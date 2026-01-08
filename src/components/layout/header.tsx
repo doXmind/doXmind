@@ -1,0 +1,81 @@
+"use client";
+
+import {
+  PanelLeftClose,
+  PanelLeft,
+  MessageSquare,
+  MessageSquareOff,
+  Moon,
+  Sun,
+  FileText,
+} from "lucide-react";
+import { useTheme } from "next-themes";
+import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useLayoutStore } from "@/stores/layout-store";
+import { useFileStore } from "@/stores/file-store";
+import { useEditorStore } from "@/stores/editor-store";
+
+export function Header() {
+  const { isSidebarOpen, isChatOpen, toggleSidebar, toggleChat } =
+    useLayoutStore();
+  const { currentFileId, files } = useFileStore();
+  const { isDirty, isSaving } = useEditorStore();
+  const { theme, setTheme } = useTheme();
+
+  const currentFile = files.find((f) => f.id === currentFileId);
+
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  };
+
+  return (
+    <header className="h-12 border-b border-border flex items-center justify-between px-4 bg-card">
+      {/* Left Section */}
+      <div className="flex items-center gap-2">
+        <Tooltip content={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}>
+          <Button variant="ghost" size="icon" onClick={toggleSidebar}>
+            {isSidebarOpen ? (
+              <PanelLeftClose className="h-4 w-4" />
+            ) : (
+              <PanelLeft className="h-4 w-4" />
+            )}
+          </Button>
+        </Tooltip>
+
+        <div className="flex items-center gap-2 ml-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium text-sm">
+            {currentFile?.name || "doXmind Mini"}
+          </span>
+          {isDirty && (
+            <span className="text-xs text-muted-foreground">(unsaved)</span>
+          )}
+          {isSaving && (
+            <span className="text-xs text-muted-foreground">Saving...</span>
+          )}
+        </div>
+      </div>
+
+      {/* Right Section */}
+      <div className="flex items-center gap-1">
+        <Tooltip content="Toggle Theme">
+          <Button variant="ghost" size="icon" onClick={toggleTheme}>
+            <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+          </Button>
+        </Tooltip>
+
+        <Tooltip content={isChatOpen ? "Hide AI Chat" : "Show AI Chat"}>
+          <Button variant="ghost" size="icon" onClick={toggleChat}>
+            {isChatOpen ? (
+              <MessageSquareOff className="h-4 w-4" />
+            ) : (
+              <MessageSquare className="h-4 w-4" />
+            )}
+          </Button>
+        </Tooltip>
+      </div>
+    </header>
+  );
+}

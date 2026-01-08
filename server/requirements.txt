@@ -1,0 +1,27 @@
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# AI / LLM
+anthropic==0.40.0
+langchain==0.3.13
+langchain-anthropic==0.3.0
+langchain-core==0.3.28
+langgraph==0.2.60
+
+# Vector Database
+chromadb==0.5.23
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+aiosqlite==0.20.0
+
+# Utilities
+python-multipart==0.0.19
+httpx==0.28.1
+sse-starlette==2.2.1
