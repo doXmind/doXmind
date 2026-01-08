@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import { BubbleMenu, Editor } from "@tiptap/react";
 import {
   Bold,
@@ -13,12 +14,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
+import { LinkModal } from "./link-modal";
 
 interface BubbleMenuComponentProps {
   editor: Editor;
 }
 
 export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
   const { openQuickEdit } = useEditorStore();
 
   const handleAIEdit = (event: React.MouseEvent) => {
@@ -29,17 +32,28 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
     openQuickEdit({ x: rect.left, y: rect.bottom + 5 });
   };
 
-  const addLink = () => {
-    const url = window.prompt("Enter URL:");
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
-    }
+  const handleLinkConfirm = (url: string) => {
+    editor.chain().focus().setLink({ href: url }).run();
   };
 
+  // Only show when text is selected (not just cursor on a link)
+  const shouldShow = useCallback(() => {
+    const { from, to } = editor.state.selection;
+    const hasSelection = to - from > 0;
+    return hasSelection;
+  }, [editor]);
+
   return (
+    <>
+      <LinkModal
+        open={linkModalOpen}
+        onClose={() => setLinkModalOpen(false)}
+        onConfirm={handleLinkConfirm}
+      />
     <BubbleMenu
       editor={editor}
       tippyOptions={{ duration: 100 }}
+      shouldShow={shouldShow}
       className="bubble-menu flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-lg"
     >
       <BubbleButton
@@ -69,7 +83,7 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
       />
       <BubbleButton
         icon={<LinkIcon className="h-4 w-4" />}
-        onClick={addLink}
+        onClick={() => setLinkModalOpen(true)}
         isActive={editor.isActive("link")}
       />
 
@@ -82,6 +96,7 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
         tooltip="AI Edit"
       />
     </BubbleMenu>
+    </>
   );
 }
 

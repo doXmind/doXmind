@@ -23,6 +23,7 @@ import {
   Image,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEditorStore } from "@/stores/editor-store";
 
 interface CommandItem {
   title: string;
@@ -137,10 +138,13 @@ const commands: CommandItem[] = [
     description: "Insert an image from URL",
     icon: <Image className="h-4 w-4" />,
     command: ({ editor, range }) => {
-      const url = window.prompt("Enter image URL:");
-      if (url) {
-        editor.chain().focus().deleteRange(range).setImage({ src: url }).run();
-      }
+      // Delete the slash command text first
+      editor.chain().focus().deleteRange(range).run();
+      // Open image modal through global store
+      const { openImageModal } = useEditorStore.getState();
+      openImageModal((url, alt) => {
+        editor.chain().focus().setImage({ src: url, alt }).run();
+      });
     },
   },
 ];

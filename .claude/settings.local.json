@@ -15,7 +15,9 @@
       "Bash(git checkout:*)",
       "Bash(GIT_EDITOR=true git rebase:*)",
       "Bash(python -c:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd autocomplete ghost text system and context pills for chat\n\nAutocomplete System:\n- Add TipTap extensions for inline ghost text using ProseMirror decorations\n- Implement keyboard shortcuts: Tab \\(accept\\), Ctrl+Right \\(accept word\\), Escape \\(dismiss\\), Alt+/ \\(manual trigger\\)\n- Add LRU cache with TTL \\(1000 entries, 5min\\) to reduce API calls\n- Add auto/manual trigger mode toggle in editor toolbar\n- Smart trigger after spaces, punctuation; request cancellation via AbortController\n\nChat Context Pills \\(Cursor-style\\):\n- Replace chat prefill with collapsible Context Pills UI\n- Support multiple selections sent to chat simultaneously\n- Show selected text as expandable pills with char count\n- Contexts displayed in both chat input and message history\n- Clear contexts after sending message\n\nQuick Edit Menu:\n- Fix submenu rendering to prevent viewport clipping\n- Add translation options: Spanish, French, German, Japanese\n- Add tone options: Friendly, Confident\n- Fix click-outside behavior during processing\n\nNew files:\n- src/extensions/autocomplete-extension.ts\n- src/extensions/autocomplete-keymap.ts\n- server/services/autocomplete_cache.py\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(npm run lint)"
     ]
   }
 }

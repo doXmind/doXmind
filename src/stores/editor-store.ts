@@ -29,6 +29,9 @@ export interface PendingEdit {
   newContent?: string;
 }
 
+// Image modal callback for slash commands
+export type ImageModalCallback = (url: string, alt?: string) => void;
+
 interface EditorState {
   isDirty: boolean;
   selection: Selection | null;
@@ -49,6 +52,10 @@ interface EditorState {
 
   // Pending edits from AI/Agent that need to be applied through editor
   pendingEdits: PendingEdit[];
+
+  // Image modal state (for slash commands)
+  imageModalOpen: boolean;
+  imageModalCallback: ImageModalCallback | null;
 
   // Actions
   setDirty: (dirty: boolean) => void;
@@ -74,6 +81,10 @@ interface EditorState {
   queueEdit: (edit: PendingEdit) => void;
   clearPendingEdit: (id: string) => void;
   clearAllPendingEdits: () => void;
+
+  // Image Modal Actions (for slash commands)
+  openImageModal: (callback: ImageModalCallback) => void;
+  closeImageModal: () => void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -88,6 +99,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   autocompleteTriggerMode: "manual",
   chatContexts: [],
   pendingEdits: [],
+  imageModalOpen: false,
+  imageModalCallback: null,
 
   setDirty: (dirty) => set({ isDirty: dirty }),
   setSelection: (selection) => set({ selection }),
@@ -119,4 +132,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       pendingEdits: state.pendingEdits.filter((e) => e.id !== id),
     })),
   clearAllPendingEdits: () => set({ pendingEdits: [] }),
+
+  openImageModal: (callback) => set({ imageModalOpen: true, imageModalCallback: callback }),
+  closeImageModal: () => set({ imageModalOpen: false, imageModalCallback: null }),
 }));

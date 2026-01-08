@@ -18,7 +18,9 @@ import { common, createLowlight } from "lowlight";
 import { useCallback, useEffect, useRef } from "react";
 import { EditorToolbar } from "./editor-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
+import { LinkBubbleMenu } from "./link-bubble-menu";
 import { SlashCommands } from "./slash-commands";
+import { ImageModal } from "./image-modal";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
 import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
@@ -121,7 +123,10 @@ export function Editor({ file: initialFile }: EditorProps) {
   // Subscribe directly to file store to get real-time updates (for AI edits)
   const { updateFile, files } = useFileStore();
   const file = files.find(f => f.id === initialFile.id) || initialFile;
-  const { setDirty, setSelection, setSaving, setLastSavedAt, pendingEdits, clearPendingEdit } = useEditorStore();
+  const {
+    setDirty, setSelection, setSaving, setLastSavedAt, pendingEdits, clearPendingEdit,
+    imageModalOpen, imageModalCallback, closeImageModal
+  } = useEditorStore();
 
   const lastContentRef = useRef(file.content);
 
@@ -262,6 +267,14 @@ export function Editor({ file: initialFile }: EditorProps) {
     [editor]
   );
 
+  // Handle Image Modal confirm (for slash commands)
+  const handleImageModalConfirm = useCallback((url: string, alt?: string) => {
+    if (imageModalCallback) {
+      imageModalCallback(url, alt);
+    }
+    closeImageModal();
+  }, [imageModalCallback, closeImageModal]);
+
   if (!editor) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -279,7 +292,14 @@ export function Editor({ file: initialFile }: EditorProps) {
         </div>
       </ScrollArea>
       <BubbleMenuComponent editor={editor} />
+      <LinkBubbleMenu editor={editor} />
       <QuickEditMenu onApply={handleQuickEditApply} />
+      {/* Global Image Modal for slash commands */}
+      <ImageModal
+        open={imageModalOpen}
+        onClose={closeImageModal}
+        onConfirm={handleImageModalConfirm}
+      />
     </div>
   );
 }

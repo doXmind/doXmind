@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Editor } from "@tiptap/react";
 import {
   Bold,
@@ -33,12 +34,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
+import { LinkModal } from "./link-modal";
+import { ImageModal } from "./image-modal";
 
 interface EditorToolbarProps {
   editor: Editor;
 }
 
 export function EditorToolbar({ editor }: EditorToolbarProps) {
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+
   const {
     autocompleteEnabled,
     setAutocompleteEnabled,
@@ -46,18 +52,12 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
     setAutocompleteTriggerMode,
   } = useEditorStore();
 
-  const addLink = () => {
-    const url = window.prompt("Enter URL:");
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
-    }
+  const handleLinkConfirm = (url: string) => {
+    editor.chain().focus().setLink({ href: url }).run();
   };
 
-  const addImage = () => {
-    const url = window.prompt("Enter image URL:");
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
+  const handleImageConfirm = (url: string, alt?: string) => {
+    editor.chain().focus().setImage({ src: url, alt }).run();
   };
 
   const addTable = () => {
@@ -199,13 +199,13 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
       <ToolbarGroup>
         <ToolbarButton
           icon={<LinkIcon className="h-4 w-4" />}
-          onClick={addLink}
+          onClick={() => setLinkModalOpen(true)}
           isActive={editor.isActive("link")}
           tooltip="Add Link"
         />
         <ToolbarButton
           icon={<ImageIcon className="h-4 w-4" />}
-          onClick={addImage}
+          onClick={() => setImageModalOpen(true)}
           tooltip="Add Image"
         />
         <ToolbarButton
@@ -214,6 +214,18 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
           tooltip="Insert Table"
         />
       </ToolbarGroup>
+
+      {/* Modals */}
+      <LinkModal
+        open={linkModalOpen}
+        onClose={() => setLinkModalOpen(false)}
+        onConfirm={handleLinkConfirm}
+      />
+      <ImageModal
+        open={imageModalOpen}
+        onClose={() => setImageModalOpen(false)}
+        onConfirm={handleImageConfirm}
+      />
 
       {/* Spacer to push AI autocomplete to the right */}
       <div className="flex-1" />
