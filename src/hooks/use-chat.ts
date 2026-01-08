@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { useChatStore, type ChatMessage, type ToolCall } from "@/stores/chat-store";
+import { useChatStore, type ChatMessage, type ToolCall, type MessageContextItem } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore, type PendingEdit } from "@/stores/editor-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
@@ -94,14 +94,24 @@ export function useChat() {
   }, [getFile, queueEdit]);
 
   const sendMessage = useCallback(
-    async (message: string, fileIds: string[]) => {
+    async (message: string, fileIds: string[], contexts?: MessageContextItem[] | null) => {
       const conversationId = ensureConversation(fileIds[0] || null);
 
-      // Add user message
+      // Build the full message for AI (include all contexts if present)
+      let messageForAI = message;
+      if (contexts && contexts.length > 0) {
+        const contextTexts = contexts.map((c, i) =>
+          contexts.length > 1 ? `[Reference ${i + 1}:]\n${c.text}` : c.text
+        ).join('\n\n');
+        messageForAI = `${message}\n\n[Selected text for reference:]\n${contextTexts}`;
+      }
+
+      // Add user message (with contexts for display, but clean content)
       const userMessageId = addMessage(conversationId, {
         role: "user",
-        content: message,
+        content: message,  // Store only the user's question
         fileIds,
+        contexts,  // Store contexts separately for display
       });
 
       // Save user message to backend
@@ -110,6 +120,7 @@ export function useChat() {
         role: "user",
         content: message,
         fileIds,
+        contexts,
         createdAt: new Date().toISOString(),
       };
       saveMessageToBackend(conversationId, userMessage);
@@ -151,7 +162,7 @@ export function useChat() {
         const response = await fetch("/api/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, files, conversationId }),
+          body: JSON.stringify({ message: messageForAI, files, conversationId }),
           signal: abortControllerRef.current.signal,
         });
 

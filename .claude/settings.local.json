@@ -13,7 +13,9 @@
       "Bash(git remote add:*)",
       "Bash(git add:*)",
       "Bash(git checkout:*)",
-      "Bash(GIT_EDITOR=true git rebase:*)"
+      "Bash(GIT_EDITOR=true git rebase:*)",
+      "Bash(python -c:*)",
+      "Bash(timeout:*)"
     ]
   }
 }

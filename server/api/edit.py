@@ -20,10 +20,18 @@ EDIT_PROMPTS = {
     "simplify": "Rewrite the following text using simpler language. Make it easier to understand while keeping the meaning. Only output the simplified text:",
     "expand": "Expand the following text with more details and explanations. Add relevant information to make it more comprehensive. Only output the expanded text:",
     "shorten": "Condense the following text while keeping the key information. Make it more concise. Only output the shortened text:",
+    # Translate options
     "translate-en": "Translate the following text to English. Only output the translation:",
     "translate-zh": "Translate the following text to Chinese. Only output the translation:",
+    "translate-es": "Translate the following text to Spanish. Only output the translation:",
+    "translate-fr": "Translate the following text to French. Only output the translation:",
+    "translate-de": "Translate the following text to German. Only output the translation:",
+    "translate-ja": "Translate the following text to Japanese. Only output the translation:",
+    # Tone options
     "professional": "Rewrite the following text in a more professional and formal tone. Only output the rewritten text:",
-    "casual": "Rewrite the following text in a more casual and friendly tone. Only output the rewritten text:",
+    "casual": "Rewrite the following text in a more casual and relaxed tone. Only output the rewritten text:",
+    "friendly": "Rewrite the following text in a warm, friendly, and approachable tone. Only output the rewritten text:",
+    "confident": "Rewrite the following text in a more confident and assertive tone. Only output the rewritten text:",
 }
 
 

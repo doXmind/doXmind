@@ -188,9 +188,30 @@
   to { transform: scale(1); }
 }
 
-/* AI Ghost Text */
+/* AI Ghost Text (legacy) */
 .ai-ghost-text {
   @apply text-muted-foreground/50 italic;
+}
+
+/* Autocomplete Ghost Text - Inline suggestion displayed at cursor */
+.autocomplete-ghost-text {
+  @apply text-muted-foreground/60 pointer-events-none select-none;
+  font-style: normal;
+  display: inline;
+  white-space: pre-wrap;
+  /* Prevent layout shift */
+  position: relative;
+  /* Subtle animation on appearance */
+  animation: ghostFadeIn 0.15s ease-out;
+}
+
+@keyframes ghostFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Scrollbar */

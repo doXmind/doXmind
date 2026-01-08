@@ -6,6 +6,15 @@ interface Selection {
   text: string;
 }
 
+// Single context item for "Ask in Chat" feature
+export interface ChatContextItem {
+  id: string;  // Unique ID for removal
+  type: 'selection';
+  text: string;
+  from: number;
+  to: number;
+}
+
 // Pending edit operation that should be applied through the editor (for undo support)
 export interface PendingEdit {
   id: string;
@@ -33,9 +42,10 @@ interface EditorState {
   // Autocomplete State
   autocompleteEnabled: boolean;
   autocompleteSuggestion: string | null;
+  autocompleteTriggerMode: "auto" | "manual";
 
-  // Chat Prefill State (for "Ask in Chat" feature)
-  chatPrefillText: string | null;
+  // Chat Context State (for "Ask in Chat" feature - shown as Context Pills)
+  chatContexts: ChatContextItem[];  // Support multiple contexts
 
   // Pending edits from AI/Agent that need to be applied through editor
   pendingEdits: PendingEdit[];
@@ -53,10 +63,12 @@ interface EditorState {
   // Autocomplete Actions
   setAutocompleteEnabled: (enabled: boolean) => void;
   setAutocompleteSuggestion: (suggestion: string | null) => void;
+  setAutocompleteTriggerMode: (mode: "auto" | "manual") => void;
 
-  // Chat Prefill Actions
-  sendToChat: (text: string) => void;
-  clearChatPrefill: () => void;
+  // Chat Context Actions
+  addChatContext: (context: Omit<ChatContextItem, 'id'>) => void;  // Add a new context
+  removeChatContext: (id: string) => void;  // Remove a specific context
+  clearAllChatContexts: () => void;  // Clear all contexts
 
   // Pending Edit Actions (for undo-able AI edits)
   queueEdit: (edit: PendingEdit) => void;
@@ -73,7 +85,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   quickEditPosition: null,
   autocompleteEnabled: true,
   autocompleteSuggestion: null,
-  chatPrefillText: null,
+  autocompleteTriggerMode: "manual",
+  chatContexts: [],
   pendingEdits: [],
 
   setDirty: (dirty) => set({ isDirty: dirty }),
@@ -89,9 +102,15 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setAutocompleteEnabled: (enabled) => set({ autocompleteEnabled: enabled }),
   setAutocompleteSuggestion: (suggestion) =>
     set({ autocompleteSuggestion: suggestion }),
+  setAutocompleteTriggerMode: (mode) => set({ autocompleteTriggerMode: mode }),
 
-  sendToChat: (text) => set({ chatPrefillText: text }),
-  clearChatPrefill: () => set({ chatPrefillText: null }),
+  addChatContext: (context) => set((state) => ({
+    chatContexts: [...state.chatContexts, { ...context, id: crypto.randomUUID() }]
+  })),
+  removeChatContext: (id) => set((state) => ({
+    chatContexts: state.chatContexts.filter((c) => c.id !== id)
+  })),
+  clearAllChatContexts: () => set({ chatContexts: [] }),
 
   queueEdit: (edit) =>
     set((state) => ({ pendingEdits: [...state.pendingEdits, edit] })),

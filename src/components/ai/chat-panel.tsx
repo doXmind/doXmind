@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight } from "lucide-react";
+import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatMessage } from "./chat-message";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
-import { useEditorStore } from "@/stores/editor-store";
+import { useEditorStore, type ChatContextItem } from "@/stores/editor-store";
 import { useChat, type ToolStatus, type ThinkingStatus } from "@/hooks/use-chat";
 import { cn } from "@/lib/utils";
 
@@ -136,6 +136,52 @@ function ToolIndicator({ tool }: { tool: ToolStatus }) {
   );
 }
 
+// Context Pill component - shows selected text as a collapsible pill (Cursor-style)
+function ContextPill({
+  context,
+  onRemove
+}: {
+  context: ChatContextItem;
+  onRemove: () => void;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden bg-muted/30">
+      <div className="flex items-center gap-2 px-3 py-2 text-sm">
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-primary transition-colors"
+        >
+          <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+          <span className="truncate text-muted-foreground">
+            Selected Text ({context.text.length} chars)
+          </span>
+          {isExpanded ? (
+            <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+          ) : (
+            <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="p-1 hover:bg-accent rounded transition-colors flex-shrink-0"
+          title="Remove context"
+        >
+          <X className="h-3 w-3 text-muted-foreground" />
+        </button>
+      </div>
+      {isExpanded && (
+        <div className="px-3 py-2 text-sm text-muted-foreground bg-muted/50 border-t border-border max-h-[150px] overflow-y-auto whitespace-pre-wrap">
+          {context.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChatPanel() {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -144,8 +190,8 @@ export function ChatPanel() {
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
 
-  // Import editor store for chat prefill feature
-  const { chatPrefillText, clearChatPrefill } = useEditorStore();
+  // Import editor store for chat context feature (Context Pills)
+  const { chatContexts, removeChatContext, clearAllChatContexts } = useEditorStore();
 
   // Get conversation key without triggering store updates during render
   const conversationKey = currentFileId || "global";
@@ -167,19 +213,12 @@ export function ChatPanel() {
     }
   }, [currentFileId, loadConversation]);
 
-  // Handle chat prefill from Quick Edit "Ask in Chat" feature
+  // Focus textarea when chat context is added (from Quick Edit "Ask in Chat")
   useEffect(() => {
-    if (chatPrefillText) {
-      setInput(chatPrefillText);
-      clearChatPrefill();
-      // Focus and resize textarea
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        textareaRef.current.style.height = "auto";
-        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + "px";
-      }
+    if (chatContexts.length > 0 && textareaRef.current) {
+      textareaRef.current.focus();
     }
-  }, [chatPrefillText, clearChatPrefill]);
+  }, [chatContexts.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -194,14 +233,20 @@ export function ChatPanel() {
     if (!input.trim() || isStreaming) return;
 
     const message = input.trim();
+    // Pass contexts as a separate parameter (for display), not concatenated to message
+    const contextsToSend = chatContexts.length > 0
+      ? chatContexts.map(c => ({ type: 'selection' as const, text: c.text }))
+      : null;
+
     setInput("");
+    clearAllChatContexts(); // Clear all contexts after sending
 
     // Auto-resize textarea back
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
 
-    await sendMessage(message, currentFileId ? [currentFileId] : []);
+    await sendMessage(message, currentFileId ? [currentFileId] : [], contextsToSend);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -220,7 +265,9 @@ export function ChatPanel() {
 
   const handleClear = () => {
     if (conversation.messages.length > 0) {
-      clearConversation(conversation.id);
+      // Use conversationKey (fileId or "global") instead of conversation.id (backend UUID)
+      // because the local state uses conversationKey as the key
+      clearConversation(conversationKey);
     }
   };
 
@@ -333,6 +380,20 @@ export function ChatPanel() {
             )}
           </div>
         </div>
+
+        {/* Context Pills - shows selected text from "Ask in Chat" (supports multiple) */}
+        {chatContexts.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {chatContexts.map((ctx) => (
+              <ContextPill
+                key={ctx.id}
+                context={ctx}
+                onRemove={() => removeChatContext(ctx.id)}
+              />
+            ))}
+          </div>
+        )}
+
         <p className="text-xs text-muted-foreground mt-2 text-center">
           Press Enter to send, Shift+Enter for new line
         </p>

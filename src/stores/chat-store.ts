@@ -9,6 +9,12 @@ export interface ToolCall {
   success: boolean | null;
 }
 
+// Single context item attached to a user message (from "Ask in Chat" feature)
+export interface MessageContextItem {
+  type: 'selection';
+  text: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -16,6 +22,8 @@ export interface ChatMessage {
   fileIds?: string[];
   createdAt: string;
   isStreaming?: boolean;
+  // User message specific fields
+  contexts?: MessageContextItem[] | null;  // Selected text contexts from "Ask in Chat" (supports multiple)
   // AI response specific fields
   thinking?: string | null;
   toolCalls?: ToolCall[] | null;

@@ -20,6 +20,9 @@ import { EditorToolbar } from "./editor-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { SlashCommands } from "./slash-commands";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
+import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
+import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
+import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore, type PendingEdit } from "@/stores/editor-store";
 import { debounce } from "@/lib/utils";
@@ -175,6 +178,8 @@ export function Editor({ file: initialFile }: EditorProps) {
         lowlight,
       }),
       SlashCommands,
+      AutocompleteExtension,
+      AutocompleteKeymap,
     ],
     content: file.content,
     editorProps: {
@@ -233,6 +238,13 @@ export function Editor({ file: initialFile }: EditorProps) {
       }
     }
   }, [editor, pendingEdits, file.id, clearPendingEdit]);
+
+  // Initialize autocomplete hook
+  useAutocomplete({
+    editor,
+    fileId: file.id,
+    fileName: file.name,
+  });
 
   // Handle Quick Edit apply - replace selected text with AI result
   const handleQuickEditApply = useCallback(

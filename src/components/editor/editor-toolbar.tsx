@@ -20,16 +20,32 @@ import {
   Undo,
   Redo,
   Highlighter,
+  Sparkles,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useEditorStore } from "@/stores/editor-store";
 
 interface EditorToolbarProps {
   editor: Editor;
 }
 
 export function EditorToolbar({ editor }: EditorToolbarProps) {
+  const {
+    autocompleteEnabled,
+    setAutocompleteEnabled,
+    autocompleteTriggerMode,
+    setAutocompleteTriggerMode,
+  } = useEditorStore();
+
   const addLink = () => {
     const url = window.prompt("Enter URL:");
     if (url) {
@@ -197,6 +213,76 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
           onClick={addTable}
           tooltip="Insert Table"
         />
+      </ToolbarGroup>
+
+      {/* Spacer to push AI autocomplete to the right */}
+      <div className="flex-1" />
+
+      {/* AI Autocomplete Toggle */}
+      <ToolbarGroup>
+        <DropdownMenu>
+          <Tooltip content={autocompleteEnabled ? `AI Autocomplete: ${autocompleteTriggerMode === "auto" ? "Auto" : "Manual (Alt+/)"}` : "AI Autocomplete: Off"}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-8 gap-1 px-2",
+                  autocompleteEnabled && "text-primary"
+                )}
+              >
+                <Sparkles className="h-4 w-4" />
+                <span className="text-xs hidden sm:inline">
+                  {autocompleteEnabled
+                    ? autocompleteTriggerMode === "auto"
+                      ? "Auto"
+                      : "Manual"
+                    : "Off"}
+                </span>
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => {
+                setAutocompleteEnabled(true);
+                setAutocompleteTriggerMode("auto");
+              }}
+              className={cn(
+                autocompleteEnabled && autocompleteTriggerMode === "auto" && "bg-accent"
+              )}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Auto
+              <span className="ml-auto text-xs text-muted-foreground">
+                Auto-trigger
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                setAutocompleteEnabled(true);
+                setAutocompleteTriggerMode("manual");
+              }}
+              className={cn(
+                autocompleteEnabled && autocompleteTriggerMode === "manual" && "bg-accent"
+              )}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Manual
+              <span className="ml-auto text-xs text-muted-foreground">
+                Alt+/
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setAutocompleteEnabled(false)}
+              className={cn(!autocompleteEnabled && "bg-accent")}
+            >
+              <Sparkles className="h-4 w-4 mr-2 opacity-50" />
+              Off
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </ToolbarGroup>
     </div>
   );
