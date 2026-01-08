@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { EditorToolbar } from "./editor-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
+import { TableBubbleMenu } from "./table-bubble-menu";
 import { SlashCommands } from "./slash-commands";
 import { ImageModal } from "./image-modal";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
@@ -293,6 +294,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       </ScrollArea>
       <BubbleMenuComponent editor={editor} />
       <LinkBubbleMenu editor={editor} />
+      <TableBubbleMenu editor={editor} />
       <QuickEditMenu onApply={handleQuickEditApply} />
       {/* Global Image Modal for slash commands */}
       <ImageModal

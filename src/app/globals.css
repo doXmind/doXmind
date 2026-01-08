@@ -168,6 +168,34 @@
   @apply bg-muted font-semibold;
 }
 
+/* Table selected cell highlight */
+.ProseMirror td.selectedCell,
+.ProseMirror th.selectedCell {
+  @apply relative bg-primary/10;
+}
+
+.ProseMirror .selectedCell::after {
+  @apply absolute inset-0 border-2 border-primary pointer-events-none;
+  content: '';
+  z-index: 2;
+}
+
+/* Column resize handle */
+.ProseMirror .column-resize-handle {
+  @apply absolute top-0 right-[-2px] w-1 h-full bg-primary/50;
+  cursor: col-resize;
+}
+
+/* Table wrapper for overflow handling */
+.ProseMirror .tableWrapper {
+  @apply overflow-x-auto my-4;
+}
+
+/* Table bubble menu animation */
+.table-bubble-menu {
+  animation: fadeIn 0.2s ease-out, zoomIn 0.2s ease-out;
+}
+
 /* Selection */
 .ProseMirror ::selection {
   @apply bg-primary/20;
