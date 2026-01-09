@@ -10,10 +10,16 @@ export interface ToolCall {
 }
 
 // Single context item attached to a user message (from "Ask in Chat" feature)
-export interface MessageContextItem {
-  type: 'selection';
-  text: string;
-}
+export type MessageContextItem =
+  | {
+      type: 'selection';
+      text: string;
+    }
+  | {
+      type: 'image';
+      src: string;
+      alt?: string;
+    };
 
 export interface ChatMessage {
   id: string;

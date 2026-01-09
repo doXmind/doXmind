@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { User, Bot, Loader2, FileEdit, Check, FileText, ChevronDown, ChevronRight } from "lucide-react";
+import { User, Bot, Loader2, FileEdit, Check, FileText, ChevronDown, ChevronRight, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type ChatMessage as ChatMessageType } from "@/stores/chat-store";
 import { marked } from "marked";
@@ -12,9 +12,26 @@ interface ChatMessageProps {
 }
 
 // Collapsible context display for user messages (single item)
-function MessageContextItem({ text, index, total }: { text: string; index?: number; total?: number }) {
+function MessageContextItemDisplay({
+  context,
+  index,
+  total
+}: {
+  context: { type: string; text?: string; src?: string; alt?: string };
+  index?: number;
+  total?: number;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const label = total && total > 1 ? `Reference ${(index || 0) + 1}` : "Reference";
+  const isImage = context.type === 'image';
+  const Icon = isImage ? ImageIcon : FileText;
+
+  const label = (() => {
+    const prefix = total && total > 1 ? `Reference ${(index || 0) + 1}` : "Reference";
+    if (isImage) {
+      return `${prefix}: Image${context.alt ? ` (${context.alt})` : ''}`;
+    }
+    return `${prefix} (${context.text?.length || 0} chars)`;
+  })();
 
   return (
     <div>
@@ -23,9 +40,9 @@ function MessageContextItem({ text, index, total }: { text: string; index?: numb
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-1.5 text-xs opacity-80 hover:opacity-100 transition-opacity w-full text-left"
       >
-        <FileText className="h-3 w-3 flex-shrink-0" />
+        <Icon className="h-3 w-3 flex-shrink-0" />
         <span className="flex-1 truncate">
-          {label} ({text.length} chars)
+          {label}
         </span>
         {isExpanded ? (
           <ChevronDown className="h-3 w-3 flex-shrink-0" />
@@ -34,8 +51,16 @@ function MessageContextItem({ text, index, total }: { text: string; index?: numb
         )}
       </button>
       {isExpanded && (
-        <div className="mt-1.5 text-xs opacity-70 bg-black/10 rounded px-2 py-1.5 max-h-[100px] overflow-y-auto whitespace-pre-wrap">
-          {text}
+        <div className="mt-1.5 text-xs opacity-70 bg-black/10 rounded px-2 py-1.5 max-h-[100px] overflow-y-auto">
+          {isImage ? (
+            <img
+              src={context.src}
+              alt={context.alt || 'Image'}
+              className="max-w-full h-auto rounded"
+            />
+          ) : (
+            <div className="whitespace-pre-wrap">{context.text}</div>
+          )}
         </div>
       )}
     </div>
@@ -43,13 +68,13 @@ function MessageContextItem({ text, index, total }: { text: string; index?: numb
 }
 
 // Container for multiple contexts
-function MessageContextsDisplay({ contexts }: { contexts: { type: string; text: string }[] }) {
+function MessageContextsDisplay({ contexts }: { contexts: { type: string; text?: string; src?: string; alt?: string }[] }) {
   return (
     <div className="mt-2 border-t border-primary-foreground/20 pt-2 space-y-1">
       {contexts.map((ctx, index) => (
-        <MessageContextItem
+        <MessageContextItemDisplay
           key={index}
-          text={ctx.text}
+          context={ctx}
           index={index}
           total={contexts.length}
         />

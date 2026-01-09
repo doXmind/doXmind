@@ -100,10 +100,14 @@ export function useChat() {
       // Build the full message for AI (include all contexts if present)
       let messageForAI = message;
       if (contexts && contexts.length > 0) {
-        const contextTexts = contexts.map((c, i) =>
-          contexts.length > 1 ? `[Reference ${i + 1}:]\n${c.text}` : c.text
-        ).join('\n\n');
-        messageForAI = `${message}\n\n[Selected text for reference:]\n${contextTexts}`;
+        const contextTexts = contexts.map((c, i) => {
+          const prefix = contexts.length > 1 ? `[Reference ${i + 1}:]\n` : '';
+          if (c.type === 'image') {
+            return `${prefix}[Image: ${c.src}${c.alt ? ` (alt: ${c.alt})` : ''}]`;
+          }
+          return `${prefix}${c.text}`;
+        }).join('\n\n');
+        messageForAI = `${message}\n\n[Selected content for reference:]\n${contextTexts}`;
       }
 
       // Add user message (with contexts for display, but clean content)

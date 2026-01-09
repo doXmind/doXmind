@@ -7,13 +7,27 @@ interface Selection {
 }
 
 // Single context item for "Ask in Chat" feature
-export interface ChatContextItem {
-  id: string;  // Unique ID for removal
+export type SelectionContext = {
+  id: string;
   type: 'selection';
   text: string;
   from: number;
   to: number;
-}
+};
+
+export type ImageContext = {
+  id: string;
+  type: 'image';
+  src: string;
+  alt?: string;
+};
+
+export type ChatContextItem = SelectionContext | ImageContext;
+
+// Input type for adding context (without id)
+export type ChatContextInput =
+  | Omit<SelectionContext, 'id'>
+  | Omit<ImageContext, 'id'>;
 
 // Pending edit operation that should be applied through the editor (for undo support)
 export interface PendingEdit {
@@ -73,7 +87,7 @@ interface EditorState {
   setAutocompleteTriggerMode: (mode: "auto" | "manual") => void;
 
   // Chat Context Actions
-  addChatContext: (context: Omit<ChatContextItem, 'id'>) => void;  // Add a new context
+  addChatContext: (context: ChatContextInput) => void;  // Add a new context
   removeChatContext: (id: string) => void;  // Remove a specific context
   clearAllChatContexts: () => void;  // Clear all contexts
 
@@ -118,7 +132,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setAutocompleteTriggerMode: (mode) => set({ autocompleteTriggerMode: mode }),
 
   addChatContext: (context) => set((state) => ({
-    chatContexts: [...state.chatContexts, { ...context, id: crypto.randomUUID() }]
+    chatContexts: [...state.chatContexts, { ...context, id: crypto.randomUUID() } as ChatContextItem]
   })),
   removeChatContext: (id) => set((state) => ({
     chatContexts: state.chatContexts.filter((c) => c.id !== id)

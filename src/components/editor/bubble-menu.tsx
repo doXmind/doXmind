@@ -37,12 +37,13 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
   };
 
   // Only show when text is selected (not just cursor on a link)
-  // Don't show when in table - table has its own bubble menu
+  // Don't show when in table or image - they have their own bubble menus
   const shouldShow = useCallback(() => {
     const { from, to } = editor.state.selection;
     const hasSelection = to - from > 0;
     const isInTable = editor.isActive("table");
-    return hasSelection && !isInTable;
+    const isImage = editor.isActive("image");
+    return hasSelection && !isInTable && !isImage;
   }, [editor]);
 
   return (

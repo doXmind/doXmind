@@ -105,8 +105,91 @@
   @apply bg-transparent p-0;
 }
 
-.ProseMirror img {
+/* Image Node View */
+.ProseMirror .image-node-wrapper {
+  @apply block my-4;
+}
+
+.ProseMirror .image-node-wrapper[data-align="left"] {
+  @apply text-left;
+}
+
+.ProseMirror .image-node-wrapper[data-align="center"] {
+  @apply text-center;
+}
+
+.ProseMirror .image-node-wrapper[data-align="right"] {
+  @apply text-right;
+}
+
+.ProseMirror .image-container {
+  @apply relative inline-block;
+  line-height: 0;
+}
+
+.ProseMirror .image-container.selected {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+.ProseMirror .image-container img {
   @apply max-w-full h-auto rounded-lg;
+  display: block;
+}
+
+/* Resize handles */
+.ProseMirror .resize-handle {
+  @apply absolute bg-primary;
+  width: 10px;
+  height: 10px;
+  border: 2px solid hsl(var(--background));
+  border-radius: 50%;
+  z-index: 10;
+}
+
+.ProseMirror .resize-handle.top-left {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.ProseMirror .resize-handle.top-right {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.ProseMirror .resize-handle.bottom-left {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
+}
+
+.ProseMirror .resize-handle.bottom-right {
+  bottom: -5px;
+  right: -5px;
+  cursor: nwse-resize;
+}
+
+/* Size label during resize */
+.ProseMirror .size-label {
+  @apply absolute text-xs whitespace-nowrap pointer-events-none;
+  @apply bg-popover border border-border rounded px-2 py-0.5;
+  bottom: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+
+/* Image bubble menu animation */
+.image-bubble-menu {
+  animation: fadeIn 0.2s ease-out, zoomIn 0.2s ease-out;
+}
+
+/* Resizing state */
+.ProseMirror .image-container.is-resizing {
+  user-select: none;
 }
 
 .ProseMirror hr {

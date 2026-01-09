@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText } from "lucide-react";
+import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -136,7 +136,7 @@ function ToolIndicator({ tool }: { tool: ToolStatus }) {
   );
 }
 
-// Context Pill component - shows selected text as a collapsible pill (Cursor-style)
+// Context Pill component - shows selected text or image as a collapsible pill (Cursor-style)
 function ContextPill({
   context,
   onRemove
@@ -146,6 +146,12 @@ function ContextPill({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const isImage = context.type === 'image';
+  const Icon = isImage ? ImageIcon : FileText;
+  const label = isImage
+    ? `Image${context.alt ? `: ${context.alt}` : ''}`
+    : `Selected Text (${context.text.length} chars)`;
+
   return (
     <div className="border border-border rounded-lg overflow-hidden bg-muted/30">
       <div className="flex items-center gap-2 px-3 py-2 text-sm">
@@ -154,9 +160,9 @@ function ContextPill({
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-primary transition-colors"
         >
-          <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+          <Icon className="h-4 w-4 text-primary flex-shrink-0" />
           <span className="truncate text-muted-foreground">
-            Selected Text ({context.text.length} chars)
+            {label}
           </span>
           {isExpanded ? (
             <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -174,8 +180,16 @@ function ContextPill({
         </button>
       </div>
       {isExpanded && (
-        <div className="px-3 py-2 text-sm text-muted-foreground bg-muted/50 border-t border-border max-h-[150px] overflow-y-auto whitespace-pre-wrap">
-          {context.text}
+        <div className="px-3 py-2 text-sm text-muted-foreground bg-muted/50 border-t border-border max-h-[150px] overflow-y-auto">
+          {isImage ? (
+            <img
+              src={context.src}
+              alt={context.alt || 'Image'}
+              className="max-w-full h-auto rounded"
+            />
+          ) : (
+            <div className="whitespace-pre-wrap">{context.text}</div>
+          )}
         </div>
       )}
     </div>
@@ -235,7 +249,12 @@ export function ChatPanel() {
     const message = input.trim();
     // Pass contexts as a separate parameter (for display), not concatenated to message
     const contextsToSend = chatContexts.length > 0
-      ? chatContexts.map(c => ({ type: 'selection' as const, text: c.text }))
+      ? chatContexts.map(c => {
+          if (c.type === 'image') {
+            return { type: 'image' as const, src: c.src, alt: c.alt };
+          }
+          return { type: 'selection' as const, text: c.text };
+        })
       : null;
 
     setInput("");

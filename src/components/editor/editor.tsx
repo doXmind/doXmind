@@ -6,7 +6,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
 import Typography from "@tiptap/extension-typography";
 import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
+import { ResizableImage } from "@/extensions/resizable-image";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Table from "@tiptap/extension-table";
@@ -20,6 +20,7 @@ import { EditorToolbar } from "./editor-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 import { TableBubbleMenu } from "./table-bubble-menu";
+import { ImageBubbleMenu } from "./image-bubble-menu";
 import { SlashCommands } from "./slash-commands";
 import { ImageModal } from "./image-modal";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
@@ -165,7 +166,7 @@ export function Editor({ file: initialFile }: EditorProps) {
           class: "text-primary underline underline-offset-2 cursor-pointer",
         },
       }),
-      Image.configure({
+      ResizableImage.configure({
         HTMLAttributes: {
           class: "rounded-lg max-w-full",
         },
@@ -295,6 +296,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       <BubbleMenuComponent editor={editor} />
       <LinkBubbleMenu editor={editor} />
       <TableBubbleMenu editor={editor} />
+      <ImageBubbleMenu editor={editor} />
       <QuickEditMenu onApply={handleQuickEditApply} />
       {/* Global Image Modal for slash commands */}
       <ImageModal
