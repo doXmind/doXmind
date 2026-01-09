@@ -4,6 +4,9 @@
 
 A minimalist, modern AI writing tool that combines a powerful markdown editor with Claude AI assistance.
 
+<img width="1355" height="859" alt="880c13120803e0339a8c8c2b0105486" src="https://github.com/user-attachments/assets/581ae1e0-b96a-4654-abc3-9fe5e49b2ae3" />
+
+
 ## Features
 
 - **Rich Markdown Editor** - TipTap-based WYSIWYG editor with full markdown support
