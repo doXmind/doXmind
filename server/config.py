@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
 
     # Database - supports both SQLite and PostgreSQL
     # For PostgreSQL: postgresql+asyncpg://user:password@host:port/dbname

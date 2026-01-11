@@ -108,6 +108,21 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Search within a single document at sentence level.
+   * Returns sentence-level chunks for precise in-document highlighting.
+   * @param query - Search query
+   * @param fileId - File to search within
+   * @param topK - Maximum number of results (default 10)
+   * @param minScore - Minimum similarity score 0-1 (default 0.4 for OpenAI embeddings)
+   */
+  async searchInDocument(query: string, fileId: string, topK: number = 10, minScore: number = 0.4) {
+    return this.request<SearchResults>("/api/files/search/in-document", {
+      method: "POST",
+      body: JSON.stringify({ query, file_id: fileId, top_k: topK, min_score: minScore }),
+    });
+  }
+
   // Versions API
   async listVersions(fileId: string, limit: number = 50) {
     return this.request<Array<{

@@ -15,7 +15,7 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorToolbar } from "./editor-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
@@ -23,9 +23,11 @@ import { TableBubbleMenu } from "./table-bubble-menu";
 import { ImageBubbleMenu } from "./image-bubble-menu";
 import { SlashCommands } from "./slash-commands";
 import { ImageModal } from "./image-modal";
+import { SearchToolbar } from "./search-toolbar";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
 import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
+import { SearchExtension } from "@/extensions/search-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore, type PendingEdit } from "@/stores/editor-store";
@@ -130,6 +132,9 @@ export function Editor({ file: initialFile }: EditorProps) {
     imageModalOpen, imageModalCallback, closeImageModal
   } = useEditorStore();
 
+  // Search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
   const lastContentRef = useRef(file.content);
 
   // Debounced save function
@@ -187,6 +192,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       SlashCommands,
       AutocompleteExtension,
       AutocompleteKeymap,
+      SearchExtension,
     ],
     content: file.content,
     editorProps: {
@@ -277,6 +283,19 @@ export function Editor({ file: initialFile }: EditorProps) {
     closeImageModal();
   }, [imageModalCallback, closeImageModal]);
 
+  // Handle search keyboard shortcut (Ctrl/Cmd + F)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   if (!editor) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -287,12 +306,20 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <EditorToolbar editor={editor} />
-      <ScrollArea className="flex-1">
-        <div className="max-w-4xl mx-auto px-8 py-6">
-          <EditorContent editor={editor} />
-        </div>
-      </ScrollArea>
+      <EditorToolbar editor={editor} onSearchClick={() => setIsSearchOpen(true)} />
+      <div className="relative flex-1">
+        <SearchToolbar
+          editor={editor}
+          fileId={file.id}
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
+        />
+        <ScrollArea className="h-full">
+          <div className="max-w-4xl mx-auto px-8 py-6">
+            <EditorContent editor={editor} />
+          </div>
+        </ScrollArea>
+      </div>
       <BubbleMenuComponent editor={editor} />
       <LinkBubbleMenu editor={editor} />
       <TableBubbleMenu editor={editor} />

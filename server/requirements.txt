@@ -11,6 +11,7 @@ langchain==0.3.13
 langchain-anthropic==0.3.0
 langchain-core==0.3.28
 langgraph==0.2.60
+openai==1.58.1
 
 # Vector Database
 chromadb==0.5.23

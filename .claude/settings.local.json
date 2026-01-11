@@ -21,7 +21,8 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd modal-based link and image insertion with link bubble menu\n\nLink & Image Modals:\n- Replace window.prompt with proper modal dialogs for link/image insertion\n- Add reusable Modal, ModalHeader, ModalFooter UI components\n- LinkModal with URL input and Enter key support\n- ImageModal with URL and optional alt text fields\n- Used in toolbar, bubble menu, and slash commands\n\nLink Bubble Menu:\n- Add dedicated bubble menu for existing links \\(appears on cursor hover\\)\n- Shows URL preview with truncation\n- Actions: copy link, edit inline, open in new tab, remove link\n- Edit mode with inline URL input and Enter/Escape handling\n- Separate from text selection bubble menu\n\nEditor Improvements:\n- Bubble menu now only shows on text selection \\(not on link hover\\)\n- Slash command /image now opens ImageModal via global store\n- Image modal callback pattern for async modal results\n\nNew files:\n- src/components/ui/modal.tsx - Reusable modal with backdrop and animations\n- src/components/editor/link-modal.tsx - Link URL input modal\n- src/components/editor/image-modal.tsx - Image URL/alt input modal\n- src/components/editor/link-bubble-menu.tsx - Link editing bubble menu\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(npx eslint:*)",
       "Bash(git commit:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)"
     ]
   }
 }

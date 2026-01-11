@@ -23,6 +23,7 @@ import {
   Highlighter,
   Sparkles,
   ChevronDown,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -39,9 +40,10 @@ import { ImageModal } from "./image-modal";
 
 interface EditorToolbarProps {
   editor: Editor;
+  onSearchClick?: () => void;
 }
 
-export function EditorToolbar({ editor }: EditorToolbarProps) {
+export function EditorToolbar({ editor, onSearchClick }: EditorToolbarProps) {
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
 
@@ -212,6 +214,17 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
           icon={<TableIcon className="h-4 w-4" />}
           onClick={addTable}
           tooltip="Insert Table"
+        />
+      </ToolbarGroup>
+
+      <ToolbarDivider />
+
+      {/* Search */}
+      <ToolbarGroup>
+        <ToolbarButton
+          icon={<Search className="h-4 w-4" />}
+          onClick={() => onSearchClick?.()}
+          tooltip="Search (Ctrl+F)"
         />
       </ToolbarGroup>
 
