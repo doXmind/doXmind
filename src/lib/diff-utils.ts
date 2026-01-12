@@ -271,6 +271,25 @@ function diffByParagraphs(
 
   const diff = diffParagraphArrays(oldParagraphs, newParagraphs);
 
+  // Check if no paragraphs are unchanged - this is a full replacement
+  // In this case, create a single hunk to avoid leaving empty paragraphs behind
+  const hasUnchanged = diff.some(d => d.type === "unchanged");
+
+  if (!hasUnchanged && oldContent !== newContent) {
+    console.log("[diff-utils] Full replacement detected, creating single hunk");
+    return [{
+      id: generateId(),
+      type: "replace" as const,
+      from: 1,
+      to: oldContent.length + 1,
+      oldContent: oldContent,
+      newContent: newContent,
+      status: "pending" as const,
+      createdAt: new Date().toISOString(),
+      editId: fileId,
+    }];
+  }
+
   // Calculate positions for each paragraph in the old document
   const oldPositions: Array<{ from: number; to: number }> = [];
   let pos = 1;
@@ -416,6 +435,7 @@ export function computeDiffHunks(
 
   console.log("[diff-utils] Computing hunks for edit type:", edit.type);
   console.log("[diff-utils] Original markdown length:", originalMarkdown.length);
+  console.log("[diff-utils] Original markdown preview:", originalMarkdown.substring(0, 300));
 
   switch (edit.type) {
     case "str_replace": {
@@ -424,178 +444,34 @@ export function computeDiffHunks(
         return [];
       }
 
-      console.log("[diff-utils] Looking for old_str:", edit.old_str.substring(0, 100) + "...");
+      console.log("[diff-utils] Looking for old_str (length=" + edit.old_str.length + "):", edit.old_str.substring(0, 100) + "...");
 
-      // Find the old_str in the document
-      let from: number;
-      let to: number;
+      // For str_replace, simply create a single hunk for the replacement
+      // The old_str and new_str define exactly what to replace
+      // Position finding will be handled by the diff-review-extension using findTextInDocument
 
-      if (doc) {
-        const range = findTextInDoc(doc, edit.old_str);
-        if (!range) {
-          console.warn("[diff-utils] Could not find old_str in document, trying markdown");
-          // Fallback: use markdown position with fuzzy matching
-          const mdIndex = fuzzyIndexOf(originalMarkdown, edit.old_str);
-          if (mdIndex === -1) {
-            console.warn("[diff-utils] Could not find old_str in markdown either");
-            console.log("[diff-utils] Markdown content:", originalMarkdown.substring(0, 200) + "...");
-            return [];
-          }
-          from = mdIndex + 1;
-          to = mdIndex + edit.old_str.length + 1;
-        } else {
-          from = range.from;
-          to = range.to;
-        }
-      } else {
-        // Fallback without doc reference - use fuzzy matching
-        const mdIndex = fuzzyIndexOf(originalMarkdown, edit.old_str);
-        if (mdIndex === -1) {
-          console.warn("[diff-utils] Could not find old_str in markdown (no doc)");
-          console.log("[diff-utils] Markdown preview:", originalMarkdown.substring(0, 300));
-          console.log("[diff-utils] old_str preview:", edit.old_str.substring(0, 300));
-          return [];
-        }
-        from = mdIndex + 1;
-        to = mdIndex + edit.old_str.length + 1;
-      }
+      const hunkType: DiffChangeType =
+        edit.new_str === ""
+          ? "delete"
+          : edit.old_str === ""
+            ? "insert"
+            : "replace";
 
-      // Check if old and new content have different paragraph structures
-      // If so, split into multiple hunks for better review experience
-      const oldParagraphs = splitIntoParagraphs(edit.old_str);
-      const newParagraphs = splitIntoParagraphs(edit.new_str);
-
-      // Special case: one paragraph being split into multiple, or vice versa
-      // In this case, it's cleaner to show as a single "replace" operation
-      // rather than complex paragraph matching which may produce confusing results
-      const isParagraphSplit =
-        (oldParagraphs.length === 1 && newParagraphs.length > 1) ||
-        (oldParagraphs.length > 1 && newParagraphs.length === 1);
-
-      if (isParagraphSplit) {
-        // Show as a single replace hunk - old content deleted, new content inserted
-        console.log("[diff-utils] str_replace: paragraph split/merge detected, creating single hunk");
-
-        hunks.push({
-          id: generateId(),
-          type: "replace",
-          from,
-          to,
-          oldContent: edit.old_str,
-          newContent: edit.new_str,
-          status: "pending",
-          createdAt: new Date().toISOString(),
-          editId: edit.file_id,
-        });
-      } else if (
-        oldParagraphs.length > 1 &&
-        newParagraphs.length > 1
-      ) {
-        // Both have multiple paragraphs - use paragraph diffing
-        console.log("[diff-utils] str_replace with paragraph changes, using paragraph diff");
-
-        const paragraphDiff = diffParagraphArrays(oldParagraphs, newParagraphs);
-
-        // Calculate positions for each old paragraph within the range
-        const oldPositions: Array<{ from: number; to: number }> = [];
-        let pos = from;
-        for (const para of oldParagraphs) {
-          const paraFrom = pos;
-          const paraTo = pos + para.length;
-          oldPositions.push({ from: paraFrom, to: paraTo });
-          pos = paraTo + 2; // +2 for \n\n separator
-        }
-
-        for (const change of paragraphDiff) {
-          if (change.type === "unchanged") continue;
-
-          if (change.type === "modified" && change.oldIndex !== undefined) {
-            const position = oldPositions[change.oldIndex];
-            if (position) {
-              hunks.push({
-                id: generateId(),
-                type: "replace",
-                from: position.from,
-                to: position.to,
-                oldContent: change.oldContent || "",
-                newContent: change.newContent || "",
-                status: "pending",
-                createdAt: new Date().toISOString(),
-                editId: edit.file_id,
-              });
-            }
-          } else if (change.type === "removed" && change.oldIndex !== undefined) {
-            const position = oldPositions[change.oldIndex];
-            if (position) {
-              hunks.push({
-                id: generateId(),
-                type: "delete",
-                from: position.from,
-                to: position.to,
-                oldContent: change.oldContent || "",
-                newContent: "",
-                status: "pending",
-                createdAt: new Date().toISOString(),
-                editId: edit.file_id,
-              });
-            }
-          } else if (change.type === "added") {
-            // Insert at end of the replaced range
-            hunks.push({
-              id: generateId(),
-              type: "insert",
-              from: to,
-              to: to,
-              oldContent: "",
-              newContent: change.newContent || "",
-              status: "pending",
-              createdAt: new Date().toISOString(),
-              editId: edit.file_id,
-            });
-          }
-        }
-
-        // If paragraph diff didn't create any hunks (content looks same after normalization)
-        // but actual text is different, create a single hunk
-        if (hunks.length === 0 && edit.old_str !== edit.new_str) {
-          const hunkType: DiffChangeType =
-            edit.new_str === "" ? "delete" : edit.old_str === "" ? "insert" : "replace";
-
-          hunks.push({
-            id: generateId(),
-            type: hunkType,
-            from,
-            to,
-            oldContent: edit.old_str,
-            newContent: edit.new_str,
-            status: "pending",
-            createdAt: new Date().toISOString(),
-            editId: edit.file_id,
-          });
-        }
-      } else {
-        // Simple single-paragraph replacement
-        const hunkType: DiffChangeType =
-          edit.new_str === ""
-            ? "delete"
-            : edit.old_str === ""
-              ? "insert"
-              : "replace";
-
-        const hunk: DiffHunk = {
-          id: generateId(),
-          type: hunkType,
-          from,
-          to,
-          oldContent: edit.old_str,
-          newContent: edit.new_str,
-          status: "pending" as const,
-          createdAt: new Date().toISOString(),
-          editId: edit.file_id,
-        };
-        console.log("[diff-utils] Created str_replace hunk:", { id: hunk.id, from, to, type: hunkType });
-        hunks.push(hunk);
-      }
+      // Use a placeholder position - the actual position will be found
+      // by findTextInDocument in diff-review-extension.ts when rendering
+      const hunk: DiffHunk = {
+        id: generateId(),
+        type: hunkType,
+        from: 0, // Placeholder - will be resolved by findTextInDocument
+        to: 0,   // Placeholder - will be resolved by findTextInDocument
+        oldContent: edit.old_str,
+        newContent: edit.new_str,
+        status: "pending" as const,
+        createdAt: new Date().toISOString(),
+        editId: edit.file_id,
+      };
+      console.log("[diff-utils] Created str_replace hunk:", { id: hunk.id, type: hunkType, oldContent: edit.old_str.substring(0, 50) + "..." });
+      hunks.push(hunk);
       break;
     }
 

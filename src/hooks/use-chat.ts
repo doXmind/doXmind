@@ -69,47 +69,67 @@ export function useChat() {
   const { getFile, updateFile } = useFileStore();
   const { startDiffReview, isReviewMode, addHunksToDiffSession, diffSession } = useEditorStore();
 
-  // Apply an edit operation by starting diff review mode
-  // Instead of directly applying, we compute diff hunks for user review
-  const applyEdit = useCallback((edit: EditOperation): boolean => {
-    const file = getFile(edit.file_id);
-    if (!file) {
-      console.error(`[useChat] File not found: ${edit.file_id}`);
-      return false;
+  // Apply multiple edit operations at once to avoid async state issues
+  // Collects all hunks first, then starts/updates diff review session once
+  const applyEdits = useCallback((edits: EditOperation[]): number => {
+    if (edits.length === 0) return 0;
+
+    // Group edits by file_id
+    const editsByFile = new Map<string, EditOperation[]>();
+    for (const edit of edits) {
+      const existing = editsByFile.get(edit.file_id) || [];
+      existing.push(edit);
+      editsByFile.set(edit.file_id, existing);
     }
 
-    // Convert EditOperation to the format expected by computeDiffHunks
-    const diffEdit: DiffEditOperation = {
-      type: edit.type,
-      file_id: edit.file_id,
-      file_name: edit.file_name,
-      success: edit.success,
-      old_str: edit.old_str,
-      new_str: edit.new_str,
-      insert_line: edit.insert_line,
-      new_content: edit.new_content,
-    };
+    let totalApplied = 0;
 
-    // Compute diff hunks from the edit operation
-    const hunks = computeDiffHunks(file.content, diffEdit);
+    // Process each file's edits
+    for (const [fileId, fileEdits] of editsByFile) {
+      const file = getFile(fileId);
+      if (!file) {
+        console.error(`[useChat] File not found: ${fileId}`);
+        continue;
+      }
 
-    if (hunks.length === 0) {
-      console.warn(`[useChat] No diff hunks computed for ${edit.type} edit`);
-      return false;
+      // Collect all hunks for this file
+      const allHunks: DiffHunk[] = [];
+      for (const edit of fileEdits) {
+        const diffEdit: DiffEditOperation = {
+          type: edit.type,
+          file_id: edit.file_id,
+          file_name: edit.file_name,
+          success: edit.success,
+          old_str: edit.old_str,
+          new_str: edit.new_str,
+          insert_line: edit.insert_line,
+          new_content: edit.new_content,
+        };
+
+        const hunks = computeDiffHunks(file.content, diffEdit);
+        if (hunks.length > 0) {
+          allHunks.push(...hunks);
+          totalApplied++;
+        } else {
+          console.warn(`[useChat] No diff hunks computed for ${edit.type} edit`);
+        }
+      }
+
+      if (allHunks.length === 0) continue;
+
+      // Check if we're already in review mode for this file
+      if (isReviewMode && diffSession?.fileId === fileId) {
+        // Add all hunks to existing session at once
+        addHunksToDiffSession(allHunks);
+        console.log(`[useChat] Added ${allHunks.length} hunk(s) to existing diff review`);
+      } else {
+        // Start a new diff review session with all hunks
+        startDiffReview(fileId, allHunks, file.content);
+        console.log(`[useChat] Started diff review with ${allHunks.length} hunk(s) for ${fileEdits[0].file_name}`);
+      }
     }
 
-    // Check if we're already in review mode for this file
-    if (isReviewMode && diffSession?.fileId === edit.file_id) {
-      // Add hunks to existing session
-      addHunksToDiffSession(hunks);
-      console.log(`[useChat] Added ${hunks.length} hunk(s) to existing diff review`);
-    } else {
-      // Start a new diff review session
-      startDiffReview(edit.file_id, hunks, file.content);
-      console.log(`[useChat] Started diff review with ${hunks.length} hunk(s) for ${edit.file_name}`);
-    }
-
-    return true;
+    return totalApplied;
   }, [getFile, isReviewMode, diffSession, startDiffReview, addHunksToDiffSession]);
 
   const sendMessage = useCallback(
@@ -304,10 +324,7 @@ export function useChat() {
 
                 case "edits_batch":
                   if (parsed.edits?.length > 0) {
-                    let applied = 0;
-                    for (const edit of parsed.edits) {
-                      if (applyEdit(edit)) applied++;
-                    }
+                    const applied = applyEdits(parsed.edits);
                     const applyTool: ToolStatus = {
                       name: "apply_edits",
                       status: applied > 0 ? "completed" : "error",
@@ -340,12 +357,9 @@ export function useChat() {
           }
         }
 
-        // Apply any remaining collected edits
+        // Apply any remaining collected edits (all at once to avoid async state issues)
         if (collectedEdits.length > 0) {
-          let applied = 0;
-          for (const edit of collectedEdits) {
-            if (applyEdit(edit)) applied++;
-          }
+          const applied = applyEdits(collectedEdits);
           if (applied > 0) {
             const finalTool: ToolStatus = {
               name: "apply_edits",
@@ -396,7 +410,7 @@ export function useChat() {
         abortControllerRef.current = null;
       }
     },
-    [ensureConversation, addMessage, appendToMessage, setMessageStreaming, getFile, applyEdit, saveMessageToBackend, updateMessageFull]
+    [ensureConversation, addMessage, appendToMessage, setMessageStreaming, getFile, applyEdits, saveMessageToBackend, updateMessageFull]
   );
 
   const stopStreaming = useCallback(() => {

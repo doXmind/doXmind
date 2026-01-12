@@ -233,7 +233,10 @@ export function Editor({ file: initialFile }: EditorProps) {
   useEffect(() => {
     if (editor) {
       lastContentRef.current = file.content;
-      editor.commands.setContent(file.content, false);
+      // Defer setContent to avoid flushSync during React render cycle
+      queueMicrotask(() => {
+        editor.commands.setContent(file.content, false);
+      });
     }
   }, [file.id, editor]);
 

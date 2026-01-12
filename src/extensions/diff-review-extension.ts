@@ -19,16 +19,16 @@ export interface DiffReviewPluginState {
 }
 
 /**
- * Find the ProseMirror position of a text string in the document.
+ * Find ALL occurrences of a text string in the document.
  * Unlike simple textContent.indexOf(), this correctly accounts for node boundaries.
- * Returns { from, to, blockStart } or null if not found.
+ * Returns array of { from, to, blockStart } positions.
  * blockStart is the position of the containing block node (paragraph, etc.)
  */
-function findTextInDocument(
+function findAllTextInDocument(
   doc: Parameters<typeof DiffReviewPluginKey.getState>[0]["doc"],
   searchText: string
-): { from: number; to: number; blockStart: number } | null {
-  let result: { from: number; to: number; blockStart: number } | null = null;
+): Array<{ from: number; to: number; blockStart: number }> {
+  const results: Array<{ from: number; to: number; blockStart: number }> = [];
 
   // Walk through all text nodes and build a mapping
   let textOffset = 0;
@@ -39,7 +39,7 @@ function findTextInDocument(
     blockPos: number;
   }> = [];
 
-  doc.descendants((node, pos, parent, index) => {
+  doc.descendants((node, pos) => {
     if (node.isText && node.text) {
       // Find the containing block node position
       // Walk up to find the block-level parent
@@ -61,41 +61,80 @@ function findTextInDocument(
     return true;
   });
 
-  // Now find searchText in the concatenated text
+  // Now find ALL occurrences of searchText in the concatenated text
   const fullText = doc.textContent;
-  const textIndex = fullText.indexOf(searchText);
+  let searchStart = 0;
 
-  if (textIndex === -1) return null;
+  while (searchStart < fullText.length) {
+    const textIndex = fullText.indexOf(searchText, searchStart);
+    if (textIndex === -1) break;
 
-  const textEndIndex = textIndex + searchText.length;
+    const textEndIndex = textIndex + searchText.length;
 
-  // Find the starting position
-  let fromPos: number | null = null;
-  let toPos: number | null = null;
-  let blockStart: number | null = null;
+    // Find the starting position
+    let fromPos: number | null = null;
+    let toPos: number | null = null;
+    let blockStart: number | null = null;
 
-  for (const tp of textPositions) {
-    // Check if search start falls within this text node
-    if (fromPos === null && textIndex >= tp.start && textIndex < tp.end) {
-      const offsetInNode = textIndex - tp.start;
-      fromPos = tp.pos + offsetInNode;
-      blockStart = tp.blockPos;
+    for (const tp of textPositions) {
+      // Check if search start falls within this text node
+      if (fromPos === null && textIndex >= tp.start && textIndex < tp.end) {
+        const offsetInNode = textIndex - tp.start;
+        fromPos = tp.pos + offsetInNode;
+        blockStart = tp.blockPos;
+      }
+
+      // Check if search end falls within this text node
+      if (toPos === null && textEndIndex > tp.start && textEndIndex <= tp.end) {
+        const offsetInNode = textEndIndex - tp.start;
+        toPos = tp.pos + offsetInNode;
+      }
+
+      if (fromPos !== null && toPos !== null) break;
     }
 
-    // Check if search end falls within this text node
-    if (toPos === null && textEndIndex > tp.start && textEndIndex <= tp.end) {
-      const offsetInNode = textEndIndex - tp.start;
-      toPos = tp.pos + offsetInNode;
+    if (fromPos !== null && toPos !== null && blockStart !== null) {
+      results.push({ from: fromPos, to: toPos, blockStart });
     }
 
-    if (fromPos !== null && toPos !== null) break;
+    // Move past this occurrence
+    searchStart = textIndex + 1;
   }
 
-  if (fromPos !== null && toPos !== null && blockStart !== null) {
-    result = { from: fromPos, to: toPos, blockStart };
+  return results;
+}
+
+/**
+ * Find the ProseMirror position of a text string in the document.
+ * Unlike simple textContent.indexOf(), this correctly accounts for node boundaries.
+ * Returns { from, to, blockStart } or null if not found.
+ * blockStart is the position of the containing block node (paragraph, etc.)
+ *
+ * @param excludePositions - Set of 'from' positions to exclude (already used by other hunks)
+ */
+function findTextInDocument(
+  doc: Parameters<typeof DiffReviewPluginKey.getState>[0]["doc"],
+  searchText: string,
+  excludePositions?: Set<number>
+): { from: number; to: number; blockStart: number } | null {
+  const allOccurrences = findAllTextInDocument(doc, searchText);
+
+  if (allOccurrences.length === 0) return null;
+
+  // If no exclusions, return the first occurrence
+  if (!excludePositions || excludePositions.size === 0) {
+    return allOccurrences[0];
   }
 
-  return result;
+  // Find the first occurrence that's not excluded
+  for (const occurrence of allOccurrences) {
+    if (!excludePositions.has(occurrence.from)) {
+      return occurrence;
+    }
+  }
+
+  // All occurrences are excluded, return null
+  return null;
 }
 
 // Plugin key for accessing state
@@ -141,7 +180,9 @@ function createInsertWidget(hunk: DiffHunk): HTMLElement {
 
   // Handle newlines by converting them to <br> for display
   // Split by \n\n (paragraph breaks) and \n (line breaks)
-  const newContent = hunk.newContent || "";
+  // Trim trailing newlines to avoid extra empty lines
+  const newContent = (hunk.newContent || "").replace(/\n+$/, "");
+
   if (newContent.includes("\n")) {
     // Create elements for each line/paragraph
     const parts = newContent.split(/\n\n+/);
@@ -270,6 +311,8 @@ export const DiffReviewExtension = Extension.create({
             }
 
             const decorations: Decoration[] = [];
+            // Track positions that have been claimed by hunks to avoid duplicate matches
+            const usedPositions = new Set<number>();
 
             for (const hunk of pluginState.hunks) {
               // Skip non-pending hunks
@@ -283,7 +326,8 @@ export const DiffReviewExtension = Extension.create({
 
               if (hunk.type === "replace" || hunk.type === "delete") {
                 // Search for oldContent using proper ProseMirror position mapping
-                const found = findTextInDocument(state.doc, hunk.oldContent);
+                // Pass usedPositions to exclude already-claimed positions
+                const found = findTextInDocument(state.doc, hunk.oldContent, usedPositions);
 
                 if (found) {
                   from = found.from;
@@ -291,6 +335,8 @@ export const DiffReviewExtension = Extension.create({
                   // Place buttons at the start of the containing block (paragraph)
                   // +1 to get inside the block node
                   buttonPos = found.blockStart + 1;
+                  // Mark this position as used
+                  usedPositions.add(from);
                 } else {
                   // Fallback to stored positions (may be inaccurate)
                   const docSize = state.doc.content.size;
@@ -354,130 +400,167 @@ export const DiffReviewExtension = Extension.create({
     return {
       setDiffHunks:
         (hunks: DiffHunk[]) =>
-        ({ tr, dispatch }) => {
-          if (dispatch) {
-            tr.setMeta(DiffReviewPluginKey, {
-              hunks,
-              isActive: hunks.length > 0,
-            });
-            dispatch(tr);
-          }
-          return true;
-        },
+          ({ tr, dispatch }) => {
+            if (dispatch) {
+              tr.setMeta(DiffReviewPluginKey, {
+                hunks,
+                isActive: hunks.length > 0,
+              });
+              dispatch(tr);
+            }
+            return true;
+          },
 
       clearDiffReview:
         () =>
-        ({ tr, dispatch }) => {
-          if (dispatch) {
-            tr.setMeta(DiffReviewPluginKey, {
-              hunks: [],
-              isActive: false,
-            });
-            dispatch(tr);
-          }
-          return true;
-        },
+          ({ tr, dispatch }) => {
+            if (dispatch) {
+              tr.setMeta(DiffReviewPluginKey, {
+                hunks: [],
+                isActive: false,
+              });
+              dispatch(tr);
+            }
+            return true;
+          },
 
       acceptDiffHunk:
         (hunkId: string) =>
-        ({ tr, state, dispatch }) => {
-          const pluginState = DiffReviewPluginKey.getState(state);
-          if (!pluginState || !dispatch) return false;
+          ({ tr, state, dispatch }) => {
+            const pluginState = DiffReviewPluginKey.getState(state);
+            if (!pluginState || !dispatch) return false;
 
-          const hunk = pluginState.hunks.find((h) => h.id === hunkId);
-          if (!hunk || hunk.status !== "pending") return false;
+            const hunkIndex = pluginState.hunks.findIndex((h) => h.id === hunkId);
+            if (hunkIndex === -1) return false;
 
-          // Find the actual position of oldContent using proper ProseMirror position mapping
-          let from: number;
-          let to: number;
+            const hunk = pluginState.hunks[hunkIndex];
+            if (hunk.status !== "pending") return false;
 
-          if (hunk.type === "replace" || hunk.type === "delete") {
-            const found = findTextInDocument(state.doc, hunk.oldContent);
+            // Find the actual position of oldContent using proper ProseMirror position mapping
+            // Track positions used by hunks that appear before this one in the list
+            // to find the correct occurrence
+            let from: number;
+            let to: number;
 
-            if (found) {
-              from = found.from;
-              to = found.to;
+            if (hunk.type === "replace" || hunk.type === "delete") {
+              // Build the set of positions used by earlier hunks with the same oldContent
+              const usedPositions = new Set<number>();
+              for (let i = 0; i < hunkIndex; i++) {
+                const earlierHunk = pluginState.hunks[i];
+                if (earlierHunk.status === "pending" &&
+                  (earlierHunk.type === "replace" || earlierHunk.type === "delete") &&
+                  earlierHunk.oldContent === hunk.oldContent) {
+                  // Find where this earlier hunk would match
+                  const found = findTextInDocument(state.doc, earlierHunk.oldContent, usedPositions);
+                  if (found) {
+                    usedPositions.add(found.from);
+                  }
+                }
+              }
+
+              const found = findTextInDocument(state.doc, hunk.oldContent, usedPositions);
+
+              if (found) {
+                from = found.from;
+                to = found.to;
+              } else {
+                // Fallback to stored positions
+                const docSize = state.doc.content.size;
+                from = Math.max(0, Math.min(hunk.from, docSize));
+                to = Math.max(from, Math.min(hunk.to, docSize));
+              }
             } else {
-              // Fallback to stored positions
               const docSize = state.doc.content.size;
               from = Math.max(0, Math.min(hunk.from, docSize));
-              to = Math.max(from, Math.min(hunk.to, docSize));
+              to = from;
             }
-          } else {
-            const docSize = state.doc.content.size;
-            from = Math.max(0, Math.min(hunk.from, docSize));
-            to = from;
-          }
 
-          // Apply the change based on hunk type
-          if (hunk.type === "replace" || hunk.type === "insert") {
-            const newContent = hunk.newContent || "";
+            // Apply the change based on hunk type
+            if (hunk.type === "replace" || hunk.type === "insert") {
+              // Trim trailing newlines to avoid extra empty lines
+              // This matches the visual preview logic in createInsertWidget
+              const newContent = (hunk.newContent || "").replace(/\n+$/, "");
 
-            if (hunk.type === "replace") {
-              // Delete old content first
+              if (hunk.type === "replace") {
+                // For replace, use replaceWith to atomically replace content
+                // This avoids issues with delete + insert at shifted positions
+                if (newContent) {
+                  const hasMultipleParagraphs = newContent.includes("\n\n");
+
+                  if (hasMultipleParagraphs) {
+                    // Multi-paragraph content: parse as full document structure
+                    const html = markdownToHtml(newContent);
+                    const element = document.createElement("div");
+                    element.innerHTML = html;
+
+                    const parser = ProseMirrorDOMParser.fromSchema(state.schema);
+                    const parsedDoc = parser.parse(element);
+
+                    if (parsedDoc.content.size > 0) {
+                      // Use replaceWith to replace the old content with new paragraphs
+                      tr.replaceWith(from, to, parsedDoc.content);
+                    }
+                  } else {
+                    // Single paragraph/inline content: replace with text node
+                    // Using replaceWith ensures atomic replacement without position issues
+                    const textNode = state.schema.text(newContent);
+                    tr.replaceWith(from, to, textNode);
+                  }
+                } else {
+                  // Empty new content = delete
+                  tr.delete(from, to);
+                }
+              } else {
+                // Insert type - just insert at position
+                if (newContent) {
+                  const textNode = state.schema.text(newContent);
+                  tr.insert(from, textNode);
+                }
+              }
+            } else if (hunk.type === "delete") {
+              // Just delete old content
               tr.delete(from, to);
             }
 
-            if (newContent) {
-              // Convert markdown to HTML and parse into ProseMirror nodes
-              // This properly handles paragraphs, formatting, etc.
-              const html = markdownToHtml(newContent);
-              const element = document.createElement("div");
-              element.innerHTML = html;
+            // Update hunk status
+            const updatedHunks = pluginState.hunks.map((h) =>
+              h.id === hunkId ? { ...h, status: "accepted" as const } : h
+            );
 
-              // Parse the HTML into a ProseMirror document fragment
-              const parser = ProseMirrorDOMParser.fromSchema(state.schema);
-              const parsedDoc = parser.parse(element);
+            // Check if all hunks are processed
+            const hasPending = updatedHunks.some((h) => h.status === "pending");
 
-              // Insert the content
-              if (parsedDoc.content.size > 0) {
-                tr.insert(from, parsedDoc.content);
-              }
-            }
-          } else if (hunk.type === "delete") {
-            // Just delete old content
-            tr.delete(from, to);
-          }
+            tr.setMeta(DiffReviewPluginKey, {
+              hunks: updatedHunks,
+              isActive: hasPending,
+            });
 
-          // Update hunk status
-          const updatedHunks = pluginState.hunks.map((h) =>
-            h.id === hunkId ? { ...h, status: "accepted" as const } : h
-          );
-
-          // Check if all hunks are processed
-          const hasPending = updatedHunks.some((h) => h.status === "pending");
-
-          tr.setMeta(DiffReviewPluginKey, {
-            hunks: updatedHunks,
-            isActive: hasPending,
-          });
-
-          dispatch(tr);
-          return true;
-        },
+            dispatch(tr);
+            return true;
+          },
 
       rejectDiffHunk:
         (hunkId: string) =>
-        ({ tr, state, dispatch }) => {
-          const pluginState = DiffReviewPluginKey.getState(state);
-          if (!pluginState || !dispatch) return false;
+          ({ tr, state, dispatch }) => {
+            const pluginState = DiffReviewPluginKey.getState(state);
+            if (!pluginState || !dispatch) return false;
 
-          // Just update the status, don't modify the document
-          const updatedHunks = pluginState.hunks.map((h) =>
-            h.id === hunkId ? { ...h, status: "rejected" as const } : h
-          );
+            // Just update the status, don't modify the document
+            const updatedHunks = pluginState.hunks.map((h) =>
+              h.id === hunkId ? { ...h, status: "rejected" as const } : h
+            );
 
-          // Check if all hunks are processed
-          const hasPending = updatedHunks.some((h) => h.status === "pending");
+            // Check if all hunks are processed
+            const hasPending = updatedHunks.some((h) => h.status === "pending");
 
-          tr.setMeta(DiffReviewPluginKey, {
-            hunks: updatedHunks,
-            isActive: hasPending,
-          });
+            tr.setMeta(DiffReviewPluginKey, {
+              hunks: updatedHunks,
+              isActive: hasPending,
+            });
 
-          dispatch(tr);
-          return true;
-        },
+            dispatch(tr);
+            return true;
+          },
     };
   },
 });
