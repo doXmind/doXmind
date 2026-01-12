@@ -256,9 +256,15 @@ class WritingAgent:
     async def stream(
         self,
         message: str,
-        files: List[dict]
+        files: List[dict],
+        history: List[dict] = None
     ) -> AsyncIterator[dict]:
         """Stream agent response with real-time token streaming.
+
+        Args:
+            message: The current user message
+            files: List of file contexts
+            history: Previous conversation messages (last N messages for context)
 
         Yields events in the following format:
         - {"type": "text", "content": "..."} - Real-time text tokens
@@ -280,7 +286,11 @@ class WritingAgent:
             files=files
         )
 
-        messages = [{"role": "user", "content": message}]
+        # Build messages with history for conversation continuity
+        messages = []
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": message})
         collected_edits = []
         current_file_id = files[0]["id"] if files else None
 

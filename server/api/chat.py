@@ -242,13 +242,40 @@ async def clear_conversation(
 # ============================================================================
 
 @router.post("/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     """Stream AI chat response with real-time token output.
 
     The streaming endpoint collects all events and the final response
     is saved to the database by the frontend after streaming completes.
     """
     settings = get_settings()
+
+    # Load conversation history (last 10 messages) for context
+    history = []
+    if request.conversationId:
+        # Find conversation by file_id (conversationId from frontend is actually file_id)
+        conv_result = await db.execute(
+            select(Conversation).where(Conversation.file_id == request.conversationId)
+        )
+        conversation = conv_result.scalar_one_or_none()
+
+        if conversation:
+            # Get last 10 messages ordered by created_at
+            messages_result = await db.execute(
+                select(Message)
+                .where(Message.conversation_id == conversation.id)
+                .order_by(desc(Message.created_at))
+                .limit(10)
+            )
+            messages = messages_result.scalars().all()
+            # Reverse to get chronological order
+            messages = list(reversed(messages))
+
+            for msg in messages:
+                history.append({
+                    "role": msg.role,
+                    "content": msg.content or ""
+                })
 
     # Collector for building the complete response
     collected_text = []
@@ -278,7 +305,8 @@ async def chat_stream(request: ChatRequest):
             # Stream response - each event is yielded immediately
             async for event in agent.stream(
                 message=request.message,
-                files=files
+                files=files,
+                history=history
             ):
                 event_type = event.get("type")
 
