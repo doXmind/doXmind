@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 
 interface FileItemProps {
@@ -22,7 +23,10 @@ export function FileItem({ file }: FileItemProps) {
   const { currentFileId, setCurrentFile, deleteFile, renameFile } =
     useFileStore();
   const [isRenaming, setIsRenaming] = useState(false);
-  const [newName, setNewName] = useState(file.name);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // Remove .md extension for editing
+  const getNameWithoutExtension = (name: string) => name.replace(/\.md$/, "");
+  const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
 
   const isActive = currentFileId === file.id;
 
@@ -33,9 +37,11 @@ export function FileItem({ file }: FileItemProps) {
   };
 
   const handleRename = async () => {
-    if (newName.trim() && newName !== file.name) {
+    const trimmedName = newName.trim();
+    const fullName = trimmedName ? `${trimmedName}.md` : "";
+    if (trimmedName && fullName !== file.name) {
       try {
-        await renameFile(file.id, newName.trim());
+        await renameFile(file.id, fullName);
       } catch (error) {
         console.error("Failed to rename file:", error);
       }
@@ -47,20 +53,23 @@ export function FileItem({ file }: FileItemProps) {
     if (e.key === "Enter") {
       handleRename();
     } else if (e.key === "Escape") {
-      setNewName(file.name);
+      setNewName(getNameWithoutExtension(file.name));
       setIsRenaming(false);
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(`Delete "${file.name}"?`)) {
-      try {
-        await deleteFile(file.id);
-      } catch (error) {
-        console.error("Failed to delete file:", error);
-      }
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await deleteFile(file.id);
+    } catch (error) {
+      console.error("Failed to delete file:", error);
     }
+    setShowDeleteModal(false);
   };
 
   return (
@@ -88,7 +97,7 @@ export function FileItem({ file }: FileItemProps) {
           />
         ) : (
           <>
-            <p className="text-sm truncate">{file.name}</p>
+            <p className="text-sm truncate">{getNameWithoutExtension(file.name)}</p>
             <p className="text-xs text-muted-foreground truncate">
               {formatDate(file.updatedAt)}
             </p>
@@ -113,6 +122,7 @@ export function FileItem({ file }: FileItemProps) {
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();
+                setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
               }}
             >
@@ -121,7 +131,7 @@ export function FileItem({ file }: FileItemProps) {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={handleDelete}
+              onClick={handleDeleteClick}
               className="text-destructive"
             >
               <Trash2 className="h-4 w-4 mr-2" />
@@ -130,6 +140,22 @@ export function FileItem({ file }: FileItemProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
+        <ModalHeader>Delete File</ModalHeader>
+        <p className="text-sm text-muted-foreground">
+          Are you sure you want to delete "{getNameWithoutExtension(file.name)}"? This action cannot be undone.
+        </p>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleDeleteConfirm}>
+            Delete
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }
