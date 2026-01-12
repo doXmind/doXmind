@@ -208,17 +208,26 @@ async def create_message(
     }
 
 
-@router.delete("/conversations/{conversation_id}")
+@router.delete("/conversations/{file_id}")
 async def clear_conversation(
-    conversation_id: str,
+    file_id: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Clear all messages in a conversation."""
-    # Delete all messages in the conversation
+    """Clear all messages in a conversation by file_id."""
+    # Find conversation by file_id (consistent with GET endpoint)
     result = await db.execute(
-        select(Message).where(Message.conversation_id == conversation_id)
+        select(Conversation).where(Conversation.file_id == file_id)
     )
-    messages = result.scalars().all()
+    conversation = result.scalar_one_or_none()
+
+    if not conversation:
+        return {"success": True, "deleted": 0}
+
+    # Delete all messages in the conversation
+    messages_result = await db.execute(
+        select(Message).where(Message.conversation_id == conversation.id)
+    )
+    messages = messages_result.scalars().all()
 
     for msg in messages:
         await db.delete(msg)
