@@ -565,3 +565,104 @@ html {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
+
+/* ====================================
+   Text Review Styles (Grammarly-like)
+   Color-coded underlines for writing suggestions
+   ==================================== */
+
+/* Base suggestion underline styles */
+.ProseMirror .review-suggestion {
+  cursor: pointer;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+  transition: background-color 0.15s ease;
+  border-radius: 2px;
+  padding: 1px 0;
+}
+
+.ProseMirror .review-suggestion:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark .ProseMirror .review-suggestion:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Active suggestion (selected in panel or clicked) */
+.ProseMirror .review-suggestion.review-active {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark .ProseMirror .review-suggestion.review-active {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Category-specific colors - Grammarly style */
+/* Red: Correctness (grammar, spelling, punctuation) */
+.ProseMirror .review-correctness {
+  text-decoration: underline wavy #EF4444;
+}
+
+.dark .ProseMirror .review-correctness {
+  text-decoration-color: #F87171;
+}
+
+/* Blue: Clarity (conciseness, readability) */
+.ProseMirror .review-clarity {
+  text-decoration: underline wavy #3B82F6;
+}
+
+.dark .ProseMirror .review-clarity {
+  text-decoration-color: #60A5FA;
+}
+
+/* Purple: Tone (formality, politeness) */
+.ProseMirror .review-tone {
+  text-decoration: underline wavy #8B5CF6;
+}
+
+.dark .ProseMirror .review-tone {
+  text-decoration-color: #A78BFA;
+}
+
+/* Green: Engagement (word choice, variety) */
+.ProseMirror .review-engagement {
+  text-decoration: underline wavy #22C55E;
+}
+
+.dark .ProseMirror .review-engagement {
+  text-decoration-color: #4ADE80;
+}
+
+/* Review Popup Animation */
+.review-popup {
+  animation: reviewPopupFadeIn 0.15s ease-out;
+}
+
+@keyframes reviewPopupFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Review Panel Slide Animation */
+@keyframes reviewPanelSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.review-panel-enter {
+  animation: reviewPanelSlideIn 0.2s ease-out;
+}

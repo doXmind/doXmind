@@ -113,6 +113,10 @@ interface EditorState {
   acceptAllHunks: () => void;
   rejectAllHunks: () => void;
   addHunksToDiffSession: (hunks: DiffHunk[]) => void;
+
+  // Text Review Panel State
+  isReviewPanelOpen: boolean;
+  setReviewPanelOpen: (open: boolean) => void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -131,6 +135,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   imageModalCallback: null,
   diffSession: null,
   isReviewMode: false,
+  isReviewPanelOpen: false,
 
   setDirty: (dirty) => set({ isDirty: dirty }),
   setSelection: (selection) => set({ selection }),
@@ -250,4 +255,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
         },
       };
     }),
+
+  // Text Review Panel Actions
+  setReviewPanelOpen: (open) => set({ isReviewPanelOpen: open }),
 }));

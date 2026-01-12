@@ -31,9 +31,13 @@ import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
 import { SearchExtension } from "@/extensions/search-extension";
 import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
 import { DiffReviewExtension } from "@/extensions/diff-review-extension";
+import { TextReviewExtension, getReviewState } from "@/extensions/text-review-extension";
 import { DiffReviewToolbar } from "./diff-review-toolbar";
+import { ReviewPopup } from "./review-popup";
+import { ReviewPanel } from "./review-panel";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useSpellcheck } from "@/hooks/use-spellcheck";
+import { useTextReview } from "@/hooks/use-text-review";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore, type PendingEdit } from "@/stores/editor-store";
 import { debounce } from "@/lib/utils";
@@ -135,7 +139,8 @@ export function Editor({ file: initialFile }: EditorProps) {
   const {
     setDirty, setSelection, setSaving, setLastSavedAt, pendingEdits, clearPendingEdit,
     imageModalOpen, imageModalCallback, closeImageModal,
-    diffSession, isReviewMode, endDiffReview, acceptHunk, rejectHunk
+    diffSession, isReviewMode, endDiffReview, acceptHunk, rejectHunk,
+    isReviewPanelOpen, setReviewPanelOpen
   } = useEditorStore();
 
   // Search state
@@ -201,6 +206,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       SearchExtension,
       SpellcheckExtension,
       DiffReviewExtension,
+      TextReviewExtension,
     ],
     content: file.content,
     editorProps: {
@@ -275,6 +281,43 @@ export function Editor({ file: initialFile }: EditorProps) {
     editor,
     enabled: true,
   });
+
+  // Initialize text review hook
+  const { triggerReview, clearReview } = useTextReview({
+    editor,
+    fileId: file.id,
+    onReviewStart: () => {
+      setReviewPanelOpen(true);
+    },
+    onReviewComplete: (count) => {
+      console.log(`[Editor] Review complete with ${count} suggestions`);
+    },
+  });
+
+  // Get review state for toolbar
+  const reviewState = getReviewState(editor);
+  const isReviewLoading = reviewState?.isLoading ?? false;
+  const isReviewActive = reviewState?.isActive ?? false;
+
+  // Handle Review button click
+  const handleReviewClick = useCallback(() => {
+    if (isReviewActive) {
+      // If review is active, just toggle the panel
+      setReviewPanelOpen(!isReviewPanelOpen);
+    } else {
+      // Otherwise, trigger a new review
+      triggerReview();
+    }
+  }, [isReviewActive, isReviewPanelOpen, setReviewPanelOpen, triggerReview]);
+
+  // Handle closing the review panel
+  const handleReviewPanelClose = useCallback(() => {
+    setReviewPanelOpen(false);
+    // If we close the panel and there are no pending suggestions, clear the review
+    if (!isReviewActive) {
+      clearReview();
+    }
+  }, [setReviewPanelOpen, isReviewActive, clearReview]);
 
   // Handle Quick Edit apply - replace selected text with AI result
   const handleQuickEditApply = useCallback(
@@ -410,7 +453,13 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <EditorToolbar editor={editor} onSearchClick={() => setIsSearchOpen(true)} />
+      <EditorToolbar
+        editor={editor}
+        onSearchClick={() => setIsSearchOpen(true)}
+        onReviewClick={handleReviewClick}
+        isReviewLoading={isReviewLoading}
+        isReviewActive={isReviewActive}
+      />
       <DiffReviewToolbar
         editor={editor}
         isActive={isReviewMode}
@@ -418,24 +467,36 @@ export function Editor({ file: initialFile }: EditorProps) {
         onAcceptAll={handleAcceptAll}
         onRejectAll={handleRejectAll}
       />
-      <div className="relative flex-1 min-h-0">
-        <SearchToolbar
-          editor={editor}
-          fileId={file.id}
-          isOpen={isSearchOpen}
-          onClose={() => setIsSearchOpen(false)}
-        />
-        <ScrollArea className="h-full">
-          <div className="max-w-4xl mx-auto px-8 py-6">
-            <EditorContent editor={editor} />
-          </div>
-        </ScrollArea>
+      <div className="relative flex-1 min-h-0 flex">
+        {/* Main editor content area */}
+        <div className="flex-1 min-w-0 relative">
+          <SearchToolbar
+            editor={editor}
+            fileId={file.id}
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+          />
+          <ScrollArea className="h-full">
+            <div className="max-w-4xl mx-auto px-8 py-6">
+              <EditorContent editor={editor} />
+            </div>
+          </ScrollArea>
+        </div>
+        {/* Review Panel Sidebar - inside editor area */}
+        {isReviewPanelOpen && (
+          <ReviewPanel
+            editor={editor}
+            isOpen={isReviewPanelOpen}
+            onClose={handleReviewPanelClose}
+          />
+        )}
       </div>
       <BubbleMenuComponent editor={editor} />
       <LinkBubbleMenu editor={editor} />
       <TableBubbleMenu editor={editor} />
       <ImageBubbleMenu editor={editor} />
       <SpellcheckPopup editor={editor} />
+      <ReviewPopup editor={editor} />
       <QuickEditMenu onApply={handleQuickEditApply} />
       {/* Global Image Modal for slash commands */}
       <ImageModal

@@ -24,6 +24,8 @@ import {
   Sparkles,
   ChevronDown,
   Search,
+  FileSearch,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -41,9 +43,18 @@ import { ImageModal } from "./image-modal";
 interface EditorToolbarProps {
   editor: Editor;
   onSearchClick?: () => void;
+  onReviewClick?: () => void;
+  isReviewLoading?: boolean;
+  isReviewActive?: boolean;
 }
 
-export function EditorToolbar({ editor, onSearchClick }: EditorToolbarProps) {
+export function EditorToolbar({
+  editor,
+  onSearchClick,
+  onReviewClick,
+  isReviewLoading,
+  isReviewActive,
+}: EditorToolbarProps) {
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
 
@@ -226,6 +237,31 @@ export function EditorToolbar({ editor, onSearchClick }: EditorToolbarProps) {
           onClick={() => onSearchClick?.()}
           tooltip="Search (Ctrl+F)"
         />
+      </ToolbarGroup>
+
+      <ToolbarDivider />
+
+      {/* AI Writing Review */}
+      <ToolbarGroup>
+        <Tooltip content="AI Writing Review">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onReviewClick?.()}
+            disabled={isReviewLoading}
+            className={cn(
+              "h-8 gap-1.5 px-2",
+              isReviewActive && "bg-primary/10 text-primary"
+            )}
+          >
+            {isReviewLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSearch className="h-4 w-4" />
+            )}
+            <span className="text-xs hidden sm:inline">Review</span>
+          </Button>
+        </Tooltip>
       </ToolbarGroup>
 
       {/* Modals */}
