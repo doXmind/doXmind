@@ -30,6 +30,8 @@ import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
 import { SearchExtension } from "@/extensions/search-extension";
 import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
+import { DiffReviewExtension } from "@/extensions/diff-review-extension";
+import { DiffReviewToolbar } from "./diff-review-toolbar";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useFileStore, type FileItem } from "@/stores/file-store";
@@ -132,7 +134,8 @@ export function Editor({ file: initialFile }: EditorProps) {
   const file = files.find(f => f.id === initialFile.id) || initialFile;
   const {
     setDirty, setSelection, setSaving, setLastSavedAt, pendingEdits, clearPendingEdit,
-    imageModalOpen, imageModalCallback, closeImageModal
+    imageModalOpen, imageModalCallback, closeImageModal,
+    diffSession, isReviewMode, endDiffReview, acceptHunk, rejectHunk
   } = useEditorStore();
 
   // Search state
@@ -197,6 +200,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       AutocompleteKeymap,
       SearchExtension,
       SpellcheckExtension,
+      DiffReviewExtension,
     ],
     content: file.content,
     editorProps: {
@@ -306,6 +310,93 @@ export function Editor({ file: initialFile }: EditorProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Sync diffSession to DiffReviewExtension
+  useEffect(() => {
+    if (!editor || !diffSession) {
+      editor?.commands.clearDiffReview();
+      return;
+    }
+
+    // Only show hunks for the current file that are pending
+    if (diffSession.fileId === file.id) {
+      const pendingHunks = diffSession.hunks.filter((h) => h.status === "pending");
+      editor.commands.setDiffHunks(pendingHunks);
+    }
+  }, [editor, diffSession, file.id]);
+
+  // Handle diff accept/reject events from the extension
+  useEffect(() => {
+    const handleAccept = (e: Event) => {
+      const customEvent = e as CustomEvent<{ hunkId: string }>;
+      const hunkId = customEvent.detail.hunkId;
+
+      // Apply the change through the editor command
+      editor?.commands.acceptDiffHunk(hunkId);
+
+      // Update the store
+      acceptHunk(hunkId);
+
+      // Check if all hunks are processed
+      const remaining = diffSession?.hunks.filter(
+        (h) => h.status === "pending" && h.id !== hunkId
+      );
+      if (remaining?.length === 0) {
+        endDiffReview();
+      }
+    };
+
+    const handleReject = (e: Event) => {
+      const customEvent = e as CustomEvent<{ hunkId: string }>;
+      const hunkId = customEvent.detail.hunkId;
+
+      // Just update status, no document change
+      editor?.commands.rejectDiffHunk(hunkId);
+
+      // Update the store
+      rejectHunk(hunkId);
+
+      // Check if all hunks are processed
+      const remaining = diffSession?.hunks.filter(
+        (h) => h.status === "pending" && h.id !== hunkId
+      );
+      if (remaining?.length === 0) {
+        endDiffReview();
+      }
+    };
+
+    document.addEventListener("diff-accept", handleAccept);
+    document.addEventListener("diff-reject", handleReject);
+
+    return () => {
+      document.removeEventListener("diff-accept", handleAccept);
+      document.removeEventListener("diff-reject", handleReject);
+    };
+  }, [editor, diffSession, acceptHunk, rejectHunk, endDiffReview]);
+
+  // Handle Accept All / Reject All
+  const handleAcceptAll = useCallback(() => {
+    if (!diffSession) return;
+
+    // Accept each pending hunk through the editor
+    const pendingHunks = diffSession.hunks.filter((h) => h.status === "pending");
+    for (const hunk of pendingHunks) {
+      editor?.commands.acceptDiffHunk(hunk.id);
+    }
+
+    // End review mode
+    endDiffReview();
+  }, [editor, diffSession, endDiffReview]);
+
+  const handleRejectAll = useCallback(() => {
+    if (!diffSession) return;
+
+    // Clear the extension decorations
+    editor?.commands.clearDiffReview();
+
+    // End review mode (no changes applied)
+    endDiffReview();
+  }, [editor, diffSession, endDiffReview]);
+
   if (!editor) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -317,7 +408,14 @@ export function Editor({ file: initialFile }: EditorProps) {
   return (
     <div className="flex flex-col h-full">
       <EditorToolbar editor={editor} onSearchClick={() => setIsSearchOpen(true)} />
-      <div className="relative flex-1">
+      <DiffReviewToolbar
+        editor={editor}
+        isActive={isReviewMode}
+        pendingCount={diffSession?.hunks.filter((h) => h.status === "pending").length || 0}
+        onAcceptAll={handleAcceptAll}
+        onRejectAll={handleRejectAll}
+      />
+      <div className="relative flex-1 min-h-0">
         <SearchToolbar
           editor={editor}
           fileId={file.id}

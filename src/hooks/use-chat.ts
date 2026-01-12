@@ -3,8 +3,10 @@
 import { useState, useCallback, useRef } from "react";
 import { useChatStore, type ChatMessage, type ToolCall, type MessageContextItem } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
-import { useEditorStore, type PendingEdit } from "@/stores/editor-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
+import { computeDiffHunks } from "@/lib/diff-utils";
+import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
 import { generateId } from "@/lib/utils";
 
 // Types for edit operations from the backend
@@ -65,9 +67,10 @@ export function useChat() {
     saveMessageToBackend,
   } = useChatStore();
   const { getFile, updateFile } = useFileStore();
-  const { queueEdit } = useEditorStore();
+  const { startDiffReview, isReviewMode, addHunksToDiffSession, diffSession } = useEditorStore();
 
-  // Queue an edit operation to be applied through the editor (for undo support)
+  // Apply an edit operation by starting diff review mode
+  // Instead of directly applying, we compute diff hunks for user review
   const applyEdit = useCallback((edit: EditOperation): boolean => {
     const file = getFile(edit.file_id);
     if (!file) {
@@ -75,23 +78,39 @@ export function useChat() {
       return false;
     }
 
-    // Queue the edit to be applied through the editor
-    // This ensures the edit goes through ProseMirror's transaction system
-    // and can be undone with Ctrl+Z
-    const pendingEdit: PendingEdit = {
-      id: generateId(),
+    // Convert EditOperation to the format expected by computeDiffHunks
+    const diffEdit: DiffEditOperation = {
       type: edit.type,
-      fileId: edit.file_id,
-      oldStr: edit.old_str,
-      newStr: edit.new_str,
-      insertLine: edit.insert_line,
-      newContent: edit.new_content,
+      file_id: edit.file_id,
+      file_name: edit.file_name,
+      success: edit.success,
+      old_str: edit.old_str,
+      new_str: edit.new_str,
+      insert_line: edit.insert_line,
+      new_content: edit.new_content,
     };
 
-    queueEdit(pendingEdit);
-    console.log(`[useChat] Queued ${edit.type} edit for ${edit.file_name}`);
+    // Compute diff hunks from the edit operation
+    const hunks = computeDiffHunks(file.content, diffEdit);
+
+    if (hunks.length === 0) {
+      console.warn(`[useChat] No diff hunks computed for ${edit.type} edit`);
+      return false;
+    }
+
+    // Check if we're already in review mode for this file
+    if (isReviewMode && diffSession?.fileId === edit.file_id) {
+      // Add hunks to existing session
+      addHunksToDiffSession(hunks);
+      console.log(`[useChat] Added ${hunks.length} hunk(s) to existing diff review`);
+    } else {
+      // Start a new diff review session
+      startDiffReview(edit.file_id, hunks, file.content);
+      console.log(`[useChat] Started diff review with ${hunks.length} hunk(s) for ${edit.file_name}`);
+    }
+
     return true;
-  }, [getFile, queueEdit]);
+  }, [getFile, isReviewMode, diffSession, startDiffReview, addHunksToDiffSession]);
 
   const sendMessage = useCallback(
     async (message: string, fileIds: string[], contexts?: MessageContextItem[] | null) => {

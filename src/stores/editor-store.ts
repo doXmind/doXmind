@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { DiffHunk, DiffSession } from "@/types/diff";
 
 interface Selection {
   from: number;
@@ -99,6 +100,19 @@ interface EditorState {
   // Image Modal Actions (for slash commands)
   openImageModal: (callback: ImageModalCallback) => void;
   closeImageModal: () => void;
+
+  // Diff Review State
+  diffSession: DiffSession | null;
+  isReviewMode: boolean;
+
+  // Diff Review Actions
+  startDiffReview: (fileId: string, hunks: DiffHunk[], originalContent: string) => void;
+  endDiffReview: () => void;
+  acceptHunk: (hunkId: string) => void;
+  rejectHunk: (hunkId: string) => void;
+  acceptAllHunks: () => void;
+  rejectAllHunks: () => void;
+  addHunksToDiffSession: (hunks: DiffHunk[]) => void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -115,6 +129,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   pendingEdits: [],
   imageModalOpen: false,
   imageModalCallback: null,
+  diffSession: null,
+  isReviewMode: false,
 
   setDirty: (dirty) => set({ isDirty: dirty }),
   setSelection: (selection) => set({ selection }),
@@ -149,4 +165,89 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   openImageModal: (callback) => set({ imageModalOpen: true, imageModalCallback: callback }),
   closeImageModal: () => set({ imageModalOpen: false, imageModalCallback: null }),
+
+  // Diff Review Actions
+  startDiffReview: (fileId, hunks, originalContent) =>
+    set({
+      diffSession: {
+        id: crypto.randomUUID(),
+        fileId,
+        hunks,
+        isActive: true,
+        originalContent,
+        createdAt: new Date().toISOString(),
+      },
+      isReviewMode: true,
+    }),
+
+  endDiffReview: () =>
+    set({
+      diffSession: null,
+      isReviewMode: false,
+    }),
+
+  acceptHunk: (hunkId) =>
+    set((state) => {
+      if (!state.diffSession) return state;
+      return {
+        diffSession: {
+          ...state.diffSession,
+          hunks: state.diffSession.hunks.map((h) =>
+            h.id === hunkId ? { ...h, status: "accepted" as const } : h
+          ),
+        },
+      };
+    }),
+
+  rejectHunk: (hunkId) =>
+    set((state) => {
+      if (!state.diffSession) return state;
+      return {
+        diffSession: {
+          ...state.diffSession,
+          hunks: state.diffSession.hunks.map((h) =>
+            h.id === hunkId ? { ...h, status: "rejected" as const } : h
+          ),
+        },
+      };
+    }),
+
+  acceptAllHunks: () =>
+    set((state) => {
+      if (!state.diffSession) return state;
+      return {
+        diffSession: {
+          ...state.diffSession,
+          hunks: state.diffSession.hunks.map((h) => ({
+            ...h,
+            status: "accepted" as const,
+          })),
+        },
+      };
+    }),
+
+  rejectAllHunks: () =>
+    set((state) => {
+      if (!state.diffSession) return state;
+      return {
+        diffSession: {
+          ...state.diffSession,
+          hunks: state.diffSession.hunks.map((h) => ({
+            ...h,
+            status: "rejected" as const,
+          })),
+        },
+      };
+    }),
+
+  addHunksToDiffSession: (hunks) =>
+    set((state) => {
+      if (!state.diffSession) return state;
+      return {
+        diffSession: {
+          ...state.diffSession,
+          hunks: [...state.diffSession.hunks, ...hunks],
+        },
+      };
+    }),
 }));

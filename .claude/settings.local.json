@@ -22,7 +22,11 @@
       "Bash(npx eslint:*)",
       "Bash(git commit:*)",
       "Bash(npm run dev:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git push:*)",
+      "Bash(git -C \"e:\\\\doXmind\\\\doxmind-mini\" log --oneline -20)",
+      "Bash(git -C \"e:\\\\doXmind\\\\doxmind-mini\" show 34c6e46 --stat)",
+      "Bash(cd /d e:doXminddoxmind-mini)"
     ]
   }
 }
