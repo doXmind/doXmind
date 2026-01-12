@@ -30,7 +30,7 @@ class AutocompleteRequest(BaseModel):
     file_id: str = ""
     file_name: str = ""
     cursor_position: int = 0
-    max_tokens: int = 50  # Reduced for faster responses
+    max_tokens: int = 15  # Short completions: current word + at most 1 word
 
 
 class AutocompleteResponse(BaseModel):
@@ -57,8 +57,8 @@ def build_prompt(request: AutocompleteRequest) -> tuple[str, str]:
 
 {context}"""
 
-    # Concise system prompt
-    system_prompt = """You are an autocomplete assistant. Output ONLY the next few words (5-20 words) that naturally continue the text. Do not repeat existing text. Do not explain. Just output the continuation."""
+    # Concise system prompt - only complete current word or add 1 more word
+    system_prompt = """You are an autocomplete assistant. Complete the current word being typed OR output at most ONE additional word. Keep it very short (1-2 words max). Do not repeat existing text. Do not explain. Just output the completion."""
 
     return user_prompt, system_prompt
 
@@ -72,7 +72,7 @@ def clean_suggestion(suggestion: str, text_before: str) -> str:
         text_before: Text before cursor for context
 
     Returns:
-        Cleaned suggestion string
+        Cleaned suggestion string (max 2 words)
     """
     if not suggestion:
         return ""
@@ -86,14 +86,18 @@ def clean_suggestion(suggestion: str, text_before: str) -> str:
     if text_before and text_before.endswith(" ") and suggestion.startswith(" "):
         suggestion = suggestion[1:]
 
-    # Limit length (max ~50 words or 200 chars)
-    if len(suggestion) > 200:
-        # Try to cut at a sentence or word boundary
-        cut_point = suggestion[:200].rfind(" ")
-        if cut_point > 100:
+    # Limit to at most 2 words for simple completion
+    words = suggestion.split()
+    if len(words) > 2:
+        suggestion = " ".join(words[:2])
+
+    # Also limit max chars to 50 for safety
+    if len(suggestion) > 50:
+        cut_point = suggestion[:50].rfind(" ")
+        if cut_point > 10:
             suggestion = suggestion[:cut_point]
         else:
-            suggestion = suggestion[:200]
+            suggestion = suggestion[:50]
 
     return suggestion
 

@@ -124,7 +124,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   quickEditPosition: null,
   autocompleteEnabled: true,
   autocompleteSuggestion: null,
-  autocompleteTriggerMode: "manual",
+  autocompleteTriggerMode: "auto",
   chatContexts: [],
   pendingEdits: [],
   imageModalOpen: false,

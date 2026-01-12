@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # AI Models
     default_model: str = "claude-haiku-4-5-20251001"
-    fast_model: str = "claude-haiku-4-5-20251001"
+    fast_model: str = "claude-3-5-haiku-20241022"
 
     # Limits
     max_context_tokens: int = 100000

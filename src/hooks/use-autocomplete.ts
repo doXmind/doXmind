@@ -5,10 +5,10 @@
  *
  * Manages autocomplete suggestions for the TipTap editor.
  * Features:
- * - 150ms debounce for optimal responsiveness
- * - Smart trigger conditions (after spaces, punctuation, etc.)
+ * - Simple word completion (current word + at most 1 more word)
+ * - Triggers while typing to complete current word
+ * - 300ms debounce to avoid too frequent requests
  * - Request cancellation via AbortController
- * - Context collection (4000 chars before, 1000 chars after)
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -19,12 +19,11 @@ import { AUTOCOMPLETE_TRIGGER_EVENT } from "@/extensions/autocomplete-keymap";
 
 // Configuration
 const CONFIG = {
-  DEBOUNCE_DELAY: 150, // ms - reduced from 500ms for better responsiveness
-  MIN_TEXT_LENGTH: 3, // Minimum text length before triggering
+  DEBOUNCE_DELAY: 300, // ms - longer debounce since we trigger on every keystroke
+  MIN_TEXT_LENGTH: 2, // Minimum text length before triggering
+  MIN_WORD_LENGTH: 2, // Minimum current word length to trigger completion
   MAX_CONTEXT_BEFORE: 4000, // Max chars before cursor
   MAX_CONTEXT_AFTER: 1000, // Max chars after cursor
-  // Characters that trigger autocomplete
-  TRIGGER_CHARS: [" ", "\n", ".", ",", "!", "?", ":", ";", "。", "，", "！", "？"],
 };
 
 interface UseAutocompleteOptions {
@@ -34,7 +33,8 @@ interface UseAutocompleteOptions {
 }
 
 /**
- * Check if autocomplete should be triggered based on editor state
+ * Check if autocomplete should be triggered based on editor state.
+ * Now triggers while typing to complete current word.
  */
 function shouldTrigger(editor: Editor): boolean {
   const { state } = editor;
@@ -54,13 +54,26 @@ function shouldTrigger(editor: Editor): boolean {
     return false;
   }
 
-  // Get the character before cursor
-  const textBefore = selection.from > 0
+  // Get text in current paragraph up to cursor
+  const startOfNode = $pos.start();
+  const textInNode = state.doc.textBetween(startOfNode, selection.from, "");
+
+  // Find the current word being typed (characters after last space/punctuation)
+  const currentWordMatch = textInNode.match(/[\w\u4e00-\u9fff]+$/);
+  const currentWord = currentWordMatch ? currentWordMatch[0] : "";
+
+  // Trigger if we're typing a word with at least MIN_WORD_LENGTH characters
+  // This enables completion of the current word
+  if (currentWord.length >= CONFIG.MIN_WORD_LENGTH) {
+    return true;
+  }
+
+  // Also trigger after space/newline (for next word prediction)
+  const charBefore = selection.from > 0
     ? state.doc.textBetween(selection.from - 1, selection.from)
     : "";
 
-  // Trigger after specific characters or at the start
-  return CONFIG.TRIGGER_CHARS.includes(textBefore) || textBefore === "" || selection.from === 1;
+  return charBefore === " " || charBefore === "\n" || selection.from === 1;
 }
 
 /**
