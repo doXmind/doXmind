@@ -382,6 +382,23 @@
   @apply bg-border rounded-full hover:bg-muted-foreground/30;
 }
 
+/* Spellcheck Error - Red Wavy Underline */
+.ProseMirror .spellcheck-error {
+  text-decoration: underline wavy red;
+  text-decoration-skip-ink: none;
+  cursor: pointer;
+  text-underline-offset: 2px;
+}
+
+.dark .ProseMirror .spellcheck-error {
+  text-decoration-color: #f87171; /* red-400 for better visibility in dark mode */
+}
+
+/* Spellcheck Popup Animation */
+.spellcheck-popup {
+  animation: fadeIn 0.15s ease-out, zoomIn 0.15s ease-out;
+}
+
 /* Smooth Scroll */
 html {
   scroll-behavior: smooth;

@@ -23,12 +23,15 @@ import { TableBubbleMenu } from "./table-bubble-menu";
 import { ImageBubbleMenu } from "./image-bubble-menu";
 import { SlashCommands } from "./slash-commands";
 import { ImageModal } from "./image-modal";
+import { SpellcheckPopup } from "./spellcheck-popup";
 import { SearchToolbar } from "./search-toolbar";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
 import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
 import { SearchExtension } from "@/extensions/search-extension";
+import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
+import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore, type PendingEdit } from "@/stores/editor-store";
 import { debounce } from "@/lib/utils";
@@ -193,6 +196,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       AutocompleteExtension,
       AutocompleteKeymap,
       SearchExtension,
+      SpellcheckExtension,
     ],
     content: file.content,
     editorProps: {
@@ -257,6 +261,12 @@ export function Editor({ file: initialFile }: EditorProps) {
     editor,
     fileId: file.id,
     fileName: file.name,
+  });
+
+  // Initialize spellcheck hook
+  useSpellcheck({
+    editor,
+    enabled: true,
   });
 
   // Handle Quick Edit apply - replace selected text with AI result
@@ -324,6 +334,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       <LinkBubbleMenu editor={editor} />
       <TableBubbleMenu editor={editor} />
       <ImageBubbleMenu editor={editor} />
+      <SpellcheckPopup editor={editor} />
       <QuickEditMenu onApply={handleQuickEditApply} />
       {/* Global Image Modal for slash commands */}
       <ImageModal
