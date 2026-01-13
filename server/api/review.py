@@ -10,10 +10,9 @@ Provides Grammarly-like text analysis using Claude to identify:
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 import json
 import logging
-import re
 
 from services.llm_service import LLMService
 from config import get_settings
@@ -52,23 +51,37 @@ CRITICAL RULES:
 3. Only suggest changes where you are confident the replacement is better
 4. Focus on meaningful improvements, not minor stylistic preferences
 5. Limit to the most important 10-15 suggestions maximum
-6. For each suggestion, verify the original_text exists at the specified offset
+6. For each suggestion, verify the original_text exists at the specified offset"""
 
-Respond with valid JSON in this exact format:
-{
-  "suggestions": [
-    {
-      "category": "correctness",
-      "type": "spelling_error",
-      "original_text": "teh",
-      "replacement": "the",
-      "explanation": "Common typo correction",
-      "start_offset": 10,
-      "end_offset": 13
-    }
-  ],
-  "summary": "Brief overall assessment of the document quality"
-}"""
+
+REVIEW_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["correctness", "clarity", "tone", "engagement"]
+                    },
+                    "type": {"type": "string"},
+                    "original_text": {"type": "string"},
+                    "replacement": {"type": "string"},
+                    "explanation": {"type": "string"},
+                    "start_offset": {"type": "integer"},
+                    "end_offset": {"type": "integer"}
+                },
+                "required": ["category", "type", "original_text", "replacement", "explanation", "start_offset", "end_offset"],
+                "additionalProperties": False
+            }
+        },
+        "summary": {"type": "string"}
+    },
+    "required": ["suggestions", "summary"],
+    "additionalProperties": False
+}
 
 
 @router.post("")
@@ -80,7 +93,6 @@ async def review_text(request: TextReviewRequest):
             settings = get_settings()
             llm = LLMService(model=settings.default_model)
 
-            # Prepare the document for review
             content = request.content
 
             # Skip very short documents
@@ -96,88 +108,58 @@ Document to review (total {len(content)} characters):
 {content}
 ---
 
-Analyze the entire document and return JSON with your suggestions. Remember to:
+Analyze the entire document and return your suggestions. Remember to:
 1. Copy original_text exactly as it appears
 2. Calculate accurate start_offset and end_offset positions
 3. Focus on the most impactful improvements"""
 
-            full_response = ""
+            # Send progress indicator
+            yield f"data: {json.dumps({'status': 'analyzing'})}\n\n"
 
-            # Stream the response
-            async for chunk in llm.stream(
-                user=user_prompt,
+            # Use JSON mode for guaranteed valid JSON
+            parsed = await llm.json_complete(
+                prompt=user_prompt,
+                json_schema=REVIEW_JSON_SCHEMA,
                 system=REVIEW_SYSTEM_PROMPT,
-                temperature=0.2,  # Lower temperature for more consistent analysis
+                temperature=0.2,
                 max_tokens=4096
-            ):
-                full_response += chunk
-                # Send progress chunks
-                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            )
 
-            # Parse and validate the JSON response
-            try:
-                # Extract JSON from response (handle markdown code blocks)
-                json_str = full_response.strip()
+            # Validate and clean suggestions
+            validated_suggestions = []
+            for s in parsed.get("suggestions", []):
+                original = s.get("original_text", "")
+                start = s.get("start_offset", 0)
+                end = s.get("end_offset", 0)
 
-                # Try to extract JSON from code blocks
-                if "```json" in json_str:
-                    match = re.search(r'```json\s*([\s\S]*?)\s*```', json_str)
-                    if match:
-                        json_str = match.group(1)
-                elif "```" in json_str:
-                    match = re.search(r'```\s*([\s\S]*?)\s*```', json_str)
-                    if match:
-                        json_str = match.group(1)
-
-                # Try to find JSON object if still not valid
-                if not json_str.startswith('{'):
-                    match = re.search(r'\{[\s\S]*\}', json_str)
-                    if match:
-                        json_str = match.group(0)
-
-                parsed = json.loads(json_str.strip())
-
-                # Validate and clean suggestions
-                validated_suggestions = []
-                for s in parsed.get("suggestions", []):
-                    # Verify original_text exists in content at the specified position
-                    original = s.get("original_text", "")
-                    start = s.get("start_offset", 0)
-                    end = s.get("end_offset", 0)
-
-                    # Check if the text at position matches
-                    if start >= 0 and end <= len(content) and start < end:
-                        actual_text = content[start:end]
-                        if actual_text == original:
-                            validated_suggestions.append(s)
-                        else:
-                            # Try to find the actual position
-                            found_pos = content.find(original)
-                            if found_pos >= 0:
-                                s["start_offset"] = found_pos
-                                s["end_offset"] = found_pos + len(original)
-                                validated_suggestions.append(s)
-                                logger.debug(f"Corrected position for '{original}': {start} -> {found_pos}")
+                # Check if the text at position matches
+                if start >= 0 and end <= len(content) and start < end:
+                    actual_text = content[start:end]
+                    if actual_text == original:
+                        validated_suggestions.append(s)
                     else:
-                        # Invalid position, try to find the text
+                        # Try to find the actual position
                         found_pos = content.find(original)
                         if found_pos >= 0:
                             s["start_offset"] = found_pos
                             s["end_offset"] = found_pos + len(original)
                             validated_suggestions.append(s)
+                            logger.debug(f"Corrected position for '{original}': {start} -> {found_pos}")
+                else:
+                    # Invalid position, try to find the text
+                    found_pos = content.find(original)
+                    if found_pos >= 0:
+                        s["start_offset"] = found_pos
+                        s["end_offset"] = found_pos + len(original)
+                        validated_suggestions.append(s)
 
-                result = {
-                    "suggestions": validated_suggestions,
-                    "summary": parsed.get("summary", "Review complete.")
-                }
+            result = {
+                "suggestions": validated_suggestions,
+                "summary": parsed.get("summary", "Review complete.")
+            }
 
-                yield f"data: {json.dumps({'result': result})}\n\n"
-                logger.info(f"Review complete: {len(validated_suggestions)} suggestions for file {request.file_id}")
-
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse review response: {e}")
-                logger.debug(f"Raw response: {full_response[:500]}...")
-                yield f"data: {json.dumps({'error': 'Failed to parse AI response', 'raw': full_response[:200]})}\n\n"
+            yield f"data: {json.dumps({'result': result})}\n\n"
+            logger.info(f"Review complete: {len(validated_suggestions)} suggestions for file {request.file_id}")
 
             yield "data: [DONE]\n\n"
 

@@ -95,3 +95,31 @@ class LLMService:
         except Exception as e:
             logger.error(f"LLM chat error: {e}")
             raise
+
+    async def json_complete(
+        self,
+        prompt: str,
+        json_schema: dict,
+        system: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: float = 0.7,
+    ) -> dict:
+        """Generate a structured JSON completion using Claude's JSON mode."""
+        try:
+            message = await self.client.beta.messages.create(
+                model=self.model,
+                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature,
+                system=system or "You are a helpful AI writing assistant.",
+                messages=[{"role": "user", "content": prompt}],
+                betas=["structured-outputs-2025-11-13"],
+                output_format={
+                    "type": "json_schema",
+                    "schema": json_schema
+                }
+            )
+            import json
+            return json.loads(message.content[0].text)
+        except Exception as e:
+            logger.error(f"LLM JSON completion error: {e}")
+            raise
