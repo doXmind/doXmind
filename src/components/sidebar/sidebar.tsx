@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip } from "@/components/ui/tooltip";
 import { FileItem } from "./file-item";
 import { SearchResultItemComponent } from "./search-result-item";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
@@ -208,27 +209,36 @@ export function Sidebar() {
       <div className="p-3 border-b border-border">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold">Files</h2>
-          <Button variant="ghost" size="icon" onClick={handleCreateFile}>
-            <Plus className="h-4 w-4" />
-          </Button>
+          <Tooltip content="Create New File" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleCreateFile}
+              aria-label="Create New File"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </Tooltip>
         </div>
 
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             ref={inputRef}
             placeholder="Search files and content..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-8 pr-8 h-9"
+            className="pl-9 pr-9 h-9"
+            aria-label="Search files"
           />
           {searchQuery && (
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-0.5 top-0.5 h-8 w-8"
+              className="absolute right-0.5 top-1/2 -translate-y-1/2 h-8 w-8"
               onClick={clearSearch}
+              aria-label="Clear search"
             >
               <X className="h-3.5 w-3.5" />
             </Button>

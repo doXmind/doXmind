@@ -49,6 +49,8 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
       />
       {/* Modal content */}
       <div
+        role="dialog"
+        aria-modal="true"
         className={cn(
           "relative z-50 w-full max-w-md rounded-lg border border-border bg-popover p-6 shadow-lg animate-in fade-in-0 zoom-in-95",
           className

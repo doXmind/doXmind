@@ -33,8 +33,13 @@ export function Header() {
     <header className="h-12 border-b border-border flex items-center justify-between px-4 bg-card">
       {/* Left Section */}
       <div className="flex items-center gap-2">
-        <Tooltip content={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}>
-          <Button variant="ghost" size="icon" onClick={toggleSidebar}>
+        <Tooltip content={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebar}
+            aria-label={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
+          >
             {isSidebarOpen ? (
               <PanelLeftClose className="h-4 w-4" />
             ) : (
@@ -58,16 +63,26 @@ export function Header() {
       </div>
 
       {/* Right Section */}
-      <div className="flex items-center gap-1">
-        <Tooltip content="Toggle Theme">
-          <Button variant="ghost" size="icon" onClick={toggleTheme}>
+      <div className="flex items-center gap-2">
+        <Tooltip content="Toggle Theme" side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label="Toggle Theme"
+          >
             <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           </Button>
         </Tooltip>
 
-        <Tooltip content={isChatOpen ? "Hide AI Chat" : "Show AI Chat"}>
-          <Button variant="ghost" size="icon" onClick={toggleChat}>
+        <Tooltip content={isChatOpen ? "Hide AI Chat" : "Show AI Chat"} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleChat}
+            aria-label={isChatOpen ? "Hide AI Chat" : "Show AI Chat"}
+          >
             {isChatOpen ? (
               <MessageSquareOff className="h-4 w-4" />
             ) : (

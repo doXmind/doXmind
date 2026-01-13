@@ -1,10 +1,11 @@
 "use client";
 
-import { FileText, Trash2, Pencil, FileDown } from "lucide-react";
+import { FileText, Trash2, MoreHorizontal, FileDown, Pencil } from "lucide-react";
 import { useState } from "react";
 import { cn, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -131,16 +132,19 @@ export function FileItem({ file }: FileItemProps) {
       {/* Actions */}
       <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Pencil className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip content="File options" side="right">
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={(e) => e.stopPropagation()}
+                aria-label="File options"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+          </Tooltip>
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               onClick={(e) => {

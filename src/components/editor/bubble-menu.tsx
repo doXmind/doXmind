@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { LinkModal } from "./link-modal";
@@ -63,31 +64,37 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
         icon={<Bold className="h-4 w-4" />}
         onClick={() => editor.chain().focus().toggleBold().run()}
         isActive={editor.isActive("bold")}
+        tooltip="Bold (Ctrl+B)"
       />
       <BubbleButton
         icon={<Italic className="h-4 w-4" />}
         onClick={() => editor.chain().focus().toggleItalic().run()}
         isActive={editor.isActive("italic")}
+        tooltip="Italic (Ctrl+I)"
       />
       <BubbleButton
         icon={<Strikethrough className="h-4 w-4" />}
         onClick={() => editor.chain().focus().toggleStrike().run()}
         isActive={editor.isActive("strike")}
+        tooltip="Strikethrough"
       />
       <BubbleButton
         icon={<Code className="h-4 w-4" />}
         onClick={() => editor.chain().focus().toggleCode().run()}
         isActive={editor.isActive("code")}
+        tooltip="Inline Code (Ctrl+E)"
       />
       <BubbleButton
         icon={<Highlighter className="h-4 w-4" />}
         onClick={() => editor.chain().focus().toggleHighlight().run()}
         isActive={editor.isActive("highlight")}
+        tooltip="Highlight"
       />
       <BubbleButton
         icon={<LinkIcon className="h-4 w-4" />}
         onClick={() => setLinkModalOpen(true)}
         isActive={editor.isActive("link")}
+        tooltip="Add Link (Ctrl+K)"
       />
 
       <div className="w-px h-5 bg-border mx-1" />
@@ -116,14 +123,15 @@ function BubbleButton({
   onClick,
   isActive,
   className,
+  tooltip,
 }: BubbleButtonProps) {
-  return (
+  const button = (
     <Button
       variant="ghost"
       size="icon"
       onClick={onClick}
       className={cn(
-        "h-7 w-7",
+        "h-8 w-8",
         isActive && "bg-accent text-accent-foreground",
         className
       )}
@@ -131,4 +139,10 @@ function BubbleButton({
       {icon}
     </Button>
   );
+
+  if (tooltip) {
+    return <Tooltip content={tooltip}>{button}</Tooltip>;
+  }
+
+  return button;
 }

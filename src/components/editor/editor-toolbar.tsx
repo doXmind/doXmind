@@ -89,13 +89,13 @@ export function EditorToolbar({
           icon={<Undo className="h-4 w-4" />}
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
-          tooltip="Undo"
+          tooltip="Undo (Ctrl+Z)"
         />
         <ToolbarButton
           icon={<Redo className="h-4 w-4" />}
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
-          tooltip="Redo"
+          tooltip="Redo (Ctrl+Y)"
         />
       </ToolbarGroup>
 
@@ -107,31 +107,31 @@ export function EditorToolbar({
           icon={<Bold className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleBold().run()}
           isActive={editor.isActive("bold")}
-          tooltip="Bold"
+          tooltip="Bold (Ctrl+B)"
         />
         <ToolbarButton
           icon={<Italic className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleItalic().run()}
           isActive={editor.isActive("italic")}
-          tooltip="Italic"
+          tooltip="Italic (Ctrl+I)"
         />
         <ToolbarButton
           icon={<Strikethrough className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleStrike().run()}
           isActive={editor.isActive("strike")}
-          tooltip="Strikethrough"
+          tooltip="Strikethrough (Ctrl+Shift+S)"
         />
         <ToolbarButton
           icon={<Code className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleCode().run()}
           isActive={editor.isActive("code")}
-          tooltip="Inline Code"
+          tooltip="Inline Code (Ctrl+E)"
         />
         <ToolbarButton
           icon={<Highlighter className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleHighlight().run()}
           isActive={editor.isActive("highlight")}
-          tooltip="Highlight"
+          tooltip="Highlight (Ctrl+Shift+H)"
         />
       </ToolbarGroup>
 
@@ -145,7 +145,7 @@ export function EditorToolbar({
             editor.chain().focus().toggleHeading({ level: 1 }).run()
           }
           isActive={editor.isActive("heading", { level: 1 })}
-          tooltip="Heading 1"
+          tooltip="Heading 1 (Ctrl+Alt+1)"
         />
         <ToolbarButton
           icon={<Heading2 className="h-4 w-4" />}
@@ -153,7 +153,7 @@ export function EditorToolbar({
             editor.chain().focus().toggleHeading({ level: 2 }).run()
           }
           isActive={editor.isActive("heading", { level: 2 })}
-          tooltip="Heading 2"
+          tooltip="Heading 2 (Ctrl+Alt+2)"
         />
         <ToolbarButton
           icon={<Heading3 className="h-4 w-4" />}
@@ -161,7 +161,7 @@ export function EditorToolbar({
             editor.chain().focus().toggleHeading({ level: 3 }).run()
           }
           isActive={editor.isActive("heading", { level: 3 })}
-          tooltip="Heading 3"
+          tooltip="Heading 3 (Ctrl+Alt+3)"
         />
       </ToolbarGroup>
 
@@ -173,19 +173,19 @@ export function EditorToolbar({
           icon={<List className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           isActive={editor.isActive("bulletList")}
-          tooltip="Bullet List"
+          tooltip="Bullet List (Ctrl+Shift+8)"
         />
         <ToolbarButton
           icon={<ListOrdered className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           isActive={editor.isActive("orderedList")}
-          tooltip="Numbered List"
+          tooltip="Numbered List (Ctrl+Shift+7)"
         />
         <ToolbarButton
           icon={<ListTodo className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleTaskList().run()}
           isActive={editor.isActive("taskList")}
-          tooltip="Task List"
+          tooltip="Task List (Ctrl+Shift+9)"
         />
       </ToolbarGroup>
 
@@ -197,7 +197,7 @@ export function EditorToolbar({
           icon={<Quote className="h-4 w-4" />}
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           isActive={editor.isActive("blockquote")}
-          tooltip="Blockquote"
+          tooltip="Blockquote (Ctrl+Shift+B)"
         />
         <ToolbarButton
           icon={<Minus className="h-4 w-4" />}
@@ -214,7 +214,7 @@ export function EditorToolbar({
           icon={<LinkIcon className="h-4 w-4" />}
           onClick={() => setLinkModalOpen(true)}
           isActive={editor.isActive("link")}
-          tooltip="Add Link"
+          tooltip="Add Link (Ctrl+K)"
         />
         <ToolbarButton
           icon={<ImageIcon className="h-4 w-4" />}
@@ -243,7 +243,7 @@ export function EditorToolbar({
 
       {/* AI Writing Review */}
       <ToolbarGroup>
-        <Tooltip content="AI Writing Review">
+        <Tooltip content="AI Writing Review" side="bottom">
           <Button
             variant="ghost"
             size="sm"
@@ -282,7 +282,7 @@ export function EditorToolbar({
       {/* AI Autocomplete Toggle */}
       <ToolbarGroup>
         <DropdownMenu>
-          <Tooltip content={autocompleteEnabled ? `AI Autocomplete: ${autocompleteTriggerMode === "auto" ? "Auto" : "Manual (Alt+/)"}` : "AI Autocomplete: Off"}>
+          <Tooltip content={autocompleteEnabled ? `AI Autocomplete: ${autocompleteTriggerMode === "auto" ? "Auto" : "Manual (Alt+/)"}` : "AI Autocomplete: Off"} side="bottom">
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -373,7 +373,7 @@ function ToolbarButton({
   tooltip,
 }: ToolbarButtonProps) {
   return (
-    <Tooltip content={tooltip}>
+    <Tooltip content={tooltip} side="bottom">
       <Button
         variant="ghost"
         size="icon"

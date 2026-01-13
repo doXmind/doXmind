@@ -5,6 +5,7 @@ import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessage } from "./chat-message";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
@@ -299,14 +300,16 @@ export function ChatPanel() {
           <h2 className="text-sm font-semibold">AI Assistant</h2>
         </div>
         {conversation.messages.length > 0 && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleClear}
-            title="Clear conversation"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <Tooltip content="Clear conversation" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClear}
+              aria-label="Clear conversation"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </Tooltip>
         )}
       </div>
 
@@ -376,26 +379,31 @@ export function ChatPanel() {
           />
           <div className="absolute right-2 bottom-2">
             {isStreaming ? (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={stopStreaming}
-                className="h-8 w-8"
-                title="Stop"
-              >
-                <Square className="h-4 w-4" />
-              </Button>
+              <Tooltip content="Stop generating" side="left">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={stopStreaming}
+                  className="h-8 w-8"
+                  aria-label="Stop generating"
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
+              </Tooltip>
             ) : (
-              <Button
-                type="submit"
-                size="icon"
-                variant="ghost"
-                disabled={!input.trim()}
-                className="h-8 w-8"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
+              <Tooltip content="Send message" side="left">
+                <Button
+                  type="submit"
+                  size="icon"
+                  variant="ghost"
+                  disabled={!input.trim()}
+                  className="h-8 w-8"
+                  aria-label="Send message"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </Tooltip>
             )}
           </div>
         </div>

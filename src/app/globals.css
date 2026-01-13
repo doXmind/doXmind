@@ -666,3 +666,31 @@ html {
 .review-panel-enter {
   animation: reviewPanelSlideIn 0.2s ease-out;
 }
+
+/* ====================================
+   Reduced Motion Support
+   Respects user's system preference
+   ==================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Disable specific animations */
+  .bubble-menu,
+  .table-bubble-menu,
+  .image-bubble-menu,
+  .spellcheck-popup,
+  .review-popup,
+  .review-panel-enter,
+  .autocomplete-ghost-text,
+  .ProseMirror .diff-deleted,
+  .ProseMirror .diff-inserted {
+    animation: none !important;
+  }
+}

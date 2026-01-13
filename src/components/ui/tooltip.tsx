@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface TooltipProps {
@@ -17,11 +18,70 @@ export function Tooltip({
   delayDuration = 200,
 }: TooltipProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+  const [position, setPosition] = React.useState({ top: 0, left: 0 });
+  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const tooltipRef = React.useRef<HTMLDivElement>(null);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const calculatePosition = React.useCallback(() => {
+    if (!triggerRef.current) return;
+
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const tooltipHeight = tooltipRef.current?.offsetHeight || 32;
+    const tooltipWidth = tooltipRef.current?.offsetWidth || 100;
+    const gap = 8;
+
+    let top = 0;
+    let left = 0;
+
+    switch (side) {
+      case "top":
+        top = triggerRect.top - tooltipHeight - gap;
+        left = triggerRect.left + triggerRect.width / 2 - tooltipWidth / 2;
+        break;
+      case "bottom":
+        top = triggerRect.bottom + gap;
+        left = triggerRect.left + triggerRect.width / 2 - tooltipWidth / 2;
+        break;
+      case "left":
+        top = triggerRect.top + triggerRect.height / 2 - tooltipHeight / 2;
+        left = triggerRect.left - tooltipWidth - gap;
+        break;
+      case "right":
+        top = triggerRect.top + triggerRect.height / 2 - tooltipHeight / 2;
+        left = triggerRect.right + gap;
+        break;
+    }
+
+    // Viewport boundary checks
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Prevent overflow on left/right
+    if (left < 8) left = 8;
+    if (left + tooltipWidth > viewportWidth - 8) {
+      left = viewportWidth - tooltipWidth - 8;
+    }
+
+    // Prevent overflow on top/bottom
+    if (top < 8) top = 8;
+    if (top + tooltipHeight > viewportHeight - 8) {
+      top = viewportHeight - tooltipHeight - 8;
+    }
+
+    setPosition({ top, left });
+  }, [side]);
 
   const handleMouseEnter = () => {
     timeoutRef.current = setTimeout(() => {
       setIsOpen(true);
+      // Calculate position after state update
+      requestAnimationFrame(calculatePosition);
     }, delayDuration);
   };
 
@@ -32,29 +92,45 @@ export function Tooltip({
     setIsOpen(false);
   };
 
-  const positionClasses = {
-    top: "bottom-full left-1/2 -translate-x-1/2 mb-2",
-    right: "left-full top-1/2 -translate-y-1/2 ml-2",
-    bottom: "top-full left-1/2 -translate-x-1/2 mt-2",
-    left: "right-full top-1/2 -translate-y-1/2 mr-2",
+  // Hide tooltip on click (prevents annoying tooltip staying after button click)
+  const handleClick = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setIsOpen(false);
   };
+
+  // Recalculate position when tooltip becomes visible
+  React.useEffect(() => {
+    if (isOpen && tooltipRef.current) {
+      calculatePosition();
+    }
+  }, [isOpen, calculatePosition]);
 
   return (
     <div
+      ref={triggerRef}
       className="relative inline-block"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onMouseDown={handleClick}
     >
       {children}
-      {isOpen && (
+      {mounted && isOpen && createPortal(
         <div
+          ref={tooltipRef}
+          style={{
+            position: "fixed",
+            top: position.top,
+            left: position.left,
+          }}
           className={cn(
-            "absolute z-50 overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95",
-            positionClasses[side]
+            "z-[9999] overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 whitespace-nowrap pointer-events-none"
           )}
         >
           {content}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
