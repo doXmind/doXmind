@@ -16,8 +16,7 @@ import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { common, createLowlight } from "lowlight";
+import { CustomCodeBlock } from "@/extensions/code-block";
 import { SlashCommands } from "./slash-commands";
 import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
@@ -26,9 +25,6 @@ import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
 import { DiffReviewExtension } from "@/extensions/diff-review";
 import { TextReviewExtension } from "@/extensions/text-review-extension";
 import type { Extensions } from "@tiptap/react";
-
-// Initialize lowlight for code highlighting
-const lowlight = createLowlight(common);
 
 /**
  * Get all editor extensions with their configurations
@@ -81,10 +77,8 @@ export function getEditorExtensions(): Extensions {
     TableCell,
     TableHeader,
 
-    // Code blocks with syntax highlighting
-    CodeBlockLowlight.configure({
-      lowlight,
-    }),
+    // Code blocks with syntax highlighting (custom Notion-style)
+    CustomCodeBlock,
 
     // Custom extensions
     SlashCommands,

@@ -7,6 +7,7 @@ import {
   Italic,
   Strikethrough,
   Code,
+  Code2,
   Heading1,
   Heading2,
   Heading3,
@@ -202,6 +203,12 @@ export function EditorToolbar({
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           isActive={editor.isActive("blockquote")}
           tooltip="Blockquote (Ctrl+Shift+B)"
+        />
+        <ToolbarButton
+          icon={<Code2 className="h-4 w-4" />}
+          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+          isActive={editor.isActive("codeBlock")}
+          tooltip="Code Block (```)"
         />
         <ToolbarButton
           icon={<Minus className="h-4 w-4" />}
