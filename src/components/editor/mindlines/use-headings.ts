@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Editor } from "@tiptap/react";
 import type { Heading } from "./types";
 import { findActiveHeading } from "./utils/heading-utils";
@@ -12,6 +12,8 @@ import { findActiveHeading } from "./utils/heading-utils";
 export function useHeadings(editor: Editor | null) {
   const [headings, setHeadings] = useState<Heading[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Track if user has interacted with editor (clicked/selected)
+  const hasInteractedRef = useRef(false);
 
   // Extract headings from editor content
   useEffect(() => {
@@ -41,18 +43,30 @@ export function useHeadings(editor: Editor | null) {
 
   // Track cursor position to highlight active heading
   // Uses binary search for better performance on large documents
+  // Default to first heading until user focuses the editor
   useEffect(() => {
     if (!editor || headings.length === 0) return;
 
-    const trackPosition = () => {
-      const { from } = editor.state.selection;
-      const active = findActiveHeading(headings, from);
-      setActiveId(active?.id ?? null);
+    // Set initial active to first heading
+    setActiveId(headings[0]?.id ?? null);
+
+    const onFocus = () => {
+      hasInteractedRef.current = true;
     };
 
-    trackPosition();
+    const trackPosition = () => {
+      // Only track position after user has focused the editor
+      if (!hasInteractedRef.current) return;
+      const { from } = editor.state.selection;
+      const active = findActiveHeading(headings, from);
+      // Default to first heading if cursor is before all headings
+      setActiveId(active?.id ?? headings[0]?.id ?? null);
+    };
+
+    editor.on("focus", onFocus);
     editor.on("selectionUpdate", trackPosition);
     return () => {
+      editor.off("focus", onFocus);
       editor.off("selectionUpdate", trackPosition);
     };
   }, [editor, headings]);
@@ -61,7 +75,17 @@ export function useHeadings(editor: Editor | null) {
   const navigateTo = useCallback(
     (heading: Heading) => {
       if (!editor) return;
-      editor.chain().focus().setTextSelection(heading.pos).scrollIntoView().run();
+
+      // Set cursor position
+      editor.chain().focus().setTextSelection(heading.pos).run();
+
+      // Get the heading DOM element using nodeDOM which returns the actual node element
+      const dom = editor.view.nodeDOM(heading.pos);
+      const element = dom instanceof HTMLElement ? dom : null;
+
+      if (element) {
+        element.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
     },
     [editor]
   );
