@@ -65,7 +65,8 @@
       "WebFetch(domain:ncoughlin.com)",
       "mcp__plugin_hachion_pw__browser_close",
       "Bash(npm install:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(heroku apps:destroy:*)"
     ]
   }
 }

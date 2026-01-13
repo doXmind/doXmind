@@ -98,6 +98,8 @@ export function Editor({ file: initialFile }: EditorProps) {
       lastContentRef.current = file.content;
       queueMicrotask(() => {
         editor.commands.setContent(file.content, false);
+        // Manually emit update event since setContent's emitUpdate may not trigger on("update") listeners
+        editor.emit("update", { editor, transaction: editor.state.tr });
       });
     }
   }, [file.id, editor]);

@@ -15,11 +15,24 @@ export function useHeadings(editor: Editor | null) {
   // Track if user has interacted with editor (clicked/selected)
   const hasInteractedRef = useRef(false);
 
+  // Track previous document size to detect file switches
+  const prevDocSizeRef = useRef<number | null>(null);
+
   // Extract headings from editor content
   useEffect(() => {
     if (!editor) return;
 
     const updateHeadings = () => {
+      const currentDocSize = editor.state.doc.content.size;
+      const prevDocSize = prevDocSizeRef.current;
+
+      // Detect significant content change (likely a file switch)
+      // Reset interaction state so activeId defaults to first heading
+      if (prevDocSize !== null && Math.abs(currentDocSize - prevDocSize) > 50) {
+        hasInteractedRef.current = false;
+      }
+      prevDocSizeRef.current = currentDocSize;
+
       const found: Heading[] = [];
       editor.state.doc.descendants((node, pos) => {
         if (node.type.name === "heading" && node.attrs.level <= 3) {
