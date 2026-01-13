@@ -28,6 +28,7 @@ import {
   FileSearch,
   Loader2,
   ListTree,
+  Sigma,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -236,6 +237,11 @@ export function EditorToolbar({
           icon={<TableIcon className="h-4 w-4" />}
           onClick={addTable}
           tooltip="Insert Table"
+        />
+        <ToolbarButton
+          icon={<Sigma className="h-4 w-4" />}
+          onClick={() => editor.chain().focus().insertBlockMath().run()}
+          tooltip="Math Equation (Ctrl+Shift+E)"
         />
       </ToolbarGroup>
 

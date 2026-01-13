@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* KaTeX styles for math rendering */
+@import "katex/dist/katex.min.css";
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -844,4 +847,109 @@ html {
 /* Line height for code lines - must match line-numbers */
 .ProseMirror .code-block-content {
   line-height: 1.625rem;
+}
+
+/* ====================================
+   Math Node Styles (LaTeX/KaTeX)
+   Notion-style click-to-edit math
+   ==================================== */
+
+/* Inline math wrapper */
+.ProseMirror .inline-math-wrapper {
+  @apply inline;
+}
+
+/* Block math wrapper */
+.ProseMirror .block-math-wrapper {
+  @apply block my-4;
+}
+
+/* Rendered math base styles */
+.ProseMirror .math-rendered {
+  @apply cursor-pointer;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Inline math hover */
+.ProseMirror .inline-math-wrapper .math-rendered:hover {
+  @apply bg-accent/50 rounded;
+}
+
+/* Block math hover */
+.ProseMirror .block-math-wrapper .math-rendered:hover {
+  @apply bg-accent/30;
+}
+
+/* Selected state */
+.ProseMirror .math-rendered.selected,
+.ProseMirror .math-node-wrapper.ProseMirror-selectednode .math-rendered {
+  @apply ring-2 ring-primary ring-offset-2 ring-offset-background rounded;
+}
+
+/* Math editor panel */
+.math-editor-panel {
+  animation: mathPanelFadeIn 0.15s ease-out;
+}
+
+/* Symbol picker */
+.symbol-picker {
+  animation: symbolPickerSlideIn 0.15s ease-out;
+}
+
+@keyframes mathPanelFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes symbolPickerSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scrollbar for symbol picker */
+.symbol-picker::-webkit-scrollbar {
+  @apply w-1.5;
+}
+
+.symbol-picker::-webkit-scrollbar-thumb {
+  @apply bg-border/50 rounded-full;
+}
+
+/* KaTeX adjustments for editor */
+.ProseMirror .katex {
+  font-size: 1.1em;
+}
+
+.ProseMirror .block-math-wrapper .katex {
+  font-size: 1.25em;
+}
+
+/* KaTeX display mode centering */
+.ProseMirror .katex-display {
+  @apply my-0;
+  text-align: center;
+}
+
+/* Error state for invalid LaTeX */
+.ProseMirror .math-rendered.math-error {
+  @apply text-destructive border border-destructive/30 rounded px-2 py-1;
+}
+
+/* Empty equation placeholder */
+.ProseMirror .math-rendered .math-empty-placeholder {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
 }

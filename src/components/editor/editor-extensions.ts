@@ -17,6 +17,7 @@ import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import { CustomCodeBlock } from "@/extensions/code-block";
+import { InlineMath, BlockMath } from "@/extensions/math";
 import { SlashCommands } from "./slash-commands";
 import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
@@ -79,6 +80,10 @@ export function getEditorExtensions(): Extensions {
 
     // Code blocks with syntax highlighting (custom Notion-style)
     CustomCodeBlock,
+
+    // Math support (LaTeX/KaTeX)
+    InlineMath,
+    BlockMath,
 
     // Custom extensions
     SlashCommands,

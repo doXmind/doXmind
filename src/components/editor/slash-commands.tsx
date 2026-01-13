@@ -21,6 +21,7 @@ import {
   Minus,
   Table,
   Image,
+  Sigma,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
@@ -145,6 +146,38 @@ const commands: CommandItem[] = [
       openImageModal((url, alt) => {
         editor.chain().focus().setImage({ src: url, alt }).run();
       });
+    },
+  },
+  {
+    title: "Math Block",
+    description: "Insert a block math equation",
+    icon: <Sigma className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "blockMath",
+          attrs: { latex: "" },
+        })
+        .run();
+    },
+  },
+  {
+    title: "Inline Math",
+    description: "Insert inline math expression",
+    icon: <span className="h-4 w-4 font-serif text-sm">x²</span>,
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "inlineMath",
+          attrs: { latex: "" },
+        })
+        .run();
     },
   },
 ];

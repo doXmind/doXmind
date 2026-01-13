@@ -1,0 +1,244 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import katex from "katex";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Check, X, Trash2 } from "lucide-react";
+import { SymbolPicker } from "./symbol-picker";
+
+interface MathEditorPanelProps {
+  latex: string;
+  onChange: (latex: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+  displayMode: boolean;
+}
+
+/**
+ * Math Editor Panel Component
+ *
+ * Provides LaTeX input with live preview
+ */
+export function MathEditorPanel({
+  latex,
+  onChange,
+  onSave,
+  onCancel,
+  onDelete,
+  onKeyDown,
+  displayMode,
+}: MathEditorPanelProps) {
+  const [showSymbols, setShowSymbols] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  // Focus input on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Live preview
+  useEffect(() => {
+    if (!previewRef.current) return;
+
+    const latexToRender = latex.trim();
+
+    if (!latexToRender) {
+      previewRef.current.innerHTML =
+        '<span class="text-muted-foreground italic text-sm">Preview will appear here...</span>';
+      return;
+    }
+
+    try {
+      katex.render(latexToRender, previewRef.current, {
+        displayMode,
+        throwOnError: false,
+        errorColor: "#ef4444",
+        trust: true,
+      });
+    } catch {
+      previewRef.current.innerHTML = `<span class="text-destructive text-sm">Invalid LaTeX</span>`;
+    }
+  }, [latex, displayMode]);
+
+  // Insert symbol at cursor position
+  const insertSymbol = useCallback(
+    (symbol: string) => {
+      const input = inputRef.current;
+      if (!input) {
+        onChange(latex + symbol);
+        return;
+      }
+
+      const start = input.selectionStart || 0;
+      const end = input.selectionEnd || 0;
+      const newLatex = latex.slice(0, start) + symbol + latex.slice(end);
+      onChange(newLatex);
+
+      // Move cursor after inserted symbol
+      setTimeout(() => {
+        const newPos = start + symbol.length;
+        input.setSelectionRange(newPos, newPos);
+        input.focus();
+      }, 0);
+
+      setShowSymbols(false);
+    },
+    [latex, onChange]
+  );
+
+  // Handle textarea input
+  const handleInput = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onChange(e.target.value);
+    },
+    [onChange]
+  );
+
+  // Handle special keys
+  const handleKeyDownInternal = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Allow Enter with Shift for newlines in block math
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        onSave();
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+        return;
+      }
+
+      // Forward other key events
+      onKeyDown(e);
+    },
+    [onSave, onCancel, onKeyDown]
+  );
+
+  return (
+    <div
+      className={cn(
+        "math-editor-panel relative",
+        "border border-border rounded-lg bg-popover shadow-lg",
+        "animate-in fade-in-0 zoom-in-95 duration-150",
+        displayMode ? "p-4 max-w-2xl mx-auto" : "p-2 inline-block"
+      )}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Preview */}
+      <div
+        ref={previewRef}
+        className={cn(
+          "math-preview overflow-x-auto",
+          displayMode
+            ? "py-4 text-center text-xl border-b border-border mb-3 min-h-[3rem]"
+            : "min-w-[60px] px-2 mb-2 text-center min-h-[1.5rem]"
+        )}
+      />
+
+      {/* Input area */}
+      <div className={cn("flex gap-2", displayMode ? "flex-col" : "items-start")}>
+        <div className="flex-1 relative">
+          <textarea
+            ref={inputRef}
+            value={latex}
+            onChange={handleInput}
+            onKeyDown={handleKeyDownInternal}
+            placeholder={displayMode ? "e.g., \\frac{1}{2} + \\sum_{i=1}^{n} x_i" : "e.g., x^2 + y^2"}
+            className={cn(
+              "w-full font-mono text-sm resize-none",
+              "bg-background border border-input rounded-md px-3 py-2",
+              "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
+              "placeholder:text-muted-foreground",
+              displayMode ? "min-h-[80px]" : "min-h-[36px] h-[36px]"
+            )}
+            rows={displayMode ? 3 : 1}
+          />
+        </div>
+
+        {/* Action buttons */}
+        <div className={cn("flex items-center gap-1", displayMode && "justify-end")}>
+          {/* Symbol picker button */}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={() => setShowSymbols(!showSymbols)}
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title="Insert symbol"
+          >
+            <span className="text-lg font-serif">Σ</span>
+          </Button>
+
+          {/* Save button */}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={onSave}
+            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-900/30"
+            title="Save (Enter)"
+          >
+            <Check className="h-4 w-4" />
+          </Button>
+
+          {/* Cancel button */}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={onCancel}
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title="Cancel (Escape)"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+
+          {/* Delete button */}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={onDelete}
+            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+            title="Delete"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Keyboard hints */}
+      <div className="mt-2 text-xs text-muted-foreground">
+        <span className="mr-3">
+          <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Enter</kbd> to save
+        </span>
+        <span className="mr-3">
+          <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Esc</kbd> to cancel
+        </span>
+        {displayMode && (
+          <span>
+            <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Shift+Enter</kbd> for newline
+          </span>
+        )}
+      </div>
+
+      {/* Symbol picker dropdown */}
+      {showSymbols && (
+        <SymbolPicker
+          onSelect={insertSymbol}
+          onClose={() => setShowSymbols(false)}
+        />
+      )}
+    </div>
+  );
+}
