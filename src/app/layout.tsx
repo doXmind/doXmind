@@ -12,6 +12,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "doXmind Mini - AI Writing Studio",
   description: "A minimalist AI-powered writing tool for markdown editing",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
