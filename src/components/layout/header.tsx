@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   PanelLeftClose,
   PanelLeft,
@@ -7,10 +8,10 @@ import {
   MessageSquareOff,
   Moon,
   Sun,
-  FileText,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/ui/logo";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
@@ -33,6 +34,14 @@ export function Header() {
     <header className="h-12 border-b border-border flex items-center justify-between px-4 bg-card">
       {/* Left Section */}
       <div className="flex items-center gap-2">
+        <Tooltip content="Home" side="bottom">
+          <Link href="/" className="flex items-center">
+            <Logo variant="icon" size="sm" />
+          </Link>
+        </Tooltip>
+
+        <div className="w-px h-5 bg-border mx-1" />
+
         <Tooltip content={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"} side="bottom">
           <Button
             variant="ghost"
@@ -49,9 +58,8 @@ export function Header() {
         </Tooltip>
 
         <div className="flex items-center gap-2 ml-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
           <span className="font-medium text-sm">
-            {currentFile?.name || "doXmind Mini"}
+            {currentFile?.name || "Untitled"}
           </span>
           {isDirty && (
             <span className="text-xs text-muted-foreground">(unsaved)</span>

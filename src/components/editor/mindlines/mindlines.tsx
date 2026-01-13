@@ -19,15 +19,15 @@ interface MindlinesProps {
 const containerVariants = {
   collapsed: {
     width: 208,
-    transition: { duration: 0.25, ease: "easeOut" },
+    transition: { duration: 0.25, ease: [0.4, 0, 0.2, 1] as const },
   },
   preview: {
     width: 320,
-    transition: { duration: 0.2, ease: "easeOut" },
+    transition: { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const },
   },
   expanded: {
-    width: "min(90vw, 1200px)",
-    transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] },
+    width: "auto", // Full screen with margin, controlled by inset-0 + m-4
+    transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] as const },
   },
 };
 
@@ -99,25 +99,34 @@ export function Mindlines({ editor }: MindlinesProps) {
       <motion.aside
         className={cn(
           // Base styles
-          "relative border-r bg-background/95 backdrop-blur-sm flex flex-col min-h-0 h-full",
+          "relative border-r bg-background/95 backdrop-blur-sm flex flex-col min-h-0",
           // Non-expanded: standard sidebar
-          !isExpanded && "z-30 shrink-0",
-          // Expanded: fixed overlay
+          !isExpanded && "z-30 shrink-0 h-full",
+          // Expanded: fixed overlay - use calc for proper height with margins
           isExpanded &&
-            "fixed left-0 top-[57px] bottom-0 z-30 shadow-2xl border-r-0 rounded-r-lg"
+            "fixed z-30 shadow-2xl border-r-0 rounded-lg overflow-hidden"
         )}
-        style={
-          shouldReduceMotion
+        style={{
+          ...(shouldReduceMotion && !isExpanded
             ? {
                 width:
                   mode === "collapsed"
                     ? 208
                     : mode === "preview"
                       ? 320
-                      : "min(90vw, 1200px)",
+                      : "auto",
               }
-            : undefined
-        }
+            : {}),
+          ...(isExpanded
+            ? {
+                top: 16,
+                left: 16,
+                right: 16,
+                bottom: 16,
+                height: "calc(100vh - 32px)",
+              }
+            : {}),
+        }}
         {...animationProps}
         onMouseEnter={!isExpanded ? handleMouseEnter : undefined}
         onMouseLeave={!isExpanded ? handleMouseLeave : undefined}

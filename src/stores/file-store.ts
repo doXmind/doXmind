@@ -1,14 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
+import type { FileItem } from "@/types";
 
-export interface FileItem {
-  id: string;
-  name: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
+// Re-export for convenience
+export type { FileItem } from "@/types";
 
 interface FileState {
   files: FileItem[];

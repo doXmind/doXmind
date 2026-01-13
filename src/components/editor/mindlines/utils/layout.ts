@@ -1,26 +1,32 @@
 import dagre from "@dagrejs/dagre";
-import type { Node, Edge } from "@xyflow/react";
-import type { Heading, HeadingNode as HeadingTreeNode } from "../types";
+import { Position, type Node, type Edge } from "@xyflow/react";
+import type { Heading, HeadingNode as HeadingTreeNode, FlowNodeData } from "../types";
 import { buildTree } from "../use-tree";
-
-interface FlowNodeData {
-  label: string;
-  level: number;
-  pos: number;
-}
 
 /**
  * Convert flat headings array to React Flow nodes and edges
+ * Supports collapsed nodes - children of collapsed nodes are hidden
  */
-export function convertToFlowElements(headings: Heading[]): {
-  initialNodes: Node<FlowNodeData>[];
+export function convertToFlowElements(
+  headings: Heading[],
+  collapsedNodes: Set<string> = new Set()
+): {
+  initialNodes: Node[];
   initialEdges: Edge[];
 } {
   const tree = buildTree(headings);
-  const nodes: Node<FlowNodeData>[] = [];
+  const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  function traverse(item: HeadingTreeNode, parentId?: string) {
+  function traverse(item: HeadingTreeNode, parentId?: string, isHidden: boolean = false) {
+    const isCollapsed = collapsedNodes.has(item.id);
+    const hasChildren = item.children.length > 0;
+
+    // Skip hidden nodes (children of collapsed parents)
+    if (isHidden) {
+      return;
+    }
+
     nodes.push({
       id: item.id,
       type: "heading",
@@ -29,6 +35,9 @@ export function convertToFlowElements(headings: Heading[]): {
         label: item.text,
         level: item.level,
         pos: item.pos,
+        isCollapsed,
+        hasChildren,
+        childCount: countDescendants(item),
       },
     });
 
@@ -37,11 +46,12 @@ export function convertToFlowElements(headings: Heading[]): {
         id: `${parentId}-${item.id}`,
         source: parentId,
         target: item.id,
-        type: "smoothstep",
+        type: "customEdge",
       });
     }
 
-    item.children.forEach((child) => traverse(child, item.id));
+    // If this node is collapsed, hide its children
+    item.children.forEach((child) => traverse(child, item.id, isCollapsed));
   }
 
   tree.forEach((root) => traverse(root));
@@ -49,13 +59,24 @@ export function convertToFlowElements(headings: Heading[]): {
 }
 
 /**
+ * Count all descendants of a node
+ */
+function countDescendants(node: HeadingTreeNode): number {
+  let count = 0;
+  for (const child of node.children) {
+    count += 1 + countDescendants(child);
+  }
+  return count;
+}
+
+/**
  * Apply dagre layout algorithm to position nodes
  */
 export function applyDagreLayout(
-  nodes: Node<FlowNodeData>[],
+  nodes: Node[],
   edges: Edge[],
   direction: "TB" | "LR" = "TB"
-): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
+): { nodes: Node[]; edges: Edge[] } {
   if (nodes.length === 0) {
     return { nodes: [], edges: [] };
   }
@@ -72,7 +93,8 @@ export function applyDagreLayout(
 
   // Set node dimensions based on level
   nodes.forEach((node) => {
-    const width = node.data.level === 1 ? 220 : node.data.level === 2 ? 180 : 160;
+    const data = node.data as FlowNodeData;
+    const width = data.level === 1 ? 220 : data.level === 2 ? 180 : 160;
     const height = 44;
     g.setNode(node.id, { width, height });
   });
@@ -84,14 +106,15 @@ export function applyDagreLayout(
   dagre.layout(g);
 
   const isHorizontal = direction === "LR";
-  const layoutedNodes = nodes.map((node) => {
+  const layoutedNodes: Node[] = nodes.map((node) => {
     const nodeWithPosition = g.node(node.id);
-    const width = node.data.level === 1 ? 220 : node.data.level === 2 ? 180 : 160;
+    const data = node.data as FlowNodeData;
+    const width = data.level === 1 ? 220 : data.level === 2 ? 180 : 160;
 
     return {
       ...node,
-      targetPosition: isHorizontal ? ("left" as const) : ("top" as const),
-      sourcePosition: isHorizontal ? ("right" as const) : ("bottom" as const),
+      targetPosition: isHorizontal ? Position.Left : Position.Top,
+      sourcePosition: isHorizontal ? Position.Right : Position.Bottom,
       position: {
         x: nodeWithPosition.x - width / 2,
         y: nodeWithPosition.y - 22,

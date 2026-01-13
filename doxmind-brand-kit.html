@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>doXmind Brand Kit</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+      background: #fafafa;
+      color: #000;
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 60px 40px;
+    }
+    
+    h1 {
+      font-size: 48px;
+      font-weight: 300;
+      letter-spacing: -2px;
+      margin-bottom: 8px;
+    }
+    
+    h1 span {
+      font-weight: 900;
+    }
+    
+    .subtitle {
+      font-size: 14px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 80px;
+    }
+    
+    .section {
+      margin-bottom: 80px;
+    }
+    
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #999;
+      margin-bottom: 30px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+    }
+    
+    .card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 12px;
+      padding: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+      position: relative;
+    }
+    
+    .card.dark {
+      background: #000;
+      border-color: #000;
+    }
+    
+    .card-label {
+      position: absolute;
+      bottom: 12px;
+      left: 16px;
+      font-size: 11px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .card.dark .card-label {
+      color: #666;
+    }
+    
+    .icon-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 20px;
+    }
+    
+    .icon-card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 12px;
+      padding: 30px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .icon-card.dark {
+      background: #000;
+      border-color: #000;
+    }
+    
+    .icon-card span {
+      font-size: 11px;
+      color: #999;
+    }
+    
+    .icon-card.dark span {
+      color: #666;
+    }
+    
+    .specs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 40px;
+      margin-top: 40px;
+    }
+    
+    .spec-item h4 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #999;
+      margin-bottom: 12px;
+    }
+    
+    .color-swatch {
+      width: 100%;
+      height: 80px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    
+    .color-swatch.black {
+      background: #000;
+    }
+    
+    .color-swatch.white {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+    }
+    
+    .spec-item code {
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 13px;
+      color: #333;
+      display: block;
+      margin-top: 4px;
+    }
+    
+    .typography-demo {
+      margin-top: 20px;
+    }
+    
+    .typography-demo .light {
+      font-weight: 300;
+      font-size: 32px;
+      letter-spacing: -1px;
+    }
+    
+    .typography-demo .bold {
+      font-weight: 900;
+      font-size: 32px;
+      letter-spacing: -1px;
+    }
+    
+    .download-section {
+      background: #000;
+      color: #fff;
+      border-radius: 16px;
+      padding: 50px;
+      text-align: center;
+    }
+    
+    .download-section h3 {
+      font-size: 24px;
+      font-weight: 300;
+      margin-bottom: 8px;
+    }
+    
+    .download-section p {
+      color: #666;
+      font-size: 14px;
+    }
+
+    /* SVG Definitions */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <h1>do<span>X</span>mind</h1>
+    <p class="subtitle">Brand Identity Guidelines</p>
+
+    <!-- Primary Logo -->
+    <div class="section">
+      <h2 class="section-title">Primary Logo — Full Lockup</h2>
+      <div class="grid">
+        <div class="card">
+          <svg viewBox="0 0 360 80" width="280">
+            <g transform="translate(0, 0)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#000000"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#000000"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#000000"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#000000"/>
+            </g>
+            <text x="100" y="58" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#000000" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span class="card-label">Light Background</span>
+        </div>
+        <div class="card dark">
+          <svg viewBox="0 0 360 80" width="280">
+            <g transform="translate(0, 0)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#FFFFFF"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#FFFFFF"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#FFFFFF"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#FFFFFF"/>
+            </g>
+            <text x="100" y="58" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#FFFFFF" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span class="card-label">Dark Background</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stacked Logo -->
+    <div class="section">
+      <h2 class="section-title">Stacked Logo — Vertical Layout</h2>
+      <div class="grid">
+        <div class="card">
+          <svg viewBox="0 0 120 150" width="120">
+            <g transform="translate(20, 10)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#000000"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#000000"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#000000"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#000000"/>
+            </g>
+            <text x="60" y="125" text-anchor="middle" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="24" fill="#000000" letter-spacing="-1">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span class="card-label">Light Background</span>
+        </div>
+        <div class="card dark">
+          <svg viewBox="0 0 120 150" width="120">
+            <g transform="translate(20, 10)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#FFFFFF"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#FFFFFF"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#FFFFFF"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#FFFFFF"/>
+            </g>
+            <text x="60" y="125" text-anchor="middle" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="24" fill="#FFFFFF" letter-spacing="-1">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span class="card-label">Dark Background</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Icon Only -->
+    <div class="section">
+      <h2 class="section-title">Icon — Symbol Only</h2>
+      <div class="icon-grid">
+        <div class="icon-card">
+          <svg viewBox="0 0 80 80" width="64">
+            <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#000000"/>
+            <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#000000"/>
+            <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#000000"/>
+            <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#000000"/>
+          </svg>
+          <span>Rounded</span>
+        </div>
+        <div class="icon-card dark">
+          <svg viewBox="0 0 80 80" width="64">
+            <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#FFFFFF"/>
+            <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#FFFFFF"/>
+            <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#FFFFFF"/>
+            <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#FFFFFF"/>
+          </svg>
+          <span>Rounded</span>
+        </div>
+        <div class="icon-card">
+          <svg viewBox="0 0 80 80" width="64">
+            <path d="M0 0 L0 34 L40 40 L34 0 Z" fill="#000000"/>
+            <path d="M46 0 L40 40 L80 34 L80 0 Z" fill="#000000"/>
+            <path d="M0 46 L40 40 L34 80 L0 80 Z" fill="#000000"/>
+            <path d="M40 40 L80 46 L80 80 L46 80 Z" fill="#000000"/>
+          </svg>
+          <span>Sharp</span>
+        </div>
+        <div class="icon-card dark">
+          <svg viewBox="0 0 80 80" width="64">
+            <path d="M0 0 L0 34 L40 40 L34 0 Z" fill="#FFFFFF"/>
+            <path d="M46 0 L40 40 L80 34 L80 0 Z" fill="#FFFFFF"/>
+            <path d="M0 46 L40 40 L34 80 L0 80 Z" fill="#FFFFFF"/>
+            <path d="M40 40 L80 46 L80 80 L46 80 Z" fill="#FFFFFF"/>
+          </svg>
+          <span>Sharp</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- App Icon -->
+    <div class="section">
+      <h2 class="section-title">App Icon — Container Versions</h2>
+      <div class="icon-grid">
+        <div class="icon-card">
+          <svg viewBox="0 0 100 100" width="72">
+            <rect x="0" y="0" width="100" height="100" rx="22" fill="#000000"/>
+            <g transform="translate(15, 15)">
+              <path d="M5 0 Q0 0 0 5 L0 28 L35 35 L28 0 Z" fill="#FFFFFF"/>
+              <path d="M42 0 L35 35 L70 28 L70 5 Q70 0 65 0 Z" fill="#FFFFFF"/>
+              <path d="M0 42 L35 35 L28 70 L5 70 Q0 70 0 65 Z" fill="#FFFFFF"/>
+              <path d="M35 35 L70 42 L70 65 Q70 70 65 70 L42 70 Z" fill="#FFFFFF"/>
+            </g>
+          </svg>
+          <span>iOS / Android</span>
+        </div>
+        <div class="icon-card">
+          <svg viewBox="0 0 100 100" width="72">
+            <rect x="0" y="0" width="100" height="100" rx="22" fill="#FFFFFF" stroke="#e5e5e5" stroke-width="1"/>
+            <g transform="translate(15, 15)">
+              <path d="M5 0 Q0 0 0 5 L0 28 L35 35 L28 0 Z" fill="#000000"/>
+              <path d="M42 0 L35 35 L70 28 L70 5 Q70 0 65 0 Z" fill="#000000"/>
+              <path d="M0 42 L35 35 L28 70 L5 70 Q0 70 0 65 Z" fill="#000000"/>
+              <path d="M35 35 L70 42 L70 65 Q70 70 65 70 L42 70 Z" fill="#000000"/>
+            </g>
+          </svg>
+          <span>Light Mode</span>
+        </div>
+        <div class="icon-card">
+          <svg viewBox="0 0 100 100" width="72">
+            <circle cx="50" cy="50" r="50" fill="#000000"/>
+            <g transform="translate(18, 18)">
+              <path d="M5 0 Q0 0 0 5 L0 26 L32 32 L26 0 Z" fill="#FFFFFF"/>
+              <path d="M38 0 L32 32 L64 26 L64 5 Q64 0 59 0 Z" fill="#FFFFFF"/>
+              <path d="M0 38 L32 32 L26 64 L5 64 Q0 64 0 59 Z" fill="#FFFFFF"/>
+              <path d="M32 32 L64 38 L64 59 Q64 64 59 64 L38 64 Z" fill="#FFFFFF"/>
+            </g>
+          </svg>
+          <span>Circle</span>
+        </div>
+        <div class="icon-card">
+          <svg viewBox="0 0 100 100" width="72">
+            <rect x="0" y="0" width="100" height="100" fill="#000000"/>
+            <g transform="translate(15, 15)">
+              <path d="M5 0 Q0 0 0 5 L0 28 L35 35 L28 0 Z" fill="#FFFFFF"/>
+              <path d="M42 0 L35 35 L70 28 L70 5 Q70 0 65 0 Z" fill="#FFFFFF"/>
+              <path d="M0 42 L35 35 L28 70 L5 70 Q0 70 0 65 Z" fill="#FFFFFF"/>
+              <path d="M35 35 L70 42 L70 65 Q70 70 65 70 L42 70 Z" fill="#FFFFFF"/>
+            </g>
+          </svg>
+          <span>Favicon</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wordmark Only -->
+    <div class="section">
+      <h2 class="section-title">Wordmark — Text Only</h2>
+      <div class="grid">
+        <div class="card">
+          <svg viewBox="0 0 260 60" width="240">
+            <text x="0" y="48" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#000000" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span class="card-label">Primary</span>
+        </div>
+        <div class="card dark">
+          <svg viewBox="0 0 260 60" width="240">
+            <text x="0" y="48" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#FFFFFF" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span class="card-label">Reversed</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wordmark Variations -->
+    <div class="section">
+      <h2 class="section-title">Wordmark Variations</h2>
+      <div class="grid">
+        <div class="card">
+          <svg viewBox="0 0 260 60" width="220">
+            <text x="0" y="48" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" font-weight="700" fill="#000000" letter-spacing="-2">
+              doXmind
+            </text>
+          </svg>
+          <span class="card-label">Bold Uniform</span>
+        </div>
+        <div class="card">
+          <svg viewBox="0 0 260 60" width="220">
+            <text x="0" y="48" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" font-weight="300" fill="#000000" letter-spacing="-1.5">
+              doXmind
+            </text>
+          </svg>
+          <span class="card-label">Light Uniform</span>
+        </div>
+        <div class="card dark">
+          <svg viewBox="0 0 260 60" width="220">
+            <text x="0" y="48" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" font-weight="700" fill="#FFFFFF" letter-spacing="-2">
+              doXmind
+            </text>
+          </svg>
+          <span class="card-label">Bold Reversed</span>
+        </div>
+        <div class="card dark">
+          <svg viewBox="0 0 260 60" width="220">
+            <text x="0" y="48" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" font-weight="300" fill="#FFFFFF" letter-spacing="-1.5">
+              doXmind
+            </text>
+          </svg>
+          <span class="card-label">Light Reversed</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clear Space -->
+    <div class="section">
+      <h2 class="section-title">Clear Space &amp; Minimum Size</h2>
+      <div class="grid">
+        <div class="card" style="background: #f5f5f5;">
+          <svg viewBox="0 0 440 160" width="360">
+            <!-- Clear space boundary -->
+            <rect x="40" y="40" width="360" height="80" fill="#fff" stroke="#ddd" stroke-dasharray="4"/>
+            <!-- Logo -->
+            <g transform="translate(80, 40)">
+              <g transform="translate(0, 0)">
+                <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#000000"/>
+                <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#000000"/>
+                <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#000000"/>
+                <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#000000"/>
+              </g>
+              <text x="100" y="58" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#000000" letter-spacing="-1.5">
+                <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+              </text>
+            </g>
+            <!-- Measurement indicators -->
+            <text x="20" y="85" font-size="10" fill="#999">X</text>
+            <line x1="40" y1="80" x2="75" y2="80" stroke="#ccc" stroke-width="1"/>
+          </svg>
+          <span class="card-label">Minimum clear space = Icon width (X)</span>
+        </div>
+        <div class="card">
+          <div style="text-align: center;">
+            <svg viewBox="0 0 180 40" width="180" style="margin-bottom: 20px;">
+              <g transform="translate(0, 0)">
+                <path d="M3 0 Q0 0 0 3 L0 16 L20 20 L16 0 Z" fill="#000000"/>
+                <path d="M24 0 L20 20 L40 16 L40 3 Q40 0 37 0 Z" fill="#000000"/>
+                <path d="M0 24 L20 20 L16 40 L3 40 Q0 40 0 37 Z" fill="#000000"/>
+                <path d="M20 20 L40 24 L40 37 Q40 40 37 40 L24 40 Z" fill="#000000"/>
+              </g>
+              <text x="50" y="29" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="24" fill="#000000" letter-spacing="-0.75">
+                <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+              </text>
+            </svg>
+            <p style="font-size: 11px; color: #999;">Minimum width: 120px</p>
+          </div>
+          <span class="card-label">Minimum Size</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Brand Specs -->
+    <div class="section">
+      <h2 class="section-title">Brand Specifications</h2>
+      <div class="specs">
+        <div class="spec-item">
+          <h4>Primary Color</h4>
+          <div class="color-swatch black"></div>
+          <code>HEX: #000000</code>
+          <code>RGB: 0, 0, 0</code>
+        </div>
+        <div class="spec-item">
+          <h4>Secondary Color</h4>
+          <div class="color-swatch white"></div>
+          <code>HEX: #FFFFFF</code>
+          <code>RGB: 255, 255, 255</code>
+        </div>
+        <div class="spec-item">
+          <h4>Typography</h4>
+          <div class="typography-demo">
+            <p class="light">do mind</p>
+            <p class="bold">X</p>
+          </div>
+          <code style="margin-top: 16px;">Font: System UI / SF Pro / Helvetica Neue</code>
+          <code>Weight: 300 (Light) + 900 (Black)</code>
+          <code>Letter-spacing: -1.5px</code>
+        </div>
+        <div class="spec-item">
+          <h4>Icon Geometry</h4>
+          <svg viewBox="0 0 100 100" width="80" style="margin-bottom: 12px;">
+            <rect x="0" y="0" width="100" height="100" fill="none" stroke="#ddd" stroke-width="1"/>
+            <line x1="50" y1="0" x2="50" y2="100" stroke="#ddd" stroke-width="1"/>
+            <line x1="0" y1="50" x2="100" y2="50" stroke="#ddd" stroke-width="1"/>
+            <path d="M6 0 Q0 0 0 6 L0 40 L50 50 L40 0 Z" fill="#000000"/>
+            <path d="M60 0 L50 50 L100 40 L100 6 Q100 0 94 0 Z" fill="#000000"/>
+            <path d="M0 60 L50 50 L40 100 L6 100 Q0 100 0 94 Z" fill="#000000"/>
+            <path d="M50 50 L100 60 L100 94 Q100 100 94 100 L60 100 Z" fill="#000000"/>
+          </svg>
+          <code>Corner radius: 6-8%</code>
+          <code>X gap: 20% of width</code>
+          <code>Center point: 50%, 50%</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Do's and Don'ts -->
+    <div class="section">
+      <h2 class="section-title">Usage Guidelines</h2>
+      <div class="grid">
+        <div class="card" style="flex-direction: column; gap: 20px; padding: 30px;">
+          <svg viewBox="0 0 360 80" width="240">
+            <g transform="translate(0, 0)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#000000"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#000000"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#000000"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#000000"/>
+            </g>
+            <text x="100" y="58" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#000000" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span style="color: #22c55e; font-size: 12px; font-weight: 600;">✓ USE OFFICIAL VERSIONS</span>
+        </div>
+        <div class="card" style="flex-direction: column; gap: 20px; padding: 30px;">
+          <svg viewBox="0 0 360 80" width="240" style="opacity: 0.3;">
+            <g transform="translate(0, 0)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#000000"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#000000"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#000000"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#000000"/>
+            </g>
+            <text x="100" y="58" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#000000" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span style="color: #ef4444; font-size: 12px; font-weight: 600;">✗ DON'T REDUCE OPACITY</span>
+        </div>
+        <div class="card" style="flex-direction: column; gap: 20px; padding: 30px;">
+          <svg viewBox="0 0 360 80" width="240" style="transform: skewX(-10deg);">
+            <g transform="translate(0, 0)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#000000"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#000000"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#000000"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#000000"/>
+            </g>
+            <text x="100" y="58" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#000000" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span style="color: #ef4444; font-size: 12px; font-weight: 600;">✗ DON'T DISTORT</span>
+        </div>
+        <div class="card" style="flex-direction: column; gap: 20px; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+          <svg viewBox="0 0 360 80" width="240">
+            <g transform="translate(0, 0)">
+              <path d="M6 0 Q0 0 0 6 L0 32 L40 40 L32 0 Z" fill="#FFFFFF"/>
+              <path d="M48 0 L40 40 L80 32 L80 6 Q80 0 74 0 Z" fill="#FFFFFF"/>
+              <path d="M0 48 L40 40 L32 80 L6 80 Q0 80 0 74 Z" fill="#FFFFFF"/>
+              <path d="M40 40 L80 48 L80 74 Q80 80 74 80 L48 80 Z" fill="#FFFFFF"/>
+            </g>
+            <text x="100" y="58" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="48" fill="#FFFFFF" letter-spacing="-1.5">
+              <tspan font-weight="300">do</tspan><tspan font-weight="900">X</tspan><tspan font-weight="300">mind</tspan>
+            </text>
+          </svg>
+          <span style="color: #fff; font-size: 12px; font-weight: 600;">✗ DON'T USE ON BUSY BACKGROUNDS</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="download-section">
+      <h3>do<span style="font-weight: 900;">X</span>mind</h3>
+      <p>Brand Kit v1.0 — All assets are vector SVG format</p>
+    </div>
+
+  </div>
+</body>
+</html>

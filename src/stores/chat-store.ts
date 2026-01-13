@@ -1,49 +1,9 @@
 import { create } from "zustand";
 import { generateId } from "@/lib/utils";
+import type { ChatMessage, Conversation, ToolCall, MessageContextItem } from "@/types";
 
-export interface ToolCall {
-  name: string;
-  toolId?: string;
-  input: string;
-  output: string | null;
-  success: boolean | null;
-}
-
-// Single context item attached to a user message (from "Ask in Chat" feature)
-export type MessageContextItem =
-  | {
-      type: 'selection';
-      text: string;
-    }
-  | {
-      type: 'image';
-      src: string;
-      alt?: string;
-    };
-
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  fileIds?: string[];
-  createdAt: string;
-  isStreaming?: boolean;
-  // User message specific fields
-  contexts?: MessageContextItem[] | null;  // Selected text contexts from "Ask in Chat" (supports multiple)
-  // AI response specific fields
-  thinking?: string | null;
-  toolCalls?: ToolCall[] | null;
-  edits?: Record<string, unknown>[] | null;
-  model?: string | null;
-}
-
-export interface Conversation {
-  id: string;
-  fileId: string | null;
-  messages: ChatMessage[];
-  createdAt: string;
-  isLoaded?: boolean;  // Whether messages have been loaded from backend
-}
+// Re-export for convenience
+export type { ChatMessage, Conversation, ToolCall, MessageContextItem } from "@/types";
 
 interface ChatState {
   conversations: Record<string, Conversation>;

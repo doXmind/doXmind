@@ -19,3 +19,24 @@ export interface Point {
   x: number;
   y: number;
 }
+
+// Layout direction options
+export type LayoutDirection = "TB" | "LR"; // Top-Bottom or Left-Right
+
+// Mindmap configuration
+export interface MindmapConfig {
+  direction: LayoutDirection;
+  collapsedNodes: Set<string>;
+  showAnimation: boolean;
+}
+
+// Flow node data with enhanced properties
+export interface FlowNodeData extends Record<string, unknown> {
+  label: string;
+  level: number;
+  pos: number;
+  isActive?: boolean;
+  isCollapsed?: boolean;
+  hasChildren?: boolean;
+  childCount?: number;
+}

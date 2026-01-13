@@ -10,8 +10,12 @@ import type {
   ReviewSuggestion,
   ReviewCategory,
 } from "@/extensions/text-review-extension";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import {
+  processSSEStream,
+  isAbortError,
+  createStreamController,
+} from "@/lib/streaming";
+import { API_BASE_URL, MIN_REVIEW_DOCUMENT_LENGTH } from "@/lib/constants";
 
 interface UseTextReviewOptions {
   editor: Editor | null;
@@ -36,6 +40,11 @@ interface APISuggestion {
   end_offset: number;
 }
 
+interface ReviewStreamEvent {
+  result?: { suggestions: APISuggestion[]; summary: string };
+  error?: string;
+}
+
 export function useTextReview({
   editor,
   fileId,
@@ -43,7 +52,7 @@ export function useTextReview({
   onReviewComplete,
   onReviewError,
 }: UseTextReviewOptions) {
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const streamControllerRef = useRef(createStreamController());
   const isReviewingRef = useRef(false);
 
   const triggerReview = useCallback(async (): Promise<ReviewResult | null> => {
@@ -57,83 +66,52 @@ export function useTextReview({
       return null;
     }
 
-    // Cancel any previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-    isReviewingRef.current = true;
-
     // Extract text with position mapping
     const { text, posMap } = extractTextWithPositions(editor.state.doc);
 
-    if (text.trim().length < 20) {
+    if (text.trim().length < MIN_REVIEW_DOCUMENT_LENGTH) {
       console.log("[TextReview] Document too short for review");
-      isReviewingRef.current = false;
       return null;
     }
+
+    const signal = streamControllerRef.current.start();
+    isReviewingRef.current = true;
 
     // Set loading state
     editor.commands.setReviewLoading(true);
     onReviewStart?.();
 
+    let result: { suggestions: APISuggestion[]; summary: string } | null = null;
+
     try {
-      const response = await fetch(`${API_BASE}/api/review`, {
+      const response = await fetch(`${API_BASE_URL}/api/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: text,
           file_id: fileId,
         }),
-        signal: abortControllerRef.current.signal,
+        signal,
       });
 
       if (!response.ok) {
         throw new Error(`Review request failed: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("No response body");
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let result: { suggestions: APISuggestion[]; summary: string } | null =
-        null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ") && !line.includes("[DONE]")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.result) {
-                result = data.result;
-              }
-              if (data.error) {
-                throw new Error(data.error);
-              }
-            } catch (e) {
-              // Ignore parse errors for streaming chunks (not JSON)
-              if (e instanceof SyntaxError) continue;
-              throw e;
-            }
-          }
+      await processSSEStream<ReviewStreamEvent>(response, (event) => {
+        if (event.result) {
+          result = event.result;
         }
-      }
+        if (event.error) {
+          throw new Error(event.error);
+        }
+      });
 
       if (result) {
         const docSize = editor.state.doc.content.size;
 
         // Convert API suggestions to ReviewSuggestions with mapped positions
-        const suggestions: ReviewSuggestion[] = result.suggestions
+        const suggestions: ReviewSuggestion[] = (result as { suggestions: APISuggestion[]; summary: string }).suggestions
           .map((s: APISuggestion, index: number): ReviewSuggestion | null => {
             // Map text offsets to ProseMirror positions
             const from = mapOffsetToPosition(posMap, s.start_offset);
@@ -176,14 +154,14 @@ export function useTextReview({
           );
 
         // Set suggestions in editor
-        editor.commands.setReviewSuggestions(suggestions, result.summary);
+        editor.commands.setReviewSuggestions(suggestions, (result as { suggestions: APISuggestion[]; summary: string }).summary);
 
         const reviewResult: ReviewResult = {
           suggestions,
-          summary: result.summary,
+          summary: (result as { suggestions: APISuggestion[]; summary: string }).summary,
         };
 
-        onReviewComplete?.(suggestions.length, result.summary);
+        onReviewComplete?.(suggestions.length, (result as { suggestions: APISuggestion[]; summary: string }).summary);
         console.log(`[TextReview] Review complete: ${suggestions.length} suggestions`);
 
         isReviewingRef.current = false;
@@ -195,7 +173,7 @@ export function useTextReview({
     } catch (error) {
       isReviewingRef.current = false;
 
-      if ((error as Error).name === "AbortError") {
+      if (isAbortError(error)) {
         console.log("[TextReview] Review aborted");
         return null;
       }
@@ -208,14 +186,8 @@ export function useTextReview({
   }, [editor, fileId, onReviewStart, onReviewComplete, onReviewError]);
 
   const clearReview = useCallback(() => {
-    // Cancel any in-progress request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
+    streamControllerRef.current.abort();
     isReviewingRef.current = false;
-
-    // Clear editor state
     editor?.commands.clearReview();
   }, [editor]);
 
