@@ -55,3 +55,4 @@ dist/
 data/
 *.db
 *.sqlite
+.venv/

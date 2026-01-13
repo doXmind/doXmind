@@ -35,6 +35,7 @@ import { TextReviewExtension, getReviewState } from "@/extensions/text-review-ex
 import { DiffReviewToolbar } from "./diff-review-toolbar";
 import { ReviewPopup } from "./review-popup";
 import { ReviewPanel } from "./review-panel";
+import { Mindlines } from "./mindlines";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useTextReview } from "@/hooks/use-text-review";
@@ -468,6 +469,8 @@ export function Editor({ file: initialFile }: EditorProps) {
         onRejectAll={handleRejectAll}
       />
       <div className="relative flex-1 min-h-0 flex">
+        {/* Mindlines outline */}
+        <Mindlines editor={editor} />
         {/* Main editor content area */}
         <div className="flex-1 min-w-0 relative">
           <SearchToolbar

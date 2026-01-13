@@ -26,6 +26,7 @@ import {
   Search,
   FileSearch,
   Loader2,
+  ListTree,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -37,6 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { LinkModal } from "./link-modal";
 import { ImageModal } from "./image-modal";
 
@@ -64,6 +66,8 @@ export function EditorToolbar({
     autocompleteTriggerMode,
     setAutocompleteTriggerMode,
   } = useEditorStore();
+
+  const { isMindlinesOpen, toggleMindlines } = useLayoutStore();
 
   const handleLinkConfirm = (url: string) => {
     editor.chain().focus().setLink({ href: url }).run();
@@ -230,12 +234,18 @@ export function EditorToolbar({
 
       <ToolbarDivider />
 
-      {/* Search */}
+      {/* Search & Outline */}
       <ToolbarGroup>
         <ToolbarButton
           icon={<Search className="h-4 w-4" />}
           onClick={() => onSearchClick?.()}
           tooltip="Search (Ctrl+F)"
+        />
+        <ToolbarButton
+          icon={<ListTree className="h-4 w-4" />}
+          onClick={toggleMindlines}
+          isActive={isMindlinesOpen}
+          tooltip="Toggle Outline"
         />
       </ToolbarGroup>
 
