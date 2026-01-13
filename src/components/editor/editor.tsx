@@ -468,18 +468,18 @@ export function Editor({ file: initialFile }: EditorProps) {
         onAcceptAll={handleAcceptAll}
         onRejectAll={handleRejectAll}
       />
-      <div className="relative flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex overflow-x-hidden">
         {/* Mindlines outline */}
         <Mindlines editor={editor} />
         {/* Main editor content area */}
-        <div className="flex-1 min-w-0 relative">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <SearchToolbar
             editor={editor}
             fileId={file.id}
             isOpen={isSearchOpen}
             onClose={() => setIsSearchOpen(false)}
           />
-          <ScrollArea className="h-full">
+          <ScrollArea className="flex-1 min-h-0">
             <div className="max-w-4xl mx-auto px-8 py-6">
               <EditorContent editor={editor} />
             </div>

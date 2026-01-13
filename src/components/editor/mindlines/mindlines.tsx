@@ -1,140 +1,178 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import type { Editor } from "@tiptap/react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout-store";
-import { Tooltip } from "@/components/ui/tooltip";
-
-interface Heading {
-  id: string;
-  level: number;
-  text: string;
-  pos: number;
-}
+import { useHeadings } from "./use-headings";
+import { useMindlinesState } from "./use-mindlines-state";
+import { MindlinesHeader } from "./mindlines-header";
+import { OutlineView } from "./outline-view";
+import { MindmapFlow } from "./mindmap-flow";
 
 interface MindlinesProps {
   editor: Editor | null;
 }
 
+// Animation variants for width transitions
+const containerVariants = {
+  collapsed: {
+    width: 208,
+    transition: { duration: 0.25, ease: "easeOut" },
+  },
+  preview: {
+    width: 320,
+    transition: { duration: 0.2, ease: "easeOut" },
+  },
+  expanded: {
+    width: "min(90vw, 1200px)",
+    transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] },
+  },
+};
+
+// Content fade animations
+const contentVariants = {
+  initial: { opacity: 0, scale: 0.98 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.98 },
+};
+
+/**
+ * Mindlines - Unified document outline and mindmap component
+ * Three states: collapsed (default), preview (on hover), expanded (mindmap overlay)
+ */
 export function Mindlines({ editor }: MindlinesProps) {
   const { isMindlinesOpen } = useLayoutStore();
-  const [headings, setHeadings] = useState<Heading[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const { headings, activeId, navigateTo } = useHeadings(editor);
+  const shouldReduceMotion = useReducedMotion();
 
-  // Extract headings from editor
-  useEffect(() => {
-    if (!editor) return;
+  const {
+    mode,
+    handleMouseEnter,
+    handleMouseLeave,
+    handleToggleExpand,
+    handleClose,
+  } = useMindlinesState();
 
-    const updateHeadings = () => {
-      const found: Heading[] = [];
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "heading" && node.attrs.level <= 3) {
-          found.push({
-            id: `h-${pos}`,
-            level: node.attrs.level,
-            text: node.textContent || "Untitled",
-            pos,
-          });
-        }
-      });
-      setHeadings(found);
-    };
-
-    updateHeadings();
-    editor.on("update", updateHeadings);
-    return () => {
-      editor.off("update", updateHeadings);
-    };
-  }, [editor]);
-
-  // Track current position
-  useEffect(() => {
-    if (!editor || headings.length === 0) return;
-
-    const trackPosition = () => {
-      const { from } = editor.state.selection;
-      let active: Heading | null = null;
-
-      for (let i = headings.length - 1; i >= 0; i--) {
-        if (headings[i].pos <= from) {
-          active = headings[i];
-          break;
-        }
-      }
-      setActiveId(active?.id ?? null);
-    };
-
-    trackPosition();
-    editor.on("selectionUpdate", trackPosition);
-    return () => {
-      editor.off("selectionUpdate", trackPosition);
-    };
-  }, [editor, headings]);
-
-  // Handle click to navigate
-  const handleClick = useCallback(
-    (heading: Heading) => {
-      if (!editor) return;
-      editor.chain().focus().setTextSelection(heading.pos).scrollIntoView().run();
+  // Handle navigation from mindmap (navigate + close)
+  const handleMindmapNavigate = useCallback(
+    (heading: { id: string; level: number; text: string; pos: number }) => {
+      navigateTo(heading);
+      handleClose();
     },
-    [editor]
+    [navigateTo, handleClose]
   );
 
   if (!isMindlinesOpen || !editor) return null;
 
-  if (headings.length === 0) {
-    return (
-      <div className="w-44 shrink-0 relative z-10 border-r bg-background/95 backdrop-blur-sm p-3 text-sm text-muted-foreground">
-        Add headings to see outline
-      </div>
-    );
-  }
+  const isExpanded = mode === "expanded";
+  const isPreview = mode === "preview";
+
+  // Disable animations if user prefers reduced motion
+  const animationProps = shouldReduceMotion
+    ? {}
+    : {
+        variants: containerVariants,
+        initial: false,
+        animate: mode,
+      };
 
   return (
-    <nav
-      className="w-44 shrink-0 relative z-10 border-r bg-background/95 backdrop-blur-sm overflow-y-auto"
-      aria-label="Document outline"
-    >
-      <div className="py-2 px-1">
-        {headings.map((heading) => {
-          const isActive = heading.id === activeId;
-          const indent = (heading.level - 1) * 12;
+    <>
+      {/* Backdrop overlay for expanded mode */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            className="fixed inset-0 bg-background/60 backdrop-blur-sm z-20"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={handleClose}
+            aria-hidden="true"
+          />
+        )}
+      </AnimatePresence>
 
-          return (
-            <Tooltip key={heading.id} content={heading.text} side="right">
-              <button
-                onClick={() => handleClick(heading)}
-                className={cn(
-                  "w-full text-left py-1.5 px-2 rounded text-sm truncate transition-colors",
-                  "hover:bg-accent/50",
-                  isActive && "bg-accent/30 border-l-2 border-primary"
-                )}
-                style={{ paddingLeft: `${indent + 8}px` }}
+      {/* Main container */}
+      <motion.aside
+        className={cn(
+          // Base styles
+          "relative border-r bg-background/95 backdrop-blur-sm flex flex-col min-h-0 h-full",
+          // Non-expanded: standard sidebar
+          !isExpanded && "z-30 shrink-0",
+          // Expanded: fixed overlay
+          isExpanded &&
+            "fixed left-0 top-[57px] bottom-0 z-30 shadow-2xl border-r-0 rounded-r-lg"
+        )}
+        style={
+          shouldReduceMotion
+            ? {
+                width:
+                  mode === "collapsed"
+                    ? 208
+                    : mode === "preview"
+                      ? 320
+                      : "min(90vw, 1200px)",
+              }
+            : undefined
+        }
+        {...animationProps}
+        onMouseEnter={!isExpanded ? handleMouseEnter : undefined}
+        onMouseLeave={!isExpanded ? handleMouseLeave : undefined}
+        role="navigation"
+        aria-label={isExpanded ? "Document mindmap" : "Document outline"}
+        aria-expanded={isExpanded}
+      >
+        {/* Header with title and controls */}
+        <MindlinesHeader
+          mode={mode}
+          onToggle={handleToggleExpand}
+          onClose={handleClose}
+          headingsCount={headings.length}
+        />
+
+        {/* Content: OutlineView or MindmapFlow */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <AnimatePresence mode="wait">
+            {isExpanded ? (
+              <motion.div
+                key="mindmap"
+                className="h-full"
+                variants={contentVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.2 }}
               >
-                <span
-                  className={cn(
-                    "mr-1.5",
-                    heading.level === 1 && "text-primary font-semibold",
-                    heading.level === 2 && "text-muted-foreground font-medium",
-                    heading.level === 3 && "text-muted-foreground/70"
-                  )}
-                >
-                  {heading.level === 1 ? "●" : heading.level === 2 ? "○" : "◦"}
-                </span>
-                <span
-                  className={cn(
-                    heading.level === 1 && "font-semibold",
-                    heading.level === 2 && "font-medium"
-                  )}
-                >
-                  {heading.text}
-                </span>
-              </button>
-            </Tooltip>
-          );
-        })}
-      </div>
-    </nav>
+                <MindmapFlow
+                  headings={headings}
+                  activeId={activeId}
+                  onNodeClick={handleMindmapNavigate}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="outline"
+                className="h-full overflow-y-auto"
+                variants={contentVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.15 }}
+              >
+                <OutlineView
+                  headings={headings}
+                  activeId={activeId}
+                  onNavigate={navigateTo}
+                  isPreview={isPreview}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.aside>
+    </>
   );
 }
