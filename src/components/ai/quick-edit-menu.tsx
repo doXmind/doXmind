@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Wand2,
   Languages,
@@ -80,6 +80,9 @@ interface QuickEditMenuProps {
   onApply: (newText: string, selection: { from: number; to: number }) => void;
 }
 
+// Total count: QUICK_EDIT_OPTIONS.length + 1 (Ask in Chat)
+const TOTAL_ITEMS = QUICK_EDIT_OPTIONS.length + 1;
+
 export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
   const { quickEditOpen, quickEditPosition, selection, closeQuickEdit, addChatContext } =
     useEditorStore();
@@ -89,6 +92,9 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const [adjustedPosition, setAdjustedPosition] = useState<{ x: number; y: number } | null>(null);
   const [submenuPosition, setSubmenuPosition] = useState<{ top: number; left: number } | null>(null);
+  // Keyboard navigation state
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const [submenuFocusedIndex, setSubmenuFocusedIndex] = useState<number>(-1);
   // Save selection when menu opens so we don't lose it during editing
   const savedSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
 
@@ -181,12 +187,110 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
     }
   }, [result, onApply, closeQuickEdit]);
 
-  // Reset submenu when menu closes
+  // Reset submenu and focus when menu closes
   useEffect(() => {
     if (!quickEditOpen) {
       setActiveSubmenu(null);
+      setFocusedIndex(-1);
+      setSubmenuFocusedIndex(-1);
     }
   }, [quickEditOpen]);
+
+  // Keyboard navigation handler
+  useEffect(() => {
+    if (!quickEditOpen || isEditing) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Handle submenu navigation if a submenu is open
+      if (activeSubmenu) {
+        const activeOption = QUICK_EDIT_OPTIONS.find(o => o.id === activeSubmenu);
+        const submenuItems = activeOption?.submenu || [];
+
+        switch (e.key) {
+          case "ArrowDown":
+            e.preventDefault();
+            setSubmenuFocusedIndex(prev =>
+              prev < submenuItems.length - 1 ? prev + 1 : 0
+            );
+            break;
+          case "ArrowUp":
+            e.preventDefault();
+            setSubmenuFocusedIndex(prev =>
+              prev > 0 ? prev - 1 : submenuItems.length - 1
+            );
+            break;
+          case "ArrowLeft":
+          case "Escape":
+            e.preventDefault();
+            setActiveSubmenu(null);
+            setSubmenuFocusedIndex(-1);
+            break;
+          case "Enter":
+          case " ":
+            e.preventDefault();
+            if (submenuFocusedIndex >= 0 && submenuFocusedIndex < submenuItems.length) {
+              handleSelect(submenuItems[submenuFocusedIndex].id);
+            }
+            break;
+        }
+        return;
+      }
+
+      // Main menu navigation
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setFocusedIndex(prev => (prev < TOTAL_ITEMS - 1 ? prev + 1 : 0));
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setFocusedIndex(prev => (prev > 0 ? prev - 1 : TOTAL_ITEMS - 1));
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          // Open submenu if current item has one
+          if (focusedIndex >= 0 && focusedIndex < QUICK_EDIT_OPTIONS.length) {
+            const option = QUICK_EDIT_OPTIONS[focusedIndex];
+            if (option.submenu) {
+              setActiveSubmenu(option.id);
+              setSubmenuFocusedIndex(0);
+            }
+          }
+          break;
+        case "Enter":
+        case " ":
+          e.preventDefault();
+          if (focusedIndex >= 0 && focusedIndex < QUICK_EDIT_OPTIONS.length) {
+            const option = QUICK_EDIT_OPTIONS[focusedIndex];
+            if (option.submenu) {
+              setActiveSubmenu(option.id);
+              setSubmenuFocusedIndex(0);
+            } else {
+              handleSelect(option.id);
+            }
+          } else if (focusedIndex === QUICK_EDIT_OPTIONS.length) {
+            // Ask in Chat
+            handleAskInChat();
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          closeQuickEdit();
+          break;
+        case "Home":
+          e.preventDefault();
+          setFocusedIndex(0);
+          break;
+        case "End":
+          e.preventDefault();
+          setFocusedIndex(TOTAL_ITEMS - 1);
+          break;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [quickEditOpen, isEditing, activeSubmenu, focusedIndex, submenuFocusedIndex, closeQuickEdit]);
 
   if (!quickEditOpen || !quickEditPosition || !selection) {
     return null;
@@ -264,6 +368,8 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
     <>
       <div
         ref={menuRef}
+        role="menu"
+        aria-label="AI Quick Edit options"
         className="fixed z-50 min-w-[200px] rounded-lg border border-border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
         style={{
           left: displayPosition.x,
@@ -279,21 +385,24 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
 
         <div className="h-px bg-border my-1" />
 
-        {QUICK_EDIT_OPTIONS.map((option) => (
+        {QUICK_EDIT_OPTIONS.map((option, index) => (
           <div
             key={option.id}
             data-submenu-trigger={option.id}
-            onMouseEnter={() => setActiveSubmenu(option.submenu ? option.id : null)}
+            onMouseEnter={() => {
+              setActiveSubmenu(option.submenu ? option.id : null);
+              setFocusedIndex(index);
+            }}
           >
             {option.submenu ? (
               // Item with submenu
               <button
                 disabled={isEditing}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm",
+                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
                   "hover:bg-accent hover:text-accent-foreground",
                   "disabled:opacity-50 disabled:pointer-events-none",
-                  activeSubmenu === option.id && "bg-accent"
+                  (activeSubmenu === option.id || focusedIndex === index) && "bg-accent text-accent-foreground"
                 )}
               >
                 {option.icon}
@@ -306,9 +415,10 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
                 onClick={() => handleSelect(option.id)}
                 disabled={isEditing}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm",
+                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
                   "hover:bg-accent hover:text-accent-foreground",
-                  "disabled:opacity-50 disabled:pointer-events-none"
+                  "disabled:opacity-50 disabled:pointer-events-none",
+                  focusedIndex === index && "bg-accent text-accent-foreground"
                 )}
               >
                 {option.icon}
@@ -323,13 +433,17 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
         {/* Ask in Chat option */}
         <button
           onClick={handleAskInChat}
-          onMouseEnter={() => setActiveSubmenu(null)}
+          onMouseEnter={() => {
+            setActiveSubmenu(null);
+            setFocusedIndex(QUICK_EDIT_OPTIONS.length);
+          }}
           disabled={isEditing}
           className={cn(
-            "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm",
+            "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
             "hover:bg-accent hover:text-accent-foreground",
             "disabled:opacity-50 disabled:pointer-events-none",
-            "text-primary"
+            "text-primary",
+            focusedIndex === QUICK_EDIT_OPTIONS.length && "bg-accent"
           )}
         >
           <MessageCircle className="h-4 w-4" />
@@ -351,6 +465,8 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
       {activeSubmenu && activeOption?.submenu && submenuPos && (
         <div
           ref={submenuRef}
+          role="menu"
+          aria-label={`${activeOption.label} options`}
           className="fixed z-[60] min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
           style={{
             top: submenuPos.top,
@@ -359,18 +475,21 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
           onMouseEnter={() => setActiveSubmenu(activeSubmenu)}
           onMouseLeave={() => !isEditing && setActiveSubmenu(null)}
         >
-          {activeOption.submenu.map((subItem) => (
+          {activeOption.submenu.map((subItem, subIndex) => (
             <button
               key={subItem.id}
+              role="menuitem"
               onMouseDown={(e) => {
                 e.preventDefault(); // Prevent focus loss
                 handleSelect(subItem.id);
               }}
+              onMouseEnter={() => setSubmenuFocusedIndex(subIndex)}
               disabled={isEditing}
               className={cn(
-                "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm",
+                "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
                 "hover:bg-accent hover:text-accent-foreground",
-                "disabled:opacity-50 disabled:pointer-events-none"
+                "disabled:opacity-50 disabled:pointer-events-none",
+                submenuFocusedIndex === subIndex && "bg-accent text-accent-foreground"
               )}
             >
               {subItem.label}

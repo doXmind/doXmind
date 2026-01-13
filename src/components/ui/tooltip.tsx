@@ -19,7 +19,7 @@ export function Tooltip({
 }: TooltipProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
-  const [position, setPosition] = React.useState({ top: 0, left: 0 });
+  const [position, setPosition] = React.useState<{ top: number; left: number } | null>(null);
   const triggerRef = React.useRef<HTMLDivElement>(null);
   const tooltipRef = React.useRef<HTMLDivElement>(null);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -90,6 +90,7 @@ export function Tooltip({
       clearTimeout(timeoutRef.current);
     }
     setIsOpen(false);
+    setPosition(null);
   };
 
   // Hide tooltip on click (prevents annoying tooltip staying after button click)
@@ -98,6 +99,7 @@ export function Tooltip({
       clearTimeout(timeoutRef.current);
     }
     setIsOpen(false);
+    setPosition(null);
   };
 
   // Recalculate position when tooltip becomes visible
@@ -121,8 +123,9 @@ export function Tooltip({
           ref={tooltipRef}
           style={{
             position: "fixed",
-            top: position.top,
-            left: position.left,
+            top: position?.top ?? -9999,
+            left: position?.left ?? -9999,
+            visibility: position ? "visible" : "hidden",
           }}
           className={cn(
             "z-[9999] overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 whitespace-nowrap pointer-events-none"

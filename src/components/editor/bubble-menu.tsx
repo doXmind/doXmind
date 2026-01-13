@@ -141,7 +141,7 @@ function BubbleButton({
   );
 
   if (tooltip) {
-    return <Tooltip content={tooltip}>{button}</Tooltip>;
+    return <Tooltip content={tooltip} side="top">{button}</Tooltip>;
   }
 
   return button;

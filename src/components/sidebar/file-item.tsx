@@ -1,7 +1,8 @@
 "use client";
 
 import { FileText, Trash2, MoreHorizontal, FileDown, Pencil } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { cn, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,11 +28,121 @@ export function FileItem({ file }: FileItemProps) {
     useFileStore();
   const [isRenaming, setIsRenaming] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
+  const [contextMenuReady, setContextMenuReady] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   // Remove .md extension for editing
   const getNameWithoutExtension = (name: string) => name.replace(/\.md$/, "");
   const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
 
   const isActive = currentFileId === file.id;
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+        setContextMenuFocusIndex(-1);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const itemCount = 5; // rename, 3 exports, delete
+      switch (e.key) {
+        case "Escape":
+          e.preventDefault();
+          setContextMenu(null);
+          setContextMenuFocusIndex(-1);
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          setContextMenuFocusIndex(prev =>
+            prev < itemCount - 1 ? prev + 1 : 0
+          );
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setContextMenuFocusIndex(prev =>
+            prev > 0 ? prev - 1 : itemCount - 1
+          );
+          break;
+        case "Enter":
+        case " ":
+          e.preventDefault();
+          // Execute the action based on focused index
+          if (contextMenuFocusIndex === 0) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            setNewName(getNameWithoutExtension(file.name));
+            setIsRenaming(true);
+          } else if (contextMenuFocusIndex === 1) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            handleExport('markdown');
+          } else if (contextMenuFocusIndex === 2) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            handleExport('pdf');
+          } else if (contextMenuFocusIndex === 3) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            handleExport('docx');
+          } else if (contextMenuFocusIndex === 4) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            setShowDeleteModal(true);
+          }
+          break;
+        case "Home":
+          e.preventDefault();
+          setContextMenuFocusIndex(0);
+          break;
+        case "End":
+          e.preventDefault();
+          setContextMenuFocusIndex(itemCount - 1);
+          break;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu, contextMenuFocusIndex]);
+
+  // Handle right-click context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Calculate position with viewport boundary check
+    const menuWidth = 180;
+    const menuHeight = 220;
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth - 10) {
+      x = window.innerWidth - menuWidth - 10;
+    }
+    if (y + menuHeight > window.innerHeight - 10) {
+      y = window.innerHeight - menuHeight - 10;
+    }
+
+    setContextMenu({ x, y });
+    setContextMenuFocusIndex(-1); // Reset focus when opening
+    setContextMenuReady(false); // Disable hover effects initially
+    // Enable hover effects after a short delay to prevent auto-highlight
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setContextMenuReady(true);
+      });
+    });
+  }, []);
 
   const handleClick = () => {
     if (!isRenaming) {
@@ -96,9 +207,27 @@ export function FileItem({ file }: FileItemProps) {
     }
   };
 
+  // Context menu action handlers
+  const handleContextMenuRename = () => {
+    setContextMenu(null);
+    setNewName(getNameWithoutExtension(file.name));
+    setIsRenaming(true);
+  };
+
+  const handleContextMenuDelete = () => {
+    setContextMenu(null);
+    setShowDeleteModal(true);
+  };
+
+  const handleContextMenuExport = (format: 'markdown' | 'pdf' | 'docx') => {
+    setContextMenu(null);
+    handleExport(format);
+  };
+
   return (
     <div
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
         isActive
@@ -197,6 +326,106 @@ export function FileItem({ file }: FileItemProps) {
           </Button>
         </ModalFooter>
       </Modal>
+
+      {/* Right-click Context Menu */}
+      {contextMenu && createPortal(
+        <div
+          ref={contextMenuRef}
+          role="menu"
+          aria-label="File actions"
+          style={{
+            position: "fixed",
+            top: contextMenu.y,
+            left: contextMenu.x,
+          }}
+          className="z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
+        >
+          {/* Rename */}
+          <button
+            role="menuitem"
+            onClick={handleContextMenuRename}
+            onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(0)}
+            className={cn(
+              "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+              contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
+              contextMenuFocusIndex === 0 && "bg-accent text-accent-foreground"
+            )}
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Rename
+          </button>
+
+          <div className="h-px bg-border my-1" />
+
+          {/* Export submenu label */}
+          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+            Export as
+          </div>
+
+          {/* Export Markdown */}
+          <button
+            role="menuitem"
+            onClick={() => handleContextMenuExport('markdown')}
+            onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
+            className={cn(
+              "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+              contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
+              contextMenuFocusIndex === 1 && "bg-accent text-accent-foreground"
+            )}
+          >
+            <FileDown className="h-4 w-4 mr-2" />
+            Markdown
+          </button>
+
+          {/* Export PDF */}
+          <button
+            role="menuitem"
+            onClick={() => handleContextMenuExport('pdf')}
+            onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(2)}
+            className={cn(
+              "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+              contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
+              contextMenuFocusIndex === 2 && "bg-accent text-accent-foreground"
+            )}
+          >
+            <FileDown className="h-4 w-4 mr-2" />
+            PDF
+          </button>
+
+          {/* Export Word */}
+          <button
+            role="menuitem"
+            onClick={() => handleContextMenuExport('docx')}
+            onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(3)}
+            className={cn(
+              "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+              contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
+              contextMenuFocusIndex === 3 && "bg-accent text-accent-foreground"
+            )}
+          >
+            <FileDown className="h-4 w-4 mr-2" />
+            Word
+          </button>
+
+          <div className="h-px bg-border my-1" />
+
+          {/* Delete */}
+          <button
+            role="menuitem"
+            onClick={handleContextMenuDelete}
+            onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(4)}
+            className={cn(
+              "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none text-destructive",
+              contextMenuReady && "hover:bg-destructive/10",
+              contextMenuFocusIndex === 4 && "bg-destructive/10"
+            )}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
