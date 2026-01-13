@@ -26,7 +26,10 @@
       "Bash(git push:*)",
       "Bash(git -C \"e:\\\\doXmind\\\\doxmind-mini\" log --oneline -20)",
       "Bash(git -C \"e:\\\\doXmind\\\\doxmind-mini\" show 34c6e46 --stat)",
-      "Bash(cd /d e:doXminddoxmind-mini)"
+      "Bash(cd /d e:doXminddoxmind-mini)",
+      "Bash(pip install:*)",
+      "Bash(python test_export.py:*)",
+      "Bash(del \"e:\\\\doXmind\\\\doxmind-mini\\\\server\\\\test_export.py\")"
     ]
   }
 }

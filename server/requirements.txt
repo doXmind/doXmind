@@ -26,3 +26,9 @@ aiosqlite==0.20.0
 python-multipart==0.0.19
 httpx==0.28.1
 sse-starlette==2.2.1
+
+# Export
+markdown==3.7
+fpdf2==2.8.5
+python-docx==1.1.2
+beautifulsoup4==4.12.3

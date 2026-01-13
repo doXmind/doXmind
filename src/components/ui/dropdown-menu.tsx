@@ -155,3 +155,91 @@ export function DropdownMenuLabel({
     </div>
   );
 }
+
+// SubMenu context
+const DropdownMenuSubContext = React.createContext<{
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}>({
+  open: false,
+  setOpen: () => {},
+});
+
+export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <DropdownMenuSubContext.Provider value={{ open, setOpen }}>
+      <div
+        className="relative"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        {children}
+      </div>
+    </DropdownMenuSubContext.Provider>
+  );
+}
+
+export function DropdownMenuSubTrigger({
+  children,
+  className,
+  onClick,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  onClick?: (e: React.MouseEvent) => void;
+}) {
+  const { open } = React.useContext(DropdownMenuSubContext);
+
+  return (
+    <button
+      className={cn(
+        "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
+        open && "bg-accent text-accent-foreground",
+        className
+      )}
+      onClick={onClick}
+    >
+      {children}
+      <svg
+        className="ml-auto h-4 w-4"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+  );
+}
+
+export function DropdownMenuSubContent({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const { open } = React.useContext(DropdownMenuSubContext);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className={cn(
+        "absolute left-full top-0 ml-[-4px] pl-[4px] z-50",
+        className
+      )}
+    >
+      <div
+        className={cn(
+          "min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+          "animate-in fade-in-0 zoom-in-95"
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

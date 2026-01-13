@@ -180,6 +180,25 @@ export class ApiClient {
   async healthCheck() {
     return this.request<{ status: string }>("/health");
   }
+
+  // Export API
+  /**
+   * Export a file in the specified format.
+   * @param fileId - The ID of the file to export
+   * @param format - The export format: 'markdown', 'pdf', or 'docx'
+   * @returns A Blob containing the exported file
+   */
+  async exportFile(fileId: string, format: 'markdown' | 'pdf' | 'docx'): Promise<Blob> {
+    const url = `${this.baseUrl}/api/export/${fileId}/${format}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.blob();
+  }
 }
 
 // Default client instance

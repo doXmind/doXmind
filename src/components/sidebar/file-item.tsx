@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Trash2, Pencil } from "lucide-react";
+import { FileText, Trash2, Pencil, FileDown } from "lucide-react";
 import { useState } from "react";
 import { cn, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
+import { api } from "@/lib/api";
 
 interface FileItemProps {
   file: FileItemType;
@@ -72,6 +74,27 @@ export function FileItem({ file }: FileItemProps) {
     setShowDeleteModal(false);
   };
 
+  const handleExport = async (format: 'markdown' | 'pdf' | 'docx') => {
+    try {
+      const blob = await api.exportFile(file.id, format);
+      const baseName = getNameWithoutExtension(file.name);
+      const extension = format === 'markdown' ? 'md' : format;
+      const filename = `${baseName}.${extension}`;
+
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(`Failed to export as ${format}:`, error);
+    }
+  };
+
   return (
     <div
       onClick={handleClick}
@@ -128,6 +151,20 @@ export function FileItem({ file }: FileItemProps) {
             >
               <Pencil className="h-4 w-4 mr-2" />
               Rename
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Export as</DropdownMenuLabel>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExport('markdown'); }}>
+              <FileDown className="h-4 w-4 mr-2" />
+              Markdown
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExport('pdf'); }}>
+              <FileDown className="h-4 w-4 mr-2" />
+              PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExport('docx'); }}>
+              <FileDown className="h-4 w-4 mr-2" />
+              Word
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
