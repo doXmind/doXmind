@@ -19,9 +19,16 @@ import "@xyflow/react/dist/style.css";
 import { ArrowDownUp, Expand, Shrink, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  MINDMAP_FIT_VIEW,
+  MINDMAP_CENTER_VIEW,
+  ANIMATION_DURATION,
+} from "@/lib/constants";
 import { HeadingNode } from "./flow-nodes/heading-node";
 import { CustomEdge } from "./flow-nodes/custom-edge";
 import { convertToFlowElements, applyDagreLayout } from "./utils/layout";
+import { findCollapsibleHeadingIds, findHeadingsWithChildren } from "./utils/heading-utils";
+import { useMindmapKeyboard } from "./hooks/use-mindmap-keyboard";
 import type { Heading, LayoutDirection, FlowNodeData } from "./types";
 
 // Define nodeTypes and edgeTypes OUTSIDE component to prevent re-renders
@@ -42,21 +49,9 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
 
   // State for collapsed nodes and layout direction
   // Default: show H1 and H2, collapse H2+ nodes that have children
-  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(() => {
-    const nodesWithChildren = headings
-      .filter((h) => {
-        // Only collapse H2 and below (level >= 2) that have children
-        if (h.level < 2) return false; // Don't collapse H1
-        const idx = headings.indexOf(h);
-        for (let i = idx + 1; i < headings.length; i++) {
-          if (headings[i].level <= h.level) break;
-          if (headings[i].level > h.level) return true;
-        }
-        return false;
-      })
-      .map((h) => h.id);
-    return new Set(nodesWithChildren);
-  });
+  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(
+    () => new Set(findCollapsibleHeadingIds(headings))
+  );
   const [direction, setDirection] = useState<LayoutDirection>("TB");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
@@ -117,12 +112,12 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
     if (nodes.length > 0) {
       const timer = setTimeout(() => {
         fitView({
-          padding: 0.15, // Less padding = more zoom
-          duration: 300,
-          maxZoom: 1.2, // Allow closer zoom
-          minZoom: 0.8, // Don't zoom out too much
+          padding: MINDMAP_FIT_VIEW.PADDING,
+          duration: MINDMAP_FIT_VIEW.DURATION,
+          maxZoom: MINDMAP_FIT_VIEW.MAX_ZOOM,
+          minZoom: MINDMAP_FIT_VIEW.MIN_ZOOM,
         });
-      }, 100);
+      }, MINDMAP_FIT_VIEW.DELAY);
       return () => clearTimeout(timer);
     }
   }, [nodes.length, fitView, collapsedNodes, direction]);
@@ -133,11 +128,15 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
       const node = getNode(activeId);
       if (node) {
         const timer = setTimeout(() => {
-          setCenter(node.position.x + 100, node.position.y + 22, {
-            zoom: 1,
-            duration: 500,
-          });
-        }, 100);
+          setCenter(
+            node.position.x + MINDMAP_CENTER_VIEW.X_OFFSET,
+            node.position.y + MINDMAP_CENTER_VIEW.Y_OFFSET,
+            {
+              zoom: MINDMAP_CENTER_VIEW.ZOOM,
+              duration: MINDMAP_CENTER_VIEW.CENTER_DURATION,
+            }
+          );
+        }, MINDMAP_FIT_VIEW.DELAY);
         return () => clearTimeout(timer);
       }
     }
@@ -165,75 +164,15 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
     [onNodeClick]
   );
 
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!nodes.length) return;
-
-      // Find current node index
-      const currentIndex = selectedNodeId
-        ? nodes.findIndex((n) => n.id === selectedNodeId)
-        : -1;
-
-      let nextIndex = currentIndex;
-
-      switch (e.key) {
-        case "ArrowUp":
-        case "ArrowLeft":
-          e.preventDefault();
-          nextIndex = currentIndex > 0 ? currentIndex - 1 : nodes.length - 1;
-          break;
-        case "ArrowDown":
-        case "ArrowRight":
-          e.preventDefault();
-          nextIndex = currentIndex < nodes.length - 1 ? currentIndex + 1 : 0;
-          break;
-        case "Enter":
-          e.preventDefault();
-          if (selectedNodeId) {
-            const node = nodes.find((n) => n.id === selectedNodeId);
-            if (node) {
-              const data = node.data as FlowNodeData;
-              onNodeClick({
-                id: node.id,
-                level: data.level,
-                text: data.label,
-                pos: data.pos,
-              });
-            }
-          }
-          return;
-        case " ": // Space to toggle collapse
-          e.preventDefault();
-          if (selectedNodeId) {
-            setCollapsedNodes((prev) => {
-              const next = new Set(prev);
-              if (next.has(selectedNodeId)) {
-                next.delete(selectedNodeId);
-              } else {
-                next.add(selectedNodeId);
-              }
-              return next;
-            });
-          }
-          return;
-        default:
-          return;
-      }
-
-      const nextNode = nodes[nextIndex];
-      if (nextNode) {
-        setSelectedNodeId(nextNode.id);
-        setCenter(nextNode.position.x + 100, nextNode.position.y + 22, {
-          zoom: 1,
-          duration: 200,
-        });
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nodes, selectedNodeId, setCenter, onNodeClick]);
+  // Keyboard navigation (extracted to hook)
+  useMindmapKeyboard({
+    nodes,
+    selectedNodeId,
+    setSelectedNodeId,
+    setCenter,
+    onNodeClick,
+    setCollapsedNodes,
+  });
 
   // Add isActive and selected properties to nodes for styling
   const nodesWithState = useMemo(
@@ -258,23 +197,13 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
 
   // Collapse all nodes with children
   const collapseAll = useCallback(() => {
-    const nodesWithChildren = headings
-      .filter((h) => {
-        // Check if this heading has children (headings with higher level after it)
-        const idx = headings.indexOf(h);
-        for (let i = idx + 1; i < headings.length; i++) {
-          if (headings[i].level <= h.level) break;
-          if (headings[i].level > h.level) return true;
-        }
-        return false;
-      })
-      .map((h) => h.id);
-    setCollapsedNodes(new Set(nodesWithChildren));
+    const withChildren = findHeadingsWithChildren(headings).map((h) => h.id);
+    setCollapsedNodes(new Set(withChildren));
   }, [headings]);
 
   // Reset view
   const resetView = useCallback(() => {
-    fitView({ padding: 0.2, duration: 300 });
+    fitView({ padding: 0.2, duration: ANIMATION_DURATION.SLOW });
   }, [fitView]);
 
   return (
@@ -288,9 +217,9 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
       onNodeDoubleClick={handleNodeDoubleClick}
       fitView
       fitViewOptions={{
-        padding: 0.15,
-        maxZoom: 1.2,
-        minZoom: 0.8,
+        padding: MINDMAP_FIT_VIEW.PADDING,
+        maxZoom: MINDMAP_FIT_VIEW.MAX_ZOOM,
+        minZoom: MINDMAP_FIT_VIEW.MIN_ZOOM,
       }}
       defaultViewport={{ x: 0, y: 0, zoom: 1 }}
       minZoom={0.1}

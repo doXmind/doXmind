@@ -1,9 +1,10 @@
 import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
 import { generateId } from "@/lib/utils";
-import type { ChatMessage, Conversation, ToolCall, MessageContextItem } from "@/types";
+import type { ChatMessage, Conversation, ToolCall, MessageContextItem, EditOperation } from "@/types";
 
 // Re-export for convenience
-export type { ChatMessage, Conversation, ToolCall, MessageContextItem } from "@/types";
+export type { ChatMessage, Conversation, ToolCall, MessageContextItem, EditOperation } from "@/types";
 
 interface ChatState {
   conversations: Record<string, Conversation>;
@@ -42,7 +43,8 @@ interface ChatState {
   saveMessageToBackend: (conversationId: string, message: ChatMessage) => Promise<void>;
 }
 
-export const useChatStore = create<ChatState>()((set, get) => ({
+export const useChatStore = create<ChatState>()(
+  immer((set, get) => ({
   conversations: {},
   activeConversationId: null,
   isLoadingHistory: false,
@@ -74,7 +76,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         content: string;
         thinking?: string | null;
         toolCalls?: ToolCall[] | null;
-        edits?: Record<string, unknown>[] | null;
+        edits?: EditOperation[] | null;
         model?: string | null;
         createdAt: string;
       }) => ({
@@ -96,14 +98,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         isLoaded: true,
       };
 
-      set((state) => ({
-        conversations: {
-          ...state.conversations,
-          [key]: conversation,
-        },
-        activeConversationId: key,
-        isLoadingHistory: false,
-      }));
+      set((state) => {
+        state.conversations[key] = conversation;
+        state.activeConversationId = key;
+        state.isLoadingHistory = false;
+      });
     } catch (error) {
       console.error("Failed to load conversation:", error);
       set({ isLoadingHistory: false });
@@ -118,8 +117,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const key = fileId || "global";
 
     if (state.conversations[key]) {
-      set({ activeConversationId: key });
-      return key;  // Always return key, not conversation.id
+      set((draft) => {
+        draft.activeConversationId = key;
+      });
+      return key;
     }
 
     const newConversation: Conversation = {
@@ -130,13 +131,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       isLoaded: false,
     };
 
-    set((state) => ({
-      conversations: {
-        ...state.conversations,
-        [key]: newConversation,
-      },
-      activeConversationId: key,
-    }));
+    set((draft) => {
+      draft.conversations[key] = newConversation;
+      draft.activeConversationId = key;
+    });
 
     return key;
   },
@@ -149,113 +147,68 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       createdAt: new Date().toISOString(),
     };
 
-    set((state) => {
-      const conversation = state.conversations[conversationId];
+    set((draft) => {
+      const conversation = draft.conversations[conversationId];
 
-      // Create conversation if it doesn't exist
       if (!conversation) {
-        const newConversation: Conversation = {
+        // Create conversation if it doesn't exist
+        draft.conversations[conversationId] = {
           id: conversationId,
           fileId: conversationId === "global" ? null : conversationId,
           messages: [newMessage],
           createdAt: new Date().toISOString(),
           isLoaded: true,
         };
-        return {
-          conversations: {
-            ...state.conversations,
-            [conversationId]: newConversation,
-          },
-        };
+      } else {
+        conversation.messages.push(newMessage);
       }
-
-      return {
-        conversations: {
-          ...state.conversations,
-          [conversationId]: {
-            ...conversation,
-            messages: [...conversation.messages, newMessage],
-          },
-        },
-      };
     });
 
     return id;
   },
 
   updateMessage: (conversationId, messageId, content) => {
-    set((state) => {
-      const conversation = state.conversations[conversationId];
-      if (!conversation) return state;
-
-      return {
-        conversations: {
-          ...state.conversations,
-          [conversationId]: {
-            ...conversation,
-            messages: conversation.messages.map((msg) =>
-              msg.id === messageId ? { ...msg, content } : msg
-            ),
-          },
-        },
-      };
+    set((draft) => {
+      const msg = draft.conversations[conversationId]?.messages.find(
+        (m) => m.id === messageId
+      );
+      if (msg) {
+        msg.content = content;
+      }
     });
   },
 
   updateMessageFull: (conversationId, messageId, updates) => {
-    set((state) => {
-      const conversation = state.conversations[conversationId];
-      if (!conversation) return state;
+    set((draft) => {
+      const conversation = draft.conversations[conversationId];
+      if (!conversation) return;
 
-      return {
-        conversations: {
-          ...state.conversations,
-          [conversationId]: {
-            ...conversation,
-            messages: conversation.messages.map((msg) =>
-              msg.id === messageId ? { ...msg, ...updates } : msg
-            ),
-          },
-        },
-      };
+      const msgIndex = conversation.messages.findIndex((m) => m.id === messageId);
+      if (msgIndex !== -1) {
+        Object.assign(conversation.messages[msgIndex], updates);
+      }
     });
   },
 
   appendToMessage: (conversationId, messageId, chunk) => {
-    set((state) => {
-      const conversation = state.conversations[conversationId];
-      if (!conversation) return state;
-
-      return {
-        conversations: {
-          ...state.conversations,
-          [conversationId]: {
-            ...conversation,
-            messages: conversation.messages.map((msg) =>
-              msg.id === messageId ? { ...msg, content: msg.content + chunk } : msg
-            ),
-          },
-        },
-      };
+    set((draft) => {
+      const msg = draft.conversations[conversationId]?.messages.find(
+        (m) => m.id === messageId
+      );
+      if (msg) {
+        msg.content += chunk;
+      }
     });
   },
 
   setMessageStreaming: (conversationId, messageId, isStreaming) => {
-    set((state) => {
-      const conversation = state.conversations[conversationId];
-      if (!conversation) return state;
-
-      return {
-        conversations: {
-          ...state.conversations,
-          [conversationId]: {
-            ...conversation,
-            messages: conversation.messages.map((msg) =>
-              msg.id === messageId ? { ...msg, isStreaming } : msg
-            ),
-          },
-        },
-      };
+    set((draft) => {
+      const msg = draft.conversations[conversationId]?.messages.find(
+        (m) => m.id === messageId
+      );
+      if (msg) {
+        msg.isStreaming = isStreaming;
+      }
     });
   },
 
@@ -270,24 +223,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
 
     // Clear locally
-    set((state) => {
-      const conversation = state.conversations[conversationId];
-      if (!conversation) return state;
-
-      return {
-        conversations: {
-          ...state.conversations,
-          [conversationId]: {
-            ...conversation,
-            messages: [],
-          },
-        },
-      };
+    set((draft) => {
+      const conversation = draft.conversations[conversationId];
+      if (conversation) {
+        conversation.messages = [];
+      }
     });
   },
 
   setActiveConversation: (id) => {
-    set({ activeConversationId: id });
+    set((draft) => {
+      draft.activeConversationId = id;
+    });
   },
 
   // Save a message to backend
@@ -310,4 +257,4 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       console.error("Failed to save message to backend:", error);
     }
   },
-}));
+})));

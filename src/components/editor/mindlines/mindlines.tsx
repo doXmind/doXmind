@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import type { Editor } from "@tiptap/react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { MINDLINES_WIDTH, ANIMATION_DURATION } from "@/lib/constants";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useHeadings } from "./use-headings";
 import { useMindlinesState } from "./use-mindlines-state";
@@ -15,19 +16,22 @@ interface MindlinesProps {
   editor: Editor | null;
 }
 
+// Easing function for smooth animations
+const EASE_OUT_QUART = [0.4, 0, 0.2, 1] as const;
+
 // Animation variants for width transitions
 const containerVariants = {
   collapsed: {
-    width: 208,
-    transition: { duration: 0.25, ease: [0.4, 0, 0.2, 1] as const },
+    width: MINDLINES_WIDTH.COLLAPSED,
+    transition: { duration: ANIMATION_DURATION.NORMAL / 1000, ease: EASE_OUT_QUART },
   },
   preview: {
-    width: 320,
-    transition: { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const },
+    width: MINDLINES_WIDTH.PREVIEW,
+    transition: { duration: ANIMATION_DURATION.NORMAL / 1000, ease: EASE_OUT_QUART },
   },
   expanded: {
     width: "auto", // Full screen with margin, controlled by inset-0 + m-4
-    transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] as const },
+    transition: { duration: ANIMATION_DURATION.TRANSITION / 1000, ease: EASE_OUT_QUART },
   },
 };
 
@@ -111,9 +115,9 @@ export function Mindlines({ editor }: MindlinesProps) {
             ? {
                 width:
                   mode === "collapsed"
-                    ? 208
+                    ? MINDLINES_WIDTH.COLLAPSED
                     : mode === "preview"
-                      ? 320
+                      ? MINDLINES_WIDTH.PREVIEW
                       : "auto",
               }
             : {}),

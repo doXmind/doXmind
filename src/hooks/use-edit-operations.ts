@@ -5,22 +5,10 @@ import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { computeDiffHunks } from "@/lib/diff-utils";
 import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
+import type { EditOperation } from "@/types";
 
-// Types for edit operations from the backend
-export interface EditOperation {
-  type: "str_replace" | "insert" | "replace_all";
-  file_id: string;
-  file_name: string;
-  success: boolean;
-  error?: string;
-  // For str_replace
-  old_str?: string;
-  new_str?: string;
-  // For insert
-  insert_line?: number;
-  // For replace_all
-  new_content?: string;
-}
+// Re-export for backward compatibility
+export type { EditOperation } from "@/types";
 
 /**
  * Hook for applying AI edit operations to files

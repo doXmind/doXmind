@@ -1,4 +1,7 @@
-// File types
+// =============================================================================
+// File Types
+// =============================================================================
+
 export interface FileItem {
   id: string;
   name: string;
@@ -7,7 +10,39 @@ export interface FileItem {
   updatedAt: string;
 }
 
-// Chat types
+// =============================================================================
+// Edit Operation Types (unified from multiple sources)
+// =============================================================================
+
+/**
+ * Edit operation from AI agent
+ * Used for applying changes to files via str_replace, insert, or replace_all
+ */
+export interface EditOperation {
+  /** Type of edit operation */
+  type: "str_replace" | "insert" | "replace_all";
+  /** ID of the file being edited */
+  file_id: string;
+  /** Name of the file being edited */
+  file_name: string;
+  /** Whether the operation was successful */
+  success: boolean;
+  /** Error message if operation failed */
+  error?: string;
+  /** Original string to replace (for str_replace) */
+  old_str?: string;
+  /** New string to insert (for str_replace and insert) */
+  new_str?: string;
+  /** Line number to insert at (for insert) */
+  insert_line?: number;
+  /** Complete new content (for replace_all) */
+  new_content?: string;
+}
+
+// =============================================================================
+// Chat Types
+// =============================================================================
+
 export interface ToolCall {
   name: string;
   toolId?: string;
@@ -16,7 +51,7 @@ export interface ToolCall {
   success: boolean | null;
 }
 
-// Context item attached to a user message (from "Ask in Chat" feature)
+/** Context item attached to a user message (from "Ask in Chat" feature) */
 export type MessageContextItem =
   | {
       type: "selection";
@@ -40,7 +75,7 @@ export interface ChatMessage {
   // AI response specific fields
   thinking?: string | null;
   toolCalls?: ToolCall[] | null;
-  edits?: Record<string, unknown>[] | null;
+  edits?: EditOperation[] | null;
   model?: string | null;
 }
 
@@ -52,7 +87,10 @@ export interface Conversation {
   isLoaded?: boolean;
 }
 
-// Version types
+// =============================================================================
+// Version Types
+// =============================================================================
+
 export interface FileVersion {
   id: string;
   fileId: string;
@@ -63,14 +101,20 @@ export interface FileVersion {
   createdAt: string;
 }
 
-// Editor types
+// =============================================================================
+// Editor Types
+// =============================================================================
+
 export interface Selection {
   from: number;
   to: number;
   text: string;
 }
 
-// API types
+// =============================================================================
+// API Types
+// =============================================================================
+
 export interface ApiError {
   detail: string;
   status?: number;
@@ -84,7 +128,10 @@ export interface StreamEvent {
   output?: string;
 }
 
-// Quick Edit types
+// =============================================================================
+// Quick Edit Types
+// =============================================================================
+
 export type QuickEditAction =
   | "fix-grammar"
   | "improve"
@@ -102,7 +149,10 @@ export interface QuickEditOption {
   icon: React.ReactNode;
 }
 
-// Search types
+// =============================================================================
+// Search Types
+// =============================================================================
+
 export interface SearchResult {
   id: string;
   content: string;

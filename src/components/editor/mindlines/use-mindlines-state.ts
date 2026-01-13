@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { MINDLINES_HOVER_TIMING } from "@/lib/constants";
 
 export type MindlinesMode = "collapsed" | "preview" | "expanded";
 
@@ -34,8 +35,8 @@ export function useMindlinesState(
 ): UseMindlinesStateReturn {
   const {
     defaultMode = "collapsed",
-    hoverEnterDelay = 150,
-    hoverLeaveDelay = 300,
+    hoverEnterDelay = MINDLINES_HOVER_TIMING.ENTER_DELAY,
+    hoverLeaveDelay = MINDLINES_HOVER_TIMING.LEAVE_DELAY,
     onModeChange,
   } = options;
 

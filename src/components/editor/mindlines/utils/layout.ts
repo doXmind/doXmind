@@ -2,6 +2,12 @@ import dagre from "@dagrejs/dagre";
 import { Position, type Node, type Edge } from "@xyflow/react";
 import type { Heading, HeadingNode as HeadingTreeNode, FlowNodeData } from "../types";
 import { buildTree } from "../use-tree";
+import {
+  DAGRE_LAYOUT,
+  MINDMAP_NODE_WIDTH,
+  MINDMAP_NODE_HEIGHT,
+  MINDMAP_CENTER_VIEW,
+} from "@/lib/constants";
 
 /**
  * Convert flat headings array to React Flow nodes and edges
@@ -85,18 +91,29 @@ export function applyDagreLayout(
 
   g.setGraph({
     rankdir: direction,
-    nodesep: 60,
-    ranksep: 100,
-    marginx: 20,
-    marginy: 20,
+    nodesep: DAGRE_LAYOUT.NODE_SEPARATION,
+    ranksep: DAGRE_LAYOUT.RANK_SEPARATION,
+    marginx: DAGRE_LAYOUT.MARGIN_X,
+    marginy: DAGRE_LAYOUT.MARGIN_Y,
   });
+
+  // Helper function to get node width based on heading level
+  const getNodeWidth = (level: number): number => {
+    switch (level) {
+      case 1:
+        return MINDMAP_NODE_WIDTH.H1;
+      case 2:
+        return MINDMAP_NODE_WIDTH.H2;
+      default:
+        return MINDMAP_NODE_WIDTH.H3;
+    }
+  };
 
   // Set node dimensions based on level
   nodes.forEach((node) => {
     const data = node.data as FlowNodeData;
-    const width = data.level === 1 ? 220 : data.level === 2 ? 180 : 160;
-    const height = 44;
-    g.setNode(node.id, { width, height });
+    const width = getNodeWidth(data.level);
+    g.setNode(node.id, { width, height: MINDMAP_NODE_HEIGHT });
   });
 
   edges.forEach((edge) => {
@@ -109,7 +126,7 @@ export function applyDagreLayout(
   const layoutedNodes: Node[] = nodes.map((node) => {
     const nodeWithPosition = g.node(node.id);
     const data = node.data as FlowNodeData;
-    const width = data.level === 1 ? 220 : data.level === 2 ? 180 : 160;
+    const width = getNodeWidth(data.level);
 
     return {
       ...node,
@@ -117,7 +134,7 @@ export function applyDagreLayout(
       sourcePosition: isHorizontal ? Position.Right : Position.Bottom,
       position: {
         x: nodeWithPosition.x - width / 2,
-        y: nodeWithPosition.y - 22,
+        y: nodeWithPosition.y - MINDMAP_CENTER_VIEW.Y_OFFSET,
       },
     };
   });

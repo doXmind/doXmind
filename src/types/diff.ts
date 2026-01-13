@@ -66,20 +66,5 @@ export interface DiffSession {
   createdAt: string;
 }
 
-/**
- * Edit operation from AI agent (matches use-chat.ts EditOperation)
- */
-export interface EditOperation {
-  type: "str_replace" | "insert" | "replace_all";
-  file_id: string;
-  file_name: string;
-  success: boolean;
-  error?: string;
-  // For str_replace
-  old_str?: string;
-  new_str?: string;
-  // For insert
-  insert_line?: number;
-  // For replace_all
-  new_content?: string;
-}
+// Re-export EditOperation from centralized types for backward compatibility
+export type { EditOperation } from "./index";

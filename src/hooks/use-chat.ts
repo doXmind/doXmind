@@ -284,14 +284,14 @@ export function useChat() {
             createdAt: new Date().toISOString(),
             thinking: summaryRef.data.thinking,
             toolCalls: summaryRef.data.toolCalls,
-            edits: summaryRef.data.edits as Record<string, unknown>[] | null,
+            edits: summaryRef.data.edits,
             model: summaryRef.data.model,
           };
 
           updateMessageFull(conversationId, assistantMessageId, {
             thinking: summaryRef.data.thinking,
             toolCalls: summaryRef.data.toolCalls,
-            edits: summaryRef.data.edits as Record<string, unknown>[] | null,
+            edits: summaryRef.data.edits,
             model: summaryRef.data.model,
           });
 

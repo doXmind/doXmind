@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Editor } from "@tiptap/react";
 import type { Heading } from "./types";
+import { findActiveHeading } from "./utils/heading-utils";
 
 /**
  * Hook to extract and track headings from a TipTap editor
@@ -39,19 +40,13 @@ export function useHeadings(editor: Editor | null) {
   }, [editor]);
 
   // Track cursor position to highlight active heading
+  // Uses binary search for better performance on large documents
   useEffect(() => {
     if (!editor || headings.length === 0) return;
 
     const trackPosition = () => {
       const { from } = editor.state.selection;
-      let active: Heading | null = null;
-
-      for (let i = headings.length - 1; i >= 0; i--) {
-        if (headings[i].pos <= from) {
-          active = headings[i];
-          break;
-        }
-      }
+      const active = findActiveHeading(headings, from);
       setActiveId(active?.id ?? null);
     };
 

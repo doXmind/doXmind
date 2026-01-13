@@ -21,9 +21,9 @@ import { common, createLowlight } from "lowlight";
 import { SlashCommands } from "./slash-commands";
 import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
-import { SearchExtension } from "@/extensions/search-extension";
+import { SearchExtension } from "@/extensions/search";
 import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
-import { DiffReviewExtension } from "@/extensions/diff-review-extension";
+import { DiffReviewExtension } from "@/extensions/diff-review";
 import { TextReviewExtension } from "@/extensions/text-review-extension";
 import type { Extensions } from "@tiptap/react";
 

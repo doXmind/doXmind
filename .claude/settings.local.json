@@ -63,7 +63,8 @@
       "WebFetch(domain:www.npmjs.com)",
       "Bash(npm view:*)",
       "WebFetch(domain:ncoughlin.com)",
-      "mcp__plugin_hachion_pw__browser_close"
+      "mcp__plugin_hachion_pw__browser_close",
+      "Bash(npm install:*)"
     ]
   }
 }
