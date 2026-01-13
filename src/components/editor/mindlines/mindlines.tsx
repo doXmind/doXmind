@@ -85,7 +85,7 @@ export function Mindlines({ editor }: MindlinesProps) {
 
   if (headings.length === 0) {
     return (
-      <div className="w-44 border-r bg-background/95 backdrop-blur-sm p-3 text-sm text-muted-foreground">
+      <div className="w-44 shrink-0 relative z-10 border-r bg-background/95 backdrop-blur-sm p-3 text-sm text-muted-foreground">
         Add headings to see outline
       </div>
     );
@@ -93,7 +93,7 @@ export function Mindlines({ editor }: MindlinesProps) {
 
   return (
     <nav
-      className="w-44 border-r bg-background/95 backdrop-blur-sm overflow-y-auto"
+      className="w-44 shrink-0 relative z-10 border-r bg-background/95 backdrop-blur-sm overflow-y-auto"
       aria-label="Document outline"
     >
       <div className="py-2 px-1">
