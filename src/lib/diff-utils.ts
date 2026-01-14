@@ -6,7 +6,7 @@
  */
 
 import type { DiffHunk, DiffChangeType, EditOperation } from "@/types/diff";
-import { htmlToMarkdown, isHtml } from "./markdown";
+import { htmlToMarkdown, isHtml, markdownToPlainText } from "./markdown";
 import { findLinePosition, type DocWithContent } from "./position-mapper";
 import { diffByParagraphs } from "./diff-algorithms";
 import { generateId } from "./utils";
@@ -74,12 +74,16 @@ export function computeDiffHunks(
 
       // Use a placeholder position - the actual position will be found
       // by findTextInDocument in diff-review-extension.ts when rendering
+      // Generate searchText (plain text version) for finding in doc.textContent
+      const searchText = markdownToPlainText(edit.old_str);
+
       const hunk: DiffHunk = {
         id: generateId(),
         type: hunkType,
         from: 0, // Placeholder - will be resolved by findTextInDocument
         to: 0, // Placeholder - will be resolved by findTextInDocument
-        oldContent: edit.old_str,
+        oldContent: edit.old_str, // Keep original markdown for display
+        searchText, // Plain text for searching in doc.textContent
         newContent: edit.new_str,
         status: "pending" as const,
         createdAt: new Date().toISOString(),
@@ -89,6 +93,7 @@ export function computeDiffHunks(
         id: hunk.id,
         type: hunkType,
         oldContent: edit.old_str.substring(0, 50) + "...",
+        searchText: searchText.substring(0, 50) + "...",
       });
       hunks.push(hunk);
       break;
@@ -120,6 +125,7 @@ export function computeDiffHunks(
         from: insertPos,
         to: insertPos, // For insert, from === to
         oldContent: "",
+        searchText: "", // Empty for insert type
         newContent: edit.new_str,
         status: "pending",
         createdAt: new Date().toISOString(),

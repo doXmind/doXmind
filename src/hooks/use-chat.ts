@@ -96,12 +96,22 @@ export function useChat() {
       });
 
       // Save user message to backend
+      // Strip base64 data from contexts before saving (too large for DB storage)
+      // The src URL is preserved so images can still be displayed
+      const contextsForStorage = contexts?.map(ctx => {
+        if (ctx.type === 'image') {
+          // Keep src and alt, remove base64 and mediaType (only needed for AI API)
+          return { type: ctx.type, src: ctx.src, alt: (ctx as { alt?: string }).alt };
+        }
+        return ctx;
+      }) || null;
+
       const userMessage: ChatMessage = {
         id: userMessageId,
         role: "user",
         content: message,
         fileIds,
-        contexts,
+        contexts: contextsForStorage,
         createdAt: new Date().toISOString(),
       };
       saveMessageToBackend(conversationId, userMessage);

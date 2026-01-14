@@ -51,7 +51,7 @@ TOOLS = [
                 },
                 "new_str": {
                     "type": "string",
-                    "description": "The new string to replace it with"
+                    "description": "The new string to replace it with (use Markdown format)"
                 },
                 "file_id": {
                     "type": "string",
@@ -73,7 +73,7 @@ TOOLS = [
                 },
                 "new_str": {
                     "type": "string",
-                    "description": "The text to insert"
+                    "description": "The text to insert (use Markdown format)"
                 },
                 "file_id": {
                     "type": "string",
@@ -91,7 +91,7 @@ TOOLS = [
             "properties": {
                 "new_content": {
                     "type": "string",
-                    "description": "The complete new content for the document"
+                    "description": "The complete new content for the document (use Markdown format)"
                 },
                 "file_id": {
                     "type": "string",

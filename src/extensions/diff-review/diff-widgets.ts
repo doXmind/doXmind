@@ -6,12 +6,19 @@
 
 import { marked } from "marked";
 import type { DiffHunk } from "@/types/diff";
+import { isHtml } from "@/lib/markdown";
 
 /**
  * Convert markdown to HTML for diff display
+ * If content is already HTML, return it as-is
  */
 function renderMarkdownToHtml(markdown: string): string {
   if (!markdown || markdown.trim() === "") return "";
+
+  // If content is already HTML (e.g., tables from TipTap), return as-is
+  if (isHtml(markdown)) {
+    return markdown;
+  }
 
   try {
     // Configure marked for inline rendering when content is simple

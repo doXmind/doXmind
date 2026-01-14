@@ -71,6 +71,9 @@ class Message(Base):
     role = Column(String(20))  # "user" | "assistant"
     content = Column(Text)  # Main text content
 
+    # User message specific fields
+    contexts = Column(JSON, nullable=True)  # Attached images and selected text: [{type, ...}]
+
     # AI response specific fields
     thinking = Column(Text, nullable=True)  # Extended thinking content
     tool_calls = Column(JSON, nullable=True)  # List of tool calls: [{name, input, output, success}]

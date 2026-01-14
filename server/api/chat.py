@@ -52,6 +52,7 @@ class MessageCreate(BaseModel):
     conversationId: str
     role: str  # "user" | "assistant"
     content: str
+    contexts: Optional[List[dict]] = None  # Attached images and selected text
     thinking: Optional[str] = None
     toolCalls: Optional[List[dict]] = None
     edits: Optional[List[dict]] = None
@@ -64,6 +65,7 @@ class MessageResponse(BaseModel):
     conversationId: str
     role: str
     content: str
+    contexts: Optional[List[dict]] = None
     thinking: Optional[str] = None
     toolCalls: Optional[List[dict]] = None
     edits: Optional[List[dict]] = None
@@ -129,6 +131,7 @@ async def get_conversation(
                 "conversationId": msg.conversation_id,
                 "role": msg.role,
                 "content": msg.content or "",
+                "contexts": msg.contexts,
                 "thinking": msg.thinking,
                 "toolCalls": msg.tool_calls,
                 "edits": msg.edits,
@@ -195,6 +198,7 @@ async def create_message(
         conversation_id=conversation.id,
         role=message.role,
         content=message.content,
+        contexts=message.contexts,
         thinking=message.thinking,
         tool_calls=message.toolCalls,
         edits=message.edits,
@@ -209,6 +213,7 @@ async def create_message(
         "conversationId": new_message.conversation_id,
         "role": new_message.role,
         "content": new_message.content,
+        "contexts": new_message.contexts,
         "thinking": new_message.thinking,
         "toolCalls": new_message.tool_calls,
         "edits": new_message.edits,

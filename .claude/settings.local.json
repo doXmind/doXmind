@@ -73,7 +73,10 @@
       "Bash(heroku logs:*)",
       "Bash(heroku ps:*)",
       "Bash(git ls-tree:*)",
-      "Bash(heroku config:set:*)"
+      "Bash(heroku config:set:*)",
+      "Bash(python server/migrations/add_contexts_column.py:*)",
+      "Bash(python migrations/add_contexts_column.py:*)",
+      "Bash(node:*)"
     ]
   }
 }

@@ -75,6 +75,7 @@ export const useChatStore = create<ChatState>()(
         id: string;
         role: "user" | "assistant";
         content: string;
+        contexts?: MessageContextItem[] | null;
         thinking?: string | null;
         toolCalls?: ToolCall[] | null;
         edits?: EditOperation[] | null;
@@ -84,6 +85,7 @@ export const useChatStore = create<ChatState>()(
         id: msg.id,
         role: msg.role,
         content: msg.content || "",
+        contexts: msg.contexts || null,
         createdAt: msg.createdAt,
         thinking: msg.thinking,
         toolCalls: msg.toolCalls,
@@ -270,6 +272,7 @@ export const useChatStore = create<ChatState>()(
           conversationId,
           role: message.role,
           content: message.content,
+          contexts: message.contexts,
           thinking: message.thinking,
           toolCalls: message.toolCalls,
           edits: message.edits,

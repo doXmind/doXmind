@@ -26,8 +26,11 @@ export interface DiffHunk {
   /** ProseMirror document position where the change ends (for insert, from === to) */
   to: number;
 
-  /** Original content that will be removed (empty for insert type) */
+  /** Original content that will be removed (empty for insert type) - in markdown format for display */
   oldContent: string;
+
+  /** Plain text version of oldContent for searching in doc.textContent */
+  searchText: string;
 
   /** New content that will be added (empty for delete type) */
   newContent: string;
@@ -40,6 +43,12 @@ export interface DiffHunk {
 
   /** ID of the original edit operation this hunk belongs to */
   editId: string;
+
+  /** Resolved ProseMirror position (computed by decorations, used by accept) */
+  resolvedFrom?: number;
+
+  /** Resolved ProseMirror position end (computed by decorations, used by accept) */
+  resolvedTo?: number;
 }
 
 /**

@@ -6,6 +6,7 @@
  */
 
 import type { DiffHunk } from "@/types/diff";
+import { markdownToPlainText } from "./markdown";
 
 /** Similarity threshold for considering paragraphs as modified (0-1) */
 export const SIMILARITY_THRESHOLD = 0.3;
@@ -215,6 +216,7 @@ export function diffByParagraphs(
         from: 1,
         to: oldContent.length + 1,
         oldContent: oldContent,
+        searchText: markdownToPlainText(oldContent),
         newContent: newContent,
         status: "pending" as const,
         createdAt: new Date().toISOString(),
@@ -243,12 +245,14 @@ export function diffByParagraphs(
     if (change.type === "modified" && change.oldIndex !== undefined) {
       // Replace old paragraph with new
       const position = oldPositions[change.oldIndex];
+      const oldContentStr = change.oldContent || "";
       hunks.push({
         id: generateId(),
         type: "replace",
         from: position.from,
         to: position.to,
-        oldContent: change.oldContent || "",
+        oldContent: oldContentStr,
+        searchText: markdownToPlainText(oldContentStr),
         newContent: change.newContent || "",
         status: "pending",
         createdAt: new Date().toISOString(),
@@ -257,12 +261,14 @@ export function diffByParagraphs(
     } else if (change.type === "removed" && change.oldIndex !== undefined) {
       // Delete old paragraph
       const position = oldPositions[change.oldIndex];
+      const oldContentStr = change.oldContent || "";
       hunks.push({
         id: generateId(),
         type: "delete",
         from: position.from,
         to: position.to,
-        oldContent: change.oldContent || "",
+        oldContent: oldContentStr,
+        searchText: markdownToPlainText(oldContentStr),
         newContent: "",
         status: "pending",
         createdAt: new Date().toISOString(),
@@ -281,6 +287,7 @@ export function diffByParagraphs(
         from: insertPos,
         to: insertPos,
         oldContent: "",
+        searchText: "", // Empty for insert type
         newContent: change.newContent || "",
         status: "pending",
         createdAt: new Date().toISOString(),
@@ -298,6 +305,7 @@ export function diffByParagraphs(
       from: 1,
       to: oldContent.length + 1,
       oldContent: oldContent,
+      searchText: markdownToPlainText(oldContent),
       newContent: newContent,
       status: "pending",
       createdAt: new Date().toISOString(),

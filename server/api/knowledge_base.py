@@ -88,6 +88,41 @@ async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
             pass
 
 
+async def get_or_create_conversation_by_file_id(
+    file_id: str,
+    db: AsyncSession
+) -> Conversation:
+    """Get conversation by file_id, or create if not exists.
+
+    The frontend passes file_id as conversation_id, so we need to look up
+    the actual conversation by file_id (matching chat.py behavior).
+    """
+    import uuid
+
+    # First try to find by conversation ID directly
+    conv = await db.get(Conversation, file_id)
+    if conv:
+        return conv
+
+    # Try to find by file_id
+    result = await db.execute(
+        select(Conversation).where(Conversation.file_id == file_id)
+    )
+    conv = result.scalar_one_or_none()
+    if conv:
+        return conv
+
+    # Create new conversation for this file
+    conv = Conversation(
+        id=str(uuid.uuid4()),
+        file_id=file_id if file_id != "global" else None
+    )
+    db.add(conv)
+    await db.commit()
+    await db.refresh(conv)
+    return conv
+
+
 @router.post("/{conversation_id}/attachments", response_model=AttachmentResponse)
 async def upload_attachment(
     conversation_id: str,
@@ -100,10 +135,8 @@ async def upload_attachment(
     - Max size: 50MB
     - Extracts text and indexes in vector store
     """
-    # Check conversation exists
-    conv = await db.get(Conversation, conversation_id)
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    # Get or create conversation (frontend passes file_id as conversation_id)
+    conv = await get_or_create_conversation_by_file_id(conversation_id, db)
 
     # Validate file extension
     ext = get_file_extension(file.filename or "")
@@ -123,10 +156,10 @@ async def upload_attachment(
             detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
         )
 
-    # Create attachment record
+    # Create attachment record (use actual conversation UUID, not file_id)
     file_type = ext[1:]  # Remove the dot
     attachment = ConversationAttachment(
-        conversation_id=conversation_id,
+        conversation_id=conv.id,
         original_filename=file.filename or "unknown",
         file_type=file_type,
         file_size=len(content),
@@ -142,11 +175,11 @@ async def upload_attachment(
         extracted_text = await extract_text_content(content, file.filename or "", ext)
         attachment.extracted_text = extracted_text
 
-        # Index in vector store
+        # Index in vector store (use actual conversation UUID)
         rag = RAGService()
         chunk_count = await rag.index_kb_attachment(
             attachment_id=attachment.id,
-            conversation_id=conversation_id,
+            conversation_id=conv.id,
             content=extracted_text,
             filename=file.filename or "unknown"
         )
@@ -177,21 +210,42 @@ async def upload_attachment(
     )
 
 
+async def get_conversation_by_file_id(
+    file_id: str,
+    db: AsyncSession
+) -> Conversation | None:
+    """Get conversation by file_id (without creating).
+
+    Returns None if conversation doesn't exist.
+    """
+    # First try to find by conversation ID directly
+    conv = await db.get(Conversation, file_id)
+    if conv:
+        return conv
+
+    # Try to find by file_id
+    result = await db.execute(
+        select(Conversation).where(Conversation.file_id == file_id)
+    )
+    return result.scalar_one_or_none()
+
+
 @router.get("/{conversation_id}/attachments", response_model=AttachmentListResponse)
 async def list_attachments(
     conversation_id: str,
     db: AsyncSession = Depends(get_db)
 ):
     """List all attachments in a conversation's knowledge base."""
-    # Check conversation exists
-    conv = await db.get(Conversation, conversation_id)
+    # Find conversation by file_id (frontend passes file_id as conversation_id)
+    conv = await get_conversation_by_file_id(conversation_id, db)
     if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        # Return empty list if conversation doesn't exist yet
+        return AttachmentListResponse(attachments=[], total_size=0, count=0)
 
-    # Get all attachments
+    # Get all attachments using actual conversation UUID
     result = await db.execute(
         select(ConversationAttachment)
-        .where(ConversationAttachment.conversation_id == conversation_id)
+        .where(ConversationAttachment.conversation_id == conv.id)
         .order_by(ConversationAttachment.created_at.desc())
     )
     attachments = result.scalars().all()
@@ -226,9 +280,14 @@ async def delete_attachment(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete an attachment from the knowledge base."""
-    # Get attachment
+    # Find conversation by file_id
+    conv = await get_conversation_by_file_id(conversation_id, db)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Get attachment and verify it belongs to this conversation
     attachment = await db.get(ConversationAttachment, attachment_id)
-    if not attachment or attachment.conversation_id != conversation_id:
+    if not attachment or attachment.conversation_id != conv.id:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     # Delete from vector store
@@ -252,16 +311,16 @@ async def search_knowledge_base(
     db: AsyncSession = Depends(get_db)
 ):
     """Search within the conversation's knowledge base."""
-    # Check conversation exists
-    conv = await db.get(Conversation, conversation_id)
+    # Find conversation by file_id
+    conv = await get_conversation_by_file_id(conversation_id, db)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Search
+    # Search using actual conversation UUID
     try:
         rag = RAGService()
         results = await rag.search_kb(
-            conversation_id=conversation_id,
+            conversation_id=conv.id,
             query=request.query,
             top_k=request.top_k
         )
@@ -288,8 +347,14 @@ async def get_attachment_content(
     db: AsyncSession = Depends(get_db)
 ):
     """Get the extracted text content of an attachment."""
+    # Find conversation by file_id
+    conv = await get_conversation_by_file_id(conversation_id, db)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Get attachment and verify it belongs to this conversation
     attachment = await db.get(ConversationAttachment, attachment_id)
-    if not attachment or attachment.conversation_id != conversation_id:
+    if not attachment or attachment.conversation_id != conv.id:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     return {

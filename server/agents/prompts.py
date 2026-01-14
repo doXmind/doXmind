@@ -67,6 +67,16 @@ replace_document(
 )
 ```
 
+## Content Format
+
+All content uses **Markdown format**. Use standard Markdown syntax:
+- Headings: `#`, `##`, `###`
+- Bold/Italic: `**bold**`, `*italic*`
+- Lists: `- item` or `1. item`
+- Tables: `| Header | Header |\n|--------|--------|\n| Cell | Cell |`
+- Links: `[text](url)`
+- Code: triple backticks for code blocks
+
 ## Workflow
 
 1. **First, view the document** to understand the current content
