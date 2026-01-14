@@ -11,7 +11,7 @@ import logging
 from config import get_settings, ensure_directories
 from db.database import init_db
 from services.rag_service import init_vector_store
-from api import chat, edit, autocomplete, files, versions, review, export
+from api import chat, edit, autocomplete, files, versions, review, export, import_file
 
 # Configure logging
 logging.basicConfig(
@@ -66,6 +66,7 @@ app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
+app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 
 
 @app.get("/")

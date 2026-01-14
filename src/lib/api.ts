@@ -199,6 +199,35 @@ export class ApiClient {
 
     return response.blob();
   }
+
+  /**
+   * Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
+   * @param file - The file to import
+   * @returns The created file object
+   */
+  async importFile(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const url = `${this.baseUrl}/api/import`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Import failed" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<{
+      id: string;
+      name: string;
+      content: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+  }
 }
 
 // Default client instance

@@ -15,6 +15,7 @@ interface FileState {
   // Actions
   loadFiles: () => Promise<void>;
   createFile: (name: string, content?: string) => Promise<string>;
+  importFile: (file: File) => Promise<string>;
   updateFile: (id: string, updates: Partial<Pick<FileItem, "name" | "content">>) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   setCurrentFile: (id: string | null) => void;
@@ -70,6 +71,30 @@ export const useFileStore = create<FileState>()(
           return newFile.id;
         } catch (error) {
           console.error("Failed to create file on server:", error);
+          throw error;
+        }
+      },
+
+      importFile: async (file: File) => {
+        try {
+          // Import file via API (converts PDF/DOCX/MD to markdown)
+          const serverFile = await api.importFile(file);
+          const newFile: FileItem = {
+            id: serverFile.id,
+            name: serverFile.name,
+            content: serverFile.content,
+            createdAt: serverFile.created_at,
+            updatedAt: serverFile.updated_at,
+          };
+
+          set((state) => ({
+            files: [newFile, ...state.files],
+            currentFileId: newFile.id,
+          }));
+
+          return newFile.id;
+        } catch (error) {
+          console.error("Failed to import file:", error);
           throw error;
         }
       },

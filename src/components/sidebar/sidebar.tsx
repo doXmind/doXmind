@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Search, Sparkles, Loader2, X } from "lucide-react";
+import { Plus, Search, Sparkles, Loader2, X, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,12 +22,14 @@ interface LocalSearchMatch {
 }
 
 export function Sidebar() {
-  const { files, createFile } = useFileStore();
+  const { files, createFile, importFile } = useFileStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [smartResults, setSmartResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Local search - search both name and content
   const localMatches = useMemo((): LocalSearchMatch[] => {
@@ -110,6 +113,29 @@ export function Sidebar() {
       await createFile(name);
     } catch (error) {
       console.error("Failed to create file:", error);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input so same file can be selected again
+    e.target.value = "";
+
+    setIsImporting(true);
+    try {
+      await importFile(file);
+      toast.success(`Imported "${file.name}" successfully`);
+    } catch (error) {
+      console.error("Failed to import file:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to import file");
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -209,16 +235,41 @@ export function Sidebar() {
       <div className="p-3 border-b border-border">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold">Files</h2>
-          <Tooltip content="Create New File" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleCreateFile}
-              aria-label="Create New File"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </Tooltip>
+          <div className="flex items-center gap-1">
+            <Tooltip content="Import File (PDF, DOCX, MD)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleImportClick}
+                disabled={isImporting}
+                aria-label="Import File"
+              >
+                {isImporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+              </Button>
+            </Tooltip>
+            <Tooltip content="Create New File" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleCreateFile}
+                aria-label="Create New File"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+          </div>
+          {/* Hidden file input for import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.md,.markdown"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
         </div>
 
         {/* Search */}

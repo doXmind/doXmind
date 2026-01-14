@@ -27,3 +27,6 @@ markdown==3.7
 fpdf2==2.8.5
 python-docx==1.1.2
 beautifulsoup4==4.12.3
+
+# Import (file conversion)
+markitdown[pdf,docx]
