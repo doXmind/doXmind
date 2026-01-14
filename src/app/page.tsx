@@ -12,14 +12,19 @@ export default function BrandPage() {
       <AnimatedLogo size="xl" />
 
       {/* Tagline */}
-      <motion.p
-        className="text-xl text-muted-foreground mt-8 tracking-widest uppercase"
+      <motion.div
+        className="text-center mt-8"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 1.2 }}
       >
-        AI Writing Studio
-      </motion.p>
+        <p className="text-2xl font-bold tracking-widest uppercase">
+          Think. Write. Publish.
+        </p>
+        <p className="text-sm text-muted-foreground mt-3 tracking-wide">
+          The AI editor that reasons with you
+        </p>
+      </motion.div>
 
       {/* CTA Button */}
       <motion.div

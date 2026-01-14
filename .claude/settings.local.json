@@ -69,7 +69,11 @@
       "Bash(heroku apps:destroy:*)",
       "Bash(git subtree:*)",
       "Bash(xargs basename:*)",
-      "Bash(python -m py_compile:*)"
+      "Bash(python -m py_compile:*)",
+      "Bash(heroku logs:*)",
+      "Bash(heroku ps:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(heroku config:set:*)"
     ]
   }
 }

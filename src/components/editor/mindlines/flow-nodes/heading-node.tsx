@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,13 @@ export const HeadingNode = memo(function HeadingNode({
   selected,
 }: NodeProps) {
   const nodeData = data as FlowNodeData;
+  const [hasAnimated, setHasAnimated] = useState(false);
+
+  // Track if this node has already animated (to prevent re-animation on re-renders)
+  useEffect(() => {
+    const timer = setTimeout(() => setHasAnimated(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Handle collapse toggle
   const handleCollapseClick = useCallback(
@@ -36,17 +44,29 @@ export const HeadingNode = memo(function HeadingNode({
     3: "bg-muted text-muted-foreground text-sm min-w-[130px] border-muted-foreground/20",
   };
 
+  // Calculate stagger delay based on node index (extracted from id)
+  const nodeIndex = parseInt(id.replace(/\D/g, '')) || 0;
+  const staggerDelay = Math.min(nodeIndex * 0.05, 0.5); // Cap at 0.5s
+
   return (
-    <div
+    <motion.div
+      initial={hasAnimated ? false : { scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{
+        type: 'spring',
+        stiffness: 300,
+        damping: 20,
+        delay: hasAnimated ? 0 : staggerDelay,
+      }}
+      whileHover={{ scale: 1.03, y: -2 }}
       className={cn(
         "group relative px-4 py-2.5 rounded-lg border shadow-sm",
-        "transition-all duration-200 ease-out",
-        "hover:shadow-lg hover:scale-[1.02] cursor-pointer select-none",
+        "cursor-pointer select-none",
         // Level-based styling
         levelStyles[nodeData.level] || levelStyles[3],
         // Active state
         nodeData.isActive &&
-          "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg scale-[1.02]",
+          "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg",
         // Selected state (keyboard navigation)
         selected && "ring-2 ring-blue-500 ring-offset-2"
       )}
@@ -62,8 +82,10 @@ export const HeadingNode = memo(function HeadingNode({
       <div className="flex items-center gap-2">
         {/* Collapse/Expand button */}
         {nodeData.hasChildren && (
-          <button
+          <motion.button
             onClick={handleCollapseClick}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             className={cn(
               "flex-shrink-0 p-0.5 rounded transition-colors",
               "hover:bg-black/10 dark:hover:bg-white/10",
@@ -71,28 +93,35 @@ export const HeadingNode = memo(function HeadingNode({
             )}
             aria-label={nodeData.isCollapsed ? "Expand children" : "Collapse children"}
           >
-            {nodeData.isCollapsed ? (
+            <motion.span
+              animate={{ rotate: nodeData.isCollapsed ? 0 : 90 }}
+              transition={{ duration: 0.2 }}
+            >
               <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
-          </button>
+            </motion.span>
+          </motion.button>
         )}
 
         {/* Label */}
         <span className="block max-w-[180px] truncate">{nodeData.label}</span>
 
         {/* Child count badge when collapsed */}
-        {nodeData.isCollapsed && nodeData.childCount && nodeData.childCount > 0 && (
-          <span
-            className={cn(
-              "flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full",
-              "bg-black/10 dark:bg-white/10"
-            )}
-          >
-            +{nodeData.childCount}
-          </span>
-        )}
+        <AnimatePresence>
+          {nodeData.isCollapsed && nodeData.childCount && nodeData.childCount > 0 && (
+            <motion.span
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              className={cn(
+                "flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full",
+                "bg-black/10 dark:bg-white/10"
+              )}
+            >
+              +{nodeData.childCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Source handle */}
@@ -115,6 +144,6 @@ export const HeadingNode = memo(function HeadingNode({
           {nodeData.label}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 });

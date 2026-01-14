@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Wand2,
   Languages,
@@ -12,6 +13,7 @@ import {
   MessageSquare,
   MessageCircle,
   ChevronRight,
+  Check,
 } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useQuickEdit } from "@/hooks/use-quick-edit";
@@ -366,11 +368,19 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
 
   return (
     <>
-      <div
+      <motion.div
         ref={menuRef}
         role="menu"
         aria-label="AI Quick Edit options"
-        className="fixed z-50 min-w-[200px] rounded-lg border border-border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
+        initial={{ opacity: 0, y: 8, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{
+          type: 'spring',
+          stiffness: 500,
+          damping: 30,
+          mass: 0.8
+        }}
+        className="fixed z-50 min-w-[200px] rounded-lg border border-border bg-popover p-1 shadow-lg"
         style={{
           left: displayPosition.x,
           top: displayPosition.y,
@@ -396,8 +406,11 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
           >
             {option.submenu ? (
               // Item with submenu
-              <button
+              <motion.button
                 disabled={isEditing}
+                whileHover={{ scale: 1.02, x: 2 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
                   "hover:bg-accent hover:text-accent-foreground",
@@ -407,13 +420,21 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
               >
                 {option.icon}
                 <span className="flex-1 text-left">{option.label}</span>
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-              </button>
+                <motion.span
+                  animate={{ x: activeSubmenu === option.id ? 2 : 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                </motion.span>
+              </motion.button>
             ) : (
               // Regular item
-              <button
+              <motion.button
                 onClick={() => handleSelect(option.id)}
                 disabled={isEditing}
+                whileHover={{ scale: 1.02, x: 2 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
                   "hover:bg-accent hover:text-accent-foreground",
@@ -423,7 +444,7 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
               >
                 {option.icon}
                 {option.label}
-              </button>
+              </motion.button>
             )}
           </div>
         ))}
@@ -431,13 +452,16 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
         <div className="h-px bg-border my-1" />
 
         {/* Ask in Chat option */}
-        <button
+        <motion.button
           onClick={handleAskInChat}
           onMouseEnter={() => {
             setActiveSubmenu(null);
             setFocusedIndex(QUICK_EDIT_OPTIONS.length);
           }}
           disabled={isEditing}
+          whileHover={{ scale: 1.02, x: 2 }}
+          whileTap={{ scale: 0.98 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
           className={cn(
             "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
             "hover:bg-accent hover:text-accent-foreground",
@@ -448,55 +472,80 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
         >
           <MessageCircle className="h-4 w-4" />
           Ask in Chat
-        </button>
+        </motion.button>
 
-        {isEditing && (
-          <>
-            <div className="h-px bg-border my-1" />
-            <div className="px-2 py-1.5 text-xs text-muted-foreground flex items-center gap-1">
-              <div className="h-3 w-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-              Processing...
-            </div>
-          </>
-        )}
-      </div>
+        <AnimatePresence>
+          {isEditing && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div className="h-px bg-border my-1" />
+              <div className="px-2 py-1.5 text-xs text-muted-foreground flex items-center gap-1">
+                <motion.div
+                  className="h-3 w-3 rounded-full border-2 border-primary border-t-transparent"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                />
+                Processing...
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       {/* Submenu rendered as a separate fixed element */}
-      {activeSubmenu && activeOption?.submenu && submenuPos && (
-        <div
-          ref={submenuRef}
-          role="menu"
-          aria-label={`${activeOption.label} options`}
-          className="fixed z-[60] min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
-          style={{
-            top: submenuPos.top,
-            left: submenuPos.left,
-          }}
-          onMouseEnter={() => setActiveSubmenu(activeSubmenu)}
-          onMouseLeave={() => !isEditing && setActiveSubmenu(null)}
-        >
-          {activeOption.submenu.map((subItem, subIndex) => (
-            <button
-              key={subItem.id}
-              role="menuitem"
-              onMouseDown={(e) => {
-                e.preventDefault(); // Prevent focus loss
-                handleSelect(subItem.id);
-              }}
-              onMouseEnter={() => setSubmenuFocusedIndex(subIndex)}
-              disabled={isEditing}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
-                "hover:bg-accent hover:text-accent-foreground",
-                "disabled:opacity-50 disabled:pointer-events-none",
-                submenuFocusedIndex === subIndex && "bg-accent text-accent-foreground"
-              )}
-            >
-              {subItem.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {activeSubmenu && activeOption?.submenu && submenuPos && (
+          <motion.div
+            ref={submenuRef}
+            role="menu"
+            aria-label={`${activeOption.label} options`}
+            initial={{ opacity: 0, x: -8, scale: 0.96 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -8, scale: 0.96 }}
+            transition={{
+              type: 'spring',
+              stiffness: 500,
+              damping: 30,
+              mass: 0.8
+            }}
+            className="fixed z-[60] min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg"
+            style={{
+              top: submenuPos.top,
+              left: submenuPos.left,
+            }}
+            onMouseEnter={() => setActiveSubmenu(activeSubmenu)}
+            onMouseLeave={() => !isEditing && setActiveSubmenu(null)}
+          >
+            {activeOption.submenu.map((subItem, subIndex) => (
+              <motion.button
+                key={subItem.id}
+                role="menuitem"
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Prevent focus loss
+                  handleSelect(subItem.id);
+                }}
+                onMouseEnter={() => setSubmenuFocusedIndex(subIndex)}
+                disabled={isEditing}
+                whileHover={{ scale: 1.02, x: 2 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  "disabled:opacity-50 disabled:pointer-events-none",
+                  submenuFocusedIndex === subIndex && "bg-accent text-accent-foreground"
+                )}
+              >
+                {subItem.label}
+              </motion.button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

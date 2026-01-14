@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon, Paperclip, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -75,39 +76,66 @@ function ThinkingIndicator({ thinking }: { thinking: ThinkingStatus }) {
   if (!thinking.content && !thinking.isThinking) return null;
 
   return (
-    <div className="ml-11 mb-2">
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+      className="ml-11 mb-2"
+    >
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all duration-200 w-full text-left",
+          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors duration-200 w-full text-left",
           thinking.isThinking
-            ? "bg-purple-500/5 border-purple-500/20 text-purple-600 dark:text-purple-400"
-            : "bg-purple-500/5 border-purple-500/10 text-purple-600/70 dark:text-purple-400/70"
+            ? "bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400"
+            : "bg-purple-500/5 border-purple-500/15 text-purple-600/70 dark:text-purple-400/70"
         )}
       >
         <div className="relative flex-shrink-0">
           <Brain className="h-4 w-4" />
           {thinking.isThinking && (
-            <span className="absolute -top-1 -right-1 h-2 w-2 bg-purple-500 rounded-full animate-pulse" />
+            <motion.span
+              className="absolute -top-1 -right-1 h-2 w-2 bg-purple-500 rounded-full"
+              animate={{
+                scale: [1, 1.3, 1],
+                boxShadow: [
+                  '0 0 0 0 rgba(168, 85, 247, 0.4)',
+                  '0 0 0 6px rgba(168, 85, 247, 0)',
+                  '0 0 0 0 rgba(168, 85, 247, 0.4)'
+                ]
+              }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            />
           )}
         </div>
         <span className="font-medium truncate flex-1">
           {thinking.isThinking ? "Thinking..." : "Thought process"}
         </span>
         {thinking.isThinking && <Loader2 className="h-3 w-3 animate-spin" />}
-        {isExpanded ? (
-          <ChevronDown className="h-4 w-4 flex-shrink-0" />
-        ) : (
+        <motion.span
+          animate={{ rotate: isExpanded ? 90 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
           <ChevronRight className="h-4 w-4 flex-shrink-0" />
-        )}
+        </motion.span>
       </button>
-      {isExpanded && thinking.content && (
-        <div className="mt-1 px-3 py-2 text-xs text-muted-foreground bg-muted/50 rounded-lg border border-border/50 max-h-[200px] overflow-y-auto whitespace-pre-wrap">
-          {thinking.content}
-        </div>
-      )}
-    </div>
+      <AnimatePresence>
+        {isExpanded && thinking.content && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="mt-1 px-3 py-2 text-xs text-muted-foreground bg-muted/50 rounded-lg border border-border/50 max-h-[200px] overflow-y-auto whitespace-pre-wrap">
+              {thinking.content}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -116,20 +144,55 @@ function ToolIndicator({ tool }: { tool: ToolStatus }) {
   const Icon = getToolIcon(tool.name);
   const displayName = getToolDisplayName(tool.name);
 
+  // Determine colors based on status
+  const statusStyles = {
+    running: {
+      bg: 'rgba(59, 130, 246, 0.1)',
+      border: 'rgba(59, 130, 246, 0.3)',
+      text: 'text-blue-600 dark:text-blue-400'
+    },
+    completed: {
+      bg: 'rgba(34, 197, 94, 0.1)',
+      border: 'rgba(34, 197, 94, 0.3)',
+      text: 'text-green-600 dark:text-green-400'
+    },
+    error: {
+      bg: 'rgba(239, 68, 68, 0.1)',
+      border: 'rgba(239, 68, 68, 0.3)',
+      text: 'text-red-600 dark:text-red-400'
+    }
+  };
+
+  const currentStyle = statusStyles[tool.status] || statusStyles.running;
+
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 5, scale: 0.98 }}
+      animate={{
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        backgroundColor: currentStyle.bg,
+        borderColor: currentStyle.border
+      }}
+      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
       className={cn(
-        "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all duration-200",
-        tool.status === "running" && "bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400",
-        tool.status === "completed" && "bg-green-500/5 border-green-500/20 text-green-600 dark:text-green-400",
-        tool.status === "error" && "bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-400"
+        "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border",
+        currentStyle.text
       )}
     >
       {tool.status === "running" && (
         <>
           <div className="relative">
             <Icon className="h-4 w-4 flex-shrink-0" />
-            <span className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+            <motion.span
+              className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full"
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [1, 0.7, 1]
+              }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+            />
           </div>
           <span className="truncate font-medium">{displayName}...</span>
           <Loader2 className="h-3 w-3 animate-spin ml-auto" />
@@ -137,18 +200,35 @@ function ToolIndicator({ tool }: { tool: ToolStatus }) {
       )}
       {tool.status === "completed" && (
         <>
-          <Icon className="h-4 w-4 flex-shrink-0" />
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+          >
+            <Icon className="h-4 w-4 flex-shrink-0" />
+          </motion.div>
           <span className="truncate">{tool.message || `${displayName}`}</span>
-          <Check className="h-3 w-3 ml-auto" />
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 15, delay: 0.1 }}
+          >
+            <Check className="h-3 w-3 ml-auto" />
+          </motion.div>
         </>
       )}
       {tool.status === "error" && (
         <>
-          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          <motion.div
+            animate={{ x: [0, -2, 2, -2, 0] }}
+            transition={{ duration: 0.4 }}
+          >
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          </motion.div>
           <span className="truncate">{tool.message || "Error"}</span>
         </>
       )}
-    </div>
+    </motion.div>
   );
 }
 
