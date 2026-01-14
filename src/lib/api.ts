@@ -228,6 +228,98 @@ export class ApiClient {
       updated_at: string;
     }>;
   }
+
+  // =========================================================================
+  // Knowledge Base API
+  // =========================================================================
+
+  /**
+   * Upload a file to a conversation's knowledge base.
+   */
+  async uploadKBAttachment(conversationId: string, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const url = `${this.baseUrl}/api/kb/${conversationId}/attachments`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<{
+      id: string;
+      original_filename: string;
+      file_type: string;
+      file_size: number;
+      status: string;
+      chunk_count: number;
+      error_message?: string;
+      created_at: string;
+    }>;
+  }
+
+  /**
+   * List all attachments in a conversation's knowledge base.
+   */
+  async listKBAttachments(conversationId: string) {
+    return this.request<{
+      attachments: Array<{
+        id: string;
+        original_filename: string;
+        file_type: string;
+        file_size: number;
+        status: string;
+        chunk_count: number;
+        error_message?: string;
+        created_at: string;
+      }>;
+      total_size: number;
+      count: number;
+    }>(`/api/kb/${conversationId}/attachments`);
+  }
+
+  /**
+   * Delete an attachment from a conversation's knowledge base.
+   */
+  async deleteKBAttachment(conversationId: string, attachmentId: string) {
+    return this.request<{ status: string; id: string }>(
+      `/api/kb/${conversationId}/attachments/${attachmentId}`,
+      { method: 'DELETE' }
+    );
+  }
+
+  /**
+   * Search within a conversation's knowledge base.
+   */
+  async searchKB(conversationId: string, query: string, topK: number = 5) {
+    return this.request<{
+      results: Array<{
+        content: string;
+        source_file: string;
+        score: number;
+      }>;
+    }>(`/api/kb/${conversationId}/search`, {
+      method: 'POST',
+      body: JSON.stringify({ query, top_k: topK }),
+    });
+  }
+
+  /**
+   * Get the extracted content of an attachment.
+   */
+  async getKBAttachmentContent(conversationId: string, attachmentId: string) {
+    return this.request<{
+      id: string;
+      filename: string;
+      content: string;
+      chunk_count: number;
+    }>(`/api/kb/${conversationId}/attachments/${attachmentId}/content`);
+  }
 }
 
 // Default client instance

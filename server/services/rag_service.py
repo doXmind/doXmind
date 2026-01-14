@@ -408,3 +408,185 @@ class RAGService:
     def _generate_id(self, text: str) -> str:
         """Generate a unique ID for a text chunk."""
         return hashlib.md5(text.encode()).hexdigest()[:16]
+
+    # =========================================================================
+    # Knowledge Base Methods (Conversation-level attachments)
+    # =========================================================================
+
+    async def index_kb_attachment(
+        self,
+        attachment_id: str,
+        conversation_id: str,
+        content: str,
+        filename: str
+    ) -> int:
+        """Index a knowledge base attachment with conversation scoping.
+
+        Args:
+            attachment_id: Unique ID of the attachment
+            conversation_id: ID of the conversation this attachment belongs to
+            content: Text content to index (usually markdown)
+            filename: Original filename for metadata
+
+        Returns:
+            Number of chunks indexed
+        """
+        try:
+            # First delete any existing chunks for this attachment
+            await self.delete_kb_attachment(attachment_id)
+
+            # Split content into chunks
+            chunks = self._chunk_text(content)
+
+            if not chunks:
+                return 0
+
+            # Generate IDs with KB prefix
+            ids = [f"kb_{attachment_id}_{i}" for i in range(len(chunks))]
+
+            # Prepare metadata with KB-specific fields
+            metadatas = [
+                {
+                    "chunk_type": "kb",
+                    "conversation_id": conversation_id,
+                    "attachment_id": attachment_id,
+                    "filename": filename,
+                    "chunk_index": i,
+                    "total_chunks": len(chunks)
+                }
+                for i in range(len(chunks))
+            ]
+
+            # Add to collection
+            self.collection.upsert(
+                ids=ids,
+                documents=chunks,
+                metadatas=metadatas
+            )
+
+            logger.info(f"Indexed {len(chunks)} KB chunks for attachment {attachment_id}")
+            return len(chunks)
+        except Exception as e:
+            logger.error(f"Failed to index KB attachment {attachment_id}: {e}")
+            raise
+
+    async def search_kb(
+        self,
+        conversation_id: str,
+        query: str,
+        top_k: int = 5
+    ) -> List[dict]:
+        """Search within a conversation's knowledge base attachments.
+
+        Args:
+            conversation_id: ID of the conversation to search within
+            query: Search query
+            top_k: Maximum number of results
+
+        Returns:
+            List of search results with content, source info, and scores
+        """
+        try:
+            # Filter to only KB chunks for this conversation
+            where_filter = {
+                "$and": [
+                    {"chunk_type": "kb"},
+                    {"conversation_id": conversation_id}
+                ]
+            }
+
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=top_k,
+                where=where_filter
+            )
+
+            # Format results
+            formatted = []
+            for i in range(len(results["ids"][0])):
+                distance = results["distances"][0][i] if results.get("distances") else 0
+                score = 1 - distance  # Convert distance to similarity
+
+                formatted.append({
+                    "id": results["ids"][0][i],
+                    "content": results["documents"][0][i],
+                    "metadata": results["metadatas"][0][i],
+                    "score": score,
+                    "source_file": results["metadatas"][0][i].get("filename", "Unknown")
+                })
+
+            return formatted
+        except Exception as e:
+            logger.error(f"KB search error: {e}")
+            return []
+
+    async def delete_kb_attachment(self, attachment_id: str):
+        """Delete all vector chunks for a KB attachment.
+
+        Args:
+            attachment_id: ID of the attachment to delete
+        """
+        try:
+            # Get all IDs for this attachment
+            results = self.collection.get(
+                where={"attachment_id": attachment_id}
+            )
+
+            if results["ids"]:
+                self.collection.delete(ids=results["ids"])
+                logger.info(f"Deleted {len(results['ids'])} KB chunks for attachment {attachment_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete KB attachment {attachment_id}: {e}")
+
+    async def get_kb_document_content(
+        self,
+        attachment_id: str,
+        start_chunk: int = 0,
+        end_chunk: Optional[int] = None
+    ) -> dict:
+        """Get ordered content chunks from a KB attachment.
+
+        Args:
+            attachment_id: ID of the attachment
+            start_chunk: Starting chunk index
+            end_chunk: Ending chunk index (exclusive), None for all
+
+        Returns:
+            Dict with content, total_chunks, and metadata
+        """
+        try:
+            results = self.collection.get(
+                where={"attachment_id": attachment_id}
+            )
+
+            if not results["ids"]:
+                return {"content": "", "total_chunks": 0, "filename": "Unknown"}
+
+            # Sort by chunk_index
+            chunks_with_meta = list(zip(
+                results["documents"],
+                results["metadatas"]
+            ))
+            chunks_with_meta.sort(key=lambda x: x[1].get("chunk_index", 0))
+
+            total_chunks = len(chunks_with_meta)
+            filename = chunks_with_meta[0][1].get("filename", "Unknown") if chunks_with_meta else "Unknown"
+
+            # Slice if needed
+            if end_chunk is not None:
+                chunks_with_meta = chunks_with_meta[start_chunk:end_chunk]
+            else:
+                chunks_with_meta = chunks_with_meta[start_chunk:]
+
+            # Join content
+            content = "\n\n".join([c[0] for c in chunks_with_meta])
+
+            return {
+                "content": content,
+                "total_chunks": total_chunks,
+                "filename": filename,
+                "chunks_returned": len(chunks_with_meta)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get KB document content: {e}")
+            return {"content": "", "total_chunks": 0, "filename": "Unknown"}

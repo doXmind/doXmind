@@ -11,7 +11,7 @@ import logging
 import uuid
 
 from agents.writing_agent import WritingAgent
-from db.database import get_db, Conversation, Message
+from db.database import get_db, Conversation, Message, ConversationAttachment
 from config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -261,6 +261,9 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 
     # Load conversation history (last 10 messages) for context
     history = []
+    conversation = None
+    kb_attachments = []
+
     if request.conversationId:
         # Find conversation by file_id (conversationId from frontend is actually file_id)
         conv_result = await db.execute(
@@ -286,6 +289,27 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
                     "content": msg.content or ""
                 })
 
+            # Load KB attachments for this conversation
+            kb_result = await db.execute(
+                select(ConversationAttachment)
+                .where(ConversationAttachment.conversation_id == conversation.id)
+                .where(ConversationAttachment.status == "indexed")
+            )
+            attachments = kb_result.scalars().all()
+
+            kb_attachments = [
+                {
+                    "id": att.id,
+                    "filename": att.original_filename,
+                    "file_type": att.file_type,
+                    "chunk_count": att.chunk_count
+                }
+                for att in attachments
+            ]
+
+            if kb_attachments:
+                logger.info(f"Loaded {len(kb_attachments)} KB attachment(s) for conversation")
+
     # Collector for building the complete response
     collected_text = []
     collected_thinking = []
@@ -298,8 +322,11 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
         current_tool = None
 
         try:
-            # Create agent
-            agent = WritingAgent(mode=request.mode)
+            # Create agent with KB attachments if available
+            agent = WritingAgent(
+                mode=request.mode,
+                kb_attachments=kb_attachments if kb_attachments else None
+            )
 
             # Prepare file context
             files = [
@@ -330,7 +357,8 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
                 message=request.message,
                 files=files,
                 images=images,  # Pass images for multimodal support
-                history=history
+                history=history,
+                conversation_id=conversation.id if conversation else None
             ):
                 event_type = event.get("type")
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon, Paperclip } from "lucide-react";
+import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon, Paperclip, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +12,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useEditorStore, type ChatContextItem } from "@/stores/editor-store";
 import { useChat, type ToolStatus, type ThinkingStatus } from "@/hooks/use-chat";
 import { cn } from "@/lib/utils";
+import { KnowledgeBasePanel } from "@/components/kb";
 
 // Get icon for tool type
 function getToolIcon(toolName: string) {
@@ -28,6 +29,13 @@ function getToolIcon(toolName: string) {
       return Search;
     case "apply_edits":
       return Check;
+    // Knowledge Base tools
+    case "search_knowledge_base":
+      return BookOpen;
+    case "read_kb_document":
+      return BookOpen;
+    case "list_kb_documents":
+      return BookOpen;
     default:
       return Sparkles;
   }
@@ -48,6 +56,13 @@ function getToolDisplayName(toolName: string) {
       return "Searching document";
     case "apply_edits":
       return "Applying changes";
+    // Knowledge Base tools
+    case "search_knowledge_base":
+      return "Searching knowledge base";
+    case "read_kb_document":
+      return "Reading KB document";
+    case "list_kb_documents":
+      return "Listing KB documents";
     default:
       return toolName;
   }
@@ -376,23 +391,33 @@ export function ChatPanel() {
           <Sparkles className="h-4 w-4 text-primary" />
           <h2 className="text-sm font-semibold">AI Assistant</h2>
         </div>
-        {conversation.messages.length > 0 && (
-          <Tooltip content="Clear conversation" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClear}
-              aria-label="Clear conversation"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </Tooltip>
-        )}
+        <div className="flex items-center gap-1">
+          {/* Knowledge Base Panel */}
+          <KnowledgeBasePanel conversationId={conversation.id} />
+
+          {/* Clear conversation button */}
+          {conversation.messages.length > 0 && (
+            <Tooltip content="Clear conversation" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClear}
+                aria-label="Clear conversation"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+          )}
+        </div>
       </div>
 
-      {/* Mobile Header Actions (clear button only) */}
-      {conversation.messages.length > 0 && (
-        <div className="md:hidden flex justify-end p-2 border-b border-border">
+      {/* Mobile Header Actions */}
+      <div className="md:hidden flex justify-between items-center p-2 border-b border-border">
+        {/* KB Panel on mobile */}
+        <KnowledgeBasePanel conversationId={conversation.id} />
+
+        {/* Clear button */}
+        {conversation.messages.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
@@ -403,8 +428,8 @@ export function ChatPanel() {
             <Trash2 className="h-4 w-4" />
             <span className="text-sm">Clear</span>
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4">

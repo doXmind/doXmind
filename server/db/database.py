@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, JSON, Boolean, Integer
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -52,6 +52,7 @@ class Conversation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
+    attachments = relationship("ConversationAttachment", back_populates="conversation", cascade="all, delete-orphan")
 
 
 class Message(Base):
@@ -83,6 +84,39 @@ class Message(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     conversation = relationship("Conversation", back_populates="messages")
+
+
+class ConversationAttachment(Base):
+    """Knowledge base attachment for a conversation.
+
+    Stores uploaded documents (PDF, DOCX, PPTX) that are attached to a conversation
+    and available to the AI through search/read tools.
+    """
+    __tablename__ = "conversation_attachments"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id = Column(String(36), ForeignKey("conversations.id"), nullable=False)
+
+    # File metadata
+    original_filename = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=False)  # pdf, docx, pptx
+    file_size = Column(Integer, nullable=False)  # bytes
+
+    # Extracted content
+    extracted_text = Column(Text, nullable=True)  # Markdown-converted text
+
+    # Vector store info
+    chunk_count = Column(Integer, default=0)
+
+    # Processing status
+    status = Column(String(20), default="processing")  # processing, indexed, error
+    error_message = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    conversation = relationship("Conversation", back_populates="attachments")
 
 
 # Engine and session setup

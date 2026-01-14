@@ -4,10 +4,37 @@
  * Functions for creating DOM elements for diff visualization.
  */
 
+import { marked } from "marked";
 import type { DiffHunk } from "@/types/diff";
 
 /**
+ * Convert markdown to HTML for diff display
+ */
+function renderMarkdownToHtml(markdown: string): string {
+  if (!markdown || markdown.trim() === "") return "";
+
+  try {
+    // Configure marked for inline rendering when content is simple
+    const html = marked.parse(markdown, {
+      async: false,
+      gfm: true,
+      breaks: true, // Convert \n to <br>
+    }) as string;
+    return html;
+  } catch (e) {
+    console.error("Diff markdown rendering error:", e);
+    // Fallback: escape HTML and convert newlines to <br>
+    return markdown
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+  }
+}
+
+/**
  * Create a widget for displaying inserted content (green ghost text)
+ * Renders markdown content as HTML for proper display
  */
 export function createInsertWidget(hunk: DiffHunk): HTMLElement {
   const wrapper = document.createElement("div");
@@ -16,36 +43,14 @@ export function createInsertWidget(hunk: DiffHunk): HTMLElement {
   wrapper.setAttribute("contenteditable", "false");
 
   const content = document.createElement("div");
-  content.className = "diff-inserted";
+  content.className = "diff-inserted diff-markdown-content";
 
-  // Handle newlines by converting them to <br> for display
-  // Split by \n\n (paragraph breaks) and \n (line breaks)
   // Trim trailing newlines to avoid extra empty lines
   const newContent = (hunk.newContent || "").replace(/\n+$/, "");
 
-  if (newContent.includes("\n")) {
-    // Create elements for each line/paragraph
-    const parts = newContent.split(/\n\n+/);
-    parts.forEach((part, index) => {
-      if (index > 0) {
-        // Add paragraph separator (visual break)
-        const br1 = document.createElement("br");
-        const br2 = document.createElement("br");
-        content.appendChild(br1);
-        content.appendChild(br2);
-      }
-      // Handle single newlines within the part
-      const lines = part.split("\n");
-      lines.forEach((line, lineIndex) => {
-        if (lineIndex > 0) {
-          content.appendChild(document.createElement("br"));
-        }
-        content.appendChild(document.createTextNode(line));
-      });
-    });
-  } else {
-    content.textContent = newContent;
-  }
+  // Render markdown to HTML
+  const renderedHtml = renderMarkdownToHtml(newContent);
+  content.innerHTML = renderedHtml;
 
   wrapper.appendChild(content);
   return wrapper;

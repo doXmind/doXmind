@@ -1,6 +1,6 @@
 """System prompts for the writing agent."""
 
-from typing import List
+from typing import List, Optional
 
 
 def get_writing_system_prompt(mode: str, files: List[dict]) -> str:
@@ -151,6 +151,45 @@ Focus on:
 def get_system_prompt(mode: str, files: List[dict]) -> str:
     """Legacy system prompt function - redirects to new one."""
     return get_writing_system_prompt(mode, files)
+
+
+def get_kb_context_prompt(attachments: List[dict]) -> str:
+    """Generate KB context section for system prompt.
+
+    Args:
+        attachments: List of attachment dicts with 'filename', 'file_type', 'chunk_count'
+
+    Returns:
+        KB context prompt section
+    """
+    if not attachments:
+        return ""
+
+    prompt = """
+
+## Knowledge Base
+
+You have access to a knowledge base with the following reference documents:
+
+"""
+    for att in attachments:
+        filename = att.get('filename', 'Unknown')
+        file_type = att.get('file_type', '').upper()
+        chunk_count = att.get('chunk_count', 0)
+        prompt += f"- **{filename}** ({file_type}, {chunk_count} sections)\n"
+
+    prompt += """
+Use the following tools to access this knowledge:
+- **search_knowledge_base**: Find specific information across all documents
+- **read_kb_document**: Read content from a specific document
+- **list_kb_documents**: See available documents
+
+**IMPORTANT**: When answering questions that might be addressed by these documents,
+ALWAYS search the knowledge base FIRST before providing general knowledge.
+Cite your sources when using information from the knowledge base.
+
+"""
+    return prompt
 
 
 def get_quick_edit_prompt(action: str) -> str:
