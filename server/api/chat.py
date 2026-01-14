@@ -29,10 +29,19 @@ class FileContext(BaseModel):
     content: str
 
 
+class ImageContext(BaseModel):
+    """Image context for chat (multimodal support)."""
+    src: str
+    alt: Optional[str] = None
+    base64: Optional[str] = None
+    mediaType: Optional[str] = None
+
+
 class ChatRequest(BaseModel):
     """Chat request model."""
     message: str
     files: List[FileContext] = []
+    images: List[ImageContext] = []  # Image contexts for multimodal support
     mode: str = "edit"  # "edit" | "analyze"
     conversationId: Optional[str] = None
     fileId: Optional[str] = None  # For associating conversation with a file
@@ -302,10 +311,25 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
                 for f in request.files
             ]
 
+            # Prepare image context for multimodal support
+            logger.info(f"Received {len(request.images)} image(s) in request")
+            images = []
+            for img in request.images:
+                logger.info(f"Image: src_length={len(img.src) if img.src else 0}, base64_length={len(img.base64) if img.base64 else 0}, mediaType={img.mediaType}")
+                if img.base64 and img.mediaType:
+                    images.append({
+                        "src": img.src,
+                        "alt": img.alt,
+                        "base64": img.base64,
+                        "mediaType": img.mediaType,
+                    })
+            logger.info(f"Passing {len(images)} valid image(s) to agent")
+
             # Stream response - each event is yielded immediately
             async for event in agent.stream(
                 message=request.message,
                 files=files,
+                images=images,  # Pass images for multimodal support
                 history=history
             ):
                 event_type = event.get("type")

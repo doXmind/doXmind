@@ -21,6 +21,8 @@ export type ImageContext = {
   type: 'image';
   src: string;
   alt?: string;
+  base64?: string;      // Base64 encoded image data (without data:... prefix)
+  mediaType?: string;   // MIME type (image/jpeg, image/png, etc.)
 };
 
 export type ChatContextItem = SelectionContext | ImageContext;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon } from "lucide-react";
+import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -201,12 +201,13 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
 
   // Import editor store for chat context feature (Context Pills)
-  const { chatContexts, removeChatContext, clearAllChatContexts } = useEditorStore();
+  const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } = useEditorStore();
 
   // Get conversation key without triggering store updates during render
   const conversationKey = currentFileId || "global";
@@ -249,10 +250,17 @@ export function ChatPanel() {
 
     const message = input.trim();
     // Pass contexts as a separate parameter (for display), not concatenated to message
+    // Include base64 and mediaType for image contexts to enable multimodal API
     const contextsToSend = chatContexts.length > 0
       ? chatContexts.map(c => {
           if (c.type === 'image') {
-            return { type: 'image' as const, src: c.src, alt: c.alt };
+            return {
+              type: 'image' as const,
+              src: c.src,
+              alt: c.alt,
+              base64: c.base64,
+              mediaType: c.mediaType,
+            };
           }
           return { type: 'selection' as const, text: c.text };
         })
@@ -288,6 +296,75 @@ export function ChatPanel() {
       // Use conversationKey (fileId or "global") instead of conversation.id (backend UUID)
       // because the local state uses conversationKey as the key
       clearConversation(conversationKey);
+    }
+  };
+
+  // Max images allowed
+  const MAX_IMAGES = 10;
+  const currentImageCount = chatContexts.filter(c => c.type === 'image').length;
+
+  // Process image file and add to context
+  const processImageFile = (file: File) => {
+    // Only accept image files
+    if (!file.type.startsWith('image/')) return;
+
+    // Check image count limit
+    const imageCount = chatContexts.filter(c => c.type === 'image').length;
+    if (imageCount >= MAX_IMAGES) {
+      console.warn(`Maximum ${MAX_IMAGES} images allowed`);
+      return;
+    }
+
+    // Check file size (5MB limit for Anthropic API)
+    if (file.size > 5 * 1024 * 1024) {
+      console.warn(`Image ${file.name} is too large (max 5MB)`);
+      return;
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(',')[1];
+      const mediaType = file.type;
+
+      addChatContext({
+        type: 'image',
+        src: dataUrl,  // Data URL for preview display
+        alt: file.name || 'Pasted image',
+        base64,
+        mediaType,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle image file selection from file picker
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    for (const file of Array.from(files)) {
+      processImageFile(file);
+    }
+
+    // Clear input to allow selecting the same file again
+    e.target.value = '';
+  };
+
+  // Handle paste event for images
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          processImageFile(file);
+        }
+      }
     }
   };
 
@@ -386,51 +463,19 @@ export function ChatPanel() {
         className="p-3 md:p-3 border-t border-border"
         style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
       >
-        <div className="relative">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleTextareaChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask AI anything..."
-            className="min-h-[48px] md:min-h-[44px] max-h-[200px] md:max-h-[200px] pr-14 md:pr-12 resize-none text-base md:text-sm"
-            disabled={isStreaming}
-            rows={1}
-          />
-          <div className="absolute right-2 bottom-2">
-            {isStreaming ? (
-              <Tooltip content="Stop generating" side="left">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={stopStreaming}
-                  className="h-10 w-10 md:h-8 md:w-8"
-                  aria-label="Stop generating"
-                >
-                  <Square className="h-5 w-5 md:h-4 md:w-4" />
-                </Button>
-              </Tooltip>
-            ) : (
-              <Tooltip content="Send message" side="left">
-                <Button
-                  type="submit"
-                  size="icon"
-                  variant="ghost"
-                  disabled={!input.trim()}
-                  className="h-10 w-10 md:h-8 md:w-8"
-                  aria-label="Send message"
-                >
-                  <Send className="h-5 w-5 md:h-4 md:w-4" />
-                </Button>
-              </Tooltip>
-            )}
-          </div>
-        </div>
+        {/* Hidden file input for image upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          multiple
+          onChange={handleImageSelect}
+          className="hidden"
+        />
 
-        {/* Context Pills - shows selected text from "Ask in Chat" (supports multiple) */}
+        {/* Context Pills - shows attached images and selected text */}
         {chatContexts.length > 0 && (
-          <div className="mt-2 space-y-1">
+          <div className="mb-2 space-y-1">
             {chatContexts.map((ctx) => (
               <ContextPill
                 key={ctx.id}
@@ -440,6 +485,64 @@ export function ChatPanel() {
             ))}
           </div>
         )}
+
+        <div className="relative flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1.5">
+          {/* Attach image button */}
+          <Tooltip content={currentImageCount >= MAX_IMAGES ? `Max ${MAX_IMAGES} images` : "Attach image"} side="top">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              onClick={() => fileInputRef.current?.click()}
+              className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
+              disabled={isStreaming || currentImageCount >= MAX_IMAGES}
+              aria-label="Attach image"
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+          </Tooltip>
+
+          <Textarea
+            ref={textareaRef}
+            value={input}
+            onChange={handleTextareaChange}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder="Ask AI anything..."
+            className="min-h-[24px] max-h-[200px] flex-1 resize-none border-0 bg-transparent py-1 px-1 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+            disabled={isStreaming}
+            rows={1}
+          />
+
+          {/* Send/Stop button */}
+          {isStreaming ? (
+            <Tooltip content="Stop generating" side="top">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={stopStreaming}
+                className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="Stop generating"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+          ) : (
+            <Tooltip content="Send message" side="top">
+              <Button
+                type="submit"
+                size="icon"
+                variant="default"
+                disabled={!input.trim() && chatContexts.length === 0}
+                className="h-7 w-7 flex-shrink-0"
+                aria-label="Send message"
+              >
+                <Send className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+          )}
+        </div>
 
         <p className="text-xs text-muted-foreground mt-2 text-center hidden md:block">
           Press Enter to send, Shift+Enter for new line

@@ -257,6 +257,7 @@ class WritingAgent:
         self,
         message: str,
         files: List[dict],
+        images: List[dict] = None,
         history: List[dict] = None
     ) -> AsyncIterator[dict]:
         """Stream agent response with real-time token streaming.
@@ -264,6 +265,7 @@ class WritingAgent:
         Args:
             message: The current user message
             files: List of file contexts
+            images: List of image contexts for multimodal support
             history: Previous conversation messages (last N messages for context)
 
         Yields events in the following format:
@@ -286,11 +288,53 @@ class WritingAgent:
             files=files
         )
 
+        # Build current message content (supports multimodal with images)
+        current_message_content = []
+
+        # Add images first (Claude recommends images before text for best results)
+        if images:
+            logger.info(f"Processing {len(images)} image(s) for multimodal message")
+            for i, img in enumerate(images):
+                base64_data = img.get("base64")
+                media_type = img.get("mediaType")
+                logger.info(f"Image {i+1}: mediaType={media_type}, base64_length={len(base64_data) if base64_data else 0}")
+                if base64_data and media_type:
+                    # Add image block
+                    current_message_content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64_data
+                        }
+                    })
+                    # Add image label for multiple images
+                    if len(images) > 1:
+                        alt = img.get("alt", "")
+                        label = f"Image {i+1}" + (f" ({alt})" if alt else "") + ":"
+                        current_message_content.append({
+                            "type": "text",
+                            "text": label
+                        })
+        else:
+            logger.info("No images provided for this message")
+
+        # Add text message
+        current_message_content.append({
+            "type": "text",
+            "text": message
+        })
+
         # Build messages with history for conversation continuity
         messages = []
         if history:
             messages.extend(history)
-        messages.append({"role": "user", "content": message})
+
+        # Add current message (multimodal content if has images, otherwise simple string)
+        if images and len(images) > 0:
+            messages.append({"role": "user", "content": current_message_content})
+        else:
+            messages.append({"role": "user", "content": message})
         collected_edits = []
         current_file_id = files[0]["id"] if files else None
 

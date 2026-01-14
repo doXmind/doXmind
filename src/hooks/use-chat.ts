@@ -64,18 +64,28 @@ export function useChat() {
     async (message: string, fileIds: string[], contexts?: MessageContextItem[] | null) => {
       const conversationId = ensureConversation(fileIds[0] || null);
 
-      // Build the full message for AI (include all contexts if present)
+      // Build the full message for AI (include text contexts)
       let messageForAI = message;
-      if (contexts && contexts.length > 0) {
-        const contextTexts = contexts.map((c, i) => {
-          const prefix = contexts.length > 1 ? `[Reference ${i + 1}:]\n` : '';
-          if (c.type === 'image') {
-            return `${prefix}[Image: ${c.src}${c.alt ? ` (alt: ${c.alt})` : ''}]`;
-          }
+      const textContexts = contexts?.filter(c => c.type === 'selection') || [];
+      if (textContexts.length > 0) {
+        const contextTexts = textContexts.map((c, i) => {
+          const prefix = textContexts.length > 1 ? `[Reference ${i + 1}:]\n` : '';
           return `${prefix}${c.text}`;
         }).join('\n\n');
         messageForAI = `${message}\n\n[Selected content for reference:]\n${contextTexts}`;
       }
+
+      // Extract image contexts with base64 data for multimodal API
+      const imageContexts = contexts
+        ?.filter((c): c is MessageContextItem & { type: 'image'; base64: string; mediaType: string } =>
+          c.type === 'image' && !!(c as { base64?: string }).base64 && !!(c as { mediaType?: string }).mediaType
+        )
+        .map(c => ({
+          src: c.src,
+          alt: (c as { alt?: string }).alt,
+          base64: c.base64,
+          mediaType: c.mediaType,
+        })) || [];
 
       // Add user message
       const userMessageId = addMessage(conversationId, {
@@ -135,7 +145,12 @@ export function useChat() {
         const response = await fetch("/api/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: messageForAI, files, conversationId }),
+          body: JSON.stringify({
+            message: messageForAI,
+            files,
+            images: imageContexts,  // Include image data for multimodal support
+            conversationId,
+          }),
           signal,
         });
 
