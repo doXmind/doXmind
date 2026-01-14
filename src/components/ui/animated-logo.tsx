@@ -33,7 +33,7 @@ const GlitchContext = React.createContext<{
   subscribe: (callback: () => void) => () => void;
 } | null>(null);
 
-function GlitchProvider({ children }: { children: React.ReactNode }) {
+export function GlitchProvider({ children }: { children: React.ReactNode }) {
   const subscribersRef = React.useRef<Set<() => void>>(new Set());
   const isMounted = React.useRef(false);
 
@@ -74,7 +74,7 @@ function GlitchProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AnimatedLogoIcon({ size = 80 }: { size?: number }) {
+export function AnimatedLogoIcon({ size = 80 }: { size?: number }) {
   const mainControls = useAnimationControls();
   const redControls = useAnimationControls();
   const cyanControls = useAnimationControls();
