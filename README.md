@@ -9,13 +9,38 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 
 ## Features
 
+### Core Editor
 - **Rich Markdown Editor** - TipTap-based WYSIWYG editor with full markdown support
+- **Version History** - Track changes and restore previous versions
+- **Dark/Light Mode** - Beautiful UI with theme support
+
+### AI Capabilities
 - **AI Chat** - Conversational AI assistance powered by Claude
 - **Quick Edit** - Select text and instantly improve, translate, or simplify
 - **Autocomplete** - GitHub Copilot-style AI text completion
-- **Version History** - Track changes and restore previous versions
 - **RAG Search** - Semantic search across your documents
-- **Dark/Light Mode** - Beautiful UI with theme support
+
+### Knowledge Base
+- **Document Attachments** - Attach PDF, DOCX, PPTX files to conversations
+- **AI Document Analysis** - AI can search and read your attached documents
+- **Vector Search** - Semantic search across your knowledge base
+
+### Multimodal Support
+- **Image Upload** - Paste or upload images in chat (up to 10 images per message)
+- **Vision Analysis** - Claude analyzes images using Anthropic Vision API
+- **Supported Formats** - JPEG, PNG, GIF, WebP (max 5MB per image)
+
+### File Import
+- **PDF Import** - Convert PDF documents to editable Markdown
+- **Word Import** - Import DOCX files with formatting preserved
+- **Markdown Import** - Direct import of .md files
+- **Auto Indexing** - Imported files are automatically indexed for RAG search
+
+### Mobile Experience
+- **Responsive Design** - Optimized UI for phones and tablets
+- **Bottom Navigation** - iOS-style navigation bar on mobile
+- **Swipe Gestures** - Drag-up panels for chat and outline
+- **Touch-Friendly** - Large touch targets (44-48px) for comfortable interaction
 
 ## Tech Stack
 
@@ -30,8 +55,9 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 ### Backend
 - **FastAPI** - Modern Python web framework
 - **LangGraph** - Agent orchestration framework
-- **Claude API** - Anthropic's AI models
+- **Claude API** - Anthropic's AI models (including Vision)
 - **ChromaDB** - Vector database for RAG
+- **MarkItDown** - PDF/DOCX to Markdown conversion
 - **PostgreSQL** - Production database (Docker)
 - **SQLite** - Local development database
 
@@ -127,6 +153,8 @@ doxmind-mini/
 │   ├── components/           # React components
 │   │   ├── editor/          # TipTap editor
 │   │   ├── ai/              # AI chat & quick edit
+│   │   ├── kb/              # Knowledge base components
+│   │   ├── mobile/          # Mobile-responsive components
 │   │   ├── sidebar/         # File management
 │   │   ├── layout/          # App layout
 │   │   └── ui/              # Base UI components
@@ -137,8 +165,11 @@ doxmind-mini/
 │
 ├── server/                   # Backend source
 │   ├── api/                 # API routes
+│   │   ├── knowledge_base.py # KB attachments API
+│   │   └── import_file.py   # File import API
 │   ├── agents/              # LangGraph agents
 │   ├── services/            # Business logic
+│   │   └── rag_service.py   # Vector search service
 │   ├── db/                  # Database
 │   ├── main.py              # FastAPI app
 │   └── config.py            # Configuration
@@ -189,6 +220,21 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 - Request writing help and suggestions
 - Get summaries and explanations
 - @ mention files for context
+- Attach images for visual analysis
+- Upload documents to knowledge base for reference
+
+### Knowledge Base
+Attach documents to your conversation for AI to reference:
+- **Supported Formats** - PDF, DOCX, PPTX (max 50MB)
+- **Drag & Drop** - Simply drag files into the chat
+- **AI Tools** - AI can search, read, and list your documents
+- **Status Tracking** - See upload progress and indexing status
+
+### Image Analysis
+Send images to Claude for visual understanding:
+- **Paste or Upload** - Ctrl+V to paste, or click to upload
+- **Multiple Images** - Up to 10 images per message
+- **Format Support** - JPEG, PNG, GIF, WebP (max 5MB each)
 
 ### Quick Edit
 Select text and choose from:
@@ -203,6 +249,13 @@ Select text and choose from:
 ### Autocomplete
 Press Tab to accept AI suggestions as you type.
 
+### File Import
+Import external documents directly into the editor:
+- **PDF** - Extract text and convert to Markdown
+- **DOCX** - Preserve formatting from Word documents
+- **Markdown** - Direct import of .md files
+- **Auto-Index** - Imported files are indexed for RAG search
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -215,8 +268,13 @@ Press Tab to accept AI suggestions as you type.
 | PUT | `/api/files/:id` | Update file |
 | DELETE | `/api/files/:id` | Delete file |
 | POST | `/api/files/search` | RAG search |
+| POST | `/api/import` | Import PDF/DOCX/MD file |
 | GET | `/api/versions/:fileId` | List versions |
 | POST | `/api/versions/:fileId/:versionId/restore` | Restore version |
+| POST | `/api/kb/:conversationId/attachments` | Upload KB attachment |
+| GET | `/api/kb/:conversationId/attachments` | List KB attachments |
+| DELETE | `/api/kb/:conversationId/attachments/:id` | Delete KB attachment |
+| POST | `/api/kb/:conversationId/search` | Search knowledge base |
 
 ## Docker Commands
 
