@@ -112,6 +112,9 @@ export const useFileStore = create<FileState>()(
 
         try {
           await api.deleteFile(id);
+          // Delete associated chat conversation
+          const { useChatStore } = await import("./chat-store");
+          await useChatStore.getState().deleteConversation(id);
         } catch (error) {
           console.error("Failed to delete file on server:", error);
           // Revert on error

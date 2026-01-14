@@ -39,6 +39,7 @@ interface ChatState {
     isStreaming: boolean
   ) => void;
   clearConversation: (conversationId: string) => Promise<void>;
+  deleteConversation: (fileId: string) => Promise<void>;
   setActiveConversation: (id: string | null) => void;
   saveMessageToBackend: (conversationId: string, message: ChatMessage) => Promise<void>;
 }
@@ -227,6 +228,28 @@ export const useChatStore = create<ChatState>()(
       const conversation = draft.conversations[conversationId];
       if (conversation) {
         conversation.messages = [];
+      }
+    });
+  },
+
+  // Delete conversation completely when file is deleted
+  deleteConversation: async (fileId) => {
+    const key = fileId || "global";
+
+    // Delete on backend
+    try {
+      await fetch(`/api/chat/conversations/${fileId}`, {
+        method: "DELETE",
+      });
+    } catch (error) {
+      console.error("Failed to delete conversation on backend:", error);
+    }
+
+    // Remove from local state completely
+    set((draft) => {
+      delete draft.conversations[key];
+      if (draft.activeConversationId === key) {
+        draft.activeConversationId = null;
       }
     });
   },
