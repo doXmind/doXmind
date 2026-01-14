@@ -57,7 +57,5 @@ data/
 *.sqlite
 .venv/
 
-# Heroku deployment files (local only)
+# Heroku deployment files (frontend - not needed since Next.js auto-detects)
 Procfile
-server/Procfile
-server/runtime.txt
