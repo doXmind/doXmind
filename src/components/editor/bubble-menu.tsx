@@ -133,12 +133,17 @@ function BubbleButton({
       size="icon"
       onClick={onClick}
       className={cn(
-        "h-8 w-8",
+        // Mobile: larger touch targets (44px), Desktop: compact (32px)
+        "h-11 w-11 md:h-8 md:w-8",
+        "active:scale-95 transition-transform",
         isActive && "bg-accent text-accent-foreground",
         className
       )}
     >
-      {icon}
+      {/* Mobile: larger icons, Desktop: smaller */}
+      <span className="[&>svg]:h-5 [&>svg]:w-5 md:[&>svg]:h-4 md:[&>svg]:w-4">
+        {icon}
+      </span>
     </Button>
   );
 

@@ -229,13 +229,14 @@ export function FileItem({ file }: FileItemProps) {
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       className={cn(
-        "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+        "group flex items-center gap-3 md:gap-2 px-3 md:px-2 py-3 md:py-1.5 rounded-md cursor-pointer transition-colors",
+        "active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile
         isActive
           ? "bg-accent text-accent-foreground"
           : "hover:bg-accent/50 text-foreground"
       )}
     >
-      <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+      <FileText className="h-5 w-5 md:h-4 md:w-4 flex-shrink-0 text-muted-foreground" />
 
       <div className="flex-1 min-w-0">
         {isRenaming ? (
@@ -245,32 +246,32 @@ export function FileItem({ file }: FileItemProps) {
             onBlur={handleRename}
             onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="h-6 px-1 py-0 text-sm"
+            className="h-8 md:h-6 px-2 md:px-1 py-0 text-base md:text-sm"
             autoFocus
           />
         ) : (
           <>
-            <p className="text-sm truncate">{getNameWithoutExtension(file.name)}</p>
-            <p className="text-xs text-muted-foreground truncate">
+            <p className="text-base md:text-sm truncate">{getNameWithoutExtension(file.name)}</p>
+            <p className="text-sm md:text-xs text-muted-foreground truncate">
               {formatDate(file.updatedAt)}
             </p>
           </>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Actions - Always visible on mobile via menu button */}
+      <div className="flex items-center md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         <DropdownMenu>
           <Tooltip content="File options" side="right">
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-10 w-10 md:h-8 md:w-8"
                 onClick={(e) => e.stopPropagation()}
                 aria-label="File options"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
               </Button>
             </DropdownMenuTrigger>
           </Tooltip>

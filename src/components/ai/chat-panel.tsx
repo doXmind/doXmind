@@ -293,8 +293,8 @@ export function ChatPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-3 border-b border-border flex items-center justify-between">
+      {/* Header - Hidden on mobile (title shown in mobile header) */}
+      <div className="hidden md:flex p-3 border-b border-border items-center justify-between">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
           <h2 className="text-sm font-semibold">AI Assistant</h2>
@@ -312,6 +312,22 @@ export function ChatPanel() {
           </Tooltip>
         )}
       </div>
+
+      {/* Mobile Header Actions (clear button only) */}
+      {conversation.messages.length > 0 && (
+        <div className="md:hidden flex justify-end p-2 border-b border-border">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClear}
+            className="h-10 gap-2"
+            aria-label="Clear conversation"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="text-sm">Clear</span>
+          </Button>
+        </div>
+      )}
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4">
@@ -364,8 +380,12 @@ export function ChatPanel() {
         )}
       </ScrollArea>
 
-      {/* Input */}
-      <form onSubmit={handleSubmit} className="p-3 border-t border-border">
+      {/* Input - with safe area padding on mobile */}
+      <form
+        onSubmit={handleSubmit}
+        className="p-3 md:p-3 border-t border-border"
+        style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+      >
         <div className="relative">
           <Textarea
             ref={textareaRef}
@@ -373,7 +393,7 @@ export function ChatPanel() {
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             placeholder="Ask AI anything..."
-            className="min-h-[44px] max-h-[200px] pr-12 resize-none"
+            className="min-h-[48px] md:min-h-[44px] max-h-[200px] md:max-h-[200px] pr-14 md:pr-12 resize-none text-base md:text-sm"
             disabled={isStreaming}
             rows={1}
           />
@@ -385,10 +405,10 @@ export function ChatPanel() {
                   size="icon"
                   variant="ghost"
                   onClick={stopStreaming}
-                  className="h-8 w-8"
+                  className="h-10 w-10 md:h-8 md:w-8"
                   aria-label="Stop generating"
                 >
-                  <Square className="h-4 w-4" />
+                  <Square className="h-5 w-5 md:h-4 md:w-4" />
                 </Button>
               </Tooltip>
             ) : (
@@ -398,10 +418,10 @@ export function ChatPanel() {
                   size="icon"
                   variant="ghost"
                   disabled={!input.trim()}
-                  className="h-8 w-8"
+                  className="h-10 w-10 md:h-8 md:w-8"
                   aria-label="Send message"
                 >
-                  <Send className="h-4 w-4" />
+                  <Send className="h-5 w-5 md:h-4 md:w-4" />
                 </Button>
               </Tooltip>
             )}
@@ -421,7 +441,7 @@ export function ChatPanel() {
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground mt-2 text-center">
+        <p className="text-xs text-muted-foreground mt-2 text-center hidden md:block">
           Press Enter to send, Shift+Enter for new line
         </p>
       </form>
@@ -440,7 +460,7 @@ function SuggestionButton({
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left px-3 py-2 text-sm rounded-md border border-border hover:bg-accent transition-colors"
+      className="w-full text-left px-4 md:px-3 py-3 md:py-2 text-base md:text-sm rounded-lg md:rounded-md border border-border hover:bg-accent active:scale-[0.98] transition-all"
     >
       {children}
     </button>

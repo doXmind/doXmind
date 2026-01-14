@@ -176,3 +176,55 @@ export const TEXT_TRUNCATION = {
   /** Max label width in node (pixels) */
   MAX_LABEL_WIDTH: 180,
 } as const;
+
+// =============================================================================
+// Mobile/Responsive Configuration
+// =============================================================================
+
+/** Responsive breakpoints in pixels (matching Tailwind) */
+export const BREAKPOINTS = {
+  /** Small devices (large phones landscape) */
+  SM: 640,
+  /** Medium devices (tablets portrait) - Mobile breakpoint */
+  MD: 768,
+  /** Large devices (tablets landscape, small laptops) */
+  LG: 1024,
+  /** Extra large devices (desktops) */
+  XL: 1280,
+} as const;
+
+/** Mobile touch target sizes in pixels */
+export const TOUCH_TARGETS = {
+  /** Minimum touch target size (iOS Human Interface Guidelines) */
+  MIN: 44,
+  /** Recommended touch target size (Android Material Design) */
+  RECOMMENDED: 48,
+  /** Large touch target for primary actions */
+  LARGE: 56,
+} as const;
+
+/** Mobile panel dimensions */
+export const MOBILE_PANEL = {
+  /** Bottom navigation bar height */
+  BOTTOM_NAV_HEIGHT: 56,
+  /** Mobile header height */
+  HEADER_HEIGHT: 48,
+  /** Mobile toolbar collapsed height */
+  TOOLBAR_COLLAPSED: 48,
+  /** Mobile toolbar expanded height */
+  TOOLBAR_EXPANDED: 96,
+} as const;
+
+/** Z-index layers for mobile overlays */
+export const Z_INDEX = {
+  /** Bottom navigation bar */
+  BOTTOM_NAV: 40,
+  /** Mobile overlay backdrop */
+  MOBILE_OVERLAY: 45,
+  /** Mobile panel (sidebar, chat) */
+  MOBILE_PANEL: 50,
+  /** Bubble menu and popovers */
+  BUBBLE_MENU: 60,
+  /** Modal dialogs */
+  MODAL: 70,
+} as const;

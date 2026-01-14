@@ -18,8 +18,12 @@ import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 
 export function Header() {
-  const { isSidebarOpen, isChatOpen, toggleSidebar, toggleChat } =
-    useLayoutStore();
+  const {
+    isSidebarOpen,
+    isChatOpen,
+    toggleSidebar,
+    toggleChat,
+  } = useLayoutStore();
   const { currentFileId, files } = useFileStore();
   const { isDirty, isSaving } = useEditorStore();
   const { theme, setTheme } = useTheme();
@@ -31,9 +35,16 @@ export function Header() {
   };
 
   return (
-    <header className="h-12 border-b border-border flex items-center justify-between px-4 bg-card">
-      {/* Left Section */}
-      <div className="flex items-center gap-2">
+    <header className="h-12 border-b border-border flex items-center justify-between px-3 md:px-4 bg-card">
+      {/* Mobile Header - Left Section (Logo) */}
+      <div className="flex md:hidden items-center">
+        <Link href="/" className="flex items-center">
+          <Logo variant="icon" size="sm" />
+        </Link>
+      </div>
+
+      {/* Desktop Header - Left Section */}
+      <div className="hidden md:flex items-center gap-2">
         <Tooltip content="Home" side="bottom">
           <Link href="/" className="flex items-center">
             <Logo variant="icon" size="sm" />
@@ -70,8 +81,21 @@ export function Header() {
         </div>
       </div>
 
-      {/* Right Section */}
-      <div className="flex items-center gap-2">
+      {/* Mobile Header - Center Section (Title) */}
+      <div className="flex-1 md:hidden flex items-center justify-center min-w-0 px-2">
+        <span className="font-medium text-sm truncate max-w-[180px]">
+          {currentFile?.name || "Untitled"}
+        </span>
+        {isDirty && (
+          <span className="text-xs text-muted-foreground ml-1 flex-shrink-0">(unsaved)</span>
+        )}
+      </div>
+
+      {/* Mobile Header - Right Section (spacer for balance) */}
+      <div className="flex md:hidden items-center w-8" />
+
+      {/* Desktop Header - Right Section */}
+      <div className="hidden md:flex items-center gap-2">
         <Tooltip content="Toggle Theme" side="bottom">
           <Button
             variant="ghost"

@@ -231,11 +231,11 @@ export function Sidebar() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-3 border-b border-border">
+      {/* Header - Hidden on mobile (title is in mobile header) */}
+      <div className="p-3 md:p-3 border-b border-border">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold">Files</h2>
-          <div className="flex items-center gap-1">
+          <h2 className="text-sm md:text-sm font-semibold hidden md:block">Files</h2>
+          <div className="flex items-center gap-1 md:gap-1 w-full md:w-auto justify-end">
             <Tooltip content="Import File (PDF, DOCX, MD)" side="bottom">
               <Button
                 variant="ghost"
@@ -243,11 +243,12 @@ export function Sidebar() {
                 onClick={handleImportClick}
                 disabled={isImporting}
                 aria-label="Import File"
+                className="h-10 w-10 md:h-9 md:w-9"
               >
                 {isImporting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-5 w-5 md:h-4 md:w-4 animate-spin" />
                 ) : (
-                  <Upload className="h-4 w-4" />
+                  <Upload className="h-5 w-5 md:h-4 md:w-4" />
                 )}
               </Button>
             </Tooltip>
@@ -257,8 +258,9 @@ export function Sidebar() {
                 size="icon"
                 onClick={handleCreateFile}
                 aria-label="Create New File"
+                className="h-10 w-10 md:h-9 md:w-9"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-5 w-5 md:h-4 md:w-4" />
               </Button>
             </Tooltip>
           </div>
@@ -272,26 +274,28 @@ export function Sidebar() {
           />
         </div>
 
-        {/* Search */}
+        {/* Search - Larger on mobile for touch */}
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-3 md:left-2.5 top-1/2 -translate-y-1/2 h-5 w-5 md:h-4 md:w-4 text-muted-foreground pointer-events-none" />
           <Input
             ref={inputRef}
             placeholder="Search files and content..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-9 h-9"
+            className="pl-10 md:pl-9 pr-10 md:pr-9 h-12 md:h-9 text-base md:text-sm rounded-xl md:rounded-md"
             aria-label="Search files"
+            type="search"
+            enterKeyHint="search"
           />
           {searchQuery && (
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-0.5 top-1/2 -translate-y-1/2 h-8 w-8"
+              className="absolute right-1 md:right-0.5 top-1/2 -translate-y-1/2 h-10 w-10 md:h-8 md:w-8"
               onClick={clearSearch}
               aria-label="Clear search"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-5 w-5 md:h-3.5 md:w-3.5" />
             </Button>
           )}
         </div>

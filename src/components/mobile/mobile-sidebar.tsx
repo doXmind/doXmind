@@ -1,0 +1,109 @@
+"use client";
+
+import { useRef, useEffect } from "react";
+import { X } from "lucide-react";
+import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { useLayoutStore } from "@/stores/layout-store";
+import { Sidebar } from "@/components/sidebar/sidebar";
+import { Z_INDEX } from "@/lib/constants";
+
+const SIDEBAR_WIDTH = 300; // Sidebar width in pixels
+const DRAG_CLOSE_THRESHOLD = 100; // Pixels dragged to trigger close
+
+export function MobileSidebar() {
+  const { isMobileSidebarOpen, setMobileSidebarOpen } = useLayoutStore();
+  const dragControls = useDragControls();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleClose = () => {
+    setMobileSidebarOpen(false);
+  };
+
+  const handleDragEnd = (
+    event: MouseEvent | TouchEvent | PointerEvent,
+    info: PanInfo
+  ) => {
+    // Close if dragged left past threshold or with high velocity
+    if (info.offset.x < -DRAG_CLOSE_THRESHOLD || info.velocity.x < -500) {
+      handleClose();
+    }
+  };
+
+  // Handle escape key
+  useEffect(() => {
+    if (!isMobileSidebarOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isMobileSidebarOpen]);
+
+  return (
+    <AnimatePresence>
+      {isMobileSidebarOpen && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            className="fixed inset-0 bg-black/40 dark:bg-black/60 md:hidden"
+            style={{ zIndex: Z_INDEX.MOBILE_OVERLAY }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={handleClose}
+          />
+
+          {/* Sidebar Panel - Slides in from left */}
+          <motion.div
+            ref={containerRef}
+            className="fixed inset-y-0 left-0 bg-background shadow-2xl overflow-hidden md:hidden flex flex-col"
+            style={{
+              zIndex: Z_INDEX.MOBILE_PANEL,
+              width: SIDEBAR_WIDTH,
+              maxWidth: "85vw",
+              paddingTop: "env(safe-area-inset-top)",
+              paddingBottom: "env(safe-area-inset-bottom)",
+            }}
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{
+              type: "spring",
+              damping: 30,
+              stiffness: 300,
+            }}
+            drag="x"
+            dragControls={dragControls}
+            dragConstraints={{ left: -SIDEBAR_WIDTH, right: 0 }}
+            dragElastic={{ left: 0.5, right: 0 }}
+            onDragEnd={handleDragEnd}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+              <h3 className="font-semibold text-base">Files</h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClose}
+                className="h-10 w-10"
+                aria-label="Close sidebar"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Sidebar Content */}
+            <div className="flex-1 overflow-hidden">
+              <Sidebar />
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}

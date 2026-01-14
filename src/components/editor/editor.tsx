@@ -3,11 +3,13 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorToolbar } from "./editor-toolbar";
+import { MobileToolbar } from "@/components/mobile/mobile-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 import { TableBubbleMenu } from "./table-bubble-menu";
 import { ImageBubbleMenu } from "./image-bubble-menu";
 import { ImageModal } from "./image-modal";
+import { LinkModal } from "./link-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
 import { SearchToolbar } from "./search-toolbar";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
@@ -15,6 +17,7 @@ import { DiffReviewToolbar } from "./diff-review-toolbar";
 import { ReviewPopup } from "./review-popup";
 import { ReviewPanel } from "./review-panel";
 import { Mindlines } from "./mindlines";
+import { useIsMobile } from "@/hooks/use-device-type";
 import { getReviewState } from "@/extensions/text-review-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useSpellcheck } from "@/hooks/use-spellcheck";
@@ -56,7 +59,10 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   // Search state
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // Mobile link modal state
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
 
+  const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
 
   // Debounced save function
@@ -270,6 +276,14 @@ export function Editor({ file: initialFile }: EditorProps) {
     endDiffReview();
   }, [editor, diffSession, endDiffReview]);
 
+  // Handle link confirm for mobile toolbar - must be before early return
+  const handleLinkConfirm = useCallback(
+    (url: string) => {
+      editor?.chain().focus().setLink({ href: url }).run();
+    },
+    [editor]
+  );
+
   if (!editor) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -280,13 +294,31 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <EditorToolbar
-        editor={editor}
-        onSearchClick={() => setIsSearchOpen(true)}
-        onReviewClick={handleReviewClick}
-        isReviewLoading={isReviewLoading}
-        isReviewActive={isReviewActive}
-      />
+      {/* Desktop Toolbar */}
+      {!isMobile && (
+        <EditorToolbar
+          editor={editor}
+          onSearchClick={() => setIsSearchOpen(true)}
+          onReviewClick={handleReviewClick}
+          isReviewLoading={isReviewLoading}
+          isReviewActive={isReviewActive}
+        />
+      )}
+
+      {/* Mobile Toolbar */}
+      {isMobile && (
+        <MobileToolbar
+          editor={editor}
+          onLinkClick={() => setLinkModalOpen(true)}
+          onImageClick={() => {
+            // Open image modal through store
+            useEditorStore.getState().openImageModal((url, alt) => {
+              editor?.chain().focus().setImage({ src: url, alt }).run();
+            });
+          }}
+        />
+      )}
+
       <DiffReviewToolbar
         editor={editor}
         isActive={isReviewMode}
@@ -295,8 +327,8 @@ export function Editor({ file: initialFile }: EditorProps) {
         onRejectAll={handleRejectAll}
       />
       <div className="flex-1 min-h-0 flex overflow-x-hidden">
-        {/* Mindlines outline */}
-        <Mindlines editor={editor} />
+        {/* Mindlines outline - hidden on mobile */}
+        {!isMobile && <Mindlines editor={editor} />}
         {/* Main editor content area */}
         <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <SearchToolbar
@@ -306,13 +338,13 @@ export function Editor({ file: initialFile }: EditorProps) {
             onClose={() => setIsSearchOpen(false)}
           />
           <ScrollArea className="flex-1 min-h-0">
-            <div className="max-w-4xl mx-auto px-8 py-6">
+            <div className="max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-6">
               <EditorContent editor={editor} />
             </div>
           </ScrollArea>
         </div>
-        {/* Review Panel Sidebar */}
-        {isReviewPanelOpen && (
+        {/* Review Panel Sidebar - hidden on mobile */}
+        {!isMobile && isReviewPanelOpen && (
           <ReviewPanel
             editor={editor}
             isOpen={isReviewPanelOpen}
@@ -331,6 +363,12 @@ export function Editor({ file: initialFile }: EditorProps) {
         open={imageModalOpen}
         onClose={closeImageModal}
         onConfirm={handleImageModalConfirm}
+      />
+      {/* Link Modal for mobile toolbar */}
+      <LinkModal
+        open={linkModalOpen}
+        onClose={() => setLinkModalOpen(false)}
+        onConfirm={handleLinkConfirm}
       />
     </div>
   );
