@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+
 const nextConfig: NextConfig = {
   experimental: {
     // Enable React 19 features
@@ -10,35 +12,35 @@ const nextConfig: NextConfig = {
       // Other API routes are proxied to the backend
       {
         source: "/api/chat/simple",
-        destination: "http://localhost:8000/api/chat/simple",
+        destination: `${backendUrl}/api/chat/simple`,
       },
       {
         source: "/api/chat/conversations",
-        destination: "http://localhost:8000/api/chat/conversations",
+        destination: `${backendUrl}/api/chat/conversations`,
       },
       {
         source: "/api/chat/conversations/:path*",
-        destination: "http://localhost:8000/api/chat/conversations/:path*",
+        destination: `${backendUrl}/api/chat/conversations/:path*`,
       },
       {
         source: "/api/chat/messages",
-        destination: "http://localhost:8000/api/chat/messages",
+        destination: `${backendUrl}/api/chat/messages`,
       },
       {
         source: "/api/edit/:path*",
-        destination: "http://localhost:8000/api/edit/:path*",
+        destination: `${backendUrl}/api/edit/:path*`,
       },
       {
         source: "/api/autocomplete/:path*",
-        destination: "http://localhost:8000/api/autocomplete/:path*",
+        destination: `${backendUrl}/api/autocomplete/:path*`,
       },
       {
         source: "/api/files/:path*",
-        destination: "http://localhost:8000/api/files/:path*",
+        destination: `${backendUrl}/api/files/:path*`,
       },
       {
         source: "/api/versions/:path*",
-        destination: "http://localhost:8000/api/versions/:path*",
+        destination: `${backendUrl}/api/versions/:path*`,
       },
     ];
   },
