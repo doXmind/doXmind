@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon, Paperclip, BookOpen } from "lucide-react";
+import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,7 +13,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useEditorStore, type ChatContextItem } from "@/stores/editor-store";
 import { useChat, type ToolStatus, type ThinkingStatus } from "@/hooks/use-chat";
 import { cn } from "@/lib/utils";
-import { KnowledgeBasePanel } from "@/components/kb";
+import { AttachmentMenu } from "./attachment-menu";
 
 // Get icon for tool type
 function getToolIcon(toolName: string) {
@@ -296,7 +296,6 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
@@ -434,17 +433,11 @@ export function ChatPanel() {
     reader.readAsDataURL(file);
   };
 
-  // Handle image file selection from file picker
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
+  // Handle image files from AttachmentMenu
+  const handleImageFilesFromMenu = (files: FileList) => {
     for (const file of Array.from(files)) {
       processImageFile(file);
     }
-
-    // Clear input to allow selecting the same file again
-    e.target.value = '';
   };
 
   // Handle paste event for images
@@ -472,9 +465,6 @@ export function ChatPanel() {
           <h2 className="text-sm font-semibold">AI Assistant</h2>
         </div>
         <div className="flex items-center gap-1">
-          {/* Knowledge Base Panel */}
-          <KnowledgeBasePanel conversationId={conversation.id} />
-
           {/* Clear conversation button */}
           {conversation.messages.length > 0 && (
             <Tooltip content="Clear conversation" side="bottom">
@@ -492,10 +482,7 @@ export function ChatPanel() {
       </div>
 
       {/* Mobile Header Actions */}
-      <div className="md:hidden flex justify-between items-center p-2 border-b border-border">
-        {/* KB Panel on mobile */}
-        <KnowledgeBasePanel conversationId={conversation.id} />
-
+      <div className="md:hidden flex justify-end items-center p-2 border-b border-border">
         {/* Clear button */}
         {conversation.messages.length > 0 && (
           <Button
@@ -568,16 +555,6 @@ export function ChatPanel() {
         className="p-3 md:p-3 border-t border-border"
         style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
       >
-        {/* Hidden file input for image upload */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          multiple
-          onChange={handleImageSelect}
-          className="hidden"
-        />
-
         {/* Context Pills - shows attached images and selected text */}
         {chatContexts.length > 0 && (
           <div className="mb-2 space-y-1">
@@ -592,20 +569,14 @@ export function ChatPanel() {
         )}
 
         <div className="relative flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1.5">
-          {/* Attach image button */}
-          <Tooltip content={currentImageCount >= MAX_IMAGES ? `Max ${MAX_IMAGES} images` : "Attach image"} side="top">
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              onClick={() => fileInputRef.current?.click()}
-              className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
-              disabled={isStreaming || currentImageCount >= MAX_IMAGES}
-              aria-label="Attach image"
-            >
-              <Paperclip className="h-4 w-4" />
-            </Button>
-          </Tooltip>
+          {/* Unified attachment menu */}
+          <AttachmentMenu
+            conversationId={conversation.id}
+            onImageSelect={handleImageFilesFromMenu}
+            imageCount={currentImageCount}
+            maxImages={MAX_IMAGES}
+            disabled={isStreaming}
+          />
 
           <Textarea
             ref={textareaRef}

@@ -40,7 +40,7 @@ export function Popover({ children, open: controlledOpen, onOpenChange }: Popove
 
   return (
     <PopoverContext.Provider value={{ open, setOpen, triggerRef }}>
-      <div className="relative inline-block">{children}</div>
+      <div className="relative">{children}</div>
     </PopoverContext.Provider>
   );
 }
@@ -86,6 +86,7 @@ export function PopoverTrigger({ children, asChild }: PopoverTriggerProps) {
 
 interface PopoverContentProps extends React.HTMLAttributes<HTMLDivElement> {
   align?: "start" | "center" | "end";
+  side?: "top" | "bottom";
   sideOffset?: number;
 }
 
@@ -93,6 +94,7 @@ export function PopoverContent({
   children,
   className,
   align = "center",
+  side = "bottom",
   sideOffset = 4,
   ...props
 }: PopoverContentProps) {
@@ -152,6 +154,11 @@ export function PopoverContent({
 
   if (!open) return null;
 
+  // For side="top", we need to position above the trigger
+  const positionStyles: React.CSSProperties = side === "top"
+    ? { bottom: "100%", marginBottom: sideOffset }
+    : { top: "100%", marginTop: sideOffset };
+
   return (
     <div
       ref={contentRef}
@@ -161,10 +168,9 @@ export function PopoverContent({
         align === "start" && "left-0",
         align === "center" && "left-1/2 -translate-x-1/2",
         align === "end" && "right-0",
-        `top-full mt-[${sideOffset}px]`,
         className
       )}
-      style={{ marginTop: sideOffset }}
+      style={positionStyles}
       {...props}
     >
       {children}
