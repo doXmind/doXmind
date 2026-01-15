@@ -132,6 +132,45 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
   const displayWidth = currentSize?.width || width;
   const displayHeight = currentSize?.height || height;
 
+  // Keyboard resize handler for accessibility
+  const handleKeyboardResize = useCallback(
+    (e: React.KeyboardEvent, handle: string) => {
+      const step = e.shiftKey ? 50 : 10; // Larger step with Shift
+      const img = imgRef.current;
+      if (!img) return;
+
+      const currentWidth = width || img.getBoundingClientRect().width;
+      const currentHeight = height || img.getBoundingClientRect().height;
+      const aspectRatio = currentWidth / currentHeight;
+
+      let newWidth = currentWidth;
+      let newHeight = currentHeight;
+
+      switch (e.key) {
+        case "ArrowRight":
+        case "ArrowDown":
+          e.preventDefault();
+          newWidth = currentWidth + step;
+          newHeight = newWidth / aspectRatio;
+          break;
+        case "ArrowLeft":
+        case "ArrowUp":
+          e.preventDefault();
+          newWidth = Math.max(50, currentWidth - step);
+          newHeight = newWidth / aspectRatio;
+          break;
+        default:
+          return;
+      }
+
+      updateAttributes({
+        width: Math.round(newWidth),
+        height: Math.round(newHeight),
+      });
+    },
+    [width, height, updateAttributes]
+  );
+
   return (
     <NodeViewWrapper className="image-node-wrapper" data-align={align}>
       <div
@@ -162,20 +201,40 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
         {selected && (
           <>
             <div
+              role="slider"
+              aria-label="Resize from top-left corner"
+              aria-valuenow={displayWidth || 0}
+              tabIndex={0}
               className="resize-handle top-left"
               onMouseDown={(e) => handleResizeStart(e, "top-left")}
+              onKeyDown={(e) => handleKeyboardResize(e, "top-left")}
             />
             <div
+              role="slider"
+              aria-label="Resize from top-right corner"
+              aria-valuenow={displayWidth || 0}
+              tabIndex={0}
               className="resize-handle top-right"
               onMouseDown={(e) => handleResizeStart(e, "top-right")}
+              onKeyDown={(e) => handleKeyboardResize(e, "top-right")}
             />
             <div
+              role="slider"
+              aria-label="Resize from bottom-left corner"
+              aria-valuenow={displayWidth || 0}
+              tabIndex={0}
               className="resize-handle bottom-left"
               onMouseDown={(e) => handleResizeStart(e, "bottom-left")}
+              onKeyDown={(e) => handleKeyboardResize(e, "bottom-left")}
             />
             <div
+              role="slider"
+              aria-label="Resize from bottom-right corner"
+              aria-valuenow={displayWidth || 0}
+              tabIndex={0}
               className="resize-handle bottom-right"
               onMouseDown={(e) => handleResizeStart(e, "bottom-right")}
+              onKeyDown={(e) => handleKeyboardResize(e, "bottom-right")}
             />
           </>
         )}

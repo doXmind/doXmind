@@ -49,6 +49,9 @@ export interface DiffHunk {
 
   /** Resolved ProseMirror position end (computed by decorations, used by accept) */
   resolvedTo?: number;
+
+  /** Whether this hunk represents a full document replacement (from replace_all operation) */
+  isFullDocumentReplace?: boolean;
 }
 
 /**

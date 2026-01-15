@@ -107,11 +107,7 @@ export function findSemanticRanges(
 ): SemanticRange[] {
   const results: SemanticRange[] = [];
 
-  console.log("[SearchExt] findSemanticRanges called with", chunks.length, "chunks");
-
   const { fullText, posMap } = buildPositionMap(doc);
-
-  console.log("[SearchExt] Document text length:", fullText.length);
 
   // For each chunk (now sentence-level), find its position in the document
   for (const chunk of chunks) {
@@ -120,13 +116,7 @@ export function findSemanticRanges(
       .replace(/<[^>]+>/g, "") // Remove any HTML tags (just in case)
       .trim();
 
-    console.log(
-      "[SearchExt] Processing sentence chunk:",
-      cleanChunk.slice(0, 60) + (cleanChunk.length > 60 ? "..." : "")
-    );
-
     if (cleanChunk.length < 5) {
-      console.log("[SearchExt] Chunk too short, skipping");
       continue;
     }
 
@@ -142,25 +132,19 @@ export function findSemanticRanges(
       const searchNoPunct = removePunctuation(normalizedSearch);
       const docNoPunct = removePunctuation(normalizedDoc);
       idx = docNoPunct.indexOf(searchNoPunct);
-      console.log("[SearchExt] Tried without punctuation, idx:", idx);
     }
 
     // If still no match, try finding a key phrase (first 30 chars)
     if (idx === -1 && normalizedSearch.length > 30) {
       const keyPhrase = normalizedSearch.slice(0, 30);
       idx = normalizedDoc.indexOf(keyPhrase);
-      console.log("[SearchExt] Tried key phrase match, idx:", idx);
     }
-
-    console.log("[SearchExt] Index found:", idx);
 
     if (idx !== -1) {
       // Map text index back to document position
       const from = posMap[idx] ?? 0;
       const endIdx = Math.min(idx + searchText.length, posMap.length - 1);
       const to = posMap[endIdx] ?? from;
-
-      console.log("[SearchExt] Position range:", { from, to, searchLen: searchText.length });
 
       if (from < to) {
         results.push({
@@ -171,8 +155,6 @@ export function findSemanticRanges(
       }
     }
   }
-
-  console.log("[SearchExt] Total results:", results.length);
 
   return dedupeRanges(results);
 }

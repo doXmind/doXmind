@@ -389,6 +389,7 @@ function ToolbarButton({
         size="icon"
         onClick={onClick}
         disabled={disabled}
+        aria-label={tooltip}
         className={cn(
           "h-8 w-8",
           isActive && "bg-accent text-accent-foreground"

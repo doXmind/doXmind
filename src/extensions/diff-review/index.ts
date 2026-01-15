@@ -7,10 +7,8 @@
 
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
-import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
-import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import type { DiffHunk } from "@/types/diff";
 import { markdownToHtml, isHtml } from "@/lib/markdown";
 
@@ -20,6 +18,11 @@ import {
 } from "./diff-types";
 import { findTextInDocument } from "./position-mapping";
 import { createInsertWidget, createActionWidget } from "./diff-widgets";
+import {
+  calculateReplacementRange,
+  normalizeTableHtml,
+  handleTableReplacement,
+} from "./replacement-utils";
 
 // Re-export types for external use
 export * from "./diff-types";
@@ -100,7 +103,14 @@ export const DiffReviewExtension = Extension.create({
               let to: number;
               let buttonPos: number; // Position for action buttons (at block start)
 
-              if (hunk.type === "replace" || hunk.type === "delete") {
+              if (hunk.isFullDocumentReplace) {
+                // Full document replacement: use entire document range
+                from = 0;
+                to = state.doc.content.size;
+                buttonPos = 1; // Place button at start of document
+                hunk.resolvedFrom = from;
+                hunk.resolvedTo = to;
+              } else if (hunk.type === "replace" || hunk.type === "delete") {
                 // Use searchText (plain text) for finding position in doc.textContent
                 // Fall back to oldContent for backward compatibility
                 const searchText = hunk.searchText || hunk.oldContent;
@@ -224,7 +234,11 @@ export const DiffReviewExtension = Extension.create({
           let from: number;
           let to: number;
 
-          if (hunk.type === "replace" || hunk.type === "delete") {
+          if (hunk.isFullDocumentReplace) {
+            // Full document replacement: replace entire document content
+            from = 0;
+            to = state.doc.content.size;
+          } else if (hunk.type === "replace" || hunk.type === "delete") {
             // Use resolved positions from decoration computation
             if (hunk.resolvedFrom !== undefined && hunk.resolvedTo !== undefined) {
               from = hunk.resolvedFrom;
@@ -255,151 +269,171 @@ export const DiffReviewExtension = Extension.create({
 
             if (hunk.type === "replace") {
               if (newContent) {
-                // Check if we're inside a code block
-                const $from = state.doc.resolve(from);
-                const $to = state.doc.resolve(to);
-                const isInCodeBlock = $from.parent.type.name === "codeBlock";
-
-                if (isInCodeBlock) {
-                  // For code blocks, just replace with plain text
-                  // Don't parse as markdown - keep the raw text
-                  // Strip markdown code fences if present (``` at start/end)
-                  let codeContent = newContent;
-                  // Remove opening fence: ```language or just ```
-                  codeContent = codeContent.replace(/^```[^\n]*\n?/, "");
-                  // Remove closing fence
-                  codeContent = codeContent.replace(/\n?```\s*$/, "");
-
-                  const textNode = state.schema.text(codeContent);
-                  tr.replaceWith(from, to, textNode);
-                } else {
-                  // ============================================
-                  // UNIFIED CROSS-BLOCK REPLACEMENT LOGIC
-                  // ============================================
-                  // Key insight: when old_str spans multiple blocks (e.g., heading + list),
-                  // we must replace from the START of the first block to the END of the last block.
-                  // This ensures all old content is deleted before inserting new content.
-
-                  // Step 1: Calculate the actual replacement range
-                  // This expands from/to to block boundaries when content spans multiple blocks
-                  const replacementRange = calculateReplacementRange(state.doc, from, to, $from, $to);
-
-                  // Step 2: Parse the new content
-                  const parentType = $from.parent.type.name;
-
-                  // Check if we're inside a list item or table (at any depth)
-                  let isInListItem = false;
-                  let isInTable = false;
-                  let tableDepth = -1;
-                  for (let d = $from.depth; d >= 0; d--) {
-                    const node = $from.node(d);
-                    if (node.type.name === "listItem") {
-                      isInListItem = true;
-                    }
-                    if (node.type.name === "table") {
-                      isInTable = true;
-                      tableDepth = d;
-                    }
-                  }
-
-                  const isInParagraph = parentType === "paragraph";
-                  const isInHeading = parentType === "heading";
-
-                  // Strip list markers from newContent if we're inside a list item
-                  let contentToRender = newContent;
-                  if (isInListItem && !isHtml(newContent)) {
-                    contentToRender = newContent.replace(/^[-*+]\s+|\d+\.\s+/gm, "");
-                  }
-
-                  // Check if content is already HTML
-                  const contentIsHtml = isHtml(contentToRender);
-                  const html = contentIsHtml ? contentToRender : markdownToHtml(contentToRender);
+                // Special handling for full document replacement
+                if (hunk.isFullDocumentReplace) {
+                  // For full document replacement, replace the entire document content
+                  const contentIsHtml = isHtml(newContent);
+                  const html = contentIsHtml ? newContent : markdownToHtml(newContent);
                   const element = document.createElement("div");
                   element.innerHTML = html;
 
-                  // Normalize table HTML for TipTap compatibility
                   normalizeTableHtml(element);
 
                   const parser = ProseMirrorDOMParser.fromSchema(state.schema);
                   const parsedDoc = parser.parse(element);
 
                   if (parsedDoc.content.size > 0) {
-                    const firstChild = parsedDoc.content.firstChild;
-                    const childCount = parsedDoc.content.childCount;
-                    const hasMultipleBlocks = childCount > 1;
+                    // Replace entire document content (from position 0 to end)
+                    tr.replaceWith(0, state.doc.content.size, parsedDoc.content);
+                  }
+                }
+                // Regular replace (not full document)
+                else {
+                  const $from = state.doc.resolve(from);
+                  const $to = state.doc.resolve(to);
+                  const isInCodeBlock = $from.parent.type.name === "codeBlock";
 
-                    // Step 3: Determine replacement strategy based on content analysis
-                    // Priority order (from most specific to most general):
+                  if (isInCodeBlock) {
+                    // For code blocks, just replace with plain text
+                    // Don't parse as markdown - keep the raw text
+                    // Strip markdown code fences if present (``` at start/end)
+                    let codeContent = newContent;
+                    // Remove opening fence: ```language or just ```
+                    codeContent = codeContent.replace(/^```[^\n]*\n?/, "");
+                    // Remove closing fence
+                    codeContent = codeContent.replace(/\n?```\s*$/, "");
 
-                    // 3a. Cross-block replacement: when from/to span different blocks
-                    // BUT NOT if we're replacing a table with a table (let 3a2 handle that)
-                    if (replacementRange.isCrossBlock && !(isInTable && firstChild?.type.name === "table")) {
-                      tr.replaceWith(replacementRange.actualStart, replacementRange.actualEnd, parsedDoc.content);
+                    const textNode = state.schema.text(codeContent);
+                    tr.replaceWith(from, to, textNode);
+                  } else {
+                    // ============================================
+                    // UNIFIED CROSS-BLOCK REPLACEMENT LOGIC
+                    // ============================================
+                    // Key insight: when old_str spans multiple blocks (e.g., heading + list),
+                    // we must replace from the START of the first block to the END of the last block.
+                    // This ensures all old content is deleted before inserting new content.
+
+                    // Step 1: Calculate the actual replacement range
+                    // This expands from/to to block boundaries when content spans multiple blocks
+                    const replacementRange = calculateReplacementRange(state.doc, from, to, $from, $to);
+
+                    // Step 2: Parse the new content
+                    const parentType = $from.parent.type.name;
+
+                    // Check if we're inside a list item or table (at any depth)
+                    let isInListItem = false;
+                    let isInTable = false;
+                    let tableDepth = -1;
+                    for (let d = $from.depth; d >= 0; d--) {
+                      const node = $from.node(d);
+                      if (node.type.name === "listItem") {
+                        isInListItem = true;
+                      }
+                      if (node.type.name === "table") {
+                        isInTable = true;
+                        tableDepth = d;
+                      }
                     }
-                    // 3a2. Table-to-table replacement: when we're inside a table and new content is a table
-                    // This MUST be before paragraph checks because table cells contain paragraphs
-                    else if (isInTable && firstChild?.type.name === "table" && tableDepth > 0) {
-                      // Replace the entire containing table with the new table
-                      const tableStart = $from.before(tableDepth);
-                      const tableEnd = $from.after(tableDepth);
-                      tr.replaceWith(tableStart, tableEnd, parsedDoc.content);
+
+                    const isInParagraph = parentType === "paragraph";
+                    const isInHeading = parentType === "heading";
+
+                    // Strip list markers from newContent if we're inside a list item
+                    let contentToRender = newContent;
+                    if (isInListItem && !isHtml(newContent)) {
+                      contentToRender = newContent.replace(/^[-*+]\s+|\d+\.\s+/gm, "");
                     }
-                    // 3b. List item inline replacement
-                    else if (isInListItem && firstChild?.type.name === "bulletList" && !hasMultipleBlocks) {
-                      const listItem = firstChild.content.firstChild;
-                      if (listItem) {
-                        const paragraph = listItem.content.firstChild;
-                        if (paragraph && paragraph.content.size > 0) {
-                          tr.replaceWith(from, to, paragraph.content);
+
+                    // Check if content is already HTML
+                    const contentIsHtml = isHtml(contentToRender);
+                    const html = contentIsHtml ? contentToRender : markdownToHtml(contentToRender);
+                    const element = document.createElement("div");
+                    element.innerHTML = html;
+
+                    // Normalize table HTML for TipTap compatibility
+                    normalizeTableHtml(element);
+
+                    const parser = ProseMirrorDOMParser.fromSchema(state.schema);
+                    const parsedDoc = parser.parse(element);
+
+                    if (parsedDoc.content.size > 0) {
+                      const firstChild = parsedDoc.content.firstChild;
+                      const childCount = parsedDoc.content.childCount;
+                      const hasMultipleBlocks = childCount > 1;
+
+                      // Step 3: Determine replacement strategy based on content analysis
+                      // Priority order (from most specific to most general):
+
+                      // 3a. Cross-block replacement: when from/to span different blocks
+                      // BUT NOT if we're replacing a table with a table (let 3a2 handle that)
+                      if (replacementRange.isCrossBlock && !(isInTable && firstChild?.type.name === "table")) {
+                        tr.replaceWith(replacementRange.actualStart, replacementRange.actualEnd, parsedDoc.content);
+                      }
+                      // 3a2. Table-to-table replacement: when we're inside a table and new content is a table
+                      // This MUST be before paragraph checks because table cells contain paragraphs
+                      else if (isInTable && firstChild?.type.name === "table" && tableDepth > 0) {
+                        // Replace the entire containing table with the new table
+                        const tableStart = $from.before(tableDepth);
+                        const tableEnd = $from.after(tableDepth);
+                        tr.replaceWith(tableStart, tableEnd, parsedDoc.content);
+                      }
+                      // 3b. List item inline replacement
+                      else if (isInListItem && firstChild?.type.name === "bulletList" && !hasMultipleBlocks) {
+                        const listItem = firstChild.content.firstChild;
+                        if (listItem) {
+                          const paragraph = listItem.content.firstChild;
+                          if (paragraph && paragraph.content.size > 0) {
+                            tr.replaceWith(from, to, paragraph.content);
+                          }
                         }
                       }
-                    }
-                    // 3c. Single paragraph inline replacement
-                    else if (isInParagraph && firstChild?.type.name === "paragraph" && !hasMultipleBlocks && !replacementRange.shouldExpandToBlock) {
-                      if (firstChild.content.size > 0) {
-                        tr.replaceWith(from, to, firstChild.content);
-                      }
-                    }
-                    // 3d. Multiple blocks replacing a paragraph
-                    else if (isInParagraph && hasMultipleBlocks) {
-                      const paragraphStart = $from.start($from.depth);
-                      // Use Math.max to ensure we delete all content up to 'to'
-                      const paragraphEnd = Math.max($from.end($from.depth), to);
-                      tr.replaceWith(paragraphStart, paragraphEnd, parsedDoc.content);
-                    }
-                    // 3e. Table replacement
-                    else if (firstChild?.type.name === "table") {
-                      handleTableReplacement(tr, state, from, to, $from, $to, firstChild, parsedDoc);
-                    }
-                    // 3f. Block-level content replacing paragraph
-                    else if (isInParagraph && firstChild && ["codeBlock", "blockquote", "bulletList", "orderedList"].includes(firstChild.type.name)) {
-                      let blockStart = from;
-                      let blockEnd = to;
-
-                      for (let d = $from.depth; d > 0; d--) {
-                        const node = $from.node(d);
-                        if (node.type.name === "paragraph" || node.type.name === "tableCell" || node.type.name === "tableHeader") {
-                          blockStart = $from.start(d);
-                          // Use Math.max to ensure we delete all old content
-                          blockEnd = Math.max($from.end(d), to);
-                          break;
+                      // 3c. Single paragraph inline replacement
+                      else if (isInParagraph && firstChild?.type.name === "paragraph" && !hasMultipleBlocks && !replacementRange.shouldExpandToBlock) {
+                        if (firstChild.content.size > 0) {
+                          tr.replaceWith(from, to, firstChild.content);
                         }
                       }
+                      // 3d. Multiple blocks replacing a paragraph
+                      else if (isInParagraph && hasMultipleBlocks) {
+                        const paragraphStart = $from.start($from.depth);
+                        // Use Math.max to ensure we delete all content up to 'to'
+                        const paragraphEnd = Math.max($from.end($from.depth), to);
+                        tr.replaceWith(paragraphStart, paragraphEnd, parsedDoc.content);
+                      }
+                      // 3e. Table replacement
+                      else if (firstChild?.type.name === "table") {
+                        handleTableReplacement(tr, state, from, to, $from, $to, firstChild, parsedDoc);
+                      }
+                      // 3f. Block-level content replacing paragraph
+                      else if (isInParagraph && firstChild && ["codeBlock", "blockquote", "bulletList", "orderedList"].includes(firstChild.type.name)) {
+                        let blockStart = from;
+                        let blockEnd = to;
 
-                      tr.replaceWith(blockStart, blockEnd, parsedDoc.content);
-                    }
-                    // 3g. Heading replacement (uses actualEnd which includes content beyond heading)
-                    else if (isInHeading) {
-                      const headingStart = $from.before($from.depth);
-                      const headingEnd = $from.after($from.depth);
-                      // Use Math.max to ensure we delete all content up to 'to'
-                      // This handles cases where old_str spans heading + subsequent content
-                      const actualEnd = Math.max(headingEnd, to);
-                      tr.replaceWith(headingStart, actualEnd, parsedDoc.content);
-                    }
-                    // 3h. Default: use from/to directly
-                    else {
-                      tr.replaceWith(from, to, parsedDoc.content);
+                        for (let d = $from.depth; d > 0; d--) {
+                          const node = $from.node(d);
+                          if (node.type.name === "paragraph" || node.type.name === "tableCell" || node.type.name === "tableHeader") {
+                            blockStart = $from.start(d);
+                            // Use Math.max to ensure we delete all old content
+                            blockEnd = Math.max($from.end(d), to);
+                            break;
+                          }
+                        }
+
+                        tr.replaceWith(blockStart, blockEnd, parsedDoc.content);
+                      }
+                      // 3g. Heading replacement (uses actualEnd which includes content beyond heading)
+                      else if (isInHeading) {
+                        const headingStart = $from.before($from.depth);
+                        const headingEnd = $from.after($from.depth);
+                        // Use Math.max to ensure we delete all content up to 'to'
+                        // This handles cases where old_str spans heading + subsequent content
+                        const actualEnd = Math.max(headingEnd, to);
+                        tr.replaceWith(headingStart, actualEnd, parsedDoc.content);
+                      }
+                      // 3h. Default: use from/to directly
+                      else {
+                        tr.replaceWith(from, to, parsedDoc.content);
+                      }
                     }
                   }
                 }
@@ -497,204 +531,4 @@ export function isDiffReviewActive(
     editor.state as Parameters<typeof DiffReviewPluginKey.getState>[0]
   );
   return pluginState?.isActive ?? false;
-}
-
-// ============================================
-// HELPER FUNCTIONS FOR CROSS-BLOCK REPLACEMENT
-// ============================================
-
-interface ReplacementRange {
-  actualStart: number;
-  actualEnd: number;
-  isCrossBlock: boolean;
-  shouldExpandToBlock: boolean;
-  fromBlockType: string;
-  toBlockType: string;
-}
-
-/**
- * Calculate the actual replacement range when content spans multiple blocks.
- * This ensures that when old_str contains content from multiple blocks (e.g., heading + list),
- * we replace from the START of the first block to the END of the last block.
- *
- * @param doc - The ProseMirror document
- * @param from - The starting position of the match
- * @param to - The ending position of the match
- * @param $from - Resolved position at 'from'
- * @param $to - Resolved position at 'to'
- * @returns ReplacementRange object with actual start/end positions and metadata
- */
-function calculateReplacementRange(
-  doc: PMNode,
-  from: number,
-  to: number,
-  $from: ResolvedPos,
-  $to: ResolvedPos
-): ReplacementRange {
-  // Get the block-level nodes containing from and to
-  const fromBlockType = $from.parent.type.name;
-  const toBlockType = $to.parent.type.name;
-
-  // Check if from and to are in different block-level nodes
-  // We compare the block boundaries, not just the parent type
-  const fromBlockStart = $from.start($from.depth);
-  const fromBlockEnd = $from.end($from.depth);
-  const toBlockStart = $to.start($to.depth);
-  const toBlockEnd = $to.end($to.depth);
-
-  // Content spans multiple blocks if:
-  // 1. from and to are in different blocks (different start positions), OR
-  // 2. to extends beyond the block containing from
-  const isCrossBlock = fromBlockStart !== toBlockStart || to > fromBlockEnd;
-
-  // Should expand to block boundaries if content doesn't fill the entire block
-  // This is useful for detecting partial block selections that should be expanded
-  const shouldExpandToBlock = from > fromBlockStart || to < toBlockEnd;
-
-  if (isCrossBlock) {
-    // Find the actual boundaries:
-    // - actualStart: the start of the block containing 'from'
-    // - actualEnd: the end of the block containing 'to'
-
-    // For the start, we want to include the full first block
-    let actualStart = fromBlockStart;
-
-    // Walk up to find the top-level block if we're nested
-    // (e.g., if from is in a paragraph inside a list item, we want the list item boundary)
-    for (let d = $from.depth; d > 0; d--) {
-      const node = $from.node(d);
-      // Stop at block-level nodes that are direct children of the document
-      // or at certain container types
-      if (
-        d === 1 || // Top-level block
-        ["heading", "paragraph", "codeBlock", "blockquote", "table"].includes(node.type.name)
-      ) {
-        actualStart = $from.before(d);
-        break;
-      }
-    }
-
-    // For the end, we want to include the full last block
-    let actualEnd = toBlockEnd;
-
-    // Walk up to find the top-level block containing 'to'
-    for (let d = $to.depth; d > 0; d--) {
-      const node = $to.node(d);
-      if (
-        d === 1 ||
-        ["heading", "paragraph", "codeBlock", "blockquote", "table"].includes(node.type.name)
-      ) {
-        actualEnd = $to.after(d);
-        break;
-      }
-    }
-
-    // Ensure actualEnd is at least as large as 'to'
-    actualEnd = Math.max(actualEnd, to);
-
-    return {
-      actualStart,
-      actualEnd,
-      isCrossBlock: true,
-      shouldExpandToBlock,
-      fromBlockType,
-      toBlockType,
-    };
-  }
-
-  // Not cross-block, return original positions
-  return {
-    actualStart: from,
-    actualEnd: to,
-    isCrossBlock: false,
-    shouldExpandToBlock,
-    fromBlockType,
-    toBlockType,
-  };
-}
-
-/**
- * Normalize table HTML for TipTap compatibility.
- *
- * TipTap's table extension doesn't parse <thead>/<tbody>/<colgroup> wrappers.
- * Since all content now comes as Markdown (converted by marked), the HTML structure is:
- * - <thead><tr><th>...</th></tr></thead> for header row
- * - <tbody><tr><td>...</td></tr></tbody> for body rows
- *
- * We simply unwrap thead/tbody and remove colgroup, preserving the correct <th>/<td> tags.
- */
-function normalizeTableHtml(element: HTMLElement): void {
-  const tables = element.querySelectorAll("table");
-
-  tables.forEach((table) => {
-    // Remove <colgroup> - TipTap regenerates column structure
-    table.querySelectorAll("colgroup").forEach((cg) => cg.remove());
-
-    // Collect rows from thead and tbody in correct order
-    const headerRows = Array.from(table.querySelectorAll("thead > tr"));
-    const bodyRows = Array.from(table.querySelectorAll("tbody > tr"));
-
-    // Remove thead and tbody wrappers (but keep the rows)
-    table.querySelectorAll("thead").forEach((thead) => thead.remove());
-    table.querySelectorAll("tbody").forEach((tbody) => tbody.remove());
-
-    // Append rows directly to table in correct order
-    headerRows.forEach((row) => table.appendChild(row));
-    bodyRows.forEach((row) => table.appendChild(row));
-  });
-}
-
-/**
- * Handle table replacement with proper boundary detection.
- * When replacing with a table, we need to find and replace the entire containing table node.
- */
-function handleTableReplacement(
-  tr: Transaction,
-  state: EditorState,
-  from: number,
-  to: number,
-  $from: ResolvedPos,
-  $to: ResolvedPos,
-  firstChild: PMNode,
-  parsedDoc: PMNode
-): void {
-  // Find all tables that contain our selection range
-  let tableStart: number | null = null;
-  let tableEnd: number | null = null;
-
-  // Check if 'from' is inside a table
-  for (let d = $from.depth; d > 0; d--) {
-    const node = $from.node(d);
-    if (node.type.name === "table") {
-      tableStart = $from.before(d);
-      const tempEnd = $from.after(d);
-
-      // Check if 'to' is beyond this table
-      if (to <= tempEnd) {
-        tableEnd = tempEnd;
-      } else {
-        // 'to' extends beyond this table - find where it ends
-        for (let d2 = $to.depth; d2 > 0; d2--) {
-          const node2 = $to.node(d2);
-          if (node2.type.name === "table") {
-            tableEnd = $to.after(d2);
-            break;
-          }
-        }
-        if (tableEnd === null) {
-          tableEnd = tempEnd;
-        }
-      }
-      break;
-    }
-  }
-
-  if (tableStart !== null && tableEnd !== null) {
-    const nodeAtStart = state.doc.nodeAt(tableStart);
-    const actualTableEnd = nodeAtStart ? tableStart + nodeAtStart.nodeSize : tableEnd;
-    tr.replaceWith(tableStart, actualTableEnd, parsedDoc.content);
-  } else {
-    // Not inside a table, use standard replacement
-    tr.replaceWith(from, to, parsedDoc.content);
-  }
 }

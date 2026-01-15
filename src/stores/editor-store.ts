@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import type { DiffHunk, DiffSession } from "@/types/diff";
+
+// Re-export diff review store for backward compatibility
+export { useDiffReviewStore } from "./diff-review-store";
 
 interface Selection {
   from: number;
@@ -50,6 +52,7 @@ export interface PendingEdit {
 export type ImageModalCallback = (url: string, alt?: string) => void;
 
 interface EditorState {
+  // Core editor state
   isDirty: boolean;
   selection: Selection | null;
   isSaving: boolean;
@@ -65,7 +68,7 @@ interface EditorState {
   autocompleteTriggerMode: "auto" | "manual";
 
   // Chat Context State (for "Ask in Chat" feature - shown as Context Pills)
-  chatContexts: ChatContextItem[];  // Support multiple contexts
+  chatContexts: ChatContextItem[];
 
   // Pending edits from AI/Agent that need to be applied through editor
   pendingEdits: PendingEdit[];
@@ -74,7 +77,10 @@ interface EditorState {
   imageModalOpen: boolean;
   imageModalCallback: ImageModalCallback | null;
 
-  // Actions
+  // Text Review Panel State
+  isReviewPanelOpen: boolean;
+
+  // Core editor actions
   setDirty: (dirty: boolean) => void;
   setSelection: (selection: Selection | null) => void;
   setSaving: (saving: boolean) => void;
@@ -90,9 +96,9 @@ interface EditorState {
   setAutocompleteTriggerMode: (mode: "auto" | "manual") => void;
 
   // Chat Context Actions
-  addChatContext: (context: ChatContextInput) => void;  // Add a new context
-  removeChatContext: (id: string) => void;  // Remove a specific context
-  clearAllChatContexts: () => void;  // Clear all contexts
+  addChatContext: (context: ChatContextInput) => void;
+  removeChatContext: (id: string) => void;
+  clearAllChatContexts: () => void;
 
   // Pending Edit Actions (for undo-able AI edits)
   queueEdit: (edit: PendingEdit) => void;
@@ -103,25 +109,12 @@ interface EditorState {
   openImageModal: (callback: ImageModalCallback) => void;
   closeImageModal: () => void;
 
-  // Diff Review State
-  diffSession: DiffSession | null;
-  isReviewMode: boolean;
-
-  // Diff Review Actions
-  startDiffReview: (fileId: string, hunks: DiffHunk[], originalContent: string) => void;
-  endDiffReview: () => void;
-  acceptHunk: (hunkId: string) => void;
-  rejectHunk: (hunkId: string) => void;
-  acceptAllHunks: () => void;
-  rejectAllHunks: () => void;
-  addHunksToDiffSession: (hunks: DiffHunk[]) => void;
-
-  // Text Review Panel State
-  isReviewPanelOpen: boolean;
+  // Text Review Panel Actions
   setReviewPanelOpen: (open: boolean) => void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
+  // Initial state
   isDirty: false,
   selection: null,
   isSaving: false,
@@ -135,25 +128,27 @@ export const useEditorStore = create<EditorState>()((set) => ({
   pendingEdits: [],
   imageModalOpen: false,
   imageModalCallback: null,
-  diffSession: null,
-  isReviewMode: false,
   isReviewPanelOpen: false,
 
+  // Core editor actions
   setDirty: (dirty) => set({ isDirty: dirty }),
   setSelection: (selection) => set({ selection }),
   setSaving: (saving) => set({ isSaving: saving }),
   setLastSavedAt: (date) => set({ lastSavedAt: date }),
 
+  // Quick Edit Actions
   openQuickEdit: (position) =>
     set({ quickEditOpen: true, quickEditPosition: position }),
   closeQuickEdit: () =>
     set({ quickEditOpen: false, quickEditPosition: null }),
 
+  // Autocomplete Actions
   setAutocompleteEnabled: (enabled) => set({ autocompleteEnabled: enabled }),
   setAutocompleteSuggestion: (suggestion) =>
     set({ autocompleteSuggestion: suggestion }),
   setAutocompleteTriggerMode: (mode) => set({ autocompleteTriggerMode: mode }),
 
+  // Chat Context Actions
   addChatContext: (context) => set((state) => ({
     chatContexts: [...state.chatContexts, { ...context, id: crypto.randomUUID() } as ChatContextItem]
   })),
@@ -162,6 +157,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   })),
   clearAllChatContexts: () => set({ chatContexts: [] }),
 
+  // Pending Edit Actions
   queueEdit: (edit) =>
     set((state) => ({ pendingEdits: [...state.pendingEdits, edit] })),
   clearPendingEdit: (id) =>
@@ -170,93 +166,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
     })),
   clearAllPendingEdits: () => set({ pendingEdits: [] }),
 
+  // Image Modal Actions
   openImageModal: (callback) => set({ imageModalOpen: true, imageModalCallback: callback }),
   closeImageModal: () => set({ imageModalOpen: false, imageModalCallback: null }),
-
-  // Diff Review Actions
-  startDiffReview: (fileId, hunks, originalContent) =>
-    set({
-      diffSession: {
-        id: crypto.randomUUID(),
-        fileId,
-        hunks,
-        isActive: true,
-        originalContent,
-        createdAt: new Date().toISOString(),
-      },
-      isReviewMode: true,
-    }),
-
-  endDiffReview: () =>
-    set({
-      diffSession: null,
-      isReviewMode: false,
-    }),
-
-  acceptHunk: (hunkId) =>
-    set((state) => {
-      if (!state.diffSession) return state;
-      return {
-        diffSession: {
-          ...state.diffSession,
-          hunks: state.diffSession.hunks.map((h) =>
-            h.id === hunkId ? { ...h, status: "accepted" as const } : h
-          ),
-        },
-      };
-    }),
-
-  rejectHunk: (hunkId) =>
-    set((state) => {
-      if (!state.diffSession) return state;
-      return {
-        diffSession: {
-          ...state.diffSession,
-          hunks: state.diffSession.hunks.map((h) =>
-            h.id === hunkId ? { ...h, status: "rejected" as const } : h
-          ),
-        },
-      };
-    }),
-
-  acceptAllHunks: () =>
-    set((state) => {
-      if (!state.diffSession) return state;
-      return {
-        diffSession: {
-          ...state.diffSession,
-          hunks: state.diffSession.hunks.map((h) => ({
-            ...h,
-            status: "accepted" as const,
-          })),
-        },
-      };
-    }),
-
-  rejectAllHunks: () =>
-    set((state) => {
-      if (!state.diffSession) return state;
-      return {
-        diffSession: {
-          ...state.diffSession,
-          hunks: state.diffSession.hunks.map((h) => ({
-            ...h,
-            status: "rejected" as const,
-          })),
-        },
-      };
-    }),
-
-  addHunksToDiffSession: (hunks) =>
-    set((state) => {
-      if (!state.diffSession) return state;
-      return {
-        diffSession: {
-          ...state.diffSession,
-          hunks: [...state.diffSession.hunks, ...hunks],
-        },
-      };
-    }),
 
   // Text Review Panel Actions
   setReviewPanelOpen: (open) => set({ isReviewPanelOpen: open }),

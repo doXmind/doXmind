@@ -8,7 +8,8 @@
 import type { DiffHunk, DiffChangeType, EditOperation } from "@/types/diff";
 import { htmlToMarkdown, isHtml, markdownToPlainText } from "./markdown";
 import { findLinePosition, type DocWithContent } from "./position-mapper";
-import { diffByParagraphs } from "./diff-algorithms";
+// Note: diffByParagraphs is exported for external use but no longer used internally
+// replace_all now creates a single hunk instead of paragraph-level diffs
 import { generateId } from "./utils";
 
 // Re-export utilities for external use
@@ -45,21 +46,11 @@ export function computeDiffHunks(
     ? htmlToMarkdown(originalContent)
     : originalContent;
 
-  console.log("[diff-utils] Computing hunks for edit type:", edit.type);
-  console.log("[diff-utils] Original markdown length:", originalMarkdown.length);
-  console.log("[diff-utils] Original markdown preview:", originalMarkdown.substring(0, 300));
-
   switch (edit.type) {
     case "str_replace": {
       if (!edit.old_str || edit.new_str === undefined) {
-        console.warn("[diff-utils] str_replace missing old_str or new_str");
         return [];
       }
-
-      console.log(
-        "[diff-utils] Looking for old_str (length=" + edit.old_str.length + "):",
-        edit.old_str.substring(0, 100) + "..."
-      );
 
       // For str_replace, simply create a single hunk for the replacement
       // The old_str and new_str define exactly what to replace
@@ -89,19 +80,12 @@ export function computeDiffHunks(
         createdAt: new Date().toISOString(),
         editId: edit.file_id,
       };
-      console.log("[diff-utils] Created str_replace hunk:", {
-        id: hunk.id,
-        type: hunkType,
-        oldContent: edit.old_str.substring(0, 50) + "...",
-        searchText: searchText.substring(0, 50) + "...",
-      });
       hunks.push(hunk);
       break;
     }
 
     case "insert": {
       if (edit.insert_line === undefined || edit.new_str === undefined) {
-        console.warn("[diff-utils] insert missing insert_line or new_str");
         return [];
       }
 
@@ -136,22 +120,24 @@ export function computeDiffHunks(
 
     case "replace_all": {
       if (edit.new_content === undefined) {
-        console.warn("[diff-utils] replace_all missing new_content");
         return [];
       }
 
-      console.log("[diff-utils] Creating replace_all hunks by paragraph diff");
-
-      // Split into paragraphs and diff them
-      const paragraphHunks = diffByParagraphs(
-        originalMarkdown,
-        edit.new_content,
-        edit.file_id,
-        generateId
-      );
-
-      console.log(`[diff-utils] Created ${paragraphHunks.length} paragraph hunks`);
-      hunks.push(...paragraphHunks);
+      // For replace_all, create a single hunk that replaces the entire document
+      // Do NOT use paragraph-level diffing as that creates too many individual hunks
+      hunks.push({
+        id: generateId(),
+        type: "replace" as const,
+        from: 0,
+        to: -1, // Special marker: means "end of document"
+        oldContent: originalMarkdown,
+        searchText: "", // Empty: don't use text search for full document replace
+        newContent: edit.new_content,
+        status: "pending" as const,
+        createdAt: new Date().toISOString(),
+        editId: edit.file_id,
+        isFullDocumentReplace: true,
+      });
       break;
     }
   }

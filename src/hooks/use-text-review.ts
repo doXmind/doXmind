@@ -57,12 +57,10 @@ export function useTextReview({
 
   const triggerReview = useCallback(async (): Promise<ReviewResult | null> => {
     if (!editor) {
-      console.warn("[TextReview] No editor available");
       return null;
     }
 
     if (isReviewingRef.current) {
-      console.warn("[TextReview] Review already in progress");
       return null;
     }
 
@@ -70,7 +68,6 @@ export function useTextReview({
     const { text, posMap } = extractTextWithPositions(editor.state.doc);
 
     if (text.trim().length < MIN_REVIEW_DOCUMENT_LENGTH) {
-      console.log("[TextReview] Document too short for review");
       return null;
     }
 
@@ -119,10 +116,6 @@ export function useTextReview({
 
             // Validate positions
             if (from >= to || to > docSize || from < 0) {
-              console.warn(
-                `[TextReview] Invalid position for suggestion: ${s.original_text}`,
-                { from, to, docSize }
-              );
               return null;
             }
 
@@ -162,7 +155,6 @@ export function useTextReview({
         };
 
         onReviewComplete?.(suggestions.length, (result as { suggestions: APISuggestion[]; summary: string }).summary);
-        console.log(`[TextReview] Review complete: ${suggestions.length} suggestions`);
 
         isReviewingRef.current = false;
         return reviewResult;
@@ -174,11 +166,8 @@ export function useTextReview({
       isReviewingRef.current = false;
 
       if (isAbortError(error)) {
-        console.log("[TextReview] Review aborted");
         return null;
       }
-
-      console.error("[TextReview] Error:", error);
       editor.commands.setReviewLoading(false);
       onReviewError?.((error as Error).message);
       return null;

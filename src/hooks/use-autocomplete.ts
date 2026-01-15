@@ -286,7 +286,6 @@ export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOpt
     }
 
     const handleManualTrigger = () => {
-      console.log("[useAutocomplete] Received manual trigger event");
       manualTrigger();
     };
 

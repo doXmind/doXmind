@@ -1,6 +1,6 @@
 """Knowledge Base API - Conversation-level document attachments."""
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -11,14 +11,24 @@ import logging
 
 from markitdown import MarkItDown
 
-from db.database import get_db, Conversation, ConversationAttachment
+from db.database import Conversation, ConversationAttachment
+from dependencies import get_db, get_rag_service, get_conversation_by_file_id
 from services.rag_service import RAGService
+from config import get_settings
+from exceptions import (
+    ConversationNotFoundError,
+    AttachmentNotFoundError,
+    FileTooLargeError,
+    UnsupportedFileTypeError,
+    InternalError,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Configuration
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+# Configuration from settings
+settings = get_settings()
+MAX_FILE_SIZE = settings.max_file_size
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx'}
 
 
@@ -60,19 +70,8 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename)[1].lower()
 
 
-def format_file_size(size_bytes: int) -> str:
-    """Format file size for display."""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-
-
 async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
     """Extract text content from uploaded file."""
-    # MarkItDown requires a file path
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
@@ -88,62 +87,28 @@ async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
             pass
 
 
-async def get_or_create_conversation_by_file_id(
-    file_id: str,
-    db: AsyncSession
-) -> Conversation:
-    """Get conversation by file_id, or create if not exists.
-
-    The frontend passes file_id as conversation_id, so we need to look up
-    the actual conversation by file_id (matching chat.py behavior).
-    """
-    import uuid
-
-    # First try to find by conversation ID directly
-    conv = await db.get(Conversation, file_id)
-    if conv:
-        return conv
-
-    # Try to find by file_id
-    result = await db.execute(
-        select(Conversation).where(Conversation.file_id == file_id)
-    )
-    conv = result.scalar_one_or_none()
-    if conv:
-        return conv
-
-    # Create new conversation for this file
-    conv = Conversation(
-        id=str(uuid.uuid4()),
-        file_id=file_id if file_id != "global" else None
-    )
-    db.add(conv)
-    await db.commit()
-    await db.refresh(conv)
-    return conv
-
-
 @router.post("/{conversation_id}/attachments", response_model=AttachmentResponse)
 async def upload_attachment(
     conversation_id: str,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    rag: RAGService = Depends(get_rag_service)
 ):
     """Upload a document to the conversation's knowledge base.
 
     - Accepts: PDF, DOCX, PPTX files
-    - Max size: 50MB
+    - Max size: 50MB (configurable)
     - Extracts text and indexes in vector store
     """
-    # Get or create conversation (frontend passes file_id as conversation_id)
-    conv = await get_or_create_conversation_by_file_id(conversation_id, db)
+    # Get or create conversation
+    conv = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
 
     # Validate file extension
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+        raise UnsupportedFileTypeError(
+            file_type=ext,
+            allowed_types=list(ALLOWED_EXTENSIONS)
         )
 
     # Read file content
@@ -151,12 +116,12 @@ async def upload_attachment(
 
     # Validate file size
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
+        raise FileTooLargeError(
+            max_size=MAX_FILE_SIZE,
+            actual_size=len(content)
         )
 
-    # Create attachment record (use actual conversation UUID, not file_id)
+    # Create attachment record
     file_type = ext[1:]  # Remove the dot
     attachment = ConversationAttachment(
         conversation_id=conv.id,
@@ -169,14 +134,11 @@ async def upload_attachment(
     await db.commit()
     await db.refresh(attachment)
 
-    # Process in background-like manner (synchronous for now, can be made async with Celery/etc)
+    # Process file
     try:
-        # Extract text
         extracted_text = await extract_text_content(content, file.filename or "", ext)
         attachment.extracted_text = extracted_text
 
-        # Index in vector store (use actual conversation UUID)
-        rag = RAGService()
         chunk_count = await rag.index_kb_attachment(
             attachment_id=attachment.id,
             conversation_id=conv.id,
@@ -210,39 +172,16 @@ async def upload_attachment(
     )
 
 
-async def get_conversation_by_file_id(
-    file_id: str,
-    db: AsyncSession
-) -> Conversation | None:
-    """Get conversation by file_id (without creating).
-
-    Returns None if conversation doesn't exist.
-    """
-    # First try to find by conversation ID directly
-    conv = await db.get(Conversation, file_id)
-    if conv:
-        return conv
-
-    # Try to find by file_id
-    result = await db.execute(
-        select(Conversation).where(Conversation.file_id == file_id)
-    )
-    return result.scalar_one_or_none()
-
-
 @router.get("/{conversation_id}/attachments", response_model=AttachmentListResponse)
 async def list_attachments(
     conversation_id: str,
     db: AsyncSession = Depends(get_db)
 ):
     """List all attachments in a conversation's knowledge base."""
-    # Find conversation by file_id (frontend passes file_id as conversation_id)
     conv = await get_conversation_by_file_id(conversation_id, db)
     if not conv:
-        # Return empty list if conversation doesn't exist yet
         return AttachmentListResponse(attachments=[], total_size=0, count=0)
 
-    # Get all attachments using actual conversation UUID
     result = await db.execute(
         select(ConversationAttachment)
         .where(ConversationAttachment.conversation_id == conv.id)
@@ -277,27 +216,24 @@ async def list_attachments(
 async def delete_attachment(
     conversation_id: str,
     attachment_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    rag: RAGService = Depends(get_rag_service)
 ):
     """Delete an attachment from the knowledge base."""
-    # Find conversation by file_id
     conv = await get_conversation_by_file_id(conversation_id, db)
     if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ConversationNotFoundError(conversation_id)
 
-    # Get attachment and verify it belongs to this conversation
     attachment = await db.get(ConversationAttachment, attachment_id)
     if not attachment or attachment.conversation_id != conv.id:
-        raise HTTPException(status_code=404, detail="Attachment not found")
+        raise AttachmentNotFoundError(attachment_id)
 
     # Delete from vector store
     try:
-        rag = RAGService()
         await rag.delete_kb_attachment(attachment_id)
     except Exception as e:
         logger.warning(f"Failed to delete KB vectors: {e}")
 
-    # Delete from database
     await db.delete(attachment)
     await db.commit()
 
@@ -308,17 +244,15 @@ async def delete_attachment(
 async def search_knowledge_base(
     conversation_id: str,
     request: KBSearchRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    rag: RAGService = Depends(get_rag_service)
 ):
     """Search within the conversation's knowledge base."""
-    # Find conversation by file_id
     conv = await get_conversation_by_file_id(conversation_id, db)
     if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ConversationNotFoundError(conversation_id)
 
-    # Search using actual conversation UUID
     try:
-        rag = RAGService()
         results = await rag.search_kb(
             conversation_id=conv.id,
             query=request.query,
@@ -337,7 +271,7 @@ async def search_knowledge_base(
         )
     except Exception as e:
         logger.error(f"KB search failed: {e}")
-        raise HTTPException(status_code=500, detail="Search failed")
+        raise InternalError(message="Search failed", details={"error": str(e)})
 
 
 @router.get("/{conversation_id}/attachments/{attachment_id}/content")
@@ -347,15 +281,13 @@ async def get_attachment_content(
     db: AsyncSession = Depends(get_db)
 ):
     """Get the extracted text content of an attachment."""
-    # Find conversation by file_id
     conv = await get_conversation_by_file_id(conversation_id, db)
     if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ConversationNotFoundError(conversation_id)
 
-    # Get attachment and verify it belongs to this conversation
     attachment = await db.get(ConversationAttachment, attachment_id)
     if not attachment or attachment.conversation_id != conv.id:
-        raise HTTPException(status_code=404, detail="Attachment not found")
+        raise AttachmentNotFoundError(attachment_id)
 
     return {
         "id": attachment.id,

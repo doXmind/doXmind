@@ -218,3 +218,35 @@ export const Z_INDEX = {
   /** Modal dialogs */
   MODAL: 70,
 } as const;
+
+// =============================================================================
+// Chat/AI Configuration
+// =============================================================================
+
+/** Maximum number of images allowed in chat context */
+export const CHAT_MAX_IMAGES = 10;
+
+/** Maximum image file size in bytes (5MB for Anthropic API) */
+export const CHAT_MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+// =============================================================================
+// UI Popup/Menu Dimensions
+// =============================================================================
+
+/** Review popup dimensions */
+export const REVIEW_POPUP = {
+  /** Default popup width in pixels */
+  WIDTH: 340,
+  /** Padding from viewport edges */
+  VIEWPORT_PADDING: 16,
+} as const;
+
+// =============================================================================
+// Local Storage Keys
+// =============================================================================
+
+/** Local storage key prefixes */
+export const STORAGE_KEYS = {
+  /** Onboarding completion flag */
+  ONBOARDING_COMPLETED: "doxmind-onboarding-completed",
+} as const;

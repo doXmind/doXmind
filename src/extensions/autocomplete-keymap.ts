@@ -26,7 +26,6 @@ export const AutocompleteKeymap = Extension.create({
       // Alt+/: Manual trigger autocomplete (like IntelliJ IDEA)
       // This doesn't conflict with Windows IME
       "Alt-/": () => {
-        console.log("[Autocomplete Keymap] Alt+/ pressed - triggering autocomplete");
         window.dispatchEvent(new CustomEvent(AUTOCOMPLETE_TRIGGER_EVENT));
         return true;
       },

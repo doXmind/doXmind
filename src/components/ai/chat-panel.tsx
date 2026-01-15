@@ -1,296 +1,22 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Send, Square, Trash2, Sparkles, Check, AlertCircle, Loader2, FileEdit, Eye, Search, Replace, Brain, ChevronDown, ChevronRight, X, FileText, ImageIcon, BookOpen } from "lucide-react";
+import { Send, Square, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessage } from "./chat-message";
+import { ThinkingIndicator } from "./thinking-indicator";
+import { ToolIndicator } from "./tool-indicator";
+import { ContextPill } from "./context-pill";
+import { SuggestionButton } from "./suggestion-button";
+import { AttachmentMenu } from "./attachment-menu";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
-import { useEditorStore, type ChatContextItem } from "@/stores/editor-store";
-import { useChat, type ToolStatus, type ThinkingStatus } from "@/hooks/use-chat";
-import { cn } from "@/lib/utils";
-import { AttachmentMenu } from "./attachment-menu";
-
-// Get icon for tool type
-function getToolIcon(toolName: string) {
-  switch (toolName) {
-    case "view_document":
-      return Eye;
-    case "str_replace_editor":
-      return Replace;
-    case "insert_text":
-      return FileEdit;
-    case "replace_document":
-      return FileEdit;
-    case "search_in_document":
-      return Search;
-    case "apply_edits":
-      return Check;
-    // Knowledge Base tools
-    case "search_knowledge_base":
-      return BookOpen;
-    case "read_kb_document":
-      return BookOpen;
-    case "list_kb_documents":
-      return BookOpen;
-    default:
-      return Sparkles;
-  }
-}
-
-// Get display name for tool
-function getToolDisplayName(toolName: string) {
-  switch (toolName) {
-    case "view_document":
-      return "Reading document";
-    case "str_replace_editor":
-      return "Editing text";
-    case "insert_text":
-      return "Inserting text";
-    case "replace_document":
-      return "Replacing document";
-    case "search_in_document":
-      return "Searching document";
-    case "apply_edits":
-      return "Applying changes";
-    // Knowledge Base tools
-    case "search_knowledge_base":
-      return "Searching knowledge base";
-    case "read_kb_document":
-      return "Reading KB document";
-    case "list_kb_documents":
-      return "Listing KB documents";
-    default:
-      return toolName;
-  }
-}
-
-// Thinking indicator component (shows AI reasoning process)
-function ThinkingIndicator({ thinking }: { thinking: ThinkingStatus }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  if (!thinking.content && !thinking.isThinking) return null;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 5 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className="ml-11 mb-2"
-    >
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors duration-200 w-full text-left",
-          thinking.isThinking
-            ? "bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400"
-            : "bg-purple-500/5 border-purple-500/15 text-purple-600/70 dark:text-purple-400/70"
-        )}
-      >
-        <div className="relative flex-shrink-0">
-          <Brain className="h-4 w-4" />
-          {thinking.isThinking && (
-            <motion.span
-              className="absolute -top-1 -right-1 h-2 w-2 bg-purple-500 rounded-full"
-              animate={{
-                scale: [1, 1.3, 1],
-                boxShadow: [
-                  '0 0 0 0 rgba(168, 85, 247, 0.4)',
-                  '0 0 0 6px rgba(168, 85, 247, 0)',
-                  '0 0 0 0 rgba(168, 85, 247, 0.4)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            />
-          )}
-        </div>
-        <span className="font-medium truncate flex-1">
-          {thinking.isThinking ? "Thinking..." : "Thought process"}
-        </span>
-        {thinking.isThinking && <Loader2 className="h-3 w-3 animate-spin" />}
-        <motion.span
-          animate={{ rotate: isExpanded ? 90 : 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <ChevronRight className="h-4 w-4 flex-shrink-0" />
-        </motion.span>
-      </button>
-      <AnimatePresence>
-        {isExpanded && thinking.content && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="mt-1 px-3 py-2 text-xs text-muted-foreground bg-muted/50 rounded-lg border border-border/50 max-h-[200px] overflow-y-auto whitespace-pre-wrap">
-              {thinking.content}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
-// Tool status indicator component (like Claude's tool usage display)
-function ToolIndicator({ tool }: { tool: ToolStatus }) {
-  const Icon = getToolIcon(tool.name);
-  const displayName = getToolDisplayName(tool.name);
-
-  // Determine colors based on status
-  const statusStyles = {
-    running: {
-      bg: 'rgba(59, 130, 246, 0.1)',
-      border: 'rgba(59, 130, 246, 0.3)',
-      text: 'text-blue-600 dark:text-blue-400'
-    },
-    completed: {
-      bg: 'rgba(34, 197, 94, 0.1)',
-      border: 'rgba(34, 197, 94, 0.3)',
-      text: 'text-green-600 dark:text-green-400'
-    },
-    error: {
-      bg: 'rgba(239, 68, 68, 0.1)',
-      border: 'rgba(239, 68, 68, 0.3)',
-      text: 'text-red-600 dark:text-red-400'
-    }
-  };
-
-  const currentStyle = statusStyles[tool.status] || statusStyles.running;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 5, scale: 0.98 }}
-      animate={{
-        opacity: 1,
-        y: 0,
-        scale: 1,
-        backgroundColor: currentStyle.bg,
-        borderColor: currentStyle.border
-      }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className={cn(
-        "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border",
-        currentStyle.text
-      )}
-    >
-      {tool.status === "running" && (
-        <>
-          <div className="relative">
-            <Icon className="h-4 w-4 flex-shrink-0" />
-            <motion.span
-              className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full"
-              animate={{
-                scale: [1, 1.2, 1],
-                opacity: [1, 0.7, 1]
-              }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-            />
-          </div>
-          <span className="truncate font-medium">{displayName}...</span>
-          <Loader2 className="h-3 w-3 animate-spin ml-auto" />
-        </>
-      )}
-      {tool.status === "completed" && (
-        <>
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-          >
-            <Icon className="h-4 w-4 flex-shrink-0" />
-          </motion.div>
-          <span className="truncate">{tool.message || `${displayName}`}</span>
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 15, delay: 0.1 }}
-          >
-            <Check className="h-3 w-3 ml-auto" />
-          </motion.div>
-        </>
-      )}
-      {tool.status === "error" && (
-        <>
-          <motion.div
-            animate={{ x: [0, -2, 2, -2, 0] }}
-            transition={{ duration: 0.4 }}
-          >
-            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          </motion.div>
-          <span className="truncate">{tool.message || "Error"}</span>
-        </>
-      )}
-    </motion.div>
-  );
-}
-
-// Context Pill component - shows selected text or image as a collapsible pill (Cursor-style)
-function ContextPill({
-  context,
-  onRemove
-}: {
-  context: ChatContextItem;
-  onRemove: () => void;
-}) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const isImage = context.type === 'image';
-  const Icon = isImage ? ImageIcon : FileText;
-  const label = isImage
-    ? `Image${context.alt ? `: ${context.alt}` : ''}`
-    : `Selected Text (${context.text.length} chars)`;
-
-  return (
-    <div className="border border-border rounded-lg overflow-hidden bg-muted/30">
-      <div className="flex items-center gap-2 px-3 py-2 text-sm">
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-primary transition-colors"
-        >
-          <Icon className="h-4 w-4 text-primary flex-shrink-0" />
-          <span className="truncate text-muted-foreground">
-            {label}
-          </span>
-          {isExpanded ? (
-            <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-          ) : (
-            <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="p-1 hover:bg-accent rounded transition-colors flex-shrink-0"
-          title="Remove context"
-        >
-          <X className="h-3 w-3 text-muted-foreground" />
-        </button>
-      </div>
-      {isExpanded && (
-        <div className="px-3 py-2 text-sm text-muted-foreground bg-muted/50 border-t border-border max-h-[150px] overflow-y-auto">
-          {isImage ? (
-            <img
-              src={context.src}
-              alt={context.alt || 'Image'}
-              className="max-w-full h-auto rounded"
-            />
-          ) : (
-            <div className="whitespace-pre-wrap">{context.text}</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+import { useEditorStore } from "@/stores/editor-store";
+import { useChat } from "@/hooks/use-chat";
+import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
 
 export function ChatPanel() {
   const [input, setInput] = useState("");
@@ -393,8 +119,6 @@ export function ChatPanel() {
     }
   };
 
-  // Max images allowed
-  const MAX_IMAGES = 10;
   const currentImageCount = chatContexts.filter(c => c.type === 'image').length;
 
   // Process image file and add to context
@@ -404,14 +128,12 @@ export function ChatPanel() {
 
     // Check image count limit
     const imageCount = chatContexts.filter(c => c.type === 'image').length;
-    if (imageCount >= MAX_IMAGES) {
-      console.warn(`Maximum ${MAX_IMAGES} images allowed`);
+    if (imageCount >= CHAT_MAX_IMAGES) {
       return;
     }
 
     // Check file size (5MB limit for Anthropic API)
-    if (file.size > 5 * 1024 * 1024) {
-      console.warn(`Image ${file.name} is too large (max 5MB)`);
+    if (file.size > CHAT_MAX_IMAGE_SIZE) {
       return;
     }
 
@@ -574,7 +296,7 @@ export function ChatPanel() {
             conversationId={conversation.id}
             onImageSelect={handleImageFilesFromMenu}
             imageCount={currentImageCount}
-            maxImages={MAX_IMAGES}
+            maxImages={CHAT_MAX_IMAGES}
             disabled={isStreaming}
           />
 
@@ -625,23 +347,5 @@ export function ChatPanel() {
         </p>
       </form>
     </div>
-  );
-}
-
-function SuggestionButton({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full text-left px-4 md:px-3 py-3 md:py-2 text-base md:text-sm rounded-lg md:rounded-md border border-border hover:bg-accent active:scale-[0.98] transition-all"
-    >
-      {children}
-    </button>
   );
 }

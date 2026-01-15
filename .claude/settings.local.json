@@ -77,7 +77,8 @@
       "Bash(python server/migrations/add_contexts_column.py:*)",
       "Bash(python migrations/add_contexts_column.py:*)",
       "Bash(node:*)",
-      "Bash(heroku config:*)"
+      "Bash(heroku config:*)",
+      "Bash(cd:*)"
     ]
   }
 }

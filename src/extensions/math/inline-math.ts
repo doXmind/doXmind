@@ -4,10 +4,9 @@
  * Supports inline math expressions using $...$ syntax
  */
 
-import { Node, mergeAttributes } from "@tiptap/core";
+import { Node, mergeAttributes, InputRule } from "@tiptap/core";
+import type { NodeType } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-import { inputRules } from "@tiptap/pm/inputrules";
-import { InputRule } from "@tiptap/core";
 import { MathNodeView } from "@/components/editor/math/math-node-view";
 
 export interface InlineMathOptions {
@@ -29,7 +28,7 @@ declare module "@tiptap/core" {
  * Input rule to convert $...$ to inline math
  * Matches text between single $ delimiters (not $$)
  */
-const inlineMathInputRule = (type: any) => {
+const inlineMathInputRule = (type: NodeType) => {
   return new InputRule({
     find: /(?<![\\$])\$([^$]+)\$$/,
     handler: ({ state, range, match }) => {

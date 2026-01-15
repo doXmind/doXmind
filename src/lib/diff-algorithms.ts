@@ -197,10 +197,6 @@ export function diffByParagraphs(
   const oldParagraphs = splitIntoParagraphs(oldContent);
   const newParagraphs = splitIntoParagraphs(newContent);
 
-  console.log(
-    `[diff-algorithms] Diffing ${oldParagraphs.length} old paragraphs vs ${newParagraphs.length} new paragraphs`
-  );
-
   const diff = diffParagraphArrays(oldParagraphs, newParagraphs);
 
   // Check if no paragraphs are unchanged - this is a full replacement
@@ -208,7 +204,6 @@ export function diffByParagraphs(
   const hasUnchanged = diff.some((d) => d.type === "unchanged");
 
   if (!hasUnchanged && oldContent !== newContent) {
-    console.log("[diff-algorithms] Full replacement detected, creating single hunk");
     return [
       {
         id: generateId(),
@@ -298,7 +293,6 @@ export function diffByParagraphs(
 
   // If no changes detected but content is different, create a single replace hunk
   if (hunks.length === 0 && oldContent !== newContent) {
-    console.log("[diff-algorithms] No paragraph changes detected, creating single replace hunk");
     hunks.push({
       id: generateId(),
       type: "replace",

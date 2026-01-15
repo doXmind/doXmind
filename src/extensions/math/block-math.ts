@@ -5,6 +5,7 @@
  */
 
 import { Node, mergeAttributes } from "@tiptap/core";
+import type { NodeType } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { InputRule } from "@tiptap/core";
 import { MathNodeView } from "@/components/editor/math/math-node-view";
@@ -28,7 +29,7 @@ declare module "@tiptap/core" {
  * Input rule to convert $$...$$ to block math
  * Triggers when user types $$ followed by content and closing $$
  */
-const blockMathInputRule = (type: any) => {
+const blockMathInputRule = (type: NodeType) => {
   return new InputRule({
     find: /^\$\$([^$]*)\$\$$/,
     handler: ({ state, range, match }) => {
@@ -45,7 +46,7 @@ const blockMathInputRule = (type: any) => {
 /**
  * Input rule to start a block math when typing $$ at the start of a line
  */
-const startBlockMathInputRule = (type: any) => {
+const startBlockMathInputRule = (type: NodeType) => {
   return new InputRule({
     find: /^\$\$\s$/,
     handler: ({ state, range }) => {

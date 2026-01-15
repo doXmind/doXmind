@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useFileStore } from "@/stores/file-store";
-import { useEditorStore } from "@/stores/editor-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { computeDiffHunks } from "@/lib/diff-utils";
 import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
 import type { EditOperation } from "@/types";
@@ -17,7 +17,7 @@ export type { EditOperation } from "@/types";
 export function useEditOperations() {
   const { getFile } = useFileStore();
   const { startDiffReview, isReviewMode, addHunksToDiffSession, diffSession } =
-    useEditorStore();
+    useDiffReviewStore();
 
   /**
    * Apply multiple edit operations at once to avoid async state issues

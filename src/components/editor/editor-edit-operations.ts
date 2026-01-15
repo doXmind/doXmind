@@ -37,7 +37,7 @@ export function applyPendingEdit(
           newMarkdown = currentMarkdown.replace(edit.oldStr, edit.newStr);
           success = true;
         } else {
-          console.warn("[Editor] str_replace: old_str not found, trying fuzzy match");
+          // Try fuzzy match with normalized whitespace
           const normalizedContent = currentMarkdown.replace(/\s+/g, " ");
           const normalizedOld = edit.oldStr.replace(/\s+/g, " ");
           if (normalizedContent.includes(normalizedOld)) {
@@ -71,7 +71,6 @@ export function applyPendingEdit(
   }
 
   if (!success) {
-    console.warn(`[Editor] Failed to apply ${edit.type} edit`);
     return;
   }
 
@@ -88,8 +87,6 @@ export function applyPendingEdit(
   const { tr } = editor.state;
   tr.replaceWith(0, editor.state.doc.content.size, newDoc.content);
   editor.view.dispatch(tr);
-
-  console.log(`[Editor] Applied ${edit.type} edit through ProseMirror transaction`);
 }
 
 /**
@@ -112,8 +109,7 @@ export function applyPendingEdits(
     try {
       applyPendingEdit(editor, edit, currentEditorContent);
       clearEdit(edit.id);
-    } catch (error) {
-      console.error(`[Editor] Failed to apply edit ${edit.id}:`, error);
+    } catch {
       clearEdit(edit.id);
     }
   }

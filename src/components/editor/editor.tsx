@@ -22,9 +22,10 @@ import { getReviewState } from "@/extensions/text-review-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useTextReview } from "@/hooks/use-text-review";
+import { useDiffReview } from "@/hooks/use-diff-review";
+import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { useLayoutStore } from "@/stores/layout-store";
 import { debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
@@ -49,11 +50,6 @@ export function Editor({ file: initialFile }: EditorProps) {
     imageModalOpen,
     imageModalCallback,
     closeImageModal,
-    diffSession,
-    isReviewMode,
-    endDiffReview,
-    acceptHunk,
-    rejectHunk,
     isReviewPanelOpen,
     setReviewPanelOpen,
   } = useEditorStore();
@@ -105,7 +101,6 @@ export function Editor({ file: initialFile }: EditorProps) {
       lastContentRef.current = file.content;
       queueMicrotask(() => {
         editor.commands.setContent(file.content, false);
-        // Manually emit update event since setContent's emitUpdate may not trigger on("update") listeners
         editor.emit("update", { editor, transaction: editor.state.tr });
       });
     }
@@ -150,6 +145,17 @@ export function Editor({ file: initialFile }: EditorProps) {
   const isReviewLoading = reviewState?.isLoading ?? false;
   const isReviewActive = reviewState?.isActive ?? false;
 
+  // Use diff review hook
+  const { isReviewMode, pendingCount, handleAcceptAll, handleRejectAll } = useDiffReview({
+    editor,
+    fileId: file.id,
+  });
+
+  // Use keyboard shortcuts hook
+  useEditorShortcuts({
+    onSearchOpen: () => setIsSearchOpen(true),
+  });
+
   // Handle Review button click
   const handleReviewClick = useCallback(() => {
     if (isReviewActive) {
@@ -192,102 +198,7 @@ export function Editor({ file: initialFile }: EditorProps) {
     [imageModalCallback, closeImageModal]
   );
 
-  // Get layout store for keyboard shortcut
-  const { toggleMindlines } = useLayoutStore();
-
-  // Handle keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + F: Open search
-      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
-        e.preventDefault();
-        setIsSearchOpen(true);
-      }
-      // Ctrl/Cmd + Shift + O: Toggle outline
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "o") {
-        e.preventDefault();
-        toggleMindlines();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [toggleMindlines]);
-
-  // Sync diffSession to DiffReviewExtension
-  useEffect(() => {
-    if (!editor || !diffSession) {
-      editor?.commands.clearDiffReview();
-      return;
-    }
-
-    if (diffSession.fileId === file.id) {
-      const pendingHunks = diffSession.hunks.filter((h) => h.status === "pending");
-      editor.commands.setDiffHunks(pendingHunks);
-    }
-  }, [editor, diffSession, file.id]);
-
-  // Handle diff accept/reject events
-  useEffect(() => {
-    const handleAccept = (e: Event) => {
-      const customEvent = e as CustomEvent<{ hunkId: string }>;
-      const hunkId = customEvent.detail.hunkId;
-
-      editor?.commands.acceptDiffHunk(hunkId);
-      acceptHunk(hunkId);
-
-      const remaining = diffSession?.hunks.filter(
-        (h) => h.status === "pending" && h.id !== hunkId
-      );
-      if (remaining?.length === 0) {
-        endDiffReview();
-      }
-    };
-
-    const handleReject = (e: Event) => {
-      const customEvent = e as CustomEvent<{ hunkId: string }>;
-      const hunkId = customEvent.detail.hunkId;
-
-      editor?.commands.rejectDiffHunk(hunkId);
-      rejectHunk(hunkId);
-
-      const remaining = diffSession?.hunks.filter(
-        (h) => h.status === "pending" && h.id !== hunkId
-      );
-      if (remaining?.length === 0) {
-        endDiffReview();
-      }
-    };
-
-    document.addEventListener("diff-accept", handleAccept);
-    document.addEventListener("diff-reject", handleReject);
-
-    return () => {
-      document.removeEventListener("diff-accept", handleAccept);
-      document.removeEventListener("diff-reject", handleReject);
-    };
-  }, [editor, diffSession, acceptHunk, rejectHunk, endDiffReview]);
-
-  // Handle Accept All / Reject All
-  const handleAcceptAll = useCallback(() => {
-    if (!diffSession) return;
-
-    const pendingHunks = diffSession.hunks.filter((h) => h.status === "pending");
-    for (const hunk of pendingHunks) {
-      editor?.commands.acceptDiffHunk(hunk.id);
-    }
-
-    endDiffReview();
-  }, [editor, diffSession, endDiffReview]);
-
-  const handleRejectAll = useCallback(() => {
-    if (!diffSession) return;
-
-    editor?.commands.clearDiffReview();
-    endDiffReview();
-  }, [editor, diffSession, endDiffReview]);
-
-  // Handle link confirm for mobile toolbar - must be before early return
+  // Handle link confirm for mobile toolbar
   const handleLinkConfirm = useCallback(
     (url: string) => {
       editor?.chain().focus().setLink({ href: url }).run();
@@ -322,7 +233,6 @@ export function Editor({ file: initialFile }: EditorProps) {
           editor={editor}
           onLinkClick={() => setLinkModalOpen(true)}
           onImageClick={() => {
-            // Open image modal through store
             useEditorStore.getState().openImageModal((url, alt) => {
               editor?.chain().focus().setImage({ src: url, alt }).run();
             });
@@ -333,10 +243,11 @@ export function Editor({ file: initialFile }: EditorProps) {
       <DiffReviewToolbar
         editor={editor}
         isActive={isReviewMode}
-        pendingCount={diffSession?.hunks.filter((h) => h.status === "pending").length || 0}
+        pendingCount={pendingCount}
         onAcceptAll={handleAcceptAll}
         onRejectAll={handleRejectAll}
       />
+
       <div className="flex-1 min-h-0 flex overflow-x-hidden">
         {/* Outline toggle button - shows when outline is closed */}
         {!isMobile && <OutlineToggle headingsCount={headings.length} />}
@@ -368,6 +279,8 @@ export function Editor({ file: initialFile }: EditorProps) {
           />
         )}
       </div>
+
+      {/* Bubble Menus & Popups */}
       <BubbleMenuComponent editor={editor} />
       <LinkBubbleMenu editor={editor} />
       <TableBubbleMenu editor={editor} />
@@ -375,12 +288,13 @@ export function Editor({ file: initialFile }: EditorProps) {
       <SpellcheckPopup editor={editor} />
       <ReviewPopup editor={editor} />
       <QuickEditMenu onApply={handleQuickEditApply} />
+
+      {/* Modals */}
       <ImageModal
         open={imageModalOpen}
         onClose={closeImageModal}
         onConfirm={handleImageModalConfirm}
       />
-      {/* Link Modal for mobile toolbar */}
       <LinkModal
         open={linkModalOpen}
         onClose={() => setLinkModalOpen(false)}
