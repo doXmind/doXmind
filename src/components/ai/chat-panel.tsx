@@ -513,14 +513,14 @@ export function ChatPanel() {
               Ask me to help you write, edit, or improve your document.
             </p>
             <div className="mt-4 space-y-2 w-full">
+              <SuggestionButton onClick={() => setInput("Help me write a report")}>
+                Write a report
+              </SuggestionButton>
               <SuggestionButton onClick={() => setInput("Help me improve the writing style")}>
                 Improve writing style
               </SuggestionButton>
               <SuggestionButton onClick={() => setInput("Summarize this document")}>
                 Summarize document
-              </SuggestionButton>
-              <SuggestionButton onClick={() => setInput("Check for grammar errors")}>
-                Check grammar
               </SuggestionButton>
             </div>
           </div>

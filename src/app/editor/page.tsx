@@ -28,6 +28,15 @@ export default function EditorPage() {
     loadFiles();
   }, [loadFiles]);
 
+  // Update browser tab title based on current file
+  useEffect(() => {
+    if (currentFile) {
+      document.title = `${currentFile.name} - doXmind`;
+    } else {
+      document.title = "doXmind - AI Writing Studio";
+    }
+  }, [currentFile]);
+
   // Mobile Layout: Editor always visible + overlay sheets/sidebar
   if (isMobile) {
     return (
