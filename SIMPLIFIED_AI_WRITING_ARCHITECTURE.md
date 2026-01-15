@@ -1,6 +1,6 @@
-# AI Writing Studio - 简化版架构设计
+# doXmind - 架构设计文档
 
-> 一个专注于 Markdown AI 辅助编辑的现代化写作工具，类似 "Cursor for Writing"
+> Think. Write. Publish. — 一个专注于 Markdown AI 辅助编辑的现代化写作工具
 
 ---
 
@@ -29,21 +29,24 @@
 
 ### 功能范围
 
-| 保留 ✅ | 移除 ❌ |
-|---------|---------|
-| Markdown 编辑器 | CSV 数据分析模式 |
-| AI 对话（Chat） | HTML 幻灯片模式 |
-| AI 快速编辑（Quick Edit） | 实时协作（Y.js） |
-| AI 自动补全（Autocomplete） | 复杂权限系统 |
-| 版本历史（简化版） | 工作区共享 |
-| 文件管理（简化版） | 代码执行功能 |
-| 深色/浅色主题 | 多用户系统 |
+| 核心功能 ✅ | 辅助功能 ✅ | 未实现 ❌ |
+|-------------|-------------|-----------|
+| Markdown 编辑器 | 命令面板 (Ctrl+K) | CSV 数据分析模式 |
+| AI 对话（Chat） | 键盘快捷键 (Ctrl+?) | HTML 幻灯片模式 |
+| AI 快速编辑（Quick Edit） | 高对比度模式 | 实时协作（Y.js） |
+| AI 自动补全（Autocomplete） | 引导教程 | 复杂权限系统 |
+| Diff Review（差异审查） | 网络状态指示 | 工作区共享 |
+| 版本历史 | 未保存提醒 | 代码执行功能 |
+| 文件管理 | 动态标签标题 | 多用户系统 |
+| Mindlines（大纲/思维导图） | 加载骨架屏 | |
+| 深色/浅色主题 | Framer Motion 动画 | |
+| 知识库附件 | 拖放导入 | |
 
 ---
 
 ## 技术栈选择
 
-### 前端技术栈 (2025 最新)
+### 前端技术栈 (2026 最新)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -54,6 +57,8 @@
 │  Styling:        Tailwind CSS 4.0 + shadcn/ui               │
 │  Editor:         TipTap 3.x (with AI extensions)            │
 │  State:          Zustand + React Query (TanStack Query)     │
+│  Animation:      Framer Motion (流畅 UI 动画)               │
+│  Visualization:  ReactFlow (思维导图可视化)                 │
 │  Desktop:        Tauri 2.0 (可选，用于桌面版)                │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -85,6 +90,8 @@
 | **Claude API** | 最强的写作能力，200K 上下文，原生工具调用，流式思考 |
 | **Chroma** | 轻量级向量数据库，本地运行，无需服务器 |
 | **Zustand** | 比 Redux 更简单，比 Context 更高效，完美适配 Next.js |
+| **Framer Motion** | 声明式动画 API，优秀的性能，React 生态最佳动画库 |
+| **ReactFlow** | 高性能节点图渲染，完美支持思维导图场景 |
 
 ---
 
@@ -92,7 +99,7 @@
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                           AI Writing Studio                                 │
+│                               doXmind                                       │
 ├────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -152,80 +159,98 @@
 src/
 ├── app/                          # Next.js 15 App Router
 │   ├── layout.tsx                # 根布局 (Server Component)
-│   ├── page.tsx                  # 首页/编辑器页面
+│   ├── page.tsx                  # 首页 (Landing Page)
+│   ├── globals.css               # 全局样式 + CSS 变量
 │   ├── api/                      # API Route Handlers (可选)
 │   │   └── [...proxy]/route.ts   # 代理到 Python 后端
-│   └── (editor)/                 # 编辑器路由组
-│       ├── layout.tsx            # 编辑器布局
-│       ├── [fileId]/page.tsx     # 文件编辑页
-│       └── loading.tsx           # 加载状态
+│   └── editor/                   # 编辑器路由
+│       └── page.tsx              # 编辑器主页面
 │
 ├── components/                   # React 组件
 │   ├── editor/                   # 编辑器相关
-│   │   ├── Editor.tsx            # TipTap 编辑器主组件
-│   │   ├── EditorToolbar.tsx     # 工具栏
-│   │   ├── BubbleMenu.tsx        # 选中文本浮动菜单
-│   │   ├── SlashCommand.tsx      # 斜杠命令菜单
-│   │   └── extensions/           # TipTap 扩展
-│   │       ├── ai-autocomplete.ts
-│   │       ├── ai-commands.ts
-│   │       └── markdown.ts
+│   │   ├── editor.tsx            # TipTap 编辑器主组件
+│   │   ├── editor-toolbar.tsx    # 工具栏
+│   │   ├── bubble-menu.tsx       # 选中文本浮动菜单 (Framer Motion)
+│   │   ├── search-toolbar.tsx    # 浮动搜索工具栏
+│   │   ├── diff-review-toolbar.tsx # AI 差异审查工具栏
+│   │   ├── editor-skeleton.tsx   # 编辑器加载骨架
+│   │   └── mindlines/            # 大纲/思维导图
+│   │       ├── mindlines.tsx     # 主组件
+│   │       ├── outline-view.tsx  # 大纲视图
+│   │       ├── outline-toggle.tsx # 浮动切换按钮
+│   │       ├── mindmap-flow.tsx  # ReactFlow 思维导图
+│   │       └── flow-nodes/       # 自定义节点
 │   │
 │   ├── ai/                       # AI 功能组件
-│   │   ├── ChatPanel.tsx         # AI 对话面板
-│   │   ├── ChatInput.tsx         # 输入框 (支持 @ 文件引用)
-│   │   ├── ChatMessage.tsx       # 消息气泡
-│   │   ├── QuickEditMenu.tsx     # 快速编辑菜单
-│   │   ├── AutocompleteGhost.tsx # 自动补全幽灵文本
-│   │   └── StreamingText.tsx     # 流式文本渲染
+│   │   ├── chat-panel.tsx        # AI 对话面板 (Framer Motion 动画)
+│   │   ├── chat-input.tsx        # 输入框 (支持 @ 文件引用)
+│   │   ├── chat-message.tsx      # 消息气泡
+│   │   ├── chat-skeleton.tsx     # 聊天加载骨架
+│   │   ├── quick-edit-menu.tsx   # 快速编辑菜单 (spring 动画)
+│   │   ├── attachment-menu.tsx   # 统一附件菜单 (图片+文档+KB)
+│   │   └── streaming-text.tsx    # 流式文本渲染
 │   │
 │   ├── sidebar/                  # 侧边栏
-│   │   ├── Sidebar.tsx           # 侧边栏主组件
-│   │   ├── FileTree.tsx          # 文件树
-│   │   ├── FileItem.tsx          # 文件项
-│   │   └── NewFileButton.tsx     # 新建文件按钮
+│   │   ├── sidebar.tsx           # 侧边栏主组件
+│   │   ├── sidebar-skeleton.tsx  # 侧边栏加载骨架
+│   │   └── file-tree/            # 文件树组件
+│   │
+│   ├── onboarding/               # 引导功能
+│   │   └── onboarding-tour.tsx   # 新用户引导教程
 │   │
 │   ├── ui/                       # 基础 UI 组件 (shadcn/ui)
-│   │   ├── button.tsx
-│   │   ├── dialog.tsx
-│   │   ├── dropdown-menu.tsx
-│   │   ├── input.tsx
-│   │   ├── tooltip.tsx
-│   │   └── ...
+│   │   ├── command-palette.tsx   # 命令面板 (Ctrl+K)
+│   │   ├── keyboard-shortcuts-modal.tsx # 快捷键帮助
+│   │   ├── network-status-indicator.tsx # 网络状态
+│   │   ├── success-animation.tsx # 成功动画
+│   │   ├── animated-logo.tsx     # 动画 Logo
+│   │   ├── skeleton.tsx          # 骨架屏基础组件
+│   │   └── ...                   # 其他 shadcn 组件
 │   │
-│   └── layout/                   # 布局组件
-│       ├── AppShell.tsx          # 应用外壳
-│       ├── Header.tsx            # 顶部导航
-│       └── ThemeToggle.tsx       # 主题切换
+│   ├── layout/                   # 布局组件
+│   │   ├── header.tsx            # 顶部导航
+│   │   └── theme-toggle.tsx      # 主题切换
+│   │
+│   ├── loading-screen.tsx        # 加载屏幕 (Logo + 骨架)
+│   └── welcome-screen.tsx        # 欢迎页面 (拖放导入)
+│
+├── extensions/                   # TipTap 扩展
+│   ├── diff-review/              # 差异审查扩展
+│   │   ├── index.ts              # 主扩展逻辑
+│   │   └── diff-widgets.ts       # Diff 装饰器
+│   └── search/                   # 搜索扩展
+│       └── index.ts              # 搜索高亮 + 导航
 │
 ├── hooks/                        # 自定义 Hooks
-│   ├── useEditor.ts              # 编辑器状态管理
-│   ├── useAIChat.ts              # AI 对话逻辑
-│   ├── useQuickEdit.ts           # 快速编辑逻辑
-│   ├── useAutocomplete.ts        # 自动补全逻辑
-│   ├── useFiles.ts               # 文件操作
-│   └── useStream.ts              # SSE 流式处理
+│   ├── use-chat.ts               # AI 对话逻辑
+│   ├── use-quick-edit.ts         # 快速编辑逻辑
+│   ├── use-autocomplete.ts       # 自动补全逻辑
+│   ├── use-files.ts              # 文件操作
+│   ├── use-stream.ts             # SSE 流式处理
+│   ├── use-high-contrast.ts      # 高对比度模式
+│   ├── use-network-status.ts     # 网络状态检测
+│   └── use-unsaved-changes-warning.ts # 未保存提醒
 │
 ├── lib/                          # 工具函数
 │   ├── api.ts                    # API 客户端配置
-│   ├── markdown.ts               # Markdown 工具
-│   ├── storage.ts                # 本地存储
-│   └── utils.ts                  # 通用工具
+│   ├── markdown.ts               # Markdown 工具 (turndown-plugin-gfm)
+│   ├── diff-utils.ts             # Diff 算法工具
+│   ├── diff-algorithms.ts        # Myers diff 实现
+│   └── utils.ts                  # 通用工具 + 错误消息映射
 │
 ├── stores/                       # Zustand 状态管理
 │   ├── editor-store.ts           # 编辑器状态
 │   ├── file-store.ts             # 文件状态
-│   ├── chat-store.ts             # 对话状态
+│   ├── chat-store.ts             # 对话状态 (含 contexts)
+│   ├── layout-store.ts           # 布局状态 (高对比度等)
 │   └── settings-store.ts         # 设置状态
 │
-├── types/                        # TypeScript 类型
-│   ├── editor.ts
-│   ├── file.ts
-│   ├── chat.ts
-│   └── api.ts
-│
-└── styles/                       # 样式
-    └── globals.css               # Tailwind + 自定义样式
+└── types/                        # TypeScript 类型
+    ├── editor.ts
+    ├── file.ts
+    ├── chat.ts
+    ├── diff.ts                   # Diff 相关类型
+    └── turndown-plugin-gfm.d.ts  # 类型声明
 ```
 
 ### 核心组件设计
@@ -428,11 +453,13 @@ server/
 │
 ├── api/                          # API 路由
 │   ├── __init__.py
-│   ├── chat.py                   # AI 对话端点
+│   ├── chat.py                   # AI 对话端点 (含 contexts 支持)
 │   ├── edit.py                   # 快速编辑端点
 │   ├── autocomplete.py           # 自动补全端点
 │   ├── files.py                  # 文件操作端点
-│   └── versions.py               # 版本历史端点
+│   ├── versions.py               # 版本历史端点
+│   ├── knowledge_base.py         # 知识库附件 API (file_id 查询)
+│   └── import_file.py            # 文件导入 API
 │
 ├── agents/                       # LangGraph Agents
 │   ├── __init__.py
@@ -441,11 +468,10 @@ server/
 │   │   ├── __init__.py
 │   │   ├── file_tools.py         # 文件读写工具
 │   │   ├── search_tools.py       # 内容搜索工具
-│   │   └── web_tools.py          # 网页获取工具 (可选)
+│   │   └── kb_tools.py           # 知识库搜索工具
 │   └── prompts/                  # 系统提示词
-│       ├── base.py               # 基础提示词
-│       ├── edit_mode.py          # 编辑模式提示词
-│       └── analyze_mode.py       # 分析模式提示词
+│       ├── base.py               # 基础提示词 (指定 markdown 格式)
+│       └── prompts.py            # 模式提示词
 │
 ├── services/                     # 业务服务
 │   ├── __init__.py
@@ -457,13 +483,16 @@ server/
 ├── models/                       # 数据模型
 │   ├── __init__.py
 │   ├── file.py                   # 文件模型
-│   ├── message.py                # 消息模型
+│   ├── message.py                # 消息模型 (含 contexts 字段)
 │   └── version.py                # 版本模型
 │
 ├── db/                           # 数据库
 │   ├── __init__.py
-│   ├── database.py               # SQLite 连接
+│   ├── database.py               # SQLite/PostgreSQL 连接
 │   └── migrations/               # 数据库迁移
+│
+├── migrations/                   # 独立迁移脚本
+│   └── add_contexts_column.py    # 添加 contexts 列
 │
 └── utils/                        # 工具函数
     ├── __init__.py
@@ -1102,30 +1131,41 @@ AI Writing Studio:
 ### 功能对比
 
 ```
-✅ 保留的核心功能:
+✅ 核心功能:
    - Markdown WYSIWYG 编辑
-   - AI 对话 (Chat)
-   - AI 快速编辑 (Quick Edit)
+   - AI 对话 (Chat) + Framer Motion 动画
+   - AI 快速编辑 (Quick Edit) + spring 动画
+   - AI Diff Review (差异审查) + 跨块替换
    - AI 自动补全 (Autocomplete)
-   - 文件管理
+   - Mindlines (大纲 + 思维导图)
+   - 文件管理 + 拖放导入
    - 版本历史
-   - 深色/浅色主题
+   - 知识库附件 (PDF/DOCX/PPTX)
+   - 深色/浅色/高对比度主题
 
-❌ 移除的复杂功能:
+✅ 用户体验功能:
+   - 命令面板 (Ctrl+K)
+   - 键盘快捷键帮助 (Ctrl+?)
+   - 新用户引导教程
+   - 加载骨架屏 + 动画 Logo
+   - 网络状态指示器
+   - 未保存更改提醒
+   - 动态浏览器标签标题
+   - Skip-to-content 无障碍支持
+
+❌ 未实现的功能:
    - 实时协作 (Y.js)
    - 多用户 & 权限系统
-   - Google OAuth 认证
-   - 工作区共享
    - CSV 数据分析模式
    - HTML 幻灯片模式
    - 代码执行功能
-   - S3 云存储
-   - 复杂的 MCP 工具集
 
-🆕 新增的功能:
-   - 本地 RAG (Chroma)
-   - 语义文件搜索
-   - 更智能的上下文管理
+🆕 技术亮点:
+   - 本地 RAG (Chroma) 语义搜索
+   - GFM 表格支持 (turndown-plugin-gfm)
+   - 跨块差异替换算法
+   - ReactFlow 思维导图可视化
+   - Framer Motion 全局动画系统
 ```
 
 ---
@@ -1197,3 +1237,6 @@ CHROMA_PERSIST_DIR=./data/chroma
 - [TipTap 编辑器](https://tiptap.dev/)
 - [Next.js 15 文档](https://nextjs.org/docs/app)
 - [Chroma 向量数据库](https://www.trychroma.com/)
+- [Framer Motion](https://www.framer.com/motion/)
+- [ReactFlow](https://reactflow.dev/)
+- [shadcn/ui](https://ui.shadcn.com/)

@@ -1,8 +1,8 @@
-# doXmind Mini
+# doXmind
 
-> AI-powered writing assistant for markdown editing - "Cursor for Writing"
+> Think. Write. Publish. — AI-powered writing assistant for markdown editing
 
-A minimalist, modern AI writing tool that combines a powerful markdown editor with Claude AI assistance.
+A minimalist, modern AI writing tool that combines a powerful markdown editor with Claude AI assistance. Think of it as "Cursor for Writing".
 
 <img width="1355" height="859" alt="880c13120803e0339a8c8c2b0105486" src="https://github.com/user-attachments/assets/581ae1e0-b96a-4654-abc3-9fe5e49b2ae3" />
 
@@ -11,16 +11,20 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 
 ### Core Editor
 - **Rich Markdown Editor** - TipTap-based WYSIWYG editor with full markdown support
+- **Mindlines** - Document outline panel with toggle view (Ctrl+Shift+O) and mindmap visualization
 - **Version History** - Track changes and restore previous versions
-- **Dark/Light Mode** - Beautiful UI with theme support
+- **Dark/Light Mode** - Beautiful UI with theme support and high contrast mode
+- **Loading Experience** - Polished loading screen with animated logo and skeleton UI
 
 ### AI Capabilities
-- **AI Chat** - Conversational AI assistance powered by Claude
-- **Quick Edit** - Select text and instantly improve, translate, or simplify
+- **AI Chat** - Conversational AI assistance powered by Claude with smooth animations
+- **Quick Edit** - Select text and instantly improve, translate, or simplify with spring animations
+- **Diff Review** - Review and accept/reject AI-suggested changes with cross-block replacement support
 - **Autocomplete** - GitHub Copilot-style AI text completion
 - **RAG Search** - Semantic search across your documents
 
 ### Knowledge Base
+- **Unified Attachment Menu** - Single menu for images, documents, and KB management
 - **Document Attachments** - Attach PDF, DOCX, PPTX files to conversations
 - **AI Document Analysis** - AI can search and read your attached documents
 - **Vector Search** - Semantic search across your knowledge base
@@ -42,6 +46,17 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 - **Swipe Gestures** - Drag-up panels for chat and outline
 - **Touch-Friendly** - Large touch targets (44-48px) for comfortable interaction
 
+### Accessibility & UX
+- **Command Palette** - Quick actions via Ctrl+K (search, navigate, execute commands)
+- **Keyboard Shortcuts** - Comprehensive shortcuts with help modal (Ctrl+?)
+- **Skip to Content** - Keyboard navigation with skip link for accessibility
+- **High Contrast Mode** - Light and dark high contrast variants
+- **Onboarding Tour** - Guided tour for new users
+- **Network Status** - Offline/online indicator
+- **Unsaved Changes Warning** - Prevent accidental data loss
+- **Dynamic Tab Title** - Browser tab updates based on current file
+- **Framer Motion Animations** - Polished UI transitions throughout
+
 ## Tech Stack
 
 ### Frontend
@@ -51,6 +66,8 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 - **Tailwind CSS** - Utility-first styling
 - **Zustand** - Lightweight state management
 - **React Query** - Data fetching and caching
+- **Framer Motion** - Fluid animations and transitions
+- **ReactFlow** - Mindmap visualization
 
 ### Backend
 - **FastAPI** - Modern Python web framework
@@ -147,17 +164,19 @@ Navigate to [http://localhost:3000](http://localhost:3000)
 ## Project Structure
 
 ```
-doxmind-mini/
+doxmind/
 ├── src/                      # Frontend source
 │   ├── app/                  # Next.js App Router
 │   ├── components/           # React components
-│   │   ├── editor/          # TipTap editor
-│   │   ├── ai/              # AI chat & quick edit
+│   │   ├── editor/          # TipTap editor & mindlines
+│   │   ├── ai/              # AI chat, quick edit & attachments
 │   │   ├── kb/              # Knowledge base components
 │   │   ├── mobile/          # Mobile-responsive components
 │   │   ├── sidebar/         # File management
 │   │   ├── layout/          # App layout
-│   │   └── ui/              # Base UI components
+│   │   ├── onboarding/      # Onboarding tour
+│   │   └── ui/              # Base UI components (command palette, etc.)
+│   ├── extensions/          # TipTap extensions (diff-review, search)
 │   ├── hooks/               # Custom React hooks
 │   ├── stores/              # Zustand stores
 │   ├── lib/                 # Utilities
@@ -256,6 +275,20 @@ Import external documents directly into the editor:
 - **Markdown** - Direct import of .md files
 - **Auto-Index** - Imported files are indexed for RAG search
 
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+K` | Open command palette |
+| `Ctrl+?` | Show keyboard shortcuts |
+| `Ctrl+S` | Save document |
+| `Ctrl+Shift+O` | Toggle outline panel |
+| `Ctrl+F` | Find in document |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` | Redo |
+| `Tab` | Accept autocomplete suggestion |
+| `Escape` | Cancel/close dialogs |
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -310,3 +343,5 @@ Built with:
 - [Claude](https://anthropic.com/)
 - [PostgreSQL](https://www.postgresql.org/)
 - [ChromaDB](https://www.trychroma.com/)
+- [Framer Motion](https://www.framer.com/motion/)
+- [ReactFlow](https://reactflow.dev/)
