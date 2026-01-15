@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
-  Controls,
   MiniMap,
   Background,
   BackgroundVariant,
@@ -16,7 +15,7 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowDownUp, Expand, Shrink, RotateCcw } from "lucide-react";
+import { ArrowDownUp, Expand, Shrink, RotateCcw, ZoomIn, ZoomOut, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -45,7 +44,7 @@ interface MindmapFlowProps {
  * Inner component that uses React Flow hooks
  */
 function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps) {
-  const { fitView, setCenter, getNode } = useReactFlow();
+  const { fitView, setCenter, getNode, zoomIn, zoomOut } = useReactFlow();
 
   // State for collapsed nodes and layout direction
   // Default: show H1 and H2, collapse H2+ nodes that have children
@@ -206,6 +205,15 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
     fitView({ padding: 0.2, duration: ANIMATION_DURATION.SLOW });
   }, [fitView]);
 
+  // Zoom handlers
+  const handleZoomIn = useCallback(() => {
+    zoomIn({ duration: 200 });
+  }, [zoomIn]);
+
+  const handleZoomOut = useCallback(() => {
+    zoomOut({ duration: 200 });
+  }, [zoomOut]);
+
   return (
     <ReactFlow
       nodes={nodesWithState}
@@ -275,19 +283,43 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
         </Button>
       </Panel>
 
-      {/* Keyboard shortcuts hint - moved to bottom center */}
+      {/* Zoom controls - top left */}
+      <Panel position="top-left" className="flex flex-col gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleZoomIn}
+          title="Zoom in"
+          className="h-8 w-8 bg-background/80 backdrop-blur-sm"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleZoomOut}
+          title="Zoom out"
+          className="h-8 w-8 bg-background/80 backdrop-blur-sm"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={resetView}
+          title="Fit view"
+          className="h-8 w-8 bg-background/80 backdrop-blur-sm"
+        >
+          <Maximize className="h-4 w-4" />
+        </Button>
+      </Panel>
+
+      {/* Keyboard shortcuts hint - bottom center */}
       <Panel position="bottom-center" className="text-xs text-muted-foreground bg-background/60 backdrop-blur-sm px-2 py-1 rounded mb-2">
         <span className="opacity-70">
           Click to select • Double-click to go • Space to collapse • ↑↓ Navigate
         </span>
       </Panel>
-
-      {/* Controls moved to top-left to avoid overlap */}
-      <Controls
-        showInteractive={false}
-        position="top-left"
-        className="!bg-background/80 !backdrop-blur-sm !border !shadow-sm"
-      />
 
       {/* MiniMap in bottom-right corner */}
       <MiniMap
