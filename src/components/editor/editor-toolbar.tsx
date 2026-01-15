@@ -27,7 +27,6 @@ import {
   Search,
   FileSearch,
   Loader2,
-  ListTree,
   Sigma,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,7 +39,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
-import { useLayoutStore } from "@/stores/layout-store";
 import { LinkModal } from "./link-modal";
 import { ImageModal } from "./image-modal";
 
@@ -68,8 +66,6 @@ export function EditorToolbar({
     autocompleteTriggerMode,
     setAutocompleteTriggerMode,
   } = useEditorStore();
-
-  const { isMindlinesOpen, toggleMindlines } = useLayoutStore();
 
   const handleLinkConfirm = (url: string) => {
     editor.chain().focus().setLink({ href: url }).run();
@@ -245,26 +241,30 @@ export function EditorToolbar({
         />
       </ToolbarGroup>
 
-      <ToolbarDivider />
+      {/* Modals */}
+      <LinkModal
+        open={linkModalOpen}
+        onClose={() => setLinkModalOpen(false)}
+        onConfirm={handleLinkConfirm}
+      />
+      <ImageModal
+        open={imageModalOpen}
+        onClose={() => setImageModalOpen(false)}
+        onConfirm={handleImageConfirm}
+      />
 
-      {/* Search & Outline */}
+      {/* Spacer to push right-side items */}
+      <div className="flex-1" />
+
+      {/* Right side: Search, Review, AI Autocomplete */}
       <ToolbarGroup>
         <ToolbarButton
           icon={<Search className="h-4 w-4" />}
           onClick={() => onSearchClick?.()}
           tooltip="Search (Ctrl+F)"
         />
-        <ToolbarButton
-          icon={<ListTree className="h-4 w-4" />}
-          onClick={toggleMindlines}
-          isActive={isMindlinesOpen}
-          tooltip="Toggle Outline"
-        />
       </ToolbarGroup>
 
-      <ToolbarDivider />
-
-      {/* AI Writing Review */}
       <ToolbarGroup>
         <Tooltip content="AI Writing Review" side="bottom">
           <Button
@@ -287,20 +287,7 @@ export function EditorToolbar({
         </Tooltip>
       </ToolbarGroup>
 
-      {/* Modals */}
-      <LinkModal
-        open={linkModalOpen}
-        onClose={() => setLinkModalOpen(false)}
-        onConfirm={handleLinkConfirm}
-      />
-      <ImageModal
-        open={imageModalOpen}
-        onClose={() => setImageModalOpen(false)}
-        onConfirm={handleImageConfirm}
-      />
-
-      {/* Spacer to push AI autocomplete to the right */}
-      <div className="flex-1" />
+      <ToolbarDivider />
 
       {/* AI Autocomplete Toggle */}
       <ToolbarGroup>

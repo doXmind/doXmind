@@ -90,16 +90,6 @@ export const ANIMATION_DURATION = {
 export const MINDLINES_WIDTH = {
   /** Collapsed state width */
   COLLAPSED: 208,
-  /** Preview/hover state width */
-  PREVIEW: 320,
-} as const;
-
-/** Mindlines hover timing in milliseconds */
-export const MINDLINES_HOVER_TIMING = {
-  /** Delay before expanding on hover enter */
-  ENTER_DELAY: 150,
-  /** Delay before collapsing on hover leave */
-  LEAVE_DELAY: 300,
 } as const;
 
 // =============================================================================

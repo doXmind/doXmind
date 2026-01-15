@@ -8,19 +8,16 @@ interface OutlineViewProps {
   headings: Heading[];
   activeId: string | null;
   onNavigate: (heading: Heading) => void;
-  isPreview?: boolean; // When true, show full text without truncation
 }
 
 /**
  * Traditional outline view - hierarchical indented text list
- * In collapsed mode: truncates long titles with tooltip
- * In preview mode: shows full titles (wider container)
+ * Truncates long titles with tooltip on hover
  */
 export function OutlineView({
   headings,
   activeId,
   onNavigate,
-  isPreview = false,
 }: OutlineViewProps) {
   if (headings.length === 0) {
     return (
@@ -62,9 +59,7 @@ export function OutlineView({
               </span>
               <span
                 className={cn(
-                  "min-w-0",
-                  // In preview mode, allow text to wrap; in collapsed mode, truncate
-                  isPreview ? "line-clamp-2" : "truncate",
+                  "min-w-0 truncate",
                   heading.level === 1 && "font-semibold",
                   heading.level === 2 && "font-medium"
                 )}
@@ -73,11 +68,6 @@ export function OutlineView({
               </span>
             </button>
           );
-
-          // Only show tooltip in collapsed mode (when text is truncated)
-          if (isPreview) {
-            return <div key={heading.id}>{button}</div>;
-          }
 
           return (
             <Tooltip key={heading.id} content={heading.text} side="right">

@@ -19,14 +19,10 @@ interface MindlinesProps {
 // Easing function for smooth animations
 const EASE_OUT_QUART = [0.4, 0, 0.2, 1] as const;
 
-// Animation variants for width transitions
+// Animation variants for width transitions (collapsed and expanded only, no hover preview)
 const containerVariants = {
   collapsed: {
     width: MINDLINES_WIDTH.COLLAPSED,
-    transition: { duration: ANIMATION_DURATION.NORMAL / 1000, ease: EASE_OUT_QUART },
-  },
-  preview: {
-    width: MINDLINES_WIDTH.PREVIEW,
     transition: { duration: ANIMATION_DURATION.NORMAL / 1000, ease: EASE_OUT_QUART },
   },
   expanded: {
@@ -44,20 +40,19 @@ const contentVariants = {
 
 /**
  * Mindlines - Unified document outline and mindmap component
- * Three states: collapsed (default), preview (on hover), expanded (mindmap overlay)
+ * Two states: collapsed (default) and expanded (mindmap overlay)
  */
 export function Mindlines({ editor }: MindlinesProps) {
-  const { isMindlinesOpen } = useLayoutStore();
+  const { isMindlinesOpen, setMindlinesOpen } = useLayoutStore();
   const { headings, activeId, navigateTo } = useHeadings(editor);
   const shouldReduceMotion = useReducedMotion();
 
-  const {
-    mode,
-    handleMouseEnter,
-    handleMouseLeave,
-    handleToggleExpand,
-    handleClose,
-  } = useMindlinesState();
+  const { mode, handleToggleExpand, handleClose } = useMindlinesState();
+
+  // Close the entire panel (hide from view)
+  const handleClosePanel = useCallback(() => {
+    setMindlinesOpen(false);
+  }, [setMindlinesOpen]);
 
   // Handle navigation from mindmap (navigate + close)
   const handleMindmapNavigate = useCallback(
@@ -71,7 +66,6 @@ export function Mindlines({ editor }: MindlinesProps) {
   if (!isMindlinesOpen || !editor) return null;
 
   const isExpanded = mode === "expanded";
-  const isPreview = mode === "preview";
 
   // Disable animations if user prefers reduced motion
   const animationProps = shouldReduceMotion
@@ -79,7 +73,7 @@ export function Mindlines({ editor }: MindlinesProps) {
     : {
         variants: containerVariants,
         initial: false,
-        animate: mode,
+        animate: isExpanded ? "expanded" : "collapsed",
       };
 
   return (
@@ -112,14 +106,7 @@ export function Mindlines({ editor }: MindlinesProps) {
         )}
         style={{
           ...(shouldReduceMotion && !isExpanded
-            ? {
-                width:
-                  mode === "collapsed"
-                    ? MINDLINES_WIDTH.COLLAPSED
-                    : mode === "preview"
-                      ? MINDLINES_WIDTH.PREVIEW
-                      : "auto",
-              }
+            ? { width: MINDLINES_WIDTH.COLLAPSED }
             : {}),
           ...(isExpanded
             ? {
@@ -132,8 +119,6 @@ export function Mindlines({ editor }: MindlinesProps) {
             : {}),
         }}
         {...animationProps}
-        onMouseEnter={!isExpanded ? handleMouseEnter : undefined}
-        onMouseLeave={!isExpanded ? handleMouseLeave : undefined}
         role="navigation"
         aria-label={isExpanded ? "Document mindmap" : "Document outline"}
         aria-expanded={isExpanded}
@@ -142,7 +127,7 @@ export function Mindlines({ editor }: MindlinesProps) {
         <MindlinesHeader
           mode={mode}
           onToggle={handleToggleExpand}
-          onClose={handleClose}
+          onClose={handleClosePanel}
           headingsCount={headings.length}
         />
 
@@ -163,6 +148,8 @@ export function Mindlines({ editor }: MindlinesProps) {
                   headings={headings}
                   activeId={activeId}
                   onNodeClick={handleMindmapNavigate}
+                  onToggleView={handleToggleExpand}
+                  onClose={handleClose}
                 />
               </motion.div>
             ) : (
@@ -179,7 +166,6 @@ export function Mindlines({ editor }: MindlinesProps) {
                   headings={headings}
                   activeId={activeId}
                   onNavigate={navigateTo}
-                  isPreview={isPreview}
                 />
               </motion.div>
             )}

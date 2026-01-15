@@ -1,6 +1,6 @@
 "use client";
 
-import { List, GitBranch, X, Maximize2, Minimize2 } from "lucide-react";
+import { List, GitBranch, Maximize2, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MindlinesMode } from "./use-mindlines-state";
@@ -14,7 +14,8 @@ interface MindlinesHeaderProps {
 
 /**
  * Header component for Mindlines
- * Shows title, expand/collapse toggle, and close button (in expanded mode)
+ * Shows title, expand toggle, and close button (only in non-expanded mode)
+ * In expanded mode, controls are in the mindmap panel itself
  */
 export function MindlinesHeader({
   mode,
@@ -56,36 +57,29 @@ export function MindlinesHeader({
         )}
       </div>
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-1">
-        {/* Expand/Collapse toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggle}
-          className="h-7 w-7"
-          title={isExpanded ? "Collapse to outline" : "Expand to mindmap"}
-        >
-          {isExpanded ? (
-            <Minimize2 className="w-4 h-4" />
-          ) : (
+      {/* Action buttons - only show in non-expanded mode */}
+      {!isExpanded && (
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className="h-7 w-7"
+            title="Expand to mindmap"
+          >
             <Maximize2 className="w-4 h-4" />
-          )}
-        </Button>
-
-        {/* Close button (only in expanded mode) */}
-        {isExpanded && (
+          </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
             className="h-7 w-7"
-            title="Close"
+            title="Close outline"
           >
-            <X className="w-4 h-4" />
+            <PanelLeftClose className="w-4 h-4" />
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

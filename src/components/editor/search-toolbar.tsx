@@ -63,27 +63,21 @@ export function SearchToolbar({
     }
   }, [isOpen, editor]);
 
-  // Semantic search with debounce - uses sentence-level API for precise highlighting
+  // Semantic search with debounce
   const performSemanticSearch = useCallback(
     async (query: string) => {
       if (!query.trim() || !fileId || !semanticEnabled) {
-        console.log("[Search] Skipping semantic search:", { query, fileId, semanticEnabled });
         editor?.commands.clearSemanticResults();
         return;
       }
 
-      console.log("[Search] Performing sentence-level semantic search:", { query, fileId });
       setSemanticLoading(true);
       try {
-        // Use the new in-document search API for sentence-level results
         const response = await api.searchInDocument(query, fileId, 10);
-        console.log("[Search] API response (sentences):", response);
-        // Convert to format expected by extension
         const chunks = response.results.map((r) => ({
           content: r.content,
           score: r.distance !== undefined ? 1 - r.distance : 0.5,
         }));
-        console.log("[Search] Sentence chunks for highlighting:", chunks);
         editor?.commands.setSemanticResults(chunks);
       } catch (error) {
         console.error("[Search] Semantic search error:", error);
@@ -99,11 +93,8 @@ export function SearchToolbar({
   const handleSearchChange = useCallback(
     (value: string) => {
       setSearchTerm(value);
-
-      // Keyword search (immediate)
       editor?.commands.setSearchTerm(value);
 
-      // Semantic search (debounced)
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
@@ -145,7 +136,7 @@ export function SearchToolbar({
     editor?.commands.setCaseSensitive(newValue);
   }, [caseSensitive, editor]);
 
-  // Navigation - keyword
+  // Navigation
   const handleNextKeyword = useCallback(() => {
     editor?.commands.nextSearchResult();
   }, [editor]);
@@ -154,7 +145,6 @@ export function SearchToolbar({
     editor?.commands.previousSearchResult();
   }, [editor]);
 
-  // Navigation - semantic
   const handleNextSemantic = useCallback(() => {
     editor?.commands.nextSemanticResult();
   }, [editor]);
@@ -185,7 +175,6 @@ export function SearchToolbar({
         }
         e.preventDefault();
       } else if (e.key === "Enter" && e.altKey) {
-        // Alt+Enter for semantic navigation
         if (e.shiftKey) {
           handlePreviousSemantic();
         } else {
@@ -211,25 +200,35 @@ export function SearchToolbar({
   return (
     <div
       className={cn(
-        "absolute top-2 right-4 z-50",
-        "bg-background/95 backdrop-blur-sm",
-        "border border-border rounded-lg shadow-lg",
-        "p-2 flex flex-col gap-2"
+        "absolute top-3 right-3 z-50",
+        "bg-background border border-border rounded-lg shadow-lg",
+        "w-80"
       )}
       onKeyDown={handleKeyDown}
     >
-      {/* Search input row */}
-      <div className="flex items-center gap-1.5">
-        <Search className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-
+      {/* Search row */}
+      <div className="flex items-center gap-2 p-2">
+        <Search className="h-4 w-4 text-muted-foreground shrink-0" />
         <Input
           ref={searchInputRef}
           placeholder="Search..."
           value={searchTerm}
           onChange={(e) => handleSearchChange(e.target.value)}
-          className="h-7 w-52 text-sm"
+          className="h-7 flex-1 text-sm"
         />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={onClose}
+          title="Close (Esc)"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
 
+      {/* Options & Navigation */}
+      <div className="flex items-center gap-1 px-2 pb-2">
         {/* AI toggle */}
         <Button
           variant="ghost"
@@ -248,7 +247,7 @@ export function SearchToolbar({
           )}
         </Button>
 
-        {/* Case sensitivity */}
+        {/* Case sensitive */}
         <Button
           variant="ghost"
           size="icon"
@@ -270,95 +269,88 @@ export function SearchToolbar({
           <Replace className="h-3.5 w-3.5" />
         </Button>
 
-        {/* Close */}
+        <div className="flex-1" />
+
+        {/* Keyword navigation */}
+        <span
+          className={cn(
+            "px-1.5 py-0.5 rounded text-xs",
+            "text-yellow-600 dark:text-yellow-400 bg-yellow-500/10"
+          )}
+          title="Keyword matches"
+        >
+          {keywordCount > 0 ? `${keywordIndex + 1}/${keywordCount}` : "0"}
+        </span>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7"
-          onClick={onClose}
-          title="Close (Esc)"
+          className="h-6 w-6"
+          onClick={handlePreviousKeyword}
+          disabled={keywordCount === 0}
+          title="Previous (Shift+Enter)"
         >
-          <X className="h-3.5 w-3.5" />
+          <ChevronUp className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={handleNextKeyword}
+          disabled={keywordCount === 0}
+          title="Next (Enter)"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      {/* Results navigation row */}
-      <div className="flex items-center gap-3 text-xs">
-        {/* Keyword results */}
-        <div className="flex items-center gap-1">
+      {/* Semantic results row */}
+      {semanticEnabled && (
+        <div className="flex items-center gap-1 px-2 pb-2 border-t border-border/50 pt-2">
+          <Sparkles className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+          <span className="text-xs text-muted-foreground">AI matches</span>
+          <div className="flex-1" />
           <span
-            className="px-1.5 py-0.5 rounded text-yellow-600 dark:text-yellow-400 bg-yellow-500/10"
-            title="Keyword matches"
+            className={cn(
+              "px-1.5 py-0.5 rounded text-xs",
+              "text-violet-600 dark:text-violet-400 bg-violet-500/10"
+            )}
+            title="AI semantic matches"
           >
-            {keywordCount > 0 ? `${keywordIndex + 1}/${keywordCount}` : "0"}
+            {semanticCount > 0 ? `${semanticIndex + 1}/${semanticCount}` : "0"}
           </span>
           <Button
             variant="ghost"
             size="icon"
             className="h-6 w-6"
-            onClick={handlePreviousKeyword}
-            disabled={keywordCount === 0}
-            title="Previous keyword (Shift+Enter)"
+            onClick={handlePreviousSemantic}
+            disabled={semanticCount === 0}
+            title="Previous AI (Alt+Shift+Enter)"
           >
-            <ChevronUp className="h-3 w-3" />
+            <ChevronUp className="h-3.5 w-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             className="h-6 w-6"
-            onClick={handleNextKeyword}
-            disabled={keywordCount === 0}
-            title="Next keyword (Enter)"
+            onClick={handleNextSemantic}
+            disabled={semanticCount === 0}
+            title="Next AI (Alt+Enter)"
           >
-            <ChevronDown className="h-3 w-3" />
+            <ChevronDown className="h-3.5 w-3.5" />
           </Button>
         </div>
-
-        {/* Semantic results */}
-        {semanticEnabled && (
-          <div className="flex items-center gap-1">
-            <span
-              className="px-1.5 py-0.5 rounded text-violet-600 dark:text-violet-400 bg-violet-500/10"
-              title="AI semantic matches"
-            >
-              {semanticCount > 0
-                ? `${semanticIndex + 1}/${semanticCount}`
-                : "0"}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={handlePreviousSemantic}
-              disabled={semanticCount === 0}
-              title="Previous AI match (Alt+Shift+Enter)"
-            >
-              <ChevronUp className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={handleNextSemantic}
-              disabled={semanticCount === 0}
-              title="Next AI match (Alt+Enter)"
-            >
-              <ChevronDown className="h-3 w-3" />
-            </Button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Replace row */}
       {showReplace && (
-        <div className="flex items-center gap-1.5 pt-1 border-t border-border">
+        <div className="flex items-center gap-2 p-2 border-t border-border/50">
+          <Replace className="h-4 w-4 text-muted-foreground shrink-0" />
           <Input
-            placeholder="Replace with..."
+            placeholder="Replace..."
             value={replaceTerm}
             onChange={(e) => handleReplaceChange(e.target.value)}
             className="h-7 flex-1 text-sm"
           />
-
           <Button
             variant="outline"
             size="sm"
@@ -368,7 +360,6 @@ export function SearchToolbar({
           >
             Replace
           </Button>
-
           <Button
             variant="outline"
             size="sm"

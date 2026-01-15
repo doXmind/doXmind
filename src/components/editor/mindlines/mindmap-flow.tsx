@@ -15,7 +15,7 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowDownUp, Expand, Shrink, RotateCcw, ZoomIn, ZoomOut, Maximize } from "lucide-react";
+import { ArrowDownUp, Expand, Shrink, RotateCcw, ZoomIn, ZoomOut, Maximize, Minimize2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -38,12 +38,14 @@ interface MindmapFlowProps {
   headings: Heading[];
   activeId: string | null;
   onNodeClick: (heading: Heading) => void;
+  onToggleView?: () => void;
+  onClose?: () => void;
 }
 
 /**
  * Inner component that uses React Flow hooks
  */
-function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps) {
+function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClose }: MindmapFlowProps) {
   const { fitView, setCenter, getNode, zoomIn, zoomOut } = useReactFlow();
 
   // State for collapsed nodes and layout direction
@@ -281,6 +283,37 @@ function MindmapFlowInner({ headings, activeId, onNodeClick }: MindmapFlowProps)
         >
           <RotateCcw className="h-4 w-4" />
         </Button>
+
+        {/* Separator */}
+        {(onToggleView || onClose) && (
+          <div className="w-px h-8 bg-border/50 mx-1" />
+        )}
+
+        {/* Toggle to outline view */}
+        {onToggleView && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onToggleView}
+            title="Collapse to outline"
+            className="h-8 w-8 bg-background/80 backdrop-blur-sm"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Close button */}
+        {onClose && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onClose}
+            title="Close"
+            className="h-8 w-8 bg-background/80 backdrop-blur-sm"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
       </Panel>
 
       {/* Zoom controls - top left */}

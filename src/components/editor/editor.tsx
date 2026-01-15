@@ -16,7 +16,7 @@ import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
 import { DiffReviewToolbar } from "./diff-review-toolbar";
 import { ReviewPopup } from "./review-popup";
 import { ReviewPanel } from "./review-panel";
-import { Mindlines } from "./mindlines";
+import { Mindlines, OutlineToggle, useHeadings } from "./mindlines";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { getReviewState } from "@/extensions/text-review-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
@@ -24,6 +24,7 @@ import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useTextReview } from "@/hooks/use-text-review";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
@@ -133,6 +134,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   // Initialize hooks
   useAutocomplete({ editor, fileId: file.id, fileName: file.name });
   useSpellcheck({ editor, enabled: true });
+  const { headings } = useHeadings(editor);
 
   const { triggerReview, clearReview } = useTextReview({
     editor,
@@ -190,18 +192,27 @@ export function Editor({ file: initialFile }: EditorProps) {
     [imageModalCallback, closeImageModal]
   );
 
-  // Handle search keyboard shortcut (Ctrl/Cmd + F)
+  // Get layout store for keyboard shortcut
+  const { toggleMindlines } = useLayoutStore();
+
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + F: Open search
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
         setIsSearchOpen(true);
+      }
+      // Ctrl/Cmd + Shift + O: Toggle outline
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        toggleMindlines();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [toggleMindlines]);
 
   // Sync diffSession to DiffReviewExtension
   useEffect(() => {
@@ -327,16 +338,21 @@ export function Editor({ file: initialFile }: EditorProps) {
         onRejectAll={handleRejectAll}
       />
       <div className="flex-1 min-h-0 flex overflow-x-hidden">
+        {/* Outline toggle button - shows when outline is closed */}
+        {!isMobile && <OutlineToggle headingsCount={headings.length} />}
         {/* Mindlines outline - hidden on mobile */}
         {!isMobile && <Mindlines editor={editor} />}
         {/* Main editor content area */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
-          <SearchToolbar
-            editor={editor}
-            fileId={file.id}
-            isOpen={isSearchOpen}
-            onClose={() => setIsSearchOpen(false)}
-          />
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden relative">
+          {/* Search toolbar - floating in top-right */}
+          {!isMobile && (
+            <SearchToolbar
+              editor={editor}
+              fileId={file.id}
+              isOpen={isSearchOpen}
+              onClose={() => setIsSearchOpen(false)}
+            />
+          )}
           <ScrollArea className="flex-1 min-h-0">
             <div className="max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-6">
               <EditorContent editor={editor} />
