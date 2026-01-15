@@ -16,6 +16,7 @@ import { Editor } from "@tiptap/react";
 import { useEditorStore } from "@/stores/editor-store";
 import { AutocompletePluginKey } from "@/extensions/autocomplete-extension";
 import { AUTOCOMPLETE_TRIGGER_EVENT } from "@/extensions/autocomplete-keymap";
+import { api } from "@/lib/api";
 
 // Configuration
 const CONFIG = {
@@ -169,6 +170,7 @@ export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOpt
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...api.getAuthorizationHeaders(),
         },
         body: JSON.stringify({
           text_before: textBefore,

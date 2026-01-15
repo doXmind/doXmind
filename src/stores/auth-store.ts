@@ -1,0 +1,156 @@
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { api, type User } from "@/lib/api";
+
+interface AuthState {
+  user: User | null;
+  isLoading: boolean;
+  isInitialized: boolean;
+
+  // Actions
+  initialize: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, username: string, password: string) => Promise<string>;
+  verifyEmail: (email: string, code: string) => Promise<void>;
+  resendCode: (email: string) => Promise<void>;
+  logout: () => void;
+  loginWithGoogle: () => Promise<void>;
+  handleOAuthCallback: (token: string) => Promise<void>;
+  updateProfile: (updates: { username?: string; avatar_url?: string }) => Promise<void>;
+  refreshUser: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
+}
+
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      isLoading: false,
+      isInitialized: false,
+
+      initialize: async () => {
+        if (get().isInitialized) return;
+
+        set({ isLoading: true });
+        try {
+          // Check if we have a valid token
+          if (api.isLoggedIn()) {
+            const status = await api.getAuthStatus();
+            if (status.authenticated && status.user) {
+              set({ user: status.user });
+            } else if (status.debug_mode) {
+              // In debug mode, we're "authenticated" without a real user
+              set({ user: null });
+            }
+          }
+        } catch (error) {
+          console.error("Failed to initialize auth:", error);
+          // Clear invalid token
+          api.logout();
+        } finally {
+          set({ isLoading: false, isInitialized: true });
+        }
+      },
+
+      login: async (email: string, password: string) => {
+        set({ isLoading: true });
+        try {
+          const response = await api.login(email, password);
+          set({ user: response.user || null });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      register: async (email: string, username: string, password: string) => {
+        set({ isLoading: true });
+        try {
+          const response = await api.register(email, username, password);
+          return response.message;
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      verifyEmail: async (email: string, code: string) => {
+        set({ isLoading: true });
+        try {
+          const response = await api.verifyEmail(email, code);
+          set({ user: response.user || null });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      resendCode: async (email: string) => {
+        await api.resendCode(email);
+      },
+
+      logout: () => {
+        api.logout();
+        set({ user: null });
+      },
+
+      loginWithGoogle: async () => {
+        try {
+          const { authorization_url } = await api.getGoogleAuthUrl();
+          // Redirect to Google OAuth
+          window.location.href = authorization_url;
+        } catch (error) {
+          console.error("Failed to get Google auth URL:", error);
+          throw error;
+        }
+      },
+
+      handleOAuthCallback: async (token: string) => {
+        set({ isLoading: true });
+        try {
+          // Set the token in the API client (this also sets cookie for middleware)
+          api.setAccessToken(token);
+
+          // Then fetch user info
+          const user = await api.getCurrentUser();
+          set({ user });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      updateProfile: async (updates) => {
+        set({ isLoading: true });
+        try {
+          const user = await api.updateProfile(updates);
+          set({ user });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      refreshUser: async () => {
+        try {
+          const user = await api.getCurrentUser();
+          set({ user });
+        } catch (error) {
+          console.error("Failed to refresh user:", error);
+        }
+      },
+
+      deleteAccount: async () => {
+        set({ isLoading: true });
+        try {
+          await api.deleteAccount();
+          set({ user: null });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+    }),
+    {
+      name: "auth-store",
+      partialize: (state) => ({
+        // Only persist user data, not loading states
+        user: state.user,
+      }),
+    }
+  )
+);

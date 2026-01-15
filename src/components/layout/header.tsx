@@ -17,6 +17,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { UserMenu } from "./user-menu";
 
 export function Header() {
   const {
@@ -135,6 +136,10 @@ export function Header() {
             )}
           </Button>
         </Tooltip>
+
+        <div className="w-px h-5 bg-border mx-1" />
+
+        <UserMenu />
       </div>
     </header>
   );

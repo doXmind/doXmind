@@ -26,6 +26,51 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
 
     # =========================================================================
+    # Security / JWT
+    # =========================================================================
+    # Generate a secure key: openssl rand -hex 32
+    jwt_secret_key: str = "your-secret-key-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+
+    # API Key for simple authentication (optional, for external integrations)
+    api_key: str = ""
+
+    # Rate limiting
+    rate_limit_per_minute: int = 60
+    rate_limit_burst: int = 10
+
+    # =========================================================================
+    # Email Service (SMTP)
+    # =========================================================================
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_name: str = "doXmind"
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
+
+    # =========================================================================
+    # Google OAuth
+    # =========================================================================
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
+
+    # =========================================================================
+    # Frontend URL (for OAuth redirects)
+    # =========================================================================
+    frontend_url: str = "http://localhost:3000"
+
+    # =========================================================================
+    # Verification Settings
+    # =========================================================================
+    email_verification_expire_minutes: int = 15
+    password_reset_expire_hours: int = 1
+    max_verification_attempts: int = 5
+
+    # =========================================================================
     # Database
     # =========================================================================
     # For PostgreSQL: postgresql+asyncpg://user:password@host:port/dbname

@@ -6,6 +6,7 @@ import { useFileStore } from "@/stores/file-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
+import { api } from "@/lib/api";
 
 // Re-export types for convenience
 export type { EditOperation } from "./use-edit-operations";
@@ -154,7 +155,10 @@ export function useChat() {
 
         const response = await fetch("/api/chat/stream", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...api.getAuthorizationHeaders(),
+          },
           body: JSON.stringify({
             message: messageForAI,
             files,

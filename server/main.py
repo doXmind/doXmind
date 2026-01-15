@@ -9,11 +9,15 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 from config import get_settings, ensure_directories
 from db.database import init_db
 from services.rag_service import init_vector_store
 from exceptions import AppException
-from api import chat, edit, autocomplete, files, versions, review, export, import_file, knowledge_base
+from middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from api import chat, edit, autocomplete, files, versions, review, export, import_file, knowledge_base, auth
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +50,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 # ============================================================================
@@ -86,19 +94,48 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Middleware
 # ============================================================================
 
-# CORS middleware
+# CORS middleware - tightened configuration
 settings = get_settings()
+
+# Define allowed origins based on environment
+CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# Add production origins only in non-debug mode
+if not settings.debug:
+    CORS_ORIGINS.extend([
+        "https://beta.doxmind.com",
+        "https://doxmind.com",
+        "https://www.doxmind.com",
+        "https://doxmind-mini-frontend-2fac03803995.herokuapp.com",
+    ])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://beta.doxmind.com",
-        "https://doxmind-mini-frontend-2fac03803995.herokuapp.com",
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Restrict to specific HTTP methods
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    # Restrict to specific headers
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-API-Key",
+        "X-Requested-With",
+        "Accept",
+        "Origin",
+    ],
+    # Expose headers that client can access
+    expose_headers=[
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "Retry-After",
+    ],
+    # Cache preflight requests for 1 hour
+    max_age=3600,
 )
 
 
@@ -106,6 +143,10 @@ app.add_middleware(
 # Routers
 # ============================================================================
 
+# Auth router (no prefix for standard OAuth2 paths)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+
+# Protected API routes
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(edit.router, prefix="/api/edit", tags=["edit"])
 app.include_router(autocomplete.router, prefix="/api/autocomplete", tags=["autocomplete"])

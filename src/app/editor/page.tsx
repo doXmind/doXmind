@@ -96,8 +96,8 @@ export default function EditorPage() {
           {/* Mobile Sidebar Overlay (Files) */}
           <MobileSidebar />
 
-          {/* Mobile Chat Bottom Sheet (AI) */}
-          <MobileChatSheet />
+          {/* Mobile Chat Bottom Sheet (AI) - Only show when a file is open */}
+          {currentFile && <MobileChatSheet />}
 
           {/* Mobile Outline Sheet */}
           <MobileOutlineSheet />
@@ -148,15 +148,17 @@ export default function EditorPage() {
             )}
           </main>
 
-          {/* AI Chat Panel */}
-          <aside
-            className={cn(
-              "w-96 border-l border-border bg-card flex-shrink-0 transition-all duration-300",
-              !isChatOpen && "w-0 opacity-0 overflow-hidden"
-            )}
-          >
-            <ChatPanel />
-          </aside>
+          {/* AI Chat Panel - Only show when a file is open */}
+          {currentFile && (
+            <aside
+              className={cn(
+                "w-96 border-l border-border bg-card flex-shrink-0 transition-all duration-300",
+                !isChatOpen && "w-0 opacity-0 overflow-hidden"
+              )}
+            >
+              <ChatPanel />
+            </aside>
+          )}
         </div>
 
         {/* Keyboard Shortcuts Modal */}

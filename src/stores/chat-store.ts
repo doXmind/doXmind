@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { generateId } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { ChatMessage, Conversation, ToolCall, MessageContextItem, EditOperation } from "@/types";
 
 // Re-export for convenience
@@ -52,18 +53,24 @@ export const useChatStore = create<ChatState>()(
 
   // Load conversation from backend
   loadConversation: async (fileId: string) => {
+    // Require a valid fileId - no conversations without a file
+    if (!fileId) {
+      return;
+    }
+
     const state = get();
-    const key = fileId || "global";
 
     // Skip if already loaded
-    if (state.conversations[key]?.isLoaded) {
+    if (state.conversations[fileId]?.isLoaded) {
       return;
     }
 
     set({ isLoadingHistory: true });
 
     try {
-      const response = await fetch(`/api/chat/conversations/${fileId}`);
+      const response = await fetch(`/api/chat/conversations/${fileId}`, {
+        headers: api.getAuthorizationHeaders(),
+      });
       if (!response.ok) {
         throw new Error("Failed to load conversation");
       }
@@ -102,8 +109,8 @@ export const useChatStore = create<ChatState>()(
       };
 
       set((state) => {
-        state.conversations[key] = conversation;
-        state.activeConversationId = key;
+        state.conversations[fileId] = conversation;
+        state.activeConversationId = fileId;
         state.isLoadingHistory = false;
       });
     } catch (error) {
@@ -113,21 +120,25 @@ export const useChatStore = create<ChatState>()(
   },
 
   // This function is only called when sending a message, not during render
-  // Returns the key (fileId or "global") used for local state management
+  // Returns the fileId used for local state management
   // The backend UUID is stored in conversation.id for API calls
   ensureConversation: (fileId: string | null) => {
-    const state = get();
-    const key = fileId || "global";
+    // Require a valid fileId - no conversations without a file
+    if (!fileId) {
+      throw new Error("Cannot create conversation without a file");
+    }
 
-    if (state.conversations[key]) {
+    const state = get();
+
+    if (state.conversations[fileId]) {
       set((draft) => {
-        draft.activeConversationId = key;
+        draft.activeConversationId = fileId;
       });
-      return key;
+      return fileId;
     }
 
     const newConversation: Conversation = {
-      id: key,
+      id: fileId,
       fileId,
       messages: [],
       createdAt: new Date().toISOString(),
@@ -135,11 +146,11 @@ export const useChatStore = create<ChatState>()(
     };
 
     set((draft) => {
-      draft.conversations[key] = newConversation;
-      draft.activeConversationId = key;
+      draft.conversations[fileId] = newConversation;
+      draft.activeConversationId = fileId;
     });
 
-    return key;
+    return fileId;
   },
 
   addMessage: (conversationId, message) => {
@@ -157,7 +168,7 @@ export const useChatStore = create<ChatState>()(
         // Create conversation if it doesn't exist
         draft.conversations[conversationId] = {
           id: conversationId,
-          fileId: conversationId === "global" ? null : conversationId,
+          fileId: conversationId,
           messages: [newMessage],
           createdAt: new Date().toISOString(),
           isLoaded: true,
@@ -220,6 +231,7 @@ export const useChatStore = create<ChatState>()(
     try {
       await fetch(`/api/chat/conversations/${conversationId}`, {
         method: "DELETE",
+        headers: api.getAuthorizationHeaders(),
       });
     } catch (error) {
       console.error("Failed to clear conversation on backend:", error);
@@ -236,12 +248,13 @@ export const useChatStore = create<ChatState>()(
 
   // Delete conversation completely when file is deleted
   deleteConversation: async (fileId) => {
-    const key = fileId || "global";
+    if (!fileId) return;
 
     // Delete on backend
     try {
       await fetch(`/api/chat/conversations/${fileId}`, {
         method: "DELETE",
+        headers: api.getAuthorizationHeaders(),
       });
     } catch (error) {
       console.error("Failed to delete conversation on backend:", error);
@@ -249,8 +262,8 @@ export const useChatStore = create<ChatState>()(
 
     // Remove from local state completely
     set((draft) => {
-      delete draft.conversations[key];
-      if (draft.activeConversationId === key) {
+      delete draft.conversations[fileId];
+      if (draft.activeConversationId === fileId) {
         draft.activeConversationId = null;
       }
     });
@@ -267,7 +280,10 @@ export const useChatStore = create<ChatState>()(
     try {
       await fetch("/api/chat/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...api.getAuthorizationHeaders(),
+        },
         body: JSON.stringify({
           conversationId,
           role: message.role,

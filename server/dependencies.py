@@ -59,6 +59,13 @@ def get_rag_service() -> RAGService:
 # Conversation Lookup Helpers
 # ============================================================================
 
+def normalize_file_id(file_id: str | None) -> str | None:
+    """Normalize file_id: empty string becomes None."""
+    if file_id == "" or file_id is None:
+        return None
+    return file_id
+
+
 async def get_conversation_by_file_id(
     file_id: str,
     db: AsyncSession,
@@ -80,15 +87,28 @@ async def get_conversation_by_file_id(
     from db.database import Conversation
     import uuid
 
-    # First try to find by conversation ID directly
+    normalized_file_id = normalize_file_id(file_id)
+
+    # First try to find by conversation ID directly (UUID)
     conv = await db.get(Conversation, file_id)
     if conv:
         return conv
 
-    # Try to find by file_id
-    result = await db.execute(
-        select(Conversation).where(Conversation.file_id == file_id)
-    )
+    # Try to find by file_id (handle NULL for global conversations)
+    if normalized_file_id is None:
+        result = await db.execute(
+            select(Conversation)
+            .where(Conversation.file_id.is_(None))
+            .order_by(Conversation.created_at.desc())
+            .limit(1)
+        )
+    else:
+        result = await db.execute(
+            select(Conversation)
+            .where(Conversation.file_id == normalized_file_id)
+            .order_by(Conversation.created_at.desc())
+            .limit(1)
+        )
     conv = result.scalar_one_or_none()
     if conv:
         return conv
@@ -97,7 +117,7 @@ async def get_conversation_by_file_id(
     if create_if_missing:
         conv = Conversation(
             id=str(uuid.uuid4()),
-            file_id=file_id if file_id != "global" else None
+            file_id=normalized_file_id
         )
         db.add(conv)
         await db.commit()

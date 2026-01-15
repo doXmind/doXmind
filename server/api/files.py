@@ -1,4 +1,4 @@
-"""File management API endpoints."""
+"""File management API endpoints with user data isolation."""
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
@@ -9,9 +9,29 @@ import logging
 
 from db.database import get_db, File
 from services.rag_service import RAGService
+from services.auth_service import optional_auth, TokenData
+from config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def get_user_id_filter(token: Optional[TokenData]) -> Optional[str]:
+    """Get user ID for filtering, handling dev mode and anonymous users."""
+    settings = get_settings()
+
+    if settings.debug:
+        # In debug mode, return None to show all files (no filtering)
+        return None
+
+    if token is None:
+        return None
+
+    # Skip filtering for special token types
+    if token.sub in ("dev-user", "api-key-user", "anonymous"):
+        return None
+
+    return token.sub
 
 
 class FileCreate(BaseModel):
@@ -39,9 +59,20 @@ class FileResponse(BaseModel):
 
 
 @router.get("/", response_model=List[FileResponse])
-async def list_files(db: AsyncSession = Depends(get_db)):
-    """List all files."""
-    result = await db.execute(select(File).order_by(File.updated_at.desc()))
+async def list_files(
+    db: AsyncSession = Depends(get_db),
+    token: Optional[TokenData] = Depends(optional_auth)
+):
+    """List files for the current user."""
+    user_id = get_user_id_filter(token)
+
+    query = select(File).order_by(File.updated_at.desc())
+
+    # Filter by user if authenticated
+    if user_id:
+        query = query.where(File.user_id == user_id)
+
+    result = await db.execute(query)
     files = result.scalars().all()
     return [
         FileResponse(
@@ -56,10 +87,16 @@ async def list_files(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=FileResponse)
-async def create_file(file: FileCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new file."""
+async def create_file(
+    file: FileCreate,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[TokenData] = Depends(optional_auth)
+):
+    """Create a new file for the current user."""
+    user_id = get_user_id_filter(token)
+
     try:
-        new_file = File(name=file.name, content=file.content)
+        new_file = File(name=file.name, content=file.content, user_id=user_id)
         db.add(new_file)
         await db.commit()
         await db.refresh(new_file)
@@ -70,13 +107,13 @@ async def create_file(file: FileCreate, db: AsyncSession = Depends(get_db)):
             await rag.index_file(
                 file_id=new_file.id,
                 content=file.content,
-                metadata={"name": file.name}
+                metadata={"name": file.name, "user_id": user_id}
             )
             # Also index at sentence level for in-document search
             await rag.index_file_sentences(
                 file_id=new_file.id,
                 content=file.content,
-                metadata={"name": file.name}
+                metadata={"name": file.name, "user_id": user_id}
             )
         except Exception as e:
             logger.warning(f"Failed to index file: {e}")
@@ -94,9 +131,19 @@ async def create_file(file: FileCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{file_id}", response_model=FileResponse)
-async def get_file(file_id: str, db: AsyncSession = Depends(get_db)):
-    """Get a file by ID."""
-    result = await db.execute(select(File).where(File.id == file_id))
+async def get_file(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[TokenData] = Depends(optional_auth)
+):
+    """Get a file by ID (must belong to current user)."""
+    user_id = get_user_id_filter(token)
+
+    query = select(File).where(File.id == file_id)
+    if user_id:
+        query = query.where(File.user_id == user_id)
+
+    result = await db.execute(query)
     file = result.scalar_one_or_none()
 
     if not file:
@@ -115,10 +162,17 @@ async def get_file(file_id: str, db: AsyncSession = Depends(get_db)):
 async def update_file(
     file_id: str,
     update: FileUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: Optional[TokenData] = Depends(optional_auth)
 ):
-    """Update a file."""
-    result = await db.execute(select(File).where(File.id == file_id))
+    """Update a file (must belong to current user)."""
+    user_id = get_user_id_filter(token)
+
+    query = select(File).where(File.id == file_id)
+    if user_id:
+        query = query.where(File.user_id == user_id)
+
+    result = await db.execute(query)
     file = result.scalar_one_or_none()
 
     if not file:
@@ -139,13 +193,13 @@ async def update_file(
             await rag.index_file(
                 file_id=file.id,
                 content=file.content,
-                metadata={"name": file.name}
+                metadata={"name": file.name, "user_id": user_id}
             )
             # Also re-index at sentence level for in-document search
             await rag.index_file_sentences(
                 file_id=file.id,
                 content=file.content,
-                metadata={"name": file.name}
+                metadata={"name": file.name, "user_id": user_id}
             )
         except Exception as e:
             logger.warning(f"Failed to re-index file: {e}")
@@ -160,9 +214,19 @@ async def update_file(
 
 
 @router.delete("/{file_id}")
-async def delete_file(file_id: str, db: AsyncSession = Depends(get_db)):
-    """Delete a file."""
-    result = await db.execute(select(File).where(File.id == file_id))
+async def delete_file(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[TokenData] = Depends(optional_auth)
+):
+    """Delete a file (must belong to current user)."""
+    user_id = get_user_id_filter(token)
+
+    query = select(File).where(File.id == file_id)
+    if user_id:
+        query = query.where(File.user_id == user_id)
+
+    result = await db.execute(query)
     file = result.scalar_one_or_none()
 
     if not file:
@@ -189,8 +253,13 @@ class SearchRequest(BaseModel):
 
 
 @router.post("/search")
-async def search_files(request: SearchRequest):
-    """Search files using RAG."""
+async def search_files(
+    request: SearchRequest,
+    token: Optional[TokenData] = Depends(optional_auth)
+):
+    """Search files using RAG (within user's files)."""
+    user_id = get_user_id_filter(token)
+
     try:
         rag = RAGService()
         results = await rag.search(
@@ -213,7 +282,11 @@ class InDocSearchRequest(BaseModel):
 
 
 @router.post("/search/in-document")
-async def search_in_document(request: InDocSearchRequest, db: AsyncSession = Depends(get_db)):
+async def search_in_document(
+    request: InDocSearchRequest,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[TokenData] = Depends(optional_auth)
+):
     """Search within a single document at sentence level.
 
     This endpoint uses sentence-level chunking for precise in-document
@@ -221,9 +294,15 @@ async def search_in_document(request: InDocSearchRequest, db: AsyncSession = Dep
 
     Results are filtered by min_score to only return sufficiently similar matches.
     """
+    user_id = get_user_id_filter(token)
+
     try:
-        # Verify file exists
-        result = await db.execute(select(File).where(File.id == request.file_id))
+        # Verify file exists and belongs to user
+        query = select(File).where(File.id == request.file_id)
+        if user_id:
+            query = query.where(File.user_id == user_id)
+
+        result = await db.execute(query)
         file = result.scalar_one_or_none()
 
         if not file:
@@ -246,7 +325,7 @@ async def search_in_document(request: InDocSearchRequest, db: AsyncSession = Dep
             await rag.index_file_sentences(
                 file_id=request.file_id,
                 content=file.content,
-                metadata={"name": file.name}
+                metadata={"name": file.name, "user_id": user_id}
             )
 
         # Perform sentence-level search with score filtering

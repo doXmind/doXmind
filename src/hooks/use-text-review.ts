@@ -16,6 +16,7 @@ import {
   createStreamController,
 } from "@/lib/streaming";
 import { API_BASE_URL, MIN_REVIEW_DOCUMENT_LENGTH } from "@/lib/constants";
+import { api } from "@/lib/api";
 
 interface UseTextReviewOptions {
   editor: Editor | null;
@@ -83,7 +84,10 @@ export function useTextReview({
     try {
       const response = await fetch(`${API_BASE_URL}/api/review`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...api.getAuthorizationHeaders(),
+        },
         body: JSON.stringify({
           content: text,
           file_id: fileId,

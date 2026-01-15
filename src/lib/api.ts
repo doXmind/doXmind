@@ -3,6 +3,8 @@
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const TOKEN_STORAGE_KEY = "doxmind_access_token";
+const AUTH_COOKIE_NAME = "doxmind_auth";
 
 // Search result types
 export interface SearchResultItem {
@@ -20,12 +22,127 @@ export interface SearchResults {
   results: SearchResultItem[];
 }
 
+// Auth types
+export interface User {
+  id: string;
+  email: string;
+  username?: string;
+  avatar_url?: string;
+  is_verified: boolean;
+  oauth_provider?: string;
+  created_at?: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user?: User;
+}
+
+export interface AuthStatus {
+  authenticated: boolean;
+  auth_type?: string;
+  user?: User;
+  debug_mode: boolean;
+}
+
+export interface MessageResponse {
+  success: boolean;
+  message: string;
+}
+
 export class ApiClient {
   private baseUrl: string;
+  private accessToken: string | null = null;
+  private tokenExpiry: number | null = null;
 
   constructor(baseUrl: string = API_BASE) {
     this.baseUrl = baseUrl;
+    // Load token from storage on initialization
+    this.loadToken();
   }
+
+  // ==========================================================================
+  // Token Management
+  // ==========================================================================
+
+  private loadToken(): void {
+    if (typeof window === "undefined") return;
+
+    const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (stored) {
+      try {
+        const { token, expiry } = JSON.parse(stored);
+        if (expiry && expiry > Date.now()) {
+          this.accessToken = token;
+          this.tokenExpiry = expiry;
+        } else {
+          // Token expired, remove it
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
+        }
+      } catch {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+      }
+    }
+  }
+
+  private saveToken(token: string, expiresIn: number): void {
+    this.accessToken = token;
+    // Set expiry with 5-minute buffer
+    this.tokenExpiry = Date.now() + (expiresIn - 300) * 1000;
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        TOKEN_STORAGE_KEY,
+        JSON.stringify({ token, expiry: this.tokenExpiry })
+      );
+      // Also set a cookie for middleware auth check
+      const maxAge = expiresIn - 300;
+      document.cookie = `${AUTH_COOKIE_NAME}=1; path=/; max-age=${maxAge}; SameSite=Lax`;
+    }
+  }
+
+  private clearToken(): void {
+    this.accessToken = null;
+    this.tokenExpiry = null;
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      // Also clear the auth cookie
+      document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
+    }
+  }
+
+  private isTokenValid(): boolean {
+    return !!(this.accessToken && this.tokenExpiry && this.tokenExpiry > Date.now());
+  }
+
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (this.accessToken) {
+      headers["Authorization"] = `Bearer ${this.accessToken}`;
+    }
+    return headers;
+  }
+
+  /**
+   * Get authorization headers for use in external fetch calls.
+   * Useful for streaming endpoints that bypass the ApiClient.
+   */
+  public getAuthorizationHeaders(): Record<string, string> {
+    return this.getAuthHeaders();
+  }
+
+  /**
+   * Manually set the access token (used for OAuth callback).
+   */
+  public setAccessToken(token: string, expiresIn: number = 60 * 24 * 7 * 60): void {
+    this.saveToken(token, expiresIn);
+  }
+
+  // ==========================================================================
+  // Core Request Method
+  // ==========================================================================
 
   private async request<T>(
     endpoint: string,
@@ -36,19 +153,205 @@ export class ApiClient {
       ...options,
       headers: {
         "Content-Type": "application/json",
+        ...this.getAuthHeaders(),
         ...options.headers,
       },
     });
 
+    // Handle 401 Unauthorized - clear token and retry once
+    if (response.status === 401 && this.accessToken) {
+      this.clearToken();
+      // Could implement auto-refresh here if needed
+    }
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "Unknown error" }));
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      throw new Error(error.detail || error.error?.message || `HTTP ${response.status}`);
     }
 
     return response.json();
   }
 
+  // ==========================================================================
+  // Auth API
+  // ==========================================================================
+
+  /**
+   * Get a new access token. Call this on app initialization.
+   */
+  async getToken(clientId?: string): Promise<TokenResponse> {
+    const response = await this.request<TokenResponse>("/api/auth/token", {
+      method: "POST",
+      body: JSON.stringify({ client_id: clientId }),
+    });
+
+    this.saveToken(response.access_token, response.expires_in);
+    return response;
+  }
+
+  /**
+   * Refresh the current token.
+   */
+  async refreshToken(): Promise<TokenResponse> {
+    const response = await this.request<TokenResponse>("/api/auth/refresh", {
+      method: "POST",
+    });
+
+    this.saveToken(response.access_token, response.expires_in);
+    return response;
+  }
+
+  /**
+   * Check authentication status.
+   */
+  async getAuthStatus(): Promise<AuthStatus> {
+    return this.request<AuthStatus>("/api/auth/status");
+  }
+
+  /**
+   * Ensure we have a valid token, fetching one if needed.
+   */
+  async ensureAuthenticated(): Promise<void> {
+    if (this.isTokenValid()) return;
+
+    // Get a new token
+    await this.getToken();
+  }
+
+  // ==========================================================================
+  // User Authentication API
+  // ==========================================================================
+
+  /**
+   * Register a new user. Sends verification code to email.
+   */
+  async register(email: string, username: string, password: string): Promise<MessageResponse> {
+    return this.request<MessageResponse>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, username, password }),
+    });
+  }
+
+  /**
+   * Verify email with code and complete registration.
+   */
+  async verifyEmail(email: string, code: string): Promise<TokenResponse> {
+    const response = await this.request<TokenResponse>("/api/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
+    });
+
+    this.saveToken(response.access_token, response.expires_in);
+    return response;
+  }
+
+  /**
+   * Resend verification code.
+   */
+  async resendCode(email: string): Promise<MessageResponse> {
+    return this.request<MessageResponse>("/api/auth/resend-code", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  /**
+   * Login with email and password.
+   */
+  async login(email: string, password: string): Promise<TokenResponse> {
+    const response = await this.request<TokenResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+
+    this.saveToken(response.access_token, response.expires_in);
+    return response;
+  }
+
+  /**
+   * Request password reset email.
+   */
+  async forgotPassword(email: string): Promise<MessageResponse> {
+    return this.request<MessageResponse>("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  /**
+   * Reset password with token.
+   */
+  async resetPassword(token: string, newPassword: string): Promise<MessageResponse> {
+    return this.request<MessageResponse>("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+  }
+
+  /**
+   * Change password for logged-in user.
+   */
+  async changePassword(currentPassword: string, newPassword: string): Promise<MessageResponse> {
+    return this.request<MessageResponse>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  }
+
+  /**
+   * Get Google OAuth authorization URL.
+   */
+  async getGoogleAuthUrl(): Promise<{ authorization_url: string }> {
+    return this.request<{ authorization_url: string }>("/api/auth/google");
+  }
+
+  /**
+   * Get current user profile.
+   */
+  async getCurrentUser(): Promise<User> {
+    return this.request<User>("/api/auth/me");
+  }
+
+  /**
+   * Update user profile.
+   */
+  async updateProfile(updates: { username?: string; avatar_url?: string }): Promise<User> {
+    return this.request<User>("/api/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(updates),
+    });
+  }
+
+  /**
+   * Logout - clear tokens.
+   */
+  logout(): void {
+    this.clearToken();
+  }
+
+  /**
+   * Delete user account.
+   */
+  async deleteAccount(): Promise<MessageResponse> {
+    const result = await this.request<MessageResponse>("/api/auth/me", {
+      method: "DELETE",
+    });
+    // Clear tokens after successful deletion
+    this.clearToken();
+    return result;
+  }
+
+  /**
+   * Check if user is logged in.
+   */
+  isLoggedIn(): boolean {
+    return this.isTokenValid();
+  }
+
+  // ==========================================================================
   // Files API
+  // ==========================================================================
+
   async listFiles() {
     return this.request<Array<{
       id: string;
@@ -190,7 +493,9 @@ export class ApiClient {
    */
   async exportFile(fileId: string, format: 'markdown' | 'pdf' | 'docx'): Promise<Blob> {
     const url = `${this.baseUrl}/api/export/${fileId}/${format}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: this.getAuthHeaders(),
+    });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "Export failed" }));
@@ -213,6 +518,7 @@ export class ApiClient {
     const response = await fetch(url, {
       method: 'POST',
       body: formData,
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -244,6 +550,7 @@ export class ApiClient {
     const response = await fetch(url, {
       method: 'POST',
       body: formData,
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {

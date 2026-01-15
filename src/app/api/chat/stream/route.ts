@@ -13,12 +13,25 @@ export async function POST(request: Request) {
 
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
 
+  // Forward authorization header from client request
+  const authHeader = request.headers.get('Authorization');
+  const apiKeyHeader = request.headers.get('X-API-Key');
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
+  if (apiKeyHeader) {
+    headers['X-API-Key'] = apiKeyHeader;
+  }
+
   try {
     const response = await fetch(`${backendUrl}/api/chat/stream`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

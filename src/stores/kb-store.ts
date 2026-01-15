@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
+import { api } from "@/lib/api";
 
 // KB attachment type
 export interface KBAttachment {
@@ -28,8 +29,6 @@ interface KBState {
   clearAttachments: (conversationId: string) => void;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 export const useKBStore = create<KBState>()(
   immer((set, get) => ({
     attachmentsByConversation: {},
@@ -42,35 +41,11 @@ export const useKBStore = create<KBState>()(
       set({ isLoading: true });
 
       try {
-        const response = await fetch(
-          `${API_BASE}/api/kb/${conversationId}/attachments`
-        );
-
-        if (!response.ok) {
-          // Conversation might not exist yet, that's OK
-          if (response.status === 404) {
-            set((state) => {
-              state.attachmentsByConversation[conversationId] = [];
-            });
-            return;
-          }
-          throw new Error("Failed to load attachments");
-        }
-
-        const data = await response.json();
+        const data = await api.listKBAttachments(conversationId);
 
         set((state) => {
           state.attachmentsByConversation[conversationId] = data.attachments.map(
-            (att: {
-              id: string;
-              original_filename: string;
-              file_type: string;
-              file_size: number;
-              status: string;
-              chunk_count: number;
-              error_message?: string;
-              created_at: string;
-            }) => ({
+            (att) => ({
               id: att.id,
               originalFilename: att.original_filename,
               fileType: att.file_type as "pdf" | "docx" | "pptx",
@@ -83,7 +58,11 @@ export const useKBStore = create<KBState>()(
           );
         });
       } catch (error) {
+        // Conversation might not exist yet, that's OK - return empty list
         console.error("Failed to load KB attachments:", error);
+        set((state) => {
+          state.attachmentsByConversation[conversationId] = [];
+        });
       } finally {
         set({ isLoading: false });
       }
@@ -115,9 +94,6 @@ export const useKBStore = create<KBState>()(
       });
 
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-
         // Update to processing state
         set((state) => {
           const attachments = state.attachmentsByConversation[conversationId];
@@ -128,20 +104,7 @@ export const useKBStore = create<KBState>()(
           }
         });
 
-        const response = await fetch(
-          `${API_BASE}/api/kb/${conversationId}/attachments`,
-          {
-            method: "POST",
-            body: formData,
-          }
-        );
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({ detail: "Upload failed" }));
-          throw new Error(error.detail || "Upload failed");
-        }
-
-        const data = await response.json();
+        const data = await api.uploadKBAttachment(conversationId, file);
 
         // Replace temp attachment with real one
         const newAttachment: KBAttachment = {
@@ -205,15 +168,7 @@ export const useKBStore = create<KBState>()(
       });
 
       try {
-        const response = await fetch(
-          `${API_BASE}/api/kb/${conversationId}/attachments/${attachmentId}`,
-          { method: "DELETE" }
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to delete attachment");
-        }
-
+        await api.deleteKBAttachment(conversationId, attachmentId);
         return true;
       } catch (error) {
         console.error("Failed to delete KB attachment:", error);
