@@ -10,18 +10,30 @@ import { MobileSidebar } from "@/components/mobile/mobile-sidebar";
 import { MobileChatSheet } from "@/components/mobile/mobile-chat-sheet";
 import { MobileOutlineSheet } from "@/components/mobile/mobile-outline-sheet";
 import { LoadingScreen } from "@/components/loading-screen";
+import { KeyboardShortcutsModal } from "@/components/ui/keyboard-shortcuts-modal";
+import { CommandPalette } from "@/components/ui/command-palette";
+import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
+import { NetworkStatusIndicator } from "@/components/ui/network-status-indicator";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useIsMobile } from "@/hooks/use-device-type";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
+import { useHighContrast } from "@/hooks/use-high-contrast";
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { MOBILE_PANEL } from "@/lib/constants";
 
 export default function EditorPage() {
   const { currentFileId, files, loadFiles, isLoading } = useFileStore();
-  const { isChatOpen, isSidebarOpen } = useLayoutStore();
+  const { isChatOpen, isSidebarOpen, isKeyboardShortcutsOpen, setKeyboardShortcutsOpen, isCommandPaletteOpen, setCommandPaletteOpen } = useLayoutStore();
   const currentFile = files.find((f) => f.id === currentFileId);
   const isMobile = useIsMobile();
+
+  // Warn user when leaving with unsaved changes
+  useUnsavedChangesWarning();
+
+  // Apply high contrast mode from persisted settings
+  useHighContrast();
 
   // Load files from server on mount
   useEffect(() => {
@@ -37,6 +49,28 @@ export default function EditorPage() {
     }
   }, [currentFile]);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+? or Cmd+? (Shift+/ on most keyboards) - Keyboard shortcuts
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "?") {
+        e.preventDefault();
+        setKeyboardShortcutsOpen(!isKeyboardShortcutsOpen);
+        return;
+      }
+
+      // Ctrl+K or Cmd+K - Command palette
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen(!isCommandPaletteOpen);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isKeyboardShortcutsOpen, setKeyboardShortcutsOpen, isCommandPaletteOpen, setCommandPaletteOpen]);
+
   // Mobile Layout: Editor always visible + overlay sheets/sidebar
   if (isMobile) {
     return (
@@ -47,7 +81,7 @@ export default function EditorPage() {
             style={{ paddingBottom: MOBILE_PANEL.BOTTOM_NAV_HEIGHT }}
           >
             {/* Editor Content - Always Visible */}
-            <main className="flex-1 overflow-hidden">
+            <main id="main-content" className="flex-1 overflow-hidden">
               {currentFile ? (
                 <Editor file={currentFile} />
               ) : (
@@ -67,6 +101,24 @@ export default function EditorPage() {
 
           {/* Mobile Outline Sheet */}
           <MobileOutlineSheet />
+
+          {/* Keyboard Shortcuts Modal */}
+          <KeyboardShortcutsModal
+            open={isKeyboardShortcutsOpen}
+            onClose={() => setKeyboardShortcutsOpen(false)}
+          />
+
+          {/* Command Palette */}
+          <CommandPalette
+            open={isCommandPaletteOpen}
+            onClose={() => setCommandPaletteOpen(false)}
+          />
+
+          {/* Onboarding Tour */}
+          <OnboardingTour />
+
+          {/* Network Status */}
+          <NetworkStatusIndicator />
         </AppShell>
       </LoadingScreen>
     );
@@ -88,7 +140,7 @@ export default function EditorPage() {
           </aside>
 
           {/* Main Editor Area */}
-          <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <main id="main-content" className="flex-1 flex flex-col min-w-0 overflow-hidden">
             {currentFile ? (
               <Editor file={currentFile} />
             ) : (
@@ -106,6 +158,24 @@ export default function EditorPage() {
             <ChatPanel />
           </aside>
         </div>
+
+        {/* Keyboard Shortcuts Modal */}
+        <KeyboardShortcutsModal
+          open={isKeyboardShortcutsOpen}
+          onClose={() => setKeyboardShortcutsOpen(false)}
+        />
+
+        {/* Command Palette */}
+        <CommandPalette
+          open={isCommandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+        />
+
+        {/* Onboarding Tour */}
+        <OnboardingTour />
+
+        {/* Network Status */}
+        <NetworkStatusIndicator />
       </AppShell>
     </LoadingScreen>
   );

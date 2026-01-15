@@ -8,6 +8,7 @@ import {
   MessageSquareOff,
   Moon,
   Sun,
+  Keyboard,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ export function Header() {
     isChatOpen,
     toggleSidebar,
     toggleChat,
+    setKeyboardShortcutsOpen,
   } = useLayoutStore();
   const { currentFileId, files } = useFileStore();
   const { isDirty, isSaving } = useEditorStore();
@@ -96,6 +98,17 @@ export function Header() {
 
       {/* Desktop Header - Right Section */}
       <div className="hidden md:flex items-center gap-2">
+        <Tooltip content="Keyboard Shortcuts (Ctrl+?)" side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setKeyboardShortcutsOpen(true)}
+            aria-label="Keyboard Shortcuts"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
+        </Tooltip>
+
         <Tooltip content="Toggle Theme" side="bottom">
           <Button
             variant="ghost"

@@ -11,7 +11,7 @@ import { FileItem } from "./file-item";
 import { SearchResultItemComponent } from "./search-result-item";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { api, type SearchResultItem } from "@/lib/api";
-import { debounce } from "@/lib/utils";
+import { debounce, getErrorMessage } from "@/lib/utils";
 
 // Local search result with match context
 interface LocalSearchMatch {
@@ -133,7 +133,8 @@ export function Sidebar() {
       toast.success(`Imported "${file.name}" successfully`);
     } catch (error) {
       console.error("Failed to import file:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to import file");
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
     } finally {
       setIsImporting(false);
     }

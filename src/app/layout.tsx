@@ -26,6 +26,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <Providers>
+          {/* Skip to Content - Accessibility feature for keyboard users */}
+          <a
+            href="#main-content"
+            className="skip-to-content"
+          >
+            Skip to content
+          </a>
           {children}
           <Toaster position="bottom-right" richColors />
         </Providers>
