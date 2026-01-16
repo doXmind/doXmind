@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Logo } from "@/components/ui/logo";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
@@ -58,13 +58,11 @@ export default function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm space-y-6 text-center">
           <Logo size="lg" />
           <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-destructive">
-              Invalid Link
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-destructive">Invalid Link</h1>
             <p className="text-sm text-muted-foreground">
               This password reset link is invalid or has expired.
             </p>
@@ -80,21 +78,17 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-2">
+        <div className="space-y-2 text-center">
           <Logo size="lg" />
           <h1 className="text-2xl font-semibold tracking-tight">Set new password</h1>
-          <p className="text-sm text-muted-foreground">
-            Enter your new password below
-          </p>
+          <p className="text-sm text-muted-foreground">Enter your new password below</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-              {error}
-            </div>
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
           )}
 
           <div className="space-y-2">
@@ -139,5 +133,19 @@ export default function ResetPasswordPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="animate-pulse">Loading...</div>
+        </div>
+      }
+    >
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

@@ -2,7 +2,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-dotenv==1.0.1
-pydantic==2.10.3
+pydantic[email]==2.10.3
 pydantic-settings==2.7.0
 
 # AI / LLM
@@ -42,3 +42,11 @@ beautifulsoup4==4.12.3
 
 # Import (file conversion)
 markitdown[pdf,docx]
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.2
+pytest-cov==6.0.0
+httpx==0.28.1
+factory-boy==3.3.1
+faker==33.1.0

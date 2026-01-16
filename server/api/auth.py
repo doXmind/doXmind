@@ -4,6 +4,10 @@ Provides user registration, login, OAuth, and token management.
 """
 
 import secrets
+import hmac
+import hashlib
+import time
+import base64
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.responses import RedirectResponse
@@ -317,8 +321,58 @@ async def reset_password(
 # Google OAuth Endpoints
 # =============================================================================
 
-# Store state tokens temporarily (in production, use Redis or similar)
-_oauth_states: dict[str, bool] = {}
+def _create_oauth_state() -> str:
+    """Create a signed OAuth state token (stateless approach).
+
+    Uses HMAC to sign a timestamp, allowing verification without shared storage.
+    This works across multiple workers without needing Redis/database.
+    """
+    settings = get_settings()
+    timestamp = str(int(time.time()))
+    # Create HMAC signature using JWT secret
+    signature = hmac.new(
+        settings.jwt_secret_key.encode(),
+        timestamp.encode(),
+        hashlib.sha256
+    ).digest()
+    # Combine timestamp and signature
+    state = base64.urlsafe_b64encode(
+        f"{timestamp}:{base64.urlsafe_b64encode(signature).decode()}".encode()
+    ).decode()
+    return state
+
+
+def _verify_oauth_state(state: str, max_age_seconds: int = 600) -> bool:
+    """Verify a signed OAuth state token.
+
+    Args:
+        state: The state token to verify
+        max_age_seconds: Maximum age of the token (default 10 minutes)
+
+    Returns:
+        True if valid, False otherwise
+    """
+    settings = get_settings()
+    try:
+        decoded = base64.urlsafe_b64decode(state.encode()).decode()
+        timestamp_str, signature_b64 = decoded.split(":", 1)
+        timestamp = int(timestamp_str)
+
+        # Check if expired
+        if time.time() - timestamp > max_age_seconds:
+            return False
+
+        # Verify signature
+        expected_signature = hmac.new(
+            settings.jwt_secret_key.encode(),
+            timestamp_str.encode(),
+            hashlib.sha256
+        ).digest()
+        provided_signature = base64.urlsafe_b64decode(signature_b64.encode())
+
+        return hmac.compare_digest(expected_signature, provided_signature)
+    except Exception:
+        return False
 
 
 @router.get("/google")
@@ -332,9 +386,8 @@ async def google_auth(request: Request):
             detail="Google OAuth is not configured"
         )
 
-    # Generate state for CSRF protection
-    state = secrets.token_urlsafe(32)
-    _oauth_states[state] = True
+    # Generate signed state for CSRF protection (stateless approach)
+    state = _create_oauth_state()
 
     auth_url = oauth_service.get_authorization_url(state=state)
 
@@ -351,13 +404,12 @@ async def google_callback(
     """Handle Google OAuth callback."""
     settings = get_settings()
 
-    # Verify state
-    if state not in _oauth_states:
+    # Verify signed state token
+    if not _verify_oauth_state(state):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid state parameter"
+            detail="Invalid or expired state parameter"
         )
-    del _oauth_states[state]
 
     oauth_service = get_google_oauth_service()
 

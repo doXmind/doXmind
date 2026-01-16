@@ -221,9 +221,20 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 
 async def init_db():
-    """Initialize database tables."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Initialize database tables.
+
+    Handles race conditions when multiple workers start simultaneously
+    (e.g., Heroku with WEB_CONCURRENCY > 1) by catching 'table already exists' errors.
+    """
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        # Ignore "table already exists" errors from race conditions
+        if "already exists" in str(e):
+            pass
+        else:
+            raise
 
 
 async def get_db() -> AsyncSession:
