@@ -59,3 +59,9 @@ data/
 
 # Heroku deployment files (frontend - not needed since Next.js auto-detects)
 Procfile
+
+# Vitest UI output
+html/
+
+# Claude Code settings
+.claude/
