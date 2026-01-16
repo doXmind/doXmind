@@ -16,9 +16,7 @@ export interface AutocompletePluginState {
 }
 
 // Plugin key for accessing state
-export const AutocompletePluginKey = new PluginKey<AutocompletePluginState>(
-  "autocomplete"
-);
+export const AutocompletePluginKey = new PluginKey<AutocompletePluginState>("autocomplete");
 
 // Declare custom commands for TypeScript
 declare module "@tiptap/core" {
@@ -48,7 +46,7 @@ export const AutocompleteExtension = Extension.create({
   name: "autocomplete",
 
   addProseMirrorPlugins() {
-    const editor = this.editor;
+    const _editor = this.editor;
 
     return [
       new Plugin<AutocompletePluginState>({
@@ -210,9 +208,7 @@ export const AutocompleteExtension = Extension.create({
 /**
  * Helper function to get current suggestion from editor state
  */
-export function getSuggestion(
-  editor: { state: { doc: unknown } } | null
-): string | null {
+export function getSuggestion(editor: { state: { doc: unknown } } | null): string | null {
   if (!editor) return null;
   const pluginState = AutocompletePluginKey.getState(
     editor.state as Parameters<typeof AutocompletePluginKey.getState>[0]
@@ -223,8 +219,6 @@ export function getSuggestion(
 /**
  * Helper function to check if there's an active suggestion
  */
-export function hasSuggestion(
-  editor: { state: { doc: unknown } } | null
-): boolean {
+export function hasSuggestion(editor: { state: { doc: unknown } } | null): boolean {
   return getSuggestion(editor) !== null;
 }

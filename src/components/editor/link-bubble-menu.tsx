@@ -5,7 +5,6 @@ import { BubbleMenu, Editor } from "@tiptap/react";
 import { ExternalLink, Pencil, Trash2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 
 interface LinkBubbleMenuProps {
   editor: Editor;
@@ -89,7 +88,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
       shouldShow={shouldShow}
       className="link-bubble-menu"
     >
-      <div className="flex items-center gap-1 rounded-lg border border-border bg-popover p-1.5 shadow-lg min-w-0">
+      <div className="flex min-w-0 items-center gap-1 rounded-lg border border-border bg-popover p-1.5 shadow-lg">
         {isEditing ? (
           // Edit mode
           <div className="flex items-center gap-1.5">
@@ -120,7 +119,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               href={currentUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-muted-foreground hover:text-foreground truncate max-w-48 px-2"
+              className="max-w-48 truncate px-2 text-sm text-muted-foreground hover:text-foreground"
               title={currentUrl}
               onClick={(e) => {
                 // Allow Ctrl/Cmd+Click to open
@@ -133,7 +132,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               {currentUrl}
             </a>
 
-            <div className="w-px h-5 bg-border mx-0.5" />
+            <div className="mx-0.5 h-5 w-px bg-border" />
 
             {/* Actions */}
             <Button
@@ -143,11 +142,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               className="h-7 w-7"
               title="Copy link"
             >
-              {copied ? (
-                <Check className="h-4 w-4 text-green-500" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
+              {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
             </Button>
             <Button
               variant="ghost"

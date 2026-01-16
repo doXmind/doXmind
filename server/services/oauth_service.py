@@ -1,9 +1,10 @@
 """OAuth service for Google authentication."""
 
-import httpx
-from typing import Optional, Dict, Any
-from authlib.integrations.httpx_client import AsyncOAuth2Client
 import logging
+from typing import Any
+
+import httpx
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 
 from config import get_settings
 
@@ -25,7 +26,7 @@ class GoogleOAuthService:
         """Check if Google OAuth is configured."""
         return bool(self.settings.google_client_id and self.settings.google_client_secret)
 
-    def get_authorization_url(self, state: Optional[str] = None) -> str:
+    def get_authorization_url(self, state: str | None = None) -> str:
         """Get the Google OAuth authorization URL.
 
         Args:
@@ -53,7 +54,7 @@ class GoogleOAuthService:
 
         return url
 
-    async def get_tokens(self, code: str) -> Dict[str, Any]:
+    async def get_tokens(self, code: str) -> dict[str, Any]:
         """Exchange authorization code for tokens.
 
         Args:
@@ -83,7 +84,7 @@ class GoogleOAuthService:
 
             return response.json()
 
-    async def get_user_info(self, access_token: str) -> Dict[str, Any]:
+    async def get_user_info(self, access_token: str) -> dict[str, Any]:
         """Get user information from Google.
 
         Args:
@@ -104,7 +105,7 @@ class GoogleOAuthService:
 
             return response.json()
 
-    async def authenticate(self, code: str) -> Dict[str, Any]:
+    async def authenticate(self, code: str) -> dict[str, Any]:
         """Complete OAuth flow and get user info.
 
         Args:

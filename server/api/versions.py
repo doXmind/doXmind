@@ -1,15 +1,15 @@
 """Version history API endpoints."""
 
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-import logging
-import json
 import difflib
+import json
+import logging
 
-from db.database import get_db, File, FileVersion
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from db.database import File, FileVersion, get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,9 +20,9 @@ class VersionResponse(BaseModel):
     id: str
     file_id: str
     content: str
-    diff: Optional[str]
-    edit_type: Optional[str]
-    summary: Optional[str]
+    diff: str | None
+    edit_type: str | None
+    summary: str | None
     created_at: str
 
     class Config:
@@ -34,10 +34,10 @@ class CreateVersionRequest(BaseModel):
     file_id: str
     content: str
     edit_type: str = "manual"
-    summary: Optional[str] = None
+    summary: str | None = None
 
 
-@router.get("/{file_id}", response_model=List[VersionResponse])
+@router.get("/{file_id}", response_model=list[VersionResponse])
 async def list_versions(
     file_id: str,
     limit: int = 50,

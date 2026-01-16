@@ -4,7 +4,7 @@ Tests for authentication API endpoints.
 import pytest
 from httpx import AsyncClient
 
-from services.auth_service import create_access_token, verify_token, hash_password, verify_password
+from services.auth_service import create_access_token, hash_password, verify_password, verify_token
 
 
 @pytest.mark.unit

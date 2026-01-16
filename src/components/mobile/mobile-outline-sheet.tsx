@@ -1,12 +1,11 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
 import { X, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useEditorStore } from "@/stores/editor-store";
 import { cn } from "@/lib/utils";
 import { Z_INDEX } from "@/lib/constants";
 import type { Heading } from "@/components/editor/mindlines/types";
@@ -25,11 +24,9 @@ function OutlineItem({ heading, isActive, onClick }: OutlineItemProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full text-left py-3 px-4 text-base transition-colors",
+        "w-full px-4 py-3 text-left text-base transition-colors",
         "active:bg-accent/50",
-        isActive
-          ? "text-primary font-medium bg-primary/5"
-          : "text-foreground hover:bg-accent/30",
+        isActive ? "bg-primary/5 font-medium text-primary" : "text-foreground hover:bg-accent/30",
         heading.level === 1 && "font-semibold",
         heading.level === 3 && "text-sm text-muted-foreground"
       )}
@@ -54,7 +51,7 @@ export function MobileOutlineSheet() {
     setMobileOutlineOpen(false);
   };
 
-  const handleHeadingClick = (heading: Heading) => {
+  const handleHeadingClick = (_heading: Heading) => {
     // Navigate to heading and close sheet
     // This will need to be connected to the editor's navigateTo function
     handleClose();
@@ -87,7 +84,7 @@ export function MobileOutlineSheet() {
           {/* Bottom Sheet */}
           <motion.div
             ref={containerRef}
-            className="fixed inset-x-0 bottom-0 bg-background rounded-t-2xl shadow-lg overflow-hidden md:hidden"
+            className="fixed inset-x-0 bottom-0 overflow-hidden rounded-t-2xl bg-background shadow-lg md:hidden"
             style={{
               zIndex: Z_INDEX.MOBILE_PANEL,
               maxHeight: "60vh",
@@ -105,34 +102,29 @@ export function MobileOutlineSheet() {
           >
             {/* Drag Handle */}
             <div
-              className="flex justify-center py-3 cursor-grab active:cursor-grabbing"
+              className="flex cursor-grab justify-center py-3 active:cursor-grabbing"
               onPointerDown={(e) => dragControls.start(e)}
             >
-              <div className="w-10 h-1 bg-border rounded-full" />
+              <div className="h-1 w-10 rounded-full bg-border" />
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-4 pb-2 border-b border-border">
-              <h3 className="font-semibold text-base">Document Outline</h3>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleClose}
-                className="h-10 w-10"
-              >
+            <div className="flex items-center justify-between border-b border-border px-4 pb-2">
+              <h3 className="text-base font-semibold">Document Outline</h3>
+              <Button variant="ghost" size="icon" onClick={handleClose} className="h-10 w-10">
                 <X className="h-5 w-5" />
               </Button>
             </div>
 
             {/* Content */}
-            <ScrollArea className="flex-1 max-h-[calc(60vh-80px)]">
+            <ScrollArea className="max-h-[calc(60vh-80px)] flex-1">
               {headings.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                  <ChevronDown className="h-8 w-8 text-muted-foreground mb-3" />
+                <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+                  <ChevronDown className="mb-3 h-8 w-8 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
                     No headings found in this document.
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Add headings (H1, H2, H3) to create an outline.
                   </p>
                 </div>

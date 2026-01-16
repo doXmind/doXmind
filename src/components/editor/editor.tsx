@@ -63,6 +63,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   const lastContentRef = useRef(file.content);
 
   // Debounced save function
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce returns a new function, deps are intentionally limited
   const debouncedSave = useCallback(
     debounce((content: string) => {
       setSaving(true);
@@ -104,6 +105,7 @@ export function Editor({ file: initialFile }: EditorProps) {
         editor.emit("update", { editor, transaction: editor.state.tr });
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on file.id change, not content
   }, [file.id, editor]);
 
   // Apply pending edits from AI through the editor's transaction system
@@ -208,14 +210,14 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   if (!editor) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Loading editor...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Desktop Toolbar */}
       {!isMobile && (
         <EditorToolbar
@@ -248,13 +250,13 @@ export function Editor({ file: initialFile }: EditorProps) {
         onRejectAll={handleRejectAll}
       />
 
-      <div className="flex-1 min-h-0 flex overflow-x-hidden">
+      <div className="flex min-h-0 flex-1 overflow-x-hidden">
         {/* Outline toggle button - shows when outline is closed */}
         {!isMobile && <OutlineToggle headingsCount={headings.length} />}
         {/* Mindlines outline - hidden on mobile */}
         {!isMobile && <Mindlines editor={editor} />}
         {/* Main editor content area */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden relative">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {/* Search toolbar - floating in top-right */}
           {!isMobile && (
             <SearchToolbar
@@ -264,8 +266,8 @@ export function Editor({ file: initialFile }: EditorProps) {
               onClose={() => setIsSearchOpen(false)}
             />
           )}
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-6">
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="mx-auto max-w-4xl px-4 py-4 md:px-8 md:py-6">
               <EditorContent editor={editor} />
             </div>
           </ScrollArea>

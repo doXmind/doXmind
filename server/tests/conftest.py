@@ -3,13 +3,13 @@ Pytest configuration and fixtures for the test suite.
 """
 import asyncio
 import os
-from typing import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Set test environment variables before importing app modules
 os.environ["DEBUG"] = "true"
@@ -17,10 +17,9 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
 os.environ["ANTHROPIC_API_KEY"] = "test-api-key"
 
-from main import app
 from db.database import Base, get_db
+from main import app
 from services.auth_service import create_access_token
-
 
 # Create test database engine
 test_engine = create_async_engine(

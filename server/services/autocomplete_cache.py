@@ -5,11 +5,10 @@ Thread-safe LRU cache with TTL support for autocomplete suggestions.
 Reduces API calls and improves response latency.
 """
 
-from typing import Optional
-from collections import OrderedDict
-import time
-import threading
 import hashlib
+import threading
+import time
+from collections import OrderedDict
 
 
 class AutocompleteCache:
@@ -30,7 +29,7 @@ class AutocompleteCache:
         self._hits = 0
         self._misses = 0
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """
         Get value from cache if exists and not expired.
 

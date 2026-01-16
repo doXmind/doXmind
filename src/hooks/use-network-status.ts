@@ -2,6 +2,17 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+// Network Information API types (not in standard TypeScript)
+interface NetworkInformation extends EventTarget {
+  effectiveType?: string;
+  addEventListener(type: string, listener: EventListener): void;
+  removeEventListener(type: string, listener: EventListener): void;
+}
+
+interface NavigatorWithConnection extends Navigator {
+  connection?: NetworkInformation;
+}
+
 interface NetworkStatus {
   isOnline: boolean;
   wasOffline: boolean;
@@ -42,7 +53,7 @@ export function useNetworkStatus(): NetworkStatus {
     window.addEventListener("offline", updateOnlineStatus);
 
     // Listen for connection changes (if available)
-    const connection = (navigator as any).connection;
+    const connection = (navigator as NavigatorWithConnection).connection;
     if (connection) {
       connection.addEventListener("change", updateOnlineStatus);
     }
@@ -63,7 +74,7 @@ export function useNetworkStatus(): NetworkStatus {
  * Get connection type from Network Information API (if available)
  */
 function getConnectionType(): string | undefined {
-  const connection = (navigator as any).connection;
+  const connection = (navigator as NavigatorWithConnection).connection;
   if (connection?.effectiveType) {
     return connection.effectiveType;
   }

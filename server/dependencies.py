@@ -4,12 +4,12 @@ This module provides dependency injection for services used across the API.
 Using DI ensures consistent service usage and easier testing.
 """
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import async_session
-from services.rag_service import RAGService, get_vector_store_manager
-
+from services.rag_service import RAGService
 
 # ============================================================================
 # Database Dependencies
@@ -83,9 +83,11 @@ async def get_conversation_by_file_id(
     Returns:
         Conversation or None
     """
-    from sqlalchemy import select
-    from db.database import Conversation
     import uuid
+
+    from sqlalchemy import select
+
+    from db.database import Conversation
 
     normalized_file_id = normalize_file_id(file_id)
 

@@ -1,25 +1,25 @@
 """Chat API endpoints with streaming support, message persistence, and user isolation."""
 
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
 import json
 import logging
 import uuid
 
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from agents.writing_agent import WritingAgent
-from db.database import get_db, Conversation, Message, ConversationAttachment
 from config import get_settings
-from services.auth_service import optional_auth, TokenData
+from db.database import Conversation, ConversationAttachment, Message, get_db
+from services.auth_service import TokenData, optional_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_user_id_filter(token: Optional[TokenData]) -> Optional[str]:
+def get_user_id_filter(token: TokenData | None) -> str | None:
     """Get user ID for filtering, handling dev mode and anonymous users."""
     settings = get_settings()
 
@@ -56,19 +56,19 @@ class FileContext(BaseModel):
 class ImageContext(BaseModel):
     """Image context for chat (multimodal support)."""
     src: str
-    alt: Optional[str] = None
-    base64: Optional[str] = None
-    mediaType: Optional[str] = None
+    alt: str | None = None
+    base64: str | None = None
+    mediaType: str | None = None
 
 
 class ChatRequest(BaseModel):
     """Chat request model."""
     message: str
-    files: List[FileContext] = []
-    images: List[ImageContext] = []  # Image contexts for multimodal support
+    files: list[FileContext] = []
+    images: list[ImageContext] = []  # Image contexts for multimodal support
     mode: str = "edit"  # "edit" | "analyze"
-    conversationId: Optional[str] = None
-    fileId: Optional[str] = None  # For associating conversation with a file
+    conversationId: str | None = None
+    fileId: str | None = None  # For associating conversation with a file
 
 
 class MessageCreate(BaseModel):
@@ -76,11 +76,11 @@ class MessageCreate(BaseModel):
     conversationId: str
     role: str  # "user" | "assistant"
     content: str
-    contexts: Optional[List[dict]] = None  # Attached images and selected text
-    thinking: Optional[str] = None
-    toolCalls: Optional[List[dict]] = None
-    edits: Optional[List[dict]] = None
-    model: Optional[str] = None
+    contexts: list[dict] | None = None  # Attached images and selected text
+    thinking: str | None = None
+    toolCalls: list[dict] | None = None
+    edits: list[dict] | None = None
+    model: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -89,11 +89,11 @@ class MessageResponse(BaseModel):
     conversationId: str
     role: str
     content: str
-    contexts: Optional[List[dict]] = None
-    thinking: Optional[str] = None
-    toolCalls: Optional[List[dict]] = None
-    edits: Optional[List[dict]] = None
-    model: Optional[str] = None
+    contexts: list[dict] | None = None
+    thinking: str | None = None
+    toolCalls: list[dict] | None = None
+    edits: list[dict] | None = None
+    model: str | None = None
     createdAt: str
 
     class Config:
@@ -103,8 +103,8 @@ class MessageResponse(BaseModel):
 class ConversationResponse(BaseModel):
     """Conversation with messages response."""
     id: str
-    fileId: Optional[str]
-    messages: List[MessageResponse]
+    fileId: str | None
+    messages: list[MessageResponse]
     createdAt: str
 
     class Config:
@@ -119,7 +119,7 @@ class ConversationResponse(BaseModel):
 async def get_conversation(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Get conversation for a file, or create if not exists."""
     user_id = get_user_id_filter(token)
@@ -181,7 +181,7 @@ async def get_conversation(
 @router.get("/conversations")
 async def list_conversations(
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """List conversations for the current user."""
     user_id = get_user_id_filter(token)
@@ -207,7 +207,7 @@ async def list_conversations(
 async def create_message(
     message: MessageCreate,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Create a new message in a conversation."""
     user_id = get_user_id_filter(token)
@@ -280,7 +280,7 @@ async def create_message(
 async def clear_conversation(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Clear all messages in a conversation by file_id."""
     user_id = get_user_id_filter(token)
@@ -481,7 +481,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
                 "edits": collected_edits if collected_edits else None,
                 "model": settings.default_model
             }
-            yield f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode('utf-8')
+            yield f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode()
 
             yield b"data: [DONE]\n\n"
 
@@ -513,7 +513,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 class SimpleChatRequest(BaseModel):
     """Simple chat request without files."""
     message: str
-    system: Optional[str] = None
+    system: str | None = None
 
 
 @router.post("/simple")

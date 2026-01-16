@@ -17,7 +17,7 @@ import { useAuthStore } from "@/stores/auth-store";
 
 export function UserMenu() {
   const router = useRouter();
-  const { user, logout, deleteAccount, isLoading } = useAuthStore();
+  const { user, logout, deleteAccount } = useAuthStore();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -58,13 +58,14 @@ export function UserMenu() {
           aria-label="User menu"
         >
           {user?.avatar_url ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={user.avatar_url}
               alt={user.username || user.email}
               className="h-8 w-8 rounded-full object-cover"
             />
           ) : (
-            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
               {getInitials()}
             </div>
           )}
@@ -73,12 +74,8 @@ export function UserMenu() {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">
-              {user?.username || "User"}
-            </p>
-            <p className="text-xs leading-none text-muted-foreground">
-              {user?.email}
-            </p>
+            <p className="text-sm font-medium leading-none">{user?.username || "User"}</p>
+            <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -98,7 +95,7 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={() => setShowDeleteDialog(true)}
-          className="text-destructive focus:text-destructive focus:bg-destructive/10"
+          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
         >
           <Trash2 className="mr-2 h-4 w-4" />
           Delete account
@@ -121,7 +118,7 @@ export function UserMenu() {
           <p className="text-muted-foreground">
             All your data will be permanently deleted, including:
           </p>
-          <ul className="list-disc list-inside text-muted-foreground space-y-1">
+          <ul className="list-inside list-disc space-y-1 text-muted-foreground">
             <li>All your documents and files</li>
             <li>All conversation history</li>
             <li>Your profile and settings</li>
@@ -135,11 +132,7 @@ export function UserMenu() {
           >
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            onClick={handleDeleteAccount}
-            disabled={isDeleting}
-          >
+          <Button variant="destructive" onClick={handleDeleteAccount} disabled={isDeleting}>
             {isDeleting ? "Deleting..." : "Delete my account"}
           </Button>
         </ModalFooter>

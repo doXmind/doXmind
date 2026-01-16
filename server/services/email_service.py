@@ -1,9 +1,10 @@
 """Email service for sending verification codes and notifications."""
 
-import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import logging
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+import aiosmtplib
 
 from config import get_settings
 

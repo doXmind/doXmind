@@ -8,8 +8,8 @@ This module contains the execution logic for KB tools:
 All KB tools are async since they interact with the RAG service.
 """
 
-from typing import Dict, Any, Optional, List
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +27,9 @@ def is_kb_tool(tool_name: str) -> bool:
 
 
 async def execute_list_kb_documents(
-    tool_input: Dict[str, Any],
-    kb_context: Dict[str, Any]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    kb_context: dict[str, Any]
+) -> dict[str, Any]:
     """Execute list_kb_documents tool.
 
     Lists all documents in the conversation's knowledge base.
@@ -49,9 +49,9 @@ async def execute_list_kb_documents(
 
 
 async def execute_search_knowledge_base(
-    tool_input: Dict[str, Any],
-    kb_context: Dict[str, Any]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    kb_context: dict[str, Any]
+) -> dict[str, Any]:
     """Execute search_knowledge_base tool.
 
     Searches the conversation's KB for relevant information.
@@ -87,9 +87,9 @@ async def execute_search_knowledge_base(
 
 
 async def execute_read_kb_document(
-    tool_input: Dict[str, Any],
-    kb_context: Dict[str, Any]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    kb_context: dict[str, Any]
+) -> dict[str, Any]:
     """Execute read_kb_document tool.
 
     Reads content from a specific document in the KB.
@@ -155,9 +155,9 @@ _KB_TOOL_EXECUTORS = {
 
 async def execute_kb_tool(
     tool_name: str,
-    tool_input: Dict[str, Any],
-    kb_context: Optional[Dict[str, Any]]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    kb_context: dict[str, Any] | None
+) -> dict[str, Any]:
     """Execute a KB tool asynchronously.
 
     Args:

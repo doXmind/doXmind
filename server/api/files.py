@@ -1,22 +1,22 @@
 """File management API endpoints with user data isolation."""
 
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 import logging
 
-from db.database import get_db, File
-from services.rag_service import RAGService
-from services.auth_service import optional_auth, TokenData
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from config import get_settings
+from db.database import File, get_db
+from services.auth_service import TokenData, optional_auth
+from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_user_id_filter(token: Optional[TokenData]) -> Optional[str]:
+def get_user_id_filter(token: TokenData | None) -> str | None:
     """Get user ID for filtering, handling dev mode and anonymous users."""
     settings = get_settings()
 
@@ -42,8 +42,8 @@ class FileCreate(BaseModel):
 
 class FileUpdate(BaseModel):
     """File update model."""
-    name: Optional[str] = None
-    content: Optional[str] = None
+    name: str | None = None
+    content: str | None = None
 
 
 class FileResponse(BaseModel):
@@ -58,10 +58,10 @@ class FileResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/", response_model=List[FileResponse])
+@router.get("/", response_model=list[FileResponse])
 async def list_files(
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """List files for the current user."""
     user_id = get_user_id_filter(token)
@@ -90,7 +90,7 @@ async def list_files(
 async def create_file(
     file: FileCreate,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Create a new file for the current user."""
     user_id = get_user_id_filter(token)
@@ -134,7 +134,7 @@ async def create_file(
 async def get_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Get a file by ID (must belong to current user)."""
     user_id = get_user_id_filter(token)
@@ -163,7 +163,7 @@ async def update_file(
     file_id: str,
     update: FileUpdate,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Update a file (must belong to current user)."""
     user_id = get_user_id_filter(token)
@@ -217,7 +217,7 @@ async def update_file(
 async def delete_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Delete a file (must belong to current user)."""
     user_id = get_user_id_filter(token)
@@ -248,17 +248,17 @@ async def delete_file(
 class SearchRequest(BaseModel):
     """Search request model."""
     query: str
-    file_ids: Optional[List[str]] = None
+    file_ids: list[str] | None = None
     top_k: int = 5
 
 
 @router.post("/search")
 async def search_files(
     request: SearchRequest,
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Search files using RAG (within user's files)."""
-    user_id = get_user_id_filter(token)
+    _user_id = get_user_id_filter(token)  # TODO: Use to filter search results
 
     try:
         rag = RAGService()
@@ -285,7 +285,7 @@ class InDocSearchRequest(BaseModel):
 async def search_in_document(
     request: InDocSearchRequest,
     db: AsyncSession = Depends(get_db),
-    token: Optional[TokenData] = Depends(optional_auth)
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Search within a single document at sentence level.
 

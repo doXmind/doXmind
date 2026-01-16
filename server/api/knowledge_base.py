@@ -1,27 +1,27 @@
 """Knowledge Base API - Conversation-level document attachments."""
 
-from fastapi import APIRouter, UploadFile, File, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
-from typing import List, Optional
-import tempfile
-import os
+import contextlib
 import logging
+import os
+import tempfile
 
+from fastapi import APIRouter, Depends, File, UploadFile
 from markitdown import MarkItDown
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import Conversation, ConversationAttachment
-from dependencies import get_db, get_rag_service, get_conversation_by_file_id
-from services.rag_service import RAGService
 from config import get_settings
+from db.database import ConversationAttachment
+from dependencies import get_conversation_by_file_id, get_db, get_rag_service
 from exceptions import (
-    ConversationNotFoundError,
     AttachmentNotFoundError,
+    ConversationNotFoundError,
     FileTooLargeError,
-    UnsupportedFileTypeError,
     InternalError,
+    UnsupportedFileTypeError,
 )
+from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,12 +40,12 @@ class AttachmentResponse(BaseModel):
     file_size: int
     status: str
     chunk_count: int
-    error_message: Optional[str] = None
+    error_message: str | None = None
     created_at: str
 
 
 class AttachmentListResponse(BaseModel):
-    attachments: List[AttachmentResponse]
+    attachments: list[AttachmentResponse]
     total_size: int
     count: int
 
@@ -62,7 +62,7 @@ class KBSearchResult(BaseModel):
 
 
 class KBSearchResponse(BaseModel):
-    results: List[KBSearchResult]
+    results: list[KBSearchResult]
 
 
 def get_file_extension(filename: str) -> str:
@@ -81,10 +81,8 @@ async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
         result = md.convert(tmp_path)
         return result.text_content
     finally:
-        try:
+        with contextlib.suppress(Exception):
             os.unlink(tmp_path)
-        except Exception:
-            pass
 
 
 @router.post("/{conversation_id}/attachments", response_model=AttachmentResponse)

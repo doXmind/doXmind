@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { User, Bot, Loader2, FileEdit, Check, FileText, ChevronDown, ChevronRight, ImageIcon } from "lucide-react";
+import { User, Bot, Loader2, FileText, ChevronDown, ChevronRight, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type ChatMessage as ChatMessageType } from "@/stores/chat-store";
 import { marked } from "marked";
@@ -15,20 +15,20 @@ interface ChatMessageProps {
 function MessageContextItemDisplay({
   context,
   index,
-  total
+  total,
 }: {
   context: { type: string; text?: string; src?: string; alt?: string };
   index?: number;
   total?: number;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const isImage = context.type === 'image';
+  const isImage = context.type === "image";
   const Icon = isImage ? ImageIcon : FileText;
 
   const label = (() => {
     const prefix = total && total > 1 ? `Reference ${(index || 0) + 1}` : "Reference";
     if (isImage) {
-      return `${prefix}: Image${context.alt ? ` (${context.alt})` : ''}`;
+      return `${prefix}: Image${context.alt ? ` (${context.alt})` : ""}`;
     }
     return `${prefix} (${context.text?.length || 0} chars)`;
   })();
@@ -38,12 +38,10 @@ function MessageContextItemDisplay({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-1.5 text-xs opacity-80 hover:opacity-100 transition-opacity w-full text-left"
+        className="flex w-full items-center gap-1.5 text-left text-xs opacity-80 transition-opacity hover:opacity-100"
       >
         <Icon className="h-3 w-3 flex-shrink-0" />
-        <span className="flex-1 truncate">
-          {label}
-        </span>
+        <span className="flex-1 truncate">{label}</span>
         {isExpanded ? (
           <ChevronDown className="h-3 w-3 flex-shrink-0" />
         ) : (
@@ -51,12 +49,13 @@ function MessageContextItemDisplay({
         )}
       </button>
       {isExpanded && (
-        <div className="mt-1.5 text-xs opacity-70 bg-black/10 rounded px-2 py-1.5 max-h-[100px] overflow-y-auto">
+        <div className="mt-1.5 max-h-[100px] overflow-y-auto rounded bg-black/10 px-2 py-1.5 text-xs opacity-70">
           {isImage ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={context.src}
-              alt={context.alt || 'Image'}
-              className="max-w-full h-auto rounded"
+              alt={context.alt || "Image"}
+              className="h-auto max-w-full rounded"
             />
           ) : (
             <div className="whitespace-pre-wrap">{context.text}</div>
@@ -68,9 +67,13 @@ function MessageContextItemDisplay({
 }
 
 // Container for multiple contexts
-function MessageContextsDisplay({ contexts }: { contexts: { type: string; text?: string; src?: string; alt?: string }[] }) {
+function MessageContextsDisplay({
+  contexts,
+}: {
+  contexts: { type: string; text?: string; src?: string; alt?: string }[];
+}) {
   return (
-    <div className="mt-2 border-t border-primary-foreground/20 pt-2 space-y-1">
+    <div className="mt-2 space-y-1 border-t border-primary-foreground/20 pt-2">
       {contexts.map((ctx, index) => (
         <MessageContextItemDisplay
           key={index}
@@ -118,39 +121,23 @@ export function ChatMessage({ message }: ChatMessageProps) {
   }, [message.content, isUser]);
 
   return (
-    <div
-      className={cn(
-        "flex gap-3",
-        isUser ? "flex-row-reverse" : "flex-row"
-      )}
-    >
+    <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
       {/* Avatar */}
       <div
         className={cn(
-          "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
+          "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
           isUser ? "bg-primary text-primary-foreground" : "bg-muted"
         )}
       >
-        {isUser ? (
-          <User className="h-4 w-4" />
-        ) : (
-          <Bot className="h-4 w-4" />
-        )}
+        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
 
       {/* Content */}
-      <div
-        className={cn(
-          "flex-1 max-w-[85%]",
-          isUser ? "text-right" : "text-left"
-        )}
-      >
+      <div className={cn("max-w-[85%] flex-1", isUser ? "text-right" : "text-left")}>
         <div
           className={cn(
             "inline-block rounded-lg px-3 py-2 text-sm",
-            isUser
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-foreground"
+            isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
           )}
         >
           {isUser ? (
@@ -167,14 +154,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           ) : (
             <div
-              className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+              className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
               dangerouslySetInnerHTML={{ __html: htmlContent || "" }}
             />
           )}
 
           {/* Streaming indicator */}
           {message.isStreaming && message.content && (
-            <div className="flex items-center gap-1 mt-2 text-muted-foreground">
+            <div className="mt-2 flex items-center gap-1 text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
               <span className="text-xs">Writing...</span>
             </div>
@@ -182,7 +169,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
         </div>
 
         {/* Timestamp */}
-        <p className="text-xs text-muted-foreground mt-1">
+        <p className="mt-1 text-xs text-muted-foreground">
           {new Date(message.createdAt).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",

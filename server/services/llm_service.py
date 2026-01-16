@@ -1,8 +1,9 @@
 """LLM Service for interacting with Claude API."""
 
-from anthropic import AsyncAnthropic
-from typing import AsyncIterator, Optional
 import logging
+from collections.abc import AsyncIterator
+
+from anthropic import AsyncAnthropic
 
 from config import get_settings
 
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 class LLMService:
     """Service for LLM interactions."""
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(self, model: str | None = None):
         settings = get_settings()
         api_key = settings.anthropic_api_key
         if not api_key:
@@ -24,10 +25,10 @@ class LLMService:
     async def complete(
         self,
         prompt: str,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
+        system: str | None = None,
+        max_tokens: int | None = None,
         temperature: float = 0.7,
-        stop: Optional[list[str]] = None,
+        stop: list[str] | None = None,
     ) -> str:
         """Generate a completion."""
         try:
@@ -47,8 +48,8 @@ class LLMService:
     async def stream(
         self,
         user: str,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
+        system: str | None = None,
+        max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
         """Stream a completion."""
@@ -69,8 +70,8 @@ class LLMService:
     async def chat(
         self,
         messages: list[dict],
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
+        system: str | None = None,
+        max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
         """Stream a chat completion with message history."""
@@ -100,8 +101,8 @@ class LLMService:
         self,
         prompt: str,
         json_schema: dict,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
+        system: str | None = None,
+        max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> dict:
         """Generate a structured JSON completion using Claude's JSON mode."""

@@ -1,15 +1,17 @@
 """File import API endpoint - converts PDF, DOCX, MD to Markdown."""
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-import tempfile
-import os
+import contextlib
 import logging
+import os
+import tempfile
 
-from markitdown import MarkItDown
 import markdown
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from markitdown import MarkItDown
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import get_db, File as FileModel
+from db.database import File as FileModel
+from db.database import get_db
 from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,5 @@ async def convert_with_markitdown(content: bytes, filename: str, ext: str) -> st
         return result.text_content
     finally:
         # Clean up temp file
-        try:
+        with contextlib.suppress(Exception):
             os.unlink(tmp_path)
-        except Exception:
-            pass

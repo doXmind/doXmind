@@ -27,7 +27,8 @@ export function truncate(str: string, length: number): string {
   return str.slice(0, length) + "...";
 }
 
-export function debounce<T extends (...args: any[]) => any>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic function type requires any for proper inference
+export function debounce<T extends (...args: any[]) => unknown>(
   fn: T,
   delay: number
 ): (...args: Parameters<T>) => void {
@@ -49,9 +50,10 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
   // Network errors
   "Failed to fetch": {
     title: "Connection Error",
-    description: "Unable to connect to the server. Please check your internet connection and try again.",
+    description:
+      "Unable to connect to the server. Please check your internet connection and try again.",
   },
-  "NetworkError": {
+  NetworkError: {
     title: "Network Error",
     description: "A network error occurred. Please check your connection and try again.",
   },
@@ -89,7 +91,8 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
   // AI errors
   "AI service unavailable": {
     title: "AI Service Unavailable",
-    description: "The AI service is temporarily unavailable. Your document is safe, but AI features may not work.",
+    description:
+      "The AI service is temporarily unavailable. Your document is safe, but AI features may not work.",
   },
   "Rate limit exceeded": {
     title: "Too Many Requests",

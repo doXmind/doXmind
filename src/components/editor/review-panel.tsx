@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 import {
   REVIEW_CATEGORIES,
   ReviewCategory,
@@ -29,12 +28,10 @@ interface ReviewPanelProps {
 }
 
 export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
-  const [expandedCategories, setExpandedCategories] = useState<
-    Set<ReviewCategory>
-  >(new Set(["correctness", "clarity", "tone", "engagement"]));
-  const [pluginState, setPluginState] = useState(() =>
-    TextReviewPluginKey.getState(editor.state)
+  const [expandedCategories, setExpandedCategories] = useState<Set<ReviewCategory>>(
+    new Set(["correctness", "clarity", "tone", "engagement"])
   );
+  const [pluginState, setPluginState] = useState(() => TextReviewPluginKey.getState(editor.state));
 
   // Subscribe to editor state changes
   useEffect(() => {
@@ -120,44 +117,35 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="w-80 border-l border-border bg-card flex flex-col h-full">
+    <div className="flex h-full w-80 flex-col border-l border-border bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-border">
+      <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
-          <span className="font-semibold text-sm">Writing Review</span>
+          <span className="text-sm font-semibold">Writing Review</span>
           {pendingSuggestions.length > 0 && (
-            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
               {pendingSuggestions.length}
             </span>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          className="h-7 w-7"
-        >
+        <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7">
           <X className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Loading State */}
       {isLoading && (
-        <div className="flex-1 flex flex-col items-center justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-          <span className="text-sm text-muted-foreground">
-            Analyzing document...
-          </span>
-          <span className="text-xs text-muted-foreground mt-1">
-            This may take a moment
-          </span>
+        <div className="flex flex-1 flex-col items-center justify-center py-8">
+          <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">Analyzing document...</span>
+          <span className="mt-1 text-xs text-muted-foreground">This may take a moment</span>
         </div>
       )}
 
       {/* Summary */}
       {!isLoading && summary && pendingSuggestions.length > 0 && (
-        <div className="px-3 py-2 border-b border-border bg-muted/30">
+        <div className="border-b border-border bg-muted/30 px-3 py-2">
           <p className="text-xs text-muted-foreground">{summary}</p>
         </div>
       )}
@@ -166,71 +154,61 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
       {!isLoading && pendingSuggestions.length > 0 && (
         <>
           <ScrollArea className="flex-1">
-            <div className="p-2 space-y-2">
-              {(Object.keys(REVIEW_CATEGORIES) as ReviewCategory[]).map(
-                (category) => {
-                  const items = groupedSuggestions[category] ?? [];
-                  if (items.length === 0) return null;
+            <div className="space-y-2 p-2">
+              {(Object.keys(REVIEW_CATEGORIES) as ReviewCategory[]).map((category) => {
+                const items = groupedSuggestions[category] ?? [];
+                if (items.length === 0) return null;
 
-                  const categoryInfo = REVIEW_CATEGORIES[category];
-                  const isExpanded = expandedCategories.has(category);
+                const categoryInfo = REVIEW_CATEGORIES[category];
+                const isExpanded = expandedCategories.has(category);
 
-                  return (
-                    <div
-                      key={category}
-                      className="border border-border rounded-lg overflow-hidden"
+                return (
+                  <div key={category} className="overflow-hidden rounded-lg border border-border">
+                    <button
+                      onClick={() => toggleCategory(category)}
+                      className="flex w-full items-center gap-2 p-2 transition-colors hover:bg-accent/50"
                     >
-                      <button
-                        onClick={() => toggleCategory(category)}
-                        className="w-full flex items-center gap-2 p-2 hover:bg-accent/50 transition-colors"
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        <div
-                          className="w-3 h-3 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: categoryInfo.color }}
-                        />
-                        <span className="text-sm font-medium flex-1 text-left">
-                          {categoryInfo.label}
-                        </span>
-                        <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                          {items.length}
-                        </span>
-                      </button>
-
-                      {isExpanded && (
-                        <div className="border-t border-border">
-                          {items.map((suggestion) => (
-                            <SuggestionCard
-                              key={suggestion.id}
-                              suggestion={suggestion}
-                              onAccept={() => handleAccept(suggestion.id)}
-                              onDismiss={() => handleDismiss(suggestion.id)}
-                              onNavigate={() => handleNavigate(suggestion)}
-                            />
-                          ))}
-                        </div>
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       )}
-                    </div>
-                  );
-                }
-              )}
+                      <div
+                        className="h-3 w-3 flex-shrink-0 rounded-full"
+                        style={{ backgroundColor: categoryInfo.color }}
+                      />
+                      <span className="flex-1 text-left text-sm font-medium">
+                        {categoryInfo.label}
+                      </span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {items.length}
+                      </span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t border-border">
+                        {items.map((suggestion) => (
+                          <SuggestionCard
+                            key={suggestion.id}
+                            suggestion={suggestion}
+                            onAccept={() => handleAccept(suggestion.id)}
+                            onDismiss={() => handleDismiss(suggestion.id)}
+                            onNavigate={() => handleNavigate(suggestion)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </ScrollArea>
 
           {/* Footer Actions */}
-          <div className="p-3 border-t border-border space-y-2">
+          <div className="space-y-2 border-t border-border p-3">
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={handleDismissAll}
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
+              <Button variant="outline" size="sm" className="flex-1" onClick={handleDismissAll}>
+                <Trash2 className="mr-1 h-4 w-4" />
                 Dismiss All
               </Button>
               <Button
@@ -238,7 +216,7 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
                 className="flex-1 bg-green-600 hover:bg-green-700"
                 onClick={handleAcceptAll}
               >
-                <Check className="h-4 w-4 mr-1" />
+                <Check className="mr-1 h-4 w-4" />
                 Accept All
               </Button>
             </div>
@@ -248,10 +226,10 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
 
       {/* Empty State */}
       {!isLoading && pendingSuggestions.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-4">
-          <Sparkles className="h-10 w-10 mb-3 opacity-40" />
+        <div className="flex flex-1 flex-col items-center justify-center p-4 text-muted-foreground">
+          <Sparkles className="mb-3 h-10 w-10 opacity-40" />
           <p className="text-sm font-medium">No suggestions</p>
-          <p className="text-xs text-center mt-1">
+          <p className="mt-1 text-center text-xs">
             {suggestions.length > 0
               ? "All suggestions have been reviewed"
               : "Your writing looks great!"}
@@ -281,13 +259,13 @@ function SuggestionCard({
 
   return (
     <div
-      className="p-3 hover:bg-accent/30 cursor-pointer transition-colors border-b border-border last:border-b-0 group"
+      className="group cursor-pointer border-b border-border p-3 transition-colors last:border-b-0 hover:bg-accent/30"
       onClick={onNavigate}
     >
       {/* Type label */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="mb-2 flex items-center gap-2">
         <span
-          className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded"
+          className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
           style={{
             backgroundColor: `${category.color}15`,
             color: category.color,
@@ -298,14 +276,14 @@ function SuggestionCard({
       </div>
 
       {/* Original -> Replacement */}
-      <div className="flex items-center gap-2 mb-2 text-sm flex-wrap">
-        <span className="line-through text-red-500/80 bg-red-500/10 px-1.5 py-0.5 rounded text-xs">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+        <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-xs text-red-500/80 line-through">
           {suggestion.originalText.length > 50
             ? suggestion.originalText.slice(0, 50) + "..."
             : suggestion.originalText}
         </span>
-        <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-        <span className="text-green-600 dark:text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded text-xs">
+        <ArrowRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+        <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-xs text-green-600 dark:text-green-400">
           {suggestion.replacement.length > 50
             ? suggestion.replacement.slice(0, 50) + "..."
             : suggestion.replacement}
@@ -313,29 +291,22 @@ function SuggestionCard({
       </div>
 
       {/* Explanation */}
-      <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
-        {suggestion.explanation}
-      </p>
+      <p className="mb-3 line-clamp-2 text-xs text-muted-foreground">{suggestion.explanation}</p>
 
       {/* Actions */}
       <div
-        className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="flex gap-2 opacity-0 transition-opacity group-hover:opacity-100"
         onClick={(e) => e.stopPropagation()}
       >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs"
-          onClick={onDismiss}
-        >
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onDismiss}>
           Dismiss
         </Button>
         <Button
           size="sm"
-          className="h-7 text-xs bg-green-600 hover:bg-green-700"
+          className="h-7 bg-green-600 text-xs hover:bg-green-700"
           onClick={onAccept}
         >
-          <Check className="h-3 w-3 mr-1" />
+          <Check className="mr-1 h-3 w-3" />
           Accept
         </Button>
       </div>

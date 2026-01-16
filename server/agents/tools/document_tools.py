@@ -8,8 +8,8 @@ This module contains the execution logic for document editing tools:
 - search_in_document
 """
 
-from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -22,10 +22,10 @@ class FileContext:
 
 
 def find_target_file(
-    files: List[Dict[str, Any]],
-    file_id: Optional[str],
-    current_file_id: Optional[str]
-) -> Optional[Dict[str, Any]]:
+    files: list[dict[str, Any]],
+    file_id: str | None,
+    current_file_id: str | None
+) -> dict[str, Any] | None:
     """Find the target file from the files list.
 
     Args:
@@ -49,10 +49,10 @@ def find_target_file(
 
 
 def execute_view_document(
-    tool_input: Dict[str, Any],
-    files: List[Dict[str, Any]],
-    current_file_id: Optional[str]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    files: list[dict[str, Any]],
+    current_file_id: str | None
+) -> dict[str, Any]:
     """Execute view_document tool.
 
     Returns the document content with line numbers.
@@ -72,10 +72,10 @@ def execute_view_document(
 
 
 def execute_str_replace(
-    tool_input: Dict[str, Any],
-    files: List[Dict[str, Any]],
-    current_file_id: Optional[str]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    files: list[dict[str, Any]],
+    current_file_id: str | None
+) -> dict[str, Any]:
     """Execute str_replace_editor tool.
 
     Replaces a specific string in the document.
@@ -111,10 +111,10 @@ def execute_str_replace(
 
 
 def execute_insert_text(
-    tool_input: Dict[str, Any],
-    files: List[Dict[str, Any]],
-    current_file_id: Optional[str]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    files: list[dict[str, Any]],
+    current_file_id: str | None
+) -> dict[str, Any]:
     """Execute insert_text tool.
 
     Inserts text after a specific line number.
@@ -144,10 +144,10 @@ def execute_insert_text(
 
 
 def execute_replace_document(
-    tool_input: Dict[str, Any],
-    files: List[Dict[str, Any]],
-    current_file_id: Optional[str]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    files: list[dict[str, Any]],
+    current_file_id: str | None
+) -> dict[str, Any]:
     """Execute replace_document tool.
 
     Replaces the entire document content.
@@ -170,10 +170,10 @@ def execute_replace_document(
 
 
 def execute_search_in_document(
-    tool_input: Dict[str, Any],
-    files: List[Dict[str, Any]],
-    current_file_id: Optional[str]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    files: list[dict[str, Any]],
+    current_file_id: str | None
+) -> dict[str, Any]:
     """Execute search_in_document tool.
 
     Searches for text in the document and returns matching lines with context.
@@ -216,10 +216,10 @@ _TOOL_EXECUTORS = {
 
 def execute_document_tool(
     tool_name: str,
-    tool_input: Dict[str, Any],
-    files: List[Dict[str, Any]],
-    current_file_id: Optional[str]
-) -> Dict[str, Any]:
+    tool_input: dict[str, Any],
+    files: list[dict[str, Any]],
+    current_file_id: str | None
+) -> dict[str, Any]:
     """Execute a document editing tool.
 
     Args:

@@ -82,7 +82,7 @@ export function Mindlines({ editor }: MindlinesProps) {
       <AnimatePresence>
         {isExpanded && (
           <motion.div
-            className="fixed inset-0 bg-background/60 backdrop-blur-sm z-20"
+            className="fixed inset-0 z-20 bg-background/60 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -97,17 +97,14 @@ export function Mindlines({ editor }: MindlinesProps) {
       <motion.aside
         className={cn(
           // Base styles
-          "relative border-r bg-background/95 backdrop-blur-sm flex flex-col min-h-0",
+          "relative flex min-h-0 flex-col border-r bg-background/95 backdrop-blur-sm",
           // Non-expanded: standard sidebar
-          !isExpanded && "z-30 shrink-0 h-full",
+          !isExpanded && "z-30 h-full shrink-0",
           // Expanded: fixed overlay - use calc for proper height with margins
-          isExpanded &&
-            "fixed z-30 shadow-2xl border-r-0 rounded-lg overflow-hidden"
+          isExpanded && "fixed z-30 overflow-hidden rounded-lg border-r-0 shadow-2xl"
         )}
         style={{
-          ...(shouldReduceMotion && !isExpanded
-            ? { width: MINDLINES_WIDTH.COLLAPSED }
-            : {}),
+          ...(shouldReduceMotion && !isExpanded ? { width: MINDLINES_WIDTH.COLLAPSED } : {}),
           ...(isExpanded
             ? {
                 top: 16,
@@ -121,7 +118,6 @@ export function Mindlines({ editor }: MindlinesProps) {
         {...animationProps}
         role="navigation"
         aria-label={isExpanded ? "Document mindmap" : "Document outline"}
-        aria-expanded={isExpanded}
       >
         {/* Header with title and controls */}
         <MindlinesHeader
@@ -132,7 +128,7 @@ export function Mindlines({ editor }: MindlinesProps) {
         />
 
         {/* Content: OutlineView or MindmapFlow */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <AnimatePresence mode="wait">
             {isExpanded ? (
               <motion.div
@@ -162,11 +158,7 @@ export function Mindlines({ editor }: MindlinesProps) {
                 exit="exit"
                 transition={{ duration: 0.15 }}
               >
-                <OutlineView
-                  headings={headings}
-                  activeId={activeId}
-                  onNavigate={navigateTo}
-                />
+                <OutlineView headings={headings} activeId={activeId} onNavigate={navigateTo} />
               </motion.div>
             )}
           </AnimatePresence>

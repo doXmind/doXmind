@@ -9,16 +9,18 @@ Supports:
 - Tool use with proper event handling
 """
 
-from typing import List, Optional, AsyncIterator, Dict, Any
-from anthropic import AsyncAnthropic
-import logging
 import json
+import logging
+from collections.abc import AsyncIterator
+from typing import Any
 
-from config import get_settings
-from agents.prompts import get_writing_system_prompt, get_kb_context_prompt
+from anthropic import AsyncAnthropic
+
+from agents.prompts import get_kb_context_prompt, get_writing_system_prompt
 from agents.tools.definitions import get_tools_for_mode
-from agents.tools.document_tools import execute_document_tool, is_document_tool
+from agents.tools.document_tools import execute_document_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
+from config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +35,7 @@ class WritingAgent:
         self,
         mode: str = "edit",
         enable_thinking: bool = False,
-        kb_attachments: List[Dict[str, Any]] = None
+        kb_attachments: list[dict[str, Any]] = None
     ):
         """Initialize the writing agent.
 
@@ -61,11 +63,11 @@ class WritingAgent:
     async def stream(
         self,
         message: str,
-        files: List[Dict[str, Any]],
-        images: List[Dict[str, Any]] = None,
-        history: List[Dict[str, Any]] = None,
+        files: list[dict[str, Any]],
+        images: list[dict[str, Any]] = None,
+        history: list[dict[str, Any]] = None,
         conversation_id: str = None
-    ) -> AsyncIterator[Dict[str, Any]]:
+    ) -> AsyncIterator[dict[str, Any]]:
         """Stream agent response with real-time token streaming.
 
         Args:
@@ -128,9 +130,9 @@ class WritingAgent:
     def _build_messages(
         self,
         message: str,
-        images: List[Dict[str, Any]] = None,
-        history: List[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+        images: list[dict[str, Any]] = None,
+        history: list[dict[str, Any]] = None
+    ) -> list[dict[str, Any]]:
         """Build the messages list for the API call."""
         messages = []
 
@@ -150,8 +152,8 @@ class WritingAgent:
     def _build_multimodal_content(
         self,
         message: str,
-        images: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        images: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Build multimodal content with images and text."""
         content = []
 
@@ -179,7 +181,7 @@ class WritingAgent:
         content.append({"type": "text", "text": message})
         return content
 
-    def _build_kb_context(self, conversation_id: str = None) -> Optional[Dict[str, Any]]:
+    def _build_kb_context(self, conversation_id: str = None) -> dict[str, Any] | None:
         """Build KB context for tool execution."""
         if not self.kb_attachments or not conversation_id:
             return None
@@ -192,12 +194,12 @@ class WritingAgent:
     async def _agent_loop(
         self,
         system_prompt: str,
-        messages: List[Dict[str, Any]],
-        files: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
+        files: list[dict[str, Any]],
         current_file_id: str,
-        kb_context: Optional[Dict[str, Any]],
-        collected_edits: List[Dict[str, Any]]
-    ) -> AsyncIterator[Dict[str, Any]]:
+        kb_context: dict[str, Any] | None,
+        collected_edits: list[dict[str, Any]]
+    ) -> AsyncIterator[dict[str, Any]]:
         """Main agent loop handling streaming and tool execution."""
         iteration = 0
 
@@ -237,7 +239,7 @@ class WritingAgent:
     async def _stream_response(
         self,
         system_prompt: str,
-        messages: List[Dict[str, Any]]
+        messages: list[dict[str, Any]]
     ) -> tuple:
         """Stream a single API response and collect events."""
         api_params = {
@@ -355,12 +357,12 @@ class WritingAgent:
 
     async def _execute_tool(
         self,
-        tool_use: Dict[str, Any],
-        files: List[Dict[str, Any]],
+        tool_use: dict[str, Any],
+        files: list[dict[str, Any]],
         current_file_id: str,
-        kb_context: Optional[Dict[str, Any]],
-        collected_edits: List[Dict[str, Any]]
-    ) -> AsyncIterator[Dict[str, Any]]:
+        kb_context: dict[str, Any] | None,
+        collected_edits: list[dict[str, Any]]
+    ) -> AsyncIterator[dict[str, Any]]:
         """Execute a single tool and yield events."""
         tool_name = tool_use["name"]
         tool_input = tool_use["input"]
@@ -414,7 +416,7 @@ class WritingAgent:
             }
         }
 
-    async def run(self, message: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def run(self, message: str, files: list[dict[str, Any]]) -> dict[str, Any]:
         """Run agent and return full response with edits.
 
         This is a convenience method that collects all streaming output.

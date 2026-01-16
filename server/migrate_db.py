@@ -8,7 +8,6 @@ Usage:
 """
 
 import sqlite3
-import os
 from pathlib import Path
 
 # Get the database path

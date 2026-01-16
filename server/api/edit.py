@@ -1,14 +1,14 @@
 """Quick Edit API endpoints."""
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Optional
 import json
 import logging
 
-from services.llm_service import LLMService
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
 from config import get_settings
+from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -39,7 +39,7 @@ class QuickEditRequest(BaseModel):
     """Quick edit request model."""
     text: str
     action: str
-    context: Optional[str] = ""
+    context: str | None = ""
 
 
 @router.post("/quick")

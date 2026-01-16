@@ -3,31 +3,22 @@
 Provides user registration, login, OAuth, and token management.
 """
 
-import secrets
-import hmac
-import hashlib
-import time
 import base64
-from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+import hashlib
+import hmac
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.database import get_db, User
-from services.auth_service import (
-    create_access_token,
-    verify_token,
-    verify_api_key,
-    require_auth,
-    optional_auth,
-    TokenData
-)
-from services.user_service import UserService
-from services.oauth_service import get_google_oauth_service
+from db.database import User, get_db
 from middleware.rate_limit import limiter
+from services.auth_service import TokenData, create_access_token, optional_auth, require_auth
+from services.oauth_service import get_google_oauth_service
+from services.user_service import UserService
 
 router = APIRouter()
 
@@ -79,8 +70,8 @@ class ChangePasswordRequest(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     """Request model for updating profile."""
-    username: Optional[str] = Field(None, min_length=2, max_length=100)
-    avatar_url: Optional[str] = None
+    username: str | None = Field(None, min_length=2, max_length=100)
+    avatar_url: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -88,7 +79,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int  # seconds
-    user: Optional[dict] = None
+    user: dict | None = None
 
 
 class MessageResponse(BaseModel):
@@ -101,18 +92,18 @@ class UserResponse(BaseModel):
     """User information response."""
     id: str
     email: str
-    username: Optional[str]
-    avatar_url: Optional[str]
+    username: str | None
+    avatar_url: str | None
     is_verified: bool
-    oauth_provider: Optional[str]
+    oauth_provider: str | None
     created_at: str
 
 
 class AuthStatusResponse(BaseModel):
     """Response model for auth status check."""
     authenticated: bool
-    auth_type: Optional[str] = None
-    user: Optional[UserResponse] = None
+    auth_type: str | None = None
+    user: UserResponse | None = None
     debug_mode: bool
 
 
@@ -479,7 +470,7 @@ async def refresh_token(
 @router.get("/status", response_model=AuthStatusResponse)
 async def auth_status(
     request: Request,
-    token_data: Optional[TokenData] = Depends(optional_auth),
+    token_data: TokenData | None = Depends(optional_auth),
     db: AsyncSession = Depends(get_db)
 ):
     """Check current authentication status."""

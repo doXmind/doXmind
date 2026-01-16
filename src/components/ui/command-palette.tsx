@@ -11,11 +11,6 @@ import {
   Keyboard,
   PanelLeft,
   MessageSquare,
-  Settings,
-  Trash2,
-  Download,
-  Upload,
-  Hash,
   ArrowRight,
   Contrast,
   HelpCircle,
@@ -192,9 +187,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const lowerQuery = query.toLowerCase();
     return commands.filter((cmd) => {
       const matchLabel = cmd.label.toLowerCase().includes(lowerQuery);
-      const matchKeywords = cmd.keywords?.some((kw) =>
-        kw.toLowerCase().includes(lowerQuery)
-      );
+      const matchKeywords = cmd.keywords?.some((kw) => kw.toLowerCase().includes(lowerQuery));
       return matchLabel || matchKeywords;
     });
   }, [commands, query]);
@@ -240,9 +233,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   // Scroll selected item into view
   React.useEffect(() => {
     if (listRef.current && flattenedCommands.length > 0) {
-      const selectedItem = listRef.current.querySelector(
-        `[data-index="${selectedIndex}"]`
-      );
+      const selectedItem = listRef.current.querySelector(`[data-index="${selectedIndex}"]`);
       selectedItem?.scrollIntoView({ block: "nearest" });
     }
   }, [selectedIndex, flattenedCommands.length]);
@@ -252,15 +243,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        setSelectedIndex((prev) =>
-          prev < flattenedCommands.length - 1 ? prev + 1 : 0
-        );
+        setSelectedIndex((prev) => (prev < flattenedCommands.length - 1 ? prev + 1 : 0));
         break;
       case "ArrowUp":
         e.preventDefault();
-        setSelectedIndex((prev) =>
-          prev > 0 ? prev - 1 : flattenedCommands.length - 1
-        );
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : flattenedCommands.length - 1));
         break;
       case "Enter":
         e.preventDefault();
@@ -305,10 +292,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       onClick={handleBackdropClick}
     >
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
-        aria-hidden="true"
-      />
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" aria-hidden="true" />
 
       {/* Command palette */}
       <div
@@ -324,8 +308,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         onKeyDown={handleKeyDown}
       >
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-          <Search className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+          <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"
@@ -339,7 +323,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             )}
             aria-label="Search commands"
           />
-          <kbd className="hidden sm:inline-flex h-5 px-1.5 items-center gap-1 rounded border border-border bg-muted text-[10px] font-medium text-muted-foreground">
+          <kbd className="hidden h-5 items-center gap-1 rounded border border-border bg-muted px-1.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
             ESC
           </kbd>
         </div>
@@ -371,7 +355,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       role="option"
                       aria-selected={isSelected}
                       className={cn(
-                        "w-full flex items-center gap-3 px-4 py-2 text-sm",
+                        "flex w-full items-center gap-3 px-4 py-2 text-sm",
                         "transition-colors duration-75",
                         isSelected
                           ? "bg-accent text-accent-foreground"
@@ -380,30 +364,24 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       onClick={() => cmd.action()}
                       onMouseEnter={() => setSelectedIndex(currentIndex)}
                     >
-                      <span className="flex-shrink-0 text-muted-foreground">
-                        {cmd.icon}
-                      </span>
-                      <span className="flex-1 text-left truncate">
-                        {cmd.label}
-                      </span>
+                      <span className="flex-shrink-0 text-muted-foreground">{cmd.icon}</span>
+                      <span className="flex-1 truncate text-left">{cmd.label}</span>
                       {cmd.shortcut && (
-                        <span className="flex items-center gap-1 flex-shrink-0">
+                        <span className="flex flex-shrink-0 items-center gap-1">
                           {cmd.shortcut.map((key, i) => (
                             <React.Fragment key={i}>
-                              <kbd className="h-5 min-w-[20px] px-1 inline-flex items-center justify-center rounded border border-border bg-muted text-[10px] font-medium text-muted-foreground">
+                              <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-border bg-muted px-1 text-[10px] font-medium text-muted-foreground">
                                 {formatKey(key)}
                               </kbd>
                               {i < cmd.shortcut!.length - 1 && (
-                                <span className="text-muted-foreground text-[10px]">
-                                  +
-                                </span>
+                                <span className="text-[10px] text-muted-foreground">+</span>
                               )}
                             </React.Fragment>
                           ))}
                         </span>
                       )}
                       {isSelected && (
-                        <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <ArrowRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                       )}
                     </button>
                   );
@@ -414,15 +392,15 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         </div>
 
         {/* Footer hint */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-border bg-muted/30">
+        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-4 py-2">
           <span className="text-xs text-muted-foreground">
-            <kbd className="inline-flex h-4 px-1 items-center rounded border border-border bg-muted text-[10px] font-medium mr-1">
+            <kbd className="mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
               ↑↓
             </kbd>
             to navigate
           </span>
           <span className="text-xs text-muted-foreground">
-            <kbd className="inline-flex h-4 px-1 items-center rounded border border-border bg-muted text-[10px] font-medium mr-1">
+            <kbd className="mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
               ↵
             </kbd>
             to select

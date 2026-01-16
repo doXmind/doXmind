@@ -3,13 +3,7 @@ import type { Editor, Range } from "@tiptap/core";
 import Suggestion from "@tiptap/suggestion";
 import { ReactRenderer } from "@tiptap/react";
 import tippy, { Instance } from "tippy.js";
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useState,
-  useCallback,
-} from "react";
+import { forwardRef, useEffect, useImperativeHandle, useState, useCallback } from "react";
 import {
   Heading1,
   Heading2,
@@ -40,12 +34,7 @@ const commands: CommandItem[] = [
     description: "Large section heading",
     icon: <Heading1 className="h-4 w-4" />,
     command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .setNode("heading", { level: 1 })
-        .run();
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run();
     },
   },
   {
@@ -53,12 +42,7 @@ const commands: CommandItem[] = [
     description: "Medium section heading",
     icon: <Heading2 className="h-4 w-4" />,
     command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .setNode("heading", { level: 2 })
-        .run();
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run();
     },
   },
   {
@@ -66,12 +50,7 @@ const commands: CommandItem[] = [
     description: "Small section heading",
     icon: <Heading3 className="h-4 w-4" />,
     command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .setNode("heading", { level: 3 })
-        .run();
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
     },
   },
   {
@@ -138,6 +117,7 @@ const commands: CommandItem[] = [
   {
     title: "Image",
     description: "Insert an image from URL",
+    // eslint-disable-next-line jsx-a11y/alt-text -- This is a Lucide icon, not an img element
     icon: <Image className="h-4 w-4" />,
     command: ({ editor, range }) => {
       // Delete the slash command text first
@@ -192,79 +172,71 @@ interface CommandListRef {
   onKeyDown: (props: { event: KeyboardEvent }) => boolean;
 }
 
-const CommandList = forwardRef<CommandListRef, CommandListProps>(
-  ({ items, command }, ref) => {
-    const [selectedIndex, setSelectedIndex] = useState(0);
+const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, command }, ref) => {
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
-    const selectItem = useCallback(
-      (index: number) => {
-        const item = items[index];
-        if (item) {
-          command(item);
-        }
-      },
-      [items, command]
-    );
+  const selectItem = useCallback(
+    (index: number) => {
+      const item = items[index];
+      if (item) {
+        command(item);
+      }
+    },
+    [items, command]
+  );
 
-    useEffect(() => {
-      setSelectedIndex(0);
-    }, [items]);
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [items]);
 
-    useImperativeHandle(ref, () => ({
-      onKeyDown: ({ event }) => {
-        if (event.key === "ArrowUp") {
-          setSelectedIndex((prev) => (prev - 1 + items.length) % items.length);
-          return true;
-        }
+  useImperativeHandle(ref, () => ({
+    onKeyDown: ({ event }) => {
+      if (event.key === "ArrowUp") {
+        setSelectedIndex((prev) => (prev - 1 + items.length) % items.length);
+        return true;
+      }
 
-        if (event.key === "ArrowDown") {
-          setSelectedIndex((prev) => (prev + 1) % items.length);
-          return true;
-        }
+      if (event.key === "ArrowDown") {
+        setSelectedIndex((prev) => (prev + 1) % items.length);
+        return true;
+      }
 
-        if (event.key === "Enter") {
-          selectItem(selectedIndex);
-          return true;
-        }
+      if (event.key === "Enter") {
+        selectItem(selectedIndex);
+        return true;
+      }
 
-        return false;
-      },
-    }));
+      return false;
+    },
+  }));
 
-    if (items.length === 0) {
-      return (
-        <div className="p-2 text-sm text-muted-foreground">No results</div>
-      );
-    }
-
-    return (
-      <div className="overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg">
-        {items.map((item, index) => (
-          <button
-            key={item.title}
-            onClick={() => selectItem(index)}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm",
-              index === selectedIndex
-                ? "bg-accent text-accent-foreground"
-                : "hover:bg-accent/50"
-            )}
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background">
-              {item.icon}
-            </div>
-            <div>
-              <p className="font-medium">{item.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {item.description}
-              </p>
-            </div>
-          </button>
-        ))}
-      </div>
-    );
+  if (items.length === 0) {
+    return <div className="p-2 text-sm text-muted-foreground">No results</div>;
   }
-);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg">
+      {items.map((item, index) => (
+        <button
+          key={item.title}
+          onClick={() => selectItem(index)}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm",
+            index === selectedIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+          )}
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background">
+            {item.icon}
+          </div>
+          <div>
+            <p className="font-medium">{item.title}</p>
+            <p className="text-xs text-muted-foreground">{item.description}</p>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+});
 
 CommandList.displayName = "CommandList";
 
@@ -296,9 +268,7 @@ export const SlashCommands = Extension.create({
         editor: this.editor,
         ...this.options.suggestion,
         items: ({ query }: { query: string }) => {
-          return commands.filter((item) =>
-            item.title.toLowerCase().includes(query.toLowerCase())
-          );
+          return commands.filter((item) => item.title.toLowerCase().includes(query.toLowerCase()));
         },
         render: () => {
           let component: ReactRenderer<CommandListRef> | null = null;

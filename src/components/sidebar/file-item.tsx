@@ -108,6 +108,7 @@ export function FileItem({ file }: FileItemProps) {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- file.name and handleExport are stable within render
   }, [contextMenu, contextMenuFocusIndex]);
 
   // Handle right-click context menu

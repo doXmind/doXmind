@@ -6,15 +6,14 @@ to avoid code duplication between formats.
 
 import io
 import os
-from typing import List, Optional, Protocol
 from dataclasses import dataclass, field
 from enum import Enum
+
 import markdown
-from fpdf import FPDF
+from bs4 import BeautifulSoup
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
-from bs4 import BeautifulSoup
-
+from fpdf import FPDF
 
 # ============================================================================
 # Document Node Model (Intermediate Representation)
@@ -44,7 +43,7 @@ class DocumentNode:
     """Represents a node in the document tree."""
     node_type: NodeType
     content: str = ""
-    children: List["DocumentNode"] = field(default_factory=list)
+    children: list["DocumentNode"] = field(default_factory=list)
 
     # Type-specific attributes
     level: int = 1  # For headings (1-6)
@@ -60,12 +59,12 @@ class DocumentNode:
 class HTMLToDocumentParser:
     """Parses HTML into a DocumentNode tree."""
 
-    def parse(self, html: str) -> List[DocumentNode]:
+    def parse(self, html: str) -> list[DocumentNode]:
         """Parse HTML string into document nodes."""
         soup = BeautifulSoup(html, 'html.parser')
         return self._parse_children(soup)
 
-    def _parse_children(self, element) -> List[DocumentNode]:
+    def _parse_children(self, element) -> list[DocumentNode]:
         """Parse children of an element."""
         nodes = []
         for child in element.children:
@@ -74,7 +73,7 @@ class HTMLToDocumentParser:
                 nodes.append(node)
         return nodes
 
-    def _parse_element(self, element) -> Optional[DocumentNode]:
+    def _parse_element(self, element) -> DocumentNode | None:
         """Parse a single element into a DocumentNode."""
         if element.name is None:
             # Text node
@@ -145,7 +144,7 @@ class HTMLToDocumentParser:
 
         return None
 
-    def _parse_inline_elements(self, element) -> List[DocumentNode]:
+    def _parse_inline_elements(self, element) -> list[DocumentNode]:
         """Parse inline elements (bold, italic, code, links)."""
         nodes = []
         for child in element.children:
@@ -181,7 +180,7 @@ class HTMLToDocumentParser:
                 nodes.extend(self._parse_inline_elements(child))
         return nodes
 
-    def _parse_list_items(self, element) -> List[DocumentNode]:
+    def _parse_list_items(self, element) -> list[DocumentNode]:
         """Parse list items."""
         items = []
         for li in element.find_all('li', recursive=False):
@@ -205,7 +204,7 @@ class HTMLToDocumentParser:
             items.append(item)
         return items
 
-    def _parse_table_rows(self, element) -> List[DocumentNode]:
+    def _parse_table_rows(self, element) -> list[DocumentNode]:
         """Parse table rows."""
         rows = []
         for tr in element.find_all('tr'):
@@ -253,7 +252,7 @@ class PDFRenderer:
                 self._unicode_font_path = path
                 break
 
-    def _get_system_font_path(self, font_name: str) -> Optional[str]:
+    def _get_system_font_path(self, font_name: str) -> str | None:
         """Get the path to a system font file."""
         font_dirs = []
 
@@ -274,12 +273,12 @@ class PDFRenderer:
                 font_path = os.path.join(font_dir, font_name)
                 if os.path.exists(font_path):
                     return font_path
-                for root, dirs, files in os.walk(font_dir):
+                for root, _dirs, files in os.walk(font_dir):
                     if font_name in files:
                         return os.path.join(root, font_name)
         return None
 
-    def render(self, nodes: List[DocumentNode]) -> bytes:
+    def render(self, nodes: list[DocumentNode]) -> bytes:
         """Render document nodes to PDF bytes."""
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -423,7 +422,7 @@ class PDFRenderer:
 class DOCXRenderer:
     """Renders DocumentNodes to DOCX."""
 
-    def render(self, nodes: List[DocumentNode]) -> bytes:
+    def render(self, nodes: list[DocumentNode]) -> bytes:
         """Render document nodes to DOCX bytes."""
         doc = Document()
 
@@ -476,7 +475,7 @@ class DOCXRenderer:
             para = doc.add_paragraph()
             para.add_run('_' * 50)
 
-    def _render_inline_content(self, para, children: List[DocumentNode]):
+    def _render_inline_content(self, para, children: list[DocumentNode]):
         """Render inline content to a paragraph."""
         for child in children:
             if child.node_type == NodeType.TEXT:
@@ -548,18 +547,18 @@ class ExportService:
         self.pdf_renderer = PDFRenderer()
         self.docx_renderer = DOCXRenderer()
 
-    def export_markdown(self, content: str, filename: str) -> bytes:
+    def export_markdown(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as Markdown."""
         return content.encode('utf-8')
 
-    def export_pdf(self, content: str, filename: str) -> bytes:
+    def export_pdf(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as PDF."""
         self.md.reset()
         html = self.md.convert(content)
         nodes = self.parser.parse(html)
         return self.pdf_renderer.render(nodes)
 
-    def export_docx(self, content: str, filename: str) -> bytes:
+    def export_docx(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as DOCX."""
         self.md.reset()
         html = self.md.convert(content)

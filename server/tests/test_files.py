@@ -4,9 +4,6 @@ Tests for file management API endpoints.
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from db.database import File
 
 
 @pytest.mark.unit
@@ -33,7 +30,7 @@ class TestFilesAPI:
         assert "updated_at" in data
 
     async def test_get_file(
-        self, client: AsyncClient, db_session: AsyncSession, sample_file_data: dict
+        self, client: AsyncClient, db_session: AsyncSession, sample_file_data: dict  # noqa: ARG002
     ):
         """Test getting a file by ID."""
         # Create a file first
@@ -116,7 +113,7 @@ class TestFilesAPI:
         assert response.status_code == 404
 
     async def test_list_files_multiple(
-        self, client: AsyncClient, sample_file_data: dict
+        self, client: AsyncClient, sample_file_data: dict  # noqa: ARG002
     ):
         """Test listing multiple files."""
         # Create multiple files

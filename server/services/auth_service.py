@@ -4,12 +4,12 @@ Provides JWT token generation/validation and API key authentication.
 Supports both stateless JWT auth and simple API key auth for flexibility.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
+
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, status, Depends, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 
 from config import get_settings
 
@@ -40,7 +40,7 @@ class TokenData:
 
 def create_access_token(
     subject: str = "anonymous",
-    expires_delta: Optional[timedelta] = None
+    expires_delta: timedelta | None = None
 ) -> str:
     """Create a new JWT access token.
 
@@ -54,9 +54,9 @@ def create_access_token(
     settings = get_settings()
 
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(
+        expire = datetime.now(UTC) + timedelta(
             minutes=settings.jwt_access_token_expire_minutes
         )
 
@@ -64,7 +64,7 @@ def create_access_token(
         "sub": subject,
         "exp": expire,
         "type": "access",
-        "iat": datetime.now(timezone.utc)
+        "iat": datetime.now(UTC)
     }
 
     encoded_jwt = jwt.encode(
@@ -76,7 +76,7 @@ def create_access_token(
     return encoded_jwt
 
 
-def verify_token(token: str) -> Optional[TokenData]:
+def verify_token(token: str) -> TokenData | None:
     """Verify and decode a JWT token.
 
     Args:
@@ -103,7 +103,7 @@ def verify_token(token: str) -> Optional[TokenData]:
 
         return TokenData(
             sub=sub,
-            exp=datetime.fromtimestamp(exp, tz=timezone.utc),
+            exp=datetime.fromtimestamp(exp, tz=UTC),
             token_type=token_type
         )
 
@@ -134,8 +134,8 @@ def verify_api_key(api_key: str) -> bool:
 # =============================================================================
 
 async def get_current_token(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
-) -> Optional[TokenData]:
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)
+) -> TokenData | None:
     """Extract and validate JWT token from Authorization header.
 
     This is a soft dependency - returns None if no token provided.
@@ -149,8 +149,8 @@ async def get_current_token(
 
 
 async def get_api_key(
-    api_key: Optional[str] = Depends(api_key_header)
-) -> Optional[str]:
+    api_key: str | None = Depends(api_key_header)
+) -> str | None:
     """Extract API key from X-API-Key header.
 
     Returns the API key if valid, None otherwise.
@@ -166,8 +166,8 @@ async def get_api_key(
 
 async def require_auth(
     request: Request,
-    token: Optional[TokenData] = Depends(get_current_token),
-    api_key: Optional[str] = Depends(get_api_key)
+    token: TokenData | None = Depends(get_current_token),
+    api_key: str | None = Depends(get_api_key)
 ) -> TokenData:
     """Require authentication via JWT token OR API key.
 
@@ -186,7 +186,7 @@ async def require_auth(
     if api_key is not None:
         return TokenData(
             sub="api-key-user",
-            exp=datetime.now(timezone.utc) + timedelta(days=1),
+            exp=datetime.now(UTC) + timedelta(days=1),
             token_type="api_key"
         )
 
@@ -195,7 +195,7 @@ async def require_auth(
         # Return a dummy token for development only when no real auth provided
         return TokenData(
             sub="dev-user",
-            exp=datetime.now(timezone.utc) + timedelta(days=1),
+            exp=datetime.now(UTC) + timedelta(days=1),
             token_type="dev"
         )
 
@@ -208,9 +208,9 @@ async def require_auth(
 
 
 async def optional_auth(
-    token: Optional[TokenData] = Depends(get_current_token),
-    api_key: Optional[str] = Depends(get_api_key)
-) -> Optional[TokenData]:
+    token: TokenData | None = Depends(get_current_token),
+    api_key: str | None = Depends(get_api_key)
+) -> TokenData | None:
     """Optional authentication - returns None if not authenticated.
 
     Use this for endpoints that work both authenticated and anonymously.
@@ -221,7 +221,7 @@ async def optional_auth(
     if api_key is not None:
         return TokenData(
             sub="api-key-user",
-            exp=datetime.now(timezone.utc) + timedelta(days=1),
+            exp=datetime.now(UTC) + timedelta(days=1),
             token_type="api_key"
         )
 

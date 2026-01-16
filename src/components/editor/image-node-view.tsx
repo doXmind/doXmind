@@ -21,7 +21,7 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
 
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const [currentSize, setCurrentSize] = useState<{ width: number; height: number } | null>(null);
-  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [_naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
   // Get natural image dimensions when loaded
   const handleImageLoad = useCallback(() => {
@@ -134,7 +134,7 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
 
   // Keyboard resize handler for accessibility
   const handleKeyboardResize = useCallback(
-    (e: React.KeyboardEvent, handle: string) => {
+    (e: React.KeyboardEvent, _handle: string) => {
       const step = e.shiftKey ? 50 : 10; // Larger step with Shift
       const img = imgRef.current;
       if (!img) return;
@@ -182,6 +182,7 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
         )}
         data-align={align}
       >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
           src={src}

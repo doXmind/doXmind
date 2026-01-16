@@ -1,9 +1,7 @@
 """System prompts for the writing agent."""
 
-from typing import List, Optional
 
-
-def get_writing_system_prompt(mode: str, files: List[dict]) -> str:
+def get_writing_system_prompt(mode: str, files: list[dict]) -> str:
     """Generate system prompt for the writing agent with document editing capabilities.
 
     This prompt instructs the agent to act like "Cursor for Writing" - directly
@@ -158,12 +156,12 @@ Focus on:
 
 
 # Keep the old function for backward compatibility
-def get_system_prompt(mode: str, files: List[dict]) -> str:
+def get_system_prompt(mode: str, files: list[dict]) -> str:
     """Legacy system prompt function - redirects to new one."""
     return get_writing_system_prompt(mode, files)
 
 
-def get_kb_context_prompt(attachments: List[dict]) -> str:
+def get_kb_context_prompt(attachments: list[dict]) -> str:
     """Generate KB context section for system prompt.
 
     Args:

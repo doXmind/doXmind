@@ -4,7 +4,7 @@ This module provides a unified exception hierarchy for consistent
 error handling across the application.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
 
 
 class AppException(Exception):
@@ -20,13 +20,13 @@ class AppException(Exception):
     def __init__(
         self,
         message: str = None,
-        details: Optional[Dict[str, Any]] = None
+        details: dict[str, Any] | None = None
     ):
         self.message = message or self.__class__.message
         self.details = details or {}
         super().__init__(self.message)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert exception to a dictionary for API response."""
         response = {
             "error": {

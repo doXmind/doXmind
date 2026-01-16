@@ -27,7 +27,7 @@ export function MobileChatSheet() {
   const dragControls = useDragControls();
   const containerRef = useRef<HTMLDivElement>(null);
   const [sheetHeight, setSheetHeight] = useState<number>(400);
-  const [isDragging, setIsDragging] = useState(false);
+  const [_isDragging, setIsDragging] = useState(false);
 
   // Calculate height based on viewport
   const getHeightValue = (ratio: number): number => {
@@ -49,10 +49,7 @@ export function MobileChatSheet() {
     setIsDragging(true);
   };
 
-  const handleDragEnd = (
-    event: MouseEvent | TouchEvent | PointerEvent,
-    info: PanInfo
-  ) => {
+  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     setIsDragging(false);
     const velocity = info.velocity.y;
     const offset = info.offset.y;
@@ -67,9 +64,7 @@ export function MobileChatSheet() {
     } else {
       // Snap to nearest height
       const currentHeight =
-        typeof sheetHeight === "number"
-          ? sheetHeight
-          : window.innerHeight * 0.5;
+        typeof sheetHeight === "number" ? sheetHeight : window.innerHeight * 0.5;
       const halfHeight = getHeightValue(SHEET_HEIGHTS.HALF);
       const fullHeight = getHeightValue(SHEET_HEIGHTS.FULL);
 
@@ -105,7 +100,7 @@ export function MobileChatSheet() {
           {/* iOS-style Bottom Sheet */}
           <motion.div
             ref={containerRef}
-            className="fixed inset-x-0 bottom-0 bg-background rounded-t-2xl shadow-2xl overflow-hidden md:hidden flex flex-col"
+            className="fixed inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-2xl bg-background shadow-2xl md:hidden"
             style={{
               zIndex: Z_INDEX.MOBILE_PANEL,
               height: sheetHeight,
@@ -129,19 +124,19 @@ export function MobileChatSheet() {
           >
             {/* Drag Handle Area */}
             <div
-              className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none"
+              className="flex-shrink-0 cursor-grab touch-none active:cursor-grabbing"
               onPointerDown={(e) => dragControls.start(e)}
             >
               {/* Handle Bar */}
               <div className="flex justify-center py-3">
-                <div className="w-10 h-1 bg-border rounded-full" />
+                <div className="h-1 w-10 rounded-full bg-border" />
               </div>
 
               {/* Header */}
-              <div className="flex items-center justify-between px-4 pb-3 border-b border-border">
+              <div className="flex items-center justify-between border-b border-border px-4 pb-3">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-primary" />
-                  <h3 className="font-semibold text-base">AI Assistant</h3>
+                  <h3 className="text-base font-semibold">AI Assistant</h3>
                 </div>
                 <div className="flex items-center gap-1">
                   {conversation?.messages?.length > 0 && (
@@ -160,8 +155,7 @@ export function MobileChatSheet() {
                     size="icon"
                     onClick={() =>
                       setSheetHeight(
-                        typeof sheetHeight === "number" &&
-                          sheetHeight > window.innerHeight * 0.6
+                        typeof sheetHeight === "number" && sheetHeight > window.innerHeight * 0.6
                           ? getHeightValue(SHEET_HEIGHTS.HALF)
                           : getHeightValue(SHEET_HEIGHTS.FULL)
                       )

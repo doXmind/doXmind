@@ -20,10 +20,7 @@ export function MobileSidebar() {
     setMobileSidebarOpen(false);
   };
 
-  const handleDragEnd = (
-    event: MouseEvent | TouchEvent | PointerEvent,
-    info: PanInfo
-  ) => {
+  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     // Close if dragged left past threshold or with high velocity
     if (info.offset.x < -DRAG_CLOSE_THRESHOLD || info.velocity.x < -500) {
       handleClose();
@@ -42,6 +39,7 @@ export function MobileSidebar() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleClose is stable
   }, [isMobileSidebarOpen]);
 
   return (
@@ -61,7 +59,7 @@ export function MobileSidebar() {
           {/* Sidebar Panel - Slides in from left */}
           <motion.div
             ref={containerRef}
-            className="fixed inset-y-0 left-0 bg-background shadow-2xl overflow-hidden md:hidden flex flex-col"
+            className="fixed inset-y-0 left-0 flex flex-col overflow-hidden bg-background shadow-2xl md:hidden"
             style={{
               zIndex: Z_INDEX.MOBILE_PANEL,
               width: SIDEBAR_WIDTH,
@@ -84,8 +82,8 @@ export function MobileSidebar() {
             onDragEnd={handleDragEnd}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-              <h3 className="font-semibold text-base">Files</h3>
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-base font-semibold">Files</h3>
               <Button
                 variant="ghost"
                 size="icon"

@@ -3,7 +3,7 @@
 import { memo, useCallback, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FlowNodeData } from "../types";
 
@@ -12,11 +12,7 @@ import type { FlowNodeData } from "../types";
  * Styled based on heading level (H1, H2, H3)
  * Supports expand/collapse for nodes with children
  */
-export const HeadingNode = memo(function HeadingNode({
-  id,
-  data,
-  selected,
-}: NodeProps) {
+export const HeadingNode = memo(function HeadingNode({ id, data, selected }: NodeProps) {
   const nodeData = data as FlowNodeData;
   const [hasAnimated, setHasAnimated] = useState(false);
 
@@ -31,9 +27,7 @@ export const HeadingNode = memo(function HeadingNode({
     (e: React.MouseEvent) => {
       e.stopPropagation();
       // Dispatch custom event to parent
-      window.dispatchEvent(
-        new CustomEvent("mindmap-toggle-collapse", { detail: { nodeId: id } })
-      );
+      window.dispatchEvent(new CustomEvent("mindmap-toggle-collapse", { detail: { nodeId: id } }));
     },
     [id]
   );
@@ -45,7 +39,7 @@ export const HeadingNode = memo(function HeadingNode({
   };
 
   // Calculate stagger delay based on node index (extracted from id)
-  const nodeIndex = parseInt(id.replace(/\D/g, '')) || 0;
+  const nodeIndex = parseInt(id.replace(/\D/g, "")) || 0;
   const staggerDelay = Math.min(nodeIndex * 0.05, 0.5); // Cap at 0.5s
 
   return (
@@ -53,20 +47,19 @@ export const HeadingNode = memo(function HeadingNode({
       initial={hasAnimated ? false : { scale: 0.8, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{
-        type: 'spring',
+        type: "spring",
         stiffness: 300,
         damping: 20,
         delay: hasAnimated ? 0 : staggerDelay,
       }}
       whileHover={{ scale: 1.03, y: -2 }}
       className={cn(
-        "group relative px-4 py-2.5 rounded-lg border shadow-sm",
+        "group relative rounded-lg border px-4 py-2.5 shadow-sm",
         "cursor-pointer select-none",
         // Level-based styling
         levelStyles[nodeData.level] || levelStyles[3],
         // Active state
-        nodeData.isActive &&
-          "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg",
+        nodeData.isActive && "shadow-lg ring-2 ring-primary ring-offset-2 ring-offset-background",
         // Selected state (keyboard navigation)
         selected && "ring-2 ring-blue-500 ring-offset-2"
       )}
@@ -75,7 +68,7 @@ export const HeadingNode = memo(function HeadingNode({
       <Handle
         type="target"
         position={Position.Top}
-        className="!w-2 !h-2 !bg-border !border-0 opacity-0"
+        className="!h-2 !w-2 !border-0 !bg-border opacity-0"
       />
 
       {/* Content */}
@@ -87,7 +80,7 @@ export const HeadingNode = memo(function HeadingNode({
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             className={cn(
-              "flex-shrink-0 p-0.5 rounded transition-colors",
+              "flex-shrink-0 rounded p-0.5 transition-colors",
               "hover:bg-black/10 dark:hover:bg-white/10",
               "focus:outline-none focus:ring-1 focus:ring-primary"
             )}
@@ -97,7 +90,7 @@ export const HeadingNode = memo(function HeadingNode({
               animate={{ rotate: nodeData.isCollapsed ? 0 : 90 }}
               transition={{ duration: 0.2 }}
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" />
             </motion.span>
           </motion.button>
         )}
@@ -112,9 +105,9 @@ export const HeadingNode = memo(function HeadingNode({
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              transition={{ type: "spring", stiffness: 400, damping: 20 }}
               className={cn(
-                "flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full",
+                "flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs",
                 "bg-black/10 dark:bg-white/10"
               )}
             >
@@ -128,17 +121,17 @@ export const HeadingNode = memo(function HeadingNode({
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!w-2 !h-2 !bg-border !border-0 opacity-0"
+        className="!h-2 !w-2 !border-0 !bg-border opacity-0"
       />
 
       {/* Hover tooltip with full text */}
       {nodeData.label && nodeData.label.length > 25 && (
         <div
           className={cn(
-            "absolute left-1/2 -translate-x-1/2 -bottom-10 z-50",
-            "px-2 py-1 rounded bg-popover text-popover-foreground text-xs shadow-lg",
-            "opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none",
-            "whitespace-nowrap max-w-[300px] truncate"
+            "absolute -bottom-10 left-1/2 z-50 -translate-x-1/2",
+            "rounded bg-popover px-2 py-1 text-xs text-popover-foreground shadow-lg",
+            "pointer-events-none opacity-0 transition-opacity group-hover:opacity-100",
+            "max-w-[300px] truncate whitespace-nowrap"
           )}
         >
           {nodeData.label}

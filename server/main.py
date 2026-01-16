@@ -3,21 +3,31 @@ doXmind Mini - AI Writing Studio Backend
 FastAPI + LangGraph + Claude API
 """
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-import logging
-
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from config import get_settings, ensure_directories
+from api import (
+    auth,
+    autocomplete,
+    chat,
+    edit,
+    export,
+    files,
+    import_file,
+    knowledge_base,
+    review,
+    versions,
+)
+from config import ensure_directories, get_settings
 from db.database import init_db
-from services.rag_service import init_vector_store
 from exceptions import AppException
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
-from api import chat, edit, autocomplete, files, versions, review, export, import_file, knowledge_base, auth
+from services.rag_service import init_vector_store
 
 # Configure logging
 logging.basicConfig(

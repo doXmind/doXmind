@@ -1,19 +1,19 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Skeleton, SkeletonLine, SkeletonCircle } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonCircle } from "@/components/ui/skeleton";
 
 export function ChatSkeleton() {
   return (
     <motion.div
-      className="flex flex-col h-full"
+      className="flex h-full flex-col"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
     >
       {/* Header */}
-      <div className="h-12 border-b border-border flex items-center justify-between px-3">
+      <div className="flex h-12 items-center justify-between border-b border-border px-3">
         <Skeleton className="h-5 w-16" />
         <div className="flex gap-1">
           <Skeleton className="h-8 w-8 rounded-md" />
@@ -22,7 +22,7 @@ export function ChatSkeleton() {
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 p-4 space-y-4 overflow-hidden">
+      <div className="flex-1 space-y-4 overflow-hidden p-4">
         {/* User message */}
         <motion.div
           className="flex justify-end"
@@ -75,9 +75,9 @@ export function ChatSkeleton() {
       </div>
 
       {/* Input area */}
-      <div className="p-3 border-t border-border">
+      <div className="border-t border-border p-3">
         <div className="flex items-end gap-2">
-          <Skeleton className="flex-1 h-10 rounded-xl" />
+          <Skeleton className="h-10 flex-1 rounded-xl" />
           <Skeleton className="h-10 w-10 rounded-full" />
         </div>
       </div>

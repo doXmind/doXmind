@@ -5,15 +5,15 @@ Provides AI-powered text completions for Markdown writing,
 optimized for low latency and high-quality suggestions.
 """
 
-from fastapi import APIRouter
-from pydantic import BaseModel
-from typing import Optional
 import logging
 import time
 
-from services.llm_service import LLMService
-from services.autocomplete_cache import AutocompleteCache
+from fastapi import APIRouter
+from pydantic import BaseModel
+
 from config import get_settings
+from services.autocomplete_cache import AutocompleteCache
+from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -94,10 +94,7 @@ def clean_suggestion(suggestion: str, text_before: str) -> str:
     # Also limit max chars to 50 for safety
     if len(suggestion) > 50:
         cut_point = suggestion[:50].rfind(" ")
-        if cut_point > 10:
-            suggestion = suggestion[:cut_point]
-        else:
-            suggestion = suggestion[:50]
+        suggestion = suggestion[:cut_point] if cut_point > 10 else suggestion[:50]
 
     return suggestion
 

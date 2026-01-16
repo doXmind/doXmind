@@ -92,7 +92,9 @@
       "Bash(npm run type-check:*)",
       "Bash(gh run list:*)",
       "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" run list --limit 5)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "Bash(git remote:*)",
+      "Bash(python -m ruff:*)"
     ]
   }
 }

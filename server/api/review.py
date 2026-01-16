@@ -7,15 +7,15 @@ Provides Grammarly-like text analysis using Claude to identify:
 - Engagement issues (word choice, variety)
 """
 
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Optional
 import json
 import logging
 
-from services.llm_service import LLMService
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
 from config import get_settings
+from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -25,7 +25,7 @@ class TextReviewRequest(BaseModel):
     """Request for full document review."""
     content: str
     file_id: str
-    language: Optional[str] = "en"
+    language: str | None = "en"
 
 
 REVIEW_SYSTEM_PROMPT = """You are an expert writing assistant that analyzes text for improvements.

@@ -4,7 +4,6 @@ This module contains all tool schemas used by Claude API for document editing
 and knowledge base operations.
 """
 
-from typing import List
 
 # ============================================================================
 # Document Editing Tools Definition
@@ -186,7 +185,7 @@ KB_TOOL_NAMES = {tool["name"] for tool in KB_TOOLS}
 READONLY_TOOL_NAMES = {tool["name"] for tool in READONLY_TOOLS}
 
 
-def get_tools_for_mode(mode: str, has_kb_attachments: bool = False) -> List[dict]:
+def get_tools_for_mode(mode: str, has_kb_attachments: bool = False) -> list[dict]:
     """Get the appropriate tools based on mode and KB availability.
 
     Args:
@@ -196,10 +195,7 @@ def get_tools_for_mode(mode: str, has_kb_attachments: bool = False) -> List[dict
     Returns:
         List of tool definitions for Claude API
     """
-    if mode == "edit":
-        base_tools = DOCUMENT_TOOLS
-    else:
-        base_tools = READONLY_TOOLS
+    base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
 
     if has_kb_attachments:
         return base_tools + KB_TOOLS

@@ -6,14 +6,15 @@ This module provides vector search capabilities for:
 - Knowledge base attachments (for conversation-scoped search)
 """
 
+import hashlib
+import logging
+import re
+from abc import ABC, abstractmethod
+from typing import Any
+
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
-from typing import List, Optional, Dict, Any
-import logging
-import hashlib
-import re
-from abc import ABC, abstractmethod
 
 from config import get_settings
 
@@ -28,7 +29,7 @@ class ChunkingStrategy(ABC):
     """Abstract base class for text chunking strategies."""
 
     @abstractmethod
-    def chunk(self, text: str) -> List[str]:
+    def chunk(self, text: str) -> list[str]:
         """Split text into chunks."""
         pass
 
@@ -43,7 +44,7 @@ class OverlapChunkingStrategy(ChunkingStrategy):
         self.chunk_size = chunk_size
         self.overlap = overlap
 
-    def chunk(self, text: str) -> List[str]:
+    def chunk(self, text: str) -> list[str]:
         if not text.strip():
             return []
 
@@ -81,7 +82,7 @@ class SentenceChunkingStrategy(ChunkingStrategy):
     def __init__(self, min_length: int = 5):
         self.min_length = min_length
 
-    def chunk(self, text: str) -> List[str]:
+    def chunk(self, text: str) -> list[str]:
         if not text.strip():
             return []
 
@@ -240,7 +241,7 @@ class RAGService:
         self,
         file_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         strategy: ChunkingStrategy = None
     ):
         """Index a file's content at chunk level.
@@ -276,9 +277,9 @@ class RAGService:
     async def search(
         self,
         query: str,
-        file_ids: Optional[List[str]] = None,
+        file_ids: list[str] | None = None,
         top_k: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Search for relevant document chunks.
 
         Args:
@@ -322,7 +323,7 @@ class RAGService:
         self,
         file_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: dict[str, Any] | None = None
     ):
         """Index a file at sentence level for precise in-document search.
 
@@ -360,7 +361,7 @@ class RAGService:
         file_id: str,
         top_k: int = 10,
         min_score: float = 0.7
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Search for relevant sentences within a specific file.
 
         Args:
@@ -482,7 +483,7 @@ class RAGService:
         conversation_id: str,
         query: str,
         top_k: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Search within a conversation's knowledge base.
 
         Args:
@@ -540,8 +541,8 @@ class RAGService:
         self,
         attachment_id: str,
         start_chunk: int = 0,
-        end_chunk: Optional[int] = None
-    ) -> Dict[str, Any]:
+        end_chunk: int | None = None
+    ) -> dict[str, Any]:
         """Get ordered content chunks from a KB attachment.
 
         Args:
@@ -560,7 +561,7 @@ class RAGService:
 
             # Sort by chunk_index
             chunks_with_meta = sorted(
-                zip(results["documents"], results["metadatas"]),
+                zip(results["documents"], results["metadatas"], strict=False),
                 key=lambda x: x[1].get("chunk_index", 0)
             )
 
@@ -590,7 +591,7 @@ class RAGService:
     # Utility Methods
     # -------------------------------------------------------------------------
 
-    def _format_results(self, results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _format_results(self, results: dict[str, Any]) -> list[dict[str, Any]]:
         """Format Chroma query results into a standard format."""
         formatted = []
         for i in range(len(results["ids"][0])):

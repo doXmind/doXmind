@@ -92,7 +92,7 @@ interface SubmenuPosition {
   left: number;
 }
 
-interface UseSubmenuPositionOptions {
+interface _UseSubmenuPositionOptions {
   /** ID of the active submenu item */
   activeSubmenu: string | null;
   /** Ref to the parent menu */

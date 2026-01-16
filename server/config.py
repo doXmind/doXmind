@@ -4,10 +4,11 @@ Centralized settings management with environment variable support.
 All configurable values should be defined here.
 """
 
-from pydantic_settings import BaseSettings
-from functools import lru_cache
 import os
+from functools import lru_cache
 from pathlib import Path
+
+from pydantic_settings import BaseSettings
 
 # Get the directory where config.py is located (server/)
 _BASE_DIR = Path(__file__).resolve().parent
@@ -151,7 +152,7 @@ class Settings(BaseSettings):
         return self.max_file_size / (1024 * 1024)
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
