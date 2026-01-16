@@ -12,10 +12,7 @@ import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import type { DiffHunk } from "@/types/diff";
 import { markdownToHtml, isHtml } from "@/lib/markdown";
 
-import {
-  DiffReviewPluginKey,
-  type DiffReviewPluginState,
-} from "./diff-types";
+import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
 import { findTextInDocument } from "./position-mapping";
 import { createInsertWidget, createActionWidget } from "./diff-widgets";
 import {
@@ -154,10 +151,7 @@ export const DiffReviewExtension = Extension.create({
               );
 
               // For replace and delete types: mark the old content with strikethrough
-              if (
-                (hunk.type === "replace" || hunk.type === "delete") &&
-                from < to
-              ) {
+              if ((hunk.type === "replace" || hunk.type === "delete") && from < to) {
                 decorations.push(
                   Decoration.inline(from, to, {
                     class: "diff-deleted",
@@ -265,7 +259,7 @@ export const DiffReviewExtension = Extension.create({
           // Apply the change based on hunk type
           if (hunk.type === "replace" || hunk.type === "insert") {
             // Trim trailing newlines to avoid extra empty lines
-            let newContent = (hunk.newContent || "").replace(/\n+$/, "");
+            const newContent = (hunk.newContent || "").replace(/\n+$/, "");
 
             if (hunk.type === "replace") {
               if (newContent) {
@@ -315,7 +309,13 @@ export const DiffReviewExtension = Extension.create({
 
                     // Step 1: Calculate the actual replacement range
                     // This expands from/to to block boundaries when content spans multiple blocks
-                    const replacementRange = calculateReplacementRange(state.doc, from, to, $from, $to);
+                    const replacementRange = calculateReplacementRange(
+                      state.doc,
+                      from,
+                      to,
+                      $from,
+                      $to
+                    );
 
                     // Step 2: Parse the new content
                     const parentType = $from.parent.type.name;
@@ -366,8 +366,15 @@ export const DiffReviewExtension = Extension.create({
 
                       // 3a. Cross-block replacement: when from/to span different blocks
                       // BUT NOT if we're replacing a table with a table (let 3a2 handle that)
-                      if (replacementRange.isCrossBlock && !(isInTable && firstChild?.type.name === "table")) {
-                        tr.replaceWith(replacementRange.actualStart, replacementRange.actualEnd, parsedDoc.content);
+                      if (
+                        replacementRange.isCrossBlock &&
+                        !(isInTable && firstChild?.type.name === "table")
+                      ) {
+                        tr.replaceWith(
+                          replacementRange.actualStart,
+                          replacementRange.actualEnd,
+                          parsedDoc.content
+                        );
                       }
                       // 3a2. Table-to-table replacement: when we're inside a table and new content is a table
                       // This MUST be before paragraph checks because table cells contain paragraphs
@@ -378,7 +385,11 @@ export const DiffReviewExtension = Extension.create({
                         tr.replaceWith(tableStart, tableEnd, parsedDoc.content);
                       }
                       // 3b. List item inline replacement
-                      else if (isInListItem && firstChild?.type.name === "bulletList" && !hasMultipleBlocks) {
+                      else if (
+                        isInListItem &&
+                        firstChild?.type.name === "bulletList" &&
+                        !hasMultipleBlocks
+                      ) {
                         const listItem = firstChild.content.firstChild;
                         if (listItem) {
                           const paragraph = listItem.content.firstChild;
@@ -388,7 +399,12 @@ export const DiffReviewExtension = Extension.create({
                         }
                       }
                       // 3c. Single paragraph inline replacement
-                      else if (isInParagraph && firstChild?.type.name === "paragraph" && !hasMultipleBlocks && !replacementRange.shouldExpandToBlock) {
+                      else if (
+                        isInParagraph &&
+                        firstChild?.type.name === "paragraph" &&
+                        !hasMultipleBlocks &&
+                        !replacementRange.shouldExpandToBlock
+                      ) {
                         if (firstChild.content.size > 0) {
                           tr.replaceWith(from, to, firstChild.content);
                         }
@@ -402,16 +418,35 @@ export const DiffReviewExtension = Extension.create({
                       }
                       // 3e. Table replacement
                       else if (firstChild?.type.name === "table") {
-                        handleTableReplacement(tr, state, from, to, $from, $to, firstChild, parsedDoc);
+                        handleTableReplacement(
+                          tr,
+                          state,
+                          from,
+                          to,
+                          $from,
+                          $to,
+                          firstChild,
+                          parsedDoc
+                        );
                       }
                       // 3f. Block-level content replacing paragraph
-                      else if (isInParagraph && firstChild && ["codeBlock", "blockquote", "bulletList", "orderedList"].includes(firstChild.type.name)) {
+                      else if (
+                        isInParagraph &&
+                        firstChild &&
+                        ["codeBlock", "blockquote", "bulletList", "orderedList"].includes(
+                          firstChild.type.name
+                        )
+                      ) {
                         let blockStart = from;
                         let blockEnd = to;
 
                         for (let d = $from.depth; d > 0; d--) {
                           const node = $from.node(d);
-                          if (node.type.name === "paragraph" || node.type.name === "tableCell" || node.type.name === "tableHeader") {
+                          if (
+                            node.type.name === "paragraph" ||
+                            node.type.name === "tableCell" ||
+                            node.type.name === "tableHeader"
+                          ) {
                             blockStart = $from.start(d);
                             // Use Math.max to ensure we delete all old content
                             blockEnd = Math.max($from.end(d), to);
@@ -510,9 +545,7 @@ export const DiffReviewExtension = Extension.create({
 /**
  * Helper function to get current diff hunks from editor state
  */
-export function getDiffHunks(
-  editor: { state: { doc: unknown } } | null
-): DiffHunk[] {
+export function getDiffHunks(editor: { state: { doc: unknown } } | null): DiffHunk[] {
   if (!editor) return [];
   const pluginState = DiffReviewPluginKey.getState(
     editor.state as Parameters<typeof DiffReviewPluginKey.getState>[0]
@@ -523,9 +556,7 @@ export function getDiffHunks(
 /**
  * Helper function to check if diff review is active
  */
-export function isDiffReviewActive(
-  editor: { state: { doc: unknown } } | null
-): boolean {
+export function isDiffReviewActive(editor: { state: { doc: unknown } } | null): boolean {
   if (!editor) return false;
   const pluginState = DiffReviewPluginKey.getState(
     editor.state as Parameters<typeof DiffReviewPluginKey.getState>[0]

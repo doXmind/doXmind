@@ -30,9 +30,7 @@ export interface SpellcheckPluginState {
 }
 
 // Plugin key for accessing state
-export const SpellcheckPluginKey = new PluginKey<SpellcheckPluginState>(
-  "spellcheck"
-);
+export const SpellcheckPluginKey = new PluginKey<SpellcheckPluginState>("spellcheck");
 
 // Storage key for persisted ignored words
 const IGNORED_WORDS_STORAGE_KEY = "spellcheck-ignored-words";
@@ -105,11 +103,7 @@ declare module "@tiptap/core" {
     spellcheck: {
       setSpellcheckMatches: (matches: SpellcheckMatch[]) => ReturnType;
       clearSpellcheck: () => ReturnType;
-      applyCorrection: (
-        from: number,
-        to: number,
-        replacement: string
-      ) => ReturnType;
+      applyCorrection: (from: number, to: number, replacement: string) => ReturnType;
       ignoreWord: (word: string) => ReturnType;
       removeIgnoredWord: (word: string) => ReturnType;
       setSpellcheckEnabled: (enabled: boolean) => ReturnType;
@@ -121,219 +115,211 @@ export interface SpellcheckExtensionOptions {
   errorClass: string;
 }
 
-export const SpellcheckExtension = Extension.create<SpellcheckExtensionOptions>(
-  {
-    name: "spellcheck",
+export const SpellcheckExtension = Extension.create<SpellcheckExtensionOptions>({
+  name: "spellcheck",
 
-    addOptions() {
-      return {
-        errorClass: "spellcheck-error",
-      };
-    },
+  addOptions() {
+    return {
+      errorClass: "spellcheck-error",
+    };
+  },
 
-    addStorage() {
-      return {
-        matches: [] as SpellcheckMatch[],
-        enabled: true,
-      };
-    },
+  addStorage() {
+    return {
+      matches: [] as SpellcheckMatch[],
+      enabled: true,
+    };
+  },
 
-    addProseMirrorPlugins() {
-      const { options, storage } = this;
+  addProseMirrorPlugins() {
+    const { options, storage } = this;
 
-      return [
-        new Plugin<SpellcheckPluginState>({
-          key: SpellcheckPluginKey,
+    return [
+      new Plugin<SpellcheckPluginState>({
+        key: SpellcheckPluginKey,
 
-          state: {
-            init: () => ({
-              matches: [],
-              ignoredWords: loadIgnoredWords(),
-              enabled: true,
-            }),
+        state: {
+          init: () => ({
+            matches: [],
+            ignoredWords: loadIgnoredWords(),
+            enabled: true,
+          }),
 
-            apply(tr, value) {
-              const meta = tr.getMeta(SpellcheckPluginKey);
+          apply(tr, value) {
+            const meta = tr.getMeta(SpellcheckPluginKey);
 
-              if (meta) {
-                let newState = { ...value };
+            if (meta) {
+              const newState = { ...value };
 
-                // Update matches
-                if (meta.matches !== undefined) {
-                  // Filter out matches for ignored words
-                  const filteredMatches = meta.matches.filter(
-                    (match: SpellcheckMatch) => {
-                      // Get the word text from the match
-                      const word = tr.doc.textBetween(match.from, match.to);
-                      return !value.ignoredWords.has(word.toLowerCase());
-                    }
-                  );
-                  newState.matches = filteredMatches;
-                  storage.matches = filteredMatches;
-                }
+              // Update matches
+              if (meta.matches !== undefined) {
+                // Filter out matches for ignored words
+                const filteredMatches = meta.matches.filter((match: SpellcheckMatch) => {
+                  // Get the word text from the match
+                  const word = tr.doc.textBetween(match.from, match.to);
+                  return !value.ignoredWords.has(word.toLowerCase());
+                });
+                newState.matches = filteredMatches;
+                storage.matches = filteredMatches;
+              }
 
-                // Clear matches
-                if (meta.clear) {
+              // Clear matches
+              if (meta.clear) {
+                newState.matches = [];
+                storage.matches = [];
+              }
+
+              // Add ignored word
+              if (meta.ignoreWord) {
+                const newIgnored = new Set(value.ignoredWords);
+                newIgnored.add(meta.ignoreWord.toLowerCase());
+                saveIgnoredWords(newIgnored);
+                newState.ignoredWords = newIgnored;
+                // Remove matches for the newly ignored word
+                newState.matches = newState.matches.filter((match) => {
+                  const word = tr.doc.textBetween(match.from, match.to);
+                  return word.toLowerCase() !== meta.ignoreWord.toLowerCase();
+                });
+                storage.matches = newState.matches;
+              }
+
+              // Remove ignored word
+              if (meta.removeIgnoredWord) {
+                const newIgnored = new Set(value.ignoredWords);
+                newIgnored.delete(meta.removeIgnoredWord.toLowerCase());
+                saveIgnoredWords(newIgnored);
+                newState.ignoredWords = newIgnored;
+              }
+
+              // Toggle enabled
+              if (meta.enabled !== undefined) {
+                newState.enabled = meta.enabled;
+                storage.enabled = meta.enabled;
+                if (!meta.enabled) {
                   newState.matches = [];
                   storage.matches = [];
                 }
-
-                // Add ignored word
-                if (meta.ignoreWord) {
-                  const newIgnored = new Set(value.ignoredWords);
-                  newIgnored.add(meta.ignoreWord.toLowerCase());
-                  saveIgnoredWords(newIgnored);
-                  newState.ignoredWords = newIgnored;
-                  // Remove matches for the newly ignored word
-                  newState.matches = newState.matches.filter((match) => {
-                    const word = tr.doc.textBetween(match.from, match.to);
-                    return word.toLowerCase() !== meta.ignoreWord.toLowerCase();
-                  });
-                  storage.matches = newState.matches;
-                }
-
-                // Remove ignored word
-                if (meta.removeIgnoredWord) {
-                  const newIgnored = new Set(value.ignoredWords);
-                  newIgnored.delete(meta.removeIgnoredWord.toLowerCase());
-                  saveIgnoredWords(newIgnored);
-                  newState.ignoredWords = newIgnored;
-                }
-
-                // Toggle enabled
-                if (meta.enabled !== undefined) {
-                  newState.enabled = meta.enabled;
-                  storage.enabled = meta.enabled;
-                  if (!meta.enabled) {
-                    newState.matches = [];
-                    storage.matches = [];
-                  }
-                }
-
-                return newState;
               }
 
-              // If document changed, we need to invalidate positions
-              // The hook will trigger a new check
-              if (tr.docChanged && value.matches.length > 0) {
-                // Try to map existing positions
-                const mappedMatches = value.matches
-                  .map((match) => ({
-                    ...match,
-                    from: tr.mapping.map(match.from),
-                    to: tr.mapping.map(match.to),
-                  }))
-                  .filter((match) => match.from < match.to);
+              return newState;
+            }
 
-                storage.matches = mappedMatches;
-                return {
-                  ...value,
-                  matches: mappedMatches,
-                };
+            // If document changed, we need to invalidate positions
+            // The hook will trigger a new check
+            if (tr.docChanged && value.matches.length > 0) {
+              // Try to map existing positions
+              const mappedMatches = value.matches
+                .map((match) => ({
+                  ...match,
+                  from: tr.mapping.map(match.from),
+                  to: tr.mapping.map(match.to),
+                }))
+                .filter((match) => match.from < match.to);
+
+              storage.matches = mappedMatches;
+              return {
+                ...value,
+                matches: mappedMatches,
+              };
+            }
+
+            return value;
+          },
+        },
+
+        props: {
+          decorations(state) {
+            const pluginState = this.getState(state);
+            if (!pluginState?.enabled || !pluginState.matches.length) {
+              return DecorationSet.empty;
+            }
+
+            const decorations: Decoration[] = [];
+
+            pluginState.matches.forEach((match) => {
+              // Validate positions
+              if (match.from >= 0 && match.to <= state.doc.content.size && match.from < match.to) {
+                decorations.push(
+                  Decoration.inline(match.from, match.to, {
+                    class: options.errorClass,
+                    "data-spellcheck-id": match.id,
+                    "data-spellcheck-message": match.message,
+                  })
+                );
               }
+            });
 
-              return value;
-            },
+            return DecorationSet.create(state.doc, decorations);
           },
+        },
+      }),
+    ];
+  },
 
-          props: {
-            decorations(state) {
-              const pluginState = this.getState(state);
-              if (!pluginState?.enabled || !pluginState.matches.length) {
-                return DecorationSet.empty;
-              }
+  addCommands() {
+    return {
+      setSpellcheckMatches:
+        (matches: SpellcheckMatch[]) =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.setMeta(SpellcheckPluginKey, { matches });
+            dispatch(tr);
+          }
+          return true;
+        },
 
-              const decorations: Decoration[] = [];
+      clearSpellcheck:
+        () =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.setMeta(SpellcheckPluginKey, { clear: true });
+            dispatch(tr);
+          }
+          return true;
+        },
 
-              pluginState.matches.forEach((match) => {
-                // Validate positions
-                if (
-                  match.from >= 0 &&
-                  match.to <= state.doc.content.size &&
-                  match.from < match.to
-                ) {
-                  decorations.push(
-                    Decoration.inline(match.from, match.to, {
-                      class: options.errorClass,
-                      "data-spellcheck-id": match.id,
-                      "data-spellcheck-message": match.message,
-                    })
-                  );
-                }
-              });
+      applyCorrection:
+        (from: number, to: number, replacement: string) =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.insertText(replacement, from, to);
+            dispatch(tr);
+          }
+          return true;
+        },
 
-              return DecorationSet.create(state.doc, decorations);
-            },
-          },
-        }),
-      ];
-    },
+      ignoreWord:
+        (word: string) =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.setMeta(SpellcheckPluginKey, { ignoreWord: word });
+            dispatch(tr);
+          }
+          return true;
+        },
 
-    addCommands() {
-      return {
-        setSpellcheckMatches:
-          (matches: SpellcheckMatch[]) =>
-          ({ tr, dispatch }) => {
-            if (dispatch) {
-              tr.setMeta(SpellcheckPluginKey, { matches });
-              dispatch(tr);
-            }
-            return true;
-          },
+      removeIgnoredWord:
+        (word: string) =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.setMeta(SpellcheckPluginKey, { removeIgnoredWord: word });
+            dispatch(tr);
+          }
+          return true;
+        },
 
-        clearSpellcheck:
-          () =>
-          ({ tr, dispatch }) => {
-            if (dispatch) {
-              tr.setMeta(SpellcheckPluginKey, { clear: true });
-              dispatch(tr);
-            }
-            return true;
-          },
-
-        applyCorrection:
-          (from: number, to: number, replacement: string) =>
-          ({ tr, dispatch }) => {
-            if (dispatch) {
-              tr.insertText(replacement, from, to);
-              dispatch(tr);
-            }
-            return true;
-          },
-
-        ignoreWord:
-          (word: string) =>
-          ({ tr, dispatch }) => {
-            if (dispatch) {
-              tr.setMeta(SpellcheckPluginKey, { ignoreWord: word });
-              dispatch(tr);
-            }
-            return true;
-          },
-
-        removeIgnoredWord:
-          (word: string) =>
-          ({ tr, dispatch }) => {
-            if (dispatch) {
-              tr.setMeta(SpellcheckPluginKey, { removeIgnoredWord: word });
-              dispatch(tr);
-            }
-            return true;
-          },
-
-        setSpellcheckEnabled:
-          (enabled: boolean) =>
-          ({ tr, dispatch }) => {
-            if (dispatch) {
-              tr.setMeta(SpellcheckPluginKey, { enabled });
-              dispatch(tr);
-            }
-            return true;
-          },
-      };
-    },
-  }
-);
+      setSpellcheckEnabled:
+        (enabled: boolean) =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.setMeta(SpellcheckPluginKey, { enabled });
+            dispatch(tr);
+          }
+          return true;
+        },
+    };
+  },
+});
 
 /**
  * Helper function to get spellcheck state from editor

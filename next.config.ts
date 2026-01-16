@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // Enable standalone output for Docker deployment
+  output: "standalone",
   experimental: {
     // Enable React 19 features
   },

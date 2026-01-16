@@ -1,0 +1,56 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Tests
+tests/
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Data files (will be mounted as volume)
+data/
+*.db
+*.sqlite
+
+# Documentation
+*.md
+docs/
+
+# Git
+.git/
+.gitignore
+
+# Misc
+*.log
+.DS_Store
+
+# Development files
+Dockerfile
+Dockerfile.dev

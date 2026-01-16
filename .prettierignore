@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+coverage/
+
+# Server (Python)
+server/
+*.py
+
+# Cache
+.cache/
+*.tsbuildinfo
+
+# Misc
+*.log
+.DS_Store
+.env*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Generated
+public/sw.js
+public/workbox-*.js

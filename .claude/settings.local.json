@@ -80,7 +80,19 @@
       "Bash(heroku config:*)",
       "Bash(cd:*)",
       "Bash(python migrate_db.py:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Bash(heroku ps:restart:*)",
+      "Bash(heroku domains:*)",
+      "Bash(heroku domains:add:*)",
+      "Bash(heroku auth:whoami:*)",
+      "Bash(heroku auth:token:*)",
+      "Bash(npm run test:ci:*)",
+      "Bash(echo:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(gh run list:*)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" run list --limit 5)",
+      "Bash(where:*)"
     ]
   }
 }

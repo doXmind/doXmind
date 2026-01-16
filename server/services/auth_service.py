@@ -232,11 +232,23 @@ async def optional_auth(
 # Password Utilities (for future user management)
 # =============================================================================
 
+def _truncate_password(password: str) -> str:
+    """Truncate password to bcrypt's 72-byte limit.
+
+    bcrypt silently truncates passwords longer than 72 bytes.
+    We explicitly handle this to ensure consistent behavior.
+    """
+    return password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+
+
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    return pwd_context.hash(password)
+    """Hash a password using bcrypt.
+
+    Note: bcrypt has a 72-byte limit. Passwords longer than this are truncated.
+    """
+    return pwd_context.hash(_truncate_password(password))
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return pwd_context.verify(_truncate_password(plain_password), hashed_password)

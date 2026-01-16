@@ -1,0 +1,63 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ============================================================================
+  # Deploy to Heroku using Git push
+  # ============================================================================
+  deploy-frontend:
+    name: Deploy Frontend to Heroku
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy to Heroku
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git remote add heroku-frontend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_FRONTEND_APP }}.git || true
+          git push heroku-frontend main:main --force
+        continue-on-error: true
+
+  deploy-backend:
+    name: Deploy Backend to Heroku
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy to Heroku
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          # Use git subtree to push only the server directory
+          git remote add heroku-backend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_BACKEND_APP }}.git || true
+          git subtree push --prefix server heroku-backend main --force || \
+            git push heroku-backend `git subtree split --prefix server main`:main --force
+        continue-on-error: true
+
+  # ============================================================================
+  # Notify on Completion
+  # ============================================================================
+  notify:
+    name: Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy-frontend, deploy-backend]
+    if: always()
+    steps:
+      - name: Report status
+        run: |
+          echo "Deployment workflow completed"
+          echo "Frontend: https://doxmind-mini-frontend-2fac03803995.herokuapp.com/"
+          echo "Backend: https://doxmind-mini-server-31d83014622f.herokuapp.com/"

@@ -6,10 +6,10 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 
 <img width="1355" height="859" alt="880c13120803e0339a8c8c2b0105486" src="https://github.com/user-attachments/assets/581ae1e0-b96a-4654-abc3-9fe5e49b2ae3" />
 
-
 ## Features
 
 ### Core Editor
+
 - **Rich Markdown Editor** - TipTap-based WYSIWYG editor with full markdown support
 - **Mindlines** - Document outline panel with toggle view (Ctrl+Shift+O) and mindmap visualization
 - **Version History** - Track changes and restore previous versions
@@ -17,6 +17,7 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 - **Loading Experience** - Polished loading screen with animated logo and skeleton UI
 
 ### AI Capabilities
+
 - **AI Chat** - Conversational AI assistance powered by Claude with smooth animations
 - **Quick Edit** - Select text and instantly improve, translate, or simplify with spring animations
 - **Diff Review** - Review and accept/reject AI-suggested changes with cross-block replacement support
@@ -24,29 +25,34 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 - **RAG Search** - Semantic search across your documents
 
 ### Knowledge Base
+
 - **Unified Attachment Menu** - Single menu for images, documents, and KB management
 - **Document Attachments** - Attach PDF, DOCX, PPTX files to conversations
 - **AI Document Analysis** - AI can search and read your attached documents
 - **Vector Search** - Semantic search across your knowledge base
 
 ### Multimodal Support
+
 - **Image Upload** - Paste or upload images in chat (up to 10 images per message)
 - **Vision Analysis** - Claude analyzes images using Anthropic Vision API
 - **Supported Formats** - JPEG, PNG, GIF, WebP (max 5MB per image)
 
 ### File Import
+
 - **PDF Import** - Convert PDF documents to editable Markdown
 - **Word Import** - Import DOCX files with formatting preserved
 - **Markdown Import** - Direct import of .md files
 - **Auto Indexing** - Imported files are automatically indexed for RAG search
 
 ### Mobile Experience
+
 - **Responsive Design** - Optimized UI for phones and tablets
 - **Bottom Navigation** - iOS-style navigation bar on mobile
 - **Swipe Gestures** - Drag-up panels for chat and outline
 - **Touch-Friendly** - Large touch targets (44-48px) for comfortable interaction
 
 ### Accessibility & UX
+
 - **Command Palette** - Quick actions via Ctrl+K (search, navigate, execute commands)
 - **Keyboard Shortcuts** - Comprehensive shortcuts with help modal (Ctrl+?)
 - **Skip to Content** - Keyboard navigation with skip link for accessibility
@@ -60,6 +66,7 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 ## Tech Stack
 
 ### Frontend
+
 - **Next.js 15** - React framework with App Router
 - **React 19** - Latest React with Server Components
 - **TipTap** - Headless rich text editor
@@ -70,6 +77,7 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 - **ReactFlow** - Mindmap visualization
 
 ### Backend
+
 - **FastAPI** - Modern Python web framework
 - **LangGraph** - Agent orchestration framework
 - **Claude API** - Anthropic's AI models (including Vision)
@@ -101,8 +109,9 @@ docker-compose up -d
 ```
 
 **Docker Services:**
+
 - `postgres` - PostgreSQL 16 database
-- `chroma` - ChromaDB vector database  
+- `chroma` - ChromaDB vector database
 - `backend` - FastAPI server
 - `frontend` - Next.js app
 
@@ -235,6 +244,7 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 ## AI Features
 
 ### Chat Assistant
+
 - Ask questions about your document
 - Request writing help and suggestions
 - Get summaries and explanations
@@ -243,20 +253,26 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 - Upload documents to knowledge base for reference
 
 ### Knowledge Base
+
 Attach documents to your conversation for AI to reference:
+
 - **Supported Formats** - PDF, DOCX, PPTX (max 50MB)
 - **Drag & Drop** - Simply drag files into the chat
 - **AI Tools** - AI can search, read, and list your documents
 - **Status Tracking** - See upload progress and indexing status
 
 ### Image Analysis
+
 Send images to Claude for visual understanding:
+
 - **Paste or Upload** - Ctrl+V to paste, or click to upload
 - **Multiple Images** - Up to 10 images per message
 - **Format Support** - JPEG, PNG, GIF, WebP (max 5MB each)
 
 ### Quick Edit
+
 Select text and choose from:
+
 - **Fix Grammar** - Correct spelling and grammar
 - **Improve** - Enhance writing quality
 - **Simplify** - Use simpler language
@@ -266,10 +282,13 @@ Select text and choose from:
 - **Tone** - Professional or casual
 
 ### Autocomplete
+
 Press Tab to accept AI suggestions as you type.
 
 ### File Import
+
 Import external documents directly into the editor:
+
 - **PDF** - Extract text and convert to Markdown
 - **DOCX** - Preserve formatting from Word documents
 - **Markdown** - Direct import of .md files
@@ -277,37 +296,37 @@ Import external documents directly into the editor:
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+K` | Open command palette |
-| `Ctrl+?` | Show keyboard shortcuts |
-| `Ctrl+S` | Save document |
-| `Ctrl+Shift+O` | Toggle outline panel |
-| `Ctrl+F` | Find in document |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` | Redo |
-| `Tab` | Accept autocomplete suggestion |
-| `Escape` | Cancel/close dialogs |
+| Shortcut       | Action                         |
+| -------------- | ------------------------------ |
+| `Ctrl+K`       | Open command palette           |
+| `Ctrl+?`       | Show keyboard shortcuts        |
+| `Ctrl+S`       | Save document                  |
+| `Ctrl+Shift+O` | Toggle outline panel           |
+| `Ctrl+F`       | Find in document               |
+| `Ctrl+Z`       | Undo                           |
+| `Ctrl+Shift+Z` | Redo                           |
+| `Tab`          | Accept autocomplete suggestion |
+| `Escape`       | Cancel/close dialogs           |
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/chat/stream` | Stream AI chat response |
-| POST | `/api/edit/quick` | Quick edit actions |
-| POST | `/api/autocomplete/suggest` | Get text suggestion |
-| GET | `/api/files` | List files |
-| POST | `/api/files` | Create file |
-| PUT | `/api/files/:id` | Update file |
-| DELETE | `/api/files/:id` | Delete file |
-| POST | `/api/files/search` | RAG search |
-| POST | `/api/import` | Import PDF/DOCX/MD file |
-| GET | `/api/versions/:fileId` | List versions |
-| POST | `/api/versions/:fileId/:versionId/restore` | Restore version |
-| POST | `/api/kb/:conversationId/attachments` | Upload KB attachment |
-| GET | `/api/kb/:conversationId/attachments` | List KB attachments |
-| DELETE | `/api/kb/:conversationId/attachments/:id` | Delete KB attachment |
-| POST | `/api/kb/:conversationId/search` | Search knowledge base |
+| Method | Endpoint                                   | Description             |
+| ------ | ------------------------------------------ | ----------------------- |
+| POST   | `/api/chat/stream`                         | Stream AI chat response |
+| POST   | `/api/edit/quick`                          | Quick edit actions      |
+| POST   | `/api/autocomplete/suggest`                | Get text suggestion     |
+| GET    | `/api/files`                               | List files              |
+| POST   | `/api/files`                               | Create file             |
+| PUT    | `/api/files/:id`                           | Update file             |
+| DELETE | `/api/files/:id`                           | Delete file             |
+| POST   | `/api/files/search`                        | RAG search              |
+| POST   | `/api/import`                              | Import PDF/DOCX/MD file |
+| GET    | `/api/versions/:fileId`                    | List versions           |
+| POST   | `/api/versions/:fileId/:versionId/restore` | Restore version         |
+| POST   | `/api/kb/:conversationId/attachments`      | Upload KB attachment    |
+| GET    | `/api/kb/:conversationId/attachments`      | List KB attachments     |
+| DELETE | `/api/kb/:conversationId/attachments/:id`  | Delete KB attachment    |
+| POST   | `/api/kb/:conversationId/search`           | Search knowledge base   |
 
 ## Docker Commands
 
@@ -329,6 +348,88 @@ docker-compose down -v
 docker-compose up -d
 ```
 
+## Development
+
+### Code Quality Tools
+
+This project uses modern code quality tools to ensure consistency:
+
+**Frontend:**
+
+- **ESLint** - JavaScript/TypeScript linting
+- **Prettier** - Code formatting with Tailwind CSS plugin
+- **Vitest** - Fast unit testing with React Testing Library
+- **TypeScript** - Strict type checking
+
+**Backend:**
+
+- **Ruff** - Fast Python linter and formatter
+- **pytest** - Testing framework with async support
+- **pytest-cov** - Code coverage reporting
+
+### Running Tests
+
+```bash
+# Frontend tests
+npm test                 # Run tests in watch mode
+npm run test:ui          # Run tests with UI
+npm run test:coverage    # Generate coverage report
+
+# Backend tests
+cd server
+pytest                   # Run all tests
+pytest --cov             # Run with coverage
+pytest -v -m unit        # Run only unit tests
+```
+
+### Pre-commit Hooks
+
+The project uses Husky for pre-commit hooks:
+
+```bash
+# Install hooks (automatic on npm install)
+npm run prepare
+
+# Hooks will run:
+# - ESLint (fix mode)
+# - Prettier (format)
+# on staged files
+```
+
+### API Documentation
+
+When running in debug mode, API documentation is available at:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **OpenAPI JSON**: http://localhost:8000/openapi.json
+
+### CI/CD
+
+The project includes GitHub Actions workflows:
+
+- **CI** (`ci.yml`) - Runs on every push/PR
+  - Frontend: lint, type-check, test, build
+  - Backend: lint, test
+  - Security scan with Trivy
+- **Deploy** (`deploy.yml`) - Deploys to production on main branch
+
+### Docker Production Build
+
+For production deployment, use the optimized Dockerfiles:
+
+```bash
+# Build production images
+docker build -f Dockerfile.frontend.prod -t doxmind-frontend:prod .
+docker build -f server/Dockerfile.prod -t doxmind-backend:prod ./server
+
+# Features:
+# - Multi-stage builds (smaller images)
+# - Non-root user (security)
+# - Health checks
+# - Production-optimized settings
+```
+
 ## License
 
 MIT
@@ -336,6 +437,7 @@ MIT
 ## Credits
 
 Built with:
+
 - [Next.js](https://nextjs.org/)
 - [TipTap](https://tiptap.dev/)
 - [FastAPI](https://fastapi.tiangolo.com/)

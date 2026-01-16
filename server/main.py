@@ -43,12 +43,55 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down server...")
 
 
-# Create FastAPI app
+# Create FastAPI app with OpenAPI documentation
+settings = get_settings()
+
 app = FastAPI(
     title="doXmind Mini API",
-    description="AI-powered writing assistant API",
+    description="""
+## doXmind Mini - AI Writing Studio API
+
+An AI-powered writing assistant that helps you write, edit, and organize documents.
+
+### Features
+- **AI Chat**: Interactive AI assistant for writing help
+- **Smart Editing**: AI-powered document editing and suggestions
+- **Knowledge Base**: RAG-based document search and retrieval
+- **Version Control**: Document versioning with diff tracking
+- **Export**: Export documents to PDF, DOCX, and Markdown
+
+### Authentication
+Most endpoints require authentication via JWT Bearer token or API Key.
+
+- **JWT Token**: Include in `Authorization: Bearer <token>` header
+- **API Key**: Include in `X-API-Key: <key>` header
+    """,
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if settings.debug else None,  # Swagger UI
+    redoc_url="/redoc" if settings.debug else None,  # ReDoc
+    openapi_url="/openapi.json" if settings.debug else None,
+    openapi_tags=[
+        {"name": "auth", "description": "Authentication and user management"},
+        {"name": "chat", "description": "AI chat and conversation management"},
+        {"name": "edit", "description": "AI-powered document editing"},
+        {"name": "files", "description": "File management (CRUD operations)"},
+        {"name": "versions", "description": "Document version control"},
+        {"name": "knowledge_base", "description": "Knowledge base and RAG search"},
+        {"name": "export", "description": "Document export (PDF, DOCX, MD)"},
+        {"name": "import", "description": "Document import"},
+        {"name": "autocomplete", "description": "AI autocomplete suggestions"},
+        {"name": "review", "description": "AI document review"},
+    ],
+    contact={
+        "name": "doXmind Team",
+        "url": "https://doxmind.com",
+        "email": "support@doxmind.com",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
 )
 
 # Add rate limiter to app state
@@ -95,7 +138,6 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================================
 
 # CORS middleware - tightened configuration
-settings = get_settings()
 
 # Define allowed origins based on environment
 CORS_ORIGINS = [
