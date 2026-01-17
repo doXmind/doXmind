@@ -11,11 +11,11 @@ import { ImageBubbleMenu } from "./image-bubble-menu";
 import { ImageModal } from "./image-modal";
 import { LinkModal } from "./link-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
-import { SearchToolbar } from "./search-toolbar";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
 import { DiffReviewToolbar } from "./diff-review-toolbar";
 import { ReviewPopup } from "./review-popup";
 import { ReviewPanel } from "./review-panel";
+import { SearchBar } from "./search-bar";
 import { Mindlines, OutlineToggle, useHeadings } from "./mindlines";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { getReviewState } from "@/extensions/text-review-extension";
@@ -26,6 +26,8 @@ import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useLayoutStore } from "@/stores/layout-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
@@ -54,8 +56,9 @@ export function Editor({ file: initialFile }: EditorProps) {
     setReviewPanelOpen,
   } = useEditorStore();
 
-  // Search state
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // Search bar state
+  const { isSearchBarOpen, toggleSearchBar } = useLayoutStore();
+
   // Mobile link modal state
   const [linkModalOpen, setLinkModalOpen] = useState(false);
 
@@ -95,6 +98,13 @@ export function Editor({ file: initialFile }: EditorProps) {
       }
     },
   });
+
+  // Register editor instance in global store for Command Palette access
+  const { setEditor } = useEditorRefStore();
+  useEffect(() => {
+    setEditor(editor);
+    return () => setEditor(null);
+  }, [editor, setEditor]);
 
   // Reset when file changes
   useEffect(() => {
@@ -153,10 +163,8 @@ export function Editor({ file: initialFile }: EditorProps) {
     fileId: file.id,
   });
 
-  // Use keyboard shortcuts hook
-  useEditorShortcuts({
-    onSearchOpen: () => setIsSearchOpen(true),
-  });
+  // Use keyboard shortcuts hook (Ctrl+Shift+O for outline)
+  useEditorShortcuts();
 
   // Handle Review button click
   const handleReviewClick = useCallback(() => {
@@ -222,10 +230,11 @@ export function Editor({ file: initialFile }: EditorProps) {
       {!isMobile && (
         <EditorToolbar
           editor={editor}
-          onSearchClick={() => setIsSearchOpen(true)}
+          onSearchClick={toggleSearchBar}
           onReviewClick={handleReviewClick}
           isReviewLoading={isReviewLoading}
           isReviewActive={isReviewActive}
+          isSearchActive={isSearchBarOpen}
         />
       )}
 
@@ -239,6 +248,11 @@ export function Editor({ file: initialFile }: EditorProps) {
               editor?.chain().focus().setImage({ src: url, alt }).run();
             });
           }}
+          onSearchClick={toggleSearchBar}
+          onReviewClick={handleReviewClick}
+          isReviewLoading={isReviewLoading}
+          isReviewActive={isReviewActive}
+          isSearchActive={isSearchBarOpen}
         />
       )}
 
@@ -257,20 +271,13 @@ export function Editor({ file: initialFile }: EditorProps) {
         {!isMobile && <Mindlines editor={editor} />}
         {/* Main editor content area */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Search toolbar - floating in top-right */}
-          {!isMobile && (
-            <SearchToolbar
-              editor={editor}
-              fileId={file.id}
-              isOpen={isSearchOpen}
-              onClose={() => setIsSearchOpen(false)}
-            />
-          )}
           <ScrollArea className="min-h-0 flex-1">
             <div className="mx-auto max-w-4xl px-4 py-4 md:px-8 md:py-6">
               <EditorContent editor={editor} />
             </div>
           </ScrollArea>
+          {/* Search Bar - positioned top right within editor area */}
+          <SearchBar />
         </div>
         {/* Review Panel Sidebar - hidden on mobile */}
         {!isMobile && isReviewPanelOpen && (

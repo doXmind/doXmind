@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { MobileNavMode, AIPanelState } from "@/lib/constants";
 
 interface LayoutState {
   // Desktop panel visibility
@@ -14,11 +15,21 @@ interface LayoutState {
   isMobileChatOpen: boolean;
   isMobileOutlineOpen: boolean;
 
+  // Mobile V2 state
+  mobileNavMode: MobileNavMode;
+  aiPanelState: AIPanelState;
+  isFloatingToolbarVisible: boolean;
+  isBlockSelectorOpen: boolean;
+
   // Keyboard shortcuts modal
   isKeyboardShortcutsOpen: boolean;
 
   // Command palette
   isCommandPaletteOpen: boolean;
+
+  // Search bar (Cmd+F)
+  isSearchBarOpen: boolean;
+  shouldOpenSearchWithAI: boolean; // Flag to open search in AI mode
 
   // Actions
   toggleSidebar: () => void;
@@ -45,7 +56,22 @@ interface LayoutState {
 
   // Command palette actions
   setCommandPaletteOpen: (open: boolean) => void;
+  openCommandPalette: () => void;
   toggleCommandPalette: () => void;
+
+  // Search bar actions
+  setSearchBarOpen: (open: boolean) => void;
+  toggleSearchBar: () => void;
+  openSearchBarWithAI: () => void; // Opens search bar in AI mode
+
+  // Mobile V2 actions
+  setMobileNavMode: (mode: MobileNavMode) => void;
+  setAIPanelState: (state: AIPanelState) => void;
+  setFloatingToolbarVisible: (visible: boolean) => void;
+  setBlockSelectorOpen: (open: boolean) => void;
+  openAIPanel: () => void;
+  closeAIPanel: () => void;
+  expandAIPanel: () => void;
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -63,11 +89,21 @@ export const useLayoutStore = create<LayoutState>()(
       isMobileChatOpen: false,
       isMobileOutlineOpen: false,
 
+      // Mobile V2 state
+      mobileNavMode: "idle" as MobileNavMode,
+      aiPanelState: "closed" as AIPanelState,
+      isFloatingToolbarVisible: false,
+      isBlockSelectorOpen: false,
+
       // Keyboard shortcuts modal
       isKeyboardShortcutsOpen: false,
 
       // Command palette
       isCommandPaletteOpen: false,
+
+      // Search bar
+      isSearchBarOpen: false,
+      shouldOpenSearchWithAI: false,
 
       // Desktop actions
       toggleSidebar: () => {
@@ -163,8 +199,62 @@ export const useLayoutStore = create<LayoutState>()(
         set({ isCommandPaletteOpen: open });
       },
 
+      openCommandPalette: () => {
+        set({ isCommandPaletteOpen: true });
+      },
+
       toggleCommandPalette: () => {
         set((state) => ({ isCommandPaletteOpen: !state.isCommandPaletteOpen }));
+      },
+
+      // Search bar actions
+      setSearchBarOpen: (open: boolean) => {
+        set({ isSearchBarOpen: open, shouldOpenSearchWithAI: false });
+      },
+
+      toggleSearchBar: () => {
+        set((state) => ({
+          isSearchBarOpen: !state.isSearchBarOpen,
+          shouldOpenSearchWithAI: false,
+        }));
+      },
+
+      openSearchBarWithAI: () => {
+        set({ isSearchBarOpen: true, shouldOpenSearchWithAI: true });
+      },
+
+      // Mobile V2 actions
+      setMobileNavMode: (mode: MobileNavMode) => {
+        set({ mobileNavMode: mode });
+      },
+
+      setAIPanelState: (state: AIPanelState) => {
+        set({ aiPanelState: state });
+      },
+
+      setFloatingToolbarVisible: (visible: boolean) => {
+        set({ isFloatingToolbarVisible: visible });
+      },
+
+      setBlockSelectorOpen: (open: boolean) => {
+        set({ isBlockSelectorOpen: open });
+      },
+
+      openAIPanel: () => {
+        set({ aiPanelState: "peek" as AIPanelState, isMobileChatOpen: true });
+      },
+
+      closeAIPanel: () => {
+        set({ aiPanelState: "closed" as AIPanelState, isMobileChatOpen: false });
+      },
+
+      expandAIPanel: () => {
+        set((state) => {
+          const currentState = state.aiPanelState;
+          if (currentState === "peek") return { aiPanelState: "chat" as AIPanelState };
+          if (currentState === "chat") return { aiPanelState: "full" as AIPanelState };
+          return state;
+        });
       },
     }),
     {

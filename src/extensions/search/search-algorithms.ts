@@ -120,38 +120,63 @@ export function findSemanticRanges(
       continue;
     }
 
-    const searchText = cleanChunk;
-    const normalizedSearch = normalizeText(searchText);
-    const normalizedDoc = normalizeText(fullText);
+    // Strategy 1: Try direct match in original text first (most accurate)
+    let directIdx = fullText.indexOf(cleanChunk);
+    if (directIdx !== -1) {
+      const from = posMap[directIdx];
+      const endIdx = Math.min(directIdx + cleanChunk.length - 1, posMap.length - 1);
+      const to = (posMap[endIdx] ?? from) + 1; // +1 because 'to' is exclusive
 
-    // Try exact match first
-    let idx = normalizedDoc.indexOf(normalizedSearch);
-
-    // If no exact match, try with more aggressive normalization
-    if (idx === -1) {
-      const searchNoPunct = removePunctuation(normalizedSearch);
-      const docNoPunct = removePunctuation(normalizedDoc);
-      idx = docNoPunct.indexOf(searchNoPunct);
+      if (from !== undefined && from < to) {
+        results.push({ from, to, score: chunk.score });
+        continue;
+      }
     }
 
-    // If still no match, try finding a key phrase (first 30 chars)
-    if (idx === -1 && normalizedSearch.length > 30) {
-      const keyPhrase = normalizedSearch.slice(0, 30);
-      idx = normalizedDoc.indexOf(keyPhrase);
+    // Strategy 2: Try case-insensitive match
+    const lowerFullText = fullText.toLowerCase();
+    const lowerChunk = cleanChunk.toLowerCase();
+    directIdx = lowerFullText.indexOf(lowerChunk);
+    if (directIdx !== -1) {
+      const from = posMap[directIdx];
+      const endIdx = Math.min(directIdx + cleanChunk.length - 1, posMap.length - 1);
+      const to = (posMap[endIdx] ?? from) + 1;
+
+      if (from !== undefined && from < to) {
+        results.push({ from, to, score: chunk.score });
+        continue;
+      }
     }
 
-    if (idx !== -1) {
-      // Map text index back to document position
-      const from = posMap[idx] ?? 0;
-      const endIdx = Math.min(idx + searchText.length, posMap.length - 1);
-      const to = posMap[endIdx] ?? from;
+    // Strategy 3: Try matching without punctuation at the end
+    const chunkNoPunctEnd = cleanChunk.replace(/[.,!?;:，。！？；：、]+$/, "");
+    if (chunkNoPunctEnd.length >= 5 && chunkNoPunctEnd !== cleanChunk) {
+      directIdx = lowerFullText.indexOf(chunkNoPunctEnd.toLowerCase());
+      if (directIdx !== -1) {
+        const from = posMap[directIdx];
+        const endIdx = Math.min(directIdx + chunkNoPunctEnd.length - 1, posMap.length - 1);
+        const to = (posMap[endIdx] ?? from) + 1;
 
-      if (from < to) {
-        results.push({
-          from,
-          to,
-          score: chunk.score,
-        });
+        if (from !== undefined && from < to) {
+          results.push({ from, to, score: chunk.score });
+          continue;
+        }
+      }
+    }
+
+    // Strategy 4: Try finding a key phrase (first 40 chars)
+    if (cleanChunk.length > 40) {
+      const keyPhrase = cleanChunk.slice(0, 40).toLowerCase();
+      directIdx = lowerFullText.indexOf(keyPhrase);
+      if (directIdx !== -1) {
+        const from = posMap[directIdx];
+        // Use the key phrase length for more accurate end position
+        const endIdx = Math.min(directIdx + 39, posMap.length - 1);
+        const to = (posMap[endIdx] ?? from) + 1;
+
+        if (from !== undefined && from < to) {
+          results.push({ from, to, score: chunk.score });
+        }
       }
     }
   }

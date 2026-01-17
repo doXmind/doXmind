@@ -48,6 +48,7 @@ interface EditorToolbarProps {
   onReviewClick?: () => void;
   isReviewLoading?: boolean;
   isReviewActive?: boolean;
+  isSearchActive?: boolean;
 }
 
 export function EditorToolbar({
@@ -56,6 +57,7 @@ export function EditorToolbar({
   onReviewClick,
   isReviewLoading,
   isReviewActive,
+  isSearchActive,
 }: EditorToolbarProps) {
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
@@ -261,6 +263,7 @@ export function EditorToolbar({
         <ToolbarButton
           icon={<Search className="h-4 w-4" />}
           onClick={() => onSearchClick?.()}
+          isActive={isSearchActive}
           tooltip="Search (Ctrl+F)"
         />
       </ToolbarGroup>
