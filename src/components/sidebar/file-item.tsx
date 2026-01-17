@@ -241,7 +241,7 @@ export function FileItem({ file }: FileItemProps) {
             onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
             className="h-8 px-2 py-0 text-base md:h-6 md:px-1 md:text-sm"
-            autoFocus
+            autoFocus={window.innerWidth >= 768}
           />
         ) : (
           <>

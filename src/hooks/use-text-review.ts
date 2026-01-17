@@ -82,7 +82,7 @@ export function useTextReview({
     let result: { suggestions: APISuggestion[]; summary: string } | null = null;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/review`, {
+      const response = await fetch(`${API_BASE_URL}/api/review/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

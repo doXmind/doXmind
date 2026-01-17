@@ -21,7 +21,8 @@ import { useCallback, useRef, useEffect } from "react";
  * debouncedSearch("hello");
  * ```
  */
-export function useDebouncedCallback<T extends (...args: unknown[]) => unknown>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useDebouncedCallback<T extends (...args: any[]) => any>(
   callback: T,
   delay: number
 ): (...args: Parameters<T>) => void {
@@ -77,7 +78,8 @@ export function useDebouncedCallback<T extends (...args: unknown[]) => unknown>(
  * cancel();
  * ```
  */
-export function useDebouncedCallbackWithCancel<T extends (...args: unknown[]) => unknown>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useDebouncedCallbackWithCancel<T extends (...args: any[]) => any>(
   callback: T,
   delay: number
 ): {

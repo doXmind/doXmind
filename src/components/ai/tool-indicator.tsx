@@ -11,6 +11,8 @@ import {
   Loader2,
   Sparkles,
   BookOpen,
+  Globe,
+  Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToolStatus } from "@/hooks/use-chat";
@@ -38,6 +40,10 @@ function getToolIcon(toolName: string) {
       return BookOpen;
     case "list_kb_documents":
       return BookOpen;
+    case "web_search":
+      return Globe;
+    case "web_fetch":
+      return Link2;
     default:
       return Sparkles;
   }
@@ -66,6 +72,10 @@ function getToolDisplayName(toolName: string) {
       return "Reading KB document";
     case "list_kb_documents":
       return "Listing KB documents";
+    case "web_search":
+      return "Searching the web";
+    case "web_fetch":
+      return "Fetching URL";
     default:
       return toolName;
   }

@@ -156,6 +156,7 @@ export class ApiClient {
         ...this.getAuthHeaders(),
         ...options.headers,
       },
+      signal: options.signal,
     });
 
     // Handle 401 Unauthorized - clear token and retry once
@@ -359,7 +360,7 @@ export class ApiClient {
       content: string;
       created_at: string;
       updated_at: string;
-    }>>("/api/files");
+    }>>("/api/files/");
   }
 
   async getFile(id: string) {
@@ -379,7 +380,7 @@ export class ApiClient {
       content: string;
       created_at: string;
       updated_at: string;
-    }>("/api/files", {
+    }>("/api/files/", {
       method: "POST",
       body: JSON.stringify({ name, content }),
     });
@@ -404,10 +405,11 @@ export class ApiClient {
     });
   }
 
-  async searchFiles(query: string, fileIds?: string[], topK: number = 5) {
+  async searchFiles(query: string, fileIds?: string[], topK: number = 5, signal?: AbortSignal) {
     return this.request<SearchResults>("/api/files/search", {
       method: "POST",
       body: JSON.stringify({ query, file_ids: fileIds, top_k: topK }),
+      signal,
     });
   }
 
@@ -419,10 +421,11 @@ export class ApiClient {
    * @param topK - Maximum number of results (default 10)
    * @param minScore - Minimum similarity score 0-1 (default 0.4 for OpenAI embeddings)
    */
-  async searchInDocument(query: string, fileId: string, topK: number = 10, minScore: number = 0.4) {
+  async searchInDocument(query: string, fileId: string, topK: number = 10, minScore: number = 0.4, signal?: AbortSignal) {
     return this.request<SearchResults>("/api/files/search/in-document", {
       method: "POST",
       body: JSON.stringify({ query, file_id: fileId, top_k: topK, min_score: minScore }),
+      signal,
     });
   }
 
@@ -453,7 +456,7 @@ export class ApiClient {
       edit_type?: string;
       summary?: string;
       created_at: string;
-    }>("/api/versions", {
+    }>("/api/versions/", {
       method: "POST",
       body: JSON.stringify({
         file_id: fileId,
@@ -514,7 +517,7 @@ export class ApiClient {
     const formData = new FormData();
     formData.append('file', file);
 
-    const url = `${this.baseUrl}/api/import`;
+    const url = `${this.baseUrl}/api/import/`;
     const response = await fetch(url, {
       method: 'POST',
       body: formData,

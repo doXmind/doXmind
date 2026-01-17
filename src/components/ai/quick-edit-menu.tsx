@@ -166,7 +166,7 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
         initial={{ opacity: 0, y: 8, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: 'spring', ...MENU_SPRING }}
-        className="fixed z-50 min-w-[200px] rounded-lg border border-border bg-popover p-1 shadow-lg"
+        className="fixed z-50 min-w-[200px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-1 shadow-lg"
         style={{
           left: displayPosition.x,
           top: displayPosition.y,
@@ -257,7 +257,7 @@ export function QuickEditMenu({ onApply }: QuickEditMenuProps) {
             animate={{ opacity: 1, x: 0, scale: 1 }}
             exit={{ opacity: 0, x: -8, scale: 0.96 }}
             transition={{ type: 'spring', ...MENU_SPRING }}
-            className="fixed z-[60] min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg"
+            className="fixed z-[60] min-w-[140px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-1 shadow-lg"
             style={{ top: submenuPos.top, left: submenuPos.left }}
             onMouseEnter={() => setActiveSubmenu(activeSubmenu)}
             onMouseLeave={() => !isEditing && setActiveSubmenu(null)}

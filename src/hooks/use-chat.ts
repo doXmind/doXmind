@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useChatStore, type ChatMessage, type ToolCall, type MessageContextItem } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
@@ -153,6 +154,9 @@ export function useChat() {
             content: isHtml(f!.content) ? htmlToMarkdown(f!.content) : f!.content,
           }));
 
+        // Get web tools settings
+        const webToolsSettings = useSettingsStore.getState().getWebToolsSettings();
+
         const response = await fetch("/api/chat/stream", {
           method: "POST",
           headers: {
@@ -164,6 +168,8 @@ export function useChat() {
             files,
             images: imageContexts,  // Include image data for multimodal support
             conversationId,
+            // Web search toggle (web fetch is always enabled)
+            webSearchEnabled: webToolsSettings.webSearchEnabled,
           }),
           signal,
         });
@@ -285,6 +291,56 @@ export function useChat() {
               };
               setCurrentTool(errorTool);
               setToolHistory(prev => [...prev, errorTool]);
+              break;
+            }
+
+            // Handle server-side tools (web_search, web_fetch)
+            case "server_tool_start": {
+              const serverToolStatus: ToolStatus = {
+                name: parsed.tool || "",
+                status: "running",
+                toolId: parsed.tool_id,
+                message: parsed.tool === "web_search" ? "Searching the web..." : "Fetching URL...",
+              };
+              setCurrentTool(serverToolStatus);
+              setToolHistory(prev => [...prev, serverToolStatus]);
+              break;
+            }
+
+            case "web_search_result": {
+              const resultCount = (parsed as { results?: Array<unknown> }).results?.length || 0;
+              setToolHistory(prev => {
+                const newHistory = [...prev];
+                const idx = newHistory.findLastIndex(t => t.toolId === parsed.tool_id);
+                if (idx >= 0) {
+                  newHistory[idx] = {
+                    ...newHistory[idx],
+                    status: "completed",
+                    message: `Found ${resultCount} result${resultCount !== 1 ? 's' : ''}`,
+                  };
+                }
+                return newHistory;
+              });
+              setCurrentTool(null);
+              break;
+            }
+
+            case "web_fetch_result": {
+              const url = (parsed as { url?: string }).url || "";
+              const displayUrl = url.length > 40 ? url.substring(0, 40) + "..." : url;
+              setToolHistory(prev => {
+                const newHistory = [...prev];
+                const idx = newHistory.findLastIndex(t => t.toolId === parsed.tool_id);
+                if (idx >= 0) {
+                  newHistory[idx] = {
+                    ...newHistory[idx],
+                    status: "completed",
+                    message: displayUrl ? `Fetched: ${displayUrl}` : "Content fetched",
+                  };
+                }
+                return newHistory;
+              });
+              setCurrentTool(null);
               break;
             }
           }

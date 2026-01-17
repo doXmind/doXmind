@@ -12,6 +12,7 @@ import { ToolIndicator } from "./tool-indicator";
 import { ContextPill } from "./context-pill";
 import { SuggestionButton } from "./suggestion-button";
 import { AttachmentMenu } from "./attachment-menu";
+import { ChatSettings } from "./chat-settings";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -50,8 +51,9 @@ export function ChatPanel() {
   }, [currentFileId, loadConversation]);
 
   // Focus textarea when chat context is added (from Quick Edit "Ask in Chat")
+  // Only on desktop to avoid keyboard popup on mobile
   useEffect(() => {
-    if (chatContexts.length > 0 && textareaRef.current) {
+    if (chatContexts.length > 0 && textareaRef.current && window.innerWidth >= 768) {
       textareaRef.current.focus();
     }
   }, [chatContexts.length]);
@@ -299,6 +301,9 @@ export function ChatPanel() {
             maxImages={CHAT_MAX_IMAGES}
             disabled={isStreaming}
           />
+
+          {/* Web tools settings */}
+          <ChatSettings />
 
           <Textarea
             ref={textareaRef}
