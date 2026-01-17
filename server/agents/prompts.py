@@ -8,8 +8,8 @@ The prompts have been restructured using industry-standard XML-tagged
 format following Cursor/Claude Code conventions.
 """
 
-from prompts.domains.writing import build_writing_prompt, build_kb_context
 from prompts.domains.edit import get_edit_instruction
+from prompts.domains.writing import build_kb_context, build_writing_prompt
 
 
 def get_writing_system_prompt(mode: str, files: list[dict]) -> str:

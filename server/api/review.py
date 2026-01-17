@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import get_settings
-from prompts.domains.review import REVIEW_SYSTEM_PROMPT, REVIEW_JSON_SCHEMA
+from prompts.domains.review import REVIEW_JSON_SCHEMA, REVIEW_SYSTEM_PROMPT
 from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)

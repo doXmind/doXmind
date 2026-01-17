@@ -9,7 +9,7 @@ import { ChatPanel } from "@/components/ai/chat-panel";
 import { AdaptiveNav } from "@/components/mobile/adaptive-nav";
 import { AIPanel } from "@/components/mobile/ai-panel";
 import { BlockSelector } from "@/components/mobile/block-selector";
-import { FilesPanel, OutlinePanel } from "@/components/mobile/panel-container";
+import { FilesPanel } from "@/components/mobile/panel-container";
 // Legacy mobile components (for outline content)
 import { MobileOutlineSheet } from "@/components/mobile/mobile-outline-sheet";
 import { LoadingScreen } from "@/components/loading-screen";
@@ -43,7 +43,6 @@ export default function EditorPage() {
     // Mobile V2 state
     isMobileSidebarOpen,
     setMobileSidebarOpen,
-    isMobileOutlineOpen,
     setMobileOutlineOpen,
     aiPanelState,
   } = useLayoutStore();

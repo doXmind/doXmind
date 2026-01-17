@@ -83,20 +83,6 @@ function buildPositionMap(doc: PMNode): { fullText: string; posMap: number[] } {
 }
 
 /**
- * Normalize text for fuzzy matching
- */
-function normalizeText(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-/**
- * Remove punctuation from text for matching
- */
-function removePunctuation(text: string): string {
-  return text.replace(/[.,!?;:，。！？；：、]/g, "");
-}
-
-/**
  * Find semantic match positions in document
  * Returns ranges where the chunk content appears
  * Optimized for sentence-level chunks from the API

@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import get_settings
-from prompts.domains.edit import QUICK_EDIT_SYSTEM, EDIT_ACTIONS, get_edit_instruction
+from prompts.domains.edit import EDIT_ACTIONS, QUICK_EDIT_SYSTEM, get_edit_instruction
 from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)

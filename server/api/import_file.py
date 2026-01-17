@@ -7,12 +7,12 @@ import markdown
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.files import get_user_id_filter
 from db.database import File as FileModel
 from db.database import get_db
 from services.auth_service import TokenData, optional_auth
 from services.gemini_converter import convert_file_to_markdown, is_gemini_configured
 from services.rag_service import RAGService
-from api.files import get_user_id_filter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

@@ -173,7 +173,7 @@ export function InlineAIActions({
 /**
  * Hook to manage inline AI actions visibility and position
  */
-export function useInlineAIActions(editor: Editor | null) {
+export function useInlineAIActions(_editor: Editor | null) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const { selection } = useEditorStore();

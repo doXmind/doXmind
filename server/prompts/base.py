@@ -5,7 +5,6 @@ with variable substitution and XML tag wrapping.
 """
 
 import re
-from typing import Any
 
 
 class BasePromptBuilder:

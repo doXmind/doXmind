@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import Conversation, async_session
 from services.rag_service import RAGService
 
-
 # ============================================================================
 # Database Dependencies
 # ============================================================================
