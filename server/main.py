@@ -24,11 +24,11 @@ from api import (
     skills,
     versions,
 )
-from config import ensure_directories, get_settings
-from db.database import init_db
+from config import get_settings
+from db.database import async_session, init_db
 from exceptions import AppException
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
-from services.rag_service import init_vector_store
+from services.rag_service import init_pgvector
 
 # Configure logging
 logging.basicConfig(
@@ -43,9 +43,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting doXmind Mini server...")
-    ensure_directories()
     await init_db()
-    await init_vector_store()
+
+    # Initialize pgvector for vector search
+    async with async_session() as db:
+        await init_pgvector(db)
+
     logger.info("Server started successfully!")
 
     yield

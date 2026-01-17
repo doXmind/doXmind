@@ -1,24 +1,30 @@
-"""RAG Service using Chroma for vector storage.
+"""RAG Service using PostgreSQL pgvector for vector storage.
 
-This module provides vector search capabilities for:
+This module provides vector search capabilities using pgvector extension:
 - Document chunks (for cross-file search)
 - Sentence-level chunks (for in-document search)
 - Knowledge base attachments (for conversation-scoped search)
+
+Requires: PostgreSQL with pgvector extension enabled
 """
 
 import hashlib
+import json
 import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Any
 
-import chromadb
-from chromadb.config import Settings
-from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+import openai
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Embedding dimension for text-embedding-3-small
+EMBEDDING_DIMENSION = 1536
 
 
 # ============================================================================
@@ -57,7 +63,7 @@ class OverlapChunkingStrategy(ChunkingStrategy):
 
             # Try to break at sentence boundary
             if end < len(text):
-                for sep in ["。", ".", "\n\n", "\n"]:
+                for sep in ["\u3002", ".", "\n\n", "\n"]:
                     last_sep = chunk.rfind(sep)
                     if last_sep > self.chunk_size // 2:
                         chunk = chunk[:last_sep + 1]
@@ -90,7 +96,7 @@ class SentenceChunkingStrategy(ChunkingStrategy):
         clean_text = re.sub(r'<[^>]+>', ' ', text)
 
         # Split by sentence delimiters (Chinese and English)
-        sentences = re.split(r'(?<=[。！？.!?])\s*|\n\n+', clean_text)
+        sentences = re.split(r'(?<=[\u3002\uff01\uff1f.!?])\s*|\n\n+', clean_text)
 
         chunks = []
         for sentence in sentences:
@@ -107,115 +113,116 @@ SENTENCE_CHUNK_STRATEGY = SentenceChunkingStrategy()
 
 
 # ============================================================================
-# Vector Store Manager (Singleton)
+# Embedding Functions
 # ============================================================================
 
-class VectorStoreManager:
-    """Manages Chroma client and collection initialization.
+async def get_embedding(text_content: str) -> list[float]:
+    """Generate embedding vector for text using OpenAI."""
+    settings = get_settings()
 
-    Uses singleton pattern to ensure single connection.
+    if not settings.openai_api_key:
+        raise RuntimeError("OpenAI API key required for pgvector embeddings")
+
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    response = await client.embeddings.create(
+        model="text-embedding-3-small",
+        input=text_content
+    )
+    return response.data[0].embedding
+
+
+async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
+    """Generate embeddings for multiple texts in a batch."""
+    settings = get_settings()
+
+    if not settings.openai_api_key:
+        raise RuntimeError("OpenAI API key required for pgvector embeddings")
+
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    response = await client.embeddings.create(
+        model="text-embedding-3-small",
+        input=texts
+    )
+    return [item.embedding for item in response.data]
+
+
+# ============================================================================
+# Database Initialization
+# ============================================================================
+
+async def init_pgvector(db: AsyncSession):
+    """Initialize pgvector extension and create vector table.
+
+    Should be called once at application startup.
     """
+    settings = get_settings()
 
-    _instance = None
-    _initialized = False
+    if not settings.pgvector_enabled:
+        logger.info("pgvector is disabled via PGVECTOR_ENABLED=false")
+        return
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        # Skip if already initialized
-        if VectorStoreManager._initialized:
-            return
-
-        self._client = None
-        self._collection = None
-        self._embedding_function = None
-
-    @property
-    def collection(self):
-        """Get the Chroma collection, initializing if needed."""
-        if self._collection is None:
-            self._initialize()
-        return self._collection
-
-    def _get_embedding_function(self):
-        """Get embedding function (OpenAI if available, else default)."""
-        if self._embedding_function is not None:
-            return self._embedding_function
-
-        settings = get_settings()
-        if settings.openai_api_key:
-            try:
-                self._embedding_function = OpenAIEmbeddingFunction(
-                    api_key=settings.openai_api_key,
-                    model_name="text-embedding-3-small"
-                )
-                logger.info("Using OpenAI text-embedding-3-small for embeddings")
-            except Exception as e:
-                logger.warning(f"Failed to initialize OpenAI embeddings: {e}")
-                logger.info("Falling back to default Chroma embeddings")
-        else:
-            logger.info("No OpenAI API key found, using default Chroma embeddings")
-
-        return self._embedding_function
-
-    def _initialize(self):
-        """Initialize Chroma client and collection."""
-        settings = get_settings()
-
-        try:
-            if settings.use_chroma_server:
-                self._client = chromadb.HttpClient(
-                    host=settings.chroma_host,
-                    port=settings.chroma_port,
-                    settings=Settings(anonymized_telemetry=False)
-                )
-                logger.info(f"Connected to Chroma server at {settings.chroma_host}:{settings.chroma_port}")
-            else:
-                self._client = chromadb.PersistentClient(
-                    path=settings.chroma_persist_dir,
-                    settings=Settings(anonymized_telemetry=False)
-                )
-                logger.info(f"Using local Chroma storage at {settings.chroma_persist_dir}")
-
-            embedding_fn = self._get_embedding_function()
-            self._collection = self._client.get_or_create_collection(
-                name="documents",
-                metadata={"hnsw:space": "cosine"},
-                embedding_function=embedding_fn
-            )
-
-            VectorStoreManager._initialized = True
-            logger.info("Vector store initialized successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize vector store: {e}")
-            raise RuntimeError(f"Vector store initialization failed: {e}")
-
-
-# Global manager instance
-_manager = None
-
-
-def get_vector_store_manager() -> VectorStoreManager:
-    """Get the singleton vector store manager."""
-    global _manager
-    if _manager is None:
-        _manager = VectorStoreManager()
-    return _manager
-
-
-async def init_vector_store():
-    """Initialize the vector store at application startup."""
     try:
-        manager = get_vector_store_manager()
-        # Access collection to trigger initialization
-        _ = manager.collection
+        # Create pgvector extension
+        await db.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+        # Check if vectors table exists with wrong column type (e.g., TEXT instead of VECTOR)
+        # This can happen if tests created the table with a mock schema
+        result = await db.execute(text("""
+            SELECT data_type FROM information_schema.columns
+            WHERE table_name = 'vectors' AND column_name = 'embedding'
+        """))
+        row = result.fetchone()
+
+        if row and row[0] == 'text':
+            # Table exists with wrong type, drop and recreate
+            logger.warning("Vectors table has TEXT embedding column, recreating with VECTOR type")
+            await db.execute(text("DROP TABLE IF EXISTS vectors CASCADE"))
+
+        # Create vectors table for storing all embeddings
+        await db.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS vectors (
+                id VARCHAR(255) PRIMARY KEY,
+                content TEXT NOT NULL,
+                embedding VECTOR({EMBEDDING_DIMENSION}),
+                chunk_type VARCHAR(50) NOT NULL,
+                file_id VARCHAR(36),
+                conversation_id VARCHAR(36),
+                attachment_id VARCHAR(36),
+                filename VARCHAR(255),
+                chunk_index INTEGER,
+                total_chunks INTEGER,
+                metadata JSONB,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
+        # Create indexes for efficient querying
+        await db.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_vectors_file_id ON vectors(file_id)"
+        ))
+        await db.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_vectors_conversation_id ON vectors(conversation_id)"
+        ))
+        await db.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_vectors_chunk_type ON vectors(chunk_type)"
+        ))
+        await db.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_vectors_attachment_id ON vectors(attachment_id)"
+        ))
+
+        # Create HNSW index for vector similarity search (cosine distance)
+        await db.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_vectors_embedding
+            ON vectors USING hnsw (embedding vector_cosine_ops)
+        """))
+
+        await db.commit()
+        logger.info("pgvector initialized successfully")
+
     except Exception as e:
-        logger.error(f"Failed to initialize vector store: {e}")
-        logger.warning("RAG features will be disabled")
+        await db.rollback()
+        logger.error(f"Failed to initialize pgvector: {e}")
+        raise
 
 
 # ============================================================================
@@ -223,15 +230,14 @@ async def init_vector_store():
 # ============================================================================
 
 class RAGService:
-    """RAG service for document retrieval.
+    """RAG service using PostgreSQL pgvector.
 
-    Provides methods for indexing and searching documents at
-    different granularities (chunks, sentences, KB attachments).
+    Provides methods for indexing and searching documents using
+    vector similarity search in PostgreSQL.
     """
 
-    def __init__(self):
-        manager = get_vector_store_manager()
-        self.collection = manager.collection
+    def __init__(self, db: AsyncSession):
+        self.db = db
 
     # -------------------------------------------------------------------------
     # Document Indexing (Chunk-level)
@@ -242,16 +248,9 @@ class RAGService:
         file_id: str,
         content: str,
         metadata: dict[str, Any] | None = None,
-        strategy: ChunkingStrategy = None
+        strategy: ChunkingStrategy | None = None
     ):
-        """Index a file's content at chunk level.
-
-        Args:
-            file_id: Unique file identifier
-            content: Text content to index
-            metadata: Additional metadata to store
-            strategy: Chunking strategy (defaults to overlap chunking)
-        """
+        """Index a file's content at chunk level."""
         try:
             await self.delete_file(file_id)
 
@@ -261,16 +260,39 @@ class RAGService:
             if not chunks:
                 return
 
-            ids = [f"{file_id}_{i}" for i in range(len(chunks))]
-            metadatas = [
-                {**(metadata or {}), "file_id": file_id, "chunk_index": i}
-                for i in range(len(chunks))
-            ]
+            # Get embeddings in batch
+            embeddings = await get_embeddings_batch(chunks)
 
-            self.collection.upsert(ids=ids, documents=chunks, metadatas=metadatas)
+            # Insert chunks with embeddings
+            # Serialize metadata to JSON string for asyncpg JSONB support
+            metadata_json = json.dumps(metadata or {})
+
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
+                chunk_id = f"{file_id}_{i}"
+                await self.db.execute(
+                    text("""
+                        INSERT INTO vectors (id, content, embedding, chunk_type, file_id, chunk_index, metadata)
+                        VALUES (:id, :content, :embedding, 'document', :file_id, :chunk_index, CAST(:metadata AS jsonb))
+                        ON CONFLICT (id) DO UPDATE SET
+                            content = EXCLUDED.content,
+                            embedding = EXCLUDED.embedding,
+                            metadata = EXCLUDED.metadata
+                    """),
+                    {
+                        "id": chunk_id,
+                        "content": chunk,
+                        "embedding": str(embedding),
+                        "file_id": file_id,
+                        "chunk_index": i,
+                        "metadata": metadata_json
+                    }
+                )
+
+            await self.db.commit()
             logger.info(f"Indexed {len(chunks)} chunks for file {file_id}")
 
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"Failed to index file {file_id}: {e}")
             raise
 
@@ -280,26 +302,47 @@ class RAGService:
         file_ids: list[str] | None = None,
         top_k: int = 5
     ) -> list[dict[str, Any]]:
-        """Search for relevant document chunks.
-
-        Args:
-            query: Search query
-            file_ids: Optional list of file IDs to search within
-            top_k: Maximum number of results
-
-        Returns:
-            List of search results with content, metadata, and distance
-        """
+        """Search for relevant document chunks using cosine similarity."""
         try:
-            where_filter = {"file_id": {"$in": file_ids}} if file_ids else None
+            query_embedding = await get_embedding(query)
 
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=top_k,
-                where=where_filter
-            )
+            # Build query with optional file filter
+            if file_ids:
+                result = await self.db.execute(
+                    text("""
+                        SELECT id, content, file_id, chunk_index, metadata,
+                               1 - (embedding <=> :embedding) as score
+                        FROM vectors
+                        WHERE chunk_type = 'document'
+                          AND file_id = ANY(:file_ids)
+                        ORDER BY embedding <=> :embedding
+                        LIMIT :limit
+                    """),
+                    {"embedding": str(query_embedding), "file_ids": file_ids, "limit": top_k}
+                )
+            else:
+                result = await self.db.execute(
+                    text("""
+                        SELECT id, content, file_id, chunk_index, metadata,
+                               1 - (embedding <=> :embedding) as score
+                        FROM vectors
+                        WHERE chunk_type = 'document'
+                        ORDER BY embedding <=> :embedding
+                        LIMIT :limit
+                    """),
+                    {"embedding": str(query_embedding), "limit": top_k}
+                )
 
-            return self._format_results(results)
+            rows = result.fetchall()
+            return [
+                {
+                    "id": row.id,
+                    "content": row.content,
+                    "metadata": {"file_id": row.file_id, "chunk_index": row.chunk_index, **(row.metadata or {})},
+                    "distance": 1 - row.score
+                }
+                for row in rows
+            ]
 
         except Exception as e:
             logger.error(f"Search error: {e}")
@@ -308,15 +351,19 @@ class RAGService:
     async def delete_file(self, file_id: str):
         """Delete all vectors for a file."""
         try:
-            results = self.collection.get(where={"file_id": file_id})
-            if results["ids"]:
-                self.collection.delete(ids=results["ids"])
-                logger.info(f"Deleted {len(results['ids'])} chunks for file {file_id}")
+            result = await self.db.execute(
+                text("DELETE FROM vectors WHERE file_id = :file_id"),
+                {"file_id": file_id}
+            )
+            await self.db.commit()
+            if result.rowcount > 0:
+                logger.info(f"Deleted {result.rowcount} chunks for file {file_id}")
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"Failed to delete file {file_id}: {e}")
 
     # -------------------------------------------------------------------------
-    # Sentence-level Indexing (for in-document search)
+    # Sentence-level Indexing
     # -------------------------------------------------------------------------
 
     async def index_file_sentences(
@@ -325,10 +372,7 @@ class RAGService:
         content: str,
         metadata: dict[str, Any] | None = None
     ):
-        """Index a file at sentence level for precise in-document search.
-
-        Uses separate chunk_type='sentence' to distinguish from regular chunks.
-        """
+        """Index a file at sentence level for precise in-document search."""
         try:
             await self._delete_sentence_chunks(file_id)
 
@@ -336,22 +380,37 @@ class RAGService:
             if not sentences:
                 return
 
-            sentence_prefix = f"{file_id}_sent"
-            ids = [f"{sentence_prefix}_{i}" for i in range(len(sentences))]
-            metadatas = [
-                {
-                    **(metadata or {}),
-                    "file_id": file_id,
-                    "chunk_index": i,
-                    "chunk_type": "sentence"
-                }
-                for i in range(len(sentences))
-            ]
+            embeddings = await get_embeddings_batch(sentences)
 
-            self.collection.upsert(ids=ids, documents=sentences, metadatas=metadatas)
+            # Serialize metadata to JSON string for asyncpg JSONB support
+            metadata_json = json.dumps(metadata or {})
+
+            for i, (sentence, embedding) in enumerate(zip(sentences, embeddings, strict=False)):
+                chunk_id = f"{file_id}_sent_{i}"
+                await self.db.execute(
+                    text("""
+                        INSERT INTO vectors (id, content, embedding, chunk_type, file_id, chunk_index, metadata)
+                        VALUES (:id, :content, :embedding, 'sentence', :file_id, :chunk_index, CAST(:metadata AS jsonb))
+                        ON CONFLICT (id) DO UPDATE SET
+                            content = EXCLUDED.content,
+                            embedding = EXCLUDED.embedding,
+                            metadata = EXCLUDED.metadata
+                    """),
+                    {
+                        "id": chunk_id,
+                        "content": sentence,
+                        "embedding": str(embedding),
+                        "file_id": file_id,
+                        "chunk_index": i,
+                        "metadata": metadata_json
+                    }
+                )
+
+            await self.db.commit()
             logger.info(f"Indexed {len(sentences)} sentences for file {file_id}")
 
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"Failed to index sentences for file {file_id}: {e}")
             raise
 
@@ -362,50 +421,37 @@ class RAGService:
         top_k: int = 10,
         min_score: float = 0.7
     ) -> list[dict[str, Any]]:
-        """Search for relevant sentences within a specific file.
-
-        Args:
-            query: Search query
-            file_id: File to search within
-            top_k: Maximum number of results
-            min_score: Minimum similarity score (0-1), filters by 1-distance
-
-        Returns:
-            List of results above the minimum score threshold
-        """
+        """Search for relevant sentences within a specific file."""
         try:
-            where_filter = {
-                "$and": [
-                    {"file_id": file_id},
-                    {"chunk_type": "sentence"}
-                ]
-            }
+            query_embedding = await get_embedding(query)
 
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=top_k,
-                where=where_filter
+            result = await self.db.execute(
+                text("""
+                    SELECT id, content, chunk_index, metadata,
+                           1 - (embedding <=> :embedding) as score
+                    FROM vectors
+                    WHERE chunk_type = 'sentence'
+                      AND file_id = :file_id
+                    ORDER BY embedding <=> :embedding
+                    LIMIT :limit
+                """),
+                {"embedding": str(query_embedding), "file_id": file_id, "limit": top_k}
             )
 
-            # Filter by minimum score
-            formatted = []
-            for i in range(len(results["ids"][0])):
-                distance = results["distances"][0][i] if results.get("distances") else 0
-                score = 1 - distance
+            rows = result.fetchall()
+            results = [
+                {
+                    "id": row.id,
+                    "content": row.content,
+                    "metadata": {"file_id": file_id, "chunk_index": row.chunk_index, "chunk_type": "sentence"},
+                    "distance": 1 - row.score
+                }
+                for row in rows
+                if row.score >= min_score
+            ]
 
-                if score >= min_score:
-                    formatted.append({
-                        "id": results["ids"][0][i],
-                        "content": results["documents"][0][i],
-                        "metadata": results["metadatas"][0][i],
-                        "distance": distance
-                    })
-
-            logger.info(
-                f"Sentence search: {len(results['ids'][0])} total, "
-                f"{len(formatted)} after filtering (min_score={min_score})"
-            )
-            return formatted
+            logger.info(f"Sentence search: {len(rows)} total, {len(results)} after filtering (min_score={min_score})")
+            return results
 
         except Exception as e:
             logger.error(f"Sentence search error: {e}")
@@ -414,22 +460,19 @@ class RAGService:
     async def _delete_sentence_chunks(self, file_id: str):
         """Delete sentence-level chunks for a file."""
         try:
-            results = self.collection.get(
-                where={
-                    "$and": [
-                        {"file_id": file_id},
-                        {"chunk_type": "sentence"}
-                    ]
-                }
+            result = await self.db.execute(
+                text("DELETE FROM vectors WHERE file_id = :file_id AND chunk_type = 'sentence'"),
+                {"file_id": file_id}
             )
-            if results["ids"]:
-                self.collection.delete(ids=results["ids"])
-                logger.info(f"Deleted {len(results['ids'])} sentence chunks for file {file_id}")
+            await self.db.commit()
+            if result.rowcount > 0:
+                logger.info(f"Deleted {result.rowcount} sentence chunks for file {file_id}")
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"Failed to delete sentence chunks for {file_id}: {e}")
 
     # -------------------------------------------------------------------------
-    # Knowledge Base Methods (Conversation-level attachments)
+    # Knowledge Base Methods
     # -------------------------------------------------------------------------
 
     async def index_kb_attachment(
@@ -439,17 +482,7 @@ class RAGService:
         content: str,
         filename: str
     ) -> int:
-        """Index a knowledge base attachment.
-
-        Args:
-            attachment_id: Unique attachment ID
-            conversation_id: Conversation this attachment belongs to
-            content: Text content to index
-            filename: Original filename
-
-        Returns:
-            Number of chunks indexed
-        """
+        """Index a knowledge base attachment."""
         try:
             await self.delete_kb_attachment(attachment_id)
 
@@ -457,24 +490,37 @@ class RAGService:
             if not chunks:
                 return 0
 
-            ids = [f"kb_{attachment_id}_{i}" for i in range(len(chunks))]
-            metadatas = [
-                {
-                    "chunk_type": "kb",
-                    "conversation_id": conversation_id,
-                    "attachment_id": attachment_id,
-                    "filename": filename,
-                    "chunk_index": i,
-                    "total_chunks": len(chunks)
-                }
-                for i in range(len(chunks))
-            ]
+            embeddings = await get_embeddings_batch(chunks)
+            total_chunks = len(chunks)
 
-            self.collection.upsert(ids=ids, documents=chunks, metadatas=metadatas)
-            logger.info(f"Indexed {len(chunks)} KB chunks for attachment {attachment_id}")
-            return len(chunks)
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
+                chunk_id = f"kb_{attachment_id}_{i}"
+                await self.db.execute(
+                    text("""
+                        INSERT INTO vectors (id, content, embedding, chunk_type, conversation_id, attachment_id, filename, chunk_index, total_chunks)
+                        VALUES (:id, :content, :embedding, 'kb', :conversation_id, :attachment_id, :filename, :chunk_index, :total_chunks)
+                        ON CONFLICT (id) DO UPDATE SET
+                            content = EXCLUDED.content,
+                            embedding = EXCLUDED.embedding
+                    """),
+                    {
+                        "id": chunk_id,
+                        "content": chunk,
+                        "embedding": str(embedding),
+                        "conversation_id": conversation_id,
+                        "attachment_id": attachment_id,
+                        "filename": filename,
+                        "chunk_index": i,
+                        "total_chunks": total_chunks
+                    }
+                )
+
+            await self.db.commit()
+            logger.info(f"Indexed {total_chunks} KB chunks for attachment {attachment_id}")
+            return total_chunks
 
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"Failed to index KB attachment {attachment_id}: {e}")
             raise
 
@@ -484,44 +530,39 @@ class RAGService:
         query: str,
         top_k: int = 5
     ) -> list[dict[str, Any]]:
-        """Search within a conversation's knowledge base.
-
-        Args:
-            conversation_id: Conversation to search within
-            query: Search query
-            top_k: Maximum number of results
-
-        Returns:
-            List of results with content, source info, and scores
-        """
+        """Search within a conversation's knowledge base."""
         try:
-            where_filter = {
-                "$and": [
-                    {"chunk_type": "kb"},
-                    {"conversation_id": conversation_id}
-                ]
-            }
+            query_embedding = await get_embedding(query)
 
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=top_k,
-                where=where_filter
+            result = await self.db.execute(
+                text("""
+                    SELECT id, content, attachment_id, filename, chunk_index, total_chunks,
+                           1 - (embedding <=> :embedding) as score
+                    FROM vectors
+                    WHERE chunk_type = 'kb'
+                      AND conversation_id = :conversation_id
+                    ORDER BY embedding <=> :embedding
+                    LIMIT :limit
+                """),
+                {"embedding": str(query_embedding), "conversation_id": conversation_id, "limit": top_k}
             )
 
-            formatted = []
-            for i in range(len(results["ids"][0])):
-                distance = results["distances"][0][i] if results.get("distances") else 0
-                score = 1 - distance
-
-                formatted.append({
-                    "id": results["ids"][0][i],
-                    "content": results["documents"][0][i],
-                    "metadata": results["metadatas"][0][i],
-                    "score": score,
-                    "source_file": results["metadatas"][0][i].get("filename", "Unknown")
-                })
-
-            return formatted
+            rows = result.fetchall()
+            return [
+                {
+                    "id": row.id,
+                    "content": row.content,
+                    "metadata": {
+                        "attachment_id": row.attachment_id,
+                        "filename": row.filename,
+                        "chunk_index": row.chunk_index,
+                        "total_chunks": row.total_chunks
+                    },
+                    "score": row.score,
+                    "source_file": row.filename
+                }
+                for row in rows
+            ]
 
         except Exception as e:
             logger.error(f"KB search error: {e}")
@@ -530,11 +571,15 @@ class RAGService:
     async def delete_kb_attachment(self, attachment_id: str):
         """Delete all vector chunks for a KB attachment."""
         try:
-            results = self.collection.get(where={"attachment_id": attachment_id})
-            if results["ids"]:
-                self.collection.delete(ids=results["ids"])
-                logger.info(f"Deleted {len(results['ids'])} KB chunks for attachment {attachment_id}")
+            result = await self.db.execute(
+                text("DELETE FROM vectors WHERE attachment_id = :attachment_id"),
+                {"attachment_id": attachment_id}
+            )
+            await self.db.commit()
+            if result.rowcount > 0:
+                logger.info(f"Deleted {result.rowcount} KB chunks for attachment {attachment_id}")
         except Exception as e:
+            await self.db.rollback()
             logger.error(f"Failed to delete KB attachment {attachment_id}: {e}")
 
     async def get_kb_document_content(
@@ -543,44 +588,38 @@ class RAGService:
         start_chunk: int = 0,
         end_chunk: int | None = None
     ) -> dict[str, Any]:
-        """Get ordered content chunks from a KB attachment.
-
-        Args:
-            attachment_id: Attachment ID
-            start_chunk: Starting chunk index
-            end_chunk: Ending chunk index (exclusive)
-
-        Returns:
-            Dict with content, total_chunks, filename, and chunks_returned
-        """
+        """Get ordered content chunks from a KB attachment."""
         try:
-            results = self.collection.get(where={"attachment_id": attachment_id})
-
-            if not results["ids"]:
-                return {"content": "", "total_chunks": 0, "filename": "Unknown", "chunks_returned": 0}
-
-            # Sort by chunk_index
-            chunks_with_meta = sorted(
-                zip(results["documents"], results["metadatas"], strict=False),
-                key=lambda x: x[1].get("chunk_index", 0)
+            result = await self.db.execute(
+                text("""
+                    SELECT content, filename, chunk_index, total_chunks
+                    FROM vectors
+                    WHERE attachment_id = :attachment_id
+                    ORDER BY chunk_index
+                """),
+                {"attachment_id": attachment_id}
             )
 
-            total_chunks = len(chunks_with_meta)
-            filename = chunks_with_meta[0][1].get("filename", "Unknown") if chunks_with_meta else "Unknown"
+            rows = result.fetchall()
+            if not rows:
+                return {"content": "", "total_chunks": 0, "filename": "Unknown", "chunks_returned": 0}
 
-            # Slice if needed
+            total_chunks = rows[0].total_chunks or len(rows)
+            filename = rows[0].filename or "Unknown"
+
+            # Apply slice
             if end_chunk is not None:
-                chunks_with_meta = chunks_with_meta[start_chunk:end_chunk]
+                rows = rows[start_chunk:end_chunk]
             else:
-                chunks_with_meta = chunks_with_meta[start_chunk:]
+                rows = rows[start_chunk:]
 
-            content = "\n\n".join([c[0] for c in chunks_with_meta])
+            content = "\n\n".join([row.content for row in rows])
 
             return {
                 "content": content,
                 "total_chunks": total_chunks,
                 "filename": filename,
-                "chunks_returned": len(chunks_with_meta)
+                "chunks_returned": len(rows)
             }
 
         except Exception as e:
@@ -591,19 +630,7 @@ class RAGService:
     # Utility Methods
     # -------------------------------------------------------------------------
 
-    def _format_results(self, results: dict[str, Any]) -> list[dict[str, Any]]:
-        """Format Chroma query results into a standard format."""
-        formatted = []
-        for i in range(len(results["ids"][0])):
-            formatted.append({
-                "id": results["ids"][0][i],
-                "content": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
-                "distance": results["distances"][0][i] if results.get("distances") else None
-            })
-        return formatted
-
     @staticmethod
-    def generate_id(text: str) -> str:
+    def generate_id(text_content: str) -> str:
         """Generate a unique ID for a text chunk."""
-        return hashlib.md5(text.encode()).hexdigest()[:16]
+        return hashlib.md5(text_content.encode()).hexdigest()[:16]

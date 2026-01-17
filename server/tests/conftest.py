@@ -1,31 +1,41 @@
 """
 Pytest configuration and fixtures for the test suite.
+
+Uses PostgreSQL for testing to match production environment.
+Requires: docker-compose up postgres (doxmind-postgres on port 5433)
 """
 import asyncio
 import os
+import uuid
 from collections.abc import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # Set test environment variables before importing app modules
 os.environ["DEBUG"] = "true"
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+# Use the same PostgreSQL database but with a test schema or separate test database
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
 os.environ["ANTHROPIC_API_KEY"] = "test-api-key"
+os.environ["OPENAI_API_KEY"] = "test-openai-key"
+os.environ["PGVECTOR_ENABLED"] = "false"  # Disable vector operations in tests
 
 from db.database import Base, get_db
 from dependencies import get_db as deps_get_db
 from main import app
 from services.auth_service import create_access_token
 
-# Create test database engine
+# Create test database engine with NullPool to avoid connection issues in tests
 test_engine = create_async_engine(
-    "sqlite+aiosqlite:///:memory:",
+    "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind",
     echo=False,
+    poolclass=NullPool,  # Avoid pool issues in tests
 )
 
 TestingSessionLocal = async_sessionmaker(
@@ -45,16 +55,44 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 
 @pytest.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create a fresh database session for each test."""
+    """Create a database session for each test.
+
+    Creates all tables, runs the test, then truncates tables to clean up.
+    """
+    # Ensure tables exist (idempotent)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+        # Create vectors table if it doesn't exist (normally created by init_pgvector)
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS vectors (
+                id VARCHAR(255) PRIMARY KEY,
+                content TEXT NOT NULL,
+                embedding TEXT,
+                chunk_type VARCHAR(50) NOT NULL,
+                file_id VARCHAR(36),
+                conversation_id VARCHAR(36),
+                attachment_id VARCHAR(36),
+                filename VARCHAR(255),
+                chunk_index INTEGER,
+                total_chunks INTEGER,
+                metadata JSONB,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+
     async with TestingSessionLocal() as session:
         yield session
-        await session.rollback()
 
+    # Clean up test data by truncating tables
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        # Truncate all tables (PostgreSQL specific)
+        await conn.execute(text("""
+            TRUNCATE TABLE messages, conversation_attachments, conversations,
+                          file_versions, files, password_resets,
+                          email_verifications, users, vectors
+            RESTART IDENTITY CASCADE
+        """))
 
 
 @pytest.fixture(scope="function")
@@ -239,6 +277,87 @@ def mock_chroma_collection():
                     self.data.pop(id, None)
 
     return MockCollection()
+
+
+# =============================================================================
+# Database Entity Fixtures
+# =============================================================================
+
+from db.database import User, File, Conversation
+
+
+async def create_test_user(
+    db_session: AsyncSession,
+    user_id: str = None,
+    email: str = None,
+    username: str = None,
+) -> User:
+    """Helper function to create a test user in the database.
+
+    Use this when tests need to create users with specific IDs.
+    """
+    user_id = user_id or str(uuid.uuid4())
+    email = email or f"{user_id}@example.com"
+    username = username or user_id
+
+    user = User(
+        id=user_id,
+        email=email,
+        username=username,
+        hashed_password="$2b$12$test_hashed_password",
+        is_verified=True,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def test_user(db_session: AsyncSession) -> User:
+    """Create a test user in the database."""
+    user = User(
+        id="test-user-id",
+        email="testuser@example.com",
+        username="testuser",
+        hashed_password="$2b$12$test_hashed_password",
+        is_verified=True,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def test_file(db_session: AsyncSession, test_user: User) -> File:
+    """Create a test file in the database."""
+    file = File(
+        id=str(uuid.uuid4()),
+        user_id=test_user.id,
+        name="Test Document",
+        content="# Test Content\n\nThis is test content.",
+    )
+    db_session.add(file)
+    await db_session.commit()
+    await db_session.refresh(file)
+    return file
+
+
+@pytest.fixture
+async def test_conversation(db_session: AsyncSession, test_file: File) -> Conversation:
+    """Create a test conversation in the database."""
+    conv = Conversation(
+        id=str(uuid.uuid4()),
+        file_id=test_file.id,
+        user_id=test_file.user_id,
+    )
+    db_session.add(conv)
+    await db_session.commit()
+    await db_session.refresh(conv)
+    return conv
 
 
 # Sample test data fixtures

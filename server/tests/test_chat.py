@@ -1063,8 +1063,21 @@ class TestUserIsolation:
         self, client: AsyncClient, db_session, auth_headers
     ):
         """Should filter conversations by user_id in non-debug mode."""
+        from db.database import User
+
         # This test verifies the get_user_id_filter is called properly
         # In debug mode, user_id filter returns None (shows all)
+
+        # Create user for the conversation (foreign key constraint)
+        user2 = User(
+            id="user-2",
+            email="user2@example.com",
+            username="user2",
+            is_verified=True,
+            is_active=True,
+        )
+        db_session.add(user2)
+        await db_session.commit()
 
         # Create conversation for different user
         conv = Conversation(

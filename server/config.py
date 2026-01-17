@@ -4,7 +4,6 @@ Centralized settings management with environment variable support.
 All configurable values should be defined here.
 """
 
-import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,7 +23,7 @@ class Settings(BaseSettings):
     # API Keys
     # =========================================================================
     anthropic_api_key: str = ""
-    openai_api_key: str = ""
+    openai_api_key: str = ""  # Required for pgvector embeddings
     google_api_key: str = ""  # For Gemini file conversion (PDF, DOCX, PPTX to markdown)
 
     # =========================================================================
@@ -73,18 +72,33 @@ class Settings(BaseSettings):
     max_verification_attempts: int = 5
 
     # =========================================================================
-    # Database
+    # Database (PostgreSQL with pgvector)
     # =========================================================================
-    # For PostgreSQL: postgresql+asyncpg://user:password@host:port/dbname
-    # For SQLite: sqlite+aiosqlite:///./data/app.db
-    database_url: str = "sqlite+aiosqlite:///./data/app.db"
+    # Format: postgresql+asyncpg://user:password@host:port/dbname
+    # Local Docker uses port 5433 to avoid conflict with local PostgreSQL
+    # Heroku provides postgres://, which is auto-converted
+    database_url: str = "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
+
+    @property
+    def async_database_url(self) -> str:
+        """Get database URL with async driver.
+
+        Handles Heroku's postgres:// format by converting to postgresql+asyncpg://
+        """
+        url = self.database_url
+
+        # Heroku uses postgres:// but SQLAlchemy needs postgresql://
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://") and "+asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        return url
 
     # =========================================================================
-    # Vector Store (Chroma)
+    # Vector Store (pgvector)
     # =========================================================================
-    chroma_host: str = ""  # Empty = use local persistent storage
-    chroma_port: int = 8000
-    chroma_persist_dir: str = "./data/chroma"
+    pgvector_enabled: bool = True  # Enable/disable vector search features
 
     # =========================================================================
     # Server
@@ -146,16 +160,6 @@ class Settings(BaseSettings):
     # =========================================================================
 
     @property
-    def is_postgres(self) -> bool:
-        """Check if using PostgreSQL."""
-        return "postgresql" in self.database_url
-
-    @property
-    def use_chroma_server(self) -> bool:
-        """Check if using Chroma server mode."""
-        return bool(self.chroma_host)
-
-    @property
     def max_file_size_mb(self) -> float:
         """Get max file size in megabytes."""
         return self.max_file_size / (1024 * 1024)
@@ -165,17 +169,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
-
-
-def ensure_directories():
-    """Ensure required directories exist."""
-    settings = get_settings()
-
-    # Only create directories for local storage
-    if not settings.is_postgres:
-        db_path = settings.database_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
-        if db_path.startswith("./"):
-            os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-
-    if not settings.use_chroma_server:
-        os.makedirs(settings.chroma_persist_dir, exist_ok=True)

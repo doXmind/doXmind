@@ -10,14 +10,11 @@ anthropic==0.40.0
 google-genai>=1.0.0
 openai>=1.0.0
 
-# Vector Database
-chromadb>=1.0.0
-
-# Database
+# Database (PostgreSQL with pgvector)
 sqlalchemy==2.0.36
 asyncpg==0.30.0
 psycopg2-binary==2.9.10
-aiosqlite==0.20.0
+pgvector==0.3.6
 
 # Utilities
 python-multipart==0.0.19

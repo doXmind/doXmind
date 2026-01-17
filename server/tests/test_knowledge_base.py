@@ -8,7 +8,6 @@ import pytest
 from httpx import AsyncClient
 
 from db.database import Conversation, ConversationAttachment
-from dependencies import get_rag_service
 from main import app
 
 
@@ -30,31 +29,29 @@ class TestUploadAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        # Mock dependencies using dependency override
-        with patch("api.knowledge_base.extract_text_content") as mock_extract:
+        # Mock RAGService directly
+        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
+             patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_extract.return_value = "Extracted PDF content"
             mock_rag = MagicMock()
             mock_rag.index_kb_attachment = AsyncMock(return_value=5)
-            app.dependency_overrides[get_rag_service] = lambda: mock_rag
+            mock_rag_class.return_value = mock_rag
 
-            try:
-                # Create a simple PDF file
-                pdf_content = b"%PDF-1.4 test content"
-                files = {"file": ("test.pdf", io.BytesIO(pdf_content), "application/pdf")}
+            # Create a simple PDF file
+            pdf_content = b"%PDF-1.4 test content"
+            files = {"file": ("test.pdf", io.BytesIO(pdf_content), "application/pdf")}
 
-                response = await client.post(
-                    "/api/kb/file-123/attachments",
-                    files=files,
-                    headers=auth_headers
-                )
+            response = await client.post(
+                "/api/kb/file-123/attachments",
+                files=files,
+                headers=auth_headers
+            )
 
-                assert response.status_code == 200
-                data = response.json()
-                assert data["original_filename"] == "test.pdf"
-                assert data["file_type"] == "pdf"
-                assert data["status"] == "indexed"
-            finally:
-                app.dependency_overrides.pop(get_rag_service, None)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["original_filename"] == "test.pdf"
+            assert data["file_type"] == "pdf"
+            assert data["status"] == "indexed"
 
     @pytest.mark.asyncio
     async def test_upload_docx_success(
@@ -65,28 +62,26 @@ class TestUploadAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract:
+        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
+             patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_extract.return_value = "Extracted DOCX content"
             mock_rag = MagicMock()
             mock_rag.index_kb_attachment = AsyncMock(return_value=3)
-            app.dependency_overrides[get_rag_service] = lambda: mock_rag
+            mock_rag_class.return_value = mock_rag
 
-            try:
-                docx_content = b"PK\x03\x04 test docx"
-                files = {"file": ("document.docx", io.BytesIO(docx_content), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+            docx_content = b"PK\x03\x04 test docx"
+            files = {"file": ("document.docx", io.BytesIO(docx_content), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
 
-                response = await client.post(
-                    "/api/kb/file-docx/attachments",
-                    files=files,
-                    headers=auth_headers
-                )
+            response = await client.post(
+                "/api/kb/file-docx/attachments",
+                files=files,
+                headers=auth_headers
+            )
 
-                assert response.status_code == 200
-                data = response.json()
-                assert data["file_type"] == "docx"
-                assert data["status"] == "indexed"
-            finally:
-                app.dependency_overrides.pop(get_rag_service, None)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["file_type"] == "docx"
+            assert data["status"] == "indexed"
 
     @pytest.mark.asyncio
     async def test_upload_unsupported_file_type(
@@ -139,11 +134,11 @@ class TestUploadAttachment:
     ):
         """Should create conversation if it doesn't exist."""
         with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.get_rag_service") as mock_rag_dep:
+             patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_extract.return_value = "Content"
             mock_rag = AsyncMock()
             mock_rag.index_kb_attachment = AsyncMock(return_value=1)
-            mock_rag_dep.return_value = mock_rag
+            mock_rag_class.return_value = mock_rag
 
             pdf_content = b"%PDF-1.4"
             files = {"file": ("new.pdf", io.BytesIO(pdf_content), "application/pdf")}
@@ -166,10 +161,10 @@ class TestUploadAttachment:
         await db_session.commit()
 
         with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.get_rag_service") as mock_rag_dep:
+             patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_extract.side_effect = Exception("Extraction failed")
             mock_rag = AsyncMock()
-            mock_rag_dep.return_value = mock_rag
+            mock_rag_class.return_value = mock_rag
 
             pdf_content = b"%PDF-1.4"
             files = {"file": ("corrupt.pdf", io.BytesIO(pdf_content), "application/pdf")}
@@ -292,10 +287,10 @@ class TestDeleteAttachment:
         db_session.add(att)
         await db_session.commit()
 
-        with patch("api.knowledge_base.get_rag_service") as mock_rag_dep:
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = AsyncMock()
             mock_rag.delete_kb_attachment = AsyncMock()
-            mock_rag_dep.return_value = mock_rag
+            mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
                 f"/api/kb/file-del/attachments/{att_id}",
@@ -316,9 +311,9 @@ class TestDeleteAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.get_rag_service") as mock_rag_dep:
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = AsyncMock()
-            mock_rag_dep.return_value = mock_rag
+            mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
                 "/api/kb/file-noatt/attachments/nonexistent-id",
@@ -352,9 +347,9 @@ class TestDeleteAttachment:
         db_session.add(att)
         await db_session.commit()
 
-        with patch("api.knowledge_base.get_rag_service") as mock_rag_dep:
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = AsyncMock()
-            mock_rag_dep.return_value = mock_rag
+            mock_rag_class.return_value = mock_rag
 
             # Try to delete from conv2
             response = await client.delete(
@@ -382,16 +377,15 @@ class TestSearchKnowledgeBase:
         db_session.add(conv)
         await db_session.commit()
 
-        # Use dependency override instead of patch
-        mock_rag = MagicMock()
-        mock_rag.search_kb = AsyncMock(return_value=[
-            {"content": "Result 1", "source_file": "doc1.pdf", "score": 0.95},
-            {"content": "Result 2", "source_file": "doc2.pdf", "score": 0.85}
-        ])
+        # Mock RAGService directly
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
+            mock_rag = MagicMock()
+            mock_rag.search_kb = AsyncMock(return_value=[
+                {"content": "Result 1", "source_file": "doc1.pdf", "score": 0.95},
+                {"content": "Result 2", "source_file": "doc2.pdf", "score": 0.85}
+            ])
+            mock_rag_class.return_value = mock_rag
 
-        app.dependency_overrides[get_rag_service] = lambda: mock_rag
-
-        try:
             response = await client.post(
                 "/api/kb/file-search/search",
                 headers=auth_headers,
@@ -403,8 +397,6 @@ class TestSearchKnowledgeBase:
             assert len(data["results"]) == 2
             assert data["results"][0]["content"] == "Result 1"
             assert data["results"][0]["score"] == 0.95
-        finally:
-            app.dependency_overrides.pop(get_rag_service, None)
 
     @pytest.mark.asyncio
     async def test_search_empty_results(
@@ -415,13 +407,12 @@ class TestSearchKnowledgeBase:
         db_session.add(conv)
         await db_session.commit()
 
-        # Use dependency override instead of patch
-        mock_rag = MagicMock()
-        mock_rag.search_kb = AsyncMock(return_value=[])
+        # Mock RAGService directly
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
+            mock_rag = MagicMock()
+            mock_rag.search_kb = AsyncMock(return_value=[])
+            mock_rag_class.return_value = mock_rag
 
-        app.dependency_overrides[get_rag_service] = lambda: mock_rag
-
-        try:
             response = await client.post(
                 "/api/kb/file-noresults/search",
                 headers=auth_headers,
@@ -431,8 +422,6 @@ class TestSearchKnowledgeBase:
             assert response.status_code == 200
             data = response.json()
             assert data["results"] == []
-        finally:
-            app.dependency_overrides.pop(get_rag_service, None)
 
     @pytest.mark.asyncio
     async def test_search_nonexistent_conversation(
@@ -727,29 +716,27 @@ class TestExtendedUpload:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract:
+        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
+             patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_extract.return_value = "Presentation content"
 
             mock_rag = MagicMock()
             mock_rag.index_kb_attachment = AsyncMock(return_value=10)
-            app.dependency_overrides[get_rag_service] = lambda: mock_rag
+            mock_rag_class.return_value = mock_rag
 
-            try:
-                pptx_content = b"PK\x03\x04 test pptx"
-                files = {"file": ("presentation.pptx", io.BytesIO(pptx_content), "application/vnd.openxmlformats-officedocument.presentationml.presentation")}
+            pptx_content = b"PK\x03\x04 test pptx"
+            files = {"file": ("presentation.pptx", io.BytesIO(pptx_content), "application/vnd.openxmlformats-officedocument.presentationml.presentation")}
 
-                response = await client.post(
-                    "/api/kb/file-pptx/attachments",
-                    files=files,
-                    headers=auth_headers
-                )
+            response = await client.post(
+                "/api/kb/file-pptx/attachments",
+                files=files,
+                headers=auth_headers
+            )
 
-                assert response.status_code == 200
-                data = response.json()
-                assert data["file_type"] == "pptx"
-                assert data["status"] == "indexed"
-            finally:
-                app.dependency_overrides.pop(get_rag_service, None)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["file_type"] == "pptx"
+            assert data["status"] == "indexed"
 
 
 # ============================================================================
@@ -782,10 +769,10 @@ class TestExtendedDelete:
         db_session.add(att)
         await db_session.commit()
 
-        with patch("api.knowledge_base.get_rag_service") as mock_rag_dep:
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = AsyncMock()
             mock_rag.delete_kb_attachment = AsyncMock(side_effect=Exception("RAG error"))
-            mock_rag_dep.return_value = mock_rag
+            mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
                 f"/api/kb/file-rag-err/attachments/{att_id}",
@@ -800,9 +787,9 @@ class TestExtendedDelete:
         self, client: AsyncClient, auth_headers
     ):
         """Should return 404 for nonexistent conversation."""
-        with patch("api.knowledge_base.get_rag_service") as mock_rag_dep:
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = AsyncMock()
-            mock_rag_dep.return_value = mock_rag
+            mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
                 "/api/kb/nonexistent-conv/attachments/some-att-id",
@@ -829,12 +816,11 @@ class TestExtendedSearch:
         db_session.add(conv)
         await db_session.commit()
 
-        mock_rag = MagicMock()
-        mock_rag.search_kb = AsyncMock(side_effect=Exception("Search failed"))
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
+            mock_rag = MagicMock()
+            mock_rag.search_kb = AsyncMock(side_effect=Exception("Search failed"))
+            mock_rag_class.return_value = mock_rag
 
-        app.dependency_overrides[get_rag_service] = lambda: mock_rag
-
-        try:
             response = await client.post(
                 "/api/kb/file-search-err/search",
                 headers=auth_headers,
@@ -842,8 +828,6 @@ class TestExtendedSearch:
             )
 
             assert response.status_code == 500
-        finally:
-            app.dependency_overrides.pop(get_rag_service, None)
 
     @pytest.mark.asyncio
     async def test_search_with_custom_top_k(
@@ -854,12 +838,11 @@ class TestExtendedSearch:
         db_session.add(conv)
         await db_session.commit()
 
-        mock_rag = MagicMock()
-        mock_rag.search_kb = AsyncMock(return_value=[])
+        with patch("api.knowledge_base.RAGService") as mock_rag_class:
+            mock_rag = MagicMock()
+            mock_rag.search_kb = AsyncMock(return_value=[])
+            mock_rag_class.return_value = mock_rag
 
-        app.dependency_overrides[get_rag_service] = lambda: mock_rag
-
-        try:
             response = await client.post(
                 "/api/kb/file-topk/search",
                 headers=auth_headers,
@@ -871,8 +854,6 @@ class TestExtendedSearch:
             mock_rag.search_kb.assert_called_once()
             call_kwargs = mock_rag.search_kb.call_args[1]
             assert call_kwargs["top_k"] == 20
-        finally:
-            app.dependency_overrides.pop(get_rag_service, None)
 
 
 # ============================================================================

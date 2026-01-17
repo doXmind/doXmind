@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import ConversationAttachment
-from dependencies import get_conversation_by_file_id, get_db, get_rag_service
+from dependencies import get_conversation_by_file_id, get_db
 from exceptions import (
     AttachmentNotFoundError,
     ConversationNotFoundError,
@@ -79,8 +79,7 @@ async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
 async def upload_attachment(
     conversation_id: str,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    rag: RAGService = Depends(get_rag_service)
+    db: AsyncSession = Depends(get_db)
 ):
     """Upload a document to the conversation's knowledge base.
 
@@ -127,6 +126,7 @@ async def upload_attachment(
         extracted_text = await extract_text_content(content, file.filename or "", ext)
         attachment.extracted_text = extracted_text
 
+        rag = RAGService(db)
         chunk_count = await rag.index_kb_attachment(
             attachment_id=attachment.id,
             conversation_id=conv.id,
@@ -204,8 +204,7 @@ async def list_attachments(
 async def delete_attachment(
     conversation_id: str,
     attachment_id: str,
-    db: AsyncSession = Depends(get_db),
-    rag: RAGService = Depends(get_rag_service)
+    db: AsyncSession = Depends(get_db)
 ):
     """Delete an attachment from the knowledge base."""
     conv = await get_conversation_by_file_id(conversation_id, db)
@@ -218,6 +217,7 @@ async def delete_attachment(
 
     # Delete from vector store
     try:
+        rag = RAGService(db)
         await rag.delete_kb_attachment(attachment_id)
     except Exception as e:
         logger.warning(f"Failed to delete KB vectors: {e}")
@@ -232,8 +232,7 @@ async def delete_attachment(
 async def search_knowledge_base(
     conversation_id: str,
     request: KBSearchRequest,
-    db: AsyncSession = Depends(get_db),
-    rag: RAGService = Depends(get_rag_service)
+    db: AsyncSession = Depends(get_db)
 ):
     """Search within the conversation's knowledge base."""
     conv = await get_conversation_by_file_id(conversation_id, db)
@@ -241,6 +240,7 @@ async def search_knowledge_base(
         raise ConversationNotFoundError(conversation_id)
 
     try:
+        rag = RAGService(db)
         results = await rag.search_kb(
             conversation_id=conv.id,
             query=request.query,

@@ -257,6 +257,12 @@ class TestUserDataIsolation:
         self, client: AsyncClient, db_session: AsyncSession
     ):
         """Should only return files belonging to the authenticated user."""
+        from tests.conftest import create_test_user
+
+        # Create users first (foreign key constraint)
+        await create_test_user(db_session, "user-1")
+        await create_test_user(db_session, "user-2")
+
         # Create files for different users
         user1_file = File(name="User1 File", content="Content 1", user_id="user-1")
         user2_file = File(name="User2 File", content="Content 2", user_id="user-2")
@@ -1024,6 +1030,11 @@ class TestFileDatabaseModel:
     @pytest.mark.asyncio
     async def test_file_model_creation(self, db_session: AsyncSession):
         """Should create File model correctly."""
+        from tests.conftest import create_test_user
+
+        # Create user first (foreign key constraint)
+        await create_test_user(db_session, "user-123")
+
         file = File(
             name="Test File",
             content="File content",

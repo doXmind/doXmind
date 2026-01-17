@@ -411,6 +411,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
                 mode=request.mode,
                 kb_attachments=kb_attachments if kb_attachments else None,
                 web_search_enabled=request.webSearchEnabled,
+                db=db,
             )
 
             # Prepare file context

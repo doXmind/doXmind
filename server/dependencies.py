@@ -4,12 +4,17 @@ This module provides dependency injection for services used across the API.
 Using DI ensures consistent service usage and easier testing.
 """
 
+import uuid
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
+from fastapi import Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import async_session
+from db.database import Conversation, async_session
 from services.rag_service import RAGService
+
 
 # ============================================================================
 # Database Dependencies
@@ -27,18 +32,16 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+# Type alias for cleaner dependency injection
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
 # ============================================================================
 # Service Dependencies
 # ============================================================================
 
-# Singleton RAG service instance
-_rag_service: RAGService | None = None
-
-
-def get_rag_service() -> RAGService:
-    """Get RAG service dependency.
-
-    Returns a singleton instance of RAGService.
+async def get_rag_service(db: AsyncSession = Depends(get_db)) -> RAGService:
+    """Get RAG service with database session.
 
     Usage:
         @router.post("/search")
@@ -49,10 +52,7 @@ def get_rag_service() -> RAGService:
             results = await rag.search(request.query)
             ...
     """
-    global _rag_service
-    if _rag_service is None:
-        _rag_service = RAGService()
-    return _rag_service
+    return RAGService(db)
 
 
 # ============================================================================
@@ -83,12 +83,6 @@ async def get_conversation_by_file_id(
     Returns:
         Conversation or None
     """
-    import uuid
-
-    from sqlalchemy import select
-
-    from db.database import Conversation
-
     normalized_file_id = normalize_file_id(file_id)
 
     # First try to find by conversation ID directly (UUID)

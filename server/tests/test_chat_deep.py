@@ -79,7 +79,13 @@ class TestConversationPersistence:
         self, db_session: AsyncSession
     ):
         """Multiple conversations can exist for the same file_id."""
+        from tests.conftest import create_test_user
+
         file_id = "shared-file"
+
+        # Create users first (foreign key constraint)
+        await create_test_user(db_session, "user-1")
+        await create_test_user(db_session, "user-2")
 
         conv1 = Conversation(file_id=file_id, user_id="user-1")
         conv2 = Conversation(file_id=file_id, user_id="user-2")
@@ -535,6 +541,12 @@ class TestUserIsolation:
         self, db_session: AsyncSession
     ):
         """Users should only see their own conversations."""
+        from tests.conftest import create_test_user
+
+        # Create users first (foreign key constraint)
+        await create_test_user(db_session, "user-1")
+        await create_test_user(db_session, "user-2")
+
         # Create conversations for different users
         conv1 = Conversation(file_id="user1-file", user_id="user-1")
         conv2 = Conversation(file_id="user2-file", user_id="user-2")

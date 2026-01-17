@@ -121,7 +121,8 @@ class TestSearchKnowledgeBase:
         ])
         mock_rag_class.return_value = mock_rag
 
-        kb_context = {"conversation_id": "conv-1"}
+        mock_db = MagicMock()  # Mock database session
+        kb_context = {"conversation_id": "conv-1", "db": mock_db}
 
         result = await execute_search_knowledge_base(
             {"query": "test query", "top_k": 5},
@@ -142,7 +143,8 @@ class TestSearchKnowledgeBase:
         mock_rag.search_kb = AsyncMock(return_value=[])
         mock_rag_class.return_value = mock_rag
 
-        kb_context = {"conversation_id": "conv-1"}
+        mock_db = MagicMock()  # Mock database session
+        kb_context = {"conversation_id": "conv-1", "db": mock_db}
 
         result = await execute_search_knowledge_base(
             {"query": "nonexistent"},
@@ -160,7 +162,8 @@ class TestSearchKnowledgeBase:
         mock_rag.search_kb = AsyncMock(return_value=[])
         mock_rag_class.return_value = mock_rag
 
-        kb_context = {"conversation_id": "conv-1"}
+        mock_db = MagicMock()  # Mock database session
+        kb_context = {"conversation_id": "conv-1", "db": mock_db}
 
         await execute_search_knowledge_base(
             {"query": "test", "top_k": 100},  # Request 100, should be limited to 10
@@ -177,7 +180,8 @@ class TestSearchKnowledgeBase:
         mock_rag.search_kb = AsyncMock(side_effect=Exception("Search error"))
         mock_rag_class.return_value = mock_rag
 
-        kb_context = {"conversation_id": "conv-1"}
+        mock_db = MagicMock()  # Mock database session
+        kb_context = {"conversation_id": "conv-1", "db": mock_db}
 
         result = await execute_search_knowledge_base(
             {"query": "test"},
@@ -227,11 +231,13 @@ class TestReadKBDocument:
     @pytest.mark.asyncio
     async def test_finds_document_by_exact_name(self):
         """Should find document by exact name match."""
+        mock_db = MagicMock()  # Mock database session
         kb_context = {
             "attachments": [
                 {"filename": "doc1.pdf", "id": "att-1"},
                 {"filename": "doc2.pdf", "id": "att-2"},
-            ]
+            ],
+            "db": mock_db
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
@@ -255,10 +261,12 @@ class TestReadKBDocument:
     @pytest.mark.asyncio
     async def test_finds_document_by_partial_name(self):
         """Should find document by partial name match."""
+        mock_db = MagicMock()  # Mock database session
         kb_context = {
             "attachments": [
                 {"filename": "my_document_2024.pdf", "id": "att-1"},
-            ]
+            ],
+            "db": mock_db
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
@@ -281,10 +289,12 @@ class TestReadKBDocument:
     @pytest.mark.asyncio
     async def test_case_insensitive_match(self):
         """Should match document name case-insensitively."""
+        mock_db = MagicMock()  # Mock database session
         kb_context = {
             "attachments": [
                 {"filename": "MyDocument.PDF", "id": "att-1"},
-            ]
+            ],
+            "db": mock_db
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
@@ -307,10 +317,12 @@ class TestReadKBDocument:
     @pytest.mark.asyncio
     async def test_respects_start_section(self):
         """Should use start_section parameter."""
+        mock_db = MagicMock()  # Mock database session
         kb_context = {
             "attachments": [
                 {"filename": "doc.pdf", "id": "att-1"},
-            ]
+            ],
+            "db": mock_db
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
@@ -333,10 +345,12 @@ class TestReadKBDocument:
     @pytest.mark.asyncio
     async def test_returns_no_content_message(self):
         """Should return message when document is empty."""
+        mock_db = MagicMock()  # Mock database session
         kb_context = {
             "attachments": [
                 {"filename": "empty.pdf", "id": "att-1"},
-            ]
+            ],
+            "db": mock_db
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
@@ -360,10 +374,12 @@ class TestReadKBDocument:
     @pytest.mark.asyncio
     async def test_handles_read_error(self):
         """Should return error when read fails."""
+        mock_db = MagicMock()  # Mock database session
         kb_context = {
             "attachments": [
                 {"filename": "doc.pdf", "id": "att-1"},
-            ]
+            ],
+            "db": mock_db
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
@@ -437,6 +453,7 @@ class TestExecuteKBTool:
     @pytest.mark.asyncio
     async def test_executes_search_knowledge_base(self):
         """Should execute search_knowledge_base tool."""
+        mock_db = MagicMock()  # Mock database session
         with patch("services.rag_service.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
             mock_rag.search_kb = AsyncMock(return_value=[])
@@ -445,7 +462,7 @@ class TestExecuteKBTool:
             result = await execute_kb_tool(
                 "search_knowledge_base",
                 {"query": "test"},
-                {"conversation_id": "conv-1", "attachments": []}
+                {"conversation_id": "conv-1", "attachments": [], "db": mock_db}
             )
 
             assert "result" in result

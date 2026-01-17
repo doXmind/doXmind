@@ -10,7 +10,6 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import (
-    _rag_service,
     get_conversation_by_file_id,
     get_db,
     get_rag_service,
@@ -94,43 +93,27 @@ class TestGetDb:
 class TestGetRagService:
     """Tests for get_rag_service dependency."""
 
-    def test_creates_singleton(self):
-        """Should create RAGService singleton."""
-        import dependencies
-
-        # Reset singleton
-        dependencies._rag_service = None
+    @pytest.mark.asyncio
+    async def test_creates_rag_service_with_db(self):
+        """Should create RAGService with db session."""
+        mock_db = MagicMock(spec=AsyncSession)
 
         with patch("dependencies.RAGService") as mock_rag_class:
             mock_instance = MagicMock()
             mock_rag_class.return_value = mock_instance
 
-            # First call
-            result1 = get_rag_service()
-            # Second call
-            result2 = get_rag_service()
+            result = await get_rag_service(db=mock_db)
 
-            # Should be same instance
-            assert result1 is result2
-            # Should only create once
-            mock_rag_class.assert_called_once()
+            # Should create with db
+            mock_rag_class.assert_called_once_with(mock_db)
+            assert result is mock_instance
 
-        # Clean up
-        dependencies._rag_service = None
+    @pytest.mark.asyncio
+    async def test_is_async_function(self):
+        """Should be an async function."""
+        import inspect
 
-    def test_returns_existing_instance(self):
-        """Should return existing instance if already created."""
-        import dependencies
-
-        mock_instance = MagicMock()
-        dependencies._rag_service = mock_instance
-
-        result = get_rag_service()
-
-        assert result is mock_instance
-
-        # Clean up
-        dependencies._rag_service = None
+        assert inspect.iscoroutinefunction(get_rag_service)
 
 
 # ============================================================================
@@ -286,9 +269,6 @@ class TestDependencyIntegration:
         assert callable(dependencies.normalize_file_id)
         assert callable(dependencies.get_conversation_by_file_id)
 
-        # Check private state
-        assert hasattr(dependencies, "_rag_service")
-
     @pytest.mark.asyncio
     async def test_get_db_is_async_generator(self):
         """Should be an async generator."""
@@ -296,9 +276,8 @@ class TestDependencyIntegration:
 
         assert inspect.isasyncgenfunction(get_db)
 
-    def test_get_rag_service_is_function(self):
-        """Should be a regular function."""
+    def test_get_rag_service_is_async_function(self):
+        """Should be an async function."""
         import inspect
 
-        assert inspect.isfunction(get_rag_service)
-        assert not inspect.iscoroutinefunction(get_rag_service)
+        assert inspect.iscoroutinefunction(get_rag_service)

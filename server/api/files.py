@@ -103,7 +103,7 @@ async def create_file(
 
         # Index in vector store (both chunk-level and sentence-level)
         try:
-            rag = RAGService()
+            rag = RAGService(db)
             await rag.index_file(
                 file_id=new_file.id,
                 content=file.content,
@@ -189,7 +189,7 @@ async def update_file(
     # Re-index in vector store (when content or name changes)
     if update.content is not None or update.name is not None:
         try:
-            rag = RAGService()
+            rag = RAGService(db)
             await rag.index_file(
                 file_id=file.id,
                 content=file.content,
@@ -234,7 +234,7 @@ async def delete_file(
 
     # Remove from vector store
     try:
-        rag = RAGService()
+        rag = RAGService(db)
         await rag.delete_file(file_id)
     except Exception as e:
         logger.warning(f"Failed to delete file from vector store: {e}")
@@ -255,13 +255,14 @@ class SearchRequest(BaseModel):
 @router.post("/search")
 async def search_files(
     request: SearchRequest,
+    db: AsyncSession = Depends(get_db),
     token: TokenData | None = Depends(optional_auth)
 ):
     """Search files using RAG (within user's files)."""
     _user_id = get_user_id_filter(token)  # TODO: Use to filter search results
 
     try:
-        rag = RAGService()
+        rag = RAGService(db)
         results = await rag.search(
             query=request.query,
             file_ids=request.file_ids,
@@ -308,7 +309,7 @@ async def search_in_document(
         if not file:
             raise HTTPException(status_code=404, detail="File not found")
 
-        rag = RAGService()
+        rag = RAGService(db)
 
         # Check if sentence index exists, if not create it
         # Use a low min_score for existence check

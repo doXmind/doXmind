@@ -67,6 +67,12 @@ class TestUserIsolationDeep:
         self, db_session: AsyncSession
     ):
         """User 1 should NOT see files created by User 2."""
+        from tests.conftest import create_test_user
+
+        # Create users first (foreign key constraint)
+        await create_test_user(db_session, "user-1")
+        await create_test_user(db_session, "user-2")
+
         # Create files for user 1
         file1 = File(name="User1 File", content="Secret", user_id="user-1")
         db_session.add(file1)
@@ -95,6 +101,10 @@ class TestUserIsolationDeep:
         test client runs in debug mode by default.
         """
         from api.files import get_user_id_filter
+        from tests.conftest import create_test_user
+
+        # Create user first (foreign key constraint)
+        await create_test_user(db_session, "user-1-specific")
 
         # Create file for user 1
         file = File(name="User1 File", content="Original", user_id="user-1-specific")
@@ -135,6 +145,10 @@ class TestUserIsolationDeep:
         Note: This tests the get_user_id_filter logic directly.
         """
         from api.files import get_user_id_filter
+        from tests.conftest import create_test_user
+
+        # Create user first (foreign key constraint)
+        await create_test_user(db_session, "user-owner")
 
         # Create file for user 1
         file = File(name="Important", content="Don't delete", user_id="user-owner")

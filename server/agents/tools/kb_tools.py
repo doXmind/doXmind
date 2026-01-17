@@ -66,8 +66,12 @@ async def execute_search_knowledge_base(
     # Import here to avoid circular imports
     from services.rag_service import RAGService
 
+    db = kb_context.get("db")
+    if not db:
+        return {"error": "Database session not available."}
+
     try:
-        rag = RAGService()
+        rag = RAGService(db)
         results = await rag.search_kb(conversation_id, query, top_k)
 
         if not results:
@@ -121,8 +125,12 @@ async def execute_read_kb_document(
     # Import here to avoid circular imports
     from services.rag_service import RAGService
 
+    db = kb_context.get("db")
+    if not db:
+        return {"error": "Database session not available."}
+
     try:
-        rag = RAGService()
+        rag = RAGService(db)
         result = await rag.get_kb_document_content(
             attachment['id'],
             start_section,

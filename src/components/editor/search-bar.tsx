@@ -117,24 +117,31 @@ export function SearchBar() {
   // Sync search term with editor (only for keyword search)
   useEffect(() => {
     if (!editor) return;
-    // Only do keyword search when not in AI mode
-    if (!isAIMode) {
-      editor.commands.setSearchTerm(searchTerm);
-    } else {
-      editor.commands.setSearchTerm(""); // Clear keyword highlights in AI mode
-    }
+    // Defer the editor command to avoid flushSync warning during React render
+    queueMicrotask(() => {
+      // Only do keyword search when not in AI mode
+      if (!isAIMode) {
+        editor.commands.setSearchTerm(searchTerm);
+      } else {
+        editor.commands.setSearchTerm(""); // Clear keyword highlights in AI mode
+      }
+    });
   }, [editor, searchTerm, isAIMode]);
 
   // Sync case sensitivity with editor
   useEffect(() => {
     if (!editor) return;
-    editor.commands.setCaseSensitive(caseSensitive);
+    queueMicrotask(() => {
+      editor.commands.setCaseSensitive(caseSensitive);
+    });
   }, [editor, caseSensitive]);
 
   // Clear search when closed
   useEffect(() => {
     if (!isSearchBarOpen && editor) {
-      editor.commands.closeSearch();
+      queueMicrotask(() => {
+        editor.commands.closeSearch();
+      });
       setSearchTerm("");
       setReplaceTerm("");
       setShowReplace(false);
@@ -185,21 +192,23 @@ export function SearchBar() {
   useEffect(() => {
     if (!editor) return;
 
-    if (isAIMode) {
-      // Switching to AI mode - clear keyword highlights, trigger AI search
-      editor.commands.setSearchTerm("");
-      if (searchTerm.trim()) {
-        performAISearch(searchTerm);
+    queueMicrotask(() => {
+      if (isAIMode) {
+        // Switching to AI mode - clear keyword highlights, trigger AI search
+        editor.commands.setSearchTerm("");
+        if (searchTerm.trim()) {
+          performAISearch(searchTerm);
+        }
+      } else {
+        // Switching to keyword mode - clear AI results, restore keyword search
+        setAIResults([]);
+        setShowAIResults(false);
+        editor.commands.clearSemanticResults();
+        if (searchTerm) {
+          editor.commands.setSearchTerm(searchTerm);
+        }
       }
-    } else {
-      // Switching to keyword mode - clear AI results, restore keyword search
-      setAIResults([]);
-      setShowAIResults(false);
-      editor.commands.clearSemanticResults();
-      if (searchTerm) {
-        editor.commands.setSearchTerm(searchTerm);
-      }
-    }
+    });
     // Only run when isAIMode changes, not on every searchTerm change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAIMode, editor]);

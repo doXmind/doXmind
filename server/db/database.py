@@ -1,13 +1,21 @@
 """Database configuration and models."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 from config import get_settings
+
+
+def utcnow() -> datetime:
+    """Return current UTC time as timezone-aware datetime.
+
+    asyncpg requires timezone-aware datetimes for PostgreSQL.
+    """
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -40,9 +48,9 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships - User owns all their data
     files = relationship("File", back_populates="owner", cascade="all, delete-orphan")
@@ -60,10 +68,10 @@ class EmailVerification(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(255), nullable=False, index=True)
     code = Column(String(6), nullable=False)  # 6-digit code
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
     verified = Column(Boolean, default=False)
     attempts = Column(Integer, default=0)  # Brute force protection
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     # Pending user data (stored until verification)
     pending_username = Column(String(100), nullable=True)
@@ -77,9 +85,9 @@ class PasswordReset(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     token = Column(String(255), unique=True, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
     used = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
 # =============================================================================
@@ -94,8 +102,8 @@ class File(Base):
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)  # NULL for legacy data
     name = Column(String(255), nullable=False)
     content = Column(Text, default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     owner = relationship("User", back_populates="files")
@@ -112,19 +120,24 @@ class FileVersion(Base):
     diff = Column(Text)  # JSON format diff
     edit_type = Column(String(50))  # "manual" | "ai_edit" | "ai_quick_edit"
     summary = Column(String(500))  # AI-generated change summary
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     file = relationship("File", back_populates="versions")
 
 
 class Conversation(Base):
-    """Conversation model with user ownership."""
+    """Conversation model with user ownership.
+
+    Note: file_id is NOT a foreign key to files table. It's an arbitrary string
+    identifier used to group conversations by document/context. This allows
+    conversations to exist for "files" that haven't been saved to the database yet.
+    """
     __tablename__ = "conversations"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)  # NULL for legacy data
-    file_id = Column(String(36), ForeignKey("files.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    file_id = Column(String(255), nullable=True, index=True)  # Arbitrary string identifier, NOT a FK
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     # Relationships
     owner = relationship("User", back_populates="conversations")
@@ -161,7 +174,7 @@ class Message(Base):
     input_tokens = Column(String(20), nullable=True)  # Token count
     output_tokens = Column(String(20), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     conversation = relationship("Conversation", back_populates="messages")
 
@@ -193,7 +206,7 @@ class ConversationAttachment(Base):
     error_message = Column(Text, nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     # Relationships
     conversation = relationship("Conversation", back_populates="attachments")
@@ -202,39 +215,55 @@ class ConversationAttachment(Base):
 # Engine and session setup
 settings = get_settings()
 
-# Create engine based on database type
-if settings.is_postgres:
-    engine = create_async_engine(
-        settings.database_url,
-        echo=settings.debug,
-        pool_size=5,
-        max_overflow=10
-    )
-else:
-    # SQLite
-    engine = create_async_engine(
-        settings.database_url,
-        echo=settings.debug
-    )
+# Create PostgreSQL engine
+# async_database_url handles Heroku's postgres:// format conversion
+engine = create_async_engine(
+    settings.async_database_url,
+    echo=False,  # Set to True only for SQL debugging
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,  # Verify connections before use
+    pool_recycle=300,    # Recycle connections after 5 minutes
+)
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def init_db():
+async def init_db(max_retries: int = 5, retry_delay: float = 2.0):
     """Initialize database tables.
 
     Handles race conditions when multiple workers start simultaneously
     (e.g., Heroku with WEB_CONCURRENCY > 1) by catching 'table already exists' errors.
+
+    Also retries on connection failures to handle Docker container startup timing.
     """
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:
-        # Ignore "table already exists" errors from race conditions
-        if "already exists" in str(e):
-            pass
-        else:
-            raise
+    import asyncio
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    for attempt in range(max_retries):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables initialized successfully")
+            return
+        except Exception as e:
+            # Ignore "table already exists" errors from race conditions
+            if "already exists" in str(e):
+                logger.info("Database tables already exist")
+                return
+
+            # Retry on connection errors
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"Database connection attempt {attempt + 1}/{max_retries} failed: {e}. "
+                    f"Retrying in {retry_delay}s..."
+                )
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(f"Failed to connect to database after {max_retries} attempts")
+                raise
 
 
 async def get_db() -> AsyncSession:

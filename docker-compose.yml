@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database with pgvector
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: doxmind-postgres
     restart: unless-stopped
     environment:
@@ -14,25 +14,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./server/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"  # Use 5433 externally to avoid conflict with local PostgreSQL
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-doxmind} -d ${POSTGRES_DB:-doxmind}"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # ChromaDB Vector Database
-  chroma:
-    image: chromadb/chroma:1.0.0
-    container_name: doxmind-chroma
-    restart: unless-stopped
-    volumes:
-      - chroma_data:/data
-    ports:
-      - "8001:8000"
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
 
   # Backend API Server
   backend:
@@ -44,13 +31,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      chroma:
-        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-doxmind}:${POSTGRES_PASSWORD:-doxmind123}@postgres:5432/${POSTGRES_DB:-doxmind}
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
+      - PGVECTOR_ENABLED=true
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DEBUG=${DEBUG:-false}
     ports:
       - "8000:8000"
@@ -80,7 +65,6 @@ services:
 
 volumes:
   postgres_data:
-  chroma_data:
 
 networks:
   default:

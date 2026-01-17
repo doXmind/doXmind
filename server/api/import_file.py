@@ -104,7 +104,7 @@ async def import_file(
 
         # Index in vector store
         try:
-            rag = RAGService()
+            rag = RAGService(db)
             await rag.index_file(
                 file_id=new_file.id,
                 content=html_content,

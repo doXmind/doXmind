@@ -44,6 +44,7 @@ class WritingAgent:
         enable_thinking: bool = False,
         kb_attachments: list[dict[str, Any]] = None,
         web_search_enabled: bool = False,
+        db=None,
     ):
         """Initialize the writing agent.
 
@@ -52,11 +53,13 @@ class WritingAgent:
             enable_thinking: Enable extended thinking for complex reasoning
             kb_attachments: List of KB attachments for this conversation
             web_search_enabled: Enable Anthropic web search tool
+            db: Database session for RAG operations
         """
         self.mode = mode
         self.enable_thinking = enable_thinking
         self.kb_attachments = kb_attachments or []
         self.web_search_enabled = web_search_enabled
+        self.db = db
 
         # Check if skills are available
         self.has_skills = bool(get_skills_service().list_skills())
@@ -214,7 +217,8 @@ class WritingAgent:
 
         return {
             "conversation_id": conversation_id,
-            "attachments": self.kb_attachments
+            "attachments": self.kb_attachments,
+            "db": self.db
         }
 
     async def _agent_loop(
