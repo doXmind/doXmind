@@ -259,14 +259,15 @@ async def search_files(
     token: TokenData | None = Depends(optional_auth)
 ):
     """Search files using RAG (within user's files)."""
-    _user_id = get_user_id_filter(token)  # TODO: Use to filter search results
+    user_id = get_user_id_filter(token)
 
     try:
         rag = RAGService(db)
         results = await rag.search(
             query=request.query,
             file_ids=request.file_ids,
-            top_k=request.top_k
+            top_k=request.top_k,
+            user_id=user_id
         )
         return {"results": results}
     except Exception as e:

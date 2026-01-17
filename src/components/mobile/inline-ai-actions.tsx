@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { Editor } from "@tiptap/react";
 import { Wand2, Scissors, Maximize2, Check, Languages, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { MOBILE_SPRINGS, Z_INDEX } from "@/lib/constants";
 import { haptics } from "@/lib/haptics";
+import { useQuickEdit } from "@/hooks/use-quick-edit";
 
 interface QuickAIAction {
   id: string;
@@ -49,6 +50,15 @@ const QUICK_ACTIONS: QuickAIAction[] = [
   },
 ];
 
+// Map mobile action IDs to backend action IDs
+const ACTION_ID_MAP: Record<string, string> = {
+  improve: "improve",
+  shorten: "shorten",
+  expand: "expand",
+  fix: "fix-grammar",
+  translate: "translate-en",
+};
+
 interface InlineAIActionsProps {
   editor: Editor | null;
   position: { x: number; y: number } | null;
@@ -63,36 +73,51 @@ export function InlineAIActions({
   onAction,
 }: InlineAIActionsProps) {
   const { selection } = useEditorStore();
-  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const { edit, cancel, isEditing } = useQuickEdit();
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
+
+  // Cancel AI request when component becomes invisible
+  useEffect(() => {
+    if (!visible) {
+      cancel();
+      setActiveActionId(null);
+    }
+  }, [visible, cancel]);
 
   const handleAction = useCallback(
     async (action: QuickAIAction) => {
       if (!editor || !selection?.text) return;
 
       haptics.medium();
-      setLoadingAction(action.id);
+      setActiveActionId(action.id);
 
       try {
-        // TODO: Implement actual AI call
-        // For now, simulate a delay
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        // Map action ID to backend action
+        const backendAction = ACTION_ID_MAP[action.id] || action.id;
 
-        // Simulate result (in production, this would be the AI response)
-        const result = `[Improved]: ${selection.text}`;
+        // Call AI via hook
+        const result = await edit(selection.text, backendAction);
 
-        // Apply the result to the editor
-        // editor.chain().focus().deleteSelection().insertContent(result).run();
+        if (result) {
+          // Apply the result to the editor - replace selection with AI result
+          editor
+            .chain()
+            .focus()
+            .setTextSelection({ from: selection.from, to: selection.to })
+            .insertContent(result)
+            .run();
 
-        haptics.success();
-        onAction?.(action.id, result);
+          haptics.success();
+          onAction?.(action.id, result);
+        }
       } catch (error) {
         haptics.error();
         console.error("AI action failed:", error);
       } finally {
-        setLoadingAction(null);
+        setActiveActionId(null);
       }
     },
-    [editor, selection, onAction]
+    [editor, selection, onAction, edit]
   );
 
   if (!visible || !position || !selection?.text) return null;
@@ -121,18 +146,18 @@ export function InlineAIActions({
             key={action.id}
             type="button"
             onClick={() => handleAction(action)}
-            disabled={loadingAction !== null}
+            disabled={isEditing}
             className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-full",
               "text-sm font-medium transition-colors",
               "active:scale-95",
-              loadingAction === action.id
+              isEditing && activeActionId === action.id
                 ? "bg-primary text-primary-foreground"
                 : "hover:bg-accent text-foreground"
             )}
             whileTap={{ scale: 0.95 }}
           >
-            {loadingAction === action.id ? (
+            {isEditing && activeActionId === action.id ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               action.icon

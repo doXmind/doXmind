@@ -23,6 +23,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { findTextInDoc } from "@/lib/position-mapper";
 import { useTheme } from "next-themes";
 import { api, SearchResultItem } from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
@@ -78,6 +80,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     toggleHighContrast,
   } = useLayoutStore();
   const { theme, setTheme } = useTheme();
+  const { editor } = useEditorRefStore();
 
   // Perform semantic search with debounce
   const performSearch = useDebouncedCallback(async (searchQuery: string) => {
@@ -282,13 +285,20 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       icon: <Quote className="h-4 w-4" />,
       category: "searchDocument" as const,
       action: () => {
-        // TODO: Jump to position in document
+        // Jump to position in document
+        if (editor && result.content) {
+          const position = findTextInDoc(editor.state.doc, result.content);
+          if (position) {
+            editor.commands.setTextSelection({ from: position.from, to: position.to });
+            editor.commands.scrollIntoView();
+          }
+        }
         onClose();
       },
       keywords: [],
       score: result.distance !== undefined ? Math.round((1 - result.distance) * 100) : undefined,
     }));
-  }, [docSearchResults, onClose]);
+  }, [docSearchResults, onClose, editor]);
 
   // Group filtered commands by category
   const groupedCommands = React.useMemo(() => {

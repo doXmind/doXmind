@@ -300,38 +300,48 @@ class RAGService:
         self,
         query: str,
         file_ids: list[str] | None = None,
-        top_k: int = 5
+        top_k: int = 5,
+        user_id: str | None = None
     ) -> list[dict[str, Any]]:
-        """Search for relevant document chunks using cosine similarity."""
+        """Search for relevant document chunks using cosine similarity.
+
+        Args:
+            query: Search query text
+            file_ids: Optional list of file IDs to search within
+            top_k: Maximum number of results to return
+            user_id: Optional user ID to filter results (only return user's files)
+        """
         try:
             query_embedding = await get_embedding(query)
 
-            # Build query with optional file filter
+            # Build query with optional file and user filters
+            params: dict[str, Any] = {"embedding": str(query_embedding), "limit": top_k}
+
+            # Base conditions
+            conditions = ["chunk_type = 'document'"]
+
             if file_ids:
-                result = await self.db.execute(
-                    text("""
-                        SELECT id, content, file_id, chunk_index, metadata,
-                               1 - (embedding <=> :embedding) as score
-                        FROM vectors
-                        WHERE chunk_type = 'document'
-                          AND file_id = ANY(:file_ids)
-                        ORDER BY embedding <=> :embedding
-                        LIMIT :limit
-                    """),
-                    {"embedding": str(query_embedding), "file_ids": file_ids, "limit": top_k}
-                )
-            else:
-                result = await self.db.execute(
-                    text("""
-                        SELECT id, content, file_id, chunk_index, metadata,
-                               1 - (embedding <=> :embedding) as score
-                        FROM vectors
-                        WHERE chunk_type = 'document'
-                        ORDER BY embedding <=> :embedding
-                        LIMIT :limit
-                    """),
-                    {"embedding": str(query_embedding), "limit": top_k}
-                )
+                conditions.append("file_id = ANY(:file_ids)")
+                params["file_ids"] = file_ids
+
+            if user_id:
+                # Filter by user_id in metadata, also include vectors without user_id for backward compatibility
+                conditions.append("(metadata->>'user_id' = :user_id OR metadata->>'user_id' IS NULL)")
+                params["user_id"] = user_id
+
+            where_clause = " AND ".join(conditions)
+
+            result = await self.db.execute(
+                text(f"""
+                    SELECT id, content, file_id, chunk_index, metadata,
+                           1 - (embedding <=> :embedding) as score
+                    FROM vectors
+                    WHERE {where_clause}
+                    ORDER BY embedding <=> :embedding
+                    LIMIT :limit
+                """),
+                params
+            )
 
             rows = result.fetchall()
             return [
