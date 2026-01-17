@@ -72,10 +72,12 @@
 │  Runtime:        Python 3.12+ / FastAPI                     │
 │  AI Framework:   LangGraph 1.0 + LangChain 1.0              │
 │  LLM Provider:   Claude API (Anthropic) - 主力              │
-│                  OpenRouter API - 备选多模型                │
-│  Vector DB:      Chroma / Milvus Lite (本地向量存储)        │
-│  Database:       SQLite (本地) / Turso (云端边缘)           │
-│  Embedding:      Voyage AI / OpenAI text-embedding-3        │
+│                  Web Tools (search/fetch) - 实时信息        │
+│  Vector DB:      PostgreSQL + pgvector                      │
+│  Database:       PostgreSQL (生产) / SQLite (开发)          │
+│  Embedding:      OpenAI text-embedding-3-small (1536 维)    │
+│  File Convert:   Gemini API (PDF/DOCX/PPTX → Markdown)      │
+│  Skills:         领域知识系统 (写作/研究/内容)               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,8 +89,10 @@
 | **TipTap 3.x** | 官方 Markdown 扩展，AI Toolkit 支持，ProseMirror 稳定性 |
 | **FastAPI** | 异步原生，自动 OpenAPI 文档，类型提示，比 Flask 更现代 |
 | **LangGraph 1.0** | 生产级 Agent 编排，持久化执行，人机协作支持 |
-| **Claude API** | 最强的写作能力，200K 上下文，原生工具调用，流式思考 |
-| **Chroma** | 轻量级向量数据库，本地运行，无需服务器 |
+| **Claude API** | 最强的写作能力，200K 上下文，原生工具调用，Web Tools 支持 |
+| **pgvector** | PostgreSQL 原生向量扩展，统一数据库，支持精确查询 |
+| **OpenAI Embeddings** | text-embedding-3-small 高质量嵌入，1536 维向量 |
+| **Gemini API** | 高效的文档转换，支持 PDF/DOCX/PPTX 多格式 |
 | **Zustand** | 比 Redux 更简单，比 Context 更高效，完美适配 Next.js |
 | **Framer Motion** | 声明式动画 API，优秀的性能，React 生态最佳动画库 |
 | **ReactFlow** | 高性能节点图渲染，完美支持思维导图场景 |
@@ -135,16 +139,22 @@
 │  │         │                 │                 │                         │   │
 │  │  ┌──────▼───────┐  ┌──────▼───────┐  ┌──────▼───────┐                │   │
 │  │  │  Claude API  │  │  RAG Engine  │  │  File Tools  │                │   │
-│  │  │  (LLM)       │  │  (Chroma)    │  │  (Local FS)  │                │   │
+│  │  │  (LLM+Web)   │  │  (pgvector)  │  │  (Local FS)  │                │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘                │   │
+│  │                           │                                          │   │
+│  │         ┌─────────────────┼─────────────────┐                        │   │
+│  │  ┌──────▼───────┐  ┌──────▼───────┐  ┌──────▼───────┐               │   │
+│  │  │   Skills     │  │   Gemini     │  │  Web Tools   │               │   │
+│  │  │   System     │  │  Converter   │  │ (Search/Fetch)│               │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘               │   │
 │  └───────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                         Storage Layer                                  │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │  │
-│  │  │   SQLite     │  │   Chroma     │  │  Local FS    │                 │  │
-│  │  │  (Metadata)  │  │  (Vectors)   │  │  (Content)   │                 │  │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘                 │  │
+│  │  ┌──────────────────────────────────────┐  ┌──────────────┐           │  │
+│  │  │     PostgreSQL + pgvector            │  │  Local FS    │           │  │
+│  │  │  (Metadata + Vectors + Embeddings)   │  │  (Content)   │           │  │
+│  │  └──────────────────────────────────────┘  └──────────────┘           │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -476,9 +486,19 @@ server/
 ├── services/                     # 业务服务
 │   ├── __init__.py
 │   ├── llm_service.py            # LLM 调用服务
-│   ├── rag_service.py            # RAG 检索服务
+│   ├── rag_service.py            # pgvector RAG 检索服务
+│   ├── gemini_converter.py       # Gemini 文件转换服务
+│   ├── skills_service.py         # Skills 领域知识服务
 │   ├── file_service.py           # 文件管理服务
 │   └── version_service.py        # 版本控制服务
+│
+├── skills/                       # 领域知识目录
+│   ├── essay-writing/            # 论文写作
+│   │   ├── SKILL.md              # 技能定义
+│   │   ├── templates/            # 模板文件
+│   │   └── knowledge/            # 知识文件
+│   ├── research-analysis/        # 研究分析
+│   └── content-writing/          # 内容创作
 │
 ├── models/                       # 数据模型
 │   ├── __init__.py
@@ -488,7 +508,8 @@ server/
 │
 ├── db/                           # 数据库
 │   ├── __init__.py
-│   ├── database.py               # SQLite/PostgreSQL 连接
+│   ├── database.py               # PostgreSQL + pgvector 连接
+│   ├── init.sql                  # pgvector 初始化脚本
 │   └── migrations/               # 数据库迁移
 │
 ├── migrations/                   # 独立迁移脚本
@@ -1004,93 +1025,148 @@ class Message(Base):
     conversation = relationship("Conversation", back_populates="messages")
 ```
 
-### RAG 向量存储服务
+### RAG 向量存储服务 (pgvector)
 
 ```python
 # services/rag_service.py
-import chromadb
-from chromadb.config import Settings
+"""RAG Service using PostgreSQL pgvector for vector storage.
+
+This module provides vector search capabilities using pgvector extension:
+- Document chunks (for cross-file search)
+- Sentence-level chunks (for in-document search)
+- Knowledge base attachments (for conversation-scoped search)
+
+Requires: PostgreSQL with pgvector extension enabled
+"""
+
+import openai
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-import hashlib
+from abc import ABC, abstractmethod
+
+# Embedding dimension for text-embedding-3-small
+EMBEDDING_DIMENSION = 1536
+
+
+class ChunkingStrategy(ABC):
+    """Abstract base class for text chunking strategies."""
+
+    @abstractmethod
+    def chunk(self, text: str) -> list[str]:
+        pass
+
+
+class OverlapChunkingStrategy(ChunkingStrategy):
+    """Chunk text with overlapping windows."""
+
+    def __init__(self, chunk_size: int = 1000, overlap: int = 200):
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+
+    def chunk(self, text: str) -> list[str]:
+        if not text.strip():
+            return []
+
+        chunks = []
+        start = 0
+
+        while start < len(text):
+            end = start + self.chunk_size
+            chunk = text[start:end]
+
+            # Try to break at sentence boundary
+            if end < len(text):
+                for sep in ["\u3002", ".", "\n\n", "\n"]:
+                    last_sep = chunk.rfind(sep)
+                    if last_sep > self.chunk_size // 2:
+                        chunk = chunk[:last_sep + 1]
+                        end = start + last_sep + 1
+                        break
+
+            chunk = chunk.strip()
+            if chunk:
+                chunks.append(chunk)
+
+            start = end - self.overlap
+
+        return chunks
+
 
 class RAGService:
-    """基于 Chroma 的本地 RAG 服务"""
+    """基于 pgvector 的 RAG 服务"""
 
-    def __init__(self, persist_directory: str = "./data/chroma"):
-        self.client = chromadb.PersistentClient(
-            path=persist_directory,
-            settings=Settings(anonymized_telemetry=False)
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.openai_client = openai.AsyncOpenAI()
+        self.chunking_strategy = OverlapChunkingStrategy()
+
+    async def _get_embedding(self, text: str) -> list[float]:
+        """Get embedding from OpenAI text-embedding-3-small."""
+        response = await self.openai_client.embeddings.create(
+            model="text-embedding-3-small",
+            input=text
         )
-        self.collection = self.client.get_or_create_collection(
-            name="documents",
-            metadata={"hnsw:space": "cosine"}
-        )
+        return response.data[0].embedding
 
     async def index_file(self, file_id: str, content: str, metadata: dict = None):
-        """索引文件内容"""
+        """索引文件内容到 pgvector"""
+        chunks = self.chunking_strategy.chunk(content)
 
-        # 分块
-        chunks = self._chunk_text(content)
-
-        # 生成 ID
-        ids = [f"{file_id}_{i}" for i in range(len(chunks))]
-
-        # 添加到向量库
-        self.collection.upsert(
-            ids=ids,
-            documents=chunks,
-            metadatas=[{**(metadata or {}), "file_id": file_id, "chunk_index": i}
-                      for i in range(len(chunks))]
-        )
+        for i, chunk in enumerate(chunks):
+            embedding = await self._get_embedding(chunk)
+            await self.session.execute(
+                text("""
+                    INSERT INTO document_chunks (file_id, chunk_index, content, embedding, metadata)
+                    VALUES (:file_id, :chunk_index, :content, :embedding, :metadata)
+                    ON CONFLICT (file_id, chunk_index) DO UPDATE
+                    SET content = :content, embedding = :embedding
+                """),
+                {
+                    "file_id": file_id,
+                    "chunk_index": i,
+                    "content": chunk,
+                    "embedding": embedding,
+                    "metadata": metadata or {}
+                }
+            )
+        await self.session.commit()
 
     async def search(self, query: str, file_ids: List[str] = None, top_k: int = 5) -> List[dict]:
-        """语义搜索"""
+        """语义搜索 using pgvector cosine similarity"""
+        query_embedding = await self._get_embedding(query)
 
-        where_filter = None
-        if file_ids:
-            where_filter = {"file_id": {"$in": file_ids}}
+        sql = """
+            SELECT file_id, chunk_index, content, metadata,
+                   1 - (embedding <=> :embedding) as similarity
+            FROM document_chunks
+            WHERE (:file_ids IS NULL OR file_id = ANY(:file_ids))
+            ORDER BY embedding <=> :embedding
+            LIMIT :top_k
+        """
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=top_k,
-            where=where_filter
+        result = await self.session.execute(
+            text(sql),
+            {"embedding": query_embedding, "file_ids": file_ids, "top_k": top_k}
         )
 
         return [
             {
-                "id": results["ids"][0][i],
-                "content": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
-                "distance": results["distances"][0][i] if results.get("distances") else None
+                "file_id": row.file_id,
+                "content": row.content,
+                "metadata": row.metadata,
+                "similarity": row.similarity
             }
-            for i in range(len(results["ids"][0]))
+            for row in result.fetchall()
         ]
-
-    def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
-        """将文本分块"""
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = start + chunk_size
-            chunk = text[start:end]
-
-            # 尝试在句子边界切分
-            if end < len(text):
-                last_period = chunk.rfind('。')
-                last_newline = chunk.rfind('\n')
-                break_point = max(last_period, last_newline)
-                if break_point > chunk_size // 2:
-                    chunk = chunk[:break_point + 1]
-                    end = start + break_point + 1
-
-            chunks.append(chunk.strip())
-            start = end - overlap
-
-        return chunks
 
     async def delete_file(self, file_id: str):
         """删除文件的所有向量"""
-        self.collection.delete(where={"file_id": file_id})
+        await self.session.execute(
+            text("DELETE FROM document_chunks WHERE file_id = :file_id"),
+            {"file_id": file_id}
+        )
+        await self.session.commit()
 ```
 
 ---
@@ -1106,11 +1182,14 @@ class RAGService:
 | **AI 框架** | LangChain + LangGraph | LangGraph 1.0 (更专注) |
 | **编辑器** | TipTap 2.x | TipTap 3.x (官方 Markdown) |
 | **协作** | Y.js (复杂) | 无 (本地优先) |
-| **数据库** | SQLite + S3 | SQLite (本地) |
-| **向量库** | 无 | Chroma (本地 RAG) |
-| **认证** | Google OAuth + JWT | 无 (本地应用) |
+| **数据库** | SQLite + S3 | PostgreSQL + pgvector |
+| **向量库** | 无 | pgvector (统一存储) |
+| **嵌入模型** | 无 | OpenAI text-embedding-3-small |
+| **文件转换** | MarkItDown | Gemini API |
+| **认证** | Google OAuth + JWT | Google OAuth + JWT |
 | **Agent 模式** | 4种 (edit/analyze/csv/slides) | 2种 (edit/analyze) |
-| **工具数量** | 15+ MCP 工具 | 3-5 核心工具 |
+| **工具数量** | 15+ MCP 工具 | 核心工具 + Web Tools |
+| **Skills 系统** | 无 | 3个领域 (写作/研究/内容) |
 
 ### 代码量对比 (估算)
 
@@ -1161,7 +1240,11 @@ AI Writing Studio:
    - 代码执行功能
 
 🆕 技术亮点:
-   - 本地 RAG (Chroma) 语义搜索
+   - pgvector 向量搜索 (PostgreSQL 原生)
+   - OpenAI text-embedding-3-small 嵌入
+   - Gemini API 文件转换 (PDF/DOCX/PPTX)
+   - Skills 领域知识系统
+   - Web Tools (search/fetch)
    - GFM 表格支持 (turndown-plugin-gfm)
    - 跨块差异替换算法
    - ReactFlow 思维导图可视化
@@ -1197,9 +1280,10 @@ python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # 安装依赖
-pip install fastapi uvicorn[standard] sqlalchemy aiosqlite
+pip install fastapi uvicorn[standard] sqlalchemy asyncpg
 pip install langchain langchain-anthropic langgraph
-pip install chromadb
+pip install openai  # for embeddings
+pip install google-genai  # for file conversion
 
 # 启动服务器
 uvicorn main:app --reload --port 8000
@@ -1212,9 +1296,14 @@ uvicorn main:app --reload --port 8000
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # .env (后端)
+# API Keys (all required)
 ANTHROPIC_API_KEY=sk-ant-xxx
-DATABASE_URL=sqlite:///./data/app.db
-CHROMA_PERSIST_DIR=./data/chroma
+OPENAI_API_KEY=sk-xxx          # for embeddings
+GOOGLE_API_KEY=xxx             # for file conversion
+
+# Database (PostgreSQL + pgvector)
+DATABASE_URL=postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind
+PGVECTOR_ENABLED=true
 ```
 
 ---
@@ -1236,7 +1325,9 @@ CHROMA_PERSIST_DIR=./data/chroma
 - [Claude API 文档](https://platform.claude.com/docs/en/release-notes/overview)
 - [TipTap 编辑器](https://tiptap.dev/)
 - [Next.js 15 文档](https://nextjs.org/docs/app)
-- [Chroma 向量数据库](https://www.trychroma.com/)
+- [pgvector](https://github.com/pgvector/pgvector)
+- [OpenAI Embeddings](https://platform.openai.com/docs/guides/embeddings)
+- [Gemini API](https://ai.google.dev/)
 - [Framer Motion](https://www.framer.com/motion/)
 - [ReactFlow](https://reactflow.dev/)
 - [shadcn/ui](https://ui.shadcn.com/)

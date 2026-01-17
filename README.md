@@ -22,7 +22,9 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 - **Quick Edit** - Select text and instantly improve, translate, or simplify with spring animations
 - **Diff Review** - Review and accept/reject AI-suggested changes with cross-block replacement support
 - **Autocomplete** - GitHub Copilot-style AI text completion
-- **RAG Search** - Semantic search across your documents
+- **RAG Search** - Semantic search across your documents using pgvector
+- **Skills System** - Domain-specific knowledge for essay writing, research analysis, and content writing
+- **Web Tools** - AI can search the web and fetch pages for up-to-date information
 
 ### Knowledge Base
 
@@ -39,8 +41,9 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 
 ### File Import
 
-- **PDF Import** - Convert PDF documents to editable Markdown
+- **PDF Import** - Convert PDF documents to editable Markdown using Gemini API
 - **Word Import** - Import DOCX files with formatting preserved
+- **PowerPoint Import** - Import PPTX presentations as Markdown
 - **Markdown Import** - Direct import of .md files
 - **Auto Indexing** - Imported files are automatically indexed for RAG search
 
@@ -80,24 +83,25 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 
 - **FastAPI** - Modern Python web framework
 - **LangGraph** - Agent orchestration framework
-- **Claude API** - Anthropic's AI models (including Vision)
-- **ChromaDB** - Vector database for RAG
-- **MarkItDown** - PDF/DOCX to Markdown conversion
-- **PostgreSQL** - Production database (Docker)
-- **SQLite** - Local development database
+- **Claude API** - Anthropic's AI models (including Vision and Web Tools)
+- **PostgreSQL + pgvector** - Database with vector search extension
+- **OpenAI Embeddings** - text-embedding-3-small for vector search
+- **Gemini API** - PDF/DOCX/PPTX to Markdown conversion
 
 ## Quick Start
 
 ### Option 1: Docker (Recommended)
 
-The easiest way to run the full stack with PostgreSQL and ChromaDB.
+The easiest way to run the full stack with PostgreSQL and pgvector.
 
 ```bash
 # 1. Copy environment file
 cp .env.example .env
 
-# 2. Add your Anthropic API key to .env
-# ANTHROPIC_API_KEY=sk-ant-xxx
+# 2. Add your API keys to .env
+# ANTHROPIC_API_KEY=sk-ant-xxx  (required)
+# OPENAI_API_KEY=sk-xxx         (required for vector search)
+# GOOGLE_API_KEY=xxx            (required for file import)
 
 # 3. Start all services
 docker-compose up -d
@@ -105,13 +109,11 @@ docker-compose up -d
 # 4. Open the app
 # Frontend: http://localhost:3000
 # Backend API: http://localhost:8000
-# ChromaDB: http://localhost:8001
 ```
 
 **Docker Services:**
 
-- `postgres` - PostgreSQL 16 database
-- `chroma` - ChromaDB vector database
+- `postgres` - PostgreSQL 16 with pgvector extension
 - `backend` - FastAPI server
 - `frontend` - Next.js app
 
@@ -123,7 +125,10 @@ For development without Docker.
 
 - Node.js 20+
 - Python 3.12+
+- PostgreSQL 16+ with pgvector extension
 - Anthropic API Key
+- OpenAI API Key (for embeddings)
+- Google API Key (for file conversion)
 
 #### Installation
 
@@ -197,8 +202,14 @@ doxmind/
 │   │   └── import_file.py   # File import API
 │   ├── agents/              # LangGraph agents
 │   ├── services/            # Business logic
-│   │   └── rag_service.py   # Vector search service
-│   ├── db/                  # Database
+│   │   ├── rag_service.py   # pgvector search service
+│   │   ├── gemini_converter.py  # File to Markdown conversion
+│   │   └── skills_service.py    # Skills system
+│   ├── skills/              # Domain-specific skills
+│   │   ├── essay-writing/   # Essay writing templates & knowledge
+│   │   ├── research-analysis/   # Research methods & templates
+│   │   └── content-writing/ # Content creation resources
+│   ├── db/                  # Database (PostgreSQL + pgvector)
 │   ├── main.py              # FastAPI app
 │   └── config.py            # Configuration
 │
@@ -217,8 +228,10 @@ POSTGRES_USER=doxmind
 POSTGRES_PASSWORD=doxmind123
 POSTGRES_DB=doxmind
 
-# API Key
+# API Keys (all required)
 ANTHROPIC_API_KEY=sk-ant-xxx
+OPENAI_API_KEY=sk-xxx
+GOOGLE_API_KEY=xxx
 
 # Debug
 DEBUG=true
@@ -227,18 +240,16 @@ DEBUG=true
 ### Backend (server/.env)
 
 ```env
-# For PostgreSQL (Docker)
-DATABASE_URL=postgresql+asyncpg://doxmind:doxmind123@localhost:5432/doxmind
+# PostgreSQL with pgvector (Docker uses port 5433 externally)
+DATABASE_URL=postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind
 
-# For SQLite (Local)
-DATABASE_URL=sqlite+aiosqlite:///./data/app.db
+# Vector search
+PGVECTOR_ENABLED=true
 
-# Chroma (Docker)
-CHROMA_HOST=localhost
-CHROMA_PORT=8001
-
-# API Key
+# API Keys
 ANTHROPIC_API_KEY=sk-ant-xxx
+OPENAI_API_KEY=sk-xxx        # Required for embeddings
+GOOGLE_API_KEY=xxx           # Required for file conversion
 ```
 
 ## AI Features
@@ -285,12 +296,21 @@ Select text and choose from:
 
 Press Tab to accept AI suggestions as you type.
 
+### Skills System
+
+Domain-specific knowledge that enhances AI assistance:
+
+- **Essay Writing** - Academic phrases, citation styles, argumentative templates
+- **Research Analysis** - PRISMA guidelines, literature review templates, research methods
+- **Content Writing** - SEO writing, headline formulas, blog post templates
+
 ### File Import
 
-Import external documents directly into the editor:
+Import external documents directly into the editor using Gemini API:
 
 - **PDF** - Extract text and convert to Markdown
 - **DOCX** - Preserve formatting from Word documents
+- **PPTX** - Convert PowerPoint presentations
 - **Markdown** - Direct import of .md files
 - **Auto-Index** - Imported files are indexed for RAG search
 
@@ -443,7 +463,8 @@ Built with:
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [LangGraph](https://langchain-ai.github.io/langgraph/)
 - [Claude](https://anthropic.com/)
-- [PostgreSQL](https://www.postgresql.org/)
-- [ChromaDB](https://www.trychroma.com/)
+- [PostgreSQL](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector)
+- [OpenAI](https://openai.com/) (Embeddings)
+- [Gemini](https://ai.google.dev/) (File Conversion)
 - [Framer Motion](https://www.framer.com/motion/)
 - [ReactFlow](https://reactflow.dev/)
