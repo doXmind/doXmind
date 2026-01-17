@@ -1,18 +1,18 @@
 """File import API endpoint - converts PDF, DOCX, MD to Markdown."""
 
-import contextlib
 import logging
 import os
-import tempfile
 
 import markdown
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from markitdown import MarkItDown
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File as FileModel
 from db.database import get_db
+from services.auth_service import TokenData, optional_auth
+from services.gemini_converter import convert_file_to_markdown, is_gemini_configured
 from services.rag_service import RAGService
+from api.files import get_user_id_filter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,7 +38,8 @@ def markdown_to_html(md_content: str) -> str:
 @router.post("/")
 async def import_file(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: TokenData | None = Depends(optional_auth)
 ):
     """
     Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
@@ -47,6 +48,7 @@ async def import_file(
     - Max size: 10MB
     - Returns: Created file object
     """
+    user_id = get_user_id_filter(token)
     # Validate file extension
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:
@@ -71,8 +73,14 @@ async def import_file(
             # Already markdown, just decode
             md_content = content.decode('utf-8')
         else:
-            # Use MarkItDown for PDF and DOCX
-            md_content = await convert_with_markitdown(content, file.filename, ext)
+            # Check if Gemini is configured
+            if not is_gemini_configured():
+                raise HTTPException(
+                    status_code=500,
+                    detail="File conversion requires GEMINI_API_KEY to be configured"
+                )
+            # Use Gemini API for PDF and DOCX conversion
+            md_content = await convert_file_to_markdown(content, file.filename, ext)
     except Exception as e:
         logger.error(f"Conversion failed: {e}")
         raise HTTPException(
@@ -89,7 +97,7 @@ async def import_file(
 
     # Create new file in database
     try:
-        new_file = FileModel(name=new_name, content=html_content)
+        new_file = FileModel(name=new_name, content=html_content, user_id=user_id)
         db.add(new_file)
         await db.commit()
         await db.refresh(new_file)
@@ -100,12 +108,12 @@ async def import_file(
             await rag.index_file(
                 file_id=new_file.id,
                 content=html_content,
-                metadata={"name": new_name}
+                metadata={"name": new_name, "user_id": user_id}
             )
             await rag.index_file_sentences(
                 file_id=new_file.id,
                 content=html_content,
-                metadata={"name": new_name}
+                metadata={"name": new_name, "user_id": user_id}
             )
         except Exception as e:
             logger.warning(f"Failed to index imported file: {e}")
@@ -120,20 +128,3 @@ async def import_file(
     except Exception as e:
         logger.error(f"Failed to create file: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-async def convert_with_markitdown(content: bytes, filename: str, ext: str) -> str:
-    """Convert file content to markdown using MarkItDown."""
-    # MarkItDown requires a file path, so we need to use a temp file
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        md = MarkItDown()
-        result = md.convert(tmp_path)
-        return result.text_content
-    finally:
-        # Clean up temp file
-        with contextlib.suppress(Exception):
-            os.unlink(tmp_path)

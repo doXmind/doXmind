@@ -11,7 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, get_db
+from services.auth_service import TokenData, optional_auth
 from services.export_service import export_service
+from api.files import get_user_id_filter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,7 +25,8 @@ ExportFormat = Literal["markdown", "pdf", "docx"]
 async def export_file(
     file_id: str,
     format: ExportFormat,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: TokenData | None = Depends(optional_auth)
 ):
     """Export a file in the specified format.
 
@@ -31,12 +34,18 @@ async def export_file(
         file_id: The ID of the file to export
         format: The export format (markdown, pdf, or docx)
         db: Database session
+        token: Optional auth token for user isolation
 
     Returns:
         StreamingResponse with the exported file
     """
-    # Get the file from database
-    result = await db.execute(select(File).where(File.id == file_id))
+    user_id = get_user_id_filter(token)
+
+    # Get the file from database (with user isolation)
+    query = select(File).where(File.id == file_id)
+    if user_id:
+        query = query.where(File.user_id == user_id)
+    result = await db.execute(query)
     file = result.scalar_one_or_none()
 
     if not file:
