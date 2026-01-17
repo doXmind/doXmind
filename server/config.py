@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # =========================================================================
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    google_api_key: str = ""  # For Gemini file conversion (PDF, DOCX, PPTX to markdown)
 
     # =========================================================================
     # Security / JWT
@@ -97,6 +98,14 @@ class Settings(BaseSettings):
     # =========================================================================
     default_model: str = "claude-haiku-4-5-20251001"
     fast_model: str = "claude-3-5-haiku-20241022"
+
+    # =========================================================================
+    # Web Tools Settings (Anthropic server-side tools)
+    # =========================================================================
+    web_search_enabled: bool = False  # Default off, user can enable
+    web_search_max_uses: int = 5  # Max searches per request
+    # Web fetch is always enabled (free, only costs tokens)
+    web_fetch_max_uses: int = 10  # Max fetches per request
 
     # =========================================================================
     # Limits - Centralized configuration values

@@ -7,9 +7,11 @@ pydantic-settings==2.7.0
 
 # AI / LLM
 anthropic==0.40.0
+google-genai>=1.0.0
+openai>=1.0.0
 
 # Vector Database
-chromadb==0.5.23
+chromadb>=1.0.0
 
 # Database
 sqlalchemy==2.0.36
@@ -41,8 +43,7 @@ fpdf2==2.8.5
 python-docx==1.1.2
 beautifulsoup4==4.12.3
 
-# Import (file conversion)
-markitdown[pdf,docx]
+# Import (file conversion uses Gemini API)
 
 # Testing
 pytest==8.3.4

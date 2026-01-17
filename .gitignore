@@ -5,6 +5,7 @@ node_modules/
 
 # Testing
 coverage/
+.coverage
 
 # Next.js
 .next/
@@ -65,3 +66,4 @@ html/
 
 # Claude Code settings
 .claude/
+CLAUDE.md .worktrees

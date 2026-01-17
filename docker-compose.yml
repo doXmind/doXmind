@@ -23,11 +23,11 @@ services:
 
   # ChromaDB Vector Database
   chroma:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:1.0.0
     container_name: doxmind-chroma
     restart: unless-stopped
     volumes:
-      - chroma_data:/chroma/chroma
+      - chroma_data:/data
     ports:
       - "8001:8000"
     environment:
@@ -68,7 +68,9 @@ services:
     depends_on:
       - backend
     environment:
+      - BACKEND_URL=http://backend:8000
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_SKIP_AUTH=true
     ports:
       - "3000:3000"
     volumes:

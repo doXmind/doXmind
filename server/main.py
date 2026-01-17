@@ -21,6 +21,7 @@ from api import (
     import_file,
     knowledge_base,
     review,
+    skills,
     versions,
 )
 from config import ensure_directories, get_settings
@@ -88,6 +89,7 @@ Most endpoints require authentication via JWT Bearer token or API Key.
         {"name": "files", "description": "File management (CRUD operations)"},
         {"name": "versions", "description": "Document version control"},
         {"name": "knowledge_base", "description": "Knowledge base and RAG search"},
+        {"name": "skills", "description": "Writing skills and templates"},
         {"name": "export", "description": "Document export (PDF, DOCX, MD)"},
         {"name": "import", "description": "Document import"},
         {"name": "autocomplete", "description": "AI autocomplete suggestions"},
@@ -208,6 +210,7 @@ app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
+app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 
 
 # ============================================================================
