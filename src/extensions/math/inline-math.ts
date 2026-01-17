@@ -4,10 +4,11 @@
  * Supports inline math expressions using $...$ syntax
  */
 
-import { Node, mergeAttributes, InputRule } from "@tiptap/core";
+import { Node, mergeAttributes, InputRule, PasteRule } from "@tiptap/core";
 import type { NodeType } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { MathNodeView } from "@/components/editor/math/math-node-view";
+import { createMathMigrationPlugin } from "./math-migration-plugin";
 
 export interface InlineMathOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -40,6 +41,24 @@ const inlineMathInputRule = (type: NodeType) => {
       const end = range.to;
 
       tr.replaceWith(start, end, type.create({ latex }));
+    },
+  });
+};
+
+/**
+ * Paste rule to convert $...$ to inline math when pasting
+ * Matches single $ delimiters but not $$
+ */
+const inlineMathPasteRule = (type: NodeType) => {
+  return new PasteRule({
+    // Match $...$ but not $$...$$ (negative lookahead/lookbehind)
+    find: /(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g,
+    handler: ({ state, range, match }) => {
+      const latex = match[1];
+      if (!latex?.trim()) return null;
+
+      const { tr } = state;
+      tr.replaceWith(range.from, range.to, type.create({ latex: latex.trim() }));
     },
   });
 };
@@ -111,6 +130,16 @@ export const InlineMath = Node.create<InlineMathOptions>({
 
   addInputRules() {
     return [inlineMathInputRule(this.type)];
+  },
+
+  addPasteRules() {
+    return [inlineMathPasteRule(this.type)];
+  },
+
+  addProseMirrorPlugins() {
+    // Add migration plugin to convert existing $ delimiters in loaded content
+    // Only add from this extension to avoid duplicates
+    return [createMathMigrationPlugin()];
   },
 
   addKeyboardShortcuts() {

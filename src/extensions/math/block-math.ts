@@ -4,10 +4,9 @@
  * Supports block-level math expressions using $$...$$ syntax
  */
 
-import { Node, mergeAttributes } from "@tiptap/core";
+import { Node, mergeAttributes, InputRule, PasteRule } from "@tiptap/core";
 import type { NodeType } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-import { InputRule } from "@tiptap/core";
 import { MathNodeView } from "@/components/editor/math/math-node-view";
 
 export interface BlockMathOptions {
@@ -28,10 +27,11 @@ declare module "@tiptap/core" {
 /**
  * Input rule to convert $$...$$ to block math
  * Triggers when user types $$ followed by content and closing $$
+ * Note: Removed ^ anchor to allow block math mid-paragraph
  */
 const blockMathInputRule = (type: NodeType) => {
   return new InputRule({
-    find: /^\$\$([^$]*)\$\$$/,
+    find: /\$\$([^$]*)\$\$$/,
     handler: ({ state, range, match }) => {
       const latex = match[1] || "";
       const { tr } = state;
@@ -39,6 +39,22 @@ const blockMathInputRule = (type: NodeType) => {
       const end = range.to;
 
       tr.replaceWith(start, end, type.create({ latex }));
+    },
+  });
+};
+
+/**
+ * Paste rule to convert $$...$$ to block math when pasting
+ * Matches block math including multiline content
+ */
+const blockMathPasteRule = (type: NodeType) => {
+  return new PasteRule({
+    find: /\$\$([\s\S]*?)\$\$/g,
+    handler: ({ state, range, match }) => {
+      const latex = match[1] || "";
+      const { tr } = state;
+
+      tr.replaceWith(range.from, range.to, type.create({ latex: latex.trim() }));
     },
   });
 };
@@ -124,6 +140,10 @@ export const BlockMath = Node.create<BlockMathOptions>({
 
   addInputRules() {
     return [blockMathInputRule(this.type), startBlockMathInputRule(this.type)];
+  },
+
+  addPasteRules() {
+    return [blockMathPasteRule(this.type)];
   },
 
   addKeyboardShortcuts() {
