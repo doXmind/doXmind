@@ -337,7 +337,8 @@ class TestSearchFilesEndpoint:
             mock_rag.search.assert_called_once_with(
                 query="test query",
                 file_ids=["file-1", "file-2"],
-                top_k=3
+                top_k=3,
+                user_id=None
             )
 
     async def test_search_files_error(self, client: AsyncClient):

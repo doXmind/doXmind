@@ -8,6 +8,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { ChatPanel } from "@/components/ai/chat-panel";
+import { useChat } from "@/hooks/use-chat";
 import { Z_INDEX, MOBILE_V2, MOBILE_SPRINGS, AI_PANEL_STATES } from "@/lib/constants";
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
@@ -59,7 +60,8 @@ function QuickActionButton({
 export function AIPanel() {
   const { aiPanelState, setAIPanelState, closeAIPanel, pendingSelectionForAI, clearPendingSelectionForAI } = useLayoutStore();
   const { currentFileId } = useFileStore();
-  const { conversations, clearConversation, sendMessage } = useChatStore();
+  const { conversations, clearConversation } = useChatStore();
+  const { sendMessage } = useChat();
   const conversationKey = currentFileId || "global";
   const conversation = conversations[conversationKey];
 
@@ -122,10 +124,10 @@ export function AIPanel() {
     if (prompt) {
       // Expand to chat mode and send message
       setAIPanelState(AI_PANEL_STATES.CHAT);
-      sendMessage(conversationKey, prompt);
+      sendMessage(prompt, currentFileId ? [currentFileId] : [], null);
       clearPendingSelectionForAI();
     }
-  }, [pendingSelectionForAI, conversationKey, setAIPanelState, sendMessage, clearPendingSelectionForAI]);
+  }, [pendingSelectionForAI, currentFileId, setAIPanelState, sendMessage, clearPendingSelectionForAI]);
 
   const hasSelection = Boolean(pendingSelectionForAI && pendingSelectionForAI.trim());
 

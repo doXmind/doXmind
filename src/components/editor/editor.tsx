@@ -248,11 +248,9 @@ export function Editor({ file: initialFile }: EditorProps) {
               editor?.chain().focus().setImage({ src: url, alt }).run();
             });
           }}
-          onSearchClick={toggleSearchBar}
           onReviewClick={handleReviewClick}
           isReviewLoading={isReviewLoading}
           isReviewActive={isReviewActive}
-          isSearchActive={isSearchBarOpen}
         />
       )}
 
