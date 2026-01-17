@@ -35,13 +35,15 @@ export function MathEditorPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  // Focus input on mount
+  // Focus input on mount (desktop only to avoid mobile keyboard popup)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }, 50);
-    return () => clearTimeout(timer);
+    if (typeof window !== "undefined" && window.innerWidth >= 768) {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   // Live preview
@@ -155,7 +157,7 @@ export function MathEditorPanel({
             onKeyDown={handleKeyDownInternal}
             placeholder={displayMode ? "e.g., \\frac{1}{2} + \\sum_{i=1}^{n} x_i" : "e.g., x^2 + y^2"}
             className={cn(
-              "w-full font-mono text-sm resize-none",
+              "w-full font-mono text-base md:text-sm resize-none",
               "bg-background border border-input rounded-md px-3 py-2",
               "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
               "placeholder:text-muted-foreground",

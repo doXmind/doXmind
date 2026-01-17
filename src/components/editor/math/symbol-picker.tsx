@@ -22,9 +22,11 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Focus search on mount
+  // Focus search on mount (desktop only to avoid mobile keyboard popup)
   useEffect(() => {
-    searchInputRef.current?.focus();
+    if (typeof window !== "undefined" && window.innerWidth >= 768) {
+      searchInputRef.current?.focus();
+    }
   }, []);
 
   // Close on outside click
@@ -116,7 +118,7 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={cn(
-              "w-full pl-9 pr-3 py-1.5 text-sm",
+              "w-full pl-9 pr-3 py-1.5 text-base md:text-sm",
               "bg-background border border-input rounded-md",
               "focus:outline-none focus:ring-2 focus:ring-ring",
               "placeholder:text-muted-foreground"

@@ -64,7 +64,7 @@ function ToolbarDivider() {
 }
 
 export function FloatingToolbar({ editor, onLinkClick, onMoreClick }: FloatingToolbarProps) {
-  const { isFloatingToolbarVisible, setFloatingToolbarVisible, setBlockSelectorOpen, openAIPanel } =
+  const { isFloatingToolbarVisible, setFloatingToolbarVisible, setBlockSelectorOpen, openAIPanelWithSelection } =
     useLayoutStore();
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -153,8 +153,19 @@ export function FloatingToolbar({ editor, onLinkClick, onMoreClick }: FloatingTo
 
   const handleAI = useCallback(() => {
     haptics.medium();
-    openAIPanel();
-  }, [openAIPanel]);
+    // Get selected text and pass to AI panel
+    const { selection } = editor?.state || {};
+    if (selection && editor) {
+      const { from, to } = selection;
+      const selectedText = editor.state.doc.textBetween(from, to, " ");
+      if (selectedText.trim()) {
+        openAIPanelWithSelection(selectedText);
+        return;
+      }
+    }
+    // Fallback: open panel without selection
+    openAIPanelWithSelection("");
+  }, [editor, openAIPanelWithSelection]);
 
   if (!editor) return null;
 

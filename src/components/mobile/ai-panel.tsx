@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { X, ChevronDown, ChevronUp, Sparkles, Trash2, Send } from "lucide-react";
+import { X, ChevronDown, ChevronUp, Sparkles, Trash2, Wand2, Scissors, Maximize2, Check, Languages } from "lucide-react";
 import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -12,12 +12,15 @@ import { Z_INDEX, MOBILE_V2, MOBILE_SPRINGS, AI_PANEL_STATES } from "@/lib/const
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 
+// Height for peek mode with selection (needs more space for quick actions)
+const PEEK_HEIGHT_WITH_SELECTION = 180;
+
 // Get height for each state
-const getStateHeight = (state: string): number => {
+const getStateHeight = (state: string, hasSelection: boolean = false): number => {
   if (typeof window === "undefined") return 100;
   switch (state) {
     case AI_PANEL_STATES.PEEK:
-      return MOBILE_V2.AI_PEEK_HEIGHT;
+      return hasSelection ? PEEK_HEIGHT_WITH_SELECTION : MOBILE_V2.AI_PEEK_HEIGHT;
     case AI_PANEL_STATES.CHAT:
       return window.innerHeight * MOBILE_V2.AI_CHAT_RATIO;
     case AI_PANEL_STATES.FULL:
@@ -27,10 +30,36 @@ const getStateHeight = (state: string): number => {
   }
 };
 
+// Quick action button for selection mode
+function QuickActionButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 px-3 py-2 rounded-full",
+        "bg-accent/80 text-accent-foreground text-sm font-medium",
+        "active:scale-95 transition-transform"
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
 export function AIPanel() {
-  const { aiPanelState, setAIPanelState, closeAIPanel } = useLayoutStore();
+  const { aiPanelState, setAIPanelState, closeAIPanel, pendingSelectionForAI, clearPendingSelectionForAI } = useLayoutStore();
   const { currentFileId } = useFileStore();
-  const { conversations, clearConversation } = useChatStore();
+  const { conversations, clearConversation, sendMessage } = useChatStore();
   const conversationKey = currentFileId || "global";
   const conversation = conversations[conversationKey];
 
@@ -38,13 +67,13 @@ export function AIPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [currentHeight, setCurrentHeight] = useState<number>(MOBILE_V2.AI_PEEK_HEIGHT);
 
-  // Update height when state changes
+  // Update height when state or selection changes
   useEffect(() => {
     if (aiPanelState !== AI_PANEL_STATES.CLOSED) {
-      const height = getStateHeight(aiPanelState);
+      const height = getStateHeight(aiPanelState, Boolean(pendingSelectionForAI && pendingSelectionForAI.trim()));
       setCurrentHeight(height);
     }
-  }, [aiPanelState]);
+  }, [aiPanelState, pendingSelectionForAI]);
 
   const handleClose = useCallback(() => {
     haptics.light();
@@ -75,6 +104,30 @@ export function AIPanel() {
       setAIPanelState(AI_PANEL_STATES.PEEK);
     }
   }, [aiPanelState, setAIPanelState]);
+
+  // Handle quick AI actions on selected text
+  const handleQuickAction = useCallback((action: string) => {
+    if (!pendingSelectionForAI) return;
+
+    haptics.medium();
+    const prompts: Record<string, string> = {
+      improve: `Please improve the following text, making it clearer and more professional:\n\n"${pendingSelectionForAI}"`,
+      shorten: `Please shorten the following text while keeping the main points:\n\n"${pendingSelectionForAI}"`,
+      expand: `Please expand on the following text with more details:\n\n"${pendingSelectionForAI}"`,
+      fix: `Please fix any grammar, spelling, or punctuation errors in the following text:\n\n"${pendingSelectionForAI}"`,
+      translate: `Please translate the following text to English (or Chinese if it's already in English):\n\n"${pendingSelectionForAI}"`,
+    };
+
+    const prompt = prompts[action];
+    if (prompt) {
+      // Expand to chat mode and send message
+      setAIPanelState(AI_PANEL_STATES.CHAT);
+      sendMessage(conversationKey, prompt);
+      clearPendingSelectionForAI();
+    }
+  }, [pendingSelectionForAI, conversationKey, setAIPanelState, sendMessage, clearPendingSelectionForAI]);
+
+  const hasSelection = Boolean(pendingSelectionForAI && pendingSelectionForAI.trim());
 
   const handleDragEnd = useCallback(
     (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -184,31 +237,91 @@ export function AIPanel() {
             </div>
 
             {isPeekMode ? (
-              /* Peek Mode - Compact Input */
-              <div className="flex-1 flex items-center px-4 pb-2 gap-3">
-                <div className="flex items-center gap-2 text-primary flex-shrink-0">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                {/* Tappable area that expands the panel - no auto focus */}
-                <button
-                  type="button"
-                  onClick={handleExpand}
-                  className={cn(
-                    "flex-1 bg-accent/50 rounded-full px-4 py-2.5 text-left",
-                    "text-base text-muted-foreground",
-                    "active:bg-accent/70 transition-colors"
-                  )}
-                >
-                  Ask AI anything...
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleExpand}
-                  className="h-10 w-10 rounded-full flex-shrink-0"
-                >
-                  <ChevronUp className="h-5 w-5" />
-                </Button>
+              /* Peek Mode - Compact Input or Selection Quick Actions */
+              <div className="flex-1 flex flex-col px-4 pb-2 gap-2">
+                {hasSelection ? (
+                  /* Selection Mode - Show selected text preview and quick actions */
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-primary flex-shrink-0" />
+                      <div className="flex-1 text-sm text-muted-foreground truncate">
+                        &quot;{pendingSelectionForAI?.slice(0, 50)}{pendingSelectionForAI && pendingSelectionForAI.length > 50 ? "..." : ""}&quot;
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleExpand}
+                        className="h-8 w-8 rounded-full flex-shrink-0"
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar pb-1">
+                      <QuickActionButton
+                        icon={<Wand2 className="h-4 w-4" />}
+                        label="Improve"
+                        onClick={() => handleQuickAction("improve")}
+                      />
+                      <QuickActionButton
+                        icon={<Scissors className="h-4 w-4" />}
+                        label="Shorten"
+                        onClick={() => handleQuickAction("shorten")}
+                      />
+                      <QuickActionButton
+                        icon={<Maximize2 className="h-4 w-4" />}
+                        label="Expand"
+                        onClick={() => handleQuickAction("expand")}
+                      />
+                      <QuickActionButton
+                        icon={<Check className="h-4 w-4" />}
+                        label="Fix"
+                        onClick={() => handleQuickAction("fix")}
+                      />
+                      <QuickActionButton
+                        icon={<Languages className="h-4 w-4" />}
+                        label="Translate"
+                        onClick={() => handleQuickAction("translate")}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleExpand}
+                      className={cn(
+                        "w-full bg-accent/50 rounded-full px-4 py-2 text-left",
+                        "text-sm text-muted-foreground",
+                        "active:bg-accent/70 transition-colors"
+                      )}
+                    >
+                      Ask something else...
+                    </button>
+                  </>
+                ) : (
+                  /* Normal Mode - Simple input */
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 text-primary flex-shrink-0">
+                      <Sparkles className="h-5 w-5" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleExpand}
+                      className={cn(
+                        "flex-1 bg-accent/50 rounded-full px-4 py-2.5 text-left",
+                        "text-base text-muted-foreground",
+                        "active:bg-accent/70 transition-colors"
+                      )}
+                    >
+                      Ask AI anything...
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleExpand}
+                      className="h-10 w-10 rounded-full flex-shrink-0"
+                    >
+                      <ChevronUp className="h-5 w-5" />
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               /* Chat/Full Mode - Full Interface */

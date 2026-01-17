@@ -9,6 +9,7 @@ import {
   Moon,
   Sun,
   Keyboard,
+  ListTree,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ export function Header() {
     toggleSidebar,
     toggleChat,
     setKeyboardShortcutsOpen,
+    setMobileOutlineOpen,
   } = useLayoutStore();
   const { currentFileId, files } = useFileStore();
   const { isDirty, isSaving } = useEditorStore();
@@ -94,8 +96,18 @@ export function Header() {
         )}
       </div>
 
-      {/* Mobile Header - Right Section (spacer for balance) */}
-      <div className="flex md:hidden items-center w-8" />
+      {/* Mobile Header - Right Section (Outline button) */}
+      <div className="flex md:hidden items-center">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setMobileOutlineOpen(true)}
+          aria-label="Document Outline"
+          className="h-9 w-9"
+        >
+          <ListTree className="h-5 w-5" />
+        </Button>
+      </div>
 
       {/* Desktop Header - Right Section */}
       <div className="hidden md:flex items-center gap-2">

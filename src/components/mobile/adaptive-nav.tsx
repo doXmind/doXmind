@@ -4,15 +4,9 @@ import { useCallback, useEffect } from "react";
 import {
   FolderOpen,
   Sparkles,
-  ListTree,
+  Search,
   Type,
-  Link as LinkIcon,
-  Image as ImageIcon,
   Check,
-  Wand2,
-  Scissors,
-  Maximize2,
-  MessageSquare,
   MoreHorizontal,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -113,9 +107,9 @@ function QuickActionButton({
   );
 }
 
-// Idle mode: Files, AI FAB, Outline
+// Idle mode: Files, AI FAB, Search
 function IdleNav() {
-  const { setMobileSidebarOpen, setMobileOutlineOpen, openAIPanel, isMobileSidebarOpen } =
+  const { setMobileSidebarOpen, setSearchBarOpen, openAIPanel, isMobileSidebarOpen, isSearchBarOpen } =
     useLayoutStore();
 
   return (
@@ -151,39 +145,29 @@ function IdleNav() {
         </motion.button>
       </div>
       <NavButton
-        icon={<ListTree className="h-5 w-5" />}
-        label="Outline"
-        onClick={() => setMobileOutlineOpen(true)}
+        icon={<Search className="h-5 w-5" />}
+        label="Search"
+        isActive={isSearchBarOpen}
+        onClick={() => setSearchBarOpen(true)}
       />
     </div>
   );
 }
 
-// Editing mode: Format, AI, Link, Image, Done
+// Editing mode: Simplified - Type + Done
 function EditingNav({ onDone }: { onDone: () => void }) {
-  const { setBlockSelectorOpen, openAIPanel } = useLayoutStore();
-
-  const handleLinkClick = useCallback(() => {
-    // TODO: Open link modal
-    haptics.light();
-  }, []);
-
-  const handleImageClick = useCallback(() => {
-    // TODO: Open image modal
-    haptics.light();
-  }, []);
+  const { setBlockSelectorOpen } = useLayoutStore();
 
   return (
-    <div className="flex items-center justify-between w-full px-2">
-      <div className="flex items-center gap-1">
-        <NavButton
-          icon={<Type className="h-5 w-5" />}
-          onClick={() => setBlockSelectorOpen(true)}
-        />
-        <NavButton icon={<Sparkles className="h-5 w-5" />} onClick={openAIPanel} />
-        <NavButton icon={<LinkIcon className="h-5 w-5" />} onClick={handleLinkClick} />
-        <NavButton icon={<ImageIcon className="h-5 w-5" />} onClick={handleImageClick} />
-      </div>
+    <div className="flex items-center justify-between w-full px-4">
+      <NavButton
+        icon={<Type className="h-5 w-5" />}
+        label="Type"
+        onClick={() => {
+          haptics.light();
+          setBlockSelectorOpen(true);
+        }}
+      />
       <button
         type="button"
         onClick={() => {
@@ -202,48 +186,41 @@ function EditingNav({ onDone }: { onDone: () => void }) {
   );
 }
 
-// Selection mode: AI quick actions
+// Selection mode: Copy + AI Assistant + More
 function SelectionNav() {
-  const { openAIPanel } = useLayoutStore();
+  const { openAIPanelWithSelection } = useLayoutStore();
   const { selection } = useEditorStore();
 
-  const handleQuickAction = useCallback((action: string) => {
-    haptics.medium();
-    // TODO: Implement quick AI actions
-    console.log("Quick action:", action, "on text:", selection?.text);
+  const handleCopy = useCallback(() => {
+    haptics.light();
+    if (selection?.text) {
+      navigator.clipboard.writeText(selection.text);
+    }
   }, [selection]);
 
+  const handleAI = useCallback(() => {
+    haptics.medium();
+    if (selection?.text) {
+      openAIPanelWithSelection(selection.text);
+    }
+  }, [selection, openAIPanelWithSelection]);
+
   return (
-    <div className="flex items-center gap-2 w-full px-3 overflow-x-auto hide-scrollbar">
-      <QuickActionButton
-        icon={<Wand2 className="h-4 w-4" />}
-        label="Improve"
-        onClick={() => handleQuickAction("improve")}
-      />
-      <QuickActionButton
-        icon={<Scissors className="h-4 w-4" />}
-        label="Shorten"
-        onClick={() => handleQuickAction("shorten")}
-      />
-      <QuickActionButton
-        icon={<Maximize2 className="h-4 w-4" />}
-        label="Expand"
-        onClick={() => handleQuickAction("expand")}
-      />
+    <div className="flex items-center gap-2 w-full px-4">
       <QuickActionButton
         icon={<Check className="h-4 w-4" />}
-        label="Fix"
-        onClick={() => handleQuickAction("fix")}
+        label="Copy"
+        onClick={handleCopy}
       />
-      <NavButton
-        icon={<MessageSquare className="h-5 w-5" />}
-        onClick={openAIPanel}
-        className="ml-auto flex-shrink-0"
+      <QuickActionButton
+        icon={<Sparkles className="h-4 w-4" />}
+        label="AI"
+        onClick={handleAI}
       />
       <NavButton
         icon={<MoreHorizontal className="h-5 w-5" />}
         onClick={() => haptics.light()}
-        className="flex-shrink-0"
+        className="ml-auto flex-shrink-0"
       />
     </div>
   );

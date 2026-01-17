@@ -20,6 +20,7 @@ interface LayoutState {
   aiPanelState: AIPanelState;
   isFloatingToolbarVisible: boolean;
   isBlockSelectorOpen: boolean;
+  pendingSelectionForAI: string | null; // Selected text to pass to AI panel
 
   // Keyboard shortcuts modal
   isKeyboardShortcutsOpen: boolean;
@@ -70,8 +71,10 @@ interface LayoutState {
   setFloatingToolbarVisible: (visible: boolean) => void;
   setBlockSelectorOpen: (open: boolean) => void;
   openAIPanel: () => void;
+  openAIPanelWithSelection: (text: string) => void;
   closeAIPanel: () => void;
   expandAIPanel: () => void;
+  clearPendingSelectionForAI: () => void;
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -94,6 +97,7 @@ export const useLayoutStore = create<LayoutState>()(
       aiPanelState: "closed" as AIPanelState,
       isFloatingToolbarVisible: false,
       isBlockSelectorOpen: false,
+      pendingSelectionForAI: null,
 
       // Keyboard shortcuts modal
       isKeyboardShortcutsOpen: false,
@@ -244,8 +248,20 @@ export const useLayoutStore = create<LayoutState>()(
         set({ aiPanelState: "peek" as AIPanelState, isMobileChatOpen: true });
       },
 
+      openAIPanelWithSelection: (text: string) => {
+        set({
+          aiPanelState: "peek" as AIPanelState,
+          isMobileChatOpen: true,
+          pendingSelectionForAI: text,
+        });
+      },
+
       closeAIPanel: () => {
-        set({ aiPanelState: "closed" as AIPanelState, isMobileChatOpen: false });
+        set({
+          aiPanelState: "closed" as AIPanelState,
+          isMobileChatOpen: false,
+          pendingSelectionForAI: null,
+        });
       },
 
       expandAIPanel: () => {
@@ -255,6 +271,10 @@ export const useLayoutStore = create<LayoutState>()(
           if (currentState === "chat") return { aiPanelState: "full" as AIPanelState };
           return state;
         });
+      },
+
+      clearPendingSelectionForAI: () => {
+        set({ pendingSelectionForAI: null });
       },
     }),
     {

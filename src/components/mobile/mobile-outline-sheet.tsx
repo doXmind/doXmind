@@ -6,6 +6,8 @@ import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { cn } from "@/lib/utils";
 import { Z_INDEX } from "@/lib/constants";
 import type { Heading } from "@/components/editor/mindlines/types";
@@ -39,21 +41,18 @@ function OutlineItem({ heading, isActive, onClick }: OutlineItemProps) {
 
 export function MobileOutlineSheet() {
   const { isMobileOutlineOpen, setMobileOutlineOpen } = useLayoutStore();
+  const { editor } = useEditorRefStore();
+  const { headings, activeId, navigateTo } = useHeadings(editor);
   const dragControls = useDragControls();
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Get headings from editor store (we'll need to expose this)
-  // For now, we'll create a simple placeholder that will be connected later
-  const headings: Heading[] = [];
-  const activeId: string | null = null;
 
   const handleClose = () => {
     setMobileOutlineOpen(false);
   };
 
-  const handleHeadingClick = (_heading: Heading) => {
+  const handleHeadingClick = (heading: Heading) => {
     // Navigate to heading and close sheet
-    // This will need to be connected to the editor's navigateTo function
+    navigateTo(heading);
     handleClose();
   };
 

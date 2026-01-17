@@ -87,7 +87,11 @@ export function WelcomeScreen() {
       onDrop={handleDrop}
     >
       <motion.div
-        className="max-w-md w-full text-center space-y-8"
+        className={cn(
+          "max-w-md w-full text-center space-y-8",
+          // Offset downward on mobile to visually center accounting for bottom navigation (64px nav + FAB)
+          "translate-y-16 md:translate-y-0"
+        )}
         variants={containerVariants}
         initial="hidden"
         animate="visible"

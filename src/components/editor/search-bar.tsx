@@ -290,7 +290,7 @@ export function SearchBar() {
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={isAIMode ? "AI semantic search..." : "Find in document..."}
               className={cn(
-                "flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground",
+                "flex-1 min-w-0 bg-transparent text-base md:text-sm focus:outline-none placeholder:text-muted-foreground",
                 isAIMode && "placeholder:text-purple-400"
               )}
               aria-label="Search text"
@@ -413,7 +413,7 @@ export function SearchBar() {
                     value={replaceTerm}
                     onChange={(e) => setReplaceTerm(e.target.value)}
                     placeholder="Replace with..."
-                    className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground"
+                    className="flex-1 min-w-0 bg-transparent text-base md:text-sm focus:outline-none placeholder:text-muted-foreground"
                     aria-label="Replace text"
                   />
                   <button

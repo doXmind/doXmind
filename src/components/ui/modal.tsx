@@ -42,14 +42,21 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
       previousActiveElement.current = document.activeElement as HTMLElement;
 
       // Focus the first focusable element in the modal after a short delay
+      // On mobile, focus the modal container instead to avoid keyboard popup
       requestAnimationFrame(() => {
         if (modalRef.current) {
-          const focusableElements = getFocusableElements(modalRef.current);
-          if (focusableElements.length > 0) {
-            focusableElements[0].focus();
-          } else {
-            // If no focusable elements, focus the modal itself
+          if (typeof window !== "undefined" && window.innerWidth < 768) {
+            // On mobile, focus the modal container to maintain accessibility
+            // without triggering keyboard popup
             modalRef.current.focus();
+          } else {
+            const focusableElements = getFocusableElements(modalRef.current);
+            if (focusableElements.length > 0) {
+              focusableElements[0].focus();
+            } else {
+              // If no focusable elements, focus the modal itself
+              modalRef.current.focus();
+            }
           }
         }
       });

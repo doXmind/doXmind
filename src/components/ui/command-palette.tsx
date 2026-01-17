@@ -436,7 +436,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Type a command or search..."
             className={cn(
-              "flex-1 bg-transparent text-sm",
+              "flex-1 bg-transparent text-base md:text-sm",
               "placeholder:text-muted-foreground",
               "focus:outline-none"
             )}

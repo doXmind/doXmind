@@ -250,8 +250,8 @@ export const MOBILE_V2 = {
 
   /** AI Panel - Peek mode height */
   AI_PEEK_HEIGHT: 100,
-  /** AI Panel - Chat mode height ratio */
-  AI_CHAT_RATIO: 0.55,
+  /** AI Panel - Chat mode height ratio (70vh for better usability) */
+  AI_CHAT_RATIO: 0.70,
   /** AI Panel - Full mode height ratio */
   AI_FULL_RATIO: 0.9,
 
