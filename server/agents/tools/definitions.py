@@ -177,27 +177,185 @@ Use this when you need to read through a document, or when search_knowledge_base
 
 
 # ============================================================================
+# Skill Tools Definition
+# ============================================================================
+
+SKILL_TOOLS = [
+    {
+        "name": "list_skills",
+        "description": """List all available writing skills with their templates and knowledge files.
+Use this to discover what specialized skills are available.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "read_skill_instructions",
+        "description": """Read the main instructions from a skill's SKILL.md file.
+Instructions contain domain expertise, workflow guidance, and best practices.
+
+IMPORTANT: Always read instructions FIRST before using templates or knowledge.
+
+Use this when:
+- Starting ANY task that matches a skill's domain
+- You need expert guidance on HOW to approach a writing task
+- You want to understand the recommended workflow
+
+Example: Before writing an essay, call read_skill_instructions("essay-writing") to get expert guidance on essay structure, style, and workflow.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "skill_name": {
+                    "type": "string",
+                    "description": "Name of the skill (e.g., 'essay-writing', 'research-analysis', 'content-writing')",
+                },
+            },
+            "required": ["skill_name"],
+        },
+    },
+    {
+        "name": "read_skill_template",
+        "description": """Read a template file from a skill.
+Templates provide document STRUCTURE - outlines, sections, and fill-in-the-blank frameworks.
+
+Use this when you need:
+- Document structure/outline (e.g., essay sections, report format)
+- A starting framework to fill in with content
+- Standard format for a specific document type
+
+Do NOT use for: citation formats, writing tips, or reference information (use read_skill_knowledge instead).
+
+Example: read_skill_template("essay-writing", "argumentative.md") returns the argumentative essay structure.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "skill_name": {
+                    "type": "string",
+                    "description": "Name of the skill (e.g., 'essay-writing', 'research-analysis')",
+                },
+                "template_name": {
+                    "type": "string",
+                    "description": "Name of the template file (e.g., 'argumentative.md', 'blog_post.md')",
+                },
+            },
+            "required": ["skill_name", "template_name"],
+        },
+    },
+    {
+        "name": "read_skill_knowledge",
+        "description": """Read a knowledge file from a skill.
+Knowledge files contain REFERENCE information - guidelines, rules, and best practices.
+
+Use this when you need:
+- Citation format rules (APA, MLA, Chicago, Harvard)
+- Academic phrases and transitions
+- Writing style guidelines and tips
+- Best practices for specific tasks (SEO, headlines, etc.)
+
+Do NOT use for: document structure or outlines (use read_skill_template instead).
+
+Example: read_skill_knowledge("essay-writing", "citation_apa.md") returns APA citation rules.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "skill_name": {
+                    "type": "string",
+                    "description": "Name of the skill (e.g., 'essay-writing', 'research-analysis')",
+                },
+                "knowledge_name": {
+                    "type": "string",
+                    "description": "Name of the knowledge file (e.g., 'citation_apa.md', 'academic_phrases.md')",
+                },
+            },
+            "required": ["skill_name", "knowledge_name"],
+        },
+    },
+]
+
+
+# ============================================================================
 # Tool Names for Quick Lookup
 # ============================================================================
 
 DOCUMENT_TOOL_NAMES = {tool["name"] for tool in DOCUMENT_TOOLS}
 KB_TOOL_NAMES = {tool["name"] for tool in KB_TOOLS}
+SKILL_TOOL_NAMES = {tool["name"] for tool in SKILL_TOOLS}
 READONLY_TOOL_NAMES = {tool["name"] for tool in READONLY_TOOLS}
 
 
-def get_tools_for_mode(mode: str, has_kb_attachments: bool = False) -> list[dict]:
-    """Get the appropriate tools based on mode and KB availability.
+def get_tools_for_mode(
+    mode: str,
+    has_kb_attachments: bool = False,
+    has_skills: bool = False,
+    web_search_enabled: bool = False,
+    web_search_max_uses: int = 5,
+    web_fetch_max_uses: int = 10,
+) -> list[dict]:
+    """Get the appropriate tools based on mode and feature flags.
 
     Args:
         mode: "edit" for full editing tools, "analyze" for read-only
         has_kb_attachments: Whether KB attachments exist for this conversation
+        has_skills: Whether skills are available
+        web_search_enabled: Whether web search tool is enabled
+        web_search_max_uses: Max number of web searches per request
+        web_fetch_max_uses: Max number of web fetches per request (always enabled)
 
     Returns:
         List of tool definitions for Claude API
     """
     base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
+    tools = list(base_tools)  # Make a copy
 
     if has_kb_attachments:
-        return base_tools + KB_TOOLS
+        tools = tools + KB_TOOLS
 
-    return base_tools
+    if has_skills:
+        tools = tools + SKILL_TOOLS
+
+    # Add web tools (Anthropic server-side tools)
+    # Web search is optional (costs $0.01 per search)
+    if web_search_enabled:
+        tools.append(get_web_search_tool(web_search_max_uses))
+    # Web fetch is always enabled (free, only costs tokens)
+    tools.append(get_web_fetch_tool(web_fetch_max_uses))
+
+    return tools
+
+
+# ============================================================================
+# Web Tools Definition (Anthropic server-side tools)
+# ============================================================================
+
+def get_web_search_tool(max_uses: int = 5) -> dict:
+    """Get web search tool definition for Anthropic API.
+
+    This is a server-side tool - Claude decides when to search,
+    and the API executes the search automatically.
+
+    Pricing: $10 per 1,000 searches + standard token costs.
+    """
+    return {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": max_uses
+    }
+
+
+def get_web_fetch_tool(max_uses: int = 10) -> dict:
+    """Get web fetch tool definition for Anthropic API.
+
+    This is a server-side tool - Claude decides when to fetch URLs,
+    and the API retrieves the content automatically.
+
+    Requires beta header: anthropic-beta: web-fetch-2025-09-10
+    No additional cost beyond standard token costs.
+    """
+    return {
+        "type": "web_fetch_20250910",
+        "name": "web_fetch",
+        "max_uses": max_uses,
+        "citations": {"enabled": True}
+    }

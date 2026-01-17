@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import get_settings
+from prompts.domains.review import REVIEW_SYSTEM_PROMPT, REVIEW_JSON_SCHEMA
 from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -26,62 +27,6 @@ class TextReviewRequest(BaseModel):
     content: str
     file_id: str
     language: str | None = "en"
-
-
-REVIEW_SYSTEM_PROMPT = """You are an expert writing assistant that analyzes text for improvements.
-Review the document and identify suggestions in these categories:
-
-1. CORRECTNESS (category: "correctness"): Grammar errors, spelling mistakes, punctuation issues
-2. CLARITY (category: "clarity"): Unclear sentences, wordiness, readability issues, passive voice
-3. TONE (category: "tone"): Formality mismatches, politeness issues, confidence problems
-4. ENGAGEMENT (category: "engagement"): Word variety, sentence variety, reader engagement, word choice
-
-For each issue found, you must provide:
-- category: One of "correctness", "clarity", "tone", or "engagement"
-- type: A brief snake_case identifier for the issue type (e.g., "spelling_error", "passive_voice", "wordy_phrase")
-- original_text: The EXACT text to highlight (copy it precisely as it appears)
-- replacement: The suggested replacement text
-- explanation: A brief, helpful explanation of why this change improves the writing
-- start_offset: The character position where original_text starts (0-indexed from document start)
-- end_offset: The character position where original_text ends
-
-CRITICAL RULES:
-1. The original_text MUST be an exact substring that exists in the document
-2. start_offset and end_offset MUST be accurate character positions
-3. Only suggest changes where you are confident the replacement is better
-4. Focus on meaningful improvements, not minor stylistic preferences
-5. Limit to the most important 10-15 suggestions maximum
-6. For each suggestion, verify the original_text exists at the specified offset"""
-
-
-REVIEW_JSON_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "suggestions": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "category": {
-                        "type": "string",
-                        "enum": ["correctness", "clarity", "tone", "engagement"]
-                    },
-                    "type": {"type": "string"},
-                    "original_text": {"type": "string"},
-                    "replacement": {"type": "string"},
-                    "explanation": {"type": "string"},
-                    "start_offset": {"type": "integer"},
-                    "end_offset": {"type": "integer"}
-                },
-                "required": ["category", "type", "original_text", "replacement", "explanation", "start_offset", "end_offset"],
-                "additionalProperties": False
-            }
-        },
-        "summary": {"type": "string"}
-    },
-    "required": ["suggestions", "summary"],
-    "additionalProperties": False
-}
 
 
 @router.post("")

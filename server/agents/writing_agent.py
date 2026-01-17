@@ -7,6 +7,7 @@ Supports:
 - Real-time text streaming (token by token)
 - Extended thinking (streaming thinking content)
 - Tool use with proper event handling
+- Skill tools for accessing templates and knowledge
 """
 
 import json
@@ -16,11 +17,17 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from agents.prompts import get_kb_context_prompt, get_writing_system_prompt
+from agents.prompts import (
+    get_kb_context_prompt,
+    get_skills_metadata_prompt,
+    get_writing_system_prompt,
+)
 from agents.tools.definitions import get_tools_for_mode
 from agents.tools.document_tools import execute_document_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
+from agents.tools.skill_tools import execute_skill_tool, is_skill_tool
 from config import get_settings
+from services.skills_service import get_skills_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +36,14 @@ class WritingAgent:
     """Writing agent using Claude API directly for real-time streaming."""
 
     # Maximum tool use iterations to prevent infinite loops
-    MAX_ITERATIONS = 10
+    MAX_ITERATIONS = 20
 
     def __init__(
         self,
         mode: str = "edit",
         enable_thinking: bool = False,
-        kb_attachments: list[dict[str, Any]] = None
+        kb_attachments: list[dict[str, Any]] = None,
+        web_search_enabled: bool = False,
     ):
         """Initialize the writing agent.
 
@@ -43,10 +51,15 @@ class WritingAgent:
             mode: "edit" for full editing tools, "analyze" for read-only
             enable_thinking: Enable extended thinking for complex reasoning
             kb_attachments: List of KB attachments for this conversation
+            web_search_enabled: Enable Anthropic web search tool
         """
         self.mode = mode
         self.enable_thinking = enable_thinking
         self.kb_attachments = kb_attachments or []
+        self.web_search_enabled = web_search_enabled
+
+        # Check if skills are available
+        self.has_skills = bool(get_skills_service().list_skills())
 
         settings = get_settings()
         api_key = settings.anthropic_api_key
@@ -56,9 +69,17 @@ class WritingAgent:
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = settings.default_model
         self.max_tokens = settings.max_output_tokens
+        self.settings = settings
 
-        # Get tools based on mode and KB availability
-        self.tools = get_tools_for_mode(mode, bool(self.kb_attachments))
+        # Get tools
+        self.tools = get_tools_for_mode(
+            mode,
+            bool(self.kb_attachments),
+            self.has_skills,
+            web_search_enabled,
+            settings.web_search_max_uses,
+            settings.web_fetch_max_uses,
+        )
 
     async def stream(
         self,
@@ -96,6 +117,11 @@ class WritingAgent:
         system_prompt = get_writing_system_prompt(mode=self.mode, files=files)
         if self.kb_attachments:
             system_prompt += get_kb_context_prompt(self.kb_attachments)
+
+        # Inject skills metadata if available (progressive disclosure pattern)
+        if self.has_skills:
+            skills_metadata = get_skills_service().list_skills()
+            system_prompt += get_skills_metadata_prompt(skills_metadata)
 
         # Build messages
         messages = self._build_messages(message, images, history)
@@ -206,21 +232,31 @@ class WritingAgent:
         while iteration < self.MAX_ITERATIONS:
             iteration += 1
 
-            # Make API call and stream response
-            full_response, tool_uses = await self._stream_response(
-                system_prompt, messages
-            )
+            # Stream response and yield events in real-time
+            full_response = {"role": "assistant", "content": []}
+            tool_uses = []
 
-            # Yield events from streaming
-            async for event in full_response["events"]:
-                yield event
+            async for event, response_update, tool_use in self._stream_response_realtime(
+                system_prompt, messages
+            ):
+                # Yield event immediately for real-time streaming
+                if event:
+                    yield event
+
+                # Collect response content
+                if response_update:
+                    full_response["content"].append(response_update)
+
+                # Collect tool uses
+                if tool_use:
+                    tool_uses.append(tool_use)
 
             # If no tool uses, we're done
             if not tool_uses:
                 break
 
             # Add assistant message to history
-            messages.append(full_response["message"])
+            messages.append(full_response)
 
             # Execute tools and collect results
             tool_results = []
@@ -236,12 +272,18 @@ class WritingAgent:
             # Add tool results to messages
             messages.append({"role": "user", "content": tool_results})
 
-    async def _stream_response(
+    async def _stream_response_realtime(
         self,
         system_prompt: str,
         messages: list[dict[str, Any]]
-    ) -> tuple:
-        """Stream a single API response and collect events."""
+    ) -> AsyncIterator[tuple[dict | None, dict | None, dict | None]]:
+        """Stream API response in real-time, yielding events immediately.
+
+        Yields tuples of (event, response_update, tool_use):
+        - event: Event to send to client (text, thinking, tool_start, etc.)
+        - response_update: Content block to add to full response
+        - tool_use: Tool use to execute (only for client-side tools)
+        """
         api_params = {
             "model": self.model,
             "max_tokens": self.max_tokens,
@@ -254,14 +296,17 @@ class WritingAgent:
         if self.enable_thinking and "claude-3" in self.model:
             api_params["thinking"] = {"type": "enabled", "budget_tokens": 8000}
 
-        events = []
-        full_response = {"role": "assistant", "content": []}
-        tool_uses = []
+        # Add beta headers for web tools
+        beta_headers = ["web-fetch-2025-09-10"]  # Web fetch is always enabled (free)
+        if self.web_search_enabled:
+            beta_headers.append("web-search-2025-03-05")  # Web search requires its own beta header
+        api_params["extra_headers"] = {"anthropic-beta": ",".join(beta_headers)}
 
         async with self.client.messages.stream(**api_params) as stream:
             current_text = ""
             current_thinking = ""
             current_tool_use = None
+            current_server_tool = None
             in_thinking_block = False
 
             async for event in stream:
@@ -272,7 +317,7 @@ class WritingAgent:
                     if block.type == "thinking":
                         in_thinking_block = True
                         current_thinking = ""
-                        events.append({"type": "thinking_start"})
+                        yield {"type": "thinking_start"}, None, None
 
                     elif block.type == "text":
                         current_text = ""
@@ -284,53 +329,103 @@ class WritingAgent:
                             "name": block.name,
                             "input": {}
                         }
-                        events.append({
+                        yield {
                             "type": "tool_start",
                             "tool": block.name,
                             "tool_id": block.id,
                             "input": {}
-                        })
+                        }, None, None
+
+                    # Handle server-side tools (web_search, web_fetch)
+                    elif block.type == "server_tool_use":
+                        current_server_tool = {
+                            "type": "server_tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": {}
+                        }
+                        yield {
+                            "type": "server_tool_start",
+                            "tool": block.name,
+                            "tool_id": block.id,
+                        }, None, None
+
+                    # Handle web search results
+                    elif block.type == "web_search_tool_result":
+                        results = []
+                        if hasattr(block, 'content') and block.content:
+                            for r in block.content:
+                                if hasattr(r, 'type') and r.type == "web_search_result":
+                                    results.append({
+                                        "url": getattr(r, 'url', ''),
+                                        "title": getattr(r, 'title', ''),
+                                    })
+                        yield {
+                            "type": "web_search_result",
+                            "tool_id": block.tool_use_id,
+                            "results": results
+                        }, {
+                            "type": "web_search_tool_result",
+                            "tool_use_id": block.tool_use_id,
+                            "content": block.content
+                        }, None
+
+                    # Handle web fetch results
+                    elif block.type == "web_fetch_tool_result":
+                        url = ""
+                        if hasattr(block, 'content') and hasattr(block.content, 'url'):
+                            url = block.content.url
+                        yield {
+                            "type": "web_fetch_result",
+                            "tool_id": block.tool_use_id,
+                            "url": url
+                        }, {
+                            "type": "web_fetch_tool_result",
+                            "tool_use_id": block.tool_use_id,
+                            "content": block.content
+                        }, None
 
                 # Handle content block delta
                 elif event.type == "content_block_delta":
                     delta = event.delta
 
                     if delta.type == "thinking_delta":
-                        events.append({"type": "thinking", "content": delta.thinking})
                         current_thinking += delta.thinking
+                        yield {"type": "thinking", "content": delta.thinking}, None, None
 
                     elif delta.type == "text_delta":
-                        events.append({"type": "text", "content": delta.text})
                         current_text += delta.text
+                        yield {"type": "text", "content": delta.text}, None, None
 
                     elif delta.type == "input_json_delta":
                         if current_tool_use:
                             if "partial_json" not in current_tool_use:
                                 current_tool_use["partial_json"] = ""
                             current_tool_use["partial_json"] += delta.partial_json
-                            events.append({
+                            yield {
                                 "type": "tool_input_delta",
                                 "tool": current_tool_use["name"],
                                 "delta": delta.partial_json
-                            })
+                            }, None, None
 
                 # Handle content block stop
                 elif event.type == "content_block_stop":
                     if in_thinking_block:
                         in_thinking_block = False
+                        response_update = None
                         if current_thinking:
-                            full_response["content"].append({
+                            response_update = {
                                 "type": "thinking",
                                 "thinking": current_thinking
-                            })
-                        events.append({"type": "thinking_end"})
+                            }
+                        yield {"type": "thinking_end"}, response_update, None
                         current_thinking = ""
 
                     elif current_text:
-                        full_response["content"].append({
+                        yield None, {
                             "type": "text",
                             "text": current_text
-                        })
+                        }, None
                         current_text = ""
 
                     elif current_tool_use:
@@ -344,16 +439,25 @@ class WritingAgent:
                                 current_tool_use["input"] = {}
                             del current_tool_use["partial_json"]
 
-                        full_response["content"].append(current_tool_use)
-                        tool_uses.append(current_tool_use)
+                        # Yield response update and tool_use for execution
+                        yield None, current_tool_use, current_tool_use
                         current_tool_use = None
 
-        # Create async generator from events list
-        async def event_generator():
-            for e in events:
-                yield e
+                    elif current_server_tool:
+                        # Server tool completed (web_search, web_fetch)
+                        # Parse accumulated JSON if any
+                        if "partial_json" in current_server_tool:
+                            try:
+                                current_server_tool["input"] = json.loads(
+                                    current_server_tool["partial_json"]
+                                )
+                            except json.JSONDecodeError:
+                                current_server_tool["input"] = {}
+                            del current_server_tool["partial_json"]
 
-        return {"message": full_response, "events": event_generator()}, tool_uses
+                        # Don't add to tool_uses - server tools are handled by API
+                        yield None, current_server_tool, None
+                        current_server_tool = None
 
     async def _execute_tool(
         self,
@@ -371,6 +475,8 @@ class WritingAgent:
         # Execute tool based on type
         if is_kb_tool(tool_name):
             result = await execute_kb_tool(tool_name, tool_input, kb_context)
+        elif is_skill_tool(tool_name):
+            result = await execute_skill_tool(tool_name, tool_input)
         else:
             result = execute_document_tool(tool_name, tool_input, files, current_file_id)
 
@@ -402,7 +508,7 @@ class WritingAgent:
                 "type": "tool_end",
                 "tool": tool_name,
                 "tool_id": tool_id,
-                "output": result_content[:500],
+                "output": result_content[:500] if isinstance(result_content, str) else str(result_content)[:500],
                 "success": True
             }
 
@@ -412,7 +518,7 @@ class WritingAgent:
             "result": {
                 "type": "tool_result",
                 "tool_use_id": tool_id,
-                "content": result_content
+                "content": result_content if isinstance(result_content, str) else str(result_content)
             }
         }
 

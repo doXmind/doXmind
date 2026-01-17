@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from config import get_settings
+from prompts.domains.autocomplete import build_autocomplete_prompt
 from services.autocomplete_cache import AutocompleteCache
 from services.llm_service import LLMService
 
@@ -46,20 +47,15 @@ def build_prompt(request: AutocompleteRequest) -> tuple[str, str]:
     Build optimized prompt for Markdown autocomplete.
 
     Returns:
-        Tuple of (user_prompt, system_prompt)
+        Tuple of (system_prompt, user_prompt) - using new prompts module
     """
-    text_before = request.text_before
-    # Use last 1500 chars for context
-    context = text_before[-1500:] if len(text_before) > 1500 else text_before
-
-    # Simple, direct prompt
-    user_prompt = f"""Continue this text naturally:
-
-{context}"""
-
-    # Concise system prompt - only complete current word or add 1 more word
-    system_prompt = """You are an autocomplete assistant. Complete the current word being typed OR output at most ONE additional word. Keep it very short (1-2 words max). Do not repeat existing text. Do not explain. Just output the completion."""
-
+    # Use the new structured prompt builder
+    system_prompt, user_prompt = build_autocomplete_prompt(
+        text_before=request.text_before,
+        text_after=request.text_after,
+        max_context=1500
+    )
+    # Return in expected order (user, system) to maintain compatibility
     return user_prompt, system_prompt
 
 

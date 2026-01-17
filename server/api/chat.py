@@ -69,6 +69,8 @@ class ChatRequest(BaseModel):
     mode: str = "edit"  # "edit" | "analyze"
     conversationId: str | None = None
     fileId: str | None = None  # For associating conversation with a file
+    # Web search toggle (web fetch is always enabled)
+    webSearchEnabled: bool = False
 
 
 class MessageCreate(BaseModel):
@@ -403,10 +405,12 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
         current_tool = None
 
         try:
-            # Create agent with KB attachments if available
+            # Create agent with KB attachments and web tools if available
+            # Skills are auto-detected by the agent based on context
             agent = WritingAgent(
                 mode=request.mode,
-                kb_attachments=kb_attachments if kb_attachments else None
+                kb_attachments=kb_attachments if kb_attachments else None,
+                web_search_enabled=request.webSearchEnabled,
             )
 
             # Prepare file context

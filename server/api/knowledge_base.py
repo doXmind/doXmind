@@ -1,12 +1,9 @@
 """Knowledge Base API - Conversation-level document attachments."""
 
-import contextlib
 import logging
 import os
-import tempfile
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from markitdown import MarkItDown
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +18,7 @@ from exceptions import (
     InternalError,
     UnsupportedFileTypeError,
 )
+from services.gemini_converter import convert_file_to_markdown, is_gemini_configured
 from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -71,18 +69,10 @@ def get_file_extension(filename: str) -> str:
 
 
 async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
-    """Extract text content from uploaded file."""
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        md = MarkItDown()
-        result = md.convert(tmp_path)
-        return result.text_content
-    finally:
-        with contextlib.suppress(Exception):
-            os.unlink(tmp_path)
+    """Extract text content from uploaded file using Gemini API."""
+    if not is_gemini_configured():
+        raise ValueError("File conversion requires GEMINI_API_KEY to be configured")
+    return await convert_file_to_markdown(content, filename, ext)
 
 
 @router.post("/{conversation_id}/attachments", response_model=AttachmentResponse)
