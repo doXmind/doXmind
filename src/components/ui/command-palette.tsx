@@ -14,11 +14,18 @@ import {
   ArrowRight,
   Contrast,
   HelpCircle,
+  Loader2,
+  AlertTriangle,
+  Quote,
+  RefreshCw,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useTheme } from "next-themes";
+import { api, SearchResultItem } from "@/lib/api";
+import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -30,12 +37,16 @@ interface CommandItem {
   label: string;
   icon: React.ReactNode;
   shortcut?: string[];
-  category: "file" | "navigation" | "view" | "action";
+  category: "file" | "navigation" | "view" | "action" | "searchFiles" | "searchDocument";
   action: () => void;
   keywords?: string[];
+  preview?: string;
+  score?: number;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
+  searchFiles: "Files",
+  searchDocument: "In Document",
   file: "Files",
   navigation: "Navigation",
   view: "View",
@@ -49,7 +60,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
 
-  const { files, createFile, setCurrentFile } = useFileStore();
+  // Search state
+  const [fileSearchResults, setFileSearchResults] = React.useState<SearchResultItem[]>([]);
+  const [docSearchResults, setDocSearchResults] = React.useState<SearchResultItem[]>([]);
+  const [isSearching, setIsSearching] = React.useState(false);
+  const [searchError, setSearchError] = React.useState<string | null>(null);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  const { files, createFile, setCurrentFile, currentFileId } = useFileStore();
   const {
     toggleSidebar,
     toggleChat,
@@ -60,6 +78,54 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     toggleHighContrast,
   } = useLayoutStore();
   const { theme, setTheme } = useTheme();
+
+  // Perform semantic search with debounce
+  const performSearch = useDebouncedCallback(async (searchQuery: string) => {
+    if (!searchQuery.trim()) {
+      setFileSearchResults([]);
+      setDocSearchResults([]);
+      setSearchError(null);
+      return;
+    }
+
+    // Cancel previous request
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setIsSearching(true);
+    setSearchError(null);
+
+    try {
+      // Semantic search in all files and current document
+      const [filesRes, docRes] = await Promise.all([
+        api.searchFiles(searchQuery, undefined, 10, controller.signal).catch(() => null),
+        currentFileId
+          ? api.searchInDocument(searchQuery, currentFileId, 10, 0.4, controller.signal).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      if (filesRes) setFileSearchResults(filesRes.results);
+      if (docRes) setDocSearchResults(docRes.results);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSearchError("Search failed. Click to retry.");
+    } finally {
+      setIsSearching(false);
+    }
+  }, 300);
+
+  // Trigger search when query changes
+  React.useEffect(() => {
+    performSearch(query);
+  }, [query, performSearch]);
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Build commands list
   const commands = React.useMemo<CommandItem[]>(() => {
@@ -192,17 +258,62 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     });
   }, [commands, query]);
 
+  // Convert search results to command items
+  const searchFileCommands = React.useMemo<CommandItem[]>(() => {
+    return fileSearchResults.map((result, index) => ({
+      id: `search-file-${index}`,
+      label: result.metadata?.name || "Unknown file",
+      icon: <FileText className="h-4 w-4" />,
+      category: "searchFiles" as const,
+      action: () => {
+        setCurrentFile(result.metadata.file_id);
+        onClose();
+      },
+      keywords: [],
+      preview: result.content.slice(0, 100),
+      score: result.distance !== undefined ? Math.round((1 - result.distance) * 100) : undefined,
+    }));
+  }, [fileSearchResults, setCurrentFile, onClose]);
+
+  const searchDocCommands = React.useMemo<CommandItem[]>(() => {
+    return docSearchResults.map((result, index) => ({
+      id: `search-doc-${index}`,
+      label: result.content.slice(0, 80) + (result.content.length > 80 ? "..." : ""),
+      icon: <Quote className="h-4 w-4" />,
+      category: "searchDocument" as const,
+      action: () => {
+        // TODO: Jump to position in document
+        onClose();
+      },
+      keywords: [],
+      score: result.distance !== undefined ? Math.round((1 - result.distance) * 100) : undefined,
+    }));
+  }, [docSearchResults, onClose]);
+
   // Group filtered commands by category
   const groupedCommands = React.useMemo(() => {
     const groups: Record<string, CommandItem[]> = {};
+
+    // Add search results first (only when query exists)
+    if (query.trim()) {
+      if (searchFileCommands.length > 0) {
+        groups["searchFiles"] = searchFileCommands;
+      }
+      if (searchDocCommands.length > 0) {
+        groups["searchDocument"] = searchDocCommands;
+      }
+    }
+
+    // Then add filtered commands
     for (const cmd of filteredCommands) {
       if (!groups[cmd.category]) {
         groups[cmd.category] = [];
       }
       groups[cmd.category].push(cmd);
     }
+
     return groups;
-  }, [filteredCommands]);
+  }, [filteredCommands, searchFileCommands, searchDocCommands, query]);
 
   // Flatten for keyboard navigation
   const flattenedCommands = React.useMemo(() => {
@@ -219,14 +330,20 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     setMounted(true);
   }, []);
 
-  // Focus input when opened
+  // Focus input when opened, clear search state
   React.useEffect(() => {
     if (open) {
       setQuery("");
       setSelectedIndex(0);
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
+      setFileSearchResults([]);
+      setDocSearchResults([]);
+      setSearchError(null);
+      // Only auto-focus on desktop to avoid keyboard popup on mobile
+      if (window.innerWidth >= 768) {
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
+      }
     }
   }, [open]);
 
@@ -303,7 +420,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           "relative z-50 w-full max-w-lg",
           "rounded-xl border border-border bg-popover shadow-2xl",
           "animate-in fade-in-0 zoom-in-95 slide-in-from-top-2",
-          "overflow-hidden"
+          "overflow-hidden",
+          // Mobile: add horizontal margin
+          "mx-4 md:mx-0"
         )}
         onKeyDown={handleKeyDown}
       >
@@ -323,10 +442,42 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             )}
             aria-label="Search commands"
           />
+          {/* ESC hint for desktop */}
           <kbd className="hidden h-5 items-center gap-1 rounded border border-border bg-muted px-1.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
             ESC
           </kbd>
+          {/* Close button for mobile */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="sm:hidden flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
+
+        {/* Search status */}
+        {isSearching && (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground border-b border-border">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Searching...
+          </div>
+        )}
+
+        {searchError && (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 border-b border-border">
+            <AlertTriangle className="h-3 w-3" />
+            <span className="flex-1">{searchError}</span>
+            <button
+              onClick={() => performSearch(query)}
+              className="flex items-center gap-1 hover:underline"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Command list */}
         <div
@@ -335,9 +486,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           role="listbox"
           aria-label="Commands"
         >
-          {flattenedCommands.length === 0 ? (
+          {flattenedCommands.length === 0 && !isSearching ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No commands found.
+              {query.trim() ? "No results found." : "Type to search files and commands..."}
             </div>
           ) : (
             Object.entries(groupedCommands).map(([category, items]) => (
@@ -365,7 +516,19 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       onMouseEnter={() => setSelectedIndex(currentIndex)}
                     >
                       <span className="flex-shrink-0 text-muted-foreground">{cmd.icon}</span>
-                      <span className="flex-1 truncate text-left">{cmd.label}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="truncate block text-left">{cmd.label}</span>
+                        {cmd.preview && (
+                          <span className="text-xs text-muted-foreground truncate block text-left">
+                            {cmd.preview}
+                          </span>
+                        )}
+                      </div>
+                      {cmd.score !== undefined && (
+                        <span className="text-xs text-muted-foreground flex-shrink-0">
+                          {cmd.score}%
+                        </span>
+                      )}
                       {cmd.shortcut && (
                         <span className="flex flex-shrink-0 items-center gap-1">
                           {cmd.shortcut.map((key, i) => (

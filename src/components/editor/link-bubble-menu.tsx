@@ -99,7 +99,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               onKeyDown={handleKeyDown}
               placeholder="Enter URL"
               className="h-7 w-64 text-sm"
-              autoFocus
+              autoFocus={typeof window !== "undefined" && window.innerWidth >= 768}
             />
             <Button
               variant="ghost"

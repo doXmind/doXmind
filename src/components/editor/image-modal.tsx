@@ -21,7 +21,10 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
     if (open) {
       setUrl("");
       setAlt("");
-      setTimeout(() => inputRef.current?.focus(), 0);
+      // Only auto-focus on desktop to avoid keyboard popup on mobile
+      if (window.innerWidth >= 768) {
+        setTimeout(() => inputRef.current?.focus(), 0);
+      }
     }
   }, [open]);
 

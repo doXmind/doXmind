@@ -25,8 +25,10 @@ export function LinkModal({
   React.useEffect(() => {
     if (open) {
       setUrl(initialUrl);
-      // Focus input after modal opens
-      setTimeout(() => inputRef.current?.focus(), 0);
+      // Focus input after modal opens (only on desktop to avoid keyboard popup on mobile)
+      if (window.innerWidth >= 768) {
+        setTimeout(() => inputRef.current?.focus(), 0);
+      }
     }
   }, [open, initialUrl]);
 

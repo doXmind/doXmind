@@ -133,7 +133,7 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
   return (
     <div
       ref={popupRef}
-      className="fixed z-50 bg-popover border border-border rounded-lg shadow-lg w-[340px] review-popup"
+      className="fixed z-50 bg-popover border border-border rounded-lg shadow-lg w-[calc(100vw-2rem)] max-w-[340px] review-popup"
       style={{ left: position.x, top: position.y }}
     >
       {/* Header */}

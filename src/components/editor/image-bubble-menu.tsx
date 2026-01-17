@@ -124,7 +124,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
               onKeyDown={handleKeyDown}
               placeholder={editMode === "url" ? "Image URL" : "Alt text"}
               className="h-7 w-64 text-sm"
-              autoFocus
+              autoFocus={typeof window !== "undefined" && window.innerWidth >= 768}
             />
             <Button
               variant="ghost"

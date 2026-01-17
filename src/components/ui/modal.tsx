@@ -130,6 +130,8 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
         className={cn(
           "relative z-50 w-full max-w-md rounded-lg border border-border bg-popover p-6 shadow-lg animate-in fade-in-0 zoom-in-95",
           "focus:outline-none",
+          // Mobile: add horizontal margin to prevent edge-to-edge
+          "mx-4 md:mx-0",
           className
         )}
       >

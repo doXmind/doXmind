@@ -1130,3 +1130,42 @@ html {
   color: hsl(var(--muted-foreground));
   font-style: italic;
 }
+
+/* ====================================
+   Mobile V2 Utility Styles
+   ==================================== */
+
+/* Hide scrollbar for horizontal scroll containers */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe area padding utilities */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Touch feedback for mobile buttons */
+.touch-feedback {
+  transition: transform 0.1s ease;
+}
+
+.touch-feedback:active {
+  transform: scale(0.97);
+}
+
+/* Backdrop blur fallback for older browsers */
+@supports not (backdrop-filter: blur(20px)) {
+  .backdrop-blur-xl {
+    background-color: hsl(var(--background) / 0.98);
+  }
+}
