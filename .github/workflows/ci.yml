@@ -136,11 +136,27 @@ jobs:
     defaults:
       run:
         working-directory: server
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: doxmind
+          POSTGRES_PASSWORD: doxmind123
+          POSTGRES_DB: doxmind_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DEBUG: "true"
-      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+      DATABASE_URL: "postgresql+asyncpg://doxmind:doxmind123@localhost:5432/doxmind_test"
+      PGVECTOR_ENABLED: "false"
       JWT_SECRET_KEY: "test-secret-key-for-ci"
       ANTHROPIC_API_KEY: "test-key"
+      OPENAI_API_KEY: "test-openai-key"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -2,7 +2,8 @@
 Pytest configuration and fixtures for the test suite.
 
 Uses PostgreSQL for testing to match production environment.
-Requires: docker-compose up postgres (doxmind-postgres on port 5433)
+- Local: docker-compose up postgres (port 5433)
+- CI: GitHub Actions PostgreSQL service (port 5432)
 """
 import asyncio
 import os
@@ -17,14 +18,20 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+# Get database URL from environment or use default for local development
+# Local Docker uses port 5433, CI uses port 5432
+TEST_DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
+)
+
 # Set test environment variables before importing app modules
 os.environ["DEBUG"] = "true"
-# Use the same PostgreSQL database but with a test schema or separate test database
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
-os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
-os.environ["ANTHROPIC_API_KEY"] = "test-api-key"
-os.environ["OPENAI_API_KEY"] = "test-openai-key"
-os.environ["PGVECTOR_ENABLED"] = "false"  # Disable vector operations in tests
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-api-key")
+os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+os.environ.setdefault("PGVECTOR_ENABLED", "false")  # Disable vector operations in tests
 
 from db.database import Base, get_db
 from dependencies import get_db as deps_get_db
@@ -33,7 +40,7 @@ from services.auth_service import create_access_token
 
 # Create test database engine with NullPool to avoid connection issues in tests
 test_engine = create_async_engine(
-    "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind",
+    TEST_DATABASE_URL,
     echo=False,
     poolclass=NullPool,  # Avoid pool issues in tests
 )
