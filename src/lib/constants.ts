@@ -220,6 +220,88 @@ export const Z_INDEX = {
 } as const;
 
 // =============================================================================
+// Mobile V2 Configuration (Redesigned Mobile UX)
+// =============================================================================
+
+/** Mobile V2 dimensions and sizing */
+export const MOBILE_V2 = {
+  /** Navigation bar height (reduced from 56px) */
+  NAV_BAR_HEIGHT: 48,
+  /** Navigation button size */
+  NAV_BUTTON_SIZE: 44,
+  /** Floating action button size */
+  FAB_SIZE: 56,
+
+  /** Floating toolbar height */
+  FLOATING_TOOLBAR_HEIGHT: 44,
+  /** Toolbar button size */
+  TOOLBAR_BUTTON_SIZE: 44,
+  /** Toolbar max width */
+  TOOLBAR_MAX_WIDTH: 360,
+  /** Toolbar border radius (pill shape) */
+  TOOLBAR_BORDER_RADIUS: 22,
+
+  /** Panel border radius */
+  PANEL_BORDER_RADIUS: 20,
+  /** Panel drag handle touch area height */
+  PANEL_HANDLE_HEIGHT: 40,
+  /** Panel drag handle visual width */
+  PANEL_HANDLE_WIDTH: 40,
+
+  /** AI Panel - Peek mode height */
+  AI_PEEK_HEIGHT: 100,
+  /** AI Panel - Chat mode height ratio */
+  AI_CHAT_RATIO: 0.55,
+  /** AI Panel - Full mode height ratio */
+  AI_FULL_RATIO: 0.9,
+
+  /** Block selector width */
+  BLOCK_SELECTOR_WIDTH: 260,
+  /** Block selector item height */
+  BLOCK_SELECTOR_ITEM_HEIGHT: 52,
+
+  /** Edge swipe detection zone width */
+  EDGE_SWIPE_ZONE: 20,
+  /** Minimum swipe distance to trigger action */
+  MIN_SWIPE_DISTANCE: 50,
+  /** Swipe velocity threshold (px/s) */
+  SWIPE_VELOCITY_THRESHOLD: 300,
+  /** Long press duration (ms) */
+  LONG_PRESS_DURATION: 500,
+} as const;
+
+/** Spring animation configurations for Mobile V2 */
+export const MOBILE_SPRINGS = {
+  /** Snappy spring for quick feedback (buttons) */
+  SNAPPY: { stiffness: 400, damping: 25, mass: 0.5 },
+  /** Smooth spring for panel transitions */
+  SMOOTH: { stiffness: 300, damping: 30, mass: 0.8 },
+  /** Gentle spring for overlays */
+  GENTLE: { stiffness: 200, damping: 25, mass: 1 },
+  /** Bouncy spring for playful effects */
+  BOUNCY: { stiffness: 500, damping: 15, mass: 0.5 },
+} as const;
+
+/** Mobile navigation modes */
+export const MOBILE_NAV_MODES = {
+  IDLE: "idle",
+  EDITING: "editing",
+  SELECTION: "selection",
+} as const;
+
+export type MobileNavMode = (typeof MOBILE_NAV_MODES)[keyof typeof MOBILE_NAV_MODES];
+
+/** AI Panel height states */
+export const AI_PANEL_STATES = {
+  CLOSED: "closed",
+  PEEK: "peek",
+  CHAT: "chat",
+  FULL: "full",
+} as const;
+
+export type AIPanelState = (typeof AI_PANEL_STATES)[keyof typeof AI_PANEL_STATES];
+
+// =============================================================================
 // Chat/AI Configuration
 // =============================================================================
 

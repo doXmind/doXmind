@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Editor } from "@tiptap/react";
 import {
   Bold,
@@ -25,17 +25,34 @@ import {
   ChevronDown,
   ChevronUp,
   Sigma,
+  Search,
+  FileSearch,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { MOBILE_PANEL } from "@/lib/constants";
+import { useEditorStore } from "@/stores/editor-store";
+import { useLayoutStore } from "@/stores/layout-store";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface MobileToolbarProps {
   editor: Editor;
   onLinkClick?: () => void;
   onImageClick?: () => void;
+  onSearchClick?: () => void;
+  onReviewClick?: () => void;
+  isReviewLoading?: boolean;
+  isReviewActive?: boolean;
+  isSearchActive?: boolean;
 }
 
 interface ToolbarButtonProps {
@@ -79,8 +96,28 @@ export function MobileToolbar({
   editor,
   onLinkClick,
   onImageClick,
+  onSearchClick,
+  onReviewClick,
+  isReviewLoading,
+  isReviewActive,
+  isSearchActive,
 }: MobileToolbarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    autocompleteEnabled,
+    setAutocompleteEnabled,
+    autocompleteTriggerMode,
+    setAutocompleteTriggerMode,
+  } = useEditorStore();
+
+  // Reset scroll position to start when toolbar expands
+  useEffect(() => {
+    if (isExpanded && scrollRef.current) {
+      scrollRef.current.scrollLeft = 0;
+    }
+  }, [isExpanded]);
 
   const addTable = () => {
     editor
@@ -130,6 +167,85 @@ export function MobileToolbar({
         {/* Spacer */}
         <div className="flex-1" />
 
+        {/* Search */}
+        <ToolbarButton
+          icon={<Search className="h-5 w-5" />}
+          onClick={() => onSearchClick?.()}
+          isActive={isSearchActive}
+          label="Search"
+        />
+
+        {/* Review */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onReviewClick?.()}
+          disabled={isReviewLoading}
+          className={cn(
+            "h-11 w-11 flex-shrink-0",
+            isReviewActive && "bg-primary/10 text-primary"
+          )}
+          aria-label="AI Review"
+        >
+          {isReviewLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <FileSearch className="h-5 w-5" />
+          )}
+        </Button>
+
+        {/* AI Autocomplete Toggle */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-11 w-11 flex-shrink-0",
+                autocompleteEnabled && "text-primary"
+              )}
+              aria-label="AI Autocomplete"
+            >
+              <Sparkles className="h-5 w-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => {
+                setAutocompleteEnabled(true);
+                setAutocompleteTriggerMode("auto");
+              }}
+              className={cn(
+                autocompleteEnabled && autocompleteTriggerMode === "auto" && "bg-accent"
+              )}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Auto
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                setAutocompleteEnabled(true);
+                setAutocompleteTriggerMode("manual");
+              }}
+              className={cn(
+                autocompleteEnabled && autocompleteTriggerMode === "manual" && "bg-accent"
+              )}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Manual
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setAutocompleteEnabled(false)}
+              className={cn(!autocompleteEnabled && "bg-accent")}
+            >
+              <Sparkles className="h-4 w-4 mr-2 opacity-50" />
+              Off
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <ToolbarDivider />
+
         {/* Expand/Collapse Button */}
         <Button
           variant="ghost"
@@ -154,9 +270,11 @@ export function MobileToolbar({
             animate={{ height: MOBILE_PANEL.TOOLBAR_COLLAPSED, opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-border/50"
+            className="overflow-hidden border-t border-border/50 relative"
           >
-            <ScrollArea orientation="horizontal" className="h-full">
+            {/* Scroll hint gradient on right edge */}
+            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card to-transparent pointer-events-none z-10" />
+            <ScrollArea ref={scrollRef} orientation="horizontal" className="h-full">
               <div
                 className="flex items-center gap-0.5 px-2 min-w-max"
                 style={{ height: MOBILE_PANEL.TOOLBAR_COLLAPSED }}
