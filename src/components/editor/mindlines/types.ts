@@ -39,4 +39,5 @@ export interface FlowNodeData extends Record<string, unknown> {
   isCollapsed?: boolean;
   hasChildren?: boolean;
   childCount?: number;
+  onToggleCollapse?: (nodeId: string) => void;
 }

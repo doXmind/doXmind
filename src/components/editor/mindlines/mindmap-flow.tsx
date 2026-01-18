@@ -23,6 +23,8 @@ import {
   MINDMAP_CENTER_VIEW,
   ANIMATION_DURATION,
 } from "@/lib/constants";
+import { useOutlineStore } from "@/stores/outline-store";
+import { useFileStore } from "@/stores/file-store";
 import { HeadingNode } from "./flow-nodes/heading-node";
 import { CustomEdge } from "./flow-nodes/custom-edge";
 import { convertToFlowElements, applyDagreLayout } from "./utils/layout";
@@ -47,14 +49,39 @@ interface MindmapFlowProps {
  */
 function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClose }: MindmapFlowProps) {
   const { fitView, setCenter, getNode, zoomIn, zoomOut } = useReactFlow();
+  const { currentFileId } = useFileStore();
+  const documentId = currentFileId || "default";
 
-  // State for collapsed nodes and layout direction
-  // Default: show H1 and H2, collapse H2+ nodes that have children
-  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(
-    () => new Set(findCollapsibleHeadingIds(headings))
+  // Use shared store for collapsed nodes
+  const {
+    setCollapsed,
+    toggleCollapse,
+    selectedNodeId,
+    setSelectedNode,
+  } = useOutlineStore();
+
+  // Get raw collapsed nodes array from store (stable reference)
+  const collapsedNodesArray = useOutlineStore(
+    (state) => state.collapsedNodes[documentId] || []
   );
+
+  // Create Set from array for use in components
+  const collapsedNodes = useMemo(
+    () => new Set(collapsedNodesArray),
+    [collapsedNodesArray]
+  );
+
+  // Initialize collapsed nodes on first render if empty
+  useEffect(() => {
+    if (collapsedNodesArray.length === 0 && headings.length > 0) {
+      const defaultCollapsed = findCollapsibleHeadingIds(headings);
+      if (defaultCollapsed.length > 0) {
+        setCollapsed(documentId, defaultCollapsed);
+      }
+    }
+  }, [documentId, headings, collapsedNodesArray.length, setCollapsed]);
+
   const [direction, setDirection] = useState<LayoutDirection>("TB");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // Convert headings to React Flow format with collapse support
   const { initialNodes, initialEdges } = useMemo(
@@ -65,31 +92,13 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[]);
   const [edges, setEdges] = useEdgesState([] as Edge[]);
 
-  // Listen for collapse toggle events from nodes
-  useEffect(() => {
-    const handleToggleCollapse = (e: CustomEvent<{ nodeId: string }>) => {
-      setCollapsedNodes((prev) => {
-        const next = new Set(prev);
-        if (next.has(e.detail.nodeId)) {
-          next.delete(e.detail.nodeId);
-        } else {
-          next.add(e.detail.nodeId);
-        }
-        return next;
-      });
-    };
-
-    window.addEventListener(
-      "mindmap-toggle-collapse",
-      handleToggleCollapse as EventListener
-    );
-    return () => {
-      window.removeEventListener(
-        "mindmap-toggle-collapse",
-        handleToggleCollapse as EventListener
-      );
-    };
-  }, []);
+  // Handle collapse toggle from nodes via callback
+  const handleToggleCollapse = useCallback(
+    (nodeId: string) => {
+      toggleCollapse(documentId, nodeId);
+    },
+    [documentId, toggleCollapse]
+  );
 
   // Apply layout and update nodes when headings or direction change
   useEffect(() => {
@@ -146,9 +155,9 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
   // Handle node click - only select, don't navigate
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
-      setSelectedNodeId(node.id);
+      setSelectedNode(node.id);
     },
-    []
+    [setSelectedNode]
   );
 
   // Handle double click to navigate to editor
@@ -165,25 +174,42 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
     [onNodeClick]
   );
 
+  // Create a wrapper for setCollapsedNodes that matches the expected signature
+  const setCollapsedNodesWrapper = useCallback(
+    (updater: React.SetStateAction<Set<string>>) => {
+      if (typeof updater === "function") {
+        const newSet = updater(collapsedNodes);
+        setCollapsed(documentId, Array.from(newSet));
+      } else {
+        setCollapsed(documentId, Array.from(updater));
+      }
+    },
+    [documentId, collapsedNodes, setCollapsed]
+  );
+
   // Keyboard navigation (extracted to hook)
   useMindmapKeyboard({
     nodes,
     selectedNodeId,
-    setSelectedNodeId,
+    setSelectedNodeId: setSelectedNode,
     setCenter,
     onNodeClick,
-    setCollapsedNodes,
+    setCollapsedNodes: setCollapsedNodesWrapper,
   });
 
-  // Add isActive and selected properties to nodes for styling
+  // Add isActive, selected, and onToggleCollapse to nodes for styling and interaction
   const nodesWithState = useMemo(
     () =>
       nodes.map((n) => ({
         ...n,
         selected: n.id === selectedNodeId,
-        data: { ...(n.data as FlowNodeData), isActive: n.id === activeId },
+        data: {
+          ...(n.data as FlowNodeData),
+          isActive: n.id === activeId,
+          onToggleCollapse: handleToggleCollapse,
+        },
       })),
-    [nodes, activeId, selectedNodeId]
+    [nodes, activeId, selectedNodeId, handleToggleCollapse]
   );
 
   // Toggle layout direction
@@ -193,14 +219,14 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
 
   // Expand all nodes
   const expandAll = useCallback(() => {
-    setCollapsedNodes(new Set());
-  }, []);
+    setCollapsed(documentId, []);
+  }, [documentId, setCollapsed]);
 
   // Collapse all nodes with children
   const collapseAll = useCallback(() => {
     const withChildren = findHeadingsWithChildren(headings).map((h) => h.id);
-    setCollapsedNodes(new Set(withChildren));
-  }, [headings]);
+    setCollapsed(documentId, withChildren);
+  }, [documentId, headings, setCollapsed]);
 
   // Reset view
   const resetView = useCallback(() => {

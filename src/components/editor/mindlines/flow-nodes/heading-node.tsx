@@ -22,14 +22,13 @@ export const HeadingNode = memo(function HeadingNode({ id, data, selected }: Nod
     return () => clearTimeout(timer);
   }, []);
 
-  // Handle collapse toggle
+  // Handle collapse toggle via callback prop
   const handleCollapseClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      // Dispatch custom event to parent
-      window.dispatchEvent(new CustomEvent("mindmap-toggle-collapse", { detail: { nodeId: id } }));
+      nodeData.onToggleCollapse?.(id);
     },
-    [id]
+    [id, nodeData]
   );
 
   const levelStyles: Record<number, string> = {
