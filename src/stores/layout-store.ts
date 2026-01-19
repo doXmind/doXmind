@@ -7,6 +7,7 @@ interface LayoutState {
   isSidebarOpen: boolean;
   isChatOpen: boolean;
   isMindlinesOpen: boolean;
+  isMindlinesCollapsed: boolean; // Collapsed = minimal line indicators, Expanded = full outline
   theme: "light" | "dark" | "system";
   isHighContrast: boolean;
 
@@ -36,9 +37,11 @@ interface LayoutState {
   toggleSidebar: () => void;
   toggleChat: () => void;
   toggleMindlines: () => void;
+  toggleMindlinesCollapsed: () => void;
   setSidebarOpen: (open: boolean) => void;
   setChatOpen: (open: boolean) => void;
   setMindlinesOpen: (open: boolean) => void;
+  setMindlinesCollapsed: (collapsed: boolean) => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
   setHighContrast: (enabled: boolean) => void;
   toggleHighContrast: () => void;
@@ -84,6 +87,7 @@ export const useLayoutStore = create<LayoutState>()(
       isSidebarOpen: true,
       isChatOpen: true,
       isMindlinesOpen: true,
+      isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
       theme: "system",
       isHighContrast: false,
 
@@ -122,6 +126,10 @@ export const useLayoutStore = create<LayoutState>()(
         set((state) => ({ isMindlinesOpen: !state.isMindlinesOpen }));
       },
 
+      toggleMindlinesCollapsed: () => {
+        set((state) => ({ isMindlinesCollapsed: !state.isMindlinesCollapsed }));
+      },
+
       setSidebarOpen: (open: boolean) => {
         set({ isSidebarOpen: open });
       },
@@ -132,6 +140,10 @@ export const useLayoutStore = create<LayoutState>()(
 
       setMindlinesOpen: (open: boolean) => {
         set({ isMindlinesOpen: open });
+      },
+
+      setMindlinesCollapsed: (collapsed: boolean) => {
+        set({ isMindlinesCollapsed: collapsed });
       },
 
       setTheme: (theme) => {
@@ -284,6 +296,7 @@ export const useLayoutStore = create<LayoutState>()(
         isSidebarOpen: state.isSidebarOpen,
         isChatOpen: state.isChatOpen,
         isMindlinesOpen: state.isMindlinesOpen,
+        isMindlinesCollapsed: state.isMindlinesCollapsed,
         theme: state.theme,
         isHighContrast: state.isHighContrast,
       }),

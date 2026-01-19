@@ -10,6 +10,7 @@ import { useHeadings } from "./use-headings";
 import { useMindlinesState } from "./use-mindlines-state";
 import { MindlinesHeader } from "./mindlines-header";
 import { OutlineView } from "./outline-view";
+import { OutlineCollapsed } from "./outline-collapsed";
 import { MindmapFlow } from "./mindmap-flow";
 
 interface MindlinesProps {
@@ -18,18 +19,6 @@ interface MindlinesProps {
 
 // Easing function for smooth animations
 const EASE_OUT_QUART = [0.4, 0, 0.2, 1] as const;
-
-// Animation variants for width transitions (collapsed and expanded only, no hover preview)
-const containerVariants = {
-  collapsed: {
-    width: MINDLINES_WIDTH.COLLAPSED,
-    transition: { duration: ANIMATION_DURATION.NORMAL / 1000, ease: EASE_OUT_QUART },
-  },
-  expanded: {
-    width: "auto", // Full screen with margin, controlled by inset-0 + m-4
-    transition: { duration: ANIMATION_DURATION.TRANSITION / 1000, ease: EASE_OUT_QUART },
-  },
-};
 
 // Content fade animations
 const contentVariants = {
@@ -40,10 +29,24 @@ const contentVariants = {
 
 /**
  * Mindlines - Unified document outline and mindmap component
- * Two states: collapsed (default) and expanded (mindmap overlay)
+ *
+ * Three states:
+ * - Collapsed: minimal line indicators (48px width) - click anywhere to expand
+ * - Expanded outline: full outline view (280px width) - click header to collapse
+ * - Mindmap overlay: full-screen mindmap
+ *
+ * Click-to-toggle interaction:
+ * - Collapsed: Click container, header, or headings to expand
+ * - Expanded: Click header (not buttons) to collapse
  */
 export function Mindlines({ editor }: MindlinesProps) {
-  const { isMindlinesOpen, setMindlinesOpen } = useLayoutStore();
+  const {
+    isMindlinesOpen,
+    setMindlinesOpen,
+    isMindlinesCollapsed,
+    toggleMindlinesCollapsed,
+    setMindlinesCollapsed,
+  } = useLayoutStore();
   const { headings, activeId, navigateTo } = useHeadings(editor);
   const shouldReduceMotion = useReducedMotion();
 
@@ -63,9 +66,40 @@ export function Mindlines({ editor }: MindlinesProps) {
     [navigateTo, handleClose]
   );
 
+  // Expand the outline (used by OutlineCollapsed headings)
+  const handleExpand = useCallback(() => {
+    setMindlinesCollapsed(false);
+  }, [setMindlinesCollapsed]);
+
+  // Handle container click - expand when in collapsed state
+  const handleContainerClick = useCallback(() => {
+    if (isMindlinesCollapsed) {
+      toggleMindlinesCollapsed();
+    }
+  }, [isMindlinesCollapsed, toggleMindlinesCollapsed]);
+
   if (!isMindlinesOpen || !editor) return null;
 
   const isExpanded = mode === "expanded";
+
+  // Determine current width based on state
+  const currentWidth = isExpanded
+    ? "auto"
+    : isMindlinesCollapsed
+      ? MINDLINES_WIDTH.COLLAPSED
+      : MINDLINES_WIDTH.EXPANDED;
+
+  // Animation variants for width transitions
+  const containerVariants = {
+    collapsed: {
+      width: currentWidth,
+      transition: { duration: ANIMATION_DURATION.NORMAL / 1000, ease: EASE_OUT_QUART },
+    },
+    expanded: {
+      width: "auto", // Full screen with margin, controlled by inset-0 + m-4
+      transition: { duration: ANIMATION_DURATION.TRANSITION / 1000, ease: EASE_OUT_QUART },
+    },
+  };
 
   // Disable animations if user prefers reduced motion
   const animationProps = shouldReduceMotion
@@ -100,11 +134,13 @@ export function Mindlines({ editor }: MindlinesProps) {
           "relative flex min-h-0 flex-col border-r bg-background/95 backdrop-blur-sm",
           // Non-expanded: standard sidebar
           !isExpanded && "z-30 h-full shrink-0",
+          // Collapsed: cursor pointer and hover effect for click-to-expand
+          isMindlinesCollapsed && !isExpanded && "cursor-pointer hover:bg-accent/20",
           // Expanded: fixed overlay - use calc for proper height with margins
           isExpanded && "fixed z-30 overflow-hidden rounded-lg border-r-0 shadow-2xl"
         )}
         style={{
-          ...(shouldReduceMotion && !isExpanded ? { width: MINDLINES_WIDTH.COLLAPSED } : {}),
+          ...(shouldReduceMotion && !isExpanded ? { width: currentWidth } : {}),
           ...(isExpanded
             ? {
                 top: 16,
@@ -115,6 +151,7 @@ export function Mindlines({ editor }: MindlinesProps) {
               }
             : {}),
         }}
+        onClick={isMindlinesCollapsed && !isExpanded ? handleContainerClick : undefined}
         {...animationProps}
         role="navigation"
         aria-label={isExpanded ? "Document mindmap" : "Document outline"}
@@ -122,12 +159,14 @@ export function Mindlines({ editor }: MindlinesProps) {
         {/* Header with title and controls */}
         <MindlinesHeader
           mode={mode}
+          isCollapsed={isMindlinesCollapsed}
           onToggle={handleToggleExpand}
+          onToggleCollapse={toggleMindlinesCollapsed}
           onClose={handleClosePanel}
           headingsCount={headings.length}
         />
 
-        {/* Content: OutlineView or MindmapFlow */}
+        {/* Content: OutlineCollapsed, OutlineView, or MindmapFlow */}
         <div className="min-h-0 flex-1 overflow-hidden">
           <AnimatePresence mode="wait">
             {isExpanded ? (
@@ -146,6 +185,23 @@ export function Mindlines({ editor }: MindlinesProps) {
                   onNodeClick={handleMindmapNavigate}
                   onToggleView={handleToggleExpand}
                   onClose={handleClose}
+                />
+              </motion.div>
+            ) : isMindlinesCollapsed ? (
+              <motion.div
+                key="outline-collapsed"
+                className="h-full overflow-y-auto"
+                variants={contentVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.15 }}
+              >
+                <OutlineCollapsed
+                  headings={headings}
+                  activeId={activeId}
+                  onNavigate={navigateTo}
+                  onExpand={handleExpand}
                 />
               </motion.div>
             ) : (

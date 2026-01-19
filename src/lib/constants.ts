@@ -88,8 +88,10 @@ export const ANIMATION_DURATION = {
 
 /** Mindlines sidebar width in pixels */
 export const MINDLINES_WIDTH = {
-  /** Collapsed state width */
-  COLLAPSED: 208,
+  /** Expanded state width (full outline view) */
+  EXPANDED: 280,
+  /** Collapsed state width (minimal line indicators) */
+  COLLAPSED: 48,
 } as const;
 
 // =============================================================================
