@@ -92,15 +92,14 @@ class TestUserIsolationDeep:
         assert "User2 File" not in [f.name for f in user1_files]
 
     @pytest.mark.asyncio
-    async def test_user_cannot_update_other_users_file_non_debug(
+    async def test_user_cannot_update_other_users_file(
         self, db_session: AsyncSession
     ):
-        """User should NOT be able to update another user's file in non-debug mode.
+        """User should NOT be able to update another user's file.
 
-        Note: This tests the get_user_id_filter logic directly since the
-        test client runs in debug mode by default.
+        Note: This tests the get_user_id logic directly.
         """
-        from api.files import get_user_id_filter
+        from api.files import get_user_id
         from tests.conftest import create_test_user
 
         # Create user first (foreign key constraint)
@@ -112,39 +111,37 @@ class TestUserIsolationDeep:
         await db_session.commit()
         await db_session.refresh(file)
 
-        # Simulate non-debug mode filtering
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
+        # User 2 token
+        user2_token = TokenData(
+            sub="user-2-specific",
+            exp=datetime.now(UTC) + timedelta(hours=1)
+        )
 
-            # User 2 token
-            user2_token = TokenData(
-                sub="user-2-specific",
-                exp=datetime.now(UTC) + timedelta(hours=1)
-            )
+        # Get user ID for user 2
+        user_id = get_user_id(user2_token)
 
-            # Get user ID filter for user 2
-            user_id_filter = get_user_id_filter(user2_token)
+        # Query with user 2's filter - should not find user 1's file
+        query = select(File).where(File.id == file.id)
+        if user_id:
+            query = query.where(File.user_id == user_id)
+        else:
+            query = query.where(File.user_id.is_(None))
 
-            # Query with user 2's filter - should not find user 1's file
-            query = select(File).where(File.id == file.id)
-            if user_id_filter:
-                query = query.where(File.user_id == user_id_filter)
+        result = await db_session.execute(query)
+        found_file = result.scalar_one_or_none()
 
-            result = await db_session.execute(query)
-            found_file = result.scalar_one_or_none()
-
-            # User 2 should NOT see user 1's file
-            assert found_file is None, "User 2 should not be able to access User 1's file"
+        # User 2 should NOT see user 1's file
+        assert found_file is None, "User 2 should not be able to access User 1's file"
 
     @pytest.mark.asyncio
-    async def test_user_cannot_delete_other_users_file_non_debug(
+    async def test_user_cannot_delete_other_users_file(
         self, db_session: AsyncSession
     ):
-        """User should NOT be able to delete another user's file in non-debug mode.
+        """User should NOT be able to delete another user's file.
 
-        Note: This tests the get_user_id_filter logic directly.
+        Note: This tests the get_user_id logic directly.
         """
-        from api.files import get_user_id_filter
+        from api.files import get_user_id
         from tests.conftest import create_test_user
 
         # Create user first (foreign key constraint)
@@ -156,22 +153,20 @@ class TestUserIsolationDeep:
         await db_session.commit()
         await db_session.refresh(file)
 
-        # Simulate non-debug mode
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
+        # Different user token
+        other_user_token = TokenData(
+            sub="user-attacker",
+            exp=datetime.now(UTC) + timedelta(hours=1)
+        )
 
-            # Different user token
-            other_user_token = TokenData(
-                sub="user-attacker",
-                exp=datetime.now(UTC) + timedelta(hours=1)
-            )
+        user_id = get_user_id(other_user_token)
 
-            user_id_filter = get_user_id_filter(other_user_token)
-
-            # Query with attacker's filter - should not find owner's file
-            query = select(File).where(File.id == file.id)
-            if user_id_filter:
-                query = query.where(File.user_id == user_id_filter)
+        # Query with attacker's filter - should not find owner's file
+        query = select(File).where(File.id == file.id)
+        if user_id:
+            query = query.where(File.user_id == user_id)
+        else:
+            query = query.where(File.user_id.is_(None))
 
             result = await db_session.execute(query)
             found_file = result.scalar_one_or_none()

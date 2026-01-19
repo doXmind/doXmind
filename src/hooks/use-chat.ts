@@ -27,6 +27,13 @@ export interface ThinkingStatus {
   content: string;
 }
 
+// Todo item for progress tracking
+export interface TodoItem {
+  id: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "failed";
+}
+
 // Chat stream event types
 interface ChatStreamEvent {
   type: string;
@@ -41,6 +48,7 @@ interface ChatStreamEvent {
   thinking?: string | null;
   toolCalls?: ToolCall[] | null;
   model?: string;
+  todos?: TodoItem[];
 }
 
 export function useChat() {
@@ -48,6 +56,7 @@ export function useChat() {
   const [currentTool, setCurrentTool] = useState<ToolStatus | null>(null);
   const [toolHistory, setToolHistory] = useState<ToolStatus[]>([]);
   const [thinking, setThinking] = useState<ThinkingStatus>({ isThinking: false, content: "" });
+  const [todos, setTodos] = useState<TodoItem[]>([]);
   const streamControllerRef = useRef(createStreamController());
   const toolInputRef = useRef<string>("");
 
@@ -129,6 +138,7 @@ export function useChat() {
       setCurrentTool(null);
       setToolHistory([]);
       setThinking({ isThinking: false, content: "" });
+      setTodos([]);
       toolInputRef.current = "";
 
       const signal = streamControllerRef.current.start();
@@ -343,6 +353,12 @@ export function useChat() {
               setCurrentTool(null);
               break;
             }
+
+            case "todo_update":
+              if (parsed.todos) {
+                setTodos(parsed.todos);
+              }
+              break;
           }
         });
 
@@ -393,6 +409,7 @@ export function useChat() {
         setIsStreaming(false);
         setCurrentTool(null);
         setThinking({ isThinking: false, content: "" });
+        // Don't clear todos - keep them visible after streaming ends
         toolInputRef.current = "";
       }
     },
@@ -403,6 +420,10 @@ export function useChat() {
     streamControllerRef.current.abort();
   }, []);
 
+  const clearTodos = useCallback(() => {
+    setTodos([]);
+  }, []);
+
   return {
     sendMessage,
     isStreaming,
@@ -410,5 +431,7 @@ export function useChat() {
     currentTool,
     toolHistory,
     thinking,
+    todos,
+    clearTodos,
   };
 }

@@ -564,36 +564,31 @@ class TestUserIsolation:
         assert user1_convs[0].file_id == "user1-file"
 
     @pytest.mark.asyncio
-    async def test_get_user_id_filter_returns_user_id(self):
-        """get_user_id_filter should return user ID for regular users."""
-        from api.chat import get_user_id_filter
+    async def test_get_user_id_returns_user_id(self):
+        """get_user_id should return user ID for regular users."""
+        from api.files import get_user_id
 
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
+        token = TokenData(
+            sub="regular-user-123",
+            exp=datetime.now(UTC) + timedelta(hours=1)
+        )
 
-            token = TokenData(
-                sub="regular-user-123",
-                exp=datetime.now(UTC) + timedelta(hours=1)
-            )
-
-            result = get_user_id_filter(token)
-            assert result == "regular-user-123"
+        result = get_user_id(token)
+        assert result == "regular-user-123"
 
     @pytest.mark.asyncio
-    async def test_get_user_id_filter_debug_mode(self):
-        """get_user_id_filter should return None in debug mode."""
-        from api.chat import get_user_id_filter
+    async def test_get_user_id_special_users(self):
+        """get_user_id should return None for special users (shared data)."""
+        from api.files import get_user_id
 
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=True)
-
+        for special_sub in ["dev-user", "anonymous", "api-key-user"]:
             token = TokenData(
-                sub="any-user",
+                sub=special_sub,
                 exp=datetime.now(UTC) + timedelta(hours=1)
             )
 
-            result = get_user_id_filter(token)
-            assert result is None
+            result = get_user_id(token)
+            assert result is None, f"Expected None for {special_sub}"
 
 
 # ============================================================================

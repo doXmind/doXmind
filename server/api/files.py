@@ -7,27 +7,21 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_settings
 from db.database import File, get_db
-from services.auth_service import TokenData, optional_auth
+from services.auth_service import TokenData, require_auth
 from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_user_id_filter(token: TokenData | None) -> str | None:
-    """Get user ID for filtering, handling dev mode and anonymous users."""
-    settings = get_settings()
+def get_user_id(token: TokenData) -> str | None:
+    """Get user ID from token for data isolation.
 
-    if settings.debug:
-        # In debug mode, return None to show all files (no filtering)
-        return None
-
-    if token is None:
-        return None
-
-    # Skip filtering for special token types
+    Returns None only for special dev/api-key users (which share data).
+    Real users always get their user_id for proper isolation.
+    """
+    # Special token types share data (no user isolation)
     if token.sub in ("dev-user", "api-key-user", "anonymous"):
         return None
 
@@ -61,16 +55,19 @@ class FileResponse(BaseModel):
 @router.get("/", response_model=list[FileResponse])
 async def list_files(
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """List files for the current user."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     query = select(File).order_by(File.updated_at.desc())
 
-    # Filter by user if authenticated
+    # Filter by user (None means shared/dev mode)
     if user_id:
         query = query.where(File.user_id == user_id)
+    else:
+        # For dev/anonymous users, only show files with no user_id
+        query = query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     files = result.scalars().all()
@@ -90,10 +87,10 @@ async def list_files(
 async def create_file(
     file: FileCreate,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Create a new file for the current user."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     try:
         new_file = File(name=file.name, content=file.content, user_id=user_id)
@@ -126,7 +123,16 @@ async def create_file(
             updated_at=new_file.updated_at.isoformat()
         )
     except Exception as e:
+        await db.rollback()
+        error_str = str(e)
         logger.error(f"Failed to create file: {e}")
+        # Foreign key violation on user_id means the user doesn't exist in DB
+        # This happens when token is valid but user was deleted or never created
+        if "ForeignKeyViolationError" in error_str and "user_id" in error_str:
+            raise HTTPException(
+                status_code=401,
+                detail="User session invalid. Please log in again."
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -134,14 +140,16 @@ async def create_file(
 async def get_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Get a file by ID (must belong to current user)."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     query = select(File).where(File.id == file_id)
     if user_id:
         query = query.where(File.user_id == user_id)
+    else:
+        query = query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -163,14 +171,16 @@ async def update_file(
     file_id: str,
     update: FileUpdate,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Update a file (must belong to current user)."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     query = select(File).where(File.id == file_id)
     if user_id:
         query = query.where(File.user_id == user_id)
+    else:
+        query = query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -217,14 +227,16 @@ async def update_file(
 async def delete_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Delete a file (must belong to current user)."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     query = select(File).where(File.id == file_id)
     if user_id:
         query = query.where(File.user_id == user_id)
+    else:
+        query = query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -256,10 +268,10 @@ class SearchRequest(BaseModel):
 async def search_files(
     request: SearchRequest,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Search files using RAG (within user's files)."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     try:
         rag = RAGService(db)
@@ -287,7 +299,7 @@ class InDocSearchRequest(BaseModel):
 async def search_in_document(
     request: InDocSearchRequest,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Search within a single document at sentence level.
 
@@ -296,13 +308,15 @@ async def search_in_document(
 
     Results are filtered by min_score to only return sufficiently similar matches.
     """
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     try:
         # Verify file exists and belongs to user
         query = select(File).where(File.id == request.file_id)
         if user_id:
             query = query.where(File.user_id == user_id)
+        else:
+            query = query.where(File.user_id.is_(None))
 
         result = await db.execute(query)
         file = result.scalar_one_or_none()

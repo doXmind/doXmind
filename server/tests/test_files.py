@@ -165,83 +165,52 @@ class TestFileValidation:
 
 
 # =============================================================================
-# get_user_id_filter Tests
+# get_user_id Tests
 # =============================================================================
 
 
-class TestGetUserIdFilter:
-    """Tests for get_user_id_filter function."""
+class TestGetUserId:
+    """Tests for get_user_id function."""
 
     def _create_token(self, sub: str) -> TokenData:
         """Helper to create TokenData with required fields."""
         from datetime import UTC, datetime, timedelta
         return TokenData(sub=sub, exp=datetime.now(UTC) + timedelta(hours=1))
 
-    def test_returns_none_in_debug_mode(self):
-        """Should return None in debug mode."""
-        from api.files import get_user_id_filter
-
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=True)
-
-            result = get_user_id_filter(self._create_token("user-123"))
-
-            assert result is None
-
-    def test_returns_none_for_no_token(self):
-        """Should return None when no token provided."""
-        from api.files import get_user_id_filter
-
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
-
-            result = get_user_id_filter(None)
-
-            assert result is None
-
     def test_returns_none_for_dev_user(self):
-        """Should return None for dev-user token."""
-        from api.files import get_user_id_filter
+        """Should return None for dev-user token (shared data)."""
+        from api.files import get_user_id
 
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
-
-            result = get_user_id_filter(self._create_token("dev-user"))
-
-            assert result is None
+        result = get_user_id(self._create_token("dev-user"))
+        assert result is None
 
     def test_returns_none_for_api_key_user(self):
-        """Should return None for api-key-user token."""
-        from api.files import get_user_id_filter
+        """Should return None for api-key-user token (shared data)."""
+        from api.files import get_user_id
 
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
-
-            result = get_user_id_filter(self._create_token("api-key-user"))
-
-            assert result is None
+        result = get_user_id(self._create_token("api-key-user"))
+        assert result is None
 
     def test_returns_none_for_anonymous_user(self):
-        """Should return None for anonymous token."""
-        from api.files import get_user_id_filter
+        """Should return None for anonymous token (shared data)."""
+        from api.files import get_user_id
 
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
-
-            result = get_user_id_filter(self._create_token("anonymous"))
-
-            assert result is None
+        result = get_user_id(self._create_token("anonymous"))
+        assert result is None
 
     def test_returns_user_id_for_regular_user(self):
-        """Should return user ID for regular user in non-debug mode."""
-        from api.files import get_user_id_filter
+        """Should return user ID for regular user."""
+        from api.files import get_user_id
 
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
+        result = get_user_id(self._create_token("user-123"))
+        assert result == "user-123"
 
-            result = get_user_id_filter(self._create_token("user-123"))
+    def test_returns_user_id_for_uuid_user(self):
+        """Should return user ID for UUID-based user."""
+        from api.files import get_user_id
 
-            assert result == "user-123"
+        result = get_user_id(self._create_token("550e8400-e29b-41d4-a716-446655440000"))
+        assert result == "550e8400-e29b-41d4-a716-446655440000"
 
 
 # =============================================================================
@@ -253,28 +222,30 @@ class TestGetUserIdFilter:
 class TestUserDataIsolation:
     """Tests for user data isolation in file operations."""
 
-    async def test_list_files_returns_only_user_files(
+    async def test_list_files_returns_only_shared_files_for_dev_user(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        """Should only return files belonging to the authenticated user."""
+        """Dev user should only see files with user_id=None (shared data)."""
         from tests.conftest import create_test_user
 
         # Create users first (foreign key constraint)
         await create_test_user(db_session, "user-1")
         await create_test_user(db_session, "user-2")
 
-        # Create files for different users
+        # Create files for different users and shared files
         user1_file = File(name="User1 File", content="Content 1", user_id="user-1")
         user2_file = File(name="User2 File", content="Content 2", user_id="user-2")
-        db_session.add_all([user1_file, user2_file])
+        shared_file = File(name="Shared File", content="Shared Content", user_id=None)
+        db_session.add_all([user1_file, user2_file, shared_file])
         await db_session.commit()
 
-        # In debug mode, should see all files
+        # Dev user should only see shared files (user_id=None)
         response = await client.get("/api/files/")
         assert response.status_code == 200
-        # Debug mode shows all files
         files = response.json()
-        assert len(files) >= 2
+        # Only shared file should be visible
+        assert len(files) == 1
+        assert files[0]["name"] == "Shared File"
 
     async def test_update_nonexistent_file_returns_404(
         self, client: AsyncClient
@@ -988,8 +959,8 @@ class TestFilesRouterStructure:
 # =============================================================================
 
 
-class TestUserFilterExtended:
-    """Extended tests for get_user_id_filter function."""
+class TestGetUserIdExtended:
+    """Extended tests for get_user_id function."""
 
     def _create_token(self, sub: str) -> TokenData:
         """Helper to create TokenData."""
@@ -997,27 +968,21 @@ class TestUserFilterExtended:
         return TokenData(sub=sub, exp=datetime.now(UTC) + timedelta(hours=1))
 
     def test_multiple_special_users(self):
-        """Should return None for all special user types."""
-        from api.files import get_user_id_filter
+        """Should return None for all special user types (shared data)."""
+        from api.files import get_user_id
 
         special_users = ["dev-user", "api-key-user", "anonymous"]
 
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
+        for user in special_users:
+            result = get_user_id(self._create_token(user))
+            assert result is None, f"Expected None for {user}"
 
-            for user in special_users:
-                result = get_user_id_filter(self._create_token(user))
-                assert result is None, f"Expected None for {user}"
+    def test_regular_user_returns_id(self):
+        """Should return user ID for regular users."""
+        from api.files import get_user_id
 
-    def test_regular_user_in_production(self):
-        """Should return user ID for regular users in production mode."""
-        from api.files import get_user_id_filter
-
-        with patch("api.files.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(debug=False)
-
-            result = get_user_id_filter(self._create_token("user-abc-123"))
-            assert result == "user-abc-123"
+        result = get_user_id(self._create_token("user-abc-123"))
+        assert result == "user-abc-123"
 
 
 # =============================================================================

@@ -159,10 +159,14 @@ export class ApiClient {
       signal: options.signal,
     });
 
-    // Handle 401 Unauthorized - clear token and retry once
-    if (response.status === 401 && this.accessToken) {
+    // Handle 401 Unauthorized - clear token and redirect to login
+    if (response.status === 401) {
       this.clearToken();
-      // Could implement auto-refresh here if needed
+      // Dispatch event for auth store to handle
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+      }
+      throw new Error("Session expired. Please log in again.");
     }
 
     if (!response.ok) {

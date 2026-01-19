@@ -7,10 +7,10 @@ import markdown
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.files import get_user_id_filter
+from api.files import get_user_id
 from db.database import File as FileModel
 from db.database import get_db
-from services.auth_service import TokenData, optional_auth
+from services.auth_service import TokenData, require_auth
 from services.gemini_converter import convert_file_to_markdown, is_gemini_configured
 from services.rag_service import RAGService
 
@@ -39,7 +39,7 @@ def markdown_to_html(md_content: str) -> str:
 async def import_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """
     Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
@@ -48,7 +48,7 @@ async def import_file(
     - Max size: 10MB
     - Returns: Created file object
     """
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
     # Validate file extension
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:

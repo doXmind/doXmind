@@ -309,6 +309,9 @@ def get_tools_for_mode(
     base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
     tools = list(base_tools)  # Make a copy
 
+    # Always add TODO tracking tool for task progress visibility
+    tools.append(TODO_TOOL)
+
     if has_kb_attachments:
         tools = tools + KB_TOOLS
 
@@ -323,6 +326,54 @@ def get_tools_for_mode(
     tools.append(get_web_fetch_tool(web_fetch_max_uses))
 
     return tools
+
+
+# ============================================================================
+# TODO Tracking Tool Definition
+# ============================================================================
+
+TODO_TOOL = {
+    "name": "update_todo",
+    "description": """Update the task progress list to track what you're doing.
+Use this tool to show the user your progress on complex, multi-step tasks.
+
+When to use:
+- At the START of a complex task: Create a list of planned steps
+- When STARTING a step: Mark it as "in_progress"
+- When COMPLETING a step: Mark it as "completed"
+- When a step FAILS: Mark it as "failed" with a reason
+
+Keep the todo list concise (3-7 items max). Only use for multi-step tasks.""",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "todos": {
+                "type": "array",
+                "description": "The complete list of todo items",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Unique identifier for the todo (e.g., 'step1', 'step2')"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Description of the task"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "completed", "failed"],
+                            "description": "Current status of the task"
+                        }
+                    },
+                    "required": ["id", "content", "status"]
+                }
+            }
+        },
+        "required": ["todos"]
+    }
+}
 
 
 # ============================================================================

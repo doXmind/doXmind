@@ -26,6 +26,7 @@ from agents.tools.definitions import get_tools_for_mode
 from agents.tools.document_tools import execute_document_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
 from agents.tools.skill_tools import execute_skill_tool, is_skill_tool
+from agents.tools.todo_tools import execute_todo_tool, is_todo_tool
 from config import get_settings
 from services.skills_service import get_skills_service
 
@@ -355,6 +356,8 @@ class WritingAgent:
                         }, None, None
 
                     # Handle web search results
+                    # Note: Server tool results are automatically included by the API
+                    # We just need to emit UI events, not add them to message history
                     elif block.type == "web_search_tool_result":
                         results = []
                         if hasattr(block, 'content') and block.content:
@@ -364,30 +367,25 @@ class WritingAgent:
                                         "url": getattr(r, 'url', ''),
                                         "title": getattr(r, 'title', ''),
                                     })
+                        # Only yield UI event, no response_update (API handles history)
                         yield {
                             "type": "web_search_result",
                             "tool_id": block.tool_use_id,
                             "results": results
-                        }, {
-                            "type": "web_search_tool_result",
-                            "tool_use_id": block.tool_use_id,
-                            "content": block.content
-                        }, None
+                        }, None, None
 
                     # Handle web fetch results
+                    # Note: Server tool results are automatically included by the API
                     elif block.type == "web_fetch_tool_result":
                         url = ""
                         if hasattr(block, 'content') and hasattr(block.content, 'url'):
                             url = block.content.url
+                        # Only yield UI event, no response_update (API handles history)
                         yield {
                             "type": "web_fetch_result",
                             "tool_id": block.tool_use_id,
                             "url": url
-                        }, {
-                            "type": "web_fetch_tool_result",
-                            "tool_use_id": block.tool_use_id,
-                            "content": block.content
-                        }, None
+                        }, None, None
 
                 # Handle content block delta
                 elif event.type == "content_block_delta":
@@ -477,7 +475,12 @@ class WritingAgent:
         tool_id = tool_use["id"]
 
         # Execute tool based on type
-        if is_kb_tool(tool_name):
+        if is_todo_tool(tool_name):
+            result = execute_todo_tool(tool_input)
+            # Emit todo update event for frontend
+            if "todos" in result:
+                yield {"type": "todo_update", "todos": result["todos"]}
+        elif is_kb_tool(tool_name):
             result = await execute_kb_tool(tool_name, tool_input, kb_context)
         elif is_skill_tool(tool_name):
             result = await execute_skill_tool(tool_name, tool_input)
@@ -516,15 +519,53 @@ class WritingAgent:
                 "success": True
             }
 
+        # Add instruction reinforcement to tool results
+        # This helps keep the agent on track (Claude Code pattern)
+        reinforced_content = self._add_tool_result_reminder(
+            tool_name, result_content if isinstance(result_content, str) else str(result_content)
+        )
+
         # Yield tool result for message history
         yield {
             "type": "tool_result",
             "result": {
                 "type": "tool_result",
                 "tool_use_id": tool_id,
-                "content": result_content if isinstance(result_content, str) else str(result_content)
+                "content": reinforced_content
             }
         }
+
+    def _add_tool_result_reminder(self, tool_name: str, result_content: str) -> str:
+        """Add contextual reminders to tool results to reinforce good behavior.
+
+        This pattern is borrowed from Claude Code - it helps keep the agent
+        focused on using tools rather than writing long chat responses.
+
+        Args:
+            tool_name: Name of the tool that was executed
+            result_content: The original result content
+
+        Returns:
+            Result content with appended reminder
+        """
+        # Skip reminder for todo tool (meta-tool)
+        if tool_name == "update_todo":
+            return result_content
+
+        # Different reminders based on tool type
+        if tool_name in ("view_document", "search_in_document"):
+            reminder = "\n\n<reminder>Now use editing tools (str_replace_editor, insert_text) to make changes. Keep chat responses brief.</reminder>"
+        elif tool_name in ("str_replace_editor", "insert_text", "replace_document"):
+            reminder = "\n\n<reminder>Edit complete. Continue with next edit or provide a brief confirmation to the user.</reminder>"
+        elif tool_name in ("search_knowledge_base", "read_kb_document", "list_kb_documents"):
+            reminder = "\n\n<reminder>Use this information to help the user. If editing is needed, use editing tools directly.</reminder>"
+        elif tool_name in ("read_skill_instructions", "read_skill_template", "read_skill_knowledge"):
+            reminder = "\n\n<reminder>Apply this guidance. Use editing tools to write content directly into the document.</reminder>"
+        else:
+            # Generic reminder for other tools
+            reminder = "\n\n<reminder>Continue with the task. Prefer using tools over long chat responses.</reminder>"
+
+        return result_content + reminder
 
     async def run(self, message: str, files: list[dict[str, Any]]) -> dict[str, Any]:
         """Run agent and return full response with edits.

@@ -9,6 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessage } from "./chat-message";
 import { ThinkingIndicator } from "./thinking-indicator";
 import { ToolIndicator } from "./tool-indicator";
+import { TodoProgress } from "./todo-progress";
 import { ContextPill } from "./context-pill";
 import { SuggestionButton } from "./suggestion-button";
 import { AttachmentMenu } from "./attachment-menu";
@@ -41,7 +42,7 @@ export function ChatPanel() {
     };
   }, [conversations, conversationKey, currentFileId]);
 
-  const { sendMessage, isStreaming, stopStreaming, currentTool, toolHistory, thinking } = useChat();
+  const { sendMessage, isStreaming, stopStreaming, currentTool, toolHistory, thinking, todos, clearTodos } = useChat();
 
   // Load conversation history from backend when file changes
   useEffect(() => {
@@ -64,7 +65,7 @@ export function ChatPanel() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [conversation.messages, currentTool, toolHistory, thinking]);
+  }, [conversation.messages, currentTool, toolHistory, thinking, todos]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -265,6 +266,13 @@ export function ChatPanel() {
                 {toolHistory.map((tool, index) => (
                   <ToolIndicator key={`${tool.name}-${index}`} tool={tool} />
                 ))}
+              </div>
+            )}
+
+            {/* TODO progress - shown when agent is tracking tasks */}
+            {todos.length > 0 && (
+              <div className="ml-11">
+                <TodoProgress todos={todos} />
               </div>
             )}
 

@@ -11,28 +11,13 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.writing_agent import WritingAgent
+from api.files import get_user_id
 from config import get_settings
 from db.database import Conversation, ConversationAttachment, Message, get_db
-from services.auth_service import TokenData, optional_auth
+from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def get_user_id_filter(token: TokenData | None) -> str | None:
-    """Get user ID for filtering, handling dev mode and anonymous users."""
-    settings = get_settings()
-
-    if settings.debug:
-        return None
-
-    if token is None:
-        return None
-
-    if token.sub in ("dev-user", "api-key-user", "anonymous"):
-        return None
-
-    return token.sub
 
 
 def normalize_file_id(file_id: str | None) -> str | None:
@@ -121,10 +106,10 @@ class ConversationResponse(BaseModel):
 async def get_conversation(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Get conversation for a file, or create if not exists."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
     normalized_file_id = normalize_file_id(file_id)
 
     # Find existing conversation for this file
@@ -134,6 +119,8 @@ async def get_conversation(
         query = select(Conversation).where(Conversation.file_id == normalized_file_id)
     if user_id:
         query = query.where(Conversation.user_id == user_id)
+    else:
+        query = query.where(Conversation.user_id.is_(None))
     query = query.order_by(desc(Conversation.created_at)).limit(1)
 
     result = await db.execute(query)
@@ -183,14 +170,16 @@ async def get_conversation(
 @router.get("/conversations")
 async def list_conversations(
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """List conversations for the current user."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
 
     query = select(Conversation).order_by(desc(Conversation.created_at))
     if user_id:
         query = query.where(Conversation.user_id == user_id)
+    else:
+        query = query.where(Conversation.user_id.is_(None))
 
     result = await db.execute(query)
     conversations = result.scalars().all()
@@ -209,16 +198,18 @@ async def list_conversations(
 async def create_message(
     message: MessageCreate,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Create a new message in a conversation."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
     normalized_file_id = normalize_file_id(message.conversationId)
 
     # First try to find by conversation ID (UUID)
     query = select(Conversation).where(Conversation.id == message.conversationId)
     if user_id:
         query = query.where(Conversation.user_id == user_id)
+    else:
+        query = query.where(Conversation.user_id.is_(None))
     query = query.limit(1)
 
     result = await db.execute(query)
@@ -232,6 +223,8 @@ async def create_message(
             query = select(Conversation).where(Conversation.file_id == normalized_file_id)
         if user_id:
             query = query.where(Conversation.user_id == user_id)
+        else:
+            query = query.where(Conversation.user_id.is_(None))
         query = query.order_by(desc(Conversation.created_at)).limit(1)
 
         result = await db.execute(query)
@@ -282,10 +275,10 @@ async def create_message(
 async def clear_conversation(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: TokenData | None = Depends(optional_auth)
+    token: TokenData = Depends(require_auth)
 ):
     """Clear all messages in a conversation by file_id."""
-    user_id = get_user_id_filter(token)
+    user_id = get_user_id(token)
     normalized_file_id = normalize_file_id(file_id)
 
     # Find conversation by file_id (consistent with GET endpoint)
@@ -295,6 +288,8 @@ async def clear_conversation(
         query = select(Conversation).where(Conversation.file_id == normalized_file_id)
     if user_id:
         query = query.where(Conversation.user_id == user_id)
+    else:
+        query = query.where(Conversation.user_id.is_(None))
     query = query.order_by(desc(Conversation.created_at)).limit(1)
 
     result = await db.execute(query)

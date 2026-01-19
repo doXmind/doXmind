@@ -546,59 +546,33 @@ class TestHelperFunctions:
         from api.chat import normalize_file_id
         assert normalize_file_id("file-123") == "file-123"
 
-    def test_get_user_id_filter_debug_mode(self):
-        """Should return None in debug mode."""
-        from api.chat import get_user_id_filter
+    def test_get_user_id_anonymous(self):
+        """Should return None for anonymous users (shared data)."""
+        from api.files import get_user_id
 
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value.debug = True
-            result = get_user_id_filter(MagicMock(sub="user-123"))
-            assert result is None
+        result = get_user_id(MagicMock(sub="anonymous"))
+        assert result is None
 
-    def test_get_user_id_filter_anonymous(self):
-        """Should return None for anonymous users."""
-        from api.chat import get_user_id_filter
-
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value.debug = False
-            result = get_user_id_filter(MagicMock(sub="anonymous"))
-            assert result is None
-
-    def test_get_user_id_filter_valid_user(self):
+    def test_get_user_id_valid_user(self):
         """Should return user ID for authenticated users."""
-        from api.chat import get_user_id_filter
+        from api.files import get_user_id
 
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value.debug = False
-            result = get_user_id_filter(MagicMock(sub="real-user-123"))
-            assert result == "real-user-123"
+        result = get_user_id(MagicMock(sub="real-user-123"))
+        assert result == "real-user-123"
 
-    def test_get_user_id_filter_none_token(self):
-        """Should return None when no token provided."""
-        from api.chat import get_user_id_filter
+    def test_get_user_id_dev_user(self):
+        """Should return None for dev-user (shared data)."""
+        from api.files import get_user_id
 
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value.debug = False
-            result = get_user_id_filter(None)
-            assert result is None
+        result = get_user_id(MagicMock(sub="dev-user"))
+        assert result is None
 
-    def test_get_user_id_filter_dev_user(self):
-        """Should return None for dev-user."""
-        from api.chat import get_user_id_filter
+    def test_get_user_id_api_key_user(self):
+        """Should return None for api-key-user (shared data)."""
+        from api.files import get_user_id
 
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value.debug = False
-            result = get_user_id_filter(MagicMock(sub="dev-user"))
-            assert result is None
-
-    def test_get_user_id_filter_api_key_user(self):
-        """Should return None for api-key-user."""
-        from api.chat import get_user_id_filter
-
-        with patch("api.chat.get_settings") as mock_settings:
-            mock_settings.return_value.debug = False
-            result = get_user_id_filter(MagicMock(sub="api-key-user"))
-            assert result is None
+        result = get_user_id(MagicMock(sub="api-key-user"))
+        assert result is None
 
 
 # ============================================================================
@@ -1065,8 +1039,8 @@ class TestUserIsolation:
         """Should filter conversations by user_id in non-debug mode."""
         from db.database import User
 
-        # This test verifies the get_user_id_filter is called properly
-        # In debug mode, user_id filter returns None (shows all)
+        # This test verifies the get_user_id is called properly
+        # For dev-user token, user_id returns None (shared data)
 
         # Create user for the conversation (foreign key constraint)
         user2 = User(

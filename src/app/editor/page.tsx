@@ -23,6 +23,7 @@ import { useIsMobile } from "@/hooks/use-device-type";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useMobileGestures } from "@/hooks/use-mobile-gestures";
+import { useAuthGuard } from "@/hooks/use-auth-guard";
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { MOBILE_V2 } from "@/lib/constants";
@@ -48,6 +49,9 @@ export default function EditorPage() {
   } = useLayoutStore();
   const currentFile = files.find((f) => f.id === currentFileId);
   const isMobile = useIsMobile();
+
+  // Auth guard - handles 401 responses and redirects to login
+  useAuthGuard();
 
   // Mobile gesture navigation
   const handleEdgeSwipe = useCallback(
