@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TodoItem } from "@/hooks/use-chat";
 
@@ -26,11 +26,6 @@ const statusConfig = {
     icon: CheckCircle2,
     color: "text-green-500",
     bgColor: "bg-green-500/10",
-  },
-  failed: {
-    icon: XCircle,
-    color: "text-red-500",
-    bgColor: "bg-red-500/10",
   },
 };
 
@@ -96,7 +91,7 @@ export function TodoProgress({ todos, className }: TodoProgressProps) {
                     todo.status === "completed" && "line-through text-muted-foreground"
                   )}
                 >
-                  {todo.content}
+                  {todo.status === "in_progress" ? todo.activeForm : todo.content}
                 </span>
               </motion.li>
             );

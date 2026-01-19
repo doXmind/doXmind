@@ -333,41 +333,53 @@ def get_tools_for_mode(
 # ============================================================================
 
 TODO_TOOL = {
-    "name": "update_todo",
-    "description": """Update the task progress list to track what you're doing.
-Use this tool to show the user your progress on complex, multi-step tasks.
+    "name": "TodoWrite",
+    "description": """Create and manage a structured task list for tracking progress.
 
 When to use:
-- At the START of a complex task: Create a list of planned steps
-- When STARTING a step: Mark it as "in_progress"
-- When COMPLETING a step: Mark it as "completed"
-- When a step FAILS: Mark it as "failed" with a reason
+- Complex multi-step tasks (3+ distinct steps)
+- Non-trivial tasks requiring careful planning
+- When user provides multiple tasks to complete
 
-Keep the todo list concise (3-7 items max). Only use for multi-step tasks.""",
+Task states:
+- pending: Task not yet started
+- in_progress: Currently working on (limit to ONE at a time)
+- completed: Task finished successfully
+
+IMPORTANT:
+- content: imperative form describing what to do (e.g., "Run tests", "Fix bug")
+- activeForm: present continuous form shown during execution (e.g., "Running tests", "Fixing bug")
+- Mark tasks complete IMMEDIATELY after finishing (don't batch)
+- Only ONE task should be in_progress at any time
+- Keep the list concise (3-7 items max)""",
     "input_schema": {
         "type": "object",
         "properties": {
             "todos": {
                 "type": "array",
-                "description": "The complete list of todo items",
+                "description": "The complete list of todo items (replaces entire list)",
                 "items": {
                     "type": "object",
                     "properties": {
                         "id": {
                             "type": "string",
-                            "description": "Unique identifier for the todo (e.g., 'step1', 'step2')"
+                            "description": "Unique identifier for the todo"
                         },
                         "content": {
                             "type": "string",
-                            "description": "Description of the task"
+                            "description": "Imperative form: what to do (e.g., 'Run tests')"
                         },
                         "status": {
                             "type": "string",
-                            "enum": ["pending", "in_progress", "completed", "failed"],
+                            "enum": ["pending", "in_progress", "completed"],
                             "description": "Current status of the task"
+                        },
+                        "activeForm": {
+                            "type": "string",
+                            "description": "Present continuous form shown during execution (e.g., 'Running tests')"
                         }
                     },
-                    "required": ["id", "content", "status"]
+                    "required": ["id", "content", "status", "activeForm"]
                 }
             }
         },

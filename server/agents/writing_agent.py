@@ -571,7 +571,7 @@ class WritingAgent:
             Result content with appended reminder
         """
         # Skip reminder for todo tool (meta-tool)
-        if tool_name == "update_todo":
+        if tool_name == "TodoWrite":
             return result_content
 
         # Different reminders based on tool type

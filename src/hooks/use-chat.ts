@@ -27,11 +27,12 @@ export interface ThinkingStatus {
   content: string;
 }
 
-// Todo item for progress tracking
+// Todo item for progress tracking (aligned with Claude Code's TodoWrite)
 export interface TodoItem {
   id: string;
-  content: string;
-  status: "pending" | "in_progress" | "completed" | "failed";
+  content: string;  // Imperative form: "Run tests"
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;  // Present continuous: "Running tests"
 }
 
 // Chat stream event types
