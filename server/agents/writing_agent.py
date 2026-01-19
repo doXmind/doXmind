@@ -356,36 +356,58 @@ class WritingAgent:
                         }, None, None
 
                     # Handle web search results
-                    # Note: Server tool results are automatically included by the API
-                    # We just need to emit UI events, not add them to message history
+                    # Server tool results must be included in message history
                     elif block.type == "web_search_tool_result":
                         results = []
+                        # Serialize content for message history
+                        serialized_content = []
                         if hasattr(block, 'content') and block.content:
                             for r in block.content:
-                                if hasattr(r, 'type') and r.type == "web_search_result":
-                                    results.append({
-                                        "url": getattr(r, 'url', ''),
-                                        "title": getattr(r, 'title', ''),
-                                    })
-                        # Only yield UI event, no response_update (API handles history)
+                                if hasattr(r, 'type'):
+                                    if r.type == "web_search_result":
+                                        results.append({
+                                            "url": getattr(r, 'url', ''),
+                                            "title": getattr(r, 'title', ''),
+                                        })
+                                        serialized_content.append({
+                                            "type": "web_search_result",
+                                            "url": getattr(r, 'url', ''),
+                                            "title": getattr(r, 'title', ''),
+                                            "encrypted_content": getattr(r, 'encrypted_content', ''),
+                                            "page_age": getattr(r, 'page_age', None),
+                                        })
                         yield {
                             "type": "web_search_result",
                             "tool_id": block.tool_use_id,
                             "results": results
-                        }, None, None
+                        }, {
+                            "type": "web_search_tool_result",
+                            "tool_use_id": block.tool_use_id,
+                            "content": serialized_content
+                        }, None
 
                     # Handle web fetch results
-                    # Note: Server tool results are automatically included by the API
+                    # Server tool results must be included in message history
                     elif block.type == "web_fetch_tool_result":
                         url = ""
-                        if hasattr(block, 'content') and hasattr(block.content, 'url'):
-                            url = block.content.url
-                        # Only yield UI event, no response_update (API handles history)
+                        serialized_content = {}
+                        if hasattr(block, 'content'):
+                            content = block.content
+                            url = getattr(content, 'url', '')
+                            serialized_content = {
+                                "url": url,
+                                "content": getattr(content, 'content', ''),
+                                "title": getattr(content, 'title', ''),
+                            }
                         yield {
                             "type": "web_fetch_result",
                             "tool_id": block.tool_use_id,
                             "url": url
-                        }, None, None
+                        }, {
+                            "type": "web_fetch_tool_result",
+                            "tool_use_id": block.tool_use_id,
+                            "content": serialized_content
+                        }, None
 
                 # Handle content block delta
                 elif event.type == "content_block_delta":
