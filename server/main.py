@@ -22,6 +22,7 @@ from api import (
     knowledge_base,
     review,
     skills,
+    speech,
     versions,
 )
 from config import get_settings
@@ -97,6 +98,7 @@ Most endpoints require authentication via JWT Bearer token or API Key.
         {"name": "import", "description": "Document import"},
         {"name": "autocomplete", "description": "AI autocomplete suggestions"},
         {"name": "review", "description": "AI document review"},
+        {"name": "speech", "description": "Speech-to-text transcription"},
     ],
     contact={
         "name": "doXmind Team",
@@ -214,6 +216,7 @@ app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
+app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 
 
 # ============================================================================

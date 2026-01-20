@@ -131,15 +131,15 @@
 
 /* Skip to Content - Accessibility Link */
 .skip-to-content {
-  @apply absolute z-[100] -top-12 left-4 px-4 py-2;
-  @apply bg-primary text-primary-foreground rounded-md font-medium;
+  @apply absolute -top-12 left-4 z-[100] px-4 py-2;
+  @apply rounded-md bg-primary font-medium text-primary-foreground;
   @apply focus:top-4 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
   @apply transition-all duration-200;
 }
 
 /* Editor Styles */
 .ProseMirror {
-  @apply outline-none min-h-[500px] px-4 py-2;
+  @apply min-h-[500px] px-4 py-2 outline-none;
 }
 
 .ProseMirror > * + * {
@@ -147,7 +147,7 @@
 }
 
 .ProseMirror p.is-editor-empty:first-child::before {
-  @apply text-muted-foreground pointer-events-none float-left h-0;
+  @apply pointer-events-none float-left h-0 text-muted-foreground;
   content: attr(data-placeholder);
 }
 
@@ -179,11 +179,11 @@
 }
 
 .ProseMirror pre {
-  @apply bg-muted rounded-lg p-4 font-mono text-sm overflow-x-auto;
+  @apply overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
 }
 
 .ProseMirror code {
-  @apply bg-muted rounded px-1 py-0.5 font-mono text-sm;
+  @apply rounded bg-muted px-1 py-0.5 font-mono text-sm;
 }
 
 .ProseMirror pre code {
@@ -192,7 +192,7 @@
 
 /* Image Node View */
 .ProseMirror .image-node-wrapper {
-  @apply block my-4;
+  @apply my-4 block;
 }
 
 .ProseMirror .image-node-wrapper[data-align="left"] {
@@ -219,7 +219,7 @@
 }
 
 .ProseMirror .image-container img {
-  @apply max-w-full h-auto rounded-lg;
+  @apply h-auto max-w-full rounded-lg;
   display: block;
 }
 
@@ -259,8 +259,8 @@
 
 /* Size label during resize */
 .ProseMirror .size-label {
-  @apply absolute text-xs whitespace-nowrap pointer-events-none;
-  @apply bg-popover border border-border rounded px-2 py-0.5;
+  @apply pointer-events-none absolute whitespace-nowrap text-xs;
+  @apply rounded border border-border bg-popover px-2 py-0.5;
   bottom: -28px;
   left: 50%;
   transform: translateX(-50%);
@@ -269,7 +269,9 @@
 
 /* Image bubble menu animation */
 .image-bubble-menu {
-  animation: fadeIn 0.2s ease-out, zoomIn 0.2s ease-out;
+  animation:
+    fadeIn 0.2s ease-out,
+    zoomIn 0.2s ease-out;
 }
 
 /* Resizing state */
@@ -278,23 +280,23 @@
 }
 
 .ProseMirror hr {
-  @apply border-border my-8;
+  @apply my-8 border-border;
 }
 
 .ProseMirror h1 {
-  @apply text-3xl font-bold mt-8 mb-4;
+  @apply mb-4 mt-8 text-3xl font-bold;
 }
 
 .ProseMirror h2 {
-  @apply text-2xl font-bold mt-6 mb-3;
+  @apply mb-3 mt-6 text-2xl font-bold;
 }
 
 .ProseMirror h3 {
-  @apply text-xl font-semibold mt-4 mb-2;
+  @apply mb-2 mt-4 text-xl font-semibold;
 }
 
 .ProseMirror h4 {
-  @apply text-lg font-semibold mt-3 mb-2;
+  @apply mb-2 mt-3 text-lg font-semibold;
 }
 
 .ProseMirror a {
@@ -302,7 +304,7 @@
 }
 
 .ProseMirror mark {
-  @apply bg-yellow-200 dark:bg-yellow-800 rounded px-0.5;
+  @apply rounded bg-yellow-200 px-0.5 dark:bg-yellow-800;
 }
 
 /* Task List */
@@ -319,12 +321,12 @@
 }
 
 .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
-  @apply w-4 h-4 rounded border-border;
+  @apply h-4 w-4 rounded border-border;
 }
 
 /* Table */
 .ProseMirror table {
-  @apply border-collapse w-full my-4;
+  @apply my-4 w-full border-collapse;
 }
 
 .ProseMirror th,
@@ -343,25 +345,27 @@
 }
 
 .ProseMirror .selectedCell::after {
-  @apply absolute inset-0 border-2 border-primary pointer-events-none;
-  content: '';
+  @apply pointer-events-none absolute inset-0 border-2 border-primary;
+  content: "";
   z-index: 2;
 }
 
 /* Column resize handle */
 .ProseMirror .column-resize-handle {
-  @apply absolute top-0 right-[-2px] w-1 h-full bg-primary/50;
+  @apply absolute right-[-2px] top-0 h-full w-1 bg-primary/50;
   cursor: col-resize;
 }
 
 /* Table wrapper for overflow handling */
 .ProseMirror .tableWrapper {
-  @apply overflow-x-auto my-4;
+  @apply my-4 overflow-x-auto;
 }
 
 /* Table bubble menu animation */
 .table-bubble-menu {
-  animation: fadeIn 0.2s ease-out, zoomIn 0.2s ease-out;
+  animation:
+    fadeIn 0.2s ease-out,
+    zoomIn 0.2s ease-out;
 }
 
 /* Selection */
@@ -371,27 +375,37 @@
 
 /* Bubble Menu Animation */
 .bubble-menu {
-  animation: fadeIn 0.2s ease-out, zoomIn 0.2s ease-out;
+  animation:
+    fadeIn 0.2s ease-out,
+    zoomIn 0.2s ease-out;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes zoomIn {
-  from { transform: scale(0.95); }
-  to { transform: scale(1); }
+  from {
+    transform: scale(0.95);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
 /* AI Ghost Text (legacy) */
 .ai-ghost-text {
-  @apply text-muted-foreground/50 italic;
+  @apply italic text-muted-foreground/50;
 }
 
 /* Autocomplete Ghost Text - Inline suggestion displayed at cursor */
 .autocomplete-ghost-text {
-  @apply text-muted-foreground/60 pointer-events-none select-none;
+  @apply pointer-events-none select-none text-muted-foreground/60;
   font-style: normal;
   display: inline;
   white-space: pre-wrap;
@@ -456,7 +470,7 @@
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  @apply w-2 h-2;
+  @apply h-2 w-2;
 }
 
 ::-webkit-scrollbar-track {
@@ -464,7 +478,7 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full hover:bg-muted-foreground/30;
+  @apply rounded-full bg-border hover:bg-muted-foreground/30;
 }
 
 /* Spellcheck Error - Red Wavy Underline */
@@ -481,7 +495,9 @@
 
 /* Spellcheck Popup Animation */
 .spellcheck-popup {
-  animation: fadeIn 0.15s ease-out, zoomIn 0.15s ease-out;
+  animation:
+    fadeIn 0.15s ease-out,
+    zoomIn 0.15s ease-out;
 }
 
 /* Smooth Scroll */
@@ -567,9 +583,15 @@ html {
   line-height: 1.3;
 }
 
-.ProseMirror .diff-markdown-content h1 { font-size: 1.5em; }
-.ProseMirror .diff-markdown-content h2 { font-size: 1.3em; }
-.ProseMirror .diff-markdown-content h3 { font-size: 1.1em; }
+.ProseMirror .diff-markdown-content h1 {
+  font-size: 1.5em;
+}
+.ProseMirror .diff-markdown-content h2 {
+  font-size: 1.3em;
+}
+.ProseMirror .diff-markdown-content h3 {
+  font-size: 1.1em;
+}
 
 .ProseMirror .diff-markdown-content strong {
   font-weight: 700;
@@ -781,38 +803,38 @@ html {
 /* Category-specific colors - Grammarly style */
 /* Red: Correctness (grammar, spelling, punctuation) */
 .ProseMirror .review-correctness {
-  text-decoration: underline wavy #EF4444;
+  text-decoration: underline wavy #ef4444;
 }
 
 .dark .ProseMirror .review-correctness {
-  text-decoration-color: #F87171;
+  text-decoration-color: #f87171;
 }
 
 /* Blue: Clarity (conciseness, readability) */
 .ProseMirror .review-clarity {
-  text-decoration: underline wavy #3B82F6;
+  text-decoration: underline wavy #3b82f6;
 }
 
 .dark .ProseMirror .review-clarity {
-  text-decoration-color: #60A5FA;
+  text-decoration-color: #60a5fa;
 }
 
 /* Purple: Tone (formality, politeness) */
 .ProseMirror .review-tone {
-  text-decoration: underline wavy #8B5CF6;
+  text-decoration: underline wavy #8b5cf6;
 }
 
 .dark .ProseMirror .review-tone {
-  text-decoration-color: #A78BFA;
+  text-decoration-color: #a78bfa;
 }
 
 /* Green: Engagement (word choice, variety) */
 .ProseMirror .review-engagement {
-  text-decoration: underline wavy #22C55E;
+  text-decoration: underline wavy #22c55e;
 }
 
 .dark .ProseMirror .review-engagement {
-  text-decoration-color: #4ADE80;
+  text-decoration-color: #4ade80;
 }
 
 /* Review Popup Animation */
@@ -955,7 +977,7 @@ html {
 }
 
 .ProseMirror .code-block-content .hljs-comment {
-  @apply text-gray-400 italic;
+  @apply italic text-gray-400;
 }
 
 .ProseMirror .code-block-content .hljs-function,
@@ -1038,18 +1060,20 @@ html {
 
 /* Block math wrapper */
 .ProseMirror .block-math-wrapper {
-  @apply block my-4;
+  @apply my-4 block;
 }
 
 /* Rendered math base styles */
 .ProseMirror .math-rendered {
   @apply cursor-pointer;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 /* Inline math hover */
 .ProseMirror .inline-math-wrapper .math-rendered:hover {
-  @apply bg-accent/50 rounded;
+  @apply rounded bg-accent/50;
 }
 
 /* Block math hover */
@@ -1060,7 +1084,7 @@ html {
 /* Selected state */
 .ProseMirror .math-rendered.selected,
 .ProseMirror .math-node-wrapper.ProseMirror-selectednode .math-rendered {
-  @apply ring-2 ring-primary ring-offset-2 ring-offset-background rounded;
+  @apply rounded ring-2 ring-primary ring-offset-2 ring-offset-background;
 }
 
 /* Math editor panel */
@@ -1101,7 +1125,7 @@ html {
 }
 
 .symbol-picker::-webkit-scrollbar-thumb {
-  @apply bg-border/50 rounded-full;
+  @apply rounded-full bg-border/50;
 }
 
 /* KaTeX adjustments for editor */
@@ -1121,7 +1145,7 @@ html {
 
 /* Error state for invalid LaTeX */
 .ProseMirror .math-rendered.math-error {
-  @apply text-destructive border border-destructive/30 rounded px-2 py-1;
+  @apply rounded border border-destructive/30 px-2 py-1 text-destructive;
 }
 
 /* Empty equation placeholder */
@@ -1181,7 +1205,9 @@ html {
   height: 2px;
   background-color: hsl(var(--muted-foreground) / 0.4);
   border-radius: 1px;
-  transition: background-color 0.15s ease, width 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    width 0.15s ease;
 }
 
 .outline-line-indicator:hover {
@@ -1192,4 +1218,272 @@ html {
 .outline-line-indicator.active {
   background-color: hsl(var(--primary));
   width: 16px;
+}
+
+/* ====================================
+   Mobile Block Selection Styles
+   Block-level selection for mobile reading mode
+   ==================================== */
+
+/* Selected block - subtle highlight without obstructing reading */
+.ProseMirror .block-selected {
+  position: relative;
+  background-color: hsl(var(--primary) / 0.08);
+  border-radius: 4px;
+  outline: 2px solid hsl(var(--primary) / 0.3);
+  outline-offset: 2px;
+  transition: all 0.15s ease;
+}
+
+/* Left border indicator for selected blocks */
+.ProseMirror .block-selected::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+}
+
+/* Mobile block selection mode */
+@media (max-width: 767px) {
+  /* Disable native text selection on mobile to enable block selection */
+  .ProseMirror {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    /* Prevent text selection cursor */
+    cursor: default;
+    /* Hide the blinking caret on mobile */
+    caret-color: transparent;
+  }
+
+  /* Make all top-level blocks tappable with visual feedback */
+  .ProseMirror > * {
+    transition:
+      background-color 0.1s ease,
+      transform 0.1s ease;
+    border-radius: 4px;
+    /* Add padding for better tap targets */
+    margin-left: -4px;
+    margin-right: -4px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  /* Tap feedback - brief highlight on touch */
+  .ProseMirror > *:active:not(.block-selected) {
+    background-color: hsl(var(--accent) / 0.3);
+    transform: scale(0.995);
+  }
+
+  /* Ensure code blocks and blockquotes have proper styling */
+  .ProseMirror > pre,
+  .ProseMirror > blockquote {
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 12px;
+  }
+}
+
+/* Dark mode adjustments */
+.dark .ProseMirror .block-selected {
+  background-color: hsl(var(--primary) / 0.12);
+  outline-color: hsl(var(--primary) / 0.4);
+}
+
+/* Animation for block selection */
+@keyframes blockSelectPulse {
+  0% {
+    outline-width: 2px;
+    outline-color: hsl(var(--primary) / 0.5);
+  }
+  50% {
+    outline-width: 3px;
+    outline-color: hsl(var(--primary) / 0.3);
+  }
+  100% {
+    outline-width: 2px;
+    outline-color: hsl(var(--primary) / 0.3);
+  }
+}
+
+.ProseMirror .block-selected {
+  animation: blockSelectPulse 0.3s ease-out;
+}
+
+/* ====================================
+   Voice Recording Overlay Styles
+   WeChat-style voice recording UI
+   ==================================== */
+
+/* Voice recording waveform bars */
+.voice-waveform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 48px;
+}
+
+.voice-waveform-bar {
+  width: 4px;
+  min-height: 8px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+  transition: height 0.05s ease;
+}
+
+/* Recording indicator pulse */
+@keyframes recordingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.recording-indicator {
+  animation: recordingPulse 1s ease-in-out infinite;
+}
+
+/* Voice recording overlay gradient */
+.voice-recording-gradient {
+  background: linear-gradient(
+    to top,
+    hsl(var(--background) / 0.98) 0%,
+    hsl(var(--background) / 0.95) 30%,
+    hsl(var(--background) / 0.8) 60%,
+    transparent 100%
+  );
+}
+
+/* ====================================
+   Mobile Action Bar Styles
+   Fixed bottom action bar for block selection
+   ==================================== */
+
+/* Action bar slide-up animation */
+@keyframes actionBarSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.action-bar-enter {
+  animation: actionBarSlideUp 0.2s ease-out;
+}
+
+/* Action button styles */
+.action-button {
+  @apply flex flex-col items-center gap-1 rounded-xl p-2;
+  @apply min-w-[60px] transition-colors;
+}
+
+.action-button:active {
+  @apply bg-accent;
+}
+
+.action-button-primary {
+  @apply bg-primary/10 text-primary;
+}
+
+.action-button:disabled {
+  @apply pointer-events-none opacity-40;
+}
+
+/* ====================================
+   AI Edit Preview Styles
+   Full-screen diff preview for mobile
+   ==================================== */
+
+/* Original content (to be replaced) */
+.preview-original {
+  @apply rounded-lg p-3;
+  @apply border border-destructive/20 bg-destructive/10;
+}
+
+.preview-original-text {
+  @apply line-through opacity-70;
+}
+
+/* Proposed content (new) */
+.preview-proposed {
+  @apply rounded-lg p-3;
+  @apply border border-primary/20 bg-primary/10;
+}
+
+/* Preview slide-up animation */
+@keyframes previewSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.preview-enter {
+  animation: previewSlideUp 0.3s ease-out;
+}
+
+/* ====================================
+   Mobile Outline (Notion Style)
+   Full-screen overlay outline
+   ==================================== */
+
+/* Notion-style heading item */
+.notion-heading-item {
+  @apply w-full px-4 py-3 text-left;
+  @apply transition-colors;
+  @apply active:bg-accent/50;
+  min-height: 48px;
+}
+
+.notion-heading-item.active {
+  @apply bg-primary/5 font-medium text-primary;
+}
+
+/* Heading level indentation */
+.notion-heading-h1 {
+  @apply font-semibold;
+  padding-left: 16px;
+}
+
+.notion-heading-h2 {
+  @apply font-medium;
+  padding-left: 32px;
+}
+
+.notion-heading-h3 {
+  @apply text-sm text-muted-foreground;
+  padding-left: 48px;
+}
+
+/* ====================================
+   Reduced Motion Support for Mobile Styles
+   ==================================== */
+@media (prefers-reduced-motion: reduce) {
+  .ProseMirror .block-selected {
+    animation: none !important;
+  }
+
+  .recording-indicator {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  .action-bar-enter,
+  .preview-enter {
+    animation: none !important;
+  }
 }

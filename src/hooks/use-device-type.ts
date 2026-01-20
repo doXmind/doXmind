@@ -21,12 +21,28 @@ interface DeviceType {
  * @returns Device type information
  */
 export function useDeviceType(): DeviceType {
-  const [deviceType, setDeviceType] = useState<DeviceType>({
-    isMobile: false,
-    isTablet: false,
-    isDesktop: true,
-    width: typeof window !== "undefined" ? window.innerWidth : BREAKPOINTS.LG,
-  });
+  // Initialize with actual window size if available (client-side)
+  const getInitialState = (): DeviceType => {
+    if (typeof window === "undefined") {
+      // Server-side: default to desktop
+      return {
+        isMobile: false,
+        isTablet: false,
+        isDesktop: true,
+        width: BREAKPOINTS.LG,
+      };
+    }
+    // Client-side: use actual window width
+    const width = window.innerWidth;
+    return {
+      isMobile: width < BREAKPOINTS.MD,
+      isTablet: width >= BREAKPOINTS.MD && width < BREAKPOINTS.LG,
+      isDesktop: width >= BREAKPOINTS.LG,
+      width,
+    };
+  };
+
+  const [deviceType, setDeviceType] = useState<DeviceType>(getInitialState);
 
   useEffect(() => {
     const checkDevice = () => {

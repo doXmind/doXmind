@@ -9,8 +9,7 @@
 // =============================================================================
 
 /** Backend API base URL */
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // =============================================================================
 // Editor Configuration
@@ -209,6 +208,8 @@ export const MOBILE_PANEL = {
 
 /** Z-index layers for mobile overlays */
 export const Z_INDEX = {
+  /** Floating buttons (outline, etc.) */
+  FLOATING_BUTTON: 35,
   /** Bottom navigation bar */
   BOTTOM_NAV: 40,
   /** Mobile overlay backdrop */
@@ -253,7 +254,7 @@ export const MOBILE_V2 = {
   /** AI Panel - Peek mode height */
   AI_PEEK_HEIGHT: 100,
   /** AI Panel - Chat mode height ratio (70vh for better usability) */
-  AI_CHAT_RATIO: 0.70,
+  AI_CHAT_RATIO: 0.7,
   /** AI Panel - Full mode height ratio */
   AI_FULL_RATIO: 0.9,
 

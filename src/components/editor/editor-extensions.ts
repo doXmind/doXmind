@@ -25,12 +25,20 @@ import { SearchExtension } from "@/extensions/search";
 import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
 import { DiffReviewExtension } from "@/extensions/diff-review";
 import { TextReviewExtension } from "@/extensions/text-review-extension";
+import { BlockSelectionExtension } from "@/extensions/block-selection-extension";
 import type { Extensions } from "@tiptap/react";
+
+export interface EditorExtensionsOptions {
+  /** Whether block selection is enabled (for mobile) */
+  enableBlockSelection?: boolean;
+}
 
 /**
  * Get all editor extensions with their configurations
  */
-export function getEditorExtensions(): Extensions {
+export function getEditorExtensions(options: EditorExtensionsOptions = {}): Extensions {
+  const { enableBlockSelection = false } = options;
+
   return [
     // Core editing
     StarterKit.configure({
@@ -93,6 +101,11 @@ export function getEditorExtensions(): Extensions {
     SpellcheckExtension,
     DiffReviewExtension,
     TextReviewExtension,
+
+    // Mobile block selection (long-press to select)
+    BlockSelectionExtension.configure({
+      enabled: enableBlockSelection,
+    }),
   ];
 }
 

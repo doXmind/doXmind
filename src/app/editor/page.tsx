@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { Editor } from "@/components/editor/editor";
 import { ChatPanel } from "@/components/ai/chat-panel";
-// Mobile V2 Components
+// Mobile V2 Components (Reading Mode)
 import { AdaptiveNav } from "@/components/mobile/adaptive-nav";
-import { AIPanel } from "@/components/mobile/ai-panel";
-import { BlockSelector } from "@/components/mobile/block-selector";
 import { FilesPanel } from "@/components/mobile/panel-container";
-// Legacy mobile components (for outline content)
-import { MobileOutlineSheet } from "@/components/mobile/mobile-outline-sheet";
+import { MobileActionBar } from "@/components/mobile/mobile-action-bar";
+import { VoiceRecordingOverlay } from "@/components/mobile/voice-recording-overlay";
+import { FloatingOutline } from "@/components/mobile/floating-outline";
+import { VoiceEditPreview } from "@/components/mobile/voice-edit-preview";
+// Shared Components
 import { LoadingScreen } from "@/components/loading-screen";
 import { KeyboardShortcutsModal } from "@/components/ui/keyboard-shortcuts-modal";
 import { CommandPalette } from "@/components/ui/command-palette";
@@ -19,11 +20,17 @@ import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { NetworkStatusIndicator } from "@/components/ui/network-status-indicator";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useBlockSelectionStore } from "@/stores/block-selection-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useMobileGestures } from "@/hooks/use-mobile-gestures";
 import { useAuthGuard } from "@/hooks/use-auth-guard";
+import { useBlockSelection } from "@/hooks/use-block-selection";
+import { useChat } from "@/hooks/use-chat";
+import { useDiffReview } from "@/hooks/use-diff-review";
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { MOBILE_V2 } from "@/lib/constants";
@@ -45,13 +52,42 @@ export default function EditorPage() {
     isMobileSidebarOpen,
     setMobileSidebarOpen,
     setMobileOutlineOpen,
-    aiPanelState,
   } = useLayoutStore();
+
+  const { isSelectionActive, selectedBlocks, getSelectedText, clearSelection } =
+    useBlockSelectionStore();
+
+  const { editor } = useEditorRefStore();
+
   const currentFile = files.find((f) => f.id === currentFileId);
   const isMobile = useIsMobile();
 
+  // Mobile voice recording state
+  const [isVoiceRecordingOpen, setVoiceRecordingOpen] = useState(false);
+
+  // Mobile AI chat sheet state
+  const [isVoiceEditPreviewOpen, setVoiceEditPreviewOpen] = useState(false);
+
+  // Chat hook for AI interactions
+  const { sendMessage, isStreaming, toolHistory, thinking } = useChat();
+
+  // Editor store for chat contexts
+  const { addChatContext } = useEditorStore();
+
+  // Diff review hook for accept/reject operations
+  const { handleAcceptAll, handleRejectAll } = useDiffReview({
+    editor,
+    fileId: currentFileId || "",
+  });
+
   // Auth guard - handles 401 responses and redirects to login
   useAuthGuard();
+
+  // Mobile block selection (tap to select)
+  useBlockSelection({
+    editor,
+    enabled: isMobile,
+  });
 
   // Mobile gesture navigation
   const handleEdgeSwipe = useCallback(
@@ -119,11 +155,9 @@ export default function EditorPage() {
       // Ctrl+Shift+F or Cmd+Shift+F - AI Search (semantic search)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
-        // Close command palette if open
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
         }
-        // Open search bar in AI mode
         openSearchBarWithAI();
         return;
       }
@@ -131,11 +165,9 @@ export default function EditorPage() {
       // Ctrl+F or Cmd+F - Search bar (find in document)
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
-        // Close command palette if open
         if (isCommandPaletteOpen) {
           setCommandPaletteOpen(false);
         }
-        // Toggle search bar
         setSearchBarOpen(!isSearchBarOpen);
         return;
       }
@@ -143,50 +175,159 @@ export default function EditorPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isKeyboardShortcutsOpen, setKeyboardShortcutsOpen, isCommandPaletteOpen, setCommandPaletteOpen, openCommandPalette, isSearchBarOpen, setSearchBarOpen, openSearchBarWithAI]);
+  }, [
+    isKeyboardShortcutsOpen,
+    setKeyboardShortcutsOpen,
+    isCommandPaletteOpen,
+    setCommandPaletteOpen,
+    openCommandPalette,
+    isSearchBarOpen,
+    setSearchBarOpen,
+    openSearchBarWithAI,
+  ]);
 
-  // Mobile Layout V2: Redesigned with adaptive navigation and gesture support
+  // Mobile: Handle copy
+  const handleCopy = useCallback(() => {
+    const text = getSelectedText();
+    if (text) {
+      navigator.clipboard.writeText(text);
+    }
+  }, [getSelectedText]);
+
+  // Mobile: Handle cut (copy + delete)
+  const handleCut = useCallback(() => {
+    const text = getSelectedText();
+    if (text && editor) {
+      navigator.clipboard.writeText(text);
+      // Delete selected blocks
+      for (const block of selectedBlocks) {
+        editor.chain().focus().deleteRange({ from: block.from, to: block.to }).run();
+      }
+      clearSelection();
+    }
+  }, [getSelectedText, editor, selectedBlocks, clearSelection]);
+
+  // Mobile: Handle delete
+  const handleDelete = useCallback(() => {
+    if (editor && selectedBlocks.length > 0) {
+      // Delete selected blocks in reverse order to maintain positions
+      const sortedBlocks = [...selectedBlocks].sort((a, b) => b.from - a.from);
+      for (const block of sortedBlocks) {
+        editor.chain().focus().deleteRange({ from: block.from, to: block.to }).run();
+      }
+      clearSelection();
+    }
+  }, [editor, selectedBlocks, clearSelection]);
+
+  // Mobile: Handle AI button click (opens AI Chat Sheet)
+  const handleAIOpen = useCallback(() => {
+    // If there's selected text, add it as chat context
+    const selectedText = getSelectedText();
+    if (selectedText && selectedBlocks.length > 0) {
+      // Get the range from the first and last selected blocks
+      const firstBlock = selectedBlocks[0];
+      const lastBlock = selectedBlocks[selectedBlocks.length - 1];
+      addChatContext({
+        type: "selection",
+        text: selectedText,
+        from: firstBlock.from,
+        to: lastBlock.to,
+      });
+    }
+    setVoiceEditPreviewOpen(true);
+  }, [getSelectedText, selectedBlocks, addChatContext]);
+
+  // Mobile: Handle voice transcription complete
+  const handleVoiceTranscriptionComplete = useCallback(
+    (transcription: string, selectedText: string) => {
+      console.log("[Mobile] Voice transcription complete:", transcription);
+      if (!currentFile) {
+        console.error("[Mobile] No current file!");
+        return;
+      }
+
+      // Build the AI message with context
+      const message = selectedText
+        ? `Based on the following selected text:\n\n"${selectedText}"\n\n${transcription}`
+        : transcription;
+
+      // Send to AI chat
+      sendMessage(message, [currentFile.id]);
+
+      // Close voice overlay and clear selection
+      setVoiceRecordingOpen(false);
+      clearSelection();
+    },
+    [currentFile, sendMessage, clearSelection]
+  );
+
+  // Mobile Layout: Reading-focused with block selection
   if (isMobile) {
     return (
       <LoadingScreen isLoading={isLoading} isMobile={true}>
         <AppShell>
           <div
-            className="flex flex-col h-full"
+            className="flex h-full flex-col"
             style={{
-              // Nav bar height (48px) + extra space for FAB (16px) + safe area
-              paddingBottom:
-                aiPanelState === "closed" ? MOBILE_V2.NAV_BAR_HEIGHT + 16 : 0,
+              // Adjust padding based on what's showing at the bottom
+              paddingBottom: isSelectionActive
+                ? 0 // Action bar handles its own spacing
+                : MOBILE_V2.NAV_BAR_HEIGHT + 16,
             }}
           >
             {/* Editor Content - Always Visible */}
             <main id="main-content" className="flex-1 overflow-hidden">
-              {currentFile ? (
-                <Editor file={currentFile} />
-              ) : (
-                <WelcomeScreen />
-              )}
+              {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
             </main>
           </div>
 
-          {/* Mobile V2: Adaptive Bottom Navigation */}
-          <AdaptiveNav />
+          {/* Mobile: Adaptive Bottom Navigation (AI + Files) */}
+          <AdaptiveNav onAITap={handleAIOpen} />
 
-          {/* Mobile V2: Files Panel (slide from right on edge swipe) */}
-          <FilesPanel
-            isOpen={isMobileSidebarOpen}
-            onClose={() => setMobileSidebarOpen(false)}
-          >
+          {/* Mobile: Action Bar (shows when blocks are selected via tap) */}
+          <MobileActionBar
+            onCopy={handleCopy}
+            onCut={handleCut}
+            onDelete={handleDelete}
+            onAIVoice={handleAIOpen}
+          />
+
+          {/* Mobile: Voice Recording Overlay */}
+          <VoiceRecordingOverlay
+            isOpen={isVoiceRecordingOpen}
+            onClose={() => setVoiceRecordingOpen(false)}
+            onTranscriptionComplete={handleVoiceTranscriptionComplete}
+          />
+
+          {/* Mobile: Files Panel (slide from right) */}
+          <FilesPanel isOpen={isMobileSidebarOpen} onClose={() => setMobileSidebarOpen(false)}>
             <Sidebar />
           </FilesPanel>
 
-          {/* Mobile V2: AI Panel (multi-mode bottom sheet) */}
-          {currentFile && <AIPanel />}
+          {/* Mobile: Floating Outline (Google Docs style) */}
+          <FloatingOutline />
 
-          {/* Mobile V2: Block Selector */}
-          <BlockSelector editor={null} />
-
-          {/* Mobile Outline Sheet (using legacy for now - can be upgraded later) */}
-          <MobileOutlineSheet />
+          {/* Mobile: AI Chat Sheet */}
+          <VoiceEditPreview
+            isOpen={isVoiceEditPreviewOpen}
+            isStreaming={isStreaming}
+            toolHistory={toolHistory}
+            thinking={thinking}
+            onAccept={() => {
+              handleAcceptAll();
+              setVoiceEditPreviewOpen(false);
+            }}
+            onReject={() => {
+              handleRejectAll();
+              setVoiceEditPreviewOpen(false);
+            }}
+            onClose={() => {
+              setVoiceEditPreviewOpen(false);
+            }}
+            onVoiceRecord={() => {
+              setVoiceRecordingOpen(true);
+            }}
+          />
 
           {/* Keyboard Shortcuts Modal */}
           <KeyboardShortcutsModal
@@ -218,28 +359,24 @@ export default function EditorPage() {
           {/* Sidebar */}
           <aside
             className={cn(
-              "w-64 border-r border-border bg-card flex-shrink-0 transition-all duration-300",
-              !isSidebarOpen && "w-0 opacity-0 overflow-hidden"
+              "w-64 flex-shrink-0 border-r border-border bg-card transition-all duration-300",
+              !isSidebarOpen && "w-0 overflow-hidden opacity-0"
             )}
           >
             <Sidebar />
           </aside>
 
           {/* Main Editor Area */}
-          <main id="main-content" className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {currentFile ? (
-              <Editor file={currentFile} />
-            ) : (
-              <WelcomeScreen />
-            )}
+          <main id="main-content" className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
           </main>
 
           {/* AI Chat Panel - Only show when a file is open */}
           {currentFile && (
             <aside
               className={cn(
-                "w-96 border-l border-border bg-card flex-shrink-0 transition-all duration-300",
-                !isChatOpen && "w-0 opacity-0 overflow-hidden"
+                "w-96 flex-shrink-0 border-l border-border bg-card transition-all duration-300",
+                !isChatOpen && "w-0 overflow-hidden opacity-0"
               )}
             >
               <ChatPanel />
@@ -254,10 +391,7 @@ export default function EditorPage() {
         />
 
         {/* Command Palette */}
-        <CommandPalette
-          open={isCommandPaletteOpen}
-          onClose={() => setCommandPaletteOpen(false)}
-        />
+        <CommandPalette open={isCommandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
 
         {/* Onboarding Tour */}
         <OnboardingTour />

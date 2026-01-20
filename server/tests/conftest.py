@@ -139,8 +139,12 @@ def sync_client(db_session: AsyncSession) -> Generator[TestClient, None, None]:
 
 @pytest.fixture
 def auth_headers() -> dict:
-    """Generate authentication headers for protected endpoints."""
-    token = create_access_token(subject="test-user-id")
+    """Generate authentication headers for protected endpoints.
+
+    Uses 'dev-user' subject which returns None for user_id (shared data mode),
+    avoiding foreign key constraint issues when creating conversations.
+    """
+    token = create_access_token(subject="dev-user")
     return {"Authorization": f"Bearer {token}"}
 
 

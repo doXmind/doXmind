@@ -29,20 +29,24 @@ export function ChatPanel() {
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
 
   // Import editor store for chat context feature (Context Pills)
-  const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } = useEditorStore();
+  const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
+    useEditorStore();
 
   // Get conversation key without triggering store updates during render
   const conversationKey = currentFileId || "global";
   const conversation = useMemo(() => {
-    return conversations[conversationKey] || {
-      id: conversationKey,
-      fileId: currentFileId,
-      messages: [],
-      createdAt: new Date().toISOString(),
-    };
+    return (
+      conversations[conversationKey] || {
+        id: conversationKey,
+        fileId: currentFileId,
+        messages: [],
+        createdAt: new Date().toISOString(),
+      }
+    );
   }, [conversations, conversationKey, currentFileId]);
 
-  const { sendMessage, isStreaming, stopStreaming, currentTool, toolHistory, thinking, todos, clearTodos } = useChat();
+  const { sendMessage, isStreaming, stopStreaming, currentTool, toolHistory, thinking, todos } =
+    useChat();
 
   // Load conversation history from backend when file changes
   useEffect(() => {
@@ -74,20 +78,21 @@ export function ChatPanel() {
     const message = input.trim();
     // Pass contexts as a separate parameter (for display), not concatenated to message
     // Include base64 and mediaType for image contexts to enable multimodal API
-    const contextsToSend = chatContexts.length > 0
-      ? chatContexts.map(c => {
-          if (c.type === 'image') {
-            return {
-              type: 'image' as const,
-              src: c.src,
-              alt: c.alt,
-              base64: c.base64,
-              mediaType: c.mediaType,
-            };
-          }
-          return { type: 'selection' as const, text: c.text };
-        })
-      : null;
+    const contextsToSend =
+      chatContexts.length > 0
+        ? chatContexts.map((c) => {
+            if (c.type === "image") {
+              return {
+                type: "image" as const,
+                src: c.src,
+                alt: c.alt,
+                base64: c.base64,
+                mediaType: c.mediaType,
+              };
+            }
+            return { type: "selection" as const, text: c.text };
+          })
+        : null;
 
     setInput("");
     clearAllChatContexts(); // Clear all contexts after sending
@@ -122,15 +127,15 @@ export function ChatPanel() {
     }
   };
 
-  const currentImageCount = chatContexts.filter(c => c.type === 'image').length;
+  const currentImageCount = chatContexts.filter((c) => c.type === "image").length;
 
   // Process image file and add to context
   const processImageFile = (file: File) => {
     // Only accept image files
-    if (!file.type.startsWith('image/')) return;
+    if (!file.type.startsWith("image/")) return;
 
     // Check image count limit
-    const imageCount = chatContexts.filter(c => c.type === 'image').length;
+    const imageCount = chatContexts.filter((c) => c.type === "image").length;
     if (imageCount >= CHAT_MAX_IMAGES) {
       return;
     }
@@ -144,13 +149,13 @@ export function ChatPanel() {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(',')[1];
+      const base64 = dataUrl.split(",")[1];
       const mediaType = file.type;
 
       addChatContext({
-        type: 'image',
-        src: dataUrl,  // Data URL for preview display
-        alt: file.name || 'Pasted image',
+        type: "image",
+        src: dataUrl, // Data URL for preview display
+        alt: file.name || "Pasted image",
         base64,
         mediaType,
       });
@@ -171,7 +176,7 @@ export function ChatPanel() {
     if (!items) return;
 
     for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
+      if (item.type.startsWith("image/")) {
         e.preventDefault();
         const file = item.getAsFile();
         if (file) {
@@ -182,9 +187,9 @@ export function ChatPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Header - Hidden on mobile (title shown in mobile header) */}
-      <div className="hidden md:flex p-3 border-b border-border items-center justify-between">
+      <div className="chat-header-desktop hidden items-center justify-between border-b border-border p-3 md:flex">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
           <h2 className="text-sm font-semibold">AI Assistant</h2>
@@ -207,7 +212,7 @@ export function ChatPanel() {
       </div>
 
       {/* Mobile Header Actions */}
-      <div className="md:hidden flex justify-end items-center p-2 border-b border-border">
+      <div className="chat-header-mobile flex items-center justify-end border-b border-border p-2 md:hidden">
         {/* Clear button */}
         {conversation.messages.length > 0 && (
           <Button
@@ -226,18 +231,18 @@ export function ChatPanel() {
       {/* Messages */}
       <ScrollArea className="flex-1 p-4">
         {isLoadingHistory ? (
-          <div className="flex flex-col items-center justify-center h-full text-center py-8">
-            <Loader2 className="h-8 w-8 text-muted-foreground mb-4 animate-spin" />
+          <div className="flex h-full flex-col items-center justify-center py-8 text-center">
+            <Loader2 className="mb-4 h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">Loading conversation history...</p>
           </div>
         ) : conversation.messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center py-8">
-            <Sparkles className="h-8 w-8 text-muted-foreground mb-4" />
-            <h3 className="font-medium mb-2">Start a conversation</h3>
-            <p className="text-sm text-muted-foreground max-w-[250px]">
+          <div className="flex h-full flex-col items-center justify-center py-8 text-center">
+            <Sparkles className="mb-4 h-8 w-8 text-muted-foreground" />
+            <h3 className="mb-2 font-medium">Start a conversation</h3>
+            <p className="max-w-[250px] text-sm text-muted-foreground">
               Ask me to help you write, edit, or improve your document.
             </p>
-            <div className="mt-4 space-y-2 w-full">
+            <div className="mt-4 w-full space-y-2">
               <SuggestionButton onClick={() => setInput("Help me write a report")}>
                 Write a report
               </SuggestionButton>
@@ -284,18 +289,14 @@ export function ChatPanel() {
       {/* Input - with safe area padding on mobile */}
       <form
         onSubmit={handleSubmit}
-        className="p-3 md:p-3 border-t border-border"
+        className="border-t border-border p-3 md:p-3"
         style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
       >
         {/* Context Pills - shows attached images and selected text */}
         {chatContexts.length > 0 && (
           <div className="mb-2 space-y-1">
             {chatContexts.map((ctx) => (
-              <ContextPill
-                key={ctx.id}
-                context={ctx}
-                onRemove={() => removeChatContext(ctx.id)}
-              />
+              <ContextPill key={ctx.id} context={ctx} onRemove={() => removeChatContext(ctx.id)} />
             ))}
           </div>
         )}
@@ -320,7 +321,7 @@ export function ChatPanel() {
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder="Ask AI anything..."
-            className="min-h-[24px] max-h-[200px] flex-1 resize-none border-0 bg-transparent py-1 px-1 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="max-h-[200px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
             disabled={isStreaming}
             rows={1}
           />
@@ -355,7 +356,7 @@ export function ChatPanel() {
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground mt-2 text-center hidden md:block">
+        <p className="mt-2 hidden text-center text-xs text-muted-foreground md:block">
           Press Enter to send, Shift+Enter for new line
         </p>
       </form>

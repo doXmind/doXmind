@@ -15,6 +15,7 @@ const statusConfig = {
     icon: Circle,
     color: "text-muted-foreground",
     bgColor: "bg-muted/50",
+    animate: false,
   },
   in_progress: {
     icon: Loader2,
@@ -26,6 +27,7 @@ const statusConfig = {
     icon: CheckCircle2,
     color: "text-green-500",
     bgColor: "bg-green-500/10",
+    animate: false,
   },
 };
 
@@ -40,22 +42,19 @@ export function TodoProgress({ todos, className }: TodoProgressProps) {
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className={cn(
-        "rounded-lg border bg-card/50 backdrop-blur-sm p-3 space-y-2",
-        className
-      )}
+      className={cn("space-y-2 rounded-lg border bg-card/50 p-3 backdrop-blur-sm", className)}
     >
       {/* Progress bar */}
       <div className="flex items-center gap-2">
-        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
           <motion.div
-            className="h-full bg-primary rounded-full"
+            className="h-full rounded-full bg-primary"
             initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
             transition={{ duration: 0.3 }}
           />
         </div>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span className="text-xs tabular-nums text-muted-foreground">
           {completedCount}/{todos.length}
         </span>
       </div>
@@ -73,22 +72,15 @@ export function TodoProgress({ todos, className }: TodoProgressProps) {
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}
-                className={cn(
-                  "flex items-center gap-2 text-sm py-1 px-2 rounded",
-                  config.bgColor
-                )}
+                className={cn("flex items-center gap-2 rounded px-2 py-1 text-sm", config.bgColor)}
               >
                 <Icon
-                  className={cn(
-                    "h-4 w-4 shrink-0",
-                    config.color,
-                    config.animate && "animate-spin"
-                  )}
+                  className={cn("h-4 w-4 shrink-0", config.color, config.animate && "animate-spin")}
                 />
                 <span
                   className={cn(
                     "truncate",
-                    todo.status === "completed" && "line-through text-muted-foreground"
+                    todo.status === "completed" && "text-muted-foreground line-through"
                   )}
                 >
                   {todo.status === "in_progress" ? todo.activeForm : todo.content}

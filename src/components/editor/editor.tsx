@@ -1,15 +1,13 @@
 "use client";
 
 import { useEditor, EditorContent } from "@tiptap/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { EditorToolbar } from "./editor-toolbar";
-import { MobileToolbar } from "@/components/mobile/mobile-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 import { TableBubbleMenu } from "./table-bubble-menu";
 import { ImageBubbleMenu } from "./image-bubble-menu";
 import { ImageModal } from "./image-modal";
-import { LinkModal } from "./link-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
 import { DiffReviewToolbar } from "./diff-review-toolbar";
@@ -59,9 +57,6 @@ export function Editor({ file: initialFile }: EditorProps) {
   // Search bar state
   const { isSearchBarOpen, toggleSearchBar } = useLayoutStore();
 
-  // Mobile link modal state
-  const [linkModalOpen, setLinkModalOpen] = useState(false);
-
   const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
 
@@ -80,7 +75,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   );
 
   const editor = useEditor({
-    extensions: getEditorExtensions(),
+    extensions: getEditorExtensions({ enableBlockSelection: isMobile }),
     content: file.content,
     editorProps: defaultEditorProps,
     onUpdate: ({ editor }) => {
@@ -105,6 +100,14 @@ export function Editor({ file: initialFile }: EditorProps) {
     setEditor(editor);
     return () => setEditor(null);
   }, [editor, setEditor]);
+
+  // Sync block selection enabled state with isMobile
+  // This is needed because useEditor doesn't re-initialize on prop changes
+  useEffect(() => {
+    if (editor && editor.commands.setBlockSelectionEnabled) {
+      editor.commands.setBlockSelectionEnabled(isMobile);
+    }
+  }, [editor, isMobile]);
 
   // Reset when file changes
   useEffect(() => {
@@ -208,14 +211,6 @@ export function Editor({ file: initialFile }: EditorProps) {
     [imageModalCallback, closeImageModal]
   );
 
-  // Handle link confirm for mobile toolbar
-  const handleLinkConfirm = useCallback(
-    (url: string) => {
-      editor?.chain().focus().setLink({ href: url }).run();
-    },
-    [editor]
-  );
-
   if (!editor) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -226,7 +221,7 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Desktop Toolbar */}
+      {/* Desktop Toolbar - hidden on mobile (mobile uses block-based voice interactions) */}
       {!isMobile && (
         <EditorToolbar
           editor={editor}
@@ -238,22 +233,7 @@ export function Editor({ file: initialFile }: EditorProps) {
         />
       )}
 
-      {/* Mobile Toolbar */}
-      {isMobile && (
-        <MobileToolbar
-          editor={editor}
-          onLinkClick={() => setLinkModalOpen(true)}
-          onImageClick={() => {
-            useEditorStore.getState().openImageModal((url, alt) => {
-              editor?.chain().focus().setImage({ src: url, alt }).run();
-            });
-          }}
-          onReviewClick={handleReviewClick}
-          isReviewLoading={isReviewLoading}
-          isReviewActive={isReviewActive}
-        />
-      )}
-
+      {/* Diff Review Toolbar - shown on both desktop and mobile when active */}
       <DiffReviewToolbar
         editor={editor}
         isActive={isReviewMode}
@@ -287,25 +267,25 @@ export function Editor({ file: initialFile }: EditorProps) {
         )}
       </div>
 
-      {/* Bubble Menus & Popups */}
-      <BubbleMenuComponent editor={editor} />
-      <LinkBubbleMenu editor={editor} />
-      <TableBubbleMenu editor={editor} />
-      <ImageBubbleMenu editor={editor} />
-      <SpellcheckPopup editor={editor} />
-      <ReviewPopup editor={editor} />
-      <QuickEditMenu onApply={handleQuickEditApply} />
+      {/* Bubble Menus & Popups - Desktop only */}
+      {/* Mobile uses block-based selection with long-press, no text selection menus */}
+      {!isMobile && (
+        <>
+          <BubbleMenuComponent editor={editor} />
+          <LinkBubbleMenu editor={editor} />
+          <TableBubbleMenu editor={editor} />
+          <ImageBubbleMenu editor={editor} />
+          <SpellcheckPopup editor={editor} />
+          <ReviewPopup editor={editor} />
+          <QuickEditMenu onApply={handleQuickEditApply} />
+        </>
+      )}
 
       {/* Modals */}
       <ImageModal
         open={imageModalOpen}
         onClose={closeImageModal}
         onConfirm={handleImageModalConfirm}
-      />
-      <LinkModal
-        open={linkModalOpen}
-        onClose={() => setLinkModalOpen(false)}
-        onConfirm={handleLinkConfirm}
       />
     </div>
   );
