@@ -26,7 +26,7 @@ import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { debounce } from "@/lib/utils";
+import { cn, debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
 import { applyPendingEdit } from "./editor-edit-operations";
@@ -250,7 +250,8 @@ export function Editor({ file: initialFile }: EditorProps) {
         {!isMobile && <Mindlines editor={editor} />}
         {/* Main editor content area */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <ScrollArea className="min-h-0 flex-1">
+          {/* On mobile, parent MobileEditorLayout handles scrolling, so disable ScrollArea's overflow */}
+          <ScrollArea className={cn("min-h-0 flex-1", isMobile && "overflow-visible")}>
             <div className="mx-auto max-w-4xl px-4 pt-0 pb-2 md:px-8 md:py-6">
               <EditorContent editor={editor} />
             </div>

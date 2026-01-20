@@ -270,7 +270,11 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
                       pressStartPos = pos.pos;
                     }
 
-                    // Prevent default to stop text selection from starting
+                    // Blur editor immediately on touch to prevent keyboard from appearing
+                    // This is safe because we're in block selection mode (not editing mode)
+                    view.dom.blur();
+
+                    // Prevent default to stop text selection and focus
                     // but allow scrolling by not returning true
                     return false;
                   },
@@ -293,6 +297,10 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
                     const wasTap = dx < TAP_THRESHOLD && dy < TAP_THRESHOLD;
 
                     if (wasTap && pressStartPos !== null) {
+                      // Prevent the editor from gaining focus (which would show keyboard)
+                      event.preventDefault();
+                      // Blur the editor to ensure keyboard doesn't appear
+                      view.dom.blur();
                       selectBlockAtPosition(view.state.doc, pressStartPos, event);
                     }
 
