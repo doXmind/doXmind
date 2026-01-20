@@ -14,7 +14,7 @@ export function ChatSettings() {
         variant="ghost"
         size="icon"
         onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-        className={`h-7 w-7 ${webSearchEnabled ? "text-blue-500 bg-blue-500/10" : "text-muted-foreground"}`}
+        className={`h-7 w-7 rounded-full ${webSearchEnabled ? "text-blue-500 bg-blue-500/10" : "text-muted-foreground"}`}
         aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
       >
         <Globe className="h-4 w-4" />

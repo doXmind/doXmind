@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useChatStore, type ChatMessage, type ToolCall, type MessageContextItem } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useStreamingStore, type ToolStatus, type TodoItem } from "@/stores/streaming-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
@@ -11,29 +12,7 @@ import { api } from "@/lib/api";
 
 // Re-export types for convenience
 export type { EditOperation } from "./use-edit-operations";
-
-// Tool status for UI display
-export interface ToolStatus {
-  name: string;
-  status: "running" | "completed" | "error";
-  message?: string;
-  toolId?: string;
-  input?: string;
-}
-
-// Thinking status for UI display
-export interface ThinkingStatus {
-  isThinking: boolean;
-  content: string;
-}
-
-// Todo item for progress tracking (aligned with Claude Code's TodoWrite)
-export interface TodoItem {
-  id: string;
-  content: string;  // Imperative form: "Run tests"
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;  // Present continuous: "Running tests"
-}
+export type { ToolStatus, ThinkingStatus, TodoItem } from "@/stores/streaming-store";
 
 // Chat stream event types
 interface ChatStreamEvent {
@@ -53,11 +32,21 @@ interface ChatStreamEvent {
 }
 
 export function useChat() {
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [currentTool, setCurrentTool] = useState<ToolStatus | null>(null);
-  const [toolHistory, setToolHistory] = useState<ToolStatus[]>([]);
-  const [thinking, setThinking] = useState<ThinkingStatus>({ isThinking: false, content: "" });
-  const [todos, setTodos] = useState<TodoItem[]>([]);
+  // Use global streaming store instead of local state
+  const {
+    isStreaming,
+    currentTool,
+    toolHistory,
+    thinking,
+    todos,
+    setStreaming,
+    setCurrentTool,
+    setToolHistory,
+    setThinking,
+    setTodos,
+    clearTodos,
+  } = useStreamingStore();
+
   const streamControllerRef = useRef(createStreamController());
   const toolInputRef = useRef<string>("");
 
@@ -135,7 +124,7 @@ export function useChat() {
         isStreaming: true,
       });
 
-      setIsStreaming(true);
+      setStreaming(true);
       setCurrentTool(null);
       setToolHistory([]);
       setThinking({ isThinking: false, content: "" });
@@ -407,22 +396,18 @@ export function useChat() {
         appendToMessage(conversationId, assistantMessageId, errorMessage);
       } finally {
         setMessageStreaming(conversationId, assistantMessageId, false);
-        setIsStreaming(false);
+        setStreaming(false);
         setCurrentTool(null);
         setThinking({ isThinking: false, content: "" });
         // Don't clear todos - keep them visible after streaming ends
         toolInputRef.current = "";
       }
     },
-    [ensureConversation, addMessage, appendToMessage, setMessageStreaming, getFile, applyEdits, saveMessageToBackend, updateMessageFull]
+    [ensureConversation, addMessage, appendToMessage, setMessageStreaming, getFile, applyEdits, saveMessageToBackend, updateMessageFull, setStreaming, setCurrentTool, setToolHistory, setThinking, setTodos]
   );
 
   const stopStreaming = useCallback(() => {
     streamControllerRef.current.abort();
-  }, []);
-
-  const clearTodos = useCallback(() => {
-    setTodos([]);
   }, []);
 
   return {

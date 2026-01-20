@@ -1159,6 +1159,40 @@ html {
    Mobile V2 Utility Styles
    ==================================== */
 
+/* Processing animations for AI input */
+@keyframes border-wave {
+  0% {
+    box-shadow: 0 0 0 0px hsl(var(--primary) / 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 6px hsl(var(--primary) / 0.3);
+  }
+  100% {
+    box-shadow: 0 0 0 12px hsl(var(--primary) / 0);
+  }
+}
+
+@keyframes gradient-xy {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-border-wave {
+  animation: border-wave 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.animate-gradient-xy {
+  background-size: 200% 200%;
+  animation: gradient-xy 3s ease infinite;
+}
+
 /* Hide scrollbar for horizontal scroll containers */
 .hide-scrollbar {
   -ms-overflow-style: none;
@@ -1258,6 +1292,15 @@ html {
     cursor: default;
     /* Hide the blinking caret on mobile */
     caret-color: transparent;
+    /* Reduce padding on mobile - header already provides spacing */
+    padding-top: 0;
+    padding-bottom: 0.5rem;
+    min-height: auto;
+  }
+
+  /* Remove top margin from first element on mobile to save space */
+  .ProseMirror > *:first-child {
+    margin-top: 0 !important;
   }
 
   /* Make all top-level blocks tappable with visual feedback */

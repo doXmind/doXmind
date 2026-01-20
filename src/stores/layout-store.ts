@@ -23,6 +23,13 @@ interface LayoutState {
   isBlockSelectorOpen: boolean;
   pendingSelectionForAI: string | null; // Selected text to pass to AI panel
 
+  // Mobile V3 state (new design)
+  isMobileChatOverlayOpen: boolean;
+  isMobileAnswerBubbleVisible: boolean;
+  mobileAnswerBubbleContent: string;
+  mobileEditCount: number; // Number of edits applied in last operation
+  showMobileEditSuccess: boolean;
+
   // Keyboard shortcuts modal
   isKeyboardShortcutsOpen: boolean;
 
@@ -78,6 +85,13 @@ interface LayoutState {
   closeAIPanel: () => void;
   expandAIPanel: () => void;
   clearPendingSelectionForAI: () => void;
+
+  // Mobile V3 actions (new design)
+  setMobileChatOverlayOpen: (open: boolean) => void;
+  showMobileAnswerBubble: (content: string) => void;
+  hideMobileAnswerBubble: () => void;
+  showMobileEditSuccessIndicator: (editCount: number) => void;
+  hideMobileEditSuccessIndicator: () => void;
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -102,6 +116,13 @@ export const useLayoutStore = create<LayoutState>()(
       isFloatingToolbarVisible: false,
       isBlockSelectorOpen: false,
       pendingSelectionForAI: null,
+
+      // Mobile V3 state (new design)
+      isMobileChatOverlayOpen: false,
+      isMobileAnswerBubbleVisible: false,
+      mobileAnswerBubbleContent: "",
+      mobileEditCount: 0,
+      showMobileEditSuccess: false,
 
       // Keyboard shortcuts modal
       isKeyboardShortcutsOpen: false,
@@ -287,6 +308,39 @@ export const useLayoutStore = create<LayoutState>()(
 
       clearPendingSelectionForAI: () => {
         set({ pendingSelectionForAI: null });
+      },
+
+      // Mobile V3 actions (new design)
+      setMobileChatOverlayOpen: (open: boolean) => {
+        set({ isMobileChatOverlayOpen: open });
+      },
+
+      showMobileAnswerBubble: (content: string) => {
+        set({
+          isMobileAnswerBubbleVisible: true,
+          mobileAnswerBubbleContent: content,
+        });
+      },
+
+      hideMobileAnswerBubble: () => {
+        set({
+          isMobileAnswerBubbleVisible: false,
+          mobileAnswerBubbleContent: "",
+        });
+      },
+
+      showMobileEditSuccessIndicator: (editCount: number) => {
+        set({
+          showMobileEditSuccess: true,
+          mobileEditCount: editCount,
+        });
+      },
+
+      hideMobileEditSuccessIndicator: () => {
+        set({
+          showMobileEditSuccess: false,
+          mobileEditCount: 0,
+        });
       },
     }),
     {

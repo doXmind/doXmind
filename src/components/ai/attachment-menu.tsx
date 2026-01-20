@@ -23,12 +23,13 @@ const ALLOWED_DOC_TYPES = [
 ];
 const MAX_DOC_SIZE = 50 * 1024 * 1024; // 50MB
 
-interface AttachmentMenuProps {
+export interface AttachmentMenuProps {
   conversationId: string | null;
   onImageSelect: (files: FileList) => void;
   imageCount: number;
   maxImages: number;
   disabled?: boolean;
+  className?: string;
 }
 
 type MenuView = "main" | "kb";
@@ -39,6 +40,7 @@ export function AttachmentMenu({
   imageCount,
   maxImages,
   disabled,
+  className,
 }: AttachmentMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [view, setView] = useState<MenuView>("main");
@@ -180,7 +182,7 @@ export function AttachmentMenu({
             type="button"
             size="icon"
             variant="ghost"
-            className="relative h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
+            className={cn("relative h-7 w-7 flex-shrink-0 rounded-full text-muted-foreground hover:text-foreground", className)}
             disabled={disabled}
             aria-label="Add attachment"
           >

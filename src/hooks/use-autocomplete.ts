@@ -31,6 +31,8 @@ interface UseAutocompleteOptions {
   editor: Editor | null;
   fileId: string;
   fileName: string;
+  /** Whether autocomplete is enabled (default: true). Set to false on mobile. */
+  enabled?: boolean;
 }
 
 /**
@@ -99,13 +101,16 @@ function getContext(editor: Editor): { textBefore: string; textAfter: string } {
   return { textBefore, textAfter };
 }
 
-export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOptions) {
+export function useAutocomplete({ editor, fileId, fileName, enabled = true }: UseAutocompleteOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPositionRef = useRef<number | null>(null);
 
   const { autocompleteEnabled, autocompleteTriggerMode } = useEditorStore();
+
+  // Combine store setting with prop (both must be true)
+  const isEnabled = enabled && autocompleteEnabled;
 
   /**
    * Clear the current suggestion
@@ -132,7 +137,7 @@ export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOpt
    * Fetch suggestion from the API
    */
   const fetchSuggestion = useCallback(async () => {
-    if (!editor || !autocompleteEnabled) {
+    if (!editor || !isEnabled) {
       return;
     }
 
@@ -203,7 +208,7 @@ export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOpt
     } finally {
       setIsLoading(false);
     }
-  }, [editor, autocompleteEnabled, fileId, fileName, clearSuggestion]);
+  }, [editor, isEnabled, fileId, fileName, clearSuggestion]);
 
   /**
    * Trigger autocomplete with debouncing (for auto mode)
@@ -225,18 +230,18 @@ export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOpt
    * No debouncing - triggers immediately
    */
   const manualTrigger = useCallback(() => {
-    if (!editor || !autocompleteEnabled) {
+    if (!editor || !isEnabled) {
       return;
     }
     // Immediately fetch suggestion without debouncing
     fetchSuggestion();
-  }, [editor, autocompleteEnabled, fetchSuggestion]);
+  }, [editor, isEnabled, fetchSuggestion]);
 
   /**
    * Handle editor updates
    */
   useEffect(() => {
-    if (!editor || !autocompleteEnabled) {
+    if (!editor || !isEnabled) {
       return;
     }
 
@@ -277,13 +282,13 @@ export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOpt
       editor.off("selectionUpdate", handleSelectionUpdate);
       clearSuggestion();
     };
-  }, [editor, autocompleteEnabled, autocompleteTriggerMode, triggerAutocomplete, clearSuggestion]);
+  }, [editor, isEnabled, autocompleteTriggerMode, triggerAutocomplete, clearSuggestion]);
 
   /**
    * Listen for manual trigger events from keyboard shortcuts
    */
   useEffect(() => {
-    if (!editor || !autocompleteEnabled) {
+    if (!editor || !isEnabled) {
       return;
     }
 
@@ -296,7 +301,7 @@ export function useAutocomplete({ editor, fileId, fileName }: UseAutocompleteOpt
     return () => {
       window.removeEventListener(AUTOCOMPLETE_TRIGGER_EVENT, handleManualTrigger);
     };
-  }, [editor, autocompleteEnabled, manualTrigger]);
+  }, [editor, isEnabled, manualTrigger]);
 
   /**
    * Cleanup on unmount

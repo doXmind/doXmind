@@ -142,7 +142,8 @@ export function Editor({ file: initialFile }: EditorProps) {
   }, [editor, pendingEdits, file.id, clearPendingEdit]);
 
   // Initialize hooks
-  useAutocomplete({ editor, fileId: file.id, fileName: file.name });
+  // Disable autocomplete on mobile - it interferes with touch input
+  useAutocomplete({ editor, fileId: file.id, fileName: file.name, enabled: !isMobile });
   useSpellcheck({ editor, enabled: true });
   const { headings } = useHeadings(editor);
 
@@ -250,7 +251,7 @@ export function Editor({ file: initialFile }: EditorProps) {
         {/* Main editor content area */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <ScrollArea className="min-h-0 flex-1">
-            <div className="mx-auto max-w-4xl px-4 py-4 md:px-8 md:py-6">
+            <div className="mx-auto max-w-4xl px-4 pt-0 pb-2 md:px-8 md:py-6">
               <EditorContent editor={editor} />
             </div>
           </ScrollArea>

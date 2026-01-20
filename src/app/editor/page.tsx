@@ -5,13 +5,15 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { Editor } from "@/components/editor/editor";
 import { ChatPanel } from "@/components/ai/chat-panel";
-// Mobile V2 Components (Reading Mode)
+// Mobile V2 Components (Reading Mode) - Legacy
 import { AdaptiveNav } from "@/components/mobile/adaptive-nav";
 import { FilesPanel } from "@/components/mobile/panel-container";
 import { MobileActionBar } from "@/components/mobile/mobile-action-bar";
 import { VoiceRecordingOverlay } from "@/components/mobile/voice-recording-overlay";
 import { FloatingOutline } from "@/components/mobile/floating-outline";
 import { VoiceEditPreview } from "@/components/mobile/voice-edit-preview";
+// Mobile V3 Components (New Design)
+import { MobileEditorLayout } from "@/components/mobile/mobile-editor-layout";
 // Shared Components
 import { LoadingScreen } from "@/components/loading-screen";
 import { KeyboardShortcutsModal } from "@/components/ui/keyboard-shortcuts-modal";
@@ -261,70 +263,17 @@ export default function EditorPage() {
     [currentFile, sendMessage, clearSelection]
   );
 
-  // Mobile Layout: Reading-focused with block selection
+  // Mobile Layout: New design with always-visible input
   if (isMobile) {
     return (
       <LoadingScreen isLoading={isLoading} isMobile={true}>
         <AppShell>
-          <div
-            className="flex h-full flex-col"
-            style={{
-              // Adjust padding based on what's showing at the bottom
-              paddingBottom: isSelectionActive
-                ? 0 // Action bar handles its own spacing
-                : MOBILE_V2.NAV_BAR_HEIGHT + 16,
-            }}
-          >
-            {/* Editor Content - Always Visible */}
-            <main id="main-content" className="flex-1 overflow-hidden">
+          <MobileEditorLayout>
+            {/* Editor Content */}
+            <div id="main-content" className="h-full overflow-hidden">
               {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
-            </main>
-          </div>
-
-          {/* Mobile: Adaptive Bottom Navigation (AI + Files) */}
-          <AdaptiveNav onAITap={handleAIOpen} />
-
-          {/* Mobile: Action Bar (shows when blocks are selected via tap) */}
-          <MobileActionBar
-            onCopy={handleCopy}
-            onCut={handleCut}
-            onDelete={handleDelete}
-            onAIVoice={handleAIOpen}
-          />
-
-          {/* Mobile: Voice Recording Overlay */}
-          <VoiceRecordingOverlay
-            isOpen={isVoiceRecordingOpen}
-            onClose={() => setVoiceRecordingOpen(false)}
-            onTranscriptionComplete={handleVoiceTranscriptionComplete}
-          />
-
-          {/* Mobile: Files Panel (slide from right) */}
-          <FilesPanel isOpen={isMobileSidebarOpen} onClose={() => setMobileSidebarOpen(false)}>
-            <Sidebar />
-          </FilesPanel>
-
-          {/* Mobile: Floating Outline (Google Docs style) */}
-          <FloatingOutline />
-
-          {/* Mobile: AI Chat Sheet */}
-          <VoiceEditPreview
-            isOpen={isVoiceEditPreviewOpen}
-            isStreaming={isStreaming}
-            toolHistory={toolHistory}
-            thinking={thinking}
-            onAccept={() => {
-              handleAcceptAll();
-              setVoiceEditPreviewOpen(false);
-            }}
-            onReject={() => {
-              handleRejectAll();
-              setVoiceEditPreviewOpen(false);
-            }}
-            onClose={() => {
-              setVoiceEditPreviewOpen(false);
-            }}
-          />
+            </div>
+          </MobileEditorLayout>
 
           {/* Keyboard Shortcuts Modal */}
           <KeyboardShortcutsModal
