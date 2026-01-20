@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Sparkles } from "lucide-react";
 import { MobileHeader } from "./mobile-header";
 import { MobileBottomBar } from "./mobile-bottom-bar";
 import { AIAnswerBubble } from "./ai-answer-bubble";
@@ -40,7 +41,19 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
     showMobileEditSuccessIndicator,
   } = useLayoutStore();
 
-  const { currentFileId } = useFileStore();
+  const { currentFileId, files } = useFileStore();
+
+  // Check if current document is empty
+  const currentFile = files.find((f) => f.id === currentFileId);
+  const isDocumentEmpty = useMemo(() => {
+    if (!currentFile?.content) return true;
+    // Check if content is essentially empty (just empty paragraphs)
+    const strippedContent = currentFile.content
+      .replace(/<p><\/p>/g, "")
+      .replace(/<br\s*\/?>/g, "")
+      .replace(/\s/g, "");
+    return strippedContent === "" || strippedContent === "<p></p>";
+  }, [currentFile?.content]);
   const { conversations } = useChatStore();
   const { isStreaming, toolHistory } = useStreamingStore();
 
@@ -184,13 +197,30 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
 
       {/* Main Content - Editor area with padding for header and bottom bar */}
       <main
-        className="flex-1 overflow-auto"
+        className="relative flex-1 overflow-auto"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 48px)", // Header height
           paddingBottom: "calc(env(safe-area-inset-bottom) + 140px)", // Bottom bar height (~56px input + 16px*2 padding + quick actions)
         }}
       >
         {children}
+
+        {/* Empty document placeholder - guides users to AI input */}
+        {isDocumentEmpty && (
+          <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-8">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <Sparkles className="h-6 w-6 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-base font-medium text-foreground/80">Start writing with AI</p>
+                <p className="text-sm text-muted-foreground">
+                  Tap below to describe what you want to write
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* AI Answer Bubble */}

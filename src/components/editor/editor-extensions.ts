@@ -31,15 +31,17 @@ import type { Extensions } from "@tiptap/react";
 export interface EditorExtensionsOptions {
   /** Whether block selection is enabled (for mobile) */
   enableBlockSelection?: boolean;
+  /** Whether running on mobile device */
+  isMobile?: boolean;
 }
 
 /**
  * Get all editor extensions with their configurations
  */
 export function getEditorExtensions(options: EditorExtensionsOptions = {}): Extensions {
-  const { enableBlockSelection = false } = options;
+  const { enableBlockSelection = false, isMobile = false } = options;
 
-  return [
+  const extensions: Extensions = [
     // Core editing
     StarterKit.configure({
       codeBlock: false, // We use CodeBlockLowlight instead
@@ -49,9 +51,6 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     }),
 
     // Text enhancements
-    Placeholder.configure({
-      placeholder: "Start writing, or press '/' for commands...",
-    }),
     Highlight.configure({
       multicolor: true,
     }),
@@ -107,6 +106,17 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
       enabled: enableBlockSelection,
     }),
   ];
+
+  // Only add Placeholder extension on desktop (mobile uses custom empty state UI)
+  if (!isMobile) {
+    extensions.push(
+      Placeholder.configure({
+        placeholder: "Start writing, or press '/' for commands...",
+      })
+    );
+  }
+
+  return extensions;
 }
 
 /**

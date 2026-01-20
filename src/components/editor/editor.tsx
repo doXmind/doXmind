@@ -75,7 +75,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   );
 
   const editor = useEditor({
-    extensions: getEditorExtensions({ enableBlockSelection: isMobile }),
+    extensions: getEditorExtensions({ enableBlockSelection: isMobile, isMobile }),
     content: file.content,
     editorProps: defaultEditorProps,
     onUpdate: ({ editor }) => {
