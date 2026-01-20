@@ -11,7 +11,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { motion, AnimatePresence, PanInfo } from "framer-motion";
+import { motion, AnimatePresence, PanInfo, useDragControls } from "framer-motion";
 import { Send, Square, X, Sparkles, Mic, Check, Loader2, Trash2, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -77,6 +77,8 @@ export function VoiceEditPreview({
   const [isPressing, setIsPressing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const dragControls = useDragControls();
 
   // Stores
   const { diffSession, isReviewMode } = useDiffReviewStore();
@@ -162,7 +164,16 @@ export function VoiceEditPreview({
   // Auto-scroll to bottom
   useEffect(() => {
     if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      // Use scrollTop for more reliable scrolling on mobile
+      if (scrollAreaRef.current) {
+        const scrollContainer = scrollAreaRef.current;
+        scrollContainer.scrollTo({
+          top: scrollContainer.scrollHeight,
+          behavior: "smooth",
+        });
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
     }
   }, [isOpen, conversation.messages.length, isStreaming]);
 
@@ -342,8 +353,10 @@ export function VoiceEditPreview({
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             drag="y"
+            dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0.1, bottom: 0.3 }}
+            dragListener={false}
             onDragStart={() => setIsDragging(true)}
             onDragEnd={handleDragEnd}
           >
@@ -351,6 +364,7 @@ export function VoiceEditPreview({
             <div
               className="flex cursor-grab items-center justify-center py-3 active:cursor-grabbing"
               style={{ touchAction: "none" }}
+              onPointerDown={(e) => dragControls.start(e)}
             >
               <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
             </div>
@@ -380,7 +394,11 @@ export function VoiceEditPreview({
             </div>
 
             {/* Messages Area */}
-            <ScrollArea className="flex-1" style={{ pointerEvents: isDragging ? "none" : "auto" }}>
+            <ScrollArea
+              ref={scrollAreaRef}
+              className="min-h-0 flex-1"
+              style={{ pointerEvents: isDragging ? "none" : "auto" }}
+            >
               <div className="space-y-4 p-4">
                 {isLoadingHistory ? (
                   <div className="flex flex-col items-center justify-center py-8">

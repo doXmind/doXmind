@@ -76,6 +76,7 @@ export function MobileChatOverlay({ isOpen, onClose }: MobileChatOverlayProps) {
             dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0.1, bottom: 0.3 }}
+            dragListener={false}
             onDragEnd={handleDragEnd}
           >
             {/* Drag Handle & Header */}
@@ -105,7 +106,7 @@ export function MobileChatOverlay({ isOpen, onClose }: MobileChatOverlayProps) {
 
             {/* Chat Content */}
             <div
-              className="flex-1 overflow-hidden"
+              className="min-h-0 flex-1"
               style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
             >
               {/* Embedded ChatPanel without its headers */}

@@ -1156,6 +1156,26 @@ html {
 }
 
 /* ====================================
+   Mobile Auto-Zoom Prevention
+   Ensure inputs have 16px+ font size to prevent iOS/Chrome auto-zoom
+   ==================================== */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+    /* Also disable touch manipulation zoom on inputs */
+    touch-action: manipulation;
+  }
+
+  /* Ensure TipTap editor doesn't trigger zoom */
+  .ProseMirror[contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
+
+/* ====================================
    Mobile V2 Utility Styles
    ==================================== */
 

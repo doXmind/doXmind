@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Plus, ImageIcon, FileText, BookOpen, ChevronRight, X } from "lucide-react";
+import { Plus, ImageIcon, FileText, BookOpen, ChevronRight, X, Globe, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useKBStore, formatFileSize } from "@/stores/kb-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { KBAttachmentItem } from "@/components/kb/kb-attachment-item";
 
 // Allowed document types for Knowledge Base
@@ -57,6 +58,8 @@ export function AttachmentMenu({
     deleteAttachment,
     getAttachments,
   } = useKBStore();
+
+  const { webSearchEnabled, setWebSearchEnabled } = useSettingsStore();
 
   const attachments = conversationId ? getAttachments(conversationId) : [];
   const attachmentCount = attachments.filter(a => a.status !== "error").length;
@@ -182,15 +185,19 @@ export function AttachmentMenu({
             type="button"
             size="icon"
             variant="ghost"
-            className={cn("relative h-7 w-7 flex-shrink-0 rounded-full text-muted-foreground hover:text-foreground", className)}
+            className={cn(
+              "relative flex-shrink-0 text-muted-foreground hover:text-foreground",
+              "h-10 w-10 rounded-full",
+              className
+            )}
             disabled={disabled}
             aria-label="Add attachment"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-5 w-5" />
             {totalIndicator > 0 && (
               <Badge
                 variant="secondary"
-                className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[10px] font-medium"
+                className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 text-[10px] font-medium"
               >
                 {totalIndicator}
               </Badge>
@@ -207,6 +214,29 @@ export function AttachmentMenu({
           {view === "main" ? (
             // Main menu view
             <div className="py-1">
+              {/* Web Search toggle */}
+              <button
+                type="button"
+                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+              >
+                <div className={cn(
+                  "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
+                  webSearchEnabled ? "bg-blue-500 text-white" : "bg-muted"
+                )}>
+                  <Globe className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">Web Search</div>
+                  <div className="text-xs text-muted-foreground">
+                    Find real-time news and info
+                  </div>
+                </div>
+                {webSearchEnabled && (
+                  <Check className="h-4 w-4 text-blue-500" />
+                )}
+              </button>
+
               {/* Attach Image option */}
               <button
                 type="button"
@@ -217,8 +247,8 @@ export function AttachmentMenu({
                   imageCount >= maxImages && "opacity-50 cursor-not-allowed"
                 )}
               >
-                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                  <ImageIcon className="h-4 w-4 text-blue-500" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center">
+                  <ImageIcon className="h-4 w-4 text-green-500" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium">Attach Image</div>
@@ -245,8 +275,8 @@ export function AttachmentMenu({
                   !conversationId && "opacity-50 cursor-not-allowed"
                 )}
               >
-                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center">
-                  <FileText className="h-4 w-4 text-green-500" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                  <FileText className="h-4 w-4 text-orange-500" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium">Upload Document</div>

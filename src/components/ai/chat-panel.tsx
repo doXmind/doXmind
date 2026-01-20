@@ -29,6 +29,7 @@ export function ChatPanel() {
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { currentFileId } = useFileStore();
@@ -108,7 +109,17 @@ export function ChatPanel() {
   }, [chatContexts.length]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Use scrollTop for more reliable scrolling on mobile
+    if (scrollAreaRef.current) {
+      const scrollContainer = scrollAreaRef.current;
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: "smooth",
+      });
+    } else {
+      // Fallback to scrollIntoView
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   useEffect(() => {
@@ -286,7 +297,7 @@ export function ChatPanel() {
       {/* Mobile Header Actions - removed, now in input bar */}
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 p-4">
         {isLoadingHistory ? (
           <div className="flex h-full flex-col items-center justify-center py-8 text-center">
             <Loader2 className="mb-4 h-8 w-8 animate-spin text-muted-foreground" />

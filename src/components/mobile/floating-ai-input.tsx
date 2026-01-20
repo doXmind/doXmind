@@ -12,11 +12,10 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Send, Mic, Loader2, MessageCircle, X } from "lucide-react";
+import { Send, Mic, Loader2, MessageCircle, X, AudioLines } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { AttachmentMenu } from "@/components/ai/attachment-menu";
-import { ChatSettings } from "@/components/ai/chat-settings";
 import { ContextPill } from "@/components/ai/context-pill";
 import { useChat } from "@/hooks/use-chat";
 import { useFileStore } from "@/stores/file-store";
@@ -35,7 +34,7 @@ interface FloatingAIInputProps {
 
 export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
   const [input, setInput] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { currentFileId } = useFileStore();
   const { conversations } = useChatStore();
@@ -203,6 +202,7 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
     }
 
     setInput("");
+    resetTextareaHeight();
     clearAllChatContexts();
     // Clear the visual block selection in editor when sending message
     clearBlockSelection();
@@ -224,6 +224,21 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
+    }
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // Auto-resize textarea
+    const textarea = e.target;
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px";
+  };
+
+  // Reset textarea height after submit
+  const resetTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
     }
   };
 
@@ -289,64 +304,97 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
         )}
       </AnimatePresence>
 
-      {/* Input form */}
-      <form onSubmit={handleSubmit} className="relative flex items-center gap-2">
-        {/* Input container with animations */}
+      {/* Input form - ChatGPT style layout */}
+      <form onSubmit={handleSubmit} className="relative flex items-end gap-3">
+        {/* Plus button - separate from input */}
+        <motion.div whileTap={{ scale: 0.95 }}>
+          <AttachmentMenu
+            conversationId={conversation?.id || ""}
+            onImageSelect={handleImageFilesFromMenu}
+            imageCount={currentImageCount}
+            maxImages={CHAT_MAX_IMAGES}
+            disabled={isStreaming || isRecording || isTranscribing}
+            className="h-10 w-10 rounded-full bg-muted"
+          />
+        </motion.div>
+
+        {/* Input container */}
         <div className="relative flex-1">
-          {/* Processing animation - gradient glow layer */}
+          {/* Processing animations */}
           {isStreaming && (
             <div
               className={cn(
-                "absolute inset-0 -m-[2px] rounded-full opacity-100 blur-[2px]",
+                "absolute inset-0 -m-[2px] rounded-3xl opacity-100 blur-[2px]",
                 "bg-gradient-to-r from-primary via-primary/60 to-primary/40",
                 "animate-gradient-xy"
               )}
             />
           )}
-
-          {/* Processing animation - wave layer */}
-          {isStreaming && <div className="absolute inset-0 rounded-full animate-border-wave" />}
+          {isStreaming && <div className="absolute inset-0 rounded-3xl animate-border-wave" />}
+          {isRecording && (
+            <div
+              className={cn(
+                "absolute inset-0 -m-[2px] rounded-3xl blur-[3px]",
+                "bg-destructive/60 animate-pulse"
+              )}
+            />
+          )}
+          {isTranscribing && (
+            <div
+              className={cn(
+                "absolute inset-0 -m-[2px] rounded-3xl blur-[2px]",
+                "bg-primary/40 animate-pulse"
+              )}
+            />
+          )}
 
           {/* Input field container */}
           <div
             className={cn(
-              "relative z-10 flex items-center gap-1",
-              "rounded-full bg-accent/80 backdrop-blur-sm",
-              "border border-border/50",
+              "relative z-10 flex min-h-10 items-center",
+              "rounded-3xl bg-muted",
+              "border border-transparent",
               "transition-all duration-200",
-              isStreaming && "border-primary/30"
+              isStreaming && "border-primary/30",
+              isRecording && "border-destructive/50 bg-destructive/10",
+              isTranscribing && "border-primary/30 bg-primary/5"
             )}
           >
-            {/* Attachment Menu (KB + Images) */}
-            <AttachmentMenu
-              conversationId={conversation?.id || ""}
-              onImageSelect={handleImageFilesFromMenu}
-              imageCount={currentImageCount}
-              maxImages={CHAT_MAX_IMAGES}
-              disabled={isStreaming}
-              className="ml-1"
-            />
-
-            {/* Web Tools Settings */}
-            <ChatSettings />
-
-            {/* Text input */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={isRecording ? formatDuration(duration) : input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isProcessing}
-              placeholder={getPlaceholder()}
-              className={cn(
-                "flex-1 bg-transparent py-3 text-sm",
-                "placeholder:text-muted-foreground/60",
-                "focus:outline-none",
-                "disabled:opacity-50",
-                isRecording && "text-destructive font-medium"
+            {/* Text input area with inline indicators */}
+            <div className="flex flex-1 items-center py-2 pl-4 pr-1">
+              {/* Recording indicator - inline */}
+              {isRecording && (
+                <motion.span
+                  className="mr-2 h-2.5 w-2.5 shrink-0 rounded-full bg-destructive"
+                  animate={{ opacity: [1, 0.4, 1] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                />
               )}
-            />
+
+              {/* Transcribing indicator - inline */}
+              {isTranscribing && (
+                <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin text-primary" />
+              )}
+
+              {/* Text input */}
+              <textarea
+                ref={textareaRef}
+                value={isRecording ? formatDuration(duration) : input}
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                disabled={isProcessing}
+                placeholder={getPlaceholder()}
+                rows={1}
+                className={cn(
+                  "max-h-[120px] min-h-[24px] flex-1 resize-none bg-transparent text-sm leading-6",
+                  "placeholder:text-muted-foreground/60",
+                  "focus:outline-none",
+                  "disabled:opacity-50",
+                  isRecording && "text-destructive font-medium",
+                  isTranscribing && "text-primary font-medium"
+                )}
+              />
+            </div>
 
             {/* Microphone button */}
             <Button
@@ -356,11 +404,20 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
               onClick={handleMicPress}
               disabled={isStreaming || isTranscribing}
               className={cn(
-                "h-8 w-8 shrink-0 rounded-full",
-                isRecording && "bg-destructive text-destructive-foreground animate-pulse"
+                "mr-1 h-8 w-8 shrink-0 rounded-full text-muted-foreground transition-colors",
+                isRecording && "bg-destructive text-destructive-foreground hover:bg-destructive/90"
               )}
             >
-              <Mic className="h-4 w-4" />
+              {isRecording ? (
+                <motion.div
+                  animate={{ scale: [1, 1.15, 1] }}
+                  transition={{ duration: 0.8, repeat: Infinity }}
+                >
+                  <AudioLines className="h-4 w-4" />
+                </motion.div>
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
             </Button>
           </div>
         </div>
@@ -385,8 +442,8 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
           </Button>
         </motion.div>
 
-        {/* View chat button - always visible */}
-        {onViewChat && (
+        {/* View chat button - hidden during recording/transcribing to save space */}
+        {onViewChat && !isRecording && !isTranscribing && (
           <motion.div whileTap={{ scale: 0.95 }}>
             <Button
               type="button"
