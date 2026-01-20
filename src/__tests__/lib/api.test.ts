@@ -201,7 +201,7 @@ describe("ApiClient", () => {
         json: () => Promise.resolve({ detail: "Unauthorized" }),
       });
 
-      await expect(client.healthCheck()).rejects.toThrow("Unauthorized");
+      await expect(client.healthCheck()).rejects.toThrow("Session expired. Please log in again.");
       expect(client.isLoggedIn()).toBe(false);
     });
 
