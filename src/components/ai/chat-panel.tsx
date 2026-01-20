@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Square, Trash2, Sparkles, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { Send, Square, Trash2, Sparkles, Loader2, Mic } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,15 +19,58 @@ import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useChat } from "@/hooks/use-chat";
+import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
+import { haptics } from "@/lib/haptics";
+import { cn } from "@/lib/utils";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
 
 export function ChatPanel() {
   const [input, setInput] = useState("");
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isPressing, setIsPressing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
+
+  // Speech-to-text hook
+  const {
+    isTranscribing,
+    transcribe,
+    reset: resetTranscription,
+  } = useSpeechToText({
+    onComplete: (text) => {
+      if (text) {
+        setInput((prev) => (prev ? `${prev} ${text}` : text));
+        setIsVoiceMode(false);
+      }
+    },
+  });
+
+  // Voice recording hook
+  const handleRecordingStop = useCallback(
+    async (blob: Blob) => {
+      await transcribe(blob);
+    },
+    [transcribe]
+  );
+
+  const {
+    isRecording,
+    duration,
+    error: recordingError,
+    start: startRecording,
+    stop: stopRecording,
+    cancel: cancelRecording,
+  } = useVoiceRecording({
+    maxDuration: 60000,
+    onStop: handleRecordingStop,
+    onCancel: () => {
+      resetTranscription();
+      setIsVoiceMode(false);
+    },
+  });
 
   // Import editor store for chat context feature (Context Pills)
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
@@ -127,6 +171,34 @@ export function ChatPanel() {
     }
   };
 
+  // Voice recording handlers
+  const handleVoiceStart = useCallback(async () => {
+    setIsVoiceMode(true);
+    setIsPressing(true);
+    haptics.medium();
+    await startRecording();
+  }, [startRecording]);
+
+  const handleVoiceEnd = useCallback(() => {
+    setIsPressing(false);
+    if (isRecording) {
+      haptics.light();
+      stopRecording();
+    }
+  }, [isRecording, stopRecording]);
+
+  const handleVoiceCancel = useCallback(() => {
+    setIsPressing(false);
+    setIsVoiceMode(false);
+    cancelRecording();
+  }, [cancelRecording]);
+
+  // Format recording duration
+  const formatDuration = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    return `${seconds}s`;
+  };
+
   const currentImageCount = chatContexts.filter((c) => c.type === "image").length;
 
   // Process image file and add to context
@@ -211,22 +283,7 @@ export function ChatPanel() {
         </div>
       </div>
 
-      {/* Mobile Header Actions */}
-      <div className="chat-header-mobile flex items-center justify-end border-b border-border p-2 md:hidden">
-        {/* Clear button */}
-        {conversation.messages.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClear}
-            className="h-10 gap-2"
-            aria-label="Clear conversation"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span className="text-sm">Clear</span>
-          </Button>
-        )}
-      </div>
+      {/* Mobile Header Actions - removed, now in input bar */}
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4">
@@ -301,60 +358,156 @@ export function ChatPanel() {
           </div>
         )}
 
-        <div className="relative flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1.5">
-          {/* Unified attachment menu */}
-          <AttachmentMenu
-            conversationId={conversation.id}
-            onImageSelect={handleImageFilesFromMenu}
-            imageCount={currentImageCount}
-            maxImages={CHAT_MAX_IMAGES}
-            disabled={isStreaming}
-          />
+        {/* Voice recording mode - WeChat style */}
+        {isVoiceMode ? (
+          <div className="flex flex-col items-center gap-3 py-2">
+            {/* Recording status */}
+            <div className="flex items-center gap-2 text-sm">
+              {isRecording && (
+                <>
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
+                  <span className="text-muted-foreground">{formatDuration(duration)}</span>
+                </>
+              )}
+              {isTranscribing && (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-muted-foreground">Transcribing...</span>
+                </>
+              )}
+              {recordingError && (
+                <span className="text-destructive text-xs">{recordingError}</span>
+              )}
+            </div>
 
-          {/* Web tools settings */}
-          <ChatSettings />
-
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleTextareaChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder="Ask AI anything..."
-            className="max-h-[200px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-            disabled={isStreaming}
-            rows={1}
-          />
-
-          {/* Send/Stop button */}
-          {isStreaming ? (
-            <Tooltip content="Stop generating" side="top">
-              <Button
+            {/* Press-and-hold button */}
+            {!isTranscribing && (
+              <motion.button
                 type="button"
-                size="icon"
-                variant="ghost"
-                onClick={stopStreaming}
-                className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label="Stop generating"
+                className={cn(
+                  "flex w-full items-center justify-center gap-2 rounded-full py-3 px-6",
+                  "transition-all duration-150 select-none touch-none",
+                  isRecording || isPressing
+                    ? "bg-destructive text-destructive-foreground"
+                    : "bg-muted text-muted-foreground"
+                )}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  if (!isRecording) handleVoiceStart();
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  handleVoiceEnd();
+                }}
+                onTouchCancel={handleVoiceCancel}
+                onMouseDown={() => {
+                  if (!isRecording) handleVoiceStart();
+                }}
+                onMouseUp={handleVoiceEnd}
+                onMouseLeave={() => {
+                  if (isRecording || isPressing) handleVoiceCancel();
+                }}
+                animate={{ scale: isRecording || isPressing ? 0.98 : 1 }}
+                transition={{ duration: 0.1 }}
               >
-                <Square className="h-4 w-4" />
-              </Button>
-            </Tooltip>
-          ) : (
-            <Tooltip content="Send message" side="top">
+                <Mic className={cn("h-5 w-5", isRecording && "animate-pulse")} />
+                <span className="text-sm font-medium">
+                  {isRecording ? "Release to send" : "Hold to talk"}
+                </span>
+              </motion.button>
+            )}
+
+            {/* Cancel button */}
+            <button
+              type="button"
+              onClick={handleVoiceCancel}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="relative flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1.5">
+            {/* Unified attachment menu */}
+            <AttachmentMenu
+              conversationId={conversation.id}
+              onImageSelect={handleImageFilesFromMenu}
+              imageCount={currentImageCount}
+              maxImages={CHAT_MAX_IMAGES}
+              disabled={isStreaming}
+            />
+
+            {/* Web tools settings */}
+            <ChatSettings />
+
+            {/* Mobile-only: Clear conversation button in input bar */}
+            {conversation.messages.length > 0 && (
               <Button
-                type="submit"
+                variant="ghost"
                 size="icon"
-                variant="default"
-                disabled={!input.trim() && chatContexts.length === 0}
-                className="h-7 w-7 flex-shrink-0"
-                aria-label="Send message"
+                onClick={handleClear}
+                className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
+                aria-label="Clear conversation"
               >
-                <Send className="h-3.5 w-3.5" />
+                <Trash2 className="h-4 w-4" />
               </Button>
-            </Tooltip>
-          )}
-        </div>
+            )}
+
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder="Ask AI anything..."
+              className="max-h-[200px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base md:text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+              disabled={isStreaming}
+              rows={1}
+            />
+
+            {/* Mobile-only: Microphone button */}
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              onClick={() => setIsVoiceMode(true)}
+              disabled={isStreaming}
+              className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
+              aria-label="Voice input"
+            >
+              <Mic className="h-4 w-4" />
+            </Button>
+
+            {/* Send/Stop button */}
+            {isStreaming ? (
+              <Tooltip content="Stop generating" side="top">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={stopStreaming}
+                  className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
+                  aria-label="Stop generating"
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
+              </Tooltip>
+            ) : (
+              <Tooltip content="Send message" side="top">
+                <Button
+                  type="submit"
+                  size="icon"
+                  variant="default"
+                  disabled={!input.trim() && chatContexts.length === 0}
+                  className="h-7 w-7 flex-shrink-0"
+                  aria-label="Send message"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </Button>
+              </Tooltip>
+            )}
+          </div>
+        )}
 
         <p className="mt-2 hidden text-center text-xs text-muted-foreground md:block">
           Press Enter to send, Shift+Enter for new line

@@ -324,9 +324,6 @@ export default function EditorPage() {
             onClose={() => {
               setVoiceEditPreviewOpen(false);
             }}
-            onVoiceRecord={() => {
-              setVoiceRecordingOpen(true);
-            }}
           />
 
           {/* Keyboard Shortcuts Modal */}

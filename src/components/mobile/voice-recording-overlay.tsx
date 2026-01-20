@@ -5,9 +5,12 @@
  *
  * WeChat-style voice recording overlay that appears at the bottom
  * of the screen without obstructing selected content.
+ *
+ * Interaction: Tap to show overlay, then press-and-hold the button to record.
+ * Releasing the button stops recording and sends for transcription.
  */
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,6 +39,7 @@ export function VoiceRecordingOverlay({
   maxDuration = 60000,
 }: VoiceRecordingOverlayProps) {
   const { selectedBlocks, getSelectedText } = useBlockSelectionStore();
+  const [isPressing, setIsPressing] = useState(false);
 
   const {
     isTranscribing,
@@ -203,57 +207,78 @@ export function VoiceRecordingOverlay({
               )}
             </div>
 
-            {/* Action button */}
+            {/* WeChat-style press-and-hold button */}
             <div className="flex justify-center px-4 pb-4">
               {!isTranscribing && !transcription && (
                 <motion.button
                   type="button"
                   className={cn(
-                    "flex h-16 w-16 items-center justify-center rounded-full",
-                    "transition-colors",
-                    isRecording
-                      ? "bg-destructive text-destructive-foreground"
-                      : "bg-primary text-primary-foreground"
+                    "flex w-full max-w-xs items-center justify-center gap-2 rounded-full py-4 px-6",
+                    "transition-all duration-150",
+                    "select-none touch-none",
+                    isRecording || isPressing
+                      ? "bg-destructive text-destructive-foreground scale-[0.98]"
+                      : "bg-muted text-muted-foreground active:bg-muted/80"
                   )}
-                  onTouchStart={() => {
+                  onTouchStart={(e) => {
+                    e.preventDefault();
                     if (!isRecording) {
+                      setIsPressing(true);
                       haptics.medium();
                       handleStartRecording();
                     }
                   }}
-                  onTouchEnd={() => {
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    setIsPressing(false);
                     if (isRecording) {
+                      haptics.light();
                       handleStopRecording();
+                    }
+                  }}
+                  onTouchCancel={() => {
+                    setIsPressing(false);
+                    if (isRecording) {
+                      cancel();
                     }
                   }}
                   onMouseDown={() => {
                     if (!isRecording) {
+                      setIsPressing(true);
                       haptics.medium();
                       handleStartRecording();
                     }
                   }}
                   onMouseUp={() => {
+                    setIsPressing(false);
                     if (isRecording) {
+                      haptics.light();
                       handleStopRecording();
                     }
                   }}
                   onMouseLeave={() => {
-                    if (isRecording) {
-                      // Cancel if user drags away
+                    if (isRecording || isPressing) {
+                      setIsPressing(false);
                       cancel();
                     }
                   }}
-                  whileTap={{ scale: 0.95 }}
+                  animate={{
+                    scale: isRecording || isPressing ? 0.98 : 1,
+                  }}
+                  transition={{ duration: 0.1 }}
                 >
-                  <Mic className="h-7 w-7" />
+                  <Mic className={cn("h-5 w-5", isRecording && "animate-pulse")} />
+                  <span className="text-sm font-medium">
+                    {isRecording ? "Release to send" : "Hold to talk"}
+                  </span>
                 </motion.button>
               )}
             </div>
 
-            {/* Instructions */}
+            {/* Instructions - hidden when recording */}
             {!isRecording && !isTranscribing && !transcription && !error && (
               <p className="pb-4 text-center text-xs text-muted-foreground">
-                Hold to record, release to send
+                Hold button to record, release to send
               </p>
             )}
           </motion.div>

@@ -12,7 +12,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence, PanInfo } from "framer-motion";
-import { Send, Square, X, Sparkles, Mic, Check, Loader2 } from "lucide-react";
+import { Send, Square, X, Sparkles, Mic, Check, Loader2, Trash2, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,13 +21,16 @@ import { ThinkingIndicator } from "@/components/ai/thinking-indicator";
 import { ToolIndicator } from "@/components/ai/tool-indicator";
 import { ContextPill } from "@/components/ai/context-pill";
 import { AttachmentMenu } from "@/components/ai/attachment-menu";
+import { ChatSettings } from "@/components/ai/chat-settings";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useChat } from "@/hooks/use-chat";
+import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
 import type { ToolStatus, ThinkingStatus } from "@/hooks/use-chat";
 import { haptics } from "@/lib/haptics";
+import { cn } from "@/lib/utils";
 import { Z_INDEX } from "@/lib/constants";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
 
@@ -47,8 +50,6 @@ interface MobileAIChatSheetProps {
   isOpen: boolean;
   /** Called when user closes the panel */
   onClose: () => void;
-  /** Called when user wants to record voice */
-  onVoiceRecord: () => void;
   /** Called when user accepts all edits */
   onAccept: () => void;
   /** Called when user rejects all edits */
@@ -62,7 +63,6 @@ interface MobileAIChatSheetProps {
 export function VoiceEditPreview({
   isOpen,
   onClose,
-  onVoiceRecord,
   onAccept,
   onReject,
   isStreaming: parentIsStreaming,
@@ -73,15 +73,55 @@ export function VoiceEditPreview({
   const [sheetState, setSheetState] = useState<SheetState>("compact");
   const [isDragging, setIsDragging] = useState(false);
   const [isChangesExpanded, setIsChangesExpanded] = useState(false);
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isPressing, setIsPressing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Stores
   const { diffSession, isReviewMode } = useDiffReviewStore();
-  const { conversations, loadConversation, isLoadingHistory } = useChatStore();
+  const { conversations, loadConversation, isLoadingHistory, clearConversation } = useChatStore();
   const { currentFileId } = useFileStore();
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
     useEditorStore();
+
+  // Speech-to-text hook
+  const {
+    isTranscribing,
+    transcribe,
+    reset: resetTranscription,
+  } = useSpeechToText({
+    onComplete: (text) => {
+      if (text) {
+        setInput((prev) => (prev ? `${prev} ${text}` : text));
+        setIsVoiceMode(false);
+      }
+    },
+  });
+
+  // Voice recording hook
+  const handleRecordingStop = useCallback(
+    async (blob: Blob) => {
+      await transcribe(blob);
+    },
+    [transcribe]
+  );
+
+  const {
+    isRecording,
+    duration,
+    error: recordingError,
+    start: startRecording,
+    stop: stopRecording,
+    cancel: cancelRecording,
+  } = useVoiceRecording({
+    maxDuration: 60000,
+    onStop: handleRecordingStop,
+    onCancel: () => {
+      resetTranscription();
+      setIsVoiceMode(false);
+    },
+  });
 
   // Chat hook
   const { sendMessage, isStreaming: hookIsStreaming, stopStreaming } = useChat();
@@ -241,6 +281,41 @@ export function VoiceEditPreview({
 
   const currentImageCount = chatContexts.filter((c) => c.type === "image").length;
 
+  // Voice recording handlers
+  const handleVoiceStart = useCallback(async () => {
+    setIsVoiceMode(true);
+    setIsPressing(true);
+    haptics.medium();
+    await startRecording();
+  }, [startRecording]);
+
+  const handleVoiceEnd = useCallback(() => {
+    setIsPressing(false);
+    if (isRecording) {
+      haptics.light();
+      stopRecording();
+    }
+  }, [isRecording, stopRecording]);
+
+  const handleVoiceCancel = useCallback(() => {
+    setIsPressing(false);
+    setIsVoiceMode(false);
+    cancelRecording();
+  }, [cancelRecording]);
+
+  // Format recording duration
+  const formatDuration = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    return `${seconds}s`;
+  };
+
+  // Clear conversation handler
+  const handleClear = useCallback(() => {
+    if (conversation.messages.length > 0) {
+      clearConversation(conversationKey);
+    }
+  }, [conversation.messages.length, clearConversation, conversationKey]);
+
   return (
     <AnimatePresence mode="wait">
       {isOpen && (
@@ -286,9 +361,22 @@ export function VoiceEditPreview({
                 <Sparkles className="h-5 w-5 text-primary" />
                 <span className="font-medium">AI Chat</span>
               </div>
-              <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
-                <X className="h-5 w-5" />
-              </Button>
+              <div className="flex items-center gap-1">
+                {conversation.messages.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleClear}
+                    className="h-8 w-8"
+                    aria-label="Clear conversation"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
 
             {/* Messages Area */}
@@ -402,36 +490,97 @@ export function VoiceEditPreview({
                   onImageSelect={handleImageFilesFromMenu}
                   imageCount={currentImageCount}
                   maxImages={CHAT_MAX_IMAGES}
-                  disabled={isStreaming}
+                  disabled={isStreaming || isRecording || isTranscribing}
                 />
 
-                {/* Text input */}
-                <Textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={handleTextareaChange}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  placeholder="Ask AI..."
-                  className="max-h-[120px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                  disabled={isStreaming}
-                  rows={1}
-                />
+                {/* Web search toggle */}
+                <ChatSettings />
 
-                {/* Microphone button */}
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => {
-                    haptics.medium();
-                    onVoiceRecord();
-                  }}
-                  disabled={isStreaming}
-                  className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
-                >
-                  <Mic className="h-4 w-4" />
-                </Button>
+                {/* Text input OR Hold to record button */}
+                {isVoiceMode ? (
+                  <motion.button
+                    type="button"
+                    className={cn(
+                      "flex flex-1 items-center justify-center gap-2 rounded-md py-1.5 px-3",
+                      "transition-all duration-150 select-none touch-none text-sm",
+                      isRecording || isPressing
+                        ? "bg-destructive text-destructive-foreground"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      if (!isRecording && !isTranscribing) handleVoiceStart();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      handleVoiceEnd();
+                    }}
+                    onTouchCancel={handleVoiceCancel}
+                    onMouseDown={() => {
+                      if (!isRecording && !isTranscribing) handleVoiceStart();
+                    }}
+                    onMouseUp={handleVoiceEnd}
+                    onMouseLeave={() => {
+                      if (isRecording || isPressing) handleVoiceCancel();
+                    }}
+                    animate={{ scale: isRecording || isPressing ? 0.98 : 1 }}
+                    transition={{ duration: 0.1 }}
+                  >
+                    {isTranscribing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Transcribing...</span>
+                      </>
+                    ) : isRecording ? (
+                      <>
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-destructive-foreground" />
+                        <span>{formatDuration(duration)} - Release to send</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="h-4 w-4" />
+                        <span>Hold to talk</span>
+                      </>
+                    )}
+                  </motion.button>
+                ) : (
+                  <Textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={handleTextareaChange}
+                    onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
+                    placeholder="Ask AI..."
+                    className="max-h-[120px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base focus-visible:ring-0 focus-visible:ring-offset-0"
+                    disabled={isStreaming}
+                    rows={1}
+                  />
+                )}
+
+                {/* Toggle voice/text mode OR cancel */}
+                {isVoiceMode ? (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={handleVoiceCancel}
+                    disabled={isTranscribing}
+                    className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setIsVoiceMode(true)}
+                    disabled={isStreaming}
+                    className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Mic className="h-4 w-4" />
+                  </Button>
+                )}
 
                 {/* Send/Stop button */}
                 {isStreaming ? (
@@ -449,7 +598,7 @@ export function VoiceEditPreview({
                     type="submit"
                     size="icon"
                     variant="default"
-                    disabled={!input.trim() && chatContexts.length === 0}
+                    disabled={isVoiceMode || (!input.trim() && chatContexts.length === 0)}
                     className="h-7 w-7 flex-shrink-0"
                   >
                     <Send className="h-3.5 w-3.5" />
