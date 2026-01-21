@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "doXmind Team" }],
   creator: "doXmind",
-  metadataBase: new URL("https://doxmind.com"),
+  metadataBase: new URL("https://beta.doxmind.com"),
   icons: {
     icon: "/icon.svg",
   },
