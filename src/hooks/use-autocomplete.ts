@@ -17,6 +17,9 @@ import { useEditorStore } from "@/stores/editor-store";
 import { AutocompletePluginKey } from "@/extensions/autocomplete-extension";
 import { AUTOCOMPLETE_TRIGGER_EVENT } from "@/extensions/autocomplete-keymap";
 import { api } from "@/lib/api";
+import { editorLogger } from "@/lib/logger";
+
+const log = editorLogger.child("Autocomplete");
 
 // Configuration
 const CONFIG = {
@@ -203,7 +206,7 @@ export function useAutocomplete({ editor, fileId, fileName, enabled = true }: Us
     } catch (error) {
       // Ignore abort errors
       if ((error as Error).name !== "AbortError") {
-        console.error("[Autocomplete] Error:", error);
+        log.error("Autocomplete request failed", error);
       }
     } finally {
       setIsLoading(false);

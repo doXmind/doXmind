@@ -1,5 +1,6 @@
 """Chat API endpoints with streaming support, message persistence, and user isolation."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -398,6 +399,8 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
         nonlocal collected_text, collected_thinking, collected_tool_calls, collected_edits
 
         current_tool = None
+        timeout_seconds = settings.streaming_timeout_seconds
+        start_time = asyncio.get_event_loop().time()
 
         try:
             # Create agent with KB attachments and web tools if available
@@ -441,6 +444,15 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
                 history=history,
                 conversation_id=conversation.id if conversation else None
             ):
+                # Check timeout
+                elapsed = asyncio.get_event_loop().time() - start_time
+                if elapsed > timeout_seconds:
+                    logger.warning(f"Streaming timeout after {elapsed:.1f}s")
+                    error_data = f"data: {json.dumps({'type': 'error', 'content': 'Streaming timeout exceeded'})}\n\n"
+                    yield error_data.encode('utf-8')
+                    yield b"data: [DONE]\n\n"
+                    return
+
                 event_type = event.get("type")
 
                 # Collect data for persistence
@@ -485,6 +497,11 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 
             yield b"data: [DONE]\n\n"
 
+        except asyncio.TimeoutError:
+            logger.error("Chat streaming timeout")
+            error_data = f"data: {json.dumps({'type': 'error', 'content': 'Request timeout'})}\n\n"
+            yield error_data.encode('utf-8')
+            yield b"data: [DONE]\n\n"
         except Exception as e:
             logger.error(f"Chat streaming error: {e}")
             import traceback

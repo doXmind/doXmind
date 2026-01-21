@@ -2,7 +2,10 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { generateId } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { chatLogger } from "@/lib/logger";
 import type { ChatMessage, Conversation, ToolCall, MessageContextItem, EditOperation } from "@/types";
+
+const log = chatLogger;
 
 // Re-export for convenience
 export type { ChatMessage, Conversation, ToolCall, MessageContextItem, EditOperation } from "@/types";
@@ -114,7 +117,7 @@ export const useChatStore = create<ChatState>()(
         state.isLoadingHistory = false;
       });
     } catch (error) {
-      console.error("Failed to load conversation:", error);
+      log.error("Failed to load conversation", error);
       set({ isLoadingHistory: false });
     }
   },
@@ -234,7 +237,7 @@ export const useChatStore = create<ChatState>()(
         headers: api.getAuthorizationHeaders(),
       });
     } catch (error) {
-      console.error("Failed to clear conversation on backend:", error);
+      log.error("Failed to clear conversation on backend", error);
     }
 
     // Clear locally
@@ -257,7 +260,7 @@ export const useChatStore = create<ChatState>()(
         headers: api.getAuthorizationHeaders(),
       });
     } catch (error) {
-      console.error("Failed to delete conversation on backend:", error);
+      log.error("Failed to delete conversation on backend", error);
     }
 
     // Remove from local state completely
@@ -296,7 +299,7 @@ export const useChatStore = create<ChatState>()(
         }),
       });
     } catch (error) {
-      console.error("Failed to save message to backend:", error);
+      log.error("Failed to save message to backend", error);
     }
   },
 })));

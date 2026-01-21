@@ -5,13 +5,6 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { Editor } from "@/components/editor/editor";
 import { ChatPanel } from "@/components/ai/chat-panel";
-// Mobile V2 Components (Reading Mode) - Legacy
-import { AdaptiveNav } from "@/components/mobile/adaptive-nav";
-import { FilesPanel } from "@/components/mobile/panel-container";
-import { MobileActionBar } from "@/components/mobile/mobile-action-bar";
-import { VoiceRecordingOverlay } from "@/components/mobile/voice-recording-overlay";
-import { FloatingOutline } from "@/components/mobile/floating-outline";
-import { VoiceEditPreview } from "@/components/mobile/voice-edit-preview";
 // Mobile V3 Components (New Design)
 import { MobileEditorLayout } from "@/components/mobile/mobile-editor-layout";
 // Shared Components
@@ -22,20 +15,17 @@ import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { NetworkStatusIndicator } from "@/components/ui/network-status-indicator";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useBlockSelectionStore } from "@/stores/block-selection-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { useEditorStore } from "@/stores/editor-store";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useMobileGestures } from "@/hooks/use-mobile-gestures";
 import { useAuthGuard } from "@/hooks/use-auth-guard";
 import { useBlockSelection } from "@/hooks/use-block-selection";
-import { useChat } from "@/hooks/use-chat";
 import { useDiffReview } from "@/hooks/use-diff-review";
+import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
-import { MOBILE_V2 } from "@/lib/constants";
 
 export default function EditorPage() {
   const { currentFileId, files, loadFiles, isLoading } = useFileStore();
@@ -46,44 +36,19 @@ export default function EditorPage() {
     setKeyboardShortcutsOpen,
     isCommandPaletteOpen,
     setCommandPaletteOpen,
-    openCommandPalette,
-    isSearchBarOpen,
-    setSearchBarOpen,
-    openSearchBarWithAI,
-    // Mobile V2 state
-    isMobileSidebarOpen,
     setMobileSidebarOpen,
     setMobileOutlineOpen,
   } = useLayoutStore();
 
-  const { isSelectionActive, selectedBlocks, getSelectedText, clearSelection } =
-    useBlockSelectionStore();
-
   const { editor } = useEditorRefStore();
-
   const currentFile = files.find((f) => f.id === currentFileId);
   const isMobile = useIsMobile();
 
-  // Mobile voice recording state
-  const [isVoiceRecordingOpen, setVoiceRecordingOpen] = useState(false);
-
-  // Mobile AI chat sheet state
-  const [isVoiceEditPreviewOpen, setVoiceEditPreviewOpen] = useState(false);
-
-  // Chat hook for AI interactions
-  const { sendMessage, isStreaming, toolHistory, thinking } = useChat();
-
-  // Editor store for chat contexts
-  const { addChatContext } = useEditorStore();
-
-  // Diff review hook for accept/reject operations
-  const { handleAcceptAll, handleRejectAll } = useDiffReview({
-    editor,
-    fileId: currentFileId || "",
-  });
-
   // Auth guard - handles 401 responses and redirects to login
   useAuthGuard();
+
+  // Global keyboard shortcuts (Ctrl+K, Ctrl+F, etc.)
+  useEditorKeyboardShortcuts();
 
   // Mobile block selection (tap to select)
   useBlockSelection({
@@ -113,6 +78,12 @@ export default function EditorPage() {
     enabled: isMobile,
   });
 
+  // Diff review hook for accept/reject operations
+  useDiffReview({
+    editor,
+    fileId: currentFileId || "",
+  });
+
   // Warn user when leaving with unsaved changes
   useUnsavedChangesWarning();
 
@@ -132,136 +103,6 @@ export default function EditorPage() {
       document.title = "doXmind - AI Writing Studio";
     }
   }, [currentFile]);
-
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+? or Cmd+? (Shift+/ on most keyboards) - Keyboard shortcuts
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "?") {
-        e.preventDefault();
-        setKeyboardShortcutsOpen(!isKeyboardShortcutsOpen);
-        return;
-      }
-
-      // Ctrl+K or Cmd+K - Command palette (all scope)
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        } else {
-          openCommandPalette();
-        }
-        return;
-      }
-
-      // Ctrl+Shift+F or Cmd+Shift+F - AI Search (semantic search)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        }
-        openSearchBarWithAI();
-        return;
-      }
-
-      // Ctrl+F or Cmd+F - Search bar (find in document)
-      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
-        e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        }
-        setSearchBarOpen(!isSearchBarOpen);
-        return;
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    isKeyboardShortcutsOpen,
-    setKeyboardShortcutsOpen,
-    isCommandPaletteOpen,
-    setCommandPaletteOpen,
-    openCommandPalette,
-    isSearchBarOpen,
-    setSearchBarOpen,
-    openSearchBarWithAI,
-  ]);
-
-  // Mobile: Handle copy
-  const handleCopy = useCallback(() => {
-    const text = getSelectedText();
-    if (text) {
-      navigator.clipboard.writeText(text);
-    }
-  }, [getSelectedText]);
-
-  // Mobile: Handle cut (copy + delete)
-  const handleCut = useCallback(() => {
-    const text = getSelectedText();
-    if (text && editor) {
-      navigator.clipboard.writeText(text);
-      // Delete selected blocks
-      for (const block of selectedBlocks) {
-        editor.chain().focus().deleteRange({ from: block.from, to: block.to }).run();
-      }
-      clearSelection();
-    }
-  }, [getSelectedText, editor, selectedBlocks, clearSelection]);
-
-  // Mobile: Handle delete
-  const handleDelete = useCallback(() => {
-    if (editor && selectedBlocks.length > 0) {
-      // Delete selected blocks in reverse order to maintain positions
-      const sortedBlocks = [...selectedBlocks].sort((a, b) => b.from - a.from);
-      for (const block of sortedBlocks) {
-        editor.chain().focus().deleteRange({ from: block.from, to: block.to }).run();
-      }
-      clearSelection();
-    }
-  }, [editor, selectedBlocks, clearSelection]);
-
-  // Mobile: Handle AI button click (opens AI Chat Sheet)
-  const handleAIOpen = useCallback(() => {
-    // If there's selected text, add it as chat context
-    const selectedText = getSelectedText();
-    if (selectedText && selectedBlocks.length > 0) {
-      // Get the range from the first and last selected blocks
-      const firstBlock = selectedBlocks[0];
-      const lastBlock = selectedBlocks[selectedBlocks.length - 1];
-      addChatContext({
-        type: "selection",
-        text: selectedText,
-        from: firstBlock.from,
-        to: lastBlock.to,
-      });
-    }
-    setVoiceEditPreviewOpen(true);
-  }, [getSelectedText, selectedBlocks, addChatContext]);
-
-  // Mobile: Handle voice transcription complete
-  const handleVoiceTranscriptionComplete = useCallback(
-    (transcription: string, selectedText: string) => {
-      console.log("[Mobile] Voice transcription complete:", transcription);
-      if (!currentFile) {
-        console.error("[Mobile] No current file!");
-        return;
-      }
-
-      // Build the AI message with context
-      const message = selectedText
-        ? `Based on the following selected text:\n\n"${selectedText}"\n\n${transcription}`
-        : transcription;
-
-      // Send to AI chat
-      sendMessage(message, [currentFile.id]);
-
-      // Close voice overlay and clear selection
-      setVoiceRecordingOpen(false);
-      clearSelection();
-    },
-    [currentFile, sendMessage, clearSelection]
-  );
 
   // Mobile Layout: New design with always-visible input
   if (isMobile) {

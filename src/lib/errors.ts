@@ -4,6 +4,8 @@
  * Centralized error handling for consistent error management across the app.
  */
 
+import { logger } from "./logger";
+
 /**
  * Custom application error with additional context
  */
@@ -100,7 +102,7 @@ export function handleError(
   }
 
   if (!silent) {
-    console.error(`[${context}] Error:`, error);
+    logger.error(`[${context}] Error`, error);
   }
 
   if (onError) {

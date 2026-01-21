@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { TodoItem } from "@/types/stream-events";
 
 /**
  * Streaming Store
@@ -22,13 +23,8 @@ export interface ThinkingStatus {
   content: string;
 }
 
-// Todo item for progress tracking
-export interface TodoItem {
-  id: string;
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;
-}
+// Re-export TodoItem for backward compatibility
+export type { TodoItem } from "@/types/stream-events";
 
 interface StreamingState {
   // Streaming state

@@ -18,6 +18,9 @@ import {
   hashText,
   type LanguageToolMatch,
 } from "@/lib/languagetool";
+import { editorLogger } from "@/lib/logger";
+
+const log = editorLogger.child("Spellcheck");
 import {
   extractTextWithPositions,
   mapOffsetToPosition,
@@ -184,14 +187,15 @@ export function useSpellcheck({
 
       // Log detected language for debugging
       if (response.language.detectedLanguage) {
-        console.log(
-          `[Spellcheck] Detected language: ${response.language.detectedLanguage.name} (${response.language.detectedLanguage.code})`
-        );
+        log.debug("Detected language", {
+          name: response.language.detectedLanguage.name,
+          code: response.language.detectedLanguage.code,
+        });
       }
     } catch (error) {
       // Ignore abort errors
       if ((error as Error).name !== "AbortError") {
-        console.error("[Spellcheck] Error:", error);
+        log.error("Spellcheck request failed", error);
       }
     }
   }, [editor, enabled, clearSpellcheck]);

@@ -16,6 +16,7 @@ build/
 
 # Misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # Debug
@@ -46,6 +47,12 @@ server/data/
 *.egg-info/
 dist/
 
+# Python cache and testing
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+
 # IDE
 .idea/
 .vscode/
@@ -66,4 +73,5 @@ html/
 
 # Claude Code settings
 .claude/
-CLAUDE.md .worktrees
+CLAUDE.md
+.worktrees

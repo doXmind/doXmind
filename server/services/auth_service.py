@@ -4,6 +4,7 @@ Provides JWT token generation/validation and API key authentication.
 Supports both stateless JWT auth and simple API key auth for flexibility.
 """
 
+import hmac
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, Request, status
@@ -112,7 +113,9 @@ def verify_token(token: str) -> TokenData | None:
 
 
 def verify_api_key(api_key: str) -> bool:
-    """Verify an API key.
+    """Verify an API key using constant-time comparison.
+
+    Uses hmac.compare_digest to prevent timing attacks.
 
     Args:
         api_key: The API key to verify
@@ -126,7 +129,8 @@ def verify_api_key(api_key: str) -> bool:
     if not settings.api_key:
         return False
 
-    return api_key == settings.api_key
+    # Use constant-time comparison to prevent timing attacks
+    return hmac.compare_digest(api_key.encode("utf-8"), settings.api_key.encode("utf-8"))
 
 
 # =============================================================================

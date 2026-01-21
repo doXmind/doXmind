@@ -4,8 +4,11 @@ import { useCallback } from "react";
 import { useFileStore } from "@/stores/file-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { computeDiffHunks } from "@/lib/diff-utils";
+import { editorLogger } from "@/lib/logger";
 import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
 import type { EditOperation } from "@/types";
+
+const log = editorLogger.child("EditOperations");
 
 // Re-export for backward compatibility
 export type { EditOperation } from "@/types";
@@ -41,7 +44,7 @@ export function useEditOperations() {
       for (const [fileId, fileEdits] of editsByFile) {
         const file = getFile(fileId);
         if (!file) {
-          console.error(`[useEditOperations] File not found: ${fileId}`);
+          log.warn("File not found for edit operation", { fileId });
           continue;
         }
 

@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { api } from "@/lib/api";
+import { kbLogger } from "@/lib/logger";
+
+const log = kbLogger;
 
 // KB attachment type
 export interface KBAttachment {
@@ -59,7 +62,7 @@ export const useKBStore = create<KBState>()(
         });
       } catch (error) {
         // Conversation might not exist yet, that's OK - return empty list
-        console.error("Failed to load KB attachments:", error);
+        log.error("Failed to load KB attachments", error);
         set((state) => {
           state.attachmentsByConversation[conversationId] = [];
         });
@@ -131,7 +134,7 @@ export const useKBStore = create<KBState>()(
 
         return newAttachment;
       } catch (error) {
-        console.error("Failed to upload KB attachment:", error);
+        log.error("Failed to upload KB attachment", error);
 
         // Update temp attachment to error state
         set((state) => {
@@ -171,7 +174,7 @@ export const useKBStore = create<KBState>()(
         await api.deleteKBAttachment(conversationId, attachmentId);
         return true;
       } catch (error) {
-        console.error("Failed to delete KB attachment:", error);
+        log.error("Failed to delete KB attachment", error);
 
         // Revert on error
         set((state) => {

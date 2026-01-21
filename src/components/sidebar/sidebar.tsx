@@ -10,6 +10,9 @@ import { FileItem } from "./file-item";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
+import { storeLogger } from "@/lib/logger";
+
+const log = storeLogger.child("Sidebar");
 
 export function Sidebar() {
   const { files, createFile, importFile } = useFileStore();
@@ -22,7 +25,7 @@ export function Sidebar() {
     try {
       await createFile(name);
     } catch (error) {
-      console.error("Failed to create file:", error);
+      log.error("Failed to create file", error);
     }
   };
 
@@ -42,7 +45,7 @@ export function Sidebar() {
       await importFile(file);
       toast.success(`Imported "${file.name}" successfully`);
     } catch (error) {
-      console.error("Failed to import file:", error);
+      log.error("Failed to import file", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     } finally {

@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import (
     auth,
@@ -154,6 +155,41 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Middleware
 # ============================================================================
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        # Prevent MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Prevent clickjacking
+        response.headers["X-Frame-Options"] = "DENY"
+
+        # XSS protection (legacy, but still useful for older browsers)
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # Referrer policy
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Content Security Policy (basic, adjust as needed)
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+
+        # HSTS (only in production, when not in debug mode)
+        if not settings.debug:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains; preload"
+            )
+
+        return response
+
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # CORS middleware - tightened configuration
 
 # Define allowed origins based on environment
@@ -162,14 +198,13 @@ CORS_ORIGINS = [
     "http://127.0.0.1:3000",
 ]
 
-# Add production origins only in non-debug mode
-if not settings.debug:
-    CORS_ORIGINS.extend([
-        "https://beta.doxmind.com",
-        "https://doxmind.com",
-        "https://www.doxmind.com",
-        "https://doxmind-mini-frontend-2fac03803995.herokuapp.com",
-    ])
+# Add production origins in both modes (needed for development with remote frontend)
+CORS_ORIGINS.extend([
+    "https://beta.doxmind.com",
+    "https://doxmind.com",
+    "https://www.doxmind.com",
+    "https://doxmind-mini-frontend-2fac03803995.herokuapp.com",
+])
 
 app.add_middleware(
     CORSMiddleware,

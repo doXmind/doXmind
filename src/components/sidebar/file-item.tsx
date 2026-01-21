@@ -18,6 +18,9 @@ import {
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { api } from "@/lib/api";
+import { storeLogger } from "@/lib/logger";
+
+const log = storeLogger.child("FileItem");
 
 interface FileItemProps {
   file: FileItemType;
@@ -153,7 +156,7 @@ export function FileItem({ file }: FileItemProps) {
       try {
         await renameFile(file.id, fullName);
       } catch (error) {
-        console.error("Failed to rename file:", error);
+        log.error("Failed to rename file", error);
       }
     }
     setIsRenaming(false);
@@ -177,7 +180,7 @@ export function FileItem({ file }: FileItemProps) {
     try {
       await deleteFile(file.id);
     } catch (error) {
-      console.error("Failed to delete file:", error);
+      log.error("Failed to delete file", error);
     }
     setShowDeleteModal(false);
   };
@@ -199,7 +202,7 @@ export function FileItem({ file }: FileItemProps) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error(`Failed to export as ${format}:`, error);
+      log.error(`Failed to export as ${format}`, error);
     }
   };
 

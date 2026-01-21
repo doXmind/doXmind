@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
+import { storeLogger } from "@/lib/logger";
 import type { FileItem } from "@/types";
+
+const log = storeLogger.child("File");
 
 // Re-export for convenience
 export type { FileItem } from "@/types";
@@ -45,7 +48,7 @@ export const useFileStore = create<FileState>()(
 
           set({ files, isSynced: true, isLoading: false });
         } catch (error) {
-          console.error("Failed to load files from server:", error);
+          log.error("Failed to load files from server", error);
           // Keep local files if server is unavailable
           set({ isSynced: false, isLoading: false });
         }
@@ -70,7 +73,7 @@ export const useFileStore = create<FileState>()(
 
           return newFile.id;
         } catch (error) {
-          console.error("Failed to create file on server:", error);
+          log.error("Failed to create file on server", error);
           throw error;
         }
       },
@@ -94,7 +97,7 @@ export const useFileStore = create<FileState>()(
 
           return newFile.id;
         } catch (error) {
-          console.error("Failed to import file:", error);
+          log.error("Failed to import file", error);
           throw error;
         }
       },
@@ -113,7 +116,7 @@ export const useFileStore = create<FileState>()(
           // Sync to server
           await api.updateFile(id, updates);
         } catch (error) {
-          console.error("Failed to update file on server:", error);
+          log.error("Failed to update file on server", error);
           // Revert optimistic update on error
           get().loadFiles();
         }
@@ -141,7 +144,7 @@ export const useFileStore = create<FileState>()(
           const { useChatStore } = await import("./chat-store");
           await useChatStore.getState().deleteConversation(id);
         } catch (error) {
-          console.error("Failed to delete file on server:", error);
+          log.error("Failed to delete file on server", error);
           // Revert on error
           get().loadFiles();
         }

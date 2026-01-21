@@ -30,7 +30,8 @@ class Settings(BaseSettings):
     # Security / JWT
     # =========================================================================
     # Generate a secure key: openssl rand -hex 32
-    jwt_secret_key: str = "your-secret-key-change-in-production"
+    # IMPORTANT: This MUST be set via environment variable in production
+    jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
@@ -105,7 +106,7 @@ class Settings(BaseSettings):
     # =========================================================================
     host: str = "0.0.0.0"
     port: int = 8000
-    debug: bool = True
+    debug: bool = False  # IMPORTANT: Default to False for security
 
     # =========================================================================
     # AI Models
@@ -134,6 +135,7 @@ class Settings(BaseSettings):
 
     # Agent limits
     max_agent_iterations: int = 10  # Maximum tool use iterations
+    streaming_timeout_seconds: int = 300  # 5 minutes max for streaming responses
 
     # Content limits
     max_document_context_chars: int = 50000  # Max chars for document context in chat

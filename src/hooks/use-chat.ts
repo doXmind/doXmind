@@ -4,32 +4,17 @@ import { useCallback, useRef } from "react";
 import { useChatStore, type ChatMessage, type ToolCall, type MessageContextItem } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useStreamingStore, type ToolStatus, type TodoItem } from "@/stores/streaming-store";
+import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
 import { api } from "@/lib/api";
+import type { ChatStreamEvent, TodoItem } from "@/types/stream-events";
 
 // Re-export types for convenience
 export type { EditOperation } from "./use-edit-operations";
-export type { ToolStatus, ThinkingStatus, TodoItem } from "@/stores/streaming-store";
-
-// Chat stream event types
-interface ChatStreamEvent {
-  type: string;
-  content?: string;
-  tool?: string;
-  tool_id?: string;
-  delta?: string;
-  output?: string;
-  success?: boolean;
-  edit?: EditOperation;
-  edits?: EditOperation[];
-  thinking?: string | null;
-  toolCalls?: ToolCall[] | null;
-  model?: string;
-  todos?: TodoItem[];
-}
+export type { ToolStatus, ThinkingStatus } from "@/stores/streaming-store";
+export type { TodoItem } from "@/types/stream-events";
 
 export function useChat() {
   // Use global streaming store instead of local state

@@ -7,6 +7,9 @@ import { useFileStore } from "@/stores/file-store";
 import { Button } from "@/components/ui/button";
 import { AnimatedLogo } from "@/components/ui/animated-logo";
 import { cn } from "@/lib/utils";
+import { storeLogger } from "@/lib/logger";
+
+const log = storeLogger.child("Welcome");
 
 // Animation variants
 const containerVariants = {
@@ -42,7 +45,7 @@ export function WelcomeScreen() {
     try {
       await createFile("Untitled.md");
     } catch (error) {
-      console.error("Failed to create file:", error);
+      log.error("Failed to create file", error);
     } finally {
       setIsCreating(false);
     }
@@ -68,7 +71,7 @@ export function WelcomeScreen() {
         try {
           await importFile(file);
         } catch (error) {
-          console.error("Failed to import file:", error);
+          log.error("Failed to import file", error);
         }
       }
     },

@@ -6,6 +6,21 @@ A minimalist, modern AI writing tool that combines a powerful markdown editor wi
 
 <img width="1355" height="859" alt="880c13120803e0339a8c8c2b0105486" src="https://github.com/user-attachments/assets/581ae1e0-b96a-4654-abc3-9fe5e49b2ae3" />
 
+## Table of Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Quick Start](#quick-start)
+- [Project Structure](#project-structure)
+- [Environment Variables](#environment-variables)
+- [AI Features](#ai-features)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [API Endpoints](#api-endpoints)
+- [Docker Commands](#docker-commands)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
 ## Features
 
 ### Core Editor
@@ -219,6 +234,8 @@ doxmind/
 ```
 
 ## Environment Variables
+
+> **Security Note**: Never commit `.env` files to version control. The `.gitignore` file excludes these by default.
 
 ### Docker (.env)
 
@@ -449,6 +466,38 @@ docker build -f server/Dockerfile.prod -t doxmind-backend:prod ./server
 # - Health checks
 # - Production-optimized settings
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+**Port already in use**
+
+```bash
+# Check what's using the port
+netstat -ano | findstr :3000  # Windows
+lsof -i :3000                 # macOS/Linux
+
+# Kill the process or use a different port
+```
+
+**API Key errors**
+
+- Ensure `.env` file exists with valid keys
+- Check for extra spaces or quotes around keys
+- Verify API key permissions and quotas
+
+**Database connection failed**
+
+- Check PostgreSQL is running: `docker ps`
+- Verify DATABASE_URL format
+- For local dev, SQLite is used by default
+
+**Vector search not working**
+
+- Ensure OPENAI_API_KEY is set for embeddings
+- Check pgvector extension is installed
+- Verify PGVECTOR_ENABLED=true
 
 ## License
 

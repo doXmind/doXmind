@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api, type User } from "@/lib/api";
+import { authLogger } from "@/lib/logger";
+
+const log = authLogger;
 
 interface AuthState {
   user: User | null;
@@ -44,7 +47,7 @@ export const useAuthStore = create<AuthState>()(
             }
           }
         } catch (error) {
-          console.error("Failed to initialize auth:", error);
+          log.error("Failed to initialize auth", error);
           // Clear invalid token
           api.logout();
         } finally {
@@ -97,7 +100,7 @@ export const useAuthStore = create<AuthState>()(
           // Redirect to Google OAuth
           window.location.href = authorization_url;
         } catch (error) {
-          console.error("Failed to get Google auth URL:", error);
+          log.error("Failed to get Google auth URL", error);
           throw error;
         }
       },
@@ -131,7 +134,7 @@ export const useAuthStore = create<AuthState>()(
           const user = await api.getCurrentUser();
           set({ user });
         } catch (error) {
-          console.error("Failed to refresh user:", error);
+          log.error("Failed to refresh user", error);
         }
       },
 

@@ -6,6 +6,9 @@ import {
   isAbortError,
   createStreamController,
 } from "@/lib/streaming";
+import { editorLogger } from "@/lib/logger";
+
+const log = editorLogger.child("QuickEdit");
 
 interface QuickEditEvent {
   text?: string;
@@ -41,7 +44,7 @@ export function useQuickEdit() {
       return fullText;
     } catch (error) {
       if (!isAbortError(error)) {
-        console.error("Quick edit error:", error);
+        log.error("Quick edit request failed", error);
       }
       setResult(null);
       return null;
