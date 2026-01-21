@@ -4,6 +4,7 @@ Provides user registration, login, OAuth, and token management.
 """
 
 import base64
+import json
 import hashlib
 import hmac
 import time
@@ -312,28 +313,29 @@ async def reset_password(
 # Google OAuth Endpoints
 # =============================================================================
 
-def _create_oauth_state() -> str:
+def _create_oauth_state(redirect_uri: str | None = None) -> str:
     """Create a signed OAuth state token (stateless approach).
 
     Uses HMAC to sign a timestamp, allowing verification without shared storage.
     This works across multiple workers without needing Redis/database.
     """
     settings = get_settings()
-    timestamp = str(int(time.time()))
-    # Create HMAC signature using JWT secret
+    payload = {
+        "ts": int(time.time()),
+        "redirect_uri": redirect_uri,
+    }
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
     signature = hmac.new(
         settings.jwt_secret_key.encode(),
-        timestamp.encode(),
+        payload_b64.encode(),
         hashlib.sha256
     ).digest()
-    # Combine timestamp and signature
-    state = base64.urlsafe_b64encode(
-        f"{timestamp}:{base64.urlsafe_b64encode(signature).decode()}".encode()
-    ).decode()
+    signature_b64 = base64.urlsafe_b64encode(signature).decode()
+    state = base64.urlsafe_b64encode(f"{payload_b64}.{signature_b64}".encode()).decode()
     return state
 
 
-def _verify_oauth_state(state: str, max_age_seconds: int = 600) -> bool:
+def _verify_oauth_state(state: str, max_age_seconds: int = 600) -> dict[str, str | int | None] | None:
     """Verify a signed OAuth state token.
 
     Args:
@@ -346,28 +348,32 @@ def _verify_oauth_state(state: str, max_age_seconds: int = 600) -> bool:
     settings = get_settings()
     try:
         decoded = base64.urlsafe_b64decode(state.encode()).decode()
-        timestamp_str, signature_b64 = decoded.split(":", 1)
-        timestamp = int(timestamp_str)
+        payload_b64, signature_b64 = decoded.split(".", 1)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64.encode()).decode())
+        timestamp = int(payload.get("ts", 0))
 
         # Check if expired
         if time.time() - timestamp > max_age_seconds:
-            return False
+            return None
 
         # Verify signature
         expected_signature = hmac.new(
             settings.jwt_secret_key.encode(),
-            timestamp_str.encode(),
+            payload_b64.encode(),
             hashlib.sha256
         ).digest()
         provided_signature = base64.urlsafe_b64decode(signature_b64.encode())
 
-        return hmac.compare_digest(expected_signature, provided_signature)
+        if not hmac.compare_digest(expected_signature, provided_signature):
+            return None
+
+        return payload
     except Exception:
-        return False
+        return None
 
 
 @router.get("/google")
-async def google_auth(request: Request):
+async def google_auth(request: Request, redirect_uri: str | None = None):
     """Redirect to Google OAuth authorization page."""
     oauth_service = get_google_oauth_service()
 
@@ -378,7 +384,7 @@ async def google_auth(request: Request):
         )
 
     # Generate signed state for CSRF protection (stateless approach)
-    state = _create_oauth_state()
+    state = _create_oauth_state(redirect_uri=redirect_uri)
 
     auth_url = oauth_service.get_authorization_url(state=state)
 
@@ -396,7 +402,8 @@ async def google_callback(
     settings = get_settings()
 
     # Verify signed state token
-    if not _verify_oauth_state(state):
+    state_payload = _verify_oauth_state(state)
+    if not state_payload:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state parameter"
@@ -428,7 +435,9 @@ async def google_callback(
         access_token = create_access_token(subject=user.id)
 
         # Redirect to frontend with token
-        redirect_url = f"{settings.frontend_url}/auth/callback?token={access_token}"
+        redirect_uri = state_payload.get("redirect_uri") if state_payload else None
+        base_redirect = redirect_uri or settings.frontend_url
+        redirect_url = f"{base_redirect}/auth/callback?token={access_token}"
 
         return RedirectResponse(url=redirect_url)
 

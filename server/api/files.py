@@ -1,10 +1,12 @@
 """File management API endpoints with user data isolation."""
 
 import logging
+from datetime import datetime
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, get_db
@@ -93,22 +95,29 @@ async def create_file(
     user_id = get_user_id(token)
 
     try:
-        new_file = File(name=file.name, content=file.content, user_id=user_id)
-        db.add(new_file)
+        result = await db.execute(
+            insert(File)
+            .values(name=file.name, content=file.content, user_id=user_id)
+            .returning(File.id, File.name, File.content, File.created_at, File.updated_at)
+        )
         await db.commit()
-        await db.refresh(new_file)
+        created_row = result.mappings().first()
+        if not created_row:
+            raise RuntimeError("Failed to create file")
+        created = cast(dict[str, Any], created_row)
+        file_id = cast(str, created["id"])
 
         # Index in vector store (both chunk-level and sentence-level)
         try:
             rag = RAGService(db)
             await rag.index_file(
-                file_id=new_file.id,
+                file_id=file_id,
                 content=file.content,
                 metadata={"name": file.name, "user_id": user_id}
             )
             # Also index at sentence level for in-document search
             await rag.index_file_sentences(
-                file_id=new_file.id,
+                file_id=file_id,
                 content=file.content,
                 metadata={"name": file.name, "user_id": user_id}
             )
@@ -116,11 +125,11 @@ async def create_file(
             logger.warning(f"Failed to index file: {e}")
 
         return FileResponse(
-            id=new_file.id,
-            name=new_file.name,
-            content=new_file.content,
-            created_at=new_file.created_at.isoformat(),
-            updated_at=new_file.updated_at.isoformat()
+            id=file_id,
+            name=cast(str, created["name"]),
+            content=cast(str, created["content"]),
+            created_at=cast(datetime, created["created_at"]).isoformat(),
+            updated_at=cast(datetime, created["updated_at"]).isoformat()
         )
     except Exception as e:
         await db.rollback()
