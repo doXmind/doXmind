@@ -2,11 +2,12 @@
  * Voice Recording Hook
  *
  * WeChat-style voice recording with long-press interaction.
- * Uses MediaRecorder API for audio capture.
+ * Uses MediaRecorder API on web, native bridge in RN WebView.
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { haptics } from "@/lib/haptics";
+import { isNativeWebView, nativeBridge, onNativeMessage } from "@/lib/native-bridge";
 
 export interface UseVoiceRecordingOptions {
   /** Minimum recording duration in ms (default: 500ms) */
@@ -40,7 +41,130 @@ export interface UseVoiceRecordingReturn {
   cancel: () => void;
 }
 
-export function useVoiceRecording(options: UseVoiceRecordingOptions = {}): UseVoiceRecordingReturn {
+/**
+ * Native WebView implementation using expo-av via bridge
+ */
+function useNativeVoiceRecording(options: UseVoiceRecordingOptions): UseVoiceRecordingReturn {
+  const { minDuration = 500, onStart, onStop, onCancel, onError } = options;
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
+
+  const startTimeRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Listen for native messages
+  useEffect(() => {
+    const cleanup = onNativeMessage((type, payload) => {
+      const data = payload as {
+        level?: number;
+        duration?: number;
+        base64?: string;
+        mimeType?: string;
+        error?: string;
+      };
+
+      switch (type) {
+        case "VOICE_LEVEL":
+          setAudioLevel(data.level || 0);
+          break;
+
+        case "VOICE_STOPPED":
+          // Native recording stopped, receive base64 audio data
+          if (data.base64 && data.duration && data.duration >= minDuration) {
+            // Convert base64 to Blob
+            const byteCharacters = atob(data.base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: data.mimeType || "audio/m4a" });
+            onStop?.(blob, data.duration);
+          } else if (data.duration && data.duration < minDuration) {
+            setError("Recording too short");
+            onCancel?.();
+          }
+          setIsRecording(false);
+          setDuration(0);
+          setAudioLevel(0);
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          break;
+
+        case "VOICE_CANCELLED":
+          setIsRecording(false);
+          setDuration(0);
+          setAudioLevel(0);
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          onCancel?.();
+          break;
+
+        case "VOICE_ERROR":
+          setError(data.error || "Recording failed");
+          setIsRecording(false);
+          onError?.(data.error || "Recording failed");
+          break;
+      }
+    });
+
+    return cleanup;
+  }, [minDuration, onStop, onCancel, onError]);
+
+  const start = useCallback(async () => {
+    setError(null);
+    nativeBridge.voice.start();
+    startTimeRef.current = Date.now();
+    setIsRecording(true);
+    haptics.medium();
+    onStart?.();
+
+    // Update duration timer locally
+    timerRef.current = setInterval(() => {
+      setDuration(Date.now() - startTimeRef.current);
+    }, 100);
+  }, [onStart]);
+
+  const stop = useCallback(() => {
+    nativeBridge.voice.stop();
+  }, []);
+
+  const cancel = useCallback(() => {
+    nativeBridge.voice.cancel();
+    haptics.light();
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
+  return {
+    isRecording,
+    duration,
+    error,
+    audioLevel,
+    start,
+    stop,
+    cancel,
+  };
+}
+
+/**
+ * Web implementation using MediaRecorder API
+ */
+function useWebVoiceRecording(options: UseVoiceRecordingOptions): UseVoiceRecordingReturn {
   const { minDuration = 500, maxDuration = 60000, onStart, onStop, onCancel, onError } = options;
 
   const [isRecording, setIsRecording] = useState(false);
@@ -52,7 +176,7 @@ export function useVoiceRecording(options: UseVoiceRecordingOptions = {}): UseVo
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number>(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -272,6 +396,18 @@ export function useVoiceRecording(options: UseVoiceRecordingOptions = {}): UseVo
 }
 
 /**
+ * Main hook - uses native bridge in RN WebView, web API otherwise
+ */
+export function useVoiceRecording(options: UseVoiceRecordingOptions = {}): UseVoiceRecordingReturn {
+  // Always call both hooks but only use one
+  // This maintains hook call order consistency
+  const nativeResult = useNativeVoiceRecording(options);
+  const webResult = useWebVoiceRecording(options);
+
+  return isNativeWebView ? nativeResult : webResult;
+}
+
+/**
  * Hook for speech-to-text transcription
  */
 export interface UseSpeechToTextOptions {
@@ -317,6 +453,7 @@ export function useSpeechToText(options: UseSpeechToTextOptions = {}): UseSpeech
           "audio/webm": "webm",
           "audio/webm;codecs=opus": "webm",
           "audio/mp4": "mp4",
+          "audio/m4a": "m4a",
           "audio/ogg": "ogg",
           "audio/ogg;codecs=opus": "ogg",
           "audio/wav": "wav",
