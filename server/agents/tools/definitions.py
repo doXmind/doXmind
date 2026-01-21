@@ -334,24 +334,19 @@ def get_tools_for_mode(
 
 TODO_TOOL = {
     "name": "TodoWrite",
-    "description": """Create and manage a structured task list for tracking progress.
+    "description": """Track progress for multi-step tasks (3+ steps). The user sees updates in real-time.
 
-When to use:
-- Complex multi-step tasks (3+ distinct steps)
-- Non-trivial tasks requiring careful planning
-- When user provides multiple tasks to complete
+States: pending | in_progress (ONE only) | completed
 
-Task states:
-- pending: Task not yet started
-- in_progress: Currently working on (limit to ONE at a time)
-- completed: Task finished successfully
+USAGE PATTERN:
+1. Create list: first task "in_progress", others "pending"
+2. After EACH task completes: call TodoWrite to update (mark done + start next)
+3. Never batch updates - call immediately after each step
 
-IMPORTANT:
-- content: imperative form describing what to do (e.g., "Run tests", "Fix bug")
-- activeForm: present continuous form shown during execution (e.g., "Running tests", "Fixing bug")
-- Mark tasks complete IMMEDIATELY after finishing (don't batch)
-- Only ONE task should be in_progress at any time
-- Keep the list concise (3-7 items max)""",
+Fields:
+- content: what to do ("Fix bug")
+- activeForm: shown during work ("Fixing bug")
+- status: pending/in_progress/completed""",
     "input_schema": {
         "type": "object",
         "properties": {

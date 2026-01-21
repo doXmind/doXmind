@@ -510,7 +510,9 @@ class WritingAgent:
             result = execute_document_tool(tool_name, tool_input, files, current_file_id)
 
         # Handle result
-        if result.get("success"):
+        # Check if this is an actual edit operation (must have 'type' field with valid edit type)
+        # TodoWrite returns {"success": True} but is NOT an edit operation
+        if result.get("success") and result.get("type") in ("str_replace", "insert", "replace_all"):
             # This is an edit operation
             collected_edits.append(result)
             yield {"type": "edit", "edit": result}
@@ -578,7 +580,8 @@ class WritingAgent:
         if tool_name in ("view_document", "search_in_document"):
             reminder = "\n\n<reminder>Now use editing tools (str_replace_editor, insert_text) to make changes. Keep chat responses brief.</reminder>"
         elif tool_name in ("str_replace_editor", "insert_text", "replace_document"):
-            reminder = "\n\n<reminder>Edit complete. Continue with next edit or provide a brief confirmation to the user.</reminder>"
+            # Key insight from Claude Code: remind to update todos after each edit
+            reminder = "\n\n<reminder>Edit complete. If you have a todo list, call TodoWrite NOW to mark this task completed and the next task in_progress. Then continue with the next edit.</reminder>"
         elif tool_name in ("search_knowledge_base", "read_kb_document", "list_kb_documents"):
             reminder = "\n\n<reminder>Use this information to help the user. If editing is needed, use editing tools directly.</reminder>"
         elif tool_name in ("read_skill_instructions", "read_skill_template", "read_skill_knowledge"):
