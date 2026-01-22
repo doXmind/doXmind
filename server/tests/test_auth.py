@@ -1047,20 +1047,35 @@ class TestOAuthState:
         from api.auth import _create_oauth_state, _verify_oauth_state
 
         state = _create_oauth_state()
-        assert _verify_oauth_state(state) is True
+        result = _verify_oauth_state(state)
+        # Returns payload dict on success, None on failure
+        assert result is not None
+        assert "ts" in result
+        assert "redirect_uri" in result
+
+    def test_create_state_with_redirect_uri(self):
+        """Should store redirect_uri in state payload."""
+        from api.auth import _create_oauth_state, _verify_oauth_state
+
+        redirect_uri = "https://example.com/callback"
+        state = _create_oauth_state(redirect_uri=redirect_uri)
+        result = _verify_oauth_state(state)
+        assert result is not None
+        assert result.get("redirect_uri") == redirect_uri
 
     def test_verify_invalid_state(self):
         """Should reject invalid state."""
         from api.auth import _verify_oauth_state
 
-        assert _verify_oauth_state("invalid-state") is False
-        assert _verify_oauth_state("") is False
+        assert _verify_oauth_state("invalid-state") is None
+        assert _verify_oauth_state("") is None
 
     def test_verify_expired_state(self):
         """Should reject expired state."""
         import base64
         import hashlib
         import hmac
+        import json
         import time
 
         from api.auth import _verify_oauth_state
@@ -1069,17 +1084,17 @@ class TestOAuthState:
         settings = get_settings()
 
         # Create state with old timestamp (11 minutes ago, past 10 min max_age)
-        old_timestamp = str(int(time.time()) - 660)
+        payload = {"ts": int(time.time()) - 660, "redirect_uri": None}
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
         signature = hmac.new(
             settings.jwt_secret_key.encode(),
-            old_timestamp.encode(),
+            payload_b64.encode(),
             hashlib.sha256,
         ).digest()
-        state = base64.urlsafe_b64encode(
-            f"{old_timestamp}:{base64.urlsafe_b64encode(signature).decode()}".encode()
-        ).decode()
+        signature_b64 = base64.urlsafe_b64encode(signature).decode()
+        state = base64.urlsafe_b64encode(f"{payload_b64}.{signature_b64}".encode()).decode()
 
-        assert _verify_oauth_state(state) is False
+        assert _verify_oauth_state(state) is None
 
     def test_verify_tampered_state(self):
         """Should reject state with tampered signature."""
@@ -1090,13 +1105,13 @@ class TestOAuthState:
         state = _create_oauth_state()
         # Decode and tamper
         decoded = base64.urlsafe_b64decode(state.encode()).decode()
-        timestamp, _ = decoded.split(":", 1)
+        payload_b64, _ = decoded.split(".", 1)
         # Use wrong signature
         tampered = base64.urlsafe_b64encode(
-            f"{timestamp}:wrong-signature".encode()
+            f"{payload_b64}.wrong-signature".encode()
         ).decode()
 
-        assert _verify_oauth_state(tampered) is False
+        assert _verify_oauth_state(tampered) is None
 
 
 # =============================================================================
