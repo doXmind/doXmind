@@ -332,11 +332,11 @@ class TelemetryService {
       return;
     }
 
-    const fullEvent = {
+    const fullEvent: TelemetryEvent = {
       ...event,
       timestamp: Date.now(),
       session_id: this.sessionId,
-    } as TelemetryEvent;
+    } as T;
 
     // Strip sensitive content if product improvement is disabled
     if (!this.settings.productImprovementEnabled) {
@@ -466,27 +466,20 @@ class TelemetryService {
    * Track diff hunk accept/reject
    */
   trackDiffReview(
-    data: Omit<DiffReviewEvent, "event_type" | "timestamp" | "session_id" | "decision_speed"> & {
-      event_type: DiffReviewEvent["event_type"];
-    }
+    data: Omit<DiffReviewEvent, "timestamp" | "session_id" | "decision_speed">
   ): void {
     const decision_speed = classifyDecisionSpeed(data.time_to_decision_ms);
-    this.track({ ...data, decision_speed });
+    this.track<DiffReviewEvent>({ ...data, decision_speed });
   }
 
   /**
    * Track autocomplete interaction
    */
   trackAutocomplete(
-    data: Omit<
-      AutocompleteEvent,
-      "event_type" | "timestamp" | "session_id" | "decision_speed"
-    > & {
-      event_type: AutocompleteEvent["event_type"];
-    }
+    data: Omit<AutocompleteEvent, "timestamp" | "session_id" | "decision_speed">
   ): void {
     const decision_speed = classifyDecisionSpeed(data.latency_ms);
-    this.track({ ...data, decision_speed });
+    this.track<AutocompleteEvent>({ ...data, decision_speed });
   }
 
   /**

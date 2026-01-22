@@ -189,7 +189,7 @@ export function ChatMessage({ message, conversationId, userPrompt }: ChatMessage
               userPrompt={userPrompt || ""}
               aiResponse={message.content}
               fileId={message.fileIds?.[0]}
-              model={message.model}
+              model={message.model ?? undefined}
               hadToolCalls={!!(message.toolCalls && message.toolCalls.length > 0)}
             />
           )}

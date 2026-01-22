@@ -25,7 +25,7 @@ import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useEditorStore, type LastAIOperation } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { telemetry } from "@/lib/telemetry";
+import { telemetry, type UndoAfterAIEvent } from "@/lib/telemetry";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -194,7 +194,7 @@ export function Editor({ file: initialFile }: EditorProps) {
         const lastOp = lastAIOperationRef.current;
         if (lastOp && Date.now() - lastOp.timestamp < UNDO_TRACKING_WINDOW_MS) {
           // Track undo after AI event
-          telemetry.track({
+          telemetry.track<UndoAfterAIEvent>({
             event_type: "undo_after_ai",
             ai_operation_type: lastOp.type,
             time_to_undo_ms: Date.now() - lastOp.timestamp,
