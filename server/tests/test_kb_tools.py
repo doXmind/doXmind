@@ -11,14 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agents.tools.kb_tools import (
+    KB_TOOL_NAMES,
     execute_kb_tool,
     execute_list_kb_documents,
     execute_read_kb_document,
     execute_search_knowledge_base,
     is_kb_tool,
-    KB_TOOL_NAMES,
 )
-
 
 # ============================================================================
 # is_kb_tool Tests

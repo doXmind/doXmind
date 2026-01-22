@@ -200,7 +200,11 @@ export function useAutocomplete({ editor, fileId, fileName, enabled = true }: Us
       if (editor && data.suggestion) {
         const currentPos = editor.state.selection.from;
         if (currentPos === pos) {
-          editor.commands.setSuggestion(data.suggestion);
+          // Pass context for telemetry tracking
+          editor.commands.setSuggestion(data.suggestion, {
+            textBefore,
+            triggerMode: autocompleteTriggerMode,
+          });
         }
       }
     } catch (error) {
@@ -211,7 +215,7 @@ export function useAutocomplete({ editor, fileId, fileName, enabled = true }: Us
     } finally {
       setIsLoading(false);
     }
-  }, [editor, isEnabled, fileId, fileName, clearSuggestion]);
+  }, [editor, isEnabled, fileId, fileName, clearSuggestion, autocompleteTriggerMode]);
 
   /**
    * Trigger autocomplete with debouncing (for auto mode)

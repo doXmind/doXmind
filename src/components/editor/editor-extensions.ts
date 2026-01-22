@@ -95,7 +95,6 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Custom extensions
     SlashCommands,
     AutocompleteExtension,
-    AutocompleteKeymap,
     SearchExtension,
     SpellcheckExtension,
     DiffReviewExtension,
@@ -105,6 +104,10 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     BlockSelectionExtension.configure({
       enabled: enableBlockSelection,
     }),
+
+    // AutocompleteKeymap MUST be last to ensure Tab handler has highest priority
+    // TipTap processes keyboard shortcuts in reverse order (last extension first)
+    AutocompleteKeymap,
   ];
 
   // Only add Placeholder extension on desktop (mobile uses custom empty state UI)

@@ -6,7 +6,6 @@ import pytest
 
 from services.oauth_service import GoogleOAuthService, get_google_oauth_service
 
-
 # =============================================================================
 # GoogleOAuthService Tests
 # =============================================================================

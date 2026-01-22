@@ -7,7 +7,7 @@ import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,6 @@ from api.import_file import (
     markdown_to_html,
     router,
 )
-
 
 # ============================================================================
 # Helper Function Tests
@@ -112,7 +111,7 @@ class TestConfiguration:
     def test_allowed_extensions(self):
         """Should allow correct extensions."""
         expected = {'.pdf', '.docx', '.md', '.markdown'}
-        assert ALLOWED_EXTENSIONS == expected
+        assert expected == ALLOWED_EXTENSIONS
 
 
 # ============================================================================
@@ -183,7 +182,6 @@ class TestImportEndpoint:
             yield mock_db
 
         from api.import_file import router as import_router
-        from main import app as main_app
 
         # Create new app with override
         app = FastAPI()
@@ -199,11 +197,11 @@ class TestImportEndpoint:
         file_content = b"# Title\n\nContent here."
 
         # Use patched database
-        with patch("api.import_file.get_db", override_get_db):
-            with patch("api.import_file.FileModel") as mock_file_model:
-                mock_file_model.return_value = mock_file
+        with patch("api.import_file.get_db", override_get_db), \
+             patch("api.import_file.FileModel") as mock_file_model:
+            mock_file_model.return_value = mock_file
 
-                response = client.post(
+            response = client.post(
                     "/api/import/",
                     files={"file": ("document.md", io.BytesIO(file_content), "text/markdown")}
                 )
@@ -471,7 +469,7 @@ class TestEdgeCases:
 
     def test_utf8_content(self, client):
         """Should handle UTF-8 content in markdown."""
-        file_content = "# 中文标题\n\n日本語テキスト".encode("utf-8")
+        file_content = "# 中文标题\n\n日本語テキスト".encode()
 
         response = client.post(
             "/api/import/",

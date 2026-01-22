@@ -414,9 +414,25 @@ export function VoiceEditPreview({
                   </div>
                 ) : (
                   <>
-                    {conversation.messages.map((message) => (
-                      <ChatMessage key={message.id} message={message} />
-                    ))}
+                    {conversation.messages.map((message, index) => {
+                      // Find the user prompt that triggered this AI response
+                      const userPrompt =
+                        message.role === "assistant"
+                          ? conversation.messages
+                              .slice(0, index)
+                              .reverse()
+                              .find((m) => m.role === "user")?.content
+                          : undefined;
+
+                      return (
+                        <ChatMessage
+                          key={message.id}
+                          message={message}
+                          conversationId={conversation.id}
+                          userPrompt={userPrompt}
+                        />
+                      );
+                    })}
                   </>
                 )}
 

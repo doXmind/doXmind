@@ -8,7 +8,6 @@ Tests the document editing tool executors:
 - search_in_document
 """
 
-import pytest
 
 from agents.tools.document_tools import (
     execute_document_tool,
@@ -20,7 +19,6 @@ from agents.tools.document_tools import (
     find_target_file,
     is_document_tool,
 )
-
 
 # ============================================================================
 # Sample Data

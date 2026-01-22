@@ -41,6 +41,9 @@ export interface DiffHunk {
   /** Timestamp when this hunk was created */
   createdAt: string;
 
+  /** Timestamp when this hunk was first displayed to user (for decision time tracking) */
+  displayedAt?: number;
+
   /** ID of the original edit operation this hunk belongs to */
   editId: string;
 
@@ -76,6 +79,9 @@ export interface DiffSession {
 
   /** Timestamp when this session was created */
   createdAt: string;
+
+  /** Timestamp when review session started (for session duration tracking) */
+  startedAt?: number;
 }
 
 // Re-export EditOperation from centralized types for backward compatibility

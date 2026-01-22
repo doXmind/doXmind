@@ -211,8 +211,8 @@ class MockStreamManager:
         return self._text_stream()
 
     async def _text_stream(self):
-        for text in self.texts:
-            yield text
+        for item in self.texts:
+            yield item
 
 
 @pytest.fixture
@@ -294,7 +294,7 @@ def mock_chroma_collection():
 # Database Entity Fixtures
 # =============================================================================
 
-from db.database import User, File, Conversation
+from db.database import Conversation, File, User
 
 
 async def create_test_user(

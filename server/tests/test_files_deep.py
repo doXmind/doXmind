@@ -15,12 +15,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File
 from services.auth_service import TokenData
-
 
 # ============================================================================
 # Fixtures
@@ -203,14 +202,10 @@ class TestDatabaseIntegrity:
     @pytest.mark.asyncio
     async def test_timestamps_auto_set(self, db_session: AsyncSession):
         """Timestamps should be automatically set on creation."""
-        before_create = datetime.now(UTC)
-
         file = File(name="Timestamped", content="Test")
         db_session.add(file)
         await db_session.commit()
         await db_session.refresh(file)
-
-        after_create = datetime.now(UTC)
 
         assert file.created_at is not None
         assert file.updated_at is not None
@@ -228,7 +223,6 @@ class TestDatabaseIntegrity:
         await db_session.refresh(file)
 
         original_created_at = file.created_at
-        original_updated_at = file.updated_at
 
         # Wait a bit to ensure timestamp difference
         await asyncio.sleep(0.1)

@@ -6,7 +6,6 @@ import pytest
 
 from services.email_service import EmailService, get_email_service
 
-
 # =============================================================================
 # EmailService Tests
 # =============================================================================

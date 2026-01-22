@@ -497,7 +497,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 
             yield b"data: [DONE]\n\n"
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Chat streaming timeout")
             error_data = f"data: {json.dumps({'type': 'error', 'content': 'Request timeout'})}\n\n"
             yield error_data.encode('utf-8')

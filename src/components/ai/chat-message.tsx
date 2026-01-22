@@ -6,9 +6,14 @@ import { cn } from "@/lib/utils";
 import { type ChatMessage as ChatMessageType } from "@/stores/chat-store";
 import { marked } from "marked";
 import { useMemo } from "react";
+import { MessageFeedback } from "./message-feedback";
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  /** Conversation ID for feedback tracking */
+  conversationId?: string;
+  /** The user prompt that triggered this response (for AI messages) */
+  userPrompt?: string;
 }
 
 // Collapsible context display for user messages (single item)
@@ -86,7 +91,7 @@ function MessageContextsDisplay({
   );
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, conversationId, userPrompt }: ChatMessageProps) {
   const isUser = message.role === "user";
 
   // Parse markdown and handle special markers for tool usage
@@ -168,13 +173,27 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )}
         </div>
 
-        {/* Timestamp */}
-        <p className="mt-1 text-xs text-muted-foreground">
-          {new Date(message.createdAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </p>
+        {/* Timestamp and feedback */}
+        <div className="mt-1 flex items-center gap-2">
+          <p className="text-xs text-muted-foreground">
+            {new Date(message.createdAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </p>
+          {/* Feedback buttons for completed AI messages */}
+          {!isUser && !message.isStreaming && message.content && conversationId && (
+            <MessageFeedback
+              messageId={message.id}
+              conversationId={conversationId}
+              userPrompt={userPrompt || ""}
+              aiResponse={message.content}
+              fileId={message.fileIds?.[0]}
+              model={message.model}
+              hadToolCalls={!!(message.toolCalls && message.toolCalls.length > 0)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

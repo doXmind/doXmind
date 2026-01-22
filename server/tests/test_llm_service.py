@@ -1,11 +1,12 @@
 """
 Tests for LLM Service.
 """
-import pytest
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.llm_service import LLMService
+import pytest
 
+from services.llm_service import LLMService
 
 # =============================================================================
 # Test Fixtures
@@ -315,7 +316,7 @@ class TestLLMServiceJSONComplete:
         """Test json_complete raises on invalid JSON response."""
         mock_client.beta.messages.create.return_value = MockMessage("not valid json")
 
-        with pytest.raises(Exception):
+        with pytest.raises((json.JSONDecodeError, ValueError)):
             await llm_service.json_complete(
                 "Get JSON", json_schema={"type": "object"}
             )

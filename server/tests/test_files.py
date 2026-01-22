@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File
-from services.auth_service import TokenData, create_access_token
+from services.auth_service import TokenData
 
 
 @pytest.mark.unit

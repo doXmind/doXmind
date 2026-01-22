@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import (
     Conversation,
-    ConversationAttachment,
     EmailVerification,
     File,
     Message,
@@ -26,7 +25,6 @@ from db.database import (
 )
 from services.auth_service import hash_password, verify_password
 from services.user_service import UserService
-
 
 # =============================================================================
 # Registration Flow Tests
@@ -104,13 +102,12 @@ class TestInitiateRegistration:
         with patch.object(service, "settings", MagicMock(
             debug=True,
             email_verification_expire_minutes=15
-        )):
-            with patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=False)):
-                success, message = await service.initiate_registration(
-                    email="debug@example.com",
-                    username="debuguser",
-                    password="SecurePass123!"
-                )
+        )), patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=False)):
+            success, message = await service.initiate_registration(
+                email="debug@example.com",
+                username="debuguser",
+                password="SecurePass123!"
+            )
 
         assert success is True
         # In debug mode with email failure, code is returned in message
@@ -123,13 +120,12 @@ class TestInitiateRegistration:
         with patch.object(service, "settings", MagicMock(
             debug=False,
             email_verification_expire_minutes=15
-        )):
-            with patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=False)):
-                success, message = await service.initiate_registration(
-                    email="prod@example.com",
-                    username="produser",
-                    password="SecurePass123!"
-                )
+        )), patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=False)):
+            success, message = await service.initiate_registration(
+                email="prod@example.com",
+                username="produser",
+                password="SecurePass123!"
+            )
 
         assert success is False
         assert "failed" in message.lower()

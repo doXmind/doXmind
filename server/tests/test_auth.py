@@ -1058,12 +1058,12 @@ class TestOAuthState:
 
     def test_verify_expired_state(self):
         """Should reject expired state."""
-        from api.auth import _verify_oauth_state
         import base64
         import hashlib
         import hmac
         import time
 
+        from api.auth import _verify_oauth_state
         from config import get_settings
 
         settings = get_settings()
@@ -1083,8 +1083,9 @@ class TestOAuthState:
 
     def test_verify_tampered_state(self):
         """Should reject state with tampered signature."""
-        from api.auth import _create_oauth_state, _verify_oauth_state
         import base64
+
+        from api.auth import _create_oauth_state, _verify_oauth_state
 
         state = _create_oauth_state()
         # Decode and tamper

@@ -8,8 +8,6 @@ import pytest
 from httpx import AsyncClient
 
 from db.database import Conversation, ConversationAttachment
-from main import app
-
 
 # ============================================================================
 # Upload Attachment Tests
@@ -943,20 +941,20 @@ class TestExtractTextContent:
         """Should call Gemini converter for extraction."""
         from api.knowledge_base import extract_text_content
 
-        with patch("api.knowledge_base.is_gemini_configured", return_value=True):
-            with patch("api.knowledge_base.convert_file_to_markdown") as mock_convert:
-                mock_convert.return_value = "Extracted text"
+        with patch("api.knowledge_base.is_gemini_configured", return_value=True), \
+             patch("api.knowledge_base.convert_file_to_markdown") as mock_convert:
+            mock_convert.return_value = "Extracted text"
 
-                result = await extract_text_content(b"content", "test.pdf", ".pdf")
+            result = await extract_text_content(b"content", "test.pdf", ".pdf")
 
-                assert result == "Extracted text"
-                mock_convert.assert_called_once_with(b"content", "test.pdf", ".pdf")
+            assert result == "Extracted text"
+            mock_convert.assert_called_once_with(b"content", "test.pdf", ".pdf")
 
     @pytest.mark.asyncio
     async def test_extract_raises_when_gemini_not_configured(self):
         """Should raise ValueError when Gemini API key is not configured."""
         from api.knowledge_base import extract_text_content
 
-        with patch("api.knowledge_base.is_gemini_configured", return_value=False):
-            with pytest.raises(ValueError, match="GEMINI_API_KEY"):
-                await extract_text_content(b"content", "test.pdf", ".pdf")
+        with patch("api.knowledge_base.is_gemini_configured", return_value=False), \
+             pytest.raises(ValueError, match="GEMINI_API_KEY"):
+            await extract_text_content(b"content", "test.pdf", ".pdf")

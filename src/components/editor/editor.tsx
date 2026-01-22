@@ -23,8 +23,9 @@ import { useTextReview } from "@/hooks/use-text-review";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
-import { useEditorStore } from "@/stores/editor-store";
+import { useEditorStore, type LastAIOperation } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { telemetry } from "@/lib/telemetry";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -52,6 +53,8 @@ export function Editor({ file: initialFile }: EditorProps) {
     closeImageModal,
     isReviewPanelOpen,
     setReviewPanelOpen,
+    lastAIOperation,
+    clearLastAIOperation,
   } = useEditorStore();
 
   // Search bar state
@@ -169,6 +172,44 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   // Use keyboard shortcuts hook (Ctrl+Shift+O for outline)
   useEditorShortcuts();
+
+  // Track undo after AI operations
+  // We use a ref to store the last AI operation to avoid stale closure issues
+  const lastAIOperationRef = useRef<LastAIOperation | null>(null);
+  useEffect(() => {
+    lastAIOperationRef.current = lastAIOperation;
+  }, [lastAIOperation]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const UNDO_TRACKING_WINDOW_MS = 10000; // 10 seconds
+
+    // Listen for transactions to detect undo operations
+    const handleTransaction = ({ transaction }: { transaction: { getMeta: (key: string) => unknown } }) => {
+      // Check if this is an undo operation from the history plugin
+      const historyMeta = transaction.getMeta("history$");
+      if (historyMeta && typeof historyMeta === "object" && "redo" in historyMeta && !historyMeta.redo) {
+        // This is an undo operation
+        const lastOp = lastAIOperationRef.current;
+        if (lastOp && Date.now() - lastOp.timestamp < UNDO_TRACKING_WINDOW_MS) {
+          // Track undo after AI event
+          telemetry.track({
+            event_type: "undo_after_ai",
+            ai_operation_type: lastOp.type,
+            time_to_undo_ms: Date.now() - lastOp.timestamp,
+          });
+          // Clear the last AI operation after tracking
+          clearLastAIOperation();
+        }
+      }
+    };
+
+    editor.on("transaction", handleTransaction);
+    return () => {
+      editor.off("transaction", handleTransaction);
+    };
+  }, [editor, clearLastAIOperation]);
 
   // Handle Review button click
   const handleReviewClick = useCallback(() => {

@@ -3,7 +3,7 @@
 import logging
 from io import BytesIO
 
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from openai import AsyncOpenAI
 
 from config import get_settings
@@ -82,7 +82,7 @@ async def transcribe_audio(
         # Determine file extension from content type
         # Strip codecs parameter (e.g., "audio/webm;codecs=opus" -> "audio/webm")
         base_content_type = content_type.split(";")[0].strip()
-        
+
         ext_map = {
             "audio/webm": "webm",
             "audio/mp3": "mp3",
@@ -95,7 +95,7 @@ async def transcribe_audio(
             "audio/flac": "flac",
         }
         file_ext = ext_map.get(base_content_type, "webm")
-        
+
         logger.info(f"Processing audio: content_type={content_type}, base={base_content_type}, ext={file_ext}, size={len(content)}")
 
         # Create a file-like object for the API

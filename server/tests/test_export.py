@@ -9,15 +9,12 @@ Tests cover:
 - DocumentNode model
 """
 
-import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.export import router, ExportFormat
 from services.export_service import (
     DocumentNode,
     DOCXRenderer,
@@ -27,7 +24,6 @@ from services.export_service import (
     PDFRenderer,
     export_service,
 )
-
 
 # ============================================================================
 # DocumentNode Model Tests
@@ -824,7 +820,8 @@ class TestExportAPIEndpoints:
     @pytest.fixture
     def mock_token(self):
         """Create mock TokenData for auth."""
-        from datetime import datetime, timedelta, UTC
+        from datetime import UTC, datetime, timedelta
+
         from services.auth_service import TokenData
         return TokenData(sub="dev-user", exp=datetime.now(UTC) + timedelta(hours=1))
 

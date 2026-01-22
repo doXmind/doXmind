@@ -44,6 +44,46 @@ const nextConfig: NextConfig = {
         source: "/api/versions/:path*",
         destination: `${backendUrl}/api/versions/:path*`,
       },
+      // Auth routes
+      {
+        source: "/api/auth/:path*",
+        destination: `${backendUrl}/api/auth/:path*`,
+      },
+      // Knowledge base routes
+      {
+        source: "/api/kb/:path*",
+        destination: `${backendUrl}/api/kb/:path*`,
+      },
+      // Review routes
+      {
+        source: "/api/review/:path*",
+        destination: `${backendUrl}/api/review/:path*`,
+      },
+      // Export routes
+      {
+        source: "/api/export/:path*",
+        destination: `${backendUrl}/api/export/:path*`,
+      },
+      // Import routes
+      {
+        source: "/api/import/:path*",
+        destination: `${backendUrl}/api/import/:path*`,
+      },
+      // Skills routes
+      {
+        source: "/api/skills/:path*",
+        destination: `${backendUrl}/api/skills/:path*`,
+      },
+      // Telemetry routes - for user behavior tracking
+      {
+        source: "/api/telemetry/:path*",
+        destination: `${backendUrl}/api/telemetry/:path*`,
+      },
+      // Health check
+      {
+        source: "/health",
+        destination: `${backendUrl}/health`,
+      },
     ];
   },
 };

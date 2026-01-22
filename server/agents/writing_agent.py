@@ -363,19 +363,18 @@ class WritingAgent:
                         serialized_content = []
                         if hasattr(block, 'content') and block.content:
                             for r in block.content:
-                                if hasattr(r, 'type'):
-                                    if r.type == "web_search_result":
-                                        results.append({
-                                            "url": getattr(r, 'url', ''),
-                                            "title": getattr(r, 'title', ''),
-                                        })
-                                        serialized_content.append({
-                                            "type": "web_search_result",
-                                            "url": getattr(r, 'url', ''),
-                                            "title": getattr(r, 'title', ''),
-                                            "encrypted_content": getattr(r, 'encrypted_content', ''),
-                                            "page_age": getattr(r, 'page_age', None),
-                                        })
+                                if hasattr(r, 'type') and r.type == "web_search_result":
+                                    results.append({
+                                        "url": getattr(r, 'url', ''),
+                                        "title": getattr(r, 'title', ''),
+                                    })
+                                    serialized_content.append({
+                                        "type": "web_search_result",
+                                        "url": getattr(r, 'url', ''),
+                                        "title": getattr(r, 'title', ''),
+                                        "encrypted_content": getattr(r, 'encrypted_content', ''),
+                                        "page_age": getattr(r, 'page_age', None),
+                                    })
                         yield {
                             "type": "web_search_result",
                             "tool_id": block.tool_use_id,

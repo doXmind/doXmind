@@ -6,7 +6,6 @@ Tests cover:
 - Prompt building and suggestion cleaning
 """
 
-import hashlib
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,7 +21,6 @@ from api.autocomplete import (
     router,
 )
 from services.autocomplete_cache import AutocompleteCache
-
 
 # ============================================================================
 # AutocompleteCache Tests

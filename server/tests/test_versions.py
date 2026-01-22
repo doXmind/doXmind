@@ -3,13 +3,11 @@
 Tests version creation, listing, retrieval, and restoration.
 """
 
-import json
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.versions import (
@@ -18,7 +16,6 @@ from api.versions import (
     _cleanup_old_versions,
     router,
 )
-
 
 # ============================================================================
 # Model Tests

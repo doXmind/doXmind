@@ -19,8 +19,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import Conversation, ConversationAttachment
-from main import app
-
 
 # ============================================================================
 # Database Integrity Tests

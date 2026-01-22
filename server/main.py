@@ -24,6 +24,7 @@ from api import (
     review,
     skills,
     speech,
+    telemetry,
     versions,
 )
 from config import get_settings
@@ -252,6 +253,7 @@ app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
+app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])
 
 
 # ============================================================================

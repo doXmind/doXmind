@@ -16,7 +16,7 @@ interface UseDiffReviewOptions {
  * Syncs diff session to the editor and handles accept/reject operations.
  */
 export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
-  const { diffSession, isReviewMode, endDiffReview, acceptHunk, rejectHunk } = useDiffReviewStore();
+  const { diffSession, isReviewMode, endDiffReview, acceptHunk, rejectHunk, acceptAllHunks, rejectAllHunks } = useDiffReviewStore();
 
   // Sync diffSession to DiffReviewExtension
   useEffect(() => {
@@ -81,16 +81,20 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
       editor?.commands.acceptDiffHunk(hunk.id);
     }
 
+    // Track telemetry for bulk accept
+    acceptAllHunks();
     endDiffReview();
-  }, [editor, diffSession, endDiffReview]);
+  }, [editor, diffSession, acceptAllHunks, endDiffReview]);
 
   // Handle Reject All
   const handleRejectAll = useCallback(() => {
     if (!diffSession) return;
 
     editor?.commands.clearDiffReview();
+    // Track telemetry for bulk reject
+    rejectAllHunks();
     endDiffReview();
-  }, [editor, diffSession, endDiffReview]);
+  }, [editor, diffSession, rejectAllHunks, endDiffReview]);
 
   // Get pending count
   const pendingCount = diffSession?.hunks.filter((h) => h.status === "pending").length || 0;

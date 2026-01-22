@@ -51,6 +51,13 @@ export interface PendingEdit {
 // Image modal callback for slash commands
 export type ImageModalCallback = (url: string, alt?: string) => void;
 
+// Last AI operation for undo tracking
+export interface LastAIOperation {
+  type: "diff_accept" | "autocomplete" | "quick_edit";
+  timestamp: number;
+  content?: string;  // For RLHF context
+}
+
 interface EditorState {
   // Core editor state
   isDirty: boolean;
@@ -79,6 +86,9 @@ interface EditorState {
 
   // Text Review Panel State
   isReviewPanelOpen: boolean;
+
+  // Last AI Operation (for undo tracking)
+  lastAIOperation: LastAIOperation | null;
 
   // Core editor actions
   setDirty: (dirty: boolean) => void;
@@ -111,6 +121,10 @@ interface EditorState {
 
   // Text Review Panel Actions
   setReviewPanelOpen: (open: boolean) => void;
+
+  // Last AI Operation Actions (for undo tracking)
+  setLastAIOperation: (operation: LastAIOperation | null) => void;
+  clearLastAIOperation: () => void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -129,6 +143,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   imageModalOpen: false,
   imageModalCallback: null,
   isReviewPanelOpen: false,
+  lastAIOperation: null,
 
   // Core editor actions
   setDirty: (dirty) => set({ isDirty: dirty }),
@@ -172,4 +187,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   // Text Review Panel Actions
   setReviewPanelOpen: (open) => set({ isReviewPanelOpen: open }),
+
+  // Last AI Operation Actions
+  setLastAIOperation: (operation) => set({ lastAIOperation: operation }),
+  clearLastAIOperation: () => set({ lastAIOperation: null }),
 }));

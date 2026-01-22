@@ -36,10 +36,7 @@ def build_autocomplete_prompt(
         Tuple of (system_prompt, user_prompt)
     """
     # Limit context length
-    if len(text_before) > max_context:
-        context_before = text_before[-max_context:]
-    else:
-        context_before = text_before
+    context_before = text_before[-max_context:] if len(text_before) > max_context else text_before
 
     # Build user prompt
     if text_after:

@@ -16,7 +16,6 @@ from dependencies import (
     normalize_file_id,
 )
 
-
 # ============================================================================
 # normalize_file_id Tests
 # ============================================================================
@@ -225,7 +224,7 @@ class TestGetConversationByFileId:
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        result = await get_conversation_by_file_id("", mock_db)
+        await get_conversation_by_file_id("", mock_db)
 
         # Should have executed query for NULL file_id
         mock_db.execute.assert_called_once()

@@ -1,11 +1,10 @@
 """Tests for Edit API endpoints."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
-
 
 # ============================================================================
 # Quick Edit Tests
@@ -58,7 +57,7 @@ class TestQuickEdit:
             content = response.text
 
             # Parse SSE events
-            lines = [l for l in content.strip().split("\n") if l.startswith("data: ")]
+            lines = [line for line in content.strip().split("\n") if line.startswith("data: ")]
             text_events = []
             for line in lines:
                 data = line[6:]  # Remove "data: " prefix
@@ -306,7 +305,7 @@ class TestCustomEdit:
             content = response.text
 
             # Should have multiple data events
-            lines = [l for l in content.strip().split("\n") if l.startswith("data: ")]
+            lines = [line for line in content.strip().split("\n") if line.startswith("data: ")]
             text_events = []
             for line in lines:
                 data = line[6:]

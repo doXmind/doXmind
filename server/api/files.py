@@ -64,12 +64,8 @@ async def list_files(
 
     query = select(File).order_by(File.updated_at.desc())
 
-    # Filter by user (None means shared/dev mode)
-    if user_id:
-        query = query.where(File.user_id == user_id)
-    else:
-        # For dev/anonymous users, only show files with no user_id
-        query = query.where(File.user_id.is_(None))
+    # Filter by user (None means shared/dev mode, for dev/anonymous users only show files with no user_id)
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     files = result.scalars().all()
@@ -155,10 +151,7 @@ async def get_file(
     user_id = get_user_id(token)
 
     query = select(File).where(File.id == file_id)
-    if user_id:
-        query = query.where(File.user_id == user_id)
-    else:
-        query = query.where(File.user_id.is_(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -186,10 +179,7 @@ async def update_file(
     user_id = get_user_id(token)
 
     query = select(File).where(File.id == file_id)
-    if user_id:
-        query = query.where(File.user_id == user_id)
-    else:
-        query = query.where(File.user_id.is_(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -205,30 +195,37 @@ async def update_file(
     await db.commit()
     await db.refresh(file)
 
+    # Extract all values before any async operations to avoid lazy loading issues
+    file_id = file.id
+    file_name = file.name
+    file_content = file.content
+    file_created_at = file.created_at.isoformat()
+    file_updated_at = file.updated_at.isoformat()
+
     # Re-index in vector store (when content or name changes)
     if update.content is not None or update.name is not None:
         try:
             rag = RAGService(db)
             await rag.index_file(
-                file_id=file.id,
-                content=file.content,
-                metadata={"name": file.name, "user_id": user_id}
+                file_id=file_id,
+                content=file_content,
+                metadata={"name": file_name, "user_id": user_id}
             )
             # Also re-index at sentence level for in-document search
             await rag.index_file_sentences(
-                file_id=file.id,
-                content=file.content,
-                metadata={"name": file.name, "user_id": user_id}
+                file_id=file_id,
+                content=file_content,
+                metadata={"name": file_name, "user_id": user_id}
             )
         except Exception as e:
             logger.warning(f"Failed to re-index file: {e}")
 
     return FileResponse(
-        id=file.id,
-        name=file.name,
-        content=file.content,
-        created_at=file.created_at.isoformat(),
-        updated_at=file.updated_at.isoformat()
+        id=file_id,
+        name=file_name,
+        content=file_content,
+        created_at=file_created_at,
+        updated_at=file_updated_at
     )
 
 
@@ -242,10 +239,7 @@ async def delete_file(
     user_id = get_user_id(token)
 
     query = select(File).where(File.id == file_id)
-    if user_id:
-        query = query.where(File.user_id == user_id)
-    else:
-        query = query.where(File.user_id.is_(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()

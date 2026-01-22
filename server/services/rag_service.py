@@ -618,10 +618,7 @@ class RAGService:
             filename = rows[0].filename or "Unknown"
 
             # Apply slice
-            if end_chunk is not None:
-                rows = rows[start_chunk:end_chunk]
-            else:
-                rows = rows[start_chunk:]
+            rows = rows[start_chunk:end_chunk] if end_chunk is not None else rows[start_chunk:]
 
             content = "\n\n".join([row.content for row in rows])
 

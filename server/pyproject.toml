@@ -60,6 +60,14 @@ line-ending = "lf"
 [tool.ruff.lint.isort]
 known-first-party = ["api", "db", "services", "agents", "middleware"]
 
+[tool.ruff.lint.per-file-ignores]
+# Ignore unused arguments in tests (mock parameters are required by decorators)
+"tests/*" = ["ARG002"]
+# conftest.py needs to set environment variables before imports
+"tests/conftest.py" = ["E402"]
+# telemetry.py has elif chains that are more readable as-is
+"api/telemetry.py" = ["SIM102"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"

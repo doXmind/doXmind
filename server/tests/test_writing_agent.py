@@ -4,12 +4,11 @@ These tests use mocks to avoid actual API calls to Anthropic.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agents.writing_agent import WritingAgent
-
 
 # ============================================================================
 # Mock Helpers

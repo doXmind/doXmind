@@ -15,12 +15,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import Conversation, Message
 from services.auth_service import TokenData
-
 
 # ============================================================================
 # Conversation Persistence Tests

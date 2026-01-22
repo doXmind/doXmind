@@ -212,6 +212,53 @@ class ConversationAttachment(Base):
     conversation = relationship("Conversation", back_populates="attachments")
 
 
+# =============================================================================
+# Telemetry Models
+# =============================================================================
+
+class TelemetryEvent(Base):
+    """Telemetry event for user behavior tracking.
+
+    Stores events for:
+    1. RLHF training data (chosen/rejected pairs)
+    2. Product analytics (aggregate statistics)
+    """
+    __tablename__ = "telemetry_events"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)  # Nullable for anonymous
+    event_type = Column(String(50), nullable=False, index=True)
+    event_data = Column(JSON, nullable=False)  # Full event payload
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+
+    # RLHF training fields (structured for easy export)
+    chosen_content = Column(Text, nullable=True)    # Content user preferred
+    rejected_content = Column(Text, nullable=True)  # Content user rejected
+    context = Column(Text, nullable=True)           # Context/prompt
+
+    __table_args__ = (
+        Index("idx_telemetry_user_type", "user_id", "event_type"),
+        Index("idx_telemetry_created", "created_at"),
+    )
+
+
+class UserTelemetrySettings(Base):
+    """User's telemetry preferences.
+
+    Controls what data is collected for each user.
+    Default: all enabled (product improvement enabled).
+    """
+    __tablename__ = "user_telemetry_settings"
+
+    user_id = Column(String(36), ForeignKey("users.id"), primary_key=True)
+    product_improvement_enabled = Column(Boolean, default=True)
+    collect_edit_feedback = Column(Boolean, default=True)
+    collect_chat_feedback = Column(Boolean, default=True)
+    collect_autocomplete_stats = Column(Boolean, default=True)
+    collect_usage_stats = Column(Boolean, default=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 # Engine and session setup
 settings = get_settings()
 

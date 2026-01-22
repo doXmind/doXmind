@@ -14,11 +14,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useAuthStore } from "@/stores/auth-store";
+import { TelemetrySettings } from "@/components/settings/telemetry-settings";
 
 export function UserMenu() {
   const router = useRouter();
   const { user, logout, deleteAccount } = useAuthStore();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleLogout = () => {
@@ -83,7 +85,7 @@ export function UserMenu() {
           <User className="mr-2 h-4 w-4" />
           Profile
         </DropdownMenuItem>
-        <DropdownMenuItem disabled>
+        <DropdownMenuItem onClick={() => setShowSettingsModal(true)}>
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
@@ -136,6 +138,17 @@ export function UserMenu() {
             {isDeleting ? "Deleting..." : "Delete my account"}
           </Button>
         </ModalFooter>
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal open={showSettingsModal} onClose={() => setShowSettingsModal(false)}>
+        <ModalHeader onClose={() => setShowSettingsModal(false)}>
+          <span className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            Settings
+          </span>
+        </ModalHeader>
+        <TelemetrySettings />
       </Modal>
     </DropdownMenu>
   );
