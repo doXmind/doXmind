@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -9,6 +10,18 @@ import { useAuthStore } from "@/stores/auth-store";
 export default function LoginPage() {
   const { loginWithGoogle, isLoading } = useAuthStore();
   const [error, setError] = useState("");
+  const [sessionMessage, setSessionMessage] = useState("");
+  const searchParams = useSearchParams();
+
+  // Show session expired message if redirected from auth guard
+  useEffect(() => {
+    const reason = searchParams.get("reason");
+    if (reason === "session_expired") {
+      setSessionMessage("Your session has expired. Please sign in again.");
+      // Clear the URL param without triggering a navigation
+      window.history.replaceState({}, "", "/login");
+    }
+  }, [searchParams]);
 
   const handleGoogleLogin = async () => {
     setError("");
@@ -32,6 +45,12 @@ export default function LoginPage() {
             Sign in with your Google account to continue
           </p>
         </div>
+
+        {sessionMessage && (
+          <div className="p-3 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-800">
+            {sessionMessage}
+          </div>
+        )}
 
         {error && (
           <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">

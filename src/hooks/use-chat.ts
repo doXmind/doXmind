@@ -160,6 +160,13 @@ export function useChat() {
         });
 
         if (!response.ok) {
+          // Handle 401 Unauthorized - trigger redirect to login
+          if (response.status === 401) {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+            }
+            throw new Error("Session expired. Please log in again.");
+          }
           throw new Error(`HTTP ${response.status}`);
         }
 

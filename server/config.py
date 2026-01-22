@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     # AI Models
     # =========================================================================
     default_model: str = "claude-haiku-4-5-20251001"
-    fast_model: str = "claude-3-5-haiku-20241022"
+    fast_model: str = "claude-haiku-4-5-20251001"
 
     # =========================================================================
     # Web Tools Settings (Anthropic server-side tools)

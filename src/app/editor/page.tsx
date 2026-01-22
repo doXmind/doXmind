@@ -108,10 +108,10 @@ export default function EditorPage() {
   if (isMobile) {
     return (
       <LoadingScreen isLoading={isLoading} isMobile={true}>
-        <AppShell>
+        <AppShell hideHeader>
           <MobileEditorLayout>
-            {/* Editor Content */}
-            <div id="main-content" className="h-full overflow-hidden">
+            {/* Editor Content - no overflow-hidden to allow parent scrolling */}
+            <div id="main-content">
               {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
             </div>
           </MobileEditorLayout>

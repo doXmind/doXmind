@@ -84,6 +84,18 @@ export interface AIEditPreview {
 }
 
 /**
+ * Drag state for block reordering (simplified for @dnd-kit integration)
+ */
+export interface BlockDragState {
+  /** Whether a drag operation is in progress */
+  isDragging: boolean;
+  /** The block being dragged */
+  draggedBlock: SelectableBlock | null;
+  /** Target position index where block will be dropped (index in blocks array) */
+  dropTargetIndex: number | null;
+}
+
+/**
  * Block selection store state
  */
 export interface BlockSelectionState {
@@ -97,6 +109,8 @@ export interface BlockSelectionState {
   editPreview: AIEditPreview | null;
   /** Whether AI is processing an edit request */
   isProcessingAI: boolean;
+  /** Drag state for block reordering */
+  drag: BlockDragState;
 }
 
 /**
@@ -139,6 +153,15 @@ export interface BlockSelectionActions {
   rejectEditPreview: () => void;
   /** Set AI processing state */
   setProcessingAI: (processing: boolean) => void;
+
+  /** Start dragging a block */
+  startDrag: (block: SelectableBlock) => void;
+  /** Update drag position */
+  updateDrag: (dropTargetIndex: number | null) => void;
+  /** End drag operation */
+  endDrag: () => void;
+  /** Cancel drag operation */
+  cancelDrag: () => void;
 }
 
 /**

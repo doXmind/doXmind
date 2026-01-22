@@ -81,6 +81,7 @@ export function Editor({ file: initialFile }: EditorProps) {
     extensions: getEditorExtensions({ enableBlockSelection: isMobile, isMobile }),
     content: file.content,
     editorProps: defaultEditorProps,
+    immediatelyRender: false, // Prevent SSR hydration mismatch
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       setDirty(true);
@@ -262,7 +263,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={cn("flex flex-col", !isMobile && "h-full")}>
       {/* Desktop Toolbar - hidden on mobile (mobile uses block-based voice interactions) */}
       {!isMobile && (
         <EditorToolbar
@@ -284,19 +285,25 @@ export function Editor({ file: initialFile }: EditorProps) {
         onRejectAll={handleRejectAll}
       />
 
-      <div className="flex min-h-0 flex-1 overflow-x-hidden">
+      <div className={cn("flex", !isMobile && "min-h-0 flex-1 overflow-x-hidden")}>
         {/* Outline toggle button - shows when outline is closed */}
         {!isMobile && <OutlineToggle headingsCount={headings.length} />}
         {/* Mindlines outline - hidden on mobile */}
         {!isMobile && <Mindlines editor={editor} />}
         {/* Main editor content area */}
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {/* On mobile, parent MobileEditorLayout handles scrolling, so disable ScrollArea's overflow */}
-          <ScrollArea className={cn("min-h-0 flex-1", isMobile && "overflow-visible")}>
-            <div className="mx-auto max-w-4xl px-4 pt-0 pb-2 md:px-8 md:py-6">
+        <div className={cn("relative flex flex-col", !isMobile && "min-h-0 min-w-0 flex-1 overflow-hidden")}>
+          {/* On mobile, parent MobileEditorLayout handles scrolling, so skip ScrollArea entirely */}
+          {isMobile ? (
+            <div className="mx-auto max-w-4xl px-4 pt-0 pb-2">
               <EditorContent editor={editor} />
             </div>
-          </ScrollArea>
+          ) : (
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="mx-auto max-w-4xl px-4 pt-0 pb-2 md:px-8 md:py-6">
+                <EditorContent editor={editor} />
+              </div>
+            </ScrollArea>
+          )}
           {/* Search Bar - positioned top right within editor area */}
           <SearchBar />
         </div>

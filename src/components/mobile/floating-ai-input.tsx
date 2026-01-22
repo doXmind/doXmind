@@ -23,6 +23,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useBlockSelectionStore } from "@/stores/block-selection-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,9 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
     clearSelection: clearBlockSelection,
   } = useBlockSelectionStore();
 
+  // Editor ref for copy/paste/delete operations
+  const { editor } = useEditorRefStore();
+
   // Chat context (selected text, images) from editor store
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
     useEditorStore();
@@ -60,7 +64,8 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
     const selectedText = getBlockSelectedText();
     const selectionContexts = chatContexts.filter((c) => c.type === "selection");
 
-    if (isSelectionActive && selectedBlocks.length > 0 && selectedText) {
+    // Allow empty blocks to be selected (for deletion)
+    if (isSelectionActive && selectedBlocks.length > 0) {
       // Check if we already have this exact selection as a context
       const existingSelectionContext = selectionContexts.find((c) => c.text === selectedText);
       if (!existingSelectionContext) {
@@ -262,6 +267,73 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
     [chatContexts, removeChatContext, clearBlockSelection]
   );
 
+  // Copy selected text to clipboard
+  const handleCopySelection = useCallback(async () => {
+    const selectedText = getBlockSelectedText();
+    if (selectedText) {
+      try {
+        await navigator.clipboard.writeText(selectedText);
+        haptics.light();
+      } catch (err) {
+        console.error("Failed to copy:", err);
+      }
+    }
+  }, [getBlockSelectedText]);
+
+  // Delete selected blocks
+  const handleDeleteSelection = useCallback(() => {
+    if (!editor || selectedBlocks.length === 0) return;
+
+    // Get the range of all selected blocks
+    const from = selectedBlocks[0].from;
+    const to = selectedBlocks[selectedBlocks.length - 1].to;
+
+    // Delete the selected content
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from, to })
+      .deleteSelection()
+      .run();
+
+    haptics.medium();
+    clearBlockSelection();
+    // Remove selection contexts
+    chatContexts
+      .filter((c) => c.type === "selection")
+      .forEach((c) => removeChatContext(c.id));
+  }, [editor, selectedBlocks, clearBlockSelection, chatContexts, removeChatContext]);
+
+  // Cut = Copy + Delete
+  const handleCutSelection = useCallback(async () => {
+    const selectedText = getBlockSelectedText();
+    if (!editor || selectedBlocks.length === 0 || !selectedText) return;
+
+    try {
+      // Copy to clipboard first
+      await navigator.clipboard.writeText(selectedText);
+
+      // Then delete
+      const from = selectedBlocks[0].from;
+      const to = selectedBlocks[selectedBlocks.length - 1].to;
+
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from, to })
+        .deleteSelection()
+        .run();
+
+      haptics.medium();
+      clearBlockSelection();
+      chatContexts
+        .filter((c) => c.type === "selection")
+        .forEach((c) => removeChatContext(c.id));
+    } catch (err) {
+      console.error("Failed to cut:", err);
+    }
+  }, [editor, selectedBlocks, getBlockSelectedText, clearBlockSelection, chatContexts, removeChatContext]);
+
   return (
     <div data-ai-input-area className="space-y-2">
       {/* Context Pills - show attached images and selected text */}
@@ -274,7 +346,15 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
             className="space-y-1 overflow-hidden"
           >
             {chatContexts.map((ctx) => (
-              <ContextPill key={ctx.id} context={ctx} onRemove={() => handleRemoveContext(ctx.id)} />
+              <ContextPill
+                key={ctx.id}
+                context={ctx}
+                onRemove={() => handleRemoveContext(ctx.id)}
+                onCopy={ctx.type === "selection" ? handleCopySelection : undefined}
+                onCut={ctx.type === "selection" ? handleCutSelection : undefined}
+                onDelete={ctx.type === "selection" ? handleDeleteSelection : undefined}
+                showActions={ctx.type === "selection"}
+              />
             ))}
           </motion.div>
         )}
@@ -385,8 +465,9 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
                 disabled={isProcessing}
                 placeholder={getPlaceholder()}
                 rows={1}
+                style={{ height: input ? undefined : "24px" }}
                 className={cn(
-                  "max-h-[120px] min-h-[24px] flex-1 resize-none bg-transparent text-sm leading-6",
+                  "max-h-[120px] flex-1 resize-none bg-transparent text-sm leading-6",
                   "placeholder:text-muted-foreground/60",
                   "focus:outline-none",
                   "disabled:opacity-50",

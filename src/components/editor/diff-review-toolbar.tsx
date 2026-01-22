@@ -5,7 +5,6 @@ import { Editor } from "@tiptap/react";
 import { Eye, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-device-type";
-import { Z_INDEX } from "@/lib/constants";
 
 interface DiffReviewToolbarProps {
   editor: Editor | null;
@@ -36,13 +35,9 @@ export function DiffReviewToolbar({
         "flex items-center bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800",
         // Desktop: normal padding
         "gap-3 px-4 py-2",
-        // Mobile: compact, fixed below header
-        isMobile && "fixed inset-x-0 gap-2 px-3 py-1.5"
+        // Mobile: compact styling (not fixed - stays in document flow)
+        isMobile && "gap-2 px-3 py-1.5"
       )}
-      style={isMobile ? {
-        top: "calc(env(safe-area-inset-top) + 48px)",
-        zIndex: Z_INDEX.MOBILE_PANEL - 1,
-      } : undefined}
     >
       {/* Status indicator with pulse */}
       <div className={cn(

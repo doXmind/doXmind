@@ -12,6 +12,7 @@ import type {
   BlockSelectionActions,
   VoiceRecordingState,
   AIEditPreview,
+  BlockDragState,
 } from "@/types/block-selection";
 
 const initialVoiceRecordingState: VoiceRecordingState = {
@@ -23,6 +24,12 @@ const initialVoiceRecordingState: VoiceRecordingState = {
   error: null,
 };
 
+const initialDragState: BlockDragState = {
+  isDragging: false,
+  draggedBlock: null,
+  dropTargetIndex: null,
+};
+
 type BlockSelectionStore = BlockSelectionState & BlockSelectionActions;
 
 export const useBlockSelectionStore = create<BlockSelectionStore>((set, get) => ({
@@ -32,6 +39,7 @@ export const useBlockSelectionStore = create<BlockSelectionStore>((set, get) => 
   voiceRecording: initialVoiceRecordingState,
   editPreview: null,
   isProcessingAI: false,
+  drag: initialDragState,
 
   // Block Selection Actions
   toggleBlockSelection: (block: SelectableBlock) => {
@@ -205,5 +213,37 @@ export const useBlockSelectionStore = create<BlockSelectionStore>((set, get) => 
 
   setProcessingAI: (processing: boolean) => {
     set({ isProcessingAI: processing });
+  },
+
+  // Drag Actions (simplified for @dnd-kit integration)
+  startDrag: (block: SelectableBlock) => {
+    set({
+      drag: {
+        isDragging: true,
+        draggedBlock: block,
+        dropTargetIndex: null,
+      },
+    });
+  },
+
+  updateDrag: (dropTargetIndex: number | null) => {
+    set((state) => ({
+      drag: {
+        ...state.drag,
+        dropTargetIndex,
+      },
+    }));
+  },
+
+  endDrag: () => {
+    set({
+      drag: initialDragState,
+    });
+  },
+
+  cancelDrag: () => {
+    set({
+      drag: initialDragState,
+    });
   },
 }));

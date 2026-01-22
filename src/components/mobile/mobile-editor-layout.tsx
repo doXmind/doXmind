@@ -7,8 +7,7 @@
  * Includes header, bottom bar, answer bubble, and overlays.
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { Sparkles } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { MobileHeader } from "./mobile-header";
 import { MobileBottomBar } from "./mobile-bottom-bar";
 import { AIAnswerBubble } from "./ai-answer-bubble";
@@ -16,16 +15,21 @@ import { EditSuccessIndicator } from "./edit-success-indicator";
 import { MobileChatOverlay } from "./mobile-chat-overlay";
 import { MobileSidebar } from "./mobile-sidebar";
 import { MobileOutlineSheet } from "./mobile-outline-sheet";
+import { BlockDragHandle } from "./block-drag-handle";
+import { BlockDndContext } from "./dnd";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 
 interface MobileEditorLayoutProps {
   children: React.ReactNode;
 }
 
 export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
+  const mainContentRef = useRef<HTMLElement>(null);
+
   const {
     isMobileSidebarOpen,
     isMobileOutlineOpen,
@@ -41,21 +45,10 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
     showMobileEditSuccessIndicator,
   } = useLayoutStore();
 
-  const { currentFileId, files } = useFileStore();
-
-  // Check if current document is empty
-  const currentFile = files.find((f) => f.id === currentFileId);
-  const isDocumentEmpty = useMemo(() => {
-    if (!currentFile?.content) return true;
-    // Check if content is essentially empty (just empty paragraphs)
-    const strippedContent = currentFile.content
-      .replace(/<p><\/p>/g, "")
-      .replace(/<br\s*\/?>/g, "")
-      .replace(/\s/g, "");
-    return strippedContent === "" || strippedContent === "<p></p>";
-  }, [currentFile?.content]);
+  const { currentFileId } = useFileStore();
   const { conversations } = useChatStore();
   const { isStreaming, toolHistory } = useStreamingStore();
+  const { isReviewMode } = useDiffReviewStore();
 
   // Track the last response to detect when AI finishes
   const conversationKey = currentFileId || "global";
@@ -191,37 +184,26 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   }, [hideMobileEditSuccessIndicator, setMobileChatOverlayOpen]);
 
   return (
-    <div className="flex h-screen flex-col bg-background md:hidden">
+    <div className="flex h-full flex-col bg-background md:hidden">
       {/* Header */}
       <MobileHeader />
 
       {/* Main Content - Editor area with padding for header and bottom bar */}
-      <main
-        className="relative flex-1 overflow-auto"
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 48px)", // Header height
-          paddingBottom: "calc(env(safe-area-inset-bottom) + 140px)", // Bottom bar height (~56px input + 16px*2 padding + quick actions)
-        }}
-      >
-        {children}
+      <BlockDndContext>
+        <main
+          ref={mainContentRef}
+          className="relative flex-1 overflow-auto"
+          style={{
+            paddingTop: "calc(env(safe-area-inset-top) + 48px)", // Header height
+            paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)", // Bottom bar height
+          }}
+        >
+          {children}
 
-        {/* Empty document placeholder - guides users to AI input */}
-        {isDocumentEmpty && (
-          <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-8">
-            <div className="flex flex-col items-center gap-3 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                <Sparkles className="h-6 w-6 text-primary" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-base font-medium text-foreground/80">Start writing with AI</p>
-                <p className="text-sm text-muted-foreground">
-                  Tap below to describe what you want to write
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
+          {/* Block Drag Handle - shows when a block is selected */}
+          <BlockDragHandle containerRef={mainContentRef} />
+        </main>
+      </BlockDndContext>
 
       {/* AI Answer Bubble */}
       <AIAnswerBubble
@@ -234,9 +216,9 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
         selectedContext={selectedContext}
       />
 
-      {/* Edit Success Indicator */}
+      {/* Edit Success Indicator - hide when in diff review mode (review toolbar shows actual count) */}
       <EditSuccessIndicator
-        isVisible={showMobileEditSuccess}
+        isVisible={showMobileEditSuccess && !isReviewMode}
         editCount={mobileEditCount}
         onDismiss={handleDismissEditSuccess}
         onViewDetails={handleViewEditDetails}
