@@ -6,9 +6,9 @@ pydantic[email]==2.10.3
 pydantic-settings==2.7.0
 
 # AI / LLM
-anthropic==0.40.0
-google-genai>=1.0.0
-openai>=1.0.0
+anthropic==0.76.0
+google-genai==1.52.0
+openai==1.97.1
 
 # Database (PostgreSQL with pgvector)
 sqlalchemy==2.0.36
