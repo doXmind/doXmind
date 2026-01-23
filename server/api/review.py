@@ -10,11 +10,11 @@ Provides Grammarly-like text analysis using Claude to identify:
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from config import get_settings
+from config import get_cors_headers, get_settings
 from prompts.domains.review import REVIEW_JSON_SCHEMA, REVIEW_SYSTEM_PROMPT
 from services.llm_service import LLMService
 
@@ -30,8 +30,9 @@ class TextReviewRequest(BaseModel):
 
 
 @router.post("")
-async def review_text(request: TextReviewRequest):
+async def review_text(request: TextReviewRequest, http_request: Request):
     """Stream text review suggestions from Claude."""
+    origin = http_request.headers.get("origin")
 
     async def generate():
         try:
@@ -120,5 +121,6 @@ Analyze the entire document and return your suggestions. Remember to:
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            **get_cors_headers(origin),
         }
     )

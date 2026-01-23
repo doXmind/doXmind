@@ -61,11 +61,8 @@ function OutlineItem({
 
   const handleClick = useCallback(() => {
     onSelect(node.id);
-  }, [node.id, onSelect]);
-
-  const handleDoubleClick = useCallback(() => {
     onNavigate(node);
-  }, [node, onNavigate]);
+  }, [node, onSelect, onNavigate]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -89,7 +86,6 @@ function OutlineItem({
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
-        onDoubleClick={handleDoubleClick}
         onKeyDown={handleKeyDown}
         tabIndex={0}
         role="treeitem"

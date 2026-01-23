@@ -18,7 +18,7 @@ export function KnowledgeBasePanel({ conversationId }: KnowledgeBasePanelProps) 
   const [isOpen, setIsOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const { isLoading, loadAttachments, uploadAttachment, deleteAttachment, getAttachments } =
+  const { isLoading, loadAttachments, uploadAttachments, deleteAttachment, getAttachments } =
     useKBStore();
 
   const attachments = conversationId ? getAttachments(conversationId) : [];
@@ -33,11 +33,11 @@ export function KnowledgeBasePanel({ conversationId }: KnowledgeBasePanelProps) 
   }, [conversationId, isOpen, loadAttachments]);
 
   const handleUpload = useCallback(
-    async (file: File) => {
-      if (!conversationId) return;
-      await uploadAttachment(conversationId, file);
+    async (files: File[]) => {
+      if (!conversationId || files.length === 0) return;
+      await uploadAttachments(conversationId, files);
     },
-    [conversationId, uploadAttachment]
+    [conversationId, uploadAttachments]
   );
 
   const handleDelete = useCallback(

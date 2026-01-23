@@ -3,6 +3,7 @@
 Uses Google's Gemini API to convert PDF, DOCX, PPTX files to Markdown.
 """
 
+import asyncio
 import logging
 from functools import lru_cache
 
@@ -76,9 +77,9 @@ async def convert_file_to_markdown(
 
     mime_type = MIME_TYPES[ext_lower]
 
-    try:
+    def _sync_generate() -> str:
+        """Synchronous Gemini API call to run in thread pool."""
         client = get_gemini_client()
-
         response = client.models.generate_content(
             model=model,
             contents=[
@@ -89,8 +90,11 @@ async def convert_file_to_markdown(
                 CONVERSION_PROMPT
             ]
         )
+        return response.text
 
-        markdown_content = response.text
+    try:
+        # Run blocking Gemini call in thread pool to avoid blocking event loop
+        markdown_content = await asyncio.to_thread(_sync_generate)
 
         if not markdown_content:
             raise ValueError("Gemini returned empty response")

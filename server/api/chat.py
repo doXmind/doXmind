@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, select
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.writing_agent import WritingAgent
 from api.files import get_user_id
-from config import get_settings
+from config import get_cors_headers, get_settings
 from db.database import Conversation, ConversationAttachment, Message, get_db
 from services.auth_service import TokenData, require_auth
 
@@ -318,13 +318,18 @@ async def clear_conversation(
 # ============================================================================
 
 @router.post("/stream")
-async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
+async def chat_stream(
+    request: ChatRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db)
+):
     """Stream AI chat response with real-time token output.
 
     The streaming endpoint collects all events and the final response
     is saved to the database by the frontend after streaming completes.
     """
     settings = get_settings()
+    origin = http_request.headers.get("origin")
 
     # Load conversation history (last 10 messages) for context
     history = []
@@ -518,7 +523,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
             "Content-Type": "text/event-stream; charset=utf-8",
-            "Access-Control-Allow-Origin": "*",
+            **get_cors_headers(origin),
         }
     )
 

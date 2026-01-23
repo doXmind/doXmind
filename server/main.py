@@ -27,7 +27,7 @@ from api import (
     telemetry,
     versions,
 )
-from config import get_settings
+from config import CORS_ORIGINS, get_cors_headers, get_settings
 from db.database import async_session, init_db
 from exceptions import AppException
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
@@ -131,7 +131,8 @@ async def app_exception_handler(request: Request, exc: AppException):
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content=exc.to_dict()
+        content=exc.to_dict(),
+        headers=get_cors_headers(request.headers.get("origin"))
     )
 
 
@@ -148,7 +149,8 @@ async def general_exception_handler(request: Request, exc: Exception):
                 "code": "INTERNAL_ERROR",
                 "message": "An unexpected error occurred"
             }
-        }
+        },
+        headers=get_cors_headers(request.headers.get("origin"))
     )
 
 
@@ -192,20 +194,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 
 # CORS middleware - tightened configuration
-
-# Define allowed origins based on environment
-CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
-# Add production origins in both modes (needed for development with remote frontend)
-CORS_ORIGINS.extend([
-    "https://beta.doxmind.com",
-    "https://doxmind.com",
-    "https://www.doxmind.com",
-    "https://doxmind-mini-frontend-2fac03803995.herokuapp.com",
-])
+# CORS_ORIGINS is imported from config.py
 
 app.add_middleware(
     CORSMiddleware,

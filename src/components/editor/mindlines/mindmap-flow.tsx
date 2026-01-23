@@ -36,6 +36,9 @@ import type { Heading, LayoutDirection, FlowNodeData } from "./types";
 const nodeTypes = { heading: HeadingNode };
 const edgeTypes = { customEdge: CustomEdge };
 
+// Stable empty array to prevent infinite re-renders in Zustand selectors
+const EMPTY_COLLAPSED_ARRAY: string[] = [];
+
 interface MindmapFlowProps {
   headings: Heading[];
   activeId: string | null;
@@ -62,7 +65,7 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
 
   // Get raw collapsed nodes array from store (stable reference)
   const collapsedNodesArray = useOutlineStore(
-    (state) => state.collapsedNodes[documentId] || []
+    (state) => state.collapsedNodes[documentId] ?? EMPTY_COLLAPSED_ARRAY
   );
 
   // Create Set from array for use in components

@@ -1,7 +1,9 @@
 """Knowledge Base API - Conversation-level document attachments."""
 
+import asyncio
 import logging
 import os
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel
@@ -9,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.database import ConversationAttachment
+from db.database import ConversationAttachment, async_session
 from dependencies import get_conversation_by_file_id, get_db
 from exceptions import (
     AttachmentNotFoundError,
@@ -61,6 +63,12 @@ class KBSearchResult(BaseModel):
 
 class KBSearchResponse(BaseModel):
     results: list[KBSearchResult]
+
+
+class BatchUploadResponse(BaseModel):
+    results: list[AttachmentResponse]
+    successful: int
+    failed: int
 
 
 def get_file_extension(filename: str) -> str:
@@ -158,6 +166,164 @@ async def upload_attachment(
         error_message=attachment.error_message,
         created_at=attachment.created_at.isoformat()
     )
+
+
+@router.post("/{conversation_id}/attachments/batch", response_model=BatchUploadResponse)
+async def upload_attachments_batch(
+    conversation_id: str,
+    files: Annotated[list[UploadFile], File(...)],
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload multiple documents to the conversation's knowledge base.
+
+    - Accepts: PDF, DOCX, PPTX files (up to 10 files per request)
+    - Max size: 50MB per file
+    - Returns immediately with "processing" status
+    - Files are processed in the background
+    - Frontend should poll for status updates
+    """
+    MAX_FILES = 10
+
+    if len(files) > MAX_FILES:
+        raise FileTooLargeError(
+            max_size=MAX_FILES,
+            actual_size=len(files)
+        )
+
+    # Get or create conversation
+    conv = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
+    conv_db_id = conv.id
+
+    results: list[AttachmentResponse] = []
+
+    # Read files and create attachment records immediately
+    file_data: list[tuple[str, bytes, str]] = []  # (attachment_id, content, filename)
+
+    for file in files:
+        # Validate file extension
+        ext = get_file_extension(file.filename or "")
+        if ext not in ALLOWED_EXTENSIONS:
+            results.append(AttachmentResponse(
+                id="",
+                original_filename=file.filename or "unknown",
+                file_type="unknown",
+                file_size=0,
+                status="error",
+                chunk_count=0,
+                error_message=f"Unsupported file type: {ext}",
+                created_at=""
+            ))
+            continue
+
+        # Read file content
+        content = await file.read()
+
+        # Validate file size
+        if len(content) > MAX_FILE_SIZE:
+            results.append(AttachmentResponse(
+                id="",
+                original_filename=file.filename or "unknown",
+                file_type="unknown",
+                file_size=len(content),
+                status="error",
+                chunk_count=0,
+                error_message=f"File too large: {len(content)} bytes (max {MAX_FILE_SIZE})",
+                created_at=""
+            ))
+            continue
+
+        # Create attachment record with "processing" status
+        file_type = ext[1:]
+        attachment = ConversationAttachment(
+            conversation_id=conv_db_id,
+            original_filename=file.filename or "unknown",
+            file_type=file_type,
+            file_size=len(content),
+            status="processing"
+        )
+        db.add(attachment)
+        await db.commit()
+        await db.refresh(attachment)
+
+        results.append(AttachmentResponse(
+            id=attachment.id,
+            original_filename=attachment.original_filename,
+            file_type=attachment.file_type,
+            file_size=attachment.file_size,
+            status=attachment.status,
+            chunk_count=attachment.chunk_count,
+            error_message=attachment.error_message,
+            created_at=attachment.created_at.isoformat()
+        ))
+
+        file_data.append((attachment.id, content, file.filename or "unknown"))
+
+    # Start background processing for valid files
+    if file_data:
+        asyncio.create_task(_process_files_background(conv_db_id, file_data))
+
+    successful = sum(1 for r in results if r.status == "processing")
+    failed = sum(1 for r in results if r.status == "error")
+
+    return BatchUploadResponse(
+        results=results,
+        successful=successful,
+        failed=failed
+    )
+
+
+async def _process_files_background(
+    conv_db_id: str,
+    file_data: list[tuple[str, bytes, str]]
+) -> None:
+    """Process files in the background after the API has returned.
+
+    Each file gets its own database session to avoid concurrency issues.
+    """
+    MAX_CONCURRENT = 3
+
+    async def process_single_file(attachment_id: str, content: bytes, filename: str) -> None:
+        """Process a single file with its own database session."""
+        ext = get_file_extension(filename)
+
+        async with async_session() as file_db:
+            # Get the attachment record
+            attachment = await file_db.get(ConversationAttachment, attachment_id)
+            if not attachment:
+                logger.error(f"Attachment {attachment_id} not found for background processing")
+                return
+
+            try:
+                extracted_text = await extract_text_content(content, filename, ext)
+                attachment.extracted_text = extracted_text
+
+                rag = RAGService(file_db)
+                chunk_count = await rag.index_kb_attachment(
+                    attachment_id=attachment.id,
+                    conversation_id=conv_db_id,
+                    content=extracted_text,
+                    filename=filename
+                )
+
+                attachment.chunk_count = chunk_count
+                attachment.status = "indexed"
+                await file_db.commit()
+
+                logger.info(f"Successfully indexed KB attachment: {filename} ({chunk_count} chunks)")
+
+            except Exception as e:
+                logger.error(f"Failed to process KB attachment {filename}: {e}")
+                attachment.status = "error"
+                attachment.error_message = str(e)
+                await file_db.commit()
+
+    # Process files in batches with concurrency limit
+    for i in range(0, len(file_data), MAX_CONCURRENT):
+        batch = file_data[i:i + MAX_CONCURRENT]
+        await asyncio.gather(
+            *[process_single_file(att_id, content, fname) for att_id, content, fname in batch],
+            return_exceptions=True  # Don't let one failure stop others
+        )
 
 
 @router.get("/{conversation_id}/attachments", response_model=AttachmentListResponse)

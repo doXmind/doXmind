@@ -3,11 +3,11 @@
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from config import get_settings
+from config import get_cors_headers, get_settings
 from prompts.domains.edit import EDIT_ACTIONS, QUICK_EDIT_SYSTEM, get_edit_instruction
 from services.llm_service import LLMService
 
@@ -23,13 +23,14 @@ class QuickEditRequest(BaseModel):
 
 
 @router.post("/quick")
-async def quick_edit(request: QuickEditRequest):
+async def quick_edit(request: QuickEditRequest, http_request: Request):
     """Stream quick edit response."""
 
     # Get instruction and temperature from new prompts module
     instruction = get_edit_instruction(request.action)
     config = EDIT_ACTIONS.get(request.action, {"temperature": 0.4})
     temperature = config.get("temperature", 0.4)
+    origin = http_request.headers.get("origin")
 
     async def generate():
         try:
@@ -58,6 +59,7 @@ async def quick_edit(request: QuickEditRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            **get_cors_headers(origin),
         }
     )
 
@@ -69,8 +71,9 @@ class CustomEditRequest(BaseModel):
 
 
 @router.post("/custom")
-async def custom_edit(request: CustomEditRequest):
+async def custom_edit(request: CustomEditRequest, http_request: Request):
     """Stream custom edit based on user instruction."""
+    origin = http_request.headers.get("origin")
 
     async def generate():
         try:
@@ -99,5 +102,6 @@ async def custom_edit(request: CustomEditRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            **get_cors_headers(origin),
         }
     )

@@ -171,3 +171,34 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+# ============================================================================
+# CORS Configuration
+# ============================================================================
+
+CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://beta.doxmind.com",
+    "https://doxmind.com",
+    "https://www.doxmind.com",
+    "https://doxmind-mini-frontend-2fac03803995.herokuapp.com",
+]
+
+
+def get_cors_headers(origin: str | None) -> dict[str, str]:
+    """Get CORS headers for a given origin.
+
+    Args:
+        origin: The request origin header value
+
+    Returns:
+        Dictionary with CORS headers if origin is allowed, empty dict otherwise
+    """
+    if origin and origin in CORS_ORIGINS:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+        }
+    return {}

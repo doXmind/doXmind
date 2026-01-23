@@ -578,6 +578,44 @@ export class ApiClient {
   }
 
   /**
+   * Upload multiple files to a conversation's knowledge base in batch.
+   * Backend processes files in parallel.
+   */
+  async uploadKBAttachmentsBatch(conversationId: string, files: File[]) {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+
+    const url = `${this.baseUrl}/api/kb/${conversationId}/attachments/batch`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      headers: this.getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Batch upload failed" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<{
+      results: Array<{
+        id: string;
+        original_filename: string;
+        file_type: string;
+        file_size: number;
+        status: string;
+        chunk_count: number;
+        error_message?: string;
+        created_at: string;
+      }>;
+      successful: number;
+      failed: number;
+    }>;
+  }
+
+  /**
    * List all attachments in a conversation's knowledge base.
    */
   async listKBAttachments(conversationId: string) {

@@ -5,12 +5,13 @@ import logging
 import urllib.parse
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.files import get_user_id
+from config import get_cors_headers
 from db.database import File, get_db
 from services.auth_service import TokenData, require_auth
 from services.export_service import export_service
@@ -25,6 +26,7 @@ ExportFormat = Literal["markdown", "pdf", "docx"]
 async def export_file(
     file_id: str,
     format: ExportFormat,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth)
 ):
@@ -80,7 +82,8 @@ async def export_file(
             io.BytesIO(content),
             media_type=media_type,
             headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                **get_cors_headers(request.headers.get("origin")),
             }
         )
 

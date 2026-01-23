@@ -55,6 +55,7 @@ export function AttachmentMenu({
     isLoading,
     loadAttachments,
     uploadAttachment,
+    uploadAttachments,
     deleteAttachment,
     getAttachments,
   } = useKBStore();
@@ -118,14 +119,21 @@ export function AttachmentMenu({
 
     setUploadError(null);
 
+    const filesToUpload: File[] = [];
+
     for (const file of Array.from(e.target.files)) {
       const error = validateDocFile(file);
       if (error) {
         setUploadError(error);
         continue;
       }
+      filesToUpload.push(file);
+    }
+
+    if (filesToUpload.length > 0) {
+      // Use batch upload from destructuring above (need to add it)
       try {
-        await uploadAttachment(conversationId, file);
+        await uploadAttachments(conversationId, filesToUpload);
       } catch (err) {
         setUploadError(err instanceof Error ? err.message : "Upload failed");
       }

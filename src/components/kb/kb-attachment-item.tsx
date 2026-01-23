@@ -51,8 +51,6 @@ function getStatusText(attachment: KBAttachment) {
 }
 
 export function KBAttachmentItem({ attachment, onDelete, isDeleting }: KBAttachmentItemProps) {
-  const isProcessing = attachment.status === "uploading" || attachment.status === "processing";
-
   return (
     <div
       className={cn(
@@ -94,16 +92,13 @@ export function KBAttachmentItem({ attachment, onDelete, isDeleting }: KBAttachm
         )}
       </div>
 
-      {/* Delete button */}
+      {/* Delete button - always enabled so users can cancel processing files */}
       <Button
         variant="ghost"
         size="icon"
-        className={cn(
-          "flex-shrink-0 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity",
-          isProcessing && "opacity-50 pointer-events-none"
-        )}
+        className="flex-shrink-0 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
         onClick={() => onDelete(attachment.id)}
-        disabled={isProcessing || isDeleting}
+        disabled={isDeleting}
       >
         {isDeleting ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />

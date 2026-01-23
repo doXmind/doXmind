@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface KBUploadZoneProps {
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (files: File[]) => Promise<void>;
   disabled?: boolean;
   compact?: boolean;
 }
@@ -45,20 +45,26 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
 
       setError(null);
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const validationError = validateFile(file);
+      const fileArray = Array.from(files);
+      const validFiles: File[] = [];
 
+      // Validate all files first
+      for (const file of fileArray) {
+        const validationError = validateFile(file);
         if (validationError) {
           setError(validationError);
-          continue;
+        } else {
+          validFiles.push(file);
         }
+      }
 
-        try {
-          await onUpload(file);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Upload failed");
-        }
+      if (validFiles.length === 0) return;
+
+      // Upload all valid files (store handles batching and concurrency)
+      try {
+        await onUpload(validFiles);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Upload failed");
       }
     },
     [onUpload, validateFile]
