@@ -65,8 +65,9 @@ export function computeDiffHunks(
 
       // Use a placeholder position - the actual position will be found
       // by findTextInDocument in diff-review-extension.ts when rendering
-      // Generate searchText (plain text version) for finding in doc.textContent
-      const searchText = markdownToPlainText(edit.old_str);
+      // Prefer backend-generated search_text for 100% consistency with backend validation
+      // Fall back to frontend conversion for backward compatibility
+      const searchText = edit.search_text || markdownToPlainText(edit.old_str);
 
       const hunk: DiffHunk = {
         id: generateId(),

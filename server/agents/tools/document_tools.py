@@ -11,6 +11,8 @@ This module contains the execution logic for document editing tools:
 from dataclasses import dataclass
 from typing import Any
 
+from lib.markdown_utils import markdown_to_plain_text
+
 
 @dataclass
 class FileContext:
@@ -100,12 +102,17 @@ def execute_str_replace(
             "error": f"String found {count} times. Please provide a more unique string to replace."
         }
 
+    # Generate search_text for frontend diff view matching
+    # This ensures the frontend uses the same text transformation as backend validation
+    search_text = markdown_to_plain_text(old_str)
+
     return {
         "type": "str_replace",
         "file_id": target_file["id"],
         "file_name": target_file["name"],
         "old_str": old_str,
         "new_str": new_str,
+        "search_text": search_text,
         "success": True
     }
 

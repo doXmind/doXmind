@@ -156,6 +156,30 @@ class TestStrReplace:
         assert result["file_id"] == "file-1"
         assert result["old_str"] == "Line 2"
         assert result["new_str"] == "Modified Line 2"
+        # search_text should be generated for frontend diff view matching
+        assert "search_text" in result
+        assert result["search_text"] == "Line 2"
+
+    def test_str_replace_generates_search_text_from_markdown(self):
+        """Should generate search_text by converting markdown to plain text."""
+        files = [
+            {
+                "id": "file-1",
+                "name": "doc.md",
+                "content": "This is **bold** text here.",
+                "is_current": True,
+            }
+        ]
+
+        result = execute_str_replace(
+            {"old_str": "**bold**", "new_str": "plain"},
+            files,
+            "file-1"
+        )
+
+        assert result.get("success") is True
+        # search_text should be the plain text version for matching in doc.textContent
+        assert result["search_text"] == "bold"
 
     def test_str_replace_string_not_found(self):
         """Should return error when string not found."""
