@@ -187,8 +187,6 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
     <div
       className="fixed inset-0 flex flex-col bg-background md:hidden"
       style={{
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
         height: '100dvh'
       }}
     >
