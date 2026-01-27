@@ -184,19 +184,25 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   }, [hideMobileEditSuccessIndicator, setMobileChatOverlayOpen]);
 
   return (
-    <div className="flex h-full flex-col bg-background md:hidden">
-      {/* Header */}
-      <MobileHeader />
+    <div
+      className="fixed inset-0 flex flex-col bg-background md:hidden"
+      style={{
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        height: '100dvh'
+      }}
+    >
+      {/* Header - flex child, not fixed */}
+      <div className="flex-shrink-0 h-12">
+        <MobileHeader />
+      </div>
 
-      {/* Main Content - Editor area with padding for header and bottom bar */}
+      {/* Main scroll container - SINGLE source of scrolling */}
       <BlockDndContext>
         <main
           ref={mainContentRef}
-          className="relative flex-1 overflow-auto"
-          style={{
-            paddingTop: "calc(env(safe-area-inset-top) + 48px)", // Header height
-            paddingBottom: "calc(env(safe-area-inset-bottom) + 88px)", // Bottom bar height
-          }}
+          className="relative flex-1 overflow-y-auto overflow-x-hidden"
+          style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {children}
 
@@ -204,6 +210,11 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
           <BlockDragHandle containerRef={mainContentRef} />
         </main>
       </BlockDndContext>
+
+      {/* Bottom bar - flex child, not fixed */}
+      <div className="flex-shrink-0">
+        <MobileBottomBar onViewChat={handleOpenChatOverlay} />
+      </div>
 
       {/* AI Answer Bubble */}
       <AIAnswerBubble
@@ -223,9 +234,6 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
         onDismiss={handleDismissEditSuccess}
         onViewDetails={handleViewEditDetails}
       />
-
-      {/* Bottom Bar with AI Input */}
-      <MobileBottomBar onViewChat={handleOpenChatOverlay} />
 
       {/* Chat Overlay */}
       <MobileChatOverlay isOpen={isMobileChatOverlayOpen} onClose={handleCloseChatOverlay} />

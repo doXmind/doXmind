@@ -94,22 +94,17 @@ export function MobileBottomBar({ onViewChat }: MobileBottomBarProps) {
   return (
     <div
       data-action-bar
-      className={cn(
-        "fixed inset-x-0 bottom-0 md:hidden",
-        "pointer-events-none" // Allow clicks through to content below
-      )}
-      style={{ zIndex: Z_INDEX.MOBILE_PANEL }}
+      className="w-full md:hidden"
     >
-      <div className="pointer-events-auto mx-auto max-w-xl">
+      <div className="mx-auto max-w-xl">
         <div
           className={cn(
             "bg-background/95 backdrop-blur-xl",
             "border-t border-border/50",
             "shadow-[0_-4px_20px_rgba(0,0,0,0.08)]",
             "rounded-t-2xl",
-            "p-4"
+            "p-4 pb-4"
           )}
-          style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
         >
           {/* Quick Actions Row - shown when text is selected */}
           <AnimatePresence>

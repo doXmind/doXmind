@@ -1200,6 +1200,32 @@ html {
 }
 
 /* ====================================
+   Mobile Viewport Height Fix
+   Use dynamic viewport height for better mobile browser UI handling
+   ==================================== */
+@media (max-width: 767px) {
+  /* Prevent body scroll - only main content should scroll */
+  html, body {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100vh; /* Fallback for browsers without dvh */
+  }
+
+  /* Support for dvh */
+  @supports (height: 100dvh) {
+    html, body {
+      height: 100dvh;
+    }
+  }
+
+  /* Ensure Next.js root takes full height */
+  #__next {
+    height: 100%;
+  }
+}
+
+/* ====================================
    Mobile V2 Utility Styles
    ==================================== */
 

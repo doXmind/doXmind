@@ -112,15 +112,10 @@ export function MobileHeader() {
       {/* Header Bar */}
       <header
         className={cn(
-          "fixed inset-x-0 top-0 md:hidden",
-          "bg-background/95 backdrop-blur-xl",
-          "border-b border-border/50",
+          "w-full md:hidden",
+          "bg-background border-b border-border",
           "px-2"
         )}
-        style={{
-          zIndex: Z_INDEX.BOTTOM_NAV,
-          paddingTop: "env(safe-area-inset-top)",
-        }}
       >
         <div className="flex h-12 items-center justify-between">
           {/* Files button */}
