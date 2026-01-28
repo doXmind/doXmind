@@ -18,6 +18,9 @@ export function LineNumbers({ count, className }: LineNumbersProps) {
         "border-r border-border/30",
         "bg-muted/20",
         "shrink-0",
+        // Mobile optimizations
+        "max-[374px]:hidden",  // Hide on very small screens
+        "sm:min-w-[3rem]",     // Smaller minimum width on mobile
         className
       )}
       aria-hidden="true"

@@ -294,7 +294,7 @@ export function Editor({ file: initialFile }: EditorProps) {
         <div className={cn("relative flex flex-col", !isMobile && "min-h-0 min-w-0 flex-1 overflow-hidden")}>
           {/* On mobile, parent MobileEditorLayout handles scrolling, so skip ScrollArea entirely */}
           {isMobile ? (
-            <div className="mx-auto max-w-4xl px-4 pt-0 pb-2">
+            <div className="mx-auto w-full px-4 pt-0 pb-2 sm:max-w-4xl">
               <EditorContent editor={editor} />
             </div>
           ) : (

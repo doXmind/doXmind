@@ -81,6 +81,8 @@ export function CodeBlockNodeView({
                 "p-4 pl-4 font-mono text-sm leading-relaxed",
                 "focus:outline-none",
                 "bg-transparent",
+                // Mobile optimization
+                "max-[767px]:p-3 max-[374px]:pl-4",
                 language && `language-${language}`
               )}
             />
