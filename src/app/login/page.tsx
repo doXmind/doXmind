@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { useAuthStore } from "@/stores/auth-store";
 
-export default function LoginPage() {
+function LoginContent() {
   const { loginWithGoogle, isLoading } = useAuthStore();
   const [error, setError] = useState("");
   const [sessionMessage, setSessionMessage] = useState("");
@@ -98,5 +98,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background">Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

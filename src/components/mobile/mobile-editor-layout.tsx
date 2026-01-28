@@ -27,6 +27,9 @@ interface MobileEditorLayoutProps {
   children: React.ReactNode;
 }
 
+// Edit tool names - constant that never changes
+const EDIT_TOOLS = ["str_replace", "insert", "replace_all", "apply_edits"];
+
 export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   const mainContentRef = useRef<HTMLElement>(null);
 
@@ -83,9 +86,6 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
     const selectionContext = contexts.find((c) => c.type === "selection");
     return selectionContext?.text || "";
   }, [lastUserMessage?.contexts]);
-
-  // Edit tool names
-  const EDIT_TOOLS = ["str_replace", "insert", "replace_all", "apply_edits"];
 
   // Detect whether the current response has edits
   const hasEditOperations = useMemo(() => {
