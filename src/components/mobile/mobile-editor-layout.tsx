@@ -184,12 +184,7 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   }, [hideMobileEditSuccessIndicator, setMobileChatOverlayOpen]);
 
   return (
-    <div
-      className="fixed inset-0 flex flex-col bg-background md:hidden"
-      style={{
-        height: '100dvh'
-      }}
-    >
+    <div className="flex h-full flex-col bg-background md:hidden">
       {/* Header - flex child, not fixed */}
       <div className="flex-shrink-0 h-12">
         <MobileHeader />
