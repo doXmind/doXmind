@@ -213,22 +213,12 @@ export function SearchBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAIMode, editor]);
 
-  // Jump to AI result by clicking
-  const handleAIResultClick = useCallback(
+  // Jump to semantic result by clicking - uses same command pattern as arrow navigation
+  const handleSemanticResultClick = useCallback(
     (index: number) => {
-      if (!editor || !pluginState?.semanticResults[index]) return;
-
-      // Update current semantic index
-      editor.view.dispatch(
-        editor.state.tr.setMeta(SearchPluginKey, { currentSemanticIndex: index })
-      );
-
-      // Navigate to position
-      const result = pluginState.semanticResults[index];
-      editor.commands.setTextSelection(result.from);
-      editor.commands.scrollIntoView();
+      editor?.commands.goToSemanticResult(index);
     },
-    [editor, pluginState]
+    [editor]
   );
 
   // Keyboard shortcuts
@@ -435,9 +425,9 @@ export function SearchBar() {
             )}
           </AnimatePresence>
 
-          {/* AI Search Results Panel */}
+          {/* AI Search Results Panel - renders from semanticResults for correct index mapping */}
           <AnimatePresence>
-            {isAIMode && showAIResults && aiResults.length > 0 && (
+            {isAIMode && semanticResultsCount > 0 && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: "auto", opacity: 1 }}
@@ -447,19 +437,17 @@ export function SearchBar() {
               >
                 <div className="max-h-[200px] overflow-y-auto">
                   <div className="px-3 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 sticky top-0">
-                    AI Results ({aiResults.length})
+                    AI Results ({semanticResultsCount})
                   </div>
-                  {aiResults.map((result, index) => {
-                    const score =
-                      result.distance !== undefined
-                        ? Math.round((1 - result.distance) * 100)
-                        : null;
+                  {pluginState?.semanticResults.map((result, index) => {
+                    const score = Math.round(result.score * 100);
+                    const content = editor?.state.doc.textBetween(result.from, result.to) ?? "";
                     const isCurrentResult = index === currentSemanticIndex;
 
                     return (
                       <button
-                        key={`ai-result-${index}`}
-                        onClick={() => handleAIResultClick(index)}
+                        key={`semantic-result-${index}`}
+                        onClick={() => handleSemanticResultClick(index)}
                         className={cn(
                           "w-full text-left px-3 py-2 text-sm transition-colors",
                           "hover:bg-purple-50 dark:hover:bg-purple-900/30",
@@ -474,22 +462,20 @@ export function SearchBar() {
                               isCurrentResult && "text-purple-700 dark:text-purple-300"
                             )}
                           >
-                            {result.content}
+                            {content}
                           </div>
-                          {score !== null && (
-                            <span
-                              className={cn(
-                                "flex-shrink-0 text-xs px-1.5 py-0.5 rounded",
-                                score >= 70
-                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                  : score >= 50
-                                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                    : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                              )}
-                            >
-                              {score}%
-                            </span>
-                          )}
+                          <span
+                            className={cn(
+                              "flex-shrink-0 text-xs px-1.5 py-0.5 rounded",
+                              score >= 70
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : score >= 50
+                                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                            )}
+                          >
+                            {score}%
+                          </span>
                         </div>
                       </button>
                     );

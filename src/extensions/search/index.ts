@@ -351,6 +351,22 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
           return true;
         },
 
+      goToSemanticResult:
+        (index: number) =>
+        ({ tr, state, dispatch }) => {
+          const pluginState = SearchPluginKey.getState(state);
+          if (!pluginState?.semanticResults[index] || !dispatch) return false;
+
+          tr.setMeta(SearchPluginKey, { currentSemanticIndex: index });
+          dispatch(tr);
+
+          const result = pluginState.semanticResults[index];
+          this.editor.commands.setTextSelection(result.from);
+          scrollToPosition(this.editor, result.from);
+
+          return true;
+        },
+
       nextSemanticResult:
         () =>
         ({ tr, state, dispatch }) => {

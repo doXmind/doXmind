@@ -54,6 +54,7 @@ declare module "@tiptap/core" {
       clearSemanticResults: () => ReturnType;
       nextSearchResult: () => ReturnType;
       previousSearchResult: () => ReturnType;
+      goToSemanticResult: (index: number) => ReturnType;
       nextSemanticResult: () => ReturnType;
       previousSemanticResult: () => ReturnType;
       replace: () => ReturnType;
