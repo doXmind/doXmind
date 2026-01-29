@@ -22,6 +22,7 @@ from api import (
     import_file,
     knowledge_base,
     review,
+    shares,
     skills,
     speech,
     telemetry,
@@ -100,6 +101,7 @@ Most endpoints require authentication via JWT Bearer token or API Key.
         {"name": "import", "description": "Document import"},
         {"name": "autocomplete", "description": "AI autocomplete suggestions"},
         {"name": "review", "description": "AI document review"},
+        {"name": "shares", "description": "Document sharing and public access"},
         {"name": "speech", "description": "Speech-to-text transcription"},
     ],
     contact={
@@ -240,6 +242,7 @@ app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
+app.include_router(shares.router, prefix="/api/shares", tags=["shares"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])

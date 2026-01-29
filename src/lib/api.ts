@@ -52,6 +52,39 @@ export interface MessageResponse {
   message: string;
 }
 
+// Share types
+export interface Share {
+  id: string;
+  file_id: string;
+  share_token: string;
+  share_url: string;
+  expires_at: string | null;
+  is_active: boolean;
+  content_mode: string;
+  view_count: number;
+  created_at: string;
+}
+
+export interface ShareListResponse {
+  shares: Share[];
+  count: number;
+}
+
+export interface CreateShareRequest {
+  file_id: string;
+  expires_in_days: number | null;
+  content_mode: "live";
+}
+
+export interface SharedDocumentResponse {
+  name: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  is_snapshot: boolean;
+  owner_name?: string;
+}
+
 export class ApiClient {
   private baseUrl: string;
   private accessToken: string | null = null;
@@ -671,6 +704,65 @@ export class ApiClient {
       content: string;
       chunk_count: number;
     }>(`/api/kb/${conversationId}/attachments/${attachmentId}/content`);
+  }
+
+  // =========================================================================
+  // Document Sharing API
+  // =========================================================================
+
+  /**
+   * Create a share link for a document.
+   * @param request - Share creation request with file_id, expiration, and content mode
+   * @returns The created share with share_url
+   */
+  async createShare(request: CreateShareRequest): Promise<Share> {
+    return this.request<Share>("/api/shares/", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * List all shares for a specific file.
+   * @param fileId - The file ID to list shares for
+   * @param includeExpired - Whether to include expired shares (default: false)
+   * @returns List of shares for the file
+   */
+  async listFileShares(fileId: string, includeExpired: boolean = false): Promise<ShareListResponse> {
+    return this.request<ShareListResponse>(
+      `/api/shares/file/${fileId}?include_expired=${includeExpired}`
+    );
+  }
+
+  /**
+   * Revoke a share link (deactivate it).
+   * @param shareId - The share ID to revoke
+   * @returns Status response
+   */
+  async revokeShare(shareId: string): Promise<{ status: string; share_id: string }> {
+    return this.request<{ status: string; share_id: string }>(`/api/shares/${shareId}`, {
+      method: "DELETE",
+    });
+  }
+
+  /**
+   * Get a shared document (public, no authentication required).
+   * This is the only share method that doesn't require authentication.
+   * @param shareToken - The share token from the URL
+   * @returns The shared document content
+   */
+  async getSharedDocument(shareToken: string): Promise<SharedDocumentResponse> {
+    const url = `${this.baseUrl}/api/shares/public/${shareToken}`;
+    const response = await fetch(url); // No auth headers for public access
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "Document not found or expired"
+      }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json();
   }
 }
 

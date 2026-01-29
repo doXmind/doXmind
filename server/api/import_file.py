@@ -28,10 +28,16 @@ def get_file_extension(filename: str) -> str:
 
 
 def markdown_to_html(md_content: str) -> str:
-    """Convert markdown to HTML for TipTap editor."""
+    """Convert markdown to HTML for TipTap editor.
+
+    Note: We don't use 'codehilite' extension because it wraps code blocks
+    in <div class="codehilite"> with extra <span> tags, which TipTap cannot
+    parse correctly. TipTap expects simple <pre><code class="language-xxx">
+    format. Frontend uses lowlight for syntax highlighting instead.
+    """
     return markdown.markdown(
         md_content,
-        extensions=['tables', 'fenced_code', 'codehilite']
+        extensions=['tables', 'fenced_code']
     )
 
 

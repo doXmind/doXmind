@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Trash2, MoreHorizontal, FileDown, Pencil } from "lucide-react";
+import { FileText, Trash2, MoreHorizontal, FileDown, Pencil, Share2 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { cn, formatDate } from "@/lib/utils";
@@ -16,6 +16,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
+import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { api } from "@/lib/api";
 import { storeLogger } from "@/lib/logger";
@@ -30,6 +31,7 @@ export function FileItem({ file }: FileItemProps) {
   const { currentFileId, setCurrentFile, deleteFile, renameFile } = useFileStore();
   const [isRenaming, setIsRenaming] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
   const [contextMenuReady, setContextMenuReady] = useState(false);
@@ -52,7 +54,7 @@ export function FileItem({ file }: FileItemProps) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const itemCount = 5; // rename, 3 exports, delete
+      const itemCount = 6; // rename, share, 3 exports, delete
       switch (e.key) {
         case "Escape":
           e.preventDefault();
@@ -79,16 +81,20 @@ export function FileItem({ file }: FileItemProps) {
           } else if (contextMenuFocusIndex === 1) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            handleExport("markdown");
+            setShowShareDialog(true);
           } else if (contextMenuFocusIndex === 2) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            handleExport("pdf");
+            handleExport("markdown");
           } else if (contextMenuFocusIndex === 3) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            handleExport("docx");
+            handleExport("pdf");
           } else if (contextMenuFocusIndex === 4) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            handleExport("docx");
+          } else if (contextMenuFocusIndex === 5) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             setShowDeleteModal(true);
@@ -213,6 +219,11 @@ export function FileItem({ file }: FileItemProps) {
     setIsRenaming(true);
   };
 
+  const handleContextMenuShare = () => {
+    setContextMenu(null);
+    setShowShareDialog(true);
+  };
+
   const handleContextMenuDelete = () => {
     setContextMenu(null);
     setShowDeleteModal(true);
@@ -282,6 +293,15 @@ export function FileItem({ file }: FileItemProps) {
             >
               <Pencil className="mr-2 h-4 w-4" />
               Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowShareDialog(true);
+              }}
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              Share
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground">
@@ -369,6 +389,21 @@ export function FileItem({ file }: FileItemProps) {
               Rename
             </button>
 
+            {/* Share */}
+            <button
+              role="menuitem"
+              onClick={handleContextMenuShare}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
+              className={cn(
+                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
+                contextMenuFocusIndex === 1 && "bg-accent text-accent-foreground"
+              )}
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              Share
+            </button>
+
             <div className="my-1 h-px bg-border" />
 
             {/* Export submenu label */}
@@ -378,11 +413,11 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={() => handleContextMenuExport("markdown")}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(2)}
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
                 contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 1 && "bg-accent text-accent-foreground"
+                contextMenuFocusIndex === 2 && "bg-accent text-accent-foreground"
               )}
             >
               <FileDown className="mr-2 h-4 w-4" />
@@ -393,11 +428,11 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={() => handleContextMenuExport("pdf")}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(2)}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(3)}
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
                 contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 2 && "bg-accent text-accent-foreground"
+                contextMenuFocusIndex === 3 && "bg-accent text-accent-foreground"
               )}
             >
               <FileDown className="mr-2 h-4 w-4" />
@@ -408,11 +443,11 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={() => handleContextMenuExport("docx")}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(3)}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(4)}
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
                 contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 3 && "bg-accent text-accent-foreground"
+                contextMenuFocusIndex === 4 && "bg-accent text-accent-foreground"
               )}
             >
               <FileDown className="mr-2 h-4 w-4" />
@@ -425,11 +460,11 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={handleContextMenuDelete}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(4)}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(5)}
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm text-destructive outline-none",
                 contextMenuReady && "hover:bg-destructive/10",
-                contextMenuFocusIndex === 4 && "bg-destructive/10"
+                contextMenuFocusIndex === 5 && "bg-destructive/10"
               )}
             >
               <Trash2 className="mr-2 h-4 w-4" />
@@ -438,6 +473,14 @@ export function FileItem({ file }: FileItemProps) {
           </div>,
           document.body
         )}
+
+      {/* Share Dialog */}
+      <ShareDialog
+        open={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+        fileId={file.id}
+        fileName={getNameWithoutExtension(file.name)}
+      />
     </div>
   );
 }

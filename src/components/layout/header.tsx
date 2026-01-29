@@ -67,7 +67,9 @@ export function Header() {
         </Tooltip>
 
         <div className="ml-2 flex items-center gap-2">
-          <span className="text-sm font-medium">{currentFile?.name || "Untitled"}</span>
+          <span className="text-sm font-medium">
+            {currentFile?.name.replace(/\.md$/, '') || "Untitled"}
+          </span>
           {isDirty && <span className="text-xs text-muted-foreground">(unsaved)</span>}
           {isSaving && <span className="text-xs text-muted-foreground">Saving...</span>}
         </div>
@@ -76,7 +78,7 @@ export function Header() {
       {/* Mobile Header - Center Section (Title) */}
       <div className="flex min-w-0 flex-1 items-center justify-center px-2 md:hidden">
         <span className="max-w-[180px] truncate text-sm font-medium">
-          {currentFile?.name || "Untitled"}
+          {currentFile?.name.replace(/\.md$/, '') || "Untitled"}
         </span>
         {isDirty && (
           <span className="ml-1 flex-shrink-0 text-xs text-muted-foreground">(unsaved)</span>

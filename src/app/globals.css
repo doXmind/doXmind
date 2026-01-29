@@ -971,6 +971,7 @@ html {
   @apply p-4;
   @apply min-w-0 flex-1;
   @apply bg-transparent;
+  white-space: pre;
 }
 
 .ProseMirror .code-block-content code {

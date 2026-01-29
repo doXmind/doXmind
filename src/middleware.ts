@@ -14,6 +14,11 @@ const skipAuth = process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Allow public shared document routes (no auth required)
+  if (pathname.startsWith("/shared")) {
+    return NextResponse.next();
+  }
+
   // Skip auth only if explicitly configured
   if (skipAuth) {
     return NextResponse.next();

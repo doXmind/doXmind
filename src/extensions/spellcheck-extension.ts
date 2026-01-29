@@ -57,8 +57,21 @@ function saveIgnoredWords(words: Set<string>): void {
 }
 
 /**
+ * Node types to skip during spellcheck.
+ * - codeBlock/code: Programming code, not natural language
+ * - inlineMath/blockMath: LaTeX formulas, not natural language
+ */
+const SKIP_NODE_TYPES = new Set([
+  "codeBlock",
+  "code",
+  "inlineMath",
+  "blockMath",
+]);
+
+/**
  * Extract plain text from ProseMirror document with position mapping.
  * Returns the text and a map from text index to document position.
+ * Skips code blocks and inline code to avoid false positives.
  */
 export function extractTextWithPositions(doc: PMNode): {
   text: string;
@@ -68,6 +81,11 @@ export function extractTextWithPositions(doc: PMNode): {
   const posMap: number[] = [];
 
   doc.descendants((node, pos) => {
+    // Skip code blocks and inline code entirely
+    if (SKIP_NODE_TYPES.has(node.type.name)) {
+      return false; // Don't descend into children
+    }
+
     if (node.isText && node.text) {
       for (let i = 0; i < node.text.length; i++) {
         posMap.push(pos + i);

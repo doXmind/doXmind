@@ -259,6 +259,49 @@ class UserTelemetrySettings(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+# =============================================================================
+# Document Sharing Models
+# =============================================================================
+
+class DocumentShare(Base):
+    """Document share model for public read-only access."""
+    __tablename__ = "document_shares"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # Relationships
+    file_id = Column(String(36), ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Share token - cryptographically secure, URL-safe (43 characters, ~256 bits entropy)
+    share_token = Column(String(64), unique=True, nullable=False, index=True)
+
+    # Share settings
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Content strategy: "live" (default) shows current file content
+    # Future: "snapshot" freezes content at share creation time
+    content_mode = Column(String(20), default="live", nullable=False)
+
+    # Analytics
+    view_count = Column(Integer, default=0, nullable=False)
+    last_viewed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationships
+    file = relationship("File", backref="shares")
+    owner = relationship("User", backref="document_shares")
+
+    __table_args__ = (
+        Index('idx_shares_active_expires', 'is_active', 'expires_at'),
+        Index('idx_shares_file_active', 'file_id', 'is_active'),
+    )
+
+
 # Engine and session setup
 settings = get_settings()
 

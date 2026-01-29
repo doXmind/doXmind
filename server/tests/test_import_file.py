@@ -71,8 +71,9 @@ class TestMarkdownToHtml:
         md = "```python\nprint('hello')\n```"
         html = markdown_to_html(md)
 
-        # codehilite extension wraps in <pre class="codehilite"><code>
-        assert "<pre" in html or "<code" in html
+        # fenced_code extension outputs <pre><code class="language-python">
+        assert "<pre><code" in html
+        assert "language-python" in html
 
     def test_converts_inline_code(self):
         """Should convert inline code."""
