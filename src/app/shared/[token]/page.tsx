@@ -112,7 +112,11 @@ export default function SharedDocumentPage() {
   };
 
   if (loading) {
-    return <LoadingScreen isLoading={true} isMobile={false} />;
+    return (
+      <LoadingScreen isLoading={true} isMobile={false}>
+        {null}
+      </LoadingScreen>
+    );
   }
 
   if (error || !document) {
