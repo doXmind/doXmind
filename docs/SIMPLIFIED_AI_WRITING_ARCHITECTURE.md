@@ -19,10 +19,11 @@
 7. [数据存储架构](#数据存储架构)
 8. [移动端支持](#移动端支持)
 9. [性能优化](#性能优化)
-10. [测试策略](#测试策略)
-11. [与 doXmind 的对比](#与-doxmind-的对比)
-12. [快速启动指南](#快速启动指南)
-13. [开发状态与路线图](#开发状态与路线图)
+10. [遥测与事件采集](#遥测与事件采集)
+11. [测试策略](#测试策略)
+12. [与 doXmind 的对比](#与-doxmind-的对比)
+13. [快速启动指南](#快速启动指南)
+14. [开发状态与路线图](#开发状态与路线图)
 
 ---
 
@@ -1864,6 +1865,97 @@ SMTP_PASSWORD=your-password
 
 # 前端 URL (用于邮件链接等)
 FRONTEND_URL=http://localhost:3000
+```
+
+---
+
+## 遥测与事件采集
+
+doXmind Mini 包含完整的遥测系统,用于采集用户反馈信号和 RLHF 训练数据。
+
+### 遥测架构
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                     Telemetry Architecture                       │
+├────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Frontend (TelemetryService)                   │  │
+│  │  - Event queue (batch size: 10, interval: 30s)            │  │
+│  │  - Track methods: diff, autocomplete, chat, edit          │  │
+│  │  - Settings sync with backend                             │  │
+│  │  - Page unload: navigator.sendBeacon()                    │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Backend (POST /api/telemetry/events)          │  │
+│  │  - Validate user settings                                 │  │
+│  │  - Extract RLHF fields (chosen/rejected/context)          │  │
+│  │  - Store in telemetry_events table                        │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Database (PostgreSQL)                         │  │
+│  │  - telemetry_events (event_type, event_data, RLHF fields) │  │
+│  │  - user_telemetry_settings (user preferences)             │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 事件类型
+
+| 类别 | 事件 | 用途 |
+|------|------|------|
+| **Diff 审查** | `diff_hunk_accepted/rejected` | RLHF 正/负向信号 |
+| **自动补全** | `autocomplete_accepted/dismissed` | 补全偏好学习 |
+| **对话反馈** | `chat_feedback` (+1/-1) | 回复质量评估 |
+| **编辑操作** | `post_ai_edit`, `undo_after_ai` | 用户修正追踪 |
+| **使用统计** | `feature_used`, `session_summary` | 产品分析 |
+
+### 隐私控制
+
+用户可在设置中精细控制数据采集:
+
+- **主开关**: 帮助改进 doXmind (默认开启)
+- **子开关**: 编辑反馈 / 对话反馈 / 自动补全 / 使用统计
+- **隐私保护**: 关闭主开关后,敏感内容自动替换为 `[redacted]`
+
+### RLHF 数据提取
+
+```
+事件                    → RLHF 训练数据
+────────────────────────────────────────────────────────
+diff_hunk_accepted      → chosen=AI建议, rejected=原始内容
+diff_hunk_rejected      → chosen=原始内容, rejected=AI建议
+chat_feedback (+1)      → chosen=AI回复
+autocomplete_accepted   → chosen=建议, context=光标前文本
+post_ai_edit            → chosen=用户最终版, rejected=AI原始输出
+```
+
+### 决策速度分类
+
+| 时间 | 分类 | 解读 |
+|------|------|------|
+| < 1s | instant | 强烈偏好 |
+| 1-3s | quick | 明确偏好 |
+| 3-10s | normal | 深思熟虑 |
+| > 10s | delayed | 不确定 |
+
+### 关键文件
+
+```
+前端:
+├── src/lib/telemetry.ts              # 遥测服务核心
+├── src/stores/telemetry-store.ts     # 设置状态管理
+└── src/components/settings/telemetry-settings.tsx
+
+后端:
+├── server/api/telemetry.py           # 遥测 API
+└── server/db/database.py             # TelemetryEvent, UserTelemetrySettings
 ```
 
 ---

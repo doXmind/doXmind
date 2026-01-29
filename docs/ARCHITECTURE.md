@@ -14,6 +14,10 @@
 8. [外部服务集成](#8-外部服务集成)
 9. [安全架构](#9-安全架构)
 10. [性能优化策略](#10-性能优化策略)
+11. [遥测与事件采集](#11-遥测与事件采集)
+12. [部署架构](#12-部署架构)
+13. [监控与日志](#13-监控与日志)
+14. [未来规划](#14-未来规划)
 
 ---
 
@@ -1538,9 +1542,190 @@ WITH (m = 16, ef_construction = 64);
 
 ---
 
-## 11. 部署架构
+## 11. 遥测与事件采集
 
-### 11.1 Docker Compose 开发环境
+### 11.1 事件采集架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        遥测事件采集流程                               │
+└─────────────────────────────────────────────────────────────────────┘
+
+用户交互                前端                      后端                  存储
+────────                ────                      ────                  ────
+
+  │                         │                           │                      │
+  │  1. 用户操作             │                           │                      │
+  │     (接受diff,          │                           │                      │
+  │      反馈评价等)         │                           │                      │
+  ├────────────────────────▶│                           │                      │
+  │                         │                           │                      │
+  │                         │  2. telemetry.track*()    │                      │
+  │                         │     添加到队列             │                      │
+  │                         │                           │                      │
+  │                         │  3. 批量发送 (数量=10 或   │                      │
+  │                         │     定时器=30秒)          │                      │
+  │                         │                           │                      │
+  │                         │  4. POST /api/telemetry/events                   │
+  │                         ├──────────────────────────▶│                      │
+  │                         │                           │                      │
+  │                         │                           │  5. 检查用户设置     │
+  │                         │                           │                      │
+  │                         │                           │  6. 提取 RLHF 字段   │
+  │                         │                           │                      │
+  │                         │                           │  7. 存储事件         │
+  │                         │                           ├─────────────────────▶│
+  │                         │                           │                      │
+  │                         │  8. {status: ok}          │                      │
+  │                         │◀──────────────────────────┤                      │
+  │                         │                           │                      │
+```
+
+### 11.2 遥测事件类型
+
+| 事件类型 | 分类 | 采集数据 | 用途 |
+|----------|------|----------|------|
+| `diff_hunk_accepted` | Diff 审查 | 原始内容、AI建议、决策时间 | RLHF 正向信号 |
+| `diff_hunk_rejected` | Diff 审查 | 原始内容、AI建议、决策时间 | RLHF 负向信号 |
+| `diff_all_accepted` | Diff 审查 | 批量接受数量 | 使用模式 |
+| `diff_all_rejected` | Diff 审查 | 批量拒绝数量 | 使用模式 |
+| `autocomplete_shown` | 自动补全 | 建议ID、触发模式、延迟 | 显示追踪 |
+| `autocomplete_accepted` | 自动补全 | 光标前文本、建议内容、决策速度 | RLHF 正向信号 |
+| `autocomplete_dismissed` | 自动补全 | 光标前文本、建议内容、取消原因 | RLHF 负向信号 |
+| `autocomplete_partial` | 自动补全 | 部分接受信息 | 用户偏好 |
+| `chat_feedback` | 对话 | 用户提示、AI回复、评分(+1/-1) | RLHF 训练 |
+| `chat_regenerate` | 对话 | 重新生成请求 | 负向信号 |
+| `edit_applied` | 编辑操作 | 编辑类型、成功状态 | 功能使用 |
+| `post_ai_edit` | 编辑操作 | AI原始输出、用户最终内容 | 偏好学习 |
+| `undo_after_ai` | 编辑操作 | AI操作类型、撤销时间 | 负向信号 |
+| `feature_used` | 使用统计 | 功能名称、结果、耗时 | 分析 |
+| `session_summary` | 使用统计 | 会话时长、消息数量 | 聚合统计 |
+
+### 11.3 RLHF 数据提取
+
+后端从遥测事件中提取训练对:
+
+```
+事件类型                → RLHF 字段
+─────────────────────────────────────────────────────────────────
+diff_hunk_accepted      → chosen=ai建议, rejected=原始内容
+diff_hunk_rejected      → chosen=原始内容, rejected=ai建议
+chat_feedback (+1)      → chosen=ai回复
+chat_feedback (-1)      → rejected=ai回复
+autocomplete_accepted   → chosen=建议内容, context=光标前文本
+post_ai_edit            → chosen=用户最终内容, rejected=ai原始输出
+```
+
+### 11.4 用户隐私控制
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        遥测设置界面                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  [✓] 帮助改进 doXmind (主开关)                               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  启用后,允许采集:                                                   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  [✓] 编辑反馈 (diff 接受/拒绝决策)                           │   │
+│  │  [✓] 对话反馈 (点赞/点踩评价)                                │   │
+│  │  [✓] 自动补全使用 (接受/取消)                                │   │
+│  │  [✓] 使用统计 (功能使用、会话数据)                           │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  注意: 关闭主开关后,仅采集匿名聚合统计                              │
+│        敏感内容将被替换为 "[redacted]"                              │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**设置表:**
+
+| 设置项 | 默认值 | 描述 |
+|--------|--------|------|
+| `productImprovementEnabled` | true | 详细采集的主开关 |
+| `collectEditFeedback` | true | Diff 审查和编辑操作 |
+| `collectChatFeedback` | true | 对话反馈信号 |
+| `collectAutocompleteStats` | true | 自动补全交互 |
+| `collectUsageStats` | true | 功能使用和会话摘要 |
+
+### 11.5 前端组件
+
+```
+TelemetryService (src/lib/telemetry.ts)
+├── 事件队列管理
+│   ├── 批量大小: 10 个事件
+│   ├── 刷新间隔: 30 秒
+│   └── 页面卸载: navigator.sendBeacon()
+│
+├── 追踪方法
+│   ├── trackDiffHunkAccepted(original, suggestion, decisionMs)
+│   ├── trackDiffHunkRejected(original, suggestion, decisionMs)
+│   ├── trackAutocompleteShown(suggestionId, triggerMode, latency)
+│   ├── trackAutocompleteAccepted(textBefore, suggestion, decisionMs)
+│   ├── trackAutocompleteDismissed(textBefore, suggestion, reason)
+│   ├── trackChatFeedback(prompt, response, rating, messageId)
+│   ├── trackPostAIEdit(originalOutput, finalContent)
+│   ├── trackUndoAfterAI(operationType, timeToUndo)
+│   └── trackFeatureUsed(feature, outcome, duration)
+│
+└── 设置同步
+    ├── 本地存储持久化
+    └── 后端同步 via PUT /api/telemetry/settings
+
+集成点:
+├── diff-review-store.ts     → Diff 接受/拒绝追踪
+├── use-autocomplete.ts      → 自动补全生命周期
+├── message-feedback.tsx     → 对话点赞/点踩
+├── editor.tsx               → AI操作后撤销检测
+└── telemetry-settings.tsx   → 用户偏好设置界面
+```
+
+### 11.6 后端 API
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/telemetry/events` | POST | 批量提交事件 (最多100个) |
+| `/api/telemetry/settings` | GET | 获取用户遥测设置 |
+| `/api/telemetry/settings` | PUT | 更新用户遥测设置 |
+
+**事件存储模型:**
+
+```sql
+CREATE TABLE telemetry_events (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),     -- 可为空 (匿名事件)
+    event_type VARCHAR(50) NOT NULL,
+    event_data JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    chosen_content TEXT,                    -- RLHF: 用户偏好的输出
+    rejected_content TEXT,                  -- RLHF: 被拒绝的输出
+    context TEXT                            -- RLHF: 输入上下文
+);
+
+CREATE INDEX idx_telemetry_user_type ON telemetry_events(user_id, event_type);
+CREATE INDEX idx_telemetry_created ON telemetry_events(created_at);
+```
+
+### 11.7 决策速度分类
+
+```
+决策时间               分类              解读
+──────────────────────────────────────────────────────────
+< 1 秒                 instant          强烈偏好
+1-3 秒                 quick            明确偏好
+3-10 秒                normal           深思熟虑的决策
+> 10 秒                delayed          不确定/复杂
+```
+
+---
+
+## 12. 部署架构
+
+### 12.1 Docker Compose 开发环境
 
 ```yaml
 version: '3.8'
@@ -1579,7 +1764,7 @@ volumes:
   postgres_data:
 ```
 
-### 11.2 生产部署架构
+### 12.2 生产部署架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -1616,9 +1801,9 @@ volumes:
 
 ---
 
-## 12. 监控与日志
+## 13. 监控与日志
 
-### 12.1 日志架构
+### 13.1 日志架构
 
 ```python
 # 结构化日志配置
@@ -1642,7 +1827,7 @@ logger.info("chat_request", user_id=user.id, file_id=file_id, mode=mode)
 logger.error("llm_error", error=str(e), model=model)
 ```
 
-### 12.2 关键指标
+### 13.2 关键指标
 
 | 指标 | 类型 | 描述 |
 |------|------|------|
@@ -1656,9 +1841,9 @@ logger.error("llm_error", error=str(e), model=model)
 
 ---
 
-## 13. 未来规划
+## 14. 未来规划
 
-### 13.1 技术演进
+### 14.1 技术演进
 
 | 特性 | 优先级 | 描述 |
 |------|--------|------|
@@ -1669,7 +1854,7 @@ logger.error("llm_error", error=str(e), model=model)
 | **原生应用** | P3 | React Native 移动端 |
 | **插件系统** | P3 | 可扩展编辑器功能 |
 
-### 13.2 架构改进
+### 14.2 架构改进
 
 ```
 未来架构演进方向:

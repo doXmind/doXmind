@@ -14,6 +14,10 @@
 8. [External Service Integrations](#8-external-service-integrations)
 9. [Security Architecture](#9-security-architecture)
 10. [Performance Optimization Strategies](#10-performance-optimization-strategies)
+11. [Telemetry and Event Collection](#11-telemetry-and-event-collection)
+12. [Deployment Architecture](#12-deployment-architecture)
+13. [Monitoring and Logging](#13-monitoring-and-logging)
+14. [Future Roadmap](#14-future-roadmap)
 
 ---
 
@@ -1572,9 +1576,192 @@ WITH (m = 16, ef_construction = 64);
 
 ---
 
-## 11. Deployment Architecture
+## 11. Telemetry and Event Collection
 
-### 11.1 Docker Compose Development Environment
+### 11.1 Event Collection Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Telemetry Event Collection Flow                   │
+└─────────────────────────────────────────────────────────────────────┘
+
+User Interaction          Frontend                    Backend                Storage
+────────────────          ────────                    ───────                ───────
+
+  │                         │                           │                      │
+  │  1. User action         │                           │                      │
+  │     (accept diff,       │                           │                      │
+  │      feedback, etc)     │                           │                      │
+  ├────────────────────────▶│                           │                      │
+  │                         │                           │                      │
+  │                         │  2. telemetry.track*()    │                      │
+  │                         │     Add to queue          │                      │
+  │                         │                           │                      │
+  │                         │  3. Batch (size=10 or     │                      │
+  │                         │     timer=30s)            │                      │
+  │                         │                           │                      │
+  │                         │  4. POST /api/telemetry/events                   │
+  │                         ├──────────────────────────▶│                      │
+  │                         │                           │                      │
+  │                         │                           │  5. Check user       │
+  │                         │                           │     settings         │
+  │                         │                           │                      │
+  │                         │                           │  6. Extract RLHF     │
+  │                         │                           │     fields           │
+  │                         │                           │                      │
+  │                         │                           │  7. Store events     │
+  │                         │                           ├─────────────────────▶│
+  │                         │                           │                      │
+  │                         │  8. {status: ok}          │                      │
+  │                         │◀──────────────────────────┤                      │
+  │                         │                           │                      │
+```
+
+### 11.2 Telemetry Event Types
+
+| Event Type | Category | Data Collected | Purpose |
+|------------|----------|----------------|---------|
+| `diff_hunk_accepted` | Diff Review | Original content, AI suggestion, decision time | RLHF positive signal |
+| `diff_hunk_rejected` | Diff Review | Original content, AI suggestion, decision time | RLHF negative signal |
+| `diff_all_accepted` | Diff Review | Bulk accept count | Usage pattern |
+| `diff_all_rejected` | Diff Review | Bulk reject count | Usage pattern |
+| `autocomplete_shown` | Autocomplete | Suggestion ID, trigger mode, latency | Display tracking |
+| `autocomplete_accepted` | Autocomplete | Text before, suggestion, decision speed | RLHF positive signal |
+| `autocomplete_dismissed` | Autocomplete | Text before, suggestion, dismiss reason | RLHF negative signal |
+| `autocomplete_partial` | Autocomplete | Partial acceptance info | User preference |
+| `chat_feedback` | Chat | User prompt, AI response, rating (+1/-1) | RLHF training |
+| `chat_regenerate` | Chat | Regeneration request | Negative signal |
+| `edit_applied` | Edit Ops | Edit type, success status | Feature usage |
+| `post_ai_edit` | Edit Ops | Original AI output, final user content | Preference learning |
+| `undo_after_ai` | Edit Ops | AI operation type, time to undo | Negative signal |
+| `feature_used` | Usage Stats | Feature name, outcome, duration | Analytics |
+| `session_summary` | Usage Stats | Session duration, message count | Aggregate stats |
+
+### 11.3 RLHF Data Extraction
+
+The backend extracts training pairs from telemetry events:
+
+```
+Event Type              → RLHF Fields
+─────────────────────────────────────────────────────────────────
+diff_hunk_accepted      → chosen=ai_suggestion, rejected=original_content
+diff_hunk_rejected      → chosen=original_content, rejected=ai_suggestion
+chat_feedback (+1)      → chosen=ai_response
+chat_feedback (-1)      → rejected=ai_response
+autocomplete_accepted   → chosen=suggestion, context=text_before
+post_ai_edit            → chosen=final_user_content, rejected=original_ai_output
+```
+
+### 11.4 User Privacy Controls
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Telemetry Settings UI                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  [✓] Help improve doXmind (Master toggle)                   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  When enabled, allow collection of:                                │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  [✓] Edit feedback (diff accept/reject decisions)           │   │
+│  │  [✓] Chat feedback (thumbs up/down ratings)                 │   │
+│  │  [✓] Autocomplete usage (acceptance/dismissal)              │   │
+│  │  [✓] Usage statistics (feature usage, session data)         │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  Note: When disabled, only anonymous aggregate stats collected     │
+│        with sensitive content redacted to "[redacted]"             │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Settings Table:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `productImprovementEnabled` | true | Master toggle for detailed collection |
+| `collectEditFeedback` | true | Diff review and edit operations |
+| `collectChatFeedback` | true | Chat feedback signals |
+| `collectAutocompleteStats` | true | Autocomplete interactions |
+| `collectUsageStats` | true | Feature usage and session summaries |
+
+### 11.5 Frontend Components
+
+```
+TelemetryService (src/lib/telemetry.ts)
+├── Event Queue Management
+│   ├── Batch size: 10 events
+│   ├── Flush interval: 30 seconds
+│   └── Page unload: navigator.sendBeacon()
+│
+├── Track Methods
+│   ├── trackDiffHunkAccepted(original, suggestion, decisionMs)
+│   ├── trackDiffHunkRejected(original, suggestion, decisionMs)
+│   ├── trackAutocompleteShown(suggestionId, triggerMode, latency)
+│   ├── trackAutocompleteAccepted(textBefore, suggestion, decisionMs)
+│   ├── trackAutocompleteDismissed(textBefore, suggestion, reason)
+│   ├── trackChatFeedback(prompt, response, rating, messageId)
+│   ├── trackPostAIEdit(originalOutput, finalContent)
+│   ├── trackUndoAfterAI(operationType, timeToUndo)
+│   └── trackFeatureUsed(feature, outcome, duration)
+│
+└── Settings Sync
+    ├── Local storage persistence
+    └── Backend sync via PUT /api/telemetry/settings
+
+Integration Points:
+├── diff-review-store.ts     → Diff accept/reject tracking
+├── use-autocomplete.ts      → Autocomplete lifecycle
+├── message-feedback.tsx     → Chat thumbs up/down
+├── editor.tsx               → Undo-after-AI detection
+└── telemetry-settings.tsx   → User preference UI
+```
+
+### 11.6 Backend API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/telemetry/events` | POST | Submit batch of events (max 100) |
+| `/api/telemetry/settings` | GET | Retrieve user telemetry settings |
+| `/api/telemetry/settings` | PUT | Update user telemetry settings |
+
+**Event Storage Model:**
+
+```sql
+CREATE TABLE telemetry_events (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),     -- nullable for anonymous
+    event_type VARCHAR(50) NOT NULL,
+    event_data JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    chosen_content TEXT,                    -- RLHF: preferred output
+    rejected_content TEXT,                  -- RLHF: rejected output
+    context TEXT                            -- RLHF: input context
+);
+
+CREATE INDEX idx_telemetry_user_type ON telemetry_events(user_id, event_type);
+CREATE INDEX idx_telemetry_created ON telemetry_events(created_at);
+```
+
+### 11.7 Decision Speed Classification
+
+```
+Time to Decision        Classification      Interpretation
+──────────────────────────────────────────────────────────
+< 1 second              instant            Strong preference
+1-3 seconds             quick              Clear preference
+3-10 seconds            normal             Considered decision
+> 10 seconds            delayed            Uncertain/complex
+```
+
+---
+
+## 12. Deployment Architecture
+
+### 12.1 Docker Compose Development Environment
 
 ```yaml
 version: '3.8'
@@ -1613,7 +1800,7 @@ volumes:
   postgres_data:
 ```
 
-### 11.2 Production Deployment Architecture
+### 12.2 Production Deployment Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -1650,9 +1837,9 @@ volumes:
 
 ---
 
-## 12. Monitoring and Logging
+## 13. Monitoring and Logging
 
-### 12.1 Logging Architecture
+### 13.1 Logging Architecture
 
 ```python
 # Structured Logging Configuration
@@ -1676,7 +1863,7 @@ logger.info("chat_request", user_id=user.id, file_id=file_id, mode=mode)
 logger.error("llm_error", error=str(e), model=model)
 ```
 
-### 12.2 Key Metrics
+### 13.2 Key Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
@@ -1690,9 +1877,9 @@ logger.error("llm_error", error=str(e), model=model)
 
 ---
 
-## 13. Future Roadmap
+## 14. Future Roadmap
 
-### 13.1 Technical Evolution
+### 14.1 Technical Evolution
 
 | Feature | Priority | Description |
 |---------|----------|-------------|
@@ -1703,7 +1890,7 @@ logger.error("llm_error", error=str(e), model=model)
 | **Native App** | P3 | React Native mobile app |
 | **Plugin System** | P3 | Extensible editor functionality |
 
-### 13.2 Architecture Improvements
+### 14.2 Architecture Improvements
 
 ```
 Future Architecture Evolution:
