@@ -54,7 +54,6 @@ export function AttachmentMenu({
   const {
     isLoading,
     loadAttachments,
-    uploadAttachment,
     uploadAttachments,
     deleteAttachment,
     getAttachments,

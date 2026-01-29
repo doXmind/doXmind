@@ -3,7 +3,6 @@
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -41,7 +40,7 @@ class CreateShareRequest(BaseModel):
     """Request to create a document share."""
 
     file_id: str
-    expires_in_days: Optional[int] = Field(None, ge=1, le=365)  # 1-365 days or None
+    expires_in_days: int | None = Field(None, ge=1, le=365)  # 1-365 days or None
     content_mode: str = Field("live", pattern="^(live|snapshot)$")
 
 
@@ -52,7 +51,7 @@ class ShareResponse(BaseModel):
     file_id: str
     share_token: str
     share_url: str  # Frontend URL: /shared/{share_token}
-    expires_at: Optional[str]
+    expires_at: str | None
     is_active: bool
     content_mode: str
     view_count: int
@@ -74,7 +73,7 @@ class SharedDocumentResponse(BaseModel):
     created_at: str
     updated_at: str
     is_snapshot: bool
-    owner_name: Optional[str] = None  # Optional, redacted for privacy
+    owner_name: str | None = None  # Optional, redacted for privacy
 
 
 # =============================================================================
@@ -95,10 +94,7 @@ async def create_share(
 
     # Verify file exists and belongs to user
     query = select(File).where(File.id == share_request.file_id)
-    if user_id:
-        query = query.where(File.user_id == user_id)
-    else:
-        query = query.where(File.user_id.is_(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -158,10 +154,7 @@ async def list_file_shares(
 
     # Verify ownership
     query = select(File).where(File.id == file_id)
-    if user_id:
-        query = query.where(File.user_id == user_id)
-    else:
-        query = query.where(File.user_id.is_(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()

@@ -27,23 +27,23 @@ export function ShareDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    async function fetchShares() {
+      try {
+        setLoading(true);
+        setError(null);
+        const response: ShareListResponse = await api.listFileShares(fileId);
+        setShares(response.shares);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load shares");
+      } finally {
+        setLoading(false);
+      }
+    }
+
     if (open && fileId) {
-      loadShares();
+      fetchShares();
     }
   }, [open, fileId]);
-
-  async function loadShares() {
-    try {
-      setLoading(true);
-      setError(null);
-      const response: ShareListResponse = await api.listFileShares(fileId);
-      setShares(response.shares);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load shares");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function createShare() {
     try {
@@ -111,7 +111,7 @@ export function ShareDialog({
 
   return (
     <Modal open={open} onClose={onClose} className="max-w-2xl">
-      <ModalHeader onClose={onClose}>Share "{fileName}"</ModalHeader>
+      <ModalHeader onClose={onClose}>Share &quot;{fileName}&quot;</ModalHeader>
 
       <p className="text-sm text-muted-foreground mb-6">
         Create a read-only link to share this document. Anyone with the link can

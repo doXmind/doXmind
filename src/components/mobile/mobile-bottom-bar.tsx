@@ -16,7 +16,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useChat } from "@/hooks/use-chat";
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
-import { Z_INDEX, MOBILE_SPRINGS } from "@/lib/constants";
+import { MOBILE_SPRINGS } from "@/lib/constants";
 
 // Quick action button component
 function QuickActionButton({

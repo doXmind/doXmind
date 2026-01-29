@@ -56,7 +56,10 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   // Track the last response to detect when AI finishes
   const conversationKey = currentFileId || "global";
   const conversation = conversations[conversationKey];
-  const messages = conversation?.messages || [];
+  const messages = useMemo(
+    () => conversation?.messages || [],
+    [conversation?.messages]
+  );
 
   // Find the last assistant message (not necessarily the very last message)
   const lastAssistantMessage = useMemo(() => {

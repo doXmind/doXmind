@@ -12,7 +12,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence, PanInfo, useDragControls } from "framer-motion";
-import { Send, Square, X, Sparkles, Mic, Check, Loader2, Trash2, Globe } from "lucide-react";
+import { Send, Square, X, Sparkles, Mic, Check, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -112,7 +112,7 @@ export function VoiceEditPreview({
   const {
     isRecording,
     duration,
-    error: recordingError,
+    error: _recordingError,
     start: startRecording,
     stop: stopRecording,
     cancel: cancelRecording,

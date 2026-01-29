@@ -8,7 +8,7 @@
  */
 
 import { useState } from "react";
-import { FolderOpen, MoreHorizontal, Moon, Sun, ListTree, Settings } from "lucide-react";
+import { FolderOpen, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { useLayoutStore } from "@/stores/layout-store";

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AppShell } from "@/components/layout/app-shell";
 import { LoadingScreen } from "@/components/loading-screen";
@@ -144,10 +145,12 @@ export default function SharedDocumentPage() {
             <div className="flex items-center justify-between">
               {/* Logo and Title */}
               <div className="flex items-center gap-3">
-                <img
+                <Image
                   src="/icon.svg"
                   alt="doXmind"
-                  className="w-8 h-8 flex-shrink-0"
+                  width={32}
+                  height={32}
+                  className="flex-shrink-0"
                 />
                 <h1 className="text-2xl font-bold text-foreground">
                   {document.name.replace(/\.md$/, '')}

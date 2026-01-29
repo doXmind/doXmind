@@ -4,8 +4,6 @@ Tests the markdown_to_plain_text function which must produce output
 identical to the frontend's markdownToPlainText() in src/lib/markdown.ts.
 """
 
-import pytest
-
 from lib.markdown_utils import markdown_to_plain_text
 
 
@@ -171,7 +169,7 @@ Second paragraph.
 Third paragraph."""
         result = markdown_to_plain_text(old_str)
         assert "\n" not in result
-        assert "First paragraph.Second paragraph.Third paragraph." == result
+        assert result == "First paragraph.Second paragraph.Third paragraph."
 
     def test_list_items_joined(self):
         """List items should be joined without markers or newlines."""

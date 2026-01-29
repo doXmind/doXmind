@@ -9,7 +9,7 @@ import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
 import { api } from "@/lib/api";
-import type { ChatStreamEvent, TodoItem } from "@/types/stream-events";
+import type { ChatStreamEvent } from "@/types/stream-events";
 
 // Re-export types for convenience
 export type { EditOperation } from "./use-edit-operations";

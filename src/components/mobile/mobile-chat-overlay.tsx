@@ -8,7 +8,7 @@
  */
 
 import { useCallback } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { X } from "lucide-react";
 import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ChatPanel } from "@/components/ai/chat-panel";

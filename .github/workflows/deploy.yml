@@ -1,7 +1,9 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -12,7 +14,9 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend to Heroku
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,14 +27,15 @@ jobs:
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
         run: |
-          git remote add heroku-frontend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_FRONTEND_APP }}.git || true
+          git remote add heroku-frontend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_FRONTEND_APP }}.git 2>/dev/null || true
           git push heroku-frontend main:main --force
-        continue-on-error: true
 
   deploy-backend:
     name: Deploy Backend to Heroku
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,10 +47,9 @@ jobs:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
         run: |
           # Use git subtree to push only the server directory
-          git remote add heroku-backend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_BACKEND_APP }}.git || true
+          git remote add heroku-backend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_BACKEND_APP }}.git 2>/dev/null || true
           git subtree push --prefix server heroku-backend main --force || \
-            git push heroku-backend `git subtree split --prefix server main`:main --force
-        continue-on-error: true
+            git push heroku-backend $(git subtree split --prefix server main):main --force
 
   # ============================================================================
   # Notify on Completion
@@ -56,8 +60,16 @@ jobs:
     needs: [deploy-frontend, deploy-backend]
     if: always()
     steps:
-      - name: Report status
+      - name: Check deployment status
         run: |
-          echo "Deployment workflow completed"
+          echo "Frontend deployment: ${{ needs.deploy-frontend.result }}"
+          echo "Backend deployment: ${{ needs.deploy-backend.result }}"
+
+          if [ "${{ needs.deploy-frontend.result }}" != "success" ] || [ "${{ needs.deploy-backend.result }}" != "success" ]; then
+            echo "One or more deployments failed!"
+            exit 1
+          fi
+
+          echo "All deployments successful!"
           echo "Frontend: https://doxmind-mini-frontend-2fac03803995.herokuapp.com/"
           echo "Backend: https://doxmind-mini-server-31d83014622f.herokuapp.com/"

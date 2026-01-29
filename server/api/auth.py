@@ -4,9 +4,9 @@ Provides user registration, login, OAuth, and token management.
 """
 
 import base64
-import json
 import hashlib
 import hmac
+import json
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
