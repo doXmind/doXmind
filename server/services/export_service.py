@@ -235,14 +235,21 @@ class PDFRenderer:
     def _find_unicode_font(self):
         """Find a suitable Unicode font on the system."""
         font_candidates = [
+            # Linux (fonts-noto-cjk package)
+            ('NotoSansCJK-Regular.ttc', 'Noto Sans CJK'),
+            ('NotoSansCJKsc-Regular.otf', 'Noto Sans CJK SC'),
+            ('NotoSansSC-Regular.otf', 'Noto Sans SC'),
+            # Windows
             ('msyh.ttc', 'Microsoft YaHei'),
             ('msyhbd.ttc', 'Microsoft YaHei Bold'),
             ('simhei.ttf', 'SimHei'),
             ('simsun.ttc', 'SimSun'),
+            # macOS
             ('PingFang.ttc', 'PingFang SC'),
             ('STHeiti Light.ttc', 'STHeiti'),
-            ('NotoSansCJK-Regular.ttc', 'Noto Sans CJK'),
+            # Linux fallbacks
             ('DroidSansFallbackFull.ttf', 'Droid Sans Fallback'),
+            ('DejaVuSans.ttf', 'DejaVu Sans'),
         ]
 
         for font_file, font_name in font_candidates:
@@ -260,9 +267,14 @@ class PDFRenderer:
             font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
 
         font_dirs.extend([
+            # macOS
             '/System/Library/Fonts',
             '/Library/Fonts',
             os.path.expanduser('~/Library/Fonts'),
+            # Linux - common font directories
+            '/usr/share/fonts/opentype/noto',
+            '/usr/share/fonts/truetype/noto',
+            '/usr/share/fonts/noto-cjk',
             '/usr/share/fonts',
             '/usr/local/share/fonts',
             os.path.expanduser('~/.fonts'),

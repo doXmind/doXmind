@@ -79,15 +79,9 @@ export function useEditOperations() {
         if (isReviewMode && diffSession?.fileId === fileId) {
           // Add all hunks to existing session at once
           addHunksToDiffSession(allHunks);
-          console.log(
-            `[useEditOperations] Added ${allHunks.length} hunk(s) to existing diff review`
-          );
         } else {
           // Start a new diff review session with all hunks
           startDiffReview(fileId, allHunks, file.content);
-          console.log(
-            `[useEditOperations] Started diff review with ${allHunks.length} hunk(s) for ${fileEdits[0].file_name}`
-          );
         }
       }
 

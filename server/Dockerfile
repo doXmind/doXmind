@@ -4,9 +4,11 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install system dependencies
+# fonts-noto-cjk: Required for PDF export with Chinese/Japanese/Korean characters
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

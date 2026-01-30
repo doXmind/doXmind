@@ -156,9 +156,6 @@ export function Editor({ file: initialFile }: EditorProps) {
     editor,
     fileId: file.id,
     onReviewStart: () => setReviewPanelOpen(true),
-    onReviewComplete: (count) => {
-      console.log(`[Editor] Review complete with ${count} suggestions`);
-    },
   });
 
   // Get review state for toolbar

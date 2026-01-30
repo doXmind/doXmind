@@ -190,8 +190,6 @@ function findFuzzyMatch(
   const from = bestGroup[0].pos;
   const to = bestGroup[bestGroup.length - 1].endPos;
 
-  console.log("[findFuzzyMatch] Found group with", bestGroup.length, "segments, score:", bestGroupScore);
-
   return { from, to, blockStart: from };
 }
 
@@ -204,10 +202,6 @@ export function findSemanticRanges(
   chunks: SemanticChunk[]
 ): SemanticRange[] {
   const results: SemanticRange[] = [];
-
-  console.log("[findSemanticRanges] Processing", chunks.length, "chunks");
-  console.log("[findSemanticRanges] Doc text length:", doc.textContent.length);
-  console.log("[findSemanticRanges] Doc text preview:", doc.textContent.substring(0, 200));
 
   for (const chunk of chunks) {
     // Clean the chunk content - remove HTML and markdown syntax
@@ -224,27 +218,16 @@ export function findSemanticRanges(
     // Remove markdown header markers (# ) at the start
     cleanChunk = cleanChunk.replace(/^#{1,6}\s+/, "");
 
-    console.log("[findSemanticRanges] Looking for chunk:", cleanChunk.substring(0, 80));
-
     if (cleanChunk.length < 5) {
-      console.log("[findSemanticRanges] Skipped - too short");
       continue;
     }
 
     // Try exact match first
     let found = findTextInDocument(doc, cleanChunk);
 
-    if (found) {
-      console.log("[findSemanticRanges] Exact match found at", found.from, "-", found.to);
-    } else {
+    if (!found) {
       // If exact match fails, try fuzzy matching
-      console.log("[findSemanticRanges] Exact match failed, trying fuzzy...");
       found = findFuzzyMatch(doc, cleanChunk);
-      if (found) {
-        console.log("[findSemanticRanges] Fuzzy match found at", found.from, "-", found.to);
-      } else {
-        console.log("[findSemanticRanges] No match found for this chunk");
-      }
     }
 
     if (found) {
@@ -252,7 +235,6 @@ export function findSemanticRanges(
     }
   }
 
-  console.log("[findSemanticRanges] Total results:", results.length);
   return dedupeRanges(results);
 }
 

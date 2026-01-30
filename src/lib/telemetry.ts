@@ -414,16 +414,13 @@ class TelemetryService {
     const events = [...this.eventQueue];
     this.eventQueue = [];
 
-    console.log(`[Telemetry] Flushing ${events.length} events (sync=${sync})`);
-
     try {
       if (sync && typeof navigator !== "undefined" && navigator.sendBeacon) {
         // Use sendBeacon for sync flush (page unload)
         const blob = new Blob([JSON.stringify({ events })], {
           type: "application/json",
         });
-        const success = navigator.sendBeacon("/api/telemetry/events", blob);
-        console.log(`[Telemetry] sendBeacon result: ${success}`);
+        navigator.sendBeacon("/api/telemetry/events", blob);
       } else {
         // Use fetch for async flush
         const response = await fetch("/api/telemetry/events", {
@@ -434,7 +431,6 @@ class TelemetryService {
           },
           body: JSON.stringify({ events }),
         });
-        console.log(`[Telemetry] Flush response: ${response.status} ${response.statusText}`);
         if (!response.ok) {
           const text = await response.text();
           console.warn(`[Telemetry] Flush failed: ${text}`);

@@ -258,7 +258,6 @@ function useWebVoiceRecording(options: UseVoiceRecordingOptions): UseVoiceRecord
 
       const mimeType =
         supportedTypes.find((type) => MediaRecorder.isTypeSupported(type)) || "audio/webm";
-      console.log("[VoiceRecording] Using MIME type:", mimeType);
 
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
