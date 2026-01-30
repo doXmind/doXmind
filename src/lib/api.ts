@@ -14,6 +14,8 @@ export interface SearchResultItem {
     file_id: string;
     chunk_index: number;
     name?: string;
+    start?: number;
+    end?: number;
   };
   distance?: number;
 }

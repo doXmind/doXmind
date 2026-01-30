@@ -8,6 +8,7 @@
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SearchRange, SemanticRange, SemanticChunk } from "./search-types";
+import type { TextPosition } from "../diff-review/diff-types";
 import { findTextInDocument } from "../diff-review/position-mapping";
 
 /**
@@ -81,7 +82,7 @@ function normalizeForMatch(text: string): string {
 function findFuzzyMatch(
   doc: PMNode,
   searchText: string
-): { from: number; to: number } | null {
+): TextPosition | null {
   const normalizedSearch = normalizeForMatch(searchText);
 
   if (normalizedSearch.length < 10) return null;
@@ -191,7 +192,7 @@ function findFuzzyMatch(
 
   console.log("[findFuzzyMatch] Found group with", bestGroup.length, "segments, score:", bestGroupScore);
 
-  return { from, to };
+  return { from, to, blockStart: from };
 }
 
 /**
