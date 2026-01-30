@@ -269,14 +269,34 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       icon: <FileText className="h-4 w-4" />,
       category: "searchFiles" as const,
       action: () => {
-        setCurrentFile(result.metadata.file_id);
+        const fileId = result.metadata.file_id;
+        const start = result.metadata?.start as number | undefined;
+
+        // Open the file first
+        setCurrentFile(fileId);
+
+        // If we have position info, navigate to it after file loads
+        if (start !== undefined && editor) {
+          // Use setTimeout to wait for file content to load into editor
+          setTimeout(() => {
+            const currentEditor = useEditorRefStore.getState().editor;
+            if (currentEditor) {
+              // Clamp position to document length
+              const maxPos = currentEditor.state.doc.content.size;
+              const safePos = Math.min(start, maxPos - 1);
+              currentEditor.commands.setTextSelection(safePos);
+              currentEditor.commands.scrollIntoView();
+            }
+          }, 100);
+        }
+
         onClose();
       },
       keywords: [],
       preview: result.content.slice(0, 100),
       score: result.distance !== undefined ? Math.round((1 - result.distance) * 100) : undefined,
     }));
-  }, [fileSearchResults, setCurrentFile, onClose]);
+  }, [fileSearchResults, setCurrentFile, onClose, editor]);
 
   const searchDocCommands = React.useMemo<CommandItem[]>(() => {
     return docSearchResults.map((result, index) => ({
@@ -285,12 +305,25 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       icon: <Quote className="h-4 w-4" />,
       category: "searchDocument" as const,
       action: () => {
-        // Jump to position in document
-        if (editor && result.content) {
-          const position = findTextInDoc(editor.state.doc, result.content);
-          if (position) {
-            editor.commands.setTextSelection({ from: position.from, to: position.to });
+        // Jump to position in document using metadata positions (more accurate)
+        if (editor) {
+          const start = result.metadata?.start as number | undefined;
+          const end = result.metadata?.end as number | undefined;
+
+          if (start !== undefined) {
+            // Use positions from backend (already calculated during indexing)
+            const maxPos = editor.state.doc.content.size;
+            const safeStart = Math.min(start, maxPos - 1);
+            const safeEnd = end !== undefined ? Math.min(end, maxPos) : safeStart;
+            editor.commands.setTextSelection({ from: safeStart, to: safeEnd });
             editor.commands.scrollIntoView();
+          } else if (result.content) {
+            // Fallback: search for content if no position metadata
+            const position = findTextInDoc(editor.state.doc, result.content);
+            if (position) {
+              editor.commands.setTextSelection({ from: position.from, to: position.to });
+              editor.commands.scrollIntoView();
+            }
           }
         }
         onClose();

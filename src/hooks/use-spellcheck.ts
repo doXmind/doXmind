@@ -219,7 +219,13 @@ export function useSpellcheck({
    * Handle editor updates
    */
   useEffect(() => {
-    if (!editor || !enabled) {
+    if (!editor) {
+      return;
+    }
+
+    // Clear spellcheck when disabled
+    if (!enabled) {
+      clearSpellcheck();
       return;
     }
 
@@ -243,7 +249,7 @@ export function useSpellcheck({
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [editor, enabled, triggerCheck, checkDocument]);
+  }, [editor, enabled, triggerCheck, checkDocument, clearSpellcheck]);
 
   /**
    * Cleanup on unmount

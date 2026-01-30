@@ -41,6 +41,9 @@ export interface SearchExtensionOptions {
 export interface SemanticChunk {
   content: string;
   score: number;
+  // Position in original document (from backend)
+  start?: number;
+  end?: number;
 }
 
 // Declare custom commands for TypeScript

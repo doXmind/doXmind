@@ -55,6 +55,7 @@ export function Editor({ file: initialFile }: EditorProps) {
     setReviewPanelOpen,
     lastAIOperation,
     clearLastAIOperation,
+    spellcheckEnabled,
   } = useEditorStore();
 
   // Search bar state
@@ -148,7 +149,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   // Initialize hooks
   // Disable autocomplete on mobile - it interferes with touch input
   useAutocomplete({ editor, fileId: file.id, fileName: file.name, enabled: !isMobile });
-  useSpellcheck({ editor, enabled: true });
+  useSpellcheck({ editor, enabled: spellcheckEnabled });
   const { headings } = useHeadings(editor);
 
   const { triggerReview, clearReview } = useTextReview({

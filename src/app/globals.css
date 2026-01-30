@@ -471,23 +471,26 @@
 /* Search Highlight - Semantic (Purple/Blue) */
 .ProseMirror .search-result-semantic {
   background-color: rgba(139, 92, 246, 0.15);
-  border-radius: 2px;
+  border-bottom: 2px solid rgba(139, 92, 246, 0.5);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 
 .ProseMirror .search-result-semantic-current {
   background-color: rgba(139, 92, 246, 0.35);
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+  border-bottom: 2px solid rgba(139, 92, 246, 0.8);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .dark .ProseMirror .search-result-semantic {
   background-color: rgba(139, 92, 246, 0.2);
+  border-bottom: 2px solid rgba(139, 92, 246, 0.4);
 }
 
 .dark .ProseMirror .search-result-semantic-current {
   background-color: rgba(139, 92, 246, 0.4);
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.6);
+  border-bottom: 2px solid rgba(139, 92, 246, 0.7);
 }
 
 /* Scrollbar */

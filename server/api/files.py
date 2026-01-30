@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, get_db
 from services.auth_service import TokenData, require_auth
-from services.rag_service import RAGService
+from services.rag_service import DEFAULT_STRATEGY_FACTORY, RAGService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -103,13 +103,16 @@ async def create_file(
         created = cast(dict[str, Any], created_row)
         file_id = cast(str, created["id"])
 
-        # Index in vector store (both chunk-level and sentence-level)
+        # Index in vector store with auto-selected chunking strategy
         try:
             rag = RAGService(db)
+            # Auto-select chunking strategy based on document type
+            strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file.content, file.name)
             await rag.index_file(
                 file_id=file_id,
                 content=file.content,
-                metadata={"name": file.name, "user_id": user_id}
+                metadata={"name": file.name, "user_id": user_id},
+                strategy=strategy
             )
             # Also index at sentence level for in-document search
             await rag.index_file_sentences(
@@ -206,10 +209,13 @@ async def update_file(
     if update.content is not None or update.name is not None:
         try:
             rag = RAGService(db)
+            # Auto-select chunking strategy based on document type
+            strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file_content, file_name)
             await rag.index_file(
                 file_id=file_id,
                 content=file_content,
-                metadata={"name": file_name, "user_id": user_id}
+                metadata={"name": file_name, "user_id": user_id},
+                strategy=strategy
             )
             # Also re-index at sentence level for in-document search
             await rag.index_file_sentences(
@@ -265,6 +271,8 @@ class SearchRequest(BaseModel):
     query: str
     file_ids: list[str] | None = None
     top_k: int = 5
+    use_hybrid: bool = True  # Use hybrid search (vector + keyword with RRF)
+    use_reranking: bool = False  # Use GPT reranking for improved relevance
 
 
 @router.post("/search")
@@ -273,17 +281,43 @@ async def search_files(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth)
 ):
-    """Search files using RAG (within user's files)."""
+    """Search files using RAG (within user's files).
+
+    Supports three search modes:
+    - Basic: Pure vector similarity search (use_hybrid=False, use_reranking=False)
+    - Hybrid: Vector + keyword search with RRF fusion (use_hybrid=True)
+    - Hybrid + Reranking: Hybrid search with GPT reranking (use_reranking=True)
+    """
     user_id = get_user_id(token)
 
     try:
         rag = RAGService(db)
-        results = await rag.search(
-            query=request.query,
-            file_ids=request.file_ids,
-            top_k=request.top_k,
-            user_id=user_id
-        )
+
+        if request.use_reranking:
+            # Full pipeline: hybrid search + GPT reranking
+            results = await rag.hybrid_search_with_rerank(
+                query=request.query,
+                file_ids=request.file_ids,
+                top_k=request.top_k,
+                user_id=user_id
+            )
+        elif request.use_hybrid:
+            # Hybrid search: vector + keyword with RRF
+            results = await rag.hybrid_search(
+                query=request.query,
+                file_ids=request.file_ids,
+                top_k=request.top_k,
+                user_id=user_id
+            )
+        else:
+            # Basic: pure vector similarity search
+            results = await rag.search(
+                query=request.query,
+                file_ids=request.file_ids,
+                top_k=request.top_k,
+                user_id=user_id
+            )
+
         return {"results": results}
     except Exception as e:
         logger.error(f"Search error: {e}")
@@ -291,11 +325,12 @@ async def search_files(
 
 
 class InDocSearchRequest(BaseModel):
-    """In-document search request model for sentence-level semantic search."""
+    """In-document search request model for hybrid sentence-level search."""
     query: str
     file_id: str
     top_k: int = 10
-    min_score: float = 0.4  # Minimum similarity score (0-1), default 0.4 for OpenAI embeddings
+    min_score: float = 0.3  # Minimum similarity score (0-1)
+    use_hybrid: bool = True  # Use hybrid search (semantic + keyword with RRF)
 
 
 @router.post("/search/in-document")
@@ -304,10 +339,11 @@ async def search_in_document(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth)
 ):
-    """Search within a single document at sentence level.
+    """Search within a single document using sentence-level chunks.
 
-    This endpoint uses sentence-level chunking for precise in-document
-    semantic search, enabling accurate highlighting in the editor.
+    Supports two search modes:
+    - Hybrid (default): Combines semantic (vector) and keyword (BM25) search with RRF fusion
+    - Semantic only: Pure vector similarity search (use_hybrid=False)
 
     Results are filtered by min_score to only return sufficiently similar matches.
     """
@@ -329,30 +365,21 @@ async def search_in_document(
 
         rag = RAGService(db)
 
-        # Check if sentence index exists, if not create it
-        # Use a low min_score for existence check
-        existing = await rag.search_sentences(
-            query=request.query,
-            file_id=request.file_id,
-            top_k=1,
-            min_score=0.0  # Don't filter for existence check
-        )
-
-        if not existing:
-            # Index at sentence level first
-            logger.info(f"Creating sentence index for file {request.file_id}")
-            await rag.index_file_sentences(
-                file_id=request.file_id,
-                content=file.content,
-                metadata={"name": file.name, "user_id": user_id}
-            )
-
-        # Perform sentence-level search with score filtering
+        # Use sentence-level search for precise in-document matching
         results = await rag.search_sentences(
             query=request.query,
             file_id=request.file_id,
             top_k=request.top_k,
-            min_score=request.min_score
+            min_score=request.min_score,
+            use_hybrid=request.use_hybrid
+        )
+
+        # Calculate scores for logging
+        scores = [(1 - r.get("distance", 1)) for r in results]
+        mode = "hybrid" if request.use_hybrid else "semantic"
+        logger.info(
+            f"In-document search ({mode}): query='{request.query}', file_id={request.file_id}, "
+            f"results={len(results)}, scores={scores}"
         )
 
         return {"results": results}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { Editor } from "@tiptap/react";
 import { X, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(
     null
   );
+  const [showAbove, setShowAbove] = useState(false);
+  const [errorRect, setErrorRect] = useState<DOMRect | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
   // Handle click on spellcheck error
@@ -36,6 +38,8 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       if (!errorElement) {
         setActiveMatch(null);
         setPosition(null);
+        setErrorRect(null);
+        setShowAbove(false);
         return;
       }
 
@@ -52,12 +56,15 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       if (match) {
         setActiveMatch(match);
 
-        // Position popup below the error
+        // Store the error element rect for positioning
         const rect = errorElement.getBoundingClientRect();
+        setErrorRect(rect);
+
+        // Calculate initial x position
         const viewportWidth = window.innerWidth;
         const popupWidth = 280; // Approximate popup width
+        const gap = 4;
 
-        // Calculate x position, ensuring it stays within viewport
         let x = rect.left;
         if (x + popupWidth > viewportWidth - 16) {
           x = viewportWidth - popupWidth - 16;
@@ -66,7 +73,9 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
           x = 16;
         }
 
-        setPosition({ x, y: rect.bottom + 4 });
+        // Initial position below the error (will be adjusted in useLayoutEffect)
+        setShowAbove(false);
+        setPosition({ x, y: rect.bottom + gap });
       }
     };
 
@@ -74,6 +83,8 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
     const handleScroll = () => {
       setActiveMatch(null);
       setPosition(null);
+      setErrorRect(null);
+      setShowAbove(false);
     };
 
     // Close popup on escape key
@@ -81,6 +92,8 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       if (e.key === "Escape") {
         setActiveMatch(null);
         setPosition(null);
+        setErrorRect(null);
+        setShowAbove(false);
       }
     };
 
@@ -96,6 +109,35 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
     };
   }, [editor]);
 
+  // Measure actual popup height and reposition if needed
+  useLayoutEffect(() => {
+    if (!popupRef.current || !position || !errorRect) return;
+
+    const popup = popupRef.current;
+    const popupRect = popup.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const gap = 4;
+
+    // Check if popup is cut off at the bottom
+    if (popupRect.bottom > viewportHeight - 16) {
+      const spaceAbove = errorRect.top - gap;
+      const actualPopupHeight = popupRect.height;
+
+      // If there's more space above, position above
+      if (spaceAbove >= actualPopupHeight) {
+        setShowAbove(true);
+        setPosition((prev) =>
+          prev ? { x: prev.x, y: errorRect.top - actualPopupHeight - gap } : null
+        );
+      } else if (spaceAbove > viewportHeight - errorRect.bottom - gap) {
+        // More space above than below, position above even if it might be slightly cut
+        setShowAbove(true);
+        const y = Math.max(16, errorRect.top - actualPopupHeight - gap);
+        setPosition((prev) => (prev ? { x: prev.x, y } : null));
+      }
+    }
+  }, [position, errorRect, activeMatch]);
+
   // Apply a correction
   const handleApplyCorrection = useCallback(
     (replacement: string) => {
@@ -106,6 +148,8 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       if (activeMatch.from < 0 || activeMatch.to > docSize) {
         setActiveMatch(null);
         setPosition(null);
+        setErrorRect(null);
+        setShowAbove(false);
         return;
       }
 
@@ -116,6 +160,8 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       );
       setActiveMatch(null);
       setPosition(null);
+      setErrorRect(null);
+      setShowAbove(false);
     },
     [editor, activeMatch]
   );
@@ -129,6 +175,8 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
     if (activeMatch.from < 0 || activeMatch.to > docSize) {
       setActiveMatch(null);
       setPosition(null);
+      setErrorRect(null);
+      setShowAbove(false);
       return;
     }
 
@@ -144,12 +192,16 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
     }
     setActiveMatch(null);
     setPosition(null);
+    setErrorRect(null);
+    setShowAbove(false);
   }, [editor, activeMatch]);
 
   // Close the popup
   const handleClose = useCallback(() => {
     setActiveMatch(null);
     setPosition(null);
+    setErrorRect(null);
+    setShowAbove(false);
   }, []);
 
   if (!activeMatch || !position) return null;

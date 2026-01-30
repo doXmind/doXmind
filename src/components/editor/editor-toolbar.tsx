@@ -28,6 +28,7 @@ import {
   FileSearch,
   Loader2,
   Sigma,
+  SpellCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -67,6 +68,8 @@ export function EditorToolbar({
     setAutocompleteEnabled,
     autocompleteTriggerMode,
     setAutocompleteTriggerMode,
+    spellcheckEnabled,
+    setSpellcheckEnabled,
   } = useEditorStore();
 
   const handleLinkConfirm = (url: string) => {
@@ -258,13 +261,19 @@ export function EditorToolbar({
       {/* Spacer to push right-side items */}
       <div className="flex-1" />
 
-      {/* Right side: Search, Review, AI Autocomplete */}
+      {/* Right side: Search, Spellcheck, Review, AI Autocomplete */}
       <ToolbarGroup>
         <ToolbarButton
           icon={<Search className="h-4 w-4" />}
           onClick={() => onSearchClick?.()}
           isActive={isSearchActive}
           tooltip="Search (Ctrl+F)"
+        />
+        <ToolbarButton
+          icon={<SpellCheck className="h-4 w-4" />}
+          onClick={() => setSpellcheckEnabled(!spellcheckEnabled)}
+          isActive={spellcheckEnabled}
+          tooltip={spellcheckEnabled ? "Spellcheck: On" : "Spellcheck: Off"}
         />
       </ToolbarGroup>
 

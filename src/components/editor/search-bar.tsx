@@ -74,11 +74,22 @@ export function SearchBar() {
         setShowAIResults(true);
 
         // Convert to SemanticChunk format for editor highlighting
+        // Include start/end positions from backend for accurate highlighting
         const semanticChunks: SemanticChunk[] = response.results.map((r) => ({
           content: r.content,
           score: r.distance !== undefined ? 1 - r.distance : 0.5,
+          start: r.metadata?.start as number | undefined,
+          end: r.metadata?.end as number | undefined,
         }));
+        console.log("[SearchBar] API results:", response.results.length);
+        console.log("[SearchBar] Setting semantic chunks:", semanticChunks);
         editor?.commands.setSemanticResults(semanticChunks);
+
+        // Log what the plugin state looks like after setting
+        setTimeout(() => {
+          const state = editor ? SearchPluginKey.getState(editor.state) : null;
+          console.log("[SearchBar] Plugin state after set:", state?.semanticResults.length ?? 0, "results");
+        }, 100);
       } else {
         setAIResults([]);
         editor?.commands.clearSemanticResults();

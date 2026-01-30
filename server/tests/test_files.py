@@ -269,10 +269,11 @@ class TestSearchFilesEndpoint:
     """Tests for POST /api/files/search endpoint."""
 
     async def test_search_files_success(self, client: AsyncClient):
-        """Should return search results."""
+        """Should return search results using hybrid search by default."""
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search = AsyncMock(return_value=[
+            # Default is use_hybrid=True, so hybrid_search is called
+            mock_rag.hybrid_search = AsyncMock(return_value=[
                 {"content": "Result 1", "file_id": "file-1", "score": 0.95},
                 {"content": "Result 2", "file_id": "file-2", "score": 0.85},
             ])
@@ -289,7 +290,7 @@ class TestSearchFilesEndpoint:
             assert len(data["results"]) == 2
 
     async def test_search_files_with_file_ids_filter(self, client: AsyncClient):
-        """Should filter search by file IDs."""
+        """Should filter search by file IDs using basic search."""
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
             mock_rag.search = AsyncMock(return_value=[])
@@ -300,7 +301,8 @@ class TestSearchFilesEndpoint:
                 json={
                     "query": "test query",
                     "file_ids": ["file-1", "file-2"],
-                    "top_k": 3
+                    "top_k": 3,
+                    "use_hybrid": False  # Test basic search mode
                 }
             )
 
@@ -316,7 +318,7 @@ class TestSearchFilesEndpoint:
         """Should return 500 on search error."""
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search = AsyncMock(side_effect=Exception("Search failed"))
+            mock_rag.hybrid_search = AsyncMock(side_effect=Exception("Search failed"))
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
@@ -351,7 +353,7 @@ class TestInDocumentSearchEndpoint:
     async def test_in_document_search_success(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        """Should return sentence-level search results."""
+        """Should return search results filtered by file_id."""
         # Create file
         file = File(name="Test File", content="This is test content for searching.")
         db_session.add(file)
@@ -360,8 +362,9 @@ class TestInDocumentSearchEndpoint:
 
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
+            # Uses search_sentences for in-document search
             mock_rag.search_sentences = AsyncMock(return_value=[
-                {"content": "This is test content", "start": 0, "end": 20, "score": 0.9}
+                {"content": "This is test content", "distance": 0.1}  # score = 0.9
             ])
             mock_rag_class.return_value = mock_rag
 
@@ -378,38 +381,42 @@ class TestInDocumentSearchEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert "results" in data
+            # Verify search_sentences was called with file_id
+            mock_rag.search_sentences.assert_called_once()
 
-    async def test_in_document_search_creates_index_if_missing(
+    async def test_in_document_search_filters_by_min_score(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        """Should create sentence index if it doesn't exist."""
+        """Should pass min_score to RAG service which handles filtering."""
         # Create file
-        file = File(name="Test File", content="Some content to index.")
+        file = File(name="Test File", content="Some content to search.")
         db_session.add(file)
         await db_session.commit()
         await db_session.refresh(file)
 
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            # First call returns empty (no index), second returns results
-            mock_rag.search_sentences = AsyncMock(side_effect=[
-                [],  # No existing index
-                [{"content": "Some content", "score": 0.8}]  # After indexing
+            # RAG service returns already-filtered results based on min_score
+            mock_rag.search_sentences = AsyncMock(return_value=[
+                {"content": "High score result", "distance": 0.1}   # score = 0.9
             ])
-            mock_rag.index_file_sentences = AsyncMock()
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
                 "/api/files/search/in-document",
                 json={
                     "query": "content",
-                    "file_id": file.id
+                    "file_id": file.id,
+                    "min_score": 0.5  # Passed to RAG service for filtering
                 }
             )
 
             assert response.status_code == 200
-            # Should have tried to create index
-            mock_rag.index_file_sentences.assert_called_once()
+            data = response.json()
+            assert len(data["results"]) == 1
+            # Verify min_score was passed to search_sentences
+            call_kwargs = mock_rag.search_sentences.call_args[1]
+            assert call_kwargs["min_score"] == 0.5
 
     async def test_in_document_search_error(
         self, client: AsyncClient, db_session: AsyncSession
@@ -645,7 +652,7 @@ class TestFileModels:
 
         request = InDocSearchRequest(query="test", file_id="file-1")
         assert request.top_k == 10
-        assert request.min_score == 0.4
+        assert request.min_score == 0.3
 
 
 # =============================================================================
@@ -869,7 +876,7 @@ class TestExtendedInDocumentSearch:
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
             mock_rag.search_sentences = AsyncMock(return_value=[
-                {"content": "Test", "score": 0.9}
+                {"content": "Test", "distance": 0.1}  # score = 0.9
             ])
             mock_rag_class.return_value = mock_rag
 
@@ -882,7 +889,7 @@ class TestExtendedInDocumentSearch:
             )
 
             assert response.status_code == 200
-            # Default top_k=10, min_score=0.4
+            # Default top_k=10, min_score=0.3
 
     async def test_in_document_search_with_custom_top_k(
         self, client: AsyncClient, db_session: AsyncSession
@@ -895,12 +902,9 @@ class TestExtendedInDocumentSearch:
 
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            # First call returns empty (existence check), second call returns results
-            mock_rag.search_sentences = AsyncMock(side_effect=[
-                [],  # First call - existence check
-                [{"content": "Result", "score": 0.8}]  # Second call - actual search
+            mock_rag.search_sentences = AsyncMock(return_value=[
+                {"content": "Result", "distance": 0.2}  # score = 0.8
             ])
-            mock_rag.index_file_sentences = AsyncMock()
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(

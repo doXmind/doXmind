@@ -8,6 +8,7 @@
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SearchRange, SemanticRange, SemanticChunk } from "./search-types";
+import { findTextInDocument } from "../diff-review/position-mapping";
 
 /**
  * Escape special regex characters in a string
@@ -60,78 +61,142 @@ export function processSearches(
 }
 
 /**
- * Build a position map from document text to document positions
+ * Normalize text for fuzzy matching - removes extra whitespace,
+ * markdown syntax, and converts to lowercase for comparison.
  */
-function buildPositionMap(doc: PMNode): { fullText: string; posMap: number[] } {
-  let fullText = "";
-  const posMap: number[] = []; // posMap[textIndex] = documentPos
-
-  doc.descendants((node, pos) => {
-    if (node.isText && node.text) {
-      for (let i = 0; i < node.text.length; i++) {
-        posMap.push(pos + i);
-      }
-      fullText += node.text;
-    } else if (node.isBlock && fullText.length > 0) {
-      // Add newline for block boundaries
-      posMap.push(pos);
-      fullText += "\n";
-    }
-  });
-
-  return { fullText, posMap };
+function normalizeForMatch(text: string): string {
+  return text
+    .replace(/#{1,6}\s*/g, "") // Remove markdown headers
+    .replace(/[*_~`]/g, "") // Remove markdown emphasis
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Extract link text
+    .replace(/\s+/g, " ") // Normalize whitespace
+    .trim()
+    .toLowerCase();
 }
 
 /**
- * Normalize whitespace: collapse multiple spaces/newlines into single space
+ * Find approximate match in document text using normalized comparison.
+ * Finds ALL text nodes containing matching words and returns a range covering them.
  */
-function normalizeWhitespace(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
+function findFuzzyMatch(
+  doc: PMNode,
+  searchText: string
+): { from: number; to: number } | null {
+  const normalizedSearch = normalizeForMatch(searchText);
 
-/**
- * Build a normalized position map that maps normalized text indices to document positions
- * This handles whitespace differences between chunk content and document text
- */
-function buildNormalizedPositionMap(doc: PMNode): {
-  normalizedText: string;
-  posMap: number[];
-} {
-  let normalizedText = "";
-  const posMap: number[] = [];
+  if (normalizedSearch.length < 10) return null;
+
+  // Extract significant words (longer than 3 chars)
+  const searchWords = normalizedSearch.split(" ").filter(w => w.length > 3);
+
+  if (searchWords.length < 2) return null;
+
+  // Use ALL significant words for better coverage
+  const significantWords = searchWords;
+
+  // Collect text nodes with positions
+  const textSegments: Array<{
+    pos: number;
+    endPos: number;
+    text: string;
+    normalizedText: string;
+    matchedWords: Set<string>;
+  }> = [];
 
   doc.descendants((node, pos) => {
     if (node.isText && node.text) {
-      for (let i = 0; i < node.text.length; i++) {
-        const char = node.text[i];
-        // Collapse whitespace
-        if (/\s/.test(char)) {
-          // Only add space if last char wasn't a space
-          if (normalizedText.length === 0 || normalizedText[normalizedText.length - 1] !== " ") {
-            posMap.push(pos + i);
-            normalizedText += " ";
-          }
-        } else {
-          posMap.push(pos + i);
-          normalizedText += char;
+      const normalizedText = normalizeForMatch(node.text);
+      const matchedWords = new Set<string>();
+
+      for (const word of significantWords) {
+        if (normalizedText.includes(word)) {
+          matchedWords.add(word);
         }
       }
-    } else if (node.isBlock && normalizedText.length > 0) {
-      // Add space for block boundaries if not already ending with space
-      if (normalizedText[normalizedText.length - 1] !== " ") {
-        posMap.push(pos);
-        normalizedText += " ";
-      }
+
+      textSegments.push({
+        pos,
+        endPos: pos + node.text.length,
+        text: node.text,
+        normalizedText,
+        matchedWords,
+      });
     }
   });
 
-  return { normalizedText, posMap };
+  // Find all segments that have ANY matching words
+  const matchingSegments = textSegments.filter(s => s.matchedWords.size > 0);
+
+  if (matchingSegments.length === 0) return null;
+
+  // Count total unique words matched across all segments
+  const allMatchedWords = new Set<string>();
+  for (const segment of matchingSegments) {
+    for (const word of segment.matchedWords) {
+      allMatchedWords.add(word);
+    }
+  }
+
+  // Need at least 40% of words to match somewhere in the document
+  if (allMatchedWords.size < Math.ceil(significantWords.length * 0.4)) {
+    return null;
+  }
+
+  // Find contiguous groups of matching segments (within 500 chars of each other)
+  const groups: Array<typeof matchingSegments> = [];
+  let currentGroup: typeof matchingSegments = [];
+
+  for (const segment of matchingSegments) {
+    if (currentGroup.length === 0) {
+      currentGroup.push(segment);
+    } else {
+      const lastSegment = currentGroup[currentGroup.length - 1];
+      // If this segment is within 500 chars of the last one, add to group
+      if (segment.pos - lastSegment.endPos < 500) {
+        currentGroup.push(segment);
+      } else {
+        // Start new group
+        groups.push(currentGroup);
+        currentGroup = [segment];
+      }
+    }
+  }
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+
+  // Find the group with the most matched words
+  let bestGroup: typeof matchingSegments | null = null;
+  let bestGroupScore = 0;
+
+  for (const group of groups) {
+    const groupWords = new Set<string>();
+    for (const segment of group) {
+      for (const word of segment.matchedWords) {
+        groupWords.add(word);
+      }
+    }
+    const score = groupWords.size / significantWords.length;
+    if (score > bestGroupScore) {
+      bestGroupScore = score;
+      bestGroup = group;
+    }
+  }
+
+  if (!bestGroup || bestGroup.length === 0) return null;
+
+  // Return range covering the entire best group
+  const from = bestGroup[0].pos;
+  const to = bestGroup[bestGroup.length - 1].endPos;
+
+  console.log("[findFuzzyMatch] Found group with", bestGroup.length, "segments, score:", bestGroupScore);
+
+  return { from, to };
 }
 
 /**
- * Find semantic match positions in document
- * Returns ranges where the chunk content appears
- * Optimized for sentence-level chunks from the API
+ * Find semantic match positions in document.
+ * Uses exact match first, falls back to fuzzy matching for better recall.
  */
 export function findSemanticRanges(
   doc: PMNode,
@@ -139,109 +204,54 @@ export function findSemanticRanges(
 ): SemanticRange[] {
   const results: SemanticRange[] = [];
 
-  const { fullText, posMap } = buildPositionMap(doc);
-  // Also build normalized version for fallback matching
-  const { normalizedText, posMap: normalizedPosMap } = buildNormalizedPositionMap(doc);
+  console.log("[findSemanticRanges] Processing", chunks.length, "chunks");
+  console.log("[findSemanticRanges] Doc text length:", doc.textContent.length);
+  console.log("[findSemanticRanges] Doc text preview:", doc.textContent.substring(0, 200));
 
-  // For each chunk (now sentence-level), find its position in the document
   for (const chunk of chunks) {
-    // Clean and normalize the chunk content for matching
-    const cleanChunk = chunk.content
-      .replace(/<[^>]+>/g, "") // Remove any HTML tags (just in case)
+    // Clean the chunk content - remove HTML and markdown syntax
+    let cleanChunk = chunk.content
+      .replace(/<[^>]+>/g, "") // Remove HTML tags
+      .replace(/&lt;/g, "<")   // Decode HTML entities
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
       .trim();
 
+    // Remove markdown list markers (- , * , 1. ) at the start
+    cleanChunk = cleanChunk.replace(/^[-*+]\s+/, "");
+    cleanChunk = cleanChunk.replace(/^\d+\.\s+/, "");
+    // Remove markdown header markers (# ) at the start
+    cleanChunk = cleanChunk.replace(/^#{1,6}\s+/, "");
+
+    console.log("[findSemanticRanges] Looking for chunk:", cleanChunk.substring(0, 80));
+
     if (cleanChunk.length < 5) {
+      console.log("[findSemanticRanges] Skipped - too short");
       continue;
     }
 
-    let found = false;
+    // Try exact match first
+    let found = findTextInDocument(doc, cleanChunk);
 
-    // Strategy 1: Try direct match in original text first (most accurate)
-    let directIdx = fullText.indexOf(cleanChunk);
-    if (directIdx !== -1) {
-      const from = posMap[directIdx];
-      const endIdx = Math.min(directIdx + cleanChunk.length - 1, posMap.length - 1);
-      const to = (posMap[endIdx] ?? from) + 1; // +1 because 'to' is exclusive
-
-      if (from !== undefined && from < to) {
-        results.push({ from, to, score: chunk.score });
-        found = true;
+    if (found) {
+      console.log("[findSemanticRanges] Exact match found at", found.from, "-", found.to);
+    } else {
+      // If exact match fails, try fuzzy matching
+      console.log("[findSemanticRanges] Exact match failed, trying fuzzy...");
+      found = findFuzzyMatch(doc, cleanChunk);
+      if (found) {
+        console.log("[findSemanticRanges] Fuzzy match found at", found.from, "-", found.to);
+      } else {
+        console.log("[findSemanticRanges] No match found for this chunk");
       }
     }
 
-    if (found) continue;
-
-    // Strategy 2: Try case-insensitive match
-    const lowerFullText = fullText.toLowerCase();
-    const lowerChunk = cleanChunk.toLowerCase();
-    directIdx = lowerFullText.indexOf(lowerChunk);
-    if (directIdx !== -1) {
-      const from = posMap[directIdx];
-      const endIdx = Math.min(directIdx + cleanChunk.length - 1, posMap.length - 1);
-      const to = (posMap[endIdx] ?? from) + 1;
-
-      if (from !== undefined && from < to) {
-        results.push({ from, to, score: chunk.score });
-        found = true;
-      }
-    }
-
-    if (found) continue;
-
-    // Strategy 3: Try normalized whitespace match (handles newlines, indentation)
-    const normalizedChunk = normalizeWhitespace(cleanChunk).toLowerCase();
-    if (normalizedChunk.length >= 5) {
-      const lowerNormalizedText = normalizedText.toLowerCase();
-      directIdx = lowerNormalizedText.indexOf(normalizedChunk);
-      if (directIdx !== -1) {
-        const from = normalizedPosMap[directIdx];
-        const endIdx = Math.min(directIdx + normalizedChunk.length - 1, normalizedPosMap.length - 1);
-        const to = (normalizedPosMap[endIdx] ?? from) + 1;
-
-        if (from !== undefined && from < to) {
-          results.push({ from, to, score: chunk.score });
-          found = true;
-        }
-      }
-    }
-
-    if (found) continue;
-
-    // Strategy 4: Try matching without punctuation at the end
-    const chunkNoPunctEnd = cleanChunk.replace(/[.,!?;:，。！？；：、]+$/, "");
-    if (chunkNoPunctEnd.length >= 5 && chunkNoPunctEnd !== cleanChunk) {
-      directIdx = lowerFullText.indexOf(chunkNoPunctEnd.toLowerCase());
-      if (directIdx !== -1) {
-        const from = posMap[directIdx];
-        const endIdx = Math.min(directIdx + chunkNoPunctEnd.length - 1, posMap.length - 1);
-        const to = (posMap[endIdx] ?? from) + 1;
-
-        if (from !== undefined && from < to) {
-          results.push({ from, to, score: chunk.score });
-          found = true;
-        }
-      }
-    }
-
-    if (found) continue;
-
-    // Strategy 5: Try finding a key phrase (first 30 chars, normalized)
-    const keyPhrase = normalizeWhitespace(cleanChunk).slice(0, 30).toLowerCase();
-    if (keyPhrase.length >= 10) {
-      const lowerNormalizedText = normalizedText.toLowerCase();
-      directIdx = lowerNormalizedText.indexOf(keyPhrase);
-      if (directIdx !== -1) {
-        const from = normalizedPosMap[directIdx];
-        const endIdx = Math.min(directIdx + keyPhrase.length - 1, normalizedPosMap.length - 1);
-        const to = (normalizedPosMap[endIdx] ?? from) + 1;
-
-        if (from !== undefined && from < to) {
-          results.push({ from, to, score: chunk.score });
-        }
-      }
+    if (found) {
+      results.push({ from: found.from, to: found.to, score: chunk.score });
     }
   }
 
+  console.log("[findSemanticRanges] Total results:", results.length);
   return dedupeRanges(results);
 }
 

@@ -163,6 +163,8 @@ export interface SearchResult {
   metadata: {
     file_id: string;
     chunk_index: number;
+    start?: number;  // Position in original document (for highlighting)
+    end?: number;    // Position in original document (for highlighting)
     [key: string]: unknown;
   };
   distance?: number;

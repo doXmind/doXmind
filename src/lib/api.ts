@@ -456,9 +456,9 @@ export class ApiClient {
    * @param query - Search query
    * @param fileId - File to search within
    * @param topK - Maximum number of results (default 10)
-   * @param minScore - Minimum similarity score 0-1 (default 0.4 for OpenAI embeddings)
+   * @param minScore - Minimum similarity score 0-1 (default 0.15 for sentence-level search)
    */
-  async searchInDocument(query: string, fileId: string, topK: number = 10, minScore: number = 0.4, signal?: AbortSignal) {
+  async searchInDocument(query: string, fileId: string, topK: number = 10, minScore: number = 0.15, signal?: AbortSignal) {
     return this.request<SearchResults>("/api/files/search/in-document", {
       method: "POST",
       body: JSON.stringify({ query, file_id: fileId, top_k: topK, min_score: minScore }),

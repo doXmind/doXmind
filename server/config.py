@@ -148,9 +148,27 @@ class Settings(BaseSettings):
     autocomplete_cache_ttl_seconds: int = 300  # 5 minutes
 
     # RAG settings
-    chunk_size: int = 1000
-    chunk_overlap: int = 200
+    chunk_size: int = 4000
+    chunk_overlap: int = 0  # No overlap - cleaner search results
     sentence_min_length: int = 5
+
+    # Advanced chunking settings
+    chunking_strategy: str = "auto"  # "auto", "overlap", "semantic", "recursive_markdown"
+    semantic_min_chunk_size: int = 200
+    markdown_max_chunk_size: int = 2000  # Max size for TEXT chunks (code/tables always kept whole)
+    preserve_code_blocks: bool = True
+    preserve_tables: bool = True
+
+    # Hybrid search settings (vector + keyword with RRF fusion)
+    hybrid_search_enabled: bool = True
+    semantic_weight: float = 0.7  # Weight for vector similarity search
+    keyword_weight: float = 0.3  # Weight for full-text keyword search
+    rrf_k: int = 60  # RRF constant (standard value)
+
+    # Reranking settings (GPT-based with structured outputs)
+    reranking_enabled: bool = False  # Disabled by default (adds latency/cost)
+    reranking_candidates: int = 20  # Number of candidates to fetch before reranking
+    reranking_model: str = "gpt-5-nano"  # Fast & cheap model for reranking
 
     class Config:
         env_file = str(_BASE_DIR / ".env")

@@ -553,7 +553,8 @@ class TestSearchFunctionality:
         """Search should only search in specified file_ids."""
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search = AsyncMock(return_value=[
+            # Default search uses hybrid_search (use_hybrid=True)
+            mock_rag.hybrid_search = AsyncMock(return_value=[
                 {"content": "Result", "file_id": "f1", "score": 0.9}
             ])
             mock_rag_class.return_value = mock_rag
@@ -569,16 +570,16 @@ class TestSearchFunctionality:
 
             assert response.status_code == 200
 
-            # Verify file_ids was passed to RAG
-            call_kwargs = mock_rag.search.call_args[1]
+            # Verify file_ids was passed to RAG hybrid_search
+            call_kwargs = mock_rag.hybrid_search.call_args[1]
             assert call_kwargs["file_ids"] == ["f1", "f2"]
             assert call_kwargs["top_k"] == 3
 
     @pytest.mark.asyncio
-    async def test_in_document_search_creates_index_if_missing(
+    async def test_in_document_search_returns_empty_when_no_matches(
         self, client: AsyncClient, db_session: AsyncSession
     ):
-        """In-document search should create sentence index if missing."""
+        """In-document search should return empty results when no matches found."""
         file = File(name="Not Indexed", content="This content needs indexing.")
         db_session.add(file)
         await db_session.commit()
@@ -586,12 +587,8 @@ class TestSearchFunctionality:
 
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            # First call returns empty (no index), second call returns results
-            mock_rag.search_sentences = AsyncMock(side_effect=[
-                [],  # Existence check - no index
-                [{"content": "This content", "score": 0.8}]  # After indexing
-            ])
-            mock_rag.index_file_sentences = AsyncMock()
+            # Returns empty list when no matches
+            mock_rag.search_sentences = AsyncMock(return_value=[])
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
@@ -603,9 +600,8 @@ class TestSearchFunctionality:
             )
 
             assert response.status_code == 200
-
-            # Should have called index_file_sentences
-            mock_rag.index_file_sentences.assert_called_once()
+            data = response.json()
+            assert data["results"] == []
 
     @pytest.mark.asyncio
     async def test_in_document_search_respects_min_score(
@@ -695,7 +691,8 @@ class TestAPIResponseFormat:
         """Search should return results array."""
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search = AsyncMock(return_value=[])
+            # Default search uses hybrid_search (use_hybrid=True)
+            mock_rag.hybrid_search = AsyncMock(return_value=[])
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(

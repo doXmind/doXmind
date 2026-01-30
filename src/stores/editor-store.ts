@@ -74,6 +74,9 @@ interface EditorState {
   autocompleteSuggestion: string | null;
   autocompleteTriggerMode: "auto" | "manual";
 
+  // Spellcheck State
+  spellcheckEnabled: boolean;
+
   // Chat Context State (for "Ask in Chat" feature - shown as Context Pills)
   chatContexts: ChatContextItem[];
 
@@ -104,6 +107,9 @@ interface EditorState {
   setAutocompleteEnabled: (enabled: boolean) => void;
   setAutocompleteSuggestion: (suggestion: string | null) => void;
   setAutocompleteTriggerMode: (mode: "auto" | "manual") => void;
+
+  // Spellcheck Actions
+  setSpellcheckEnabled: (enabled: boolean) => void;
 
   // Chat Context Actions
   addChatContext: (context: ChatContextInput) => void;
@@ -138,6 +144,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   autocompleteEnabled: true,
   autocompleteSuggestion: null,
   autocompleteTriggerMode: "auto",
+  spellcheckEnabled: true,
   chatContexts: [],
   pendingEdits: [],
   imageModalOpen: false,
@@ -162,6 +169,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setAutocompleteSuggestion: (suggestion) =>
     set({ autocompleteSuggestion: suggestion }),
   setAutocompleteTriggerMode: (mode) => set({ autocompleteTriggerMode: mode }),
+
+  // Spellcheck Actions
+  setSpellcheckEnabled: (enabled) => set({ spellcheckEnabled: enabled }),
 
   // Chat Context Actions
   addChatContext: (context) => set((state) => ({
