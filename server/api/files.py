@@ -1,5 +1,6 @@
 """File management API endpoints with user data isolation."""
 
+import hashlib
 import logging
 from datetime import datetime
 from typing import Any, cast
@@ -30,20 +31,28 @@ def get_user_id(token: TokenData) -> str | None:
     return token.sub
 
 
+def compute_content_hash(content: str) -> str:
+    """Compute SHA-256 hash of content for change detection."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
 class FileCreate(BaseModel):
     """File creation model."""
+
     name: str
     content: str = ""
 
 
 class FileUpdate(BaseModel):
     """File update model."""
+
     name: str | None = None
     content: str | None = None
 
 
 class FileResponse(BaseModel):
     """File response model."""
+
     id: str
     name: str
     content: str
@@ -55,10 +64,7 @@ class FileResponse(BaseModel):
 
 
 @router.get("/", response_model=list[FileResponse])
-async def list_files(
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
-):
+async def list_files(db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)):
     """List files for the current user."""
     user_id = get_user_id(token)
 
@@ -75,7 +81,7 @@ async def list_files(
             name=f.name,
             content=f.content,
             created_at=f.created_at.isoformat(),
-            updated_at=f.updated_at.isoformat()
+            updated_at=f.updated_at.isoformat(),
         )
         for f in files
     ]
@@ -83,17 +89,18 @@ async def list_files(
 
 @router.post("/", response_model=FileResponse)
 async def create_file(
-    file: FileCreate,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    file: FileCreate, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
     """Create a new file for the current user."""
     user_id = get_user_id(token)
+    content_hash = compute_content_hash(file.content) if file.content else None
 
     try:
         result = await db.execute(
             insert(File)
-            .values(name=file.name, content=file.content, user_id=user_id)
+            .values(
+                name=file.name, content=file.content, content_hash=content_hash, user_id=user_id
+            )
             .returning(File.id, File.name, File.content, File.created_at, File.updated_at)
         )
         await db.commit()
@@ -112,13 +119,13 @@ async def create_file(
                 file_id=file_id,
                 content=file.content,
                 metadata={"name": file.name, "user_id": user_id},
-                strategy=strategy
+                strategy=strategy,
             )
             # Also index at sentence level for in-document search
             await rag.index_file_sentences(
                 file_id=file_id,
                 content=file.content,
-                metadata={"name": file.name, "user_id": user_id}
+                metadata={"name": file.name, "user_id": user_id},
             )
         except Exception as e:
             logger.warning(f"Failed to index file: {e}")
@@ -128,7 +135,7 @@ async def create_file(
             name=cast(str, created["name"]),
             content=cast(str, created["content"]),
             created_at=cast(datetime, created["created_at"]).isoformat(),
-            updated_at=cast(datetime, created["updated_at"]).isoformat()
+            updated_at=cast(datetime, created["updated_at"]).isoformat(),
         )
     except Exception as e:
         await db.rollback()
@@ -138,17 +145,14 @@ async def create_file(
         # This happens when token is valid but user was deleted or never created
         if "ForeignKeyViolationError" in error_str and "user_id" in error_str:
             raise HTTPException(
-                status_code=401,
-                detail="User session invalid. Please log in again."
+                status_code=401, detail="User session invalid. Please log in again."
             )
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{file_id}", response_model=FileResponse)
 async def get_file(
-    file_id: str,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
     """Get a file by ID (must belong to current user)."""
     user_id = get_user_id(token)
@@ -167,7 +171,7 @@ async def get_file(
         name=file.name,
         content=file.content,
         created_at=file.created_at.isoformat(),
-        updated_at=file.updated_at.isoformat()
+        updated_at=file.updated_at.isoformat(),
     )
 
 
@@ -176,7 +180,7 @@ async def update_file(
     file_id: str,
     update: FileUpdate,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    token: TokenData = Depends(require_auth),
 ):
     """Update a file (must belong to current user)."""
     user_id = get_user_id(token)
@@ -190,10 +194,19 @@ async def update_file(
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
+    # Determine if re-indexing is needed based on actual content changes
+    need_reindex = False
+
     if update.name is not None:
         file.name = update.name
+        need_reindex = True  # Name change affects metadata in index
+
     if update.content is not None:
-        file.content = update.content
+        new_hash = compute_content_hash(update.content)
+        if file.content_hash != new_hash:
+            file.content = update.content
+            file.content_hash = new_hash
+            need_reindex = True
 
     await db.commit()
     await db.refresh(file)
@@ -205,8 +218,8 @@ async def update_file(
     file_created_at = file.created_at.isoformat()
     file_updated_at = file.updated_at.isoformat()
 
-    # Re-index in vector store (when content or name changes)
-    if update.content is not None or update.name is not None:
+    # Re-index in vector store only when content or name actually changed
+    if need_reindex:
         try:
             rag = RAGService(db)
             # Auto-select chunking strategy based on document type
@@ -215,13 +228,13 @@ async def update_file(
                 file_id=file_id,
                 content=file_content,
                 metadata={"name": file_name, "user_id": user_id},
-                strategy=strategy
+                strategy=strategy,
             )
             # Also re-index at sentence level for in-document search
             await rag.index_file_sentences(
                 file_id=file_id,
                 content=file_content,
-                metadata={"name": file_name, "user_id": user_id}
+                metadata={"name": file_name, "user_id": user_id},
             )
         except Exception as e:
             logger.warning(f"Failed to re-index file: {e}")
@@ -231,15 +244,13 @@ async def update_file(
         name=file_name,
         content=file_content,
         created_at=file_created_at,
-        updated_at=file_updated_at
+        updated_at=file_updated_at,
     )
 
 
 @router.delete("/{file_id}")
 async def delete_file(
-    file_id: str,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
     """Delete a file (must belong to current user)."""
     user_id = get_user_id(token)
@@ -268,6 +279,7 @@ async def delete_file(
 
 class SearchRequest(BaseModel):
     """Search request model."""
+
     query: str
     file_ids: list[str] | None = None
     top_k: int = 5
@@ -279,7 +291,7 @@ class SearchRequest(BaseModel):
 async def search_files(
     request: SearchRequest,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    token: TokenData = Depends(require_auth),
 ):
     """Search files using RAG (within user's files).
 
@@ -296,26 +308,17 @@ async def search_files(
         if request.use_reranking:
             # Full pipeline: hybrid search + GPT reranking
             results = await rag.hybrid_search_with_rerank(
-                query=request.query,
-                file_ids=request.file_ids,
-                top_k=request.top_k,
-                user_id=user_id
+                query=request.query, file_ids=request.file_ids, top_k=request.top_k, user_id=user_id
             )
         elif request.use_hybrid:
             # Hybrid search: vector + keyword with RRF
             results = await rag.hybrid_search(
-                query=request.query,
-                file_ids=request.file_ids,
-                top_k=request.top_k,
-                user_id=user_id
+                query=request.query, file_ids=request.file_ids, top_k=request.top_k, user_id=user_id
             )
         else:
             # Basic: pure vector similarity search
             results = await rag.search(
-                query=request.query,
-                file_ids=request.file_ids,
-                top_k=request.top_k,
-                user_id=user_id
+                query=request.query, file_ids=request.file_ids, top_k=request.top_k, user_id=user_id
             )
 
         return {"results": results}
@@ -326,6 +329,7 @@ async def search_files(
 
 class InDocSearchRequest(BaseModel):
     """In-document search request model for hybrid sentence-level search."""
+
     query: str
     file_id: str
     top_k: int = 10
@@ -337,7 +341,7 @@ class InDocSearchRequest(BaseModel):
 async def search_in_document(
     request: InDocSearchRequest,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    token: TokenData = Depends(require_auth),
 ):
     """Search within a single document using sentence-level chunks.
 
@@ -371,7 +375,7 @@ async def search_in_document(
             file_id=request.file_id,
             top_k=request.top_k,
             min_score=request.min_score,
-            use_hybrid=request.use_hybrid
+            use_hybrid=request.use_hybrid,
         )
 
         # Calculate scores for logging

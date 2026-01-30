@@ -20,6 +20,7 @@ def utcnow() -> datetime:
 
 class Base(DeclarativeBase):
     """Base class for all models."""
+
     pass
 
 
@@ -27,8 +28,10 @@ class Base(DeclarativeBase):
 # User Models
 # =============================================================================
 
+
 class User(Base):
     """User model for authentication and data ownership."""
+
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -54,15 +57,16 @@ class User(Base):
 
     # Relationships - User owns all their data
     files = relationship("File", back_populates="owner", cascade="all, delete-orphan")
-    conversations = relationship("Conversation", back_populates="owner", cascade="all, delete-orphan")
-
-    __table_args__ = (
-        Index('idx_users_oauth', 'oauth_provider', 'oauth_id'),
+    conversations = relationship(
+        "Conversation", back_populates="owner", cascade="all, delete-orphan"
     )
+
+    __table_args__ = (Index("idx_users_oauth", "oauth_provider", "oauth_id"),)
 
 
 class EmailVerification(Base):
     """Email verification codes for registration."""
+
     __tablename__ = "email_verifications"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -80,6 +84,7 @@ class EmailVerification(Base):
 
 class PasswordReset(Base):
     """Password reset tokens."""
+
     __tablename__ = "password_resets"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -94,14 +99,19 @@ class PasswordReset(Base):
 # Content Models
 # =============================================================================
 
+
 class File(Base):
     """File model with user ownership."""
+
     __tablename__ = "files"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)  # NULL for legacy data
+    user_id = Column(
+        String(36), ForeignKey("users.id"), nullable=True, index=True
+    )  # NULL for legacy data
     name = Column(String(255), nullable=False)
     content = Column(Text, default="")
+    content_hash = Column(String(64), nullable=True)  # SHA-256 hash for change detection
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -112,6 +122,7 @@ class File(Base):
 
 class FileVersion(Base):
     """File version model for history tracking."""
+
     __tablename__ = "file_versions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -132,17 +143,24 @@ class Conversation(Base):
     identifier used to group conversations by document/context. This allows
     conversations to exist for "files" that haven't been saved to the database yet.
     """
+
     __tablename__ = "conversations"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)  # NULL for legacy data
-    file_id = Column(String(255), nullable=True, index=True)  # Arbitrary string identifier, NOT a FK
+    user_id = Column(
+        String(36), ForeignKey("users.id"), nullable=True, index=True
+    )  # NULL for legacy data
+    file_id = Column(
+        String(255), nullable=True, index=True
+    )  # Arbitrary string identifier, NOT a FK
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     # Relationships
     owner = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
-    attachments = relationship("ConversationAttachment", back_populates="conversation", cascade="all, delete-orphan")
+    attachments = relationship(
+        "ConversationAttachment", back_populates="conversation", cascade="all, delete-orphan"
+    )
 
 
 class Message(Base):
@@ -154,6 +172,7 @@ class Message(Base):
     - tool_calls: List of tool calls with inputs and outputs
     - metadata: Additional metadata (model, tokens, etc.)
     """
+
     __tablename__ = "messages"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -185,6 +204,7 @@ class ConversationAttachment(Base):
     Stores uploaded documents (PDF, DOCX, PPTX) that are attached to a conversation
     and available to the AI through search/read tools.
     """
+
     __tablename__ = "conversation_attachments"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -216,6 +236,7 @@ class ConversationAttachment(Base):
 # Telemetry Models
 # =============================================================================
 
+
 class TelemetryEvent(Base):
     """Telemetry event for user behavior tracking.
 
@@ -223,18 +244,21 @@ class TelemetryEvent(Base):
     1. RLHF training data (chosen/rejected pairs)
     2. Product analytics (aggregate statistics)
     """
+
     __tablename__ = "telemetry_events"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)  # Nullable for anonymous
+    user_id = Column(
+        String(36), ForeignKey("users.id"), nullable=True, index=True
+    )  # Nullable for anonymous
     event_type = Column(String(50), nullable=False, index=True)
     event_data = Column(JSON, nullable=False)  # Full event payload
     created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
 
     # RLHF training fields (structured for easy export)
-    chosen_content = Column(Text, nullable=True)    # Content user preferred
+    chosen_content = Column(Text, nullable=True)  # Content user preferred
     rejected_content = Column(Text, nullable=True)  # Content user rejected
-    context = Column(Text, nullable=True)           # Context/prompt
+    context = Column(Text, nullable=True)  # Context/prompt
 
     __table_args__ = (
         Index("idx_telemetry_user_type", "user_id", "event_type"),
@@ -248,6 +272,7 @@ class UserTelemetrySettings(Base):
     Controls what data is collected for each user.
     Default: all enabled (product improvement enabled).
     """
+
     __tablename__ = "user_telemetry_settings"
 
     user_id = Column(String(36), ForeignKey("users.id"), primary_key=True)
@@ -263,15 +288,21 @@ class UserTelemetrySettings(Base):
 # Document Sharing Models
 # =============================================================================
 
+
 class DocumentShare(Base):
     """Document share model for public read-only access."""
+
     __tablename__ = "document_shares"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # Relationships
-    file_id = Column(String(36), ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_id = Column(
+        String(36), ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     # Share token - cryptographically secure, URL-safe (43 characters, ~256 bits entropy)
     share_token = Column(String(64), unique=True, nullable=False, index=True)
@@ -297,8 +328,8 @@ class DocumentShare(Base):
     owner = relationship("User", backref="document_shares")
 
     __table_args__ = (
-        Index('idx_shares_active_expires', 'is_active', 'expires_at'),
-        Index('idx_shares_file_active', 'file_id', 'is_active'),
+        Index("idx_shares_active_expires", "is_active", "expires_at"),
+        Index("idx_shares_file_active", "file_id", "is_active"),
     )
 
 
@@ -313,7 +344,7 @@ engine = create_async_engine(
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=300,    # Recycle connections after 5 minutes
+    pool_recycle=300,  # Recycle connections after 5 minutes
 )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

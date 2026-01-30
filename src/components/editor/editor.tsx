@@ -68,6 +68,11 @@ export function Editor({ file: initialFile }: EditorProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce returns a new function, deps are intentionally limited
   const debouncedSave = useCallback(
     debounce((content: string) => {
+      // Skip save if content hasn't changed
+      if (content === lastContentRef.current) {
+        setDirty(false);
+        return;
+      }
       setSaving(true);
       updateFile(file.id, { content });
       setSaving(false);

@@ -16,6 +16,7 @@ from api.files import get_user_id
 from config import get_cors_headers, get_settings
 from db.database import Conversation, ConversationAttachment, Message, get_db
 from services.auth_service import TokenData, require_auth
+from services.history_compressor import HistoryCompressor
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,8 +33,10 @@ def normalize_file_id(file_id: str | None) -> str | None:
 # Request/Response Models
 # ============================================================================
 
+
 class FileContext(BaseModel):
     """File context for chat."""
+
     id: str
     name: str
     content: str
@@ -41,6 +44,7 @@ class FileContext(BaseModel):
 
 class ImageContext(BaseModel):
     """Image context for chat (multimodal support)."""
+
     src: str
     alt: str | None = None
     base64: str | None = None
@@ -49,6 +53,7 @@ class ImageContext(BaseModel):
 
 class ChatRequest(BaseModel):
     """Chat request model."""
+
     message: str
     files: list[FileContext] = []
     images: list[ImageContext] = []  # Image contexts for multimodal support
@@ -61,6 +66,7 @@ class ChatRequest(BaseModel):
 
 class MessageCreate(BaseModel):
     """Create a new message."""
+
     conversationId: str
     role: str  # "user" | "assistant"
     content: str
@@ -73,6 +79,7 @@ class MessageCreate(BaseModel):
 
 class MessageResponse(BaseModel):
     """Message response model."""
+
     id: str
     conversationId: str
     role: str
@@ -90,6 +97,7 @@ class MessageResponse(BaseModel):
 
 class ConversationResponse(BaseModel):
     """Conversation with messages response."""
+
     id: str
     fileId: str | None
     messages: list[MessageResponse]
@@ -103,11 +111,10 @@ class ConversationResponse(BaseModel):
 # Conversation & Message CRUD Endpoints
 # ============================================================================
 
+
 @router.get("/conversations/{file_id}")
 async def get_conversation(
-    file_id: str,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
     """Get conversation for a file, or create if not exists."""
     user_id = get_user_id(token)
@@ -130,9 +137,7 @@ async def get_conversation(
     if not conversation:
         # Create new conversation
         conversation = Conversation(
-            id=str(uuid.uuid4()),
-            file_id=normalized_file_id,
-            user_id=user_id
+            id=str(uuid.uuid4()), file_id=normalized_file_id, user_id=user_id
         )
         db.add(conversation)
         await db.commit()
@@ -161,17 +166,16 @@ async def get_conversation(
                 "toolCalls": msg.tool_calls,
                 "edits": msg.edits,
                 "model": msg.model,
-                "createdAt": msg.created_at.isoformat()
+                "createdAt": msg.created_at.isoformat(),
             }
             for msg in messages
-        ]
+        ],
     }
 
 
 @router.get("/conversations")
 async def list_conversations(
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
     """List conversations for the current user."""
     user_id = get_user_id(token)
@@ -186,11 +190,7 @@ async def list_conversations(
     conversations = result.scalars().all()
 
     return [
-        {
-            "id": conv.id,
-            "fileId": conv.file_id,
-            "createdAt": conv.created_at.isoformat()
-        }
+        {"id": conv.id, "fileId": conv.file_id, "createdAt": conv.created_at.isoformat()}
         for conv in conversations
     ]
 
@@ -199,7 +199,7 @@ async def list_conversations(
 async def create_message(
     message: MessageCreate,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    token: TokenData = Depends(require_auth),
 ):
     """Create a new message in a conversation."""
     user_id = get_user_id(token)
@@ -234,9 +234,7 @@ async def create_message(
     # If still not found, create a new conversation
     if not conversation:
         conversation = Conversation(
-            id=str(uuid.uuid4()),
-            file_id=normalized_file_id,
-            user_id=user_id
+            id=str(uuid.uuid4()), file_id=normalized_file_id, user_id=user_id
         )
         db.add(conversation)
         await db.commit()
@@ -252,7 +250,7 @@ async def create_message(
         thinking=message.thinking,
         tool_calls=message.toolCalls,
         edits=message.edits,
-        model=message.model
+        model=message.model,
     )
     db.add(new_message)
     await db.commit()
@@ -268,15 +266,13 @@ async def create_message(
         "toolCalls": new_message.tool_calls,
         "edits": new_message.edits,
         "model": new_message.model,
-        "createdAt": new_message.created_at.isoformat()
+        "createdAt": new_message.created_at.isoformat(),
     }
 
 
 @router.delete("/conversations/{file_id}")
 async def clear_conversation(
-    file_id: str,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
     """Clear all messages in a conversation by file_id."""
     user_id = get_user_id(token)
@@ -317,11 +313,10 @@ async def clear_conversation(
 # Streaming Chat Endpoint
 # ============================================================================
 
+
 @router.post("/stream")
 async def chat_stream(
-    request: ChatRequest,
-    http_request: Request,
-    db: AsyncSession = Depends(get_db)
+    request: ChatRequest, http_request: Request, db: AsyncSession = Depends(get_db)
 ):
     """Stream AI chat response with real-time token output.
 
@@ -331,7 +326,7 @@ async def chat_stream(
     settings = get_settings()
     origin = http_request.headers.get("origin")
 
-    # Load conversation history (last 10 messages) for context
+    # Load conversation history with 3-1-3 compression
     history = []
     conversation = None
     kb_attachments = []
@@ -356,22 +351,20 @@ async def chat_stream(
         conversation = conv_result.scalar_one_or_none()
 
         if conversation:
-            # Get last 10 messages ordered by created_at
+            # Load up to 50 messages for 3-1-3 compression
             messages_result = await db.execute(
                 select(Message)
                 .where(Message.conversation_id == conversation.id)
                 .order_by(desc(Message.created_at))
-                .limit(10)
+                .limit(50)
             )
             messages = messages_result.scalars().all()
             # Reverse to get chronological order
             messages = list(reversed(messages))
 
-            for msg in messages:
-                history.append({
-                    "role": msg.role,
-                    "content": msg.content or ""
-                })
+            # Compress history using 3-1-3 rule
+            compressor = HistoryCompressor()
+            history = compressor.compress(messages)
 
             # Load KB attachments for this conversation
             kb_result = await db.execute(
@@ -386,7 +379,7 @@ async def chat_stream(
                     "id": att.id,
                     "filename": att.original_filename,
                     "file_type": att.file_type,
-                    "chunk_count": att.chunk_count
+                    "chunk_count": att.chunk_count,
                 }
                 for att in attachments
             ]
@@ -406,6 +399,7 @@ async def chat_stream(
         current_tool = None
         timeout_seconds = settings.streaming_timeout_seconds
         start_time = asyncio.get_event_loop().time()
+        heartbeat_interval = 25  # Send heartbeat every 25 seconds (Heroku timeout is 55s)
 
         try:
             # Create agent with KB attachments and web tools if available
@@ -422,7 +416,7 @@ async def chat_stream(
                 {
                     "id": f.id,
                     "name": f.name,
-                    "content": f.content[:50000]  # Limit content size
+                    "content": f.content[:50000],  # Limit content size
                 }
                 for f in request.files
             ]
@@ -431,30 +425,60 @@ async def chat_stream(
             logger.info(f"Received {len(request.images)} image(s) in request")
             images = []
             for img in request.images:
-                logger.info(f"Image: src_length={len(img.src) if img.src else 0}, base64_length={len(img.base64) if img.base64 else 0}, mediaType={img.mediaType}")
+                logger.info(
+                    f"Image: src_length={len(img.src) if img.src else 0}, base64_length={len(img.base64) if img.base64 else 0}, mediaType={img.mediaType}"
+                )
                 if img.base64 and img.mediaType:
-                    images.append({
-                        "src": img.src,
-                        "alt": img.alt,
-                        "base64": img.base64,
-                        "mediaType": img.mediaType,
-                    })
+                    images.append(
+                        {
+                            "src": img.src,
+                            "alt": img.alt,
+                            "base64": img.base64,
+                            "mediaType": img.mediaType,
+                        }
+                    )
             logger.info(f"Passing {len(images)} valid image(s) to agent")
 
-            # Stream response - each event is yielded immediately
-            async for event in agent.stream(
+            # Stream response with heartbeat support for Heroku
+            # Heroku closes connections after 55s of no data, so we send heartbeats every 25s
+            agent_stream = agent.stream(
                 message=request.message,
                 files=files,
                 images=images,  # Pass images for multimodal support
                 history=history,
-                conversation_id=conversation.id if conversation else None
-            ):
+                conversation_id=conversation.id if conversation else None,
+            ).__aiter__()
+
+            while True:
+                try:
+                    # Wait for next event with heartbeat timeout
+                    event = await asyncio.wait_for(
+                        agent_stream.__anext__(), timeout=heartbeat_interval
+                    )
+                except TimeoutError:
+                    # No event received within heartbeat interval, send heartbeat to keep connection alive
+                    heartbeat_data = f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    yield heartbeat_data.encode("utf-8")
+
+                    # Check overall timeout
+                    elapsed = asyncio.get_event_loop().time() - start_time
+                    if elapsed > timeout_seconds:
+                        logger.warning(f"Streaming timeout after {elapsed:.1f}s")
+                        error_data = f"data: {json.dumps({'type': 'error', 'content': 'Streaming timeout exceeded'})}\n\n"
+                        yield error_data.encode("utf-8")
+                        yield b"data: [DONE]\n\n"
+                        return
+                    continue
+                except StopAsyncIteration:
+                    # Stream completed
+                    break
+
                 # Check timeout
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed > timeout_seconds:
                     logger.warning(f"Streaming timeout after {elapsed:.1f}s")
                     error_data = f"data: {json.dumps({'type': 'error', 'content': 'Streaming timeout exceeded'})}\n\n"
-                    yield error_data.encode('utf-8')
+                    yield error_data.encode("utf-8")
                     yield b"data: [DONE]\n\n"
                     return
 
@@ -471,7 +495,7 @@ async def chat_stream(
                         "toolId": event.get("tool_id"),
                         "input": "",
                         "output": None,
-                        "success": None
+                        "success": None,
                     }
                 elif event_type == "tool_input_delta":
                     if current_tool:
@@ -487,7 +511,7 @@ async def chat_stream(
 
                 # Yield SSE formatted data with immediate flush
                 data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                yield data.encode('utf-8')
+                yield data.encode("utf-8")
 
             # Send summary event with collected data for frontend to save
             summary = {
@@ -496,7 +520,7 @@ async def chat_stream(
                 "thinking": "".join(collected_thinking) if collected_thinking else None,
                 "toolCalls": collected_tool_calls if collected_tool_calls else None,
                 "edits": collected_edits if collected_edits else None,
-                "model": settings.default_model
+                "model": settings.default_model,
             }
             yield f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode()
 
@@ -505,14 +529,15 @@ async def chat_stream(
         except TimeoutError:
             logger.error("Chat streaming timeout")
             error_data = f"data: {json.dumps({'type': 'error', 'content': 'Request timeout'})}\n\n"
-            yield error_data.encode('utf-8')
+            yield error_data.encode("utf-8")
             yield b"data: [DONE]\n\n"
         except Exception as e:
             logger.error(f"Chat streaming error: {e}")
             import traceback
+
             traceback.print_exc()
             error_data = f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-            yield error_data.encode('utf-8')
+            yield error_data.encode("utf-8")
             yield b"data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -524,7 +549,7 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
             "Content-Type": "text/event-stream; charset=utf-8",
             **get_cors_headers(origin),
-        }
+        },
     )
 
 
@@ -532,8 +557,10 @@ async def chat_stream(
 # Simple (non-streaming) Chat Endpoint
 # ============================================================================
 
+
 class SimpleChatRequest(BaseModel):
     """Simple chat request without files."""
+
     message: str
     system: str | None = None
 
@@ -545,10 +572,7 @@ async def simple_chat(request: SimpleChatRequest):
 
     try:
         llm = LLMService()
-        response = await llm.complete(
-            prompt=request.message,
-            system=request.system
-        )
+        response = await llm.complete(prompt=request.message, system=request.system)
         return {"response": response}
     except Exception as e:
         logger.error(f"Simple chat error: {e}")
