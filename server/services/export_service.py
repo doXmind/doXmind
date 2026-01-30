@@ -234,11 +234,21 @@ class PDFRenderer:
 
     def _find_unicode_font(self):
         """Find a suitable Unicode font on the system."""
+        # First try to find fonts by scanning directories (more reliable for Linux/Docker)
+        font_path = self._scan_for_cjk_font()
+        if font_path:
+            self._unicode_font_path = font_path
+            self._unicode_font = "CJK Font"
+            return
+
+        # Fallback to specific file names
         font_candidates = [
-            # Linux (fonts-noto-cjk package)
+            # Linux (fonts-noto-cjk package) - various possible names
             ('NotoSansCJK-Regular.ttc', 'Noto Sans CJK'),
+            ('NotoSansCJKsc-Regular.ttc', 'Noto Sans CJK SC'),
             ('NotoSansCJKsc-Regular.otf', 'Noto Sans CJK SC'),
             ('NotoSansSC-Regular.otf', 'Noto Sans SC'),
+            ('NotoSansSC-Regular.ttf', 'Noto Sans SC'),
             # Windows
             ('msyh.ttc', 'Microsoft YaHei'),
             ('msyhbd.ttc', 'Microsoft YaHei Bold'),
@@ -259,6 +269,34 @@ class PDFRenderer:
                 self._unicode_font_path = path
                 break
 
+    def _scan_for_cjk_font(self) -> str | None:
+        """Scan font directories for any CJK-capable font."""
+        font_dirs = [
+            # Linux - where fonts-noto-cjk installs fonts
+            '/usr/share/fonts/opentype/noto',
+            '/usr/share/fonts/truetype/noto',
+            '/usr/share/fonts/noto-cjk',
+            '/usr/share/fonts/opentype',
+            '/usr/share/fonts/truetype',
+            '/usr/share/fonts',
+        ]
+
+        # Patterns that indicate CJK support
+        cjk_patterns = ['notosanscjk', 'notoserifcjk', 'notosanssc', 'notosc', 'cjk']
+
+        for font_dir in font_dirs:
+            if not os.path.exists(font_dir):
+                continue
+            for root, _dirs, files in os.walk(font_dir):
+                for filename in files:
+                    lower_name = filename.lower()
+                    # Check if it's a font file with CJK support
+                    if lower_name.endswith(('.ttc', '.ttf', '.otf')):
+                        for pattern in cjk_patterns:
+                            if pattern in lower_name:
+                                return os.path.join(root, filename)
+        return None
+
     def _get_system_font_path(self, font_name: str) -> str | None:
         """Get the path to a system font file."""
         font_dirs = []
@@ -275,19 +313,26 @@ class PDFRenderer:
             '/usr/share/fonts/opentype/noto',
             '/usr/share/fonts/truetype/noto',
             '/usr/share/fonts/noto-cjk',
+            '/usr/share/fonts/opentype',
+            '/usr/share/fonts/truetype',
             '/usr/share/fonts',
             '/usr/local/share/fonts',
             os.path.expanduser('~/.fonts'),
         ])
 
+        font_name_lower = font_name.lower()
+
         for font_dir in font_dirs:
             if os.path.exists(font_dir):
+                # Direct path check
                 font_path = os.path.join(font_dir, font_name)
                 if os.path.exists(font_path):
                     return font_path
+                # Walk and check with case-insensitive matching
                 for root, _dirs, files in os.walk(font_dir):
-                    if font_name in files:
-                        return os.path.join(root, font_name)
+                    for filename in files:
+                        if filename.lower() == font_name_lower:
+                            return os.path.join(root, filename)
         return None
 
     def render(self, nodes: list[DocumentNode]) -> bytes:
