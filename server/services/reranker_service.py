@@ -120,7 +120,7 @@ Rank all {len(documents)} documents by relevance."""
 
         try:
             # Get reranking model from settings (default: gpt-5-nano)
-            model = getattr(self.settings, "reranking_model", "gpt-4o-mini")
+            model = getattr(self.settings, "reranking_model", "gpt-5-nano")
 
             response = await self.client.beta.chat.completions.parse(
                 model=model,

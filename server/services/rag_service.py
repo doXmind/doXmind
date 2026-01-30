@@ -2156,9 +2156,42 @@ class RAGService:
         self,
         conversation_id: str,
         query: str,
+        top_k: int = 5,
+        use_hybrid: bool = True,
+        use_rerank: bool = True
+    ) -> list[dict[str, Any]]:
+        """Search within a conversation's knowledge base.
+
+        Args:
+            conversation_id: Conversation ID to search within
+            query: Search query text
+            top_k: Maximum number of results to return
+            use_hybrid: Use hybrid search (semantic + keyword with RRF)
+            use_rerank: Use GPT reranking for improved relevance
+
+        Returns:
+            List of search results with content, metadata, and scores
+        """
+        settings = get_settings()
+
+        # Check if hybrid/rerank are enabled in settings
+        hybrid_enabled = use_hybrid and getattr(settings, "hybrid_search_enabled", True)
+        rerank_enabled = use_rerank and getattr(settings, "reranking_enabled", False)
+
+        if rerank_enabled:
+            return await self.hybrid_search_kb_with_rerank(conversation_id, query, top_k)
+        elif hybrid_enabled:
+            return await self.hybrid_search_kb(conversation_id, query, top_k)
+        else:
+            return await self._semantic_search_kb(conversation_id, query, top_k)
+
+    async def _semantic_search_kb(
+        self,
+        conversation_id: str,
+        query: str,
         top_k: int = 5
     ) -> list[dict[str, Any]]:
-        """Search within a conversation's knowledge base."""
+        """Pure semantic (vector) search within KB."""
         try:
             query_embedding = await get_embedding(query)
 
@@ -2193,8 +2226,147 @@ class RAGService:
             ]
 
         except Exception as e:
-            logger.error(f"KB search error: {e}")
+            logger.error(f"KB semantic search error: {e}")
             return []
+
+    async def _keyword_search_kb(
+        self,
+        conversation_id: str,
+        query: str,
+        top_k: int = 15
+    ) -> list[dict[str, Any]]:
+        """Full-text keyword search within KB using PostgreSQL tsvector.
+
+        Args:
+            conversation_id: Conversation ID to search within
+            query: Search query text
+            top_k: Maximum number of results to return
+        """
+        try:
+            result = await self.db.execute(
+                text("""
+                    SELECT id, content, attachment_id, filename, chunk_index, total_chunks,
+                           ts_rank_cd(search_vector, plainto_tsquery('english', :query)) as rank
+                    FROM vectors
+                    WHERE chunk_type = 'kb'
+                      AND conversation_id = :conversation_id
+                      AND search_vector IS NOT NULL
+                      AND search_vector @@ plainto_tsquery('english', :query)
+                    ORDER BY rank DESC
+                    LIMIT :limit
+                """),
+                {"query": query, "conversation_id": conversation_id, "limit": top_k}
+            )
+
+            rows = result.fetchall()
+            return [
+                {
+                    "id": row.id,
+                    "content": row.content,
+                    "metadata": {
+                        "attachment_id": row.attachment_id,
+                        "filename": row.filename,
+                        "chunk_index": row.chunk_index,
+                        "total_chunks": row.total_chunks
+                    },
+                    "score": row.rank,
+                    "source_file": row.filename
+                }
+                for row in rows
+            ]
+
+        except Exception as e:
+            logger.error(f"KB keyword search error: {e}")
+            return []
+
+    async def hybrid_search_kb(
+        self,
+        conversation_id: str,
+        query: str,
+        top_k: int = 5
+    ) -> list[dict[str, Any]]:
+        """Hybrid search combining semantic and keyword search for KB.
+
+        Uses Reciprocal Rank Fusion (RRF) to combine results from both
+        retrieval methods.
+
+        Args:
+            conversation_id: Conversation ID to search within
+            query: Search query text
+            top_k: Maximum number of results to return
+        """
+        import asyncio
+
+        settings = get_settings()
+
+        # Fetch more candidates for fusion (3x the requested top_k)
+        expanded_k = top_k * 3
+
+        # Run semantic and keyword searches in parallel
+        semantic_task = self._semantic_search_kb(conversation_id, query, expanded_k)
+        keyword_task = self._keyword_search_kb(conversation_id, query, expanded_k)
+
+        semantic_results, keyword_results = await asyncio.gather(
+            semantic_task, keyword_task
+        )
+
+        # If no keyword results, fall back to semantic only
+        if not keyword_results:
+            logger.info(f"KB hybrid search: {len(semantic_results)} semantic only (no keyword matches)")
+            return semantic_results[:top_k]
+
+        # Fuse results using RRF
+        fused = reciprocal_rank_fusion(
+            semantic_results,
+            keyword_results,
+            k=getattr(settings, "rrf_k", 60),
+            semantic_weight=getattr(settings, "semantic_weight", 0.7),
+            keyword_weight=getattr(settings, "keyword_weight", 0.3)
+        )
+
+        logger.info(
+            f"KB hybrid search: {len(semantic_results)} semantic, "
+            f"{len(keyword_results)} keyword, {len(fused)} fused"
+        )
+
+        return fused[:top_k]
+
+    async def hybrid_search_kb_with_rerank(
+        self,
+        conversation_id: str,
+        query: str,
+        top_k: int = 5
+    ) -> list[dict[str, Any]]:
+        """Hybrid search with GPT-based reranking for KB.
+
+        1. Performs hybrid search to get initial candidates
+        2. Reranks candidates using GPT with structured outputs
+        3. Returns top-k most relevant results
+
+        Args:
+            conversation_id: Conversation ID to search within
+            query: Search query text
+            top_k: Maximum number of results to return
+        """
+        settings = get_settings()
+
+        # Get more candidates for reranking
+        candidates_k = getattr(settings, "reranking_candidates", 20)
+
+        # Get initial candidates via hybrid search
+        candidates = await self.hybrid_search_kb(conversation_id, query, candidates_k)
+
+        # Rerank if we have candidates
+        if len(candidates) > 1:
+            try:
+                from services.reranker_service import GPTReranker
+                reranker = GPTReranker()
+                candidates = await reranker.rerank(query, candidates, top_k)
+                logger.info(f"KB reranked {len(candidates)} candidates")
+            except Exception as e:
+                logger.warning(f"KB reranking failed, using hybrid results: {e}")
+
+        return candidates[:top_k]
 
     async def delete_kb_attachment(self, attachment_id: str):
         """Delete all vector chunks for a KB attachment."""
