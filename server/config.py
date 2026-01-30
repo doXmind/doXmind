@@ -165,6 +165,13 @@ class Settings(BaseSettings):
     keyword_weight: float = 0.3  # Weight for full-text keyword search
     rrf_k: int = 60  # RRF constant (standard value)
 
+    # Embedding parallel processing settings
+    embedding_batch_size: int = 100  # Texts per API call (OpenAI max is 2048)
+    embedding_max_concurrent: int = 10  # Max parallel API calls (user RPM: 10,000)
+    embedding_max_retries: int = 3  # Retry attempts per batch
+    embedding_retry_delay: float = 1.0  # Initial retry delay in seconds
+    embedding_retry_backoff: float = 2.0  # Exponential backoff multiplier
+
     # Reranking settings (GPT-based with structured outputs)
     reranking_enabled: bool = False  # Disabled by default (adds latency/cost)
     reranking_candidates: int = 20  # Number of candidates to fetch before reranking
