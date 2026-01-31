@@ -143,10 +143,11 @@ async def get_conversation(
         await db.commit()
         await db.refresh(conversation)
 
-    # Load messages
+    # Load messages (exclude soft-deleted)
     messages_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation.id)
+        .where(Message.deleted_at.is_(None))
         .order_by(Message.created_at)
     )
     messages = messages_result.scalars().all()
@@ -295,14 +296,20 @@ async def clear_conversation(
     if not conversation:
         return {"success": True, "deleted": 0}
 
-    # Delete all messages in the conversation
+    # Soft delete all messages in the conversation (preserve for statistics)
+    from db.database import utcnow
+
     messages_result = await db.execute(
-        select(Message).where(Message.conversation_id == conversation.id)
+        select(Message).where(
+            Message.conversation_id == conversation.id,
+            Message.deleted_at.is_(None)
+        )
     )
     messages = messages_result.scalars().all()
 
+    now = utcnow()
     for msg in messages:
-        await db.delete(msg)
+        msg.deleted_at = now
 
     await db.commit()
 
@@ -351,10 +358,11 @@ async def chat_stream(
         conversation = conv_result.scalar_one_or_none()
 
         if conversation:
-            # Load up to 50 messages for 3-1-3 compression
+            # Load up to 50 messages for 3-1-3 compression (exclude soft-deleted)
             messages_result = await db.execute(
                 select(Message)
                 .where(Message.conversation_id == conversation.id)
+                .where(Message.deleted_at.is_(None))
                 .order_by(desc(Message.created_at))
                 .limit(50)
             )
@@ -392,9 +400,10 @@ async def chat_stream(
     collected_thinking = []
     collected_tool_calls = []
     collected_edits = []
+    collected_usage = {"input_tokens": 0, "output_tokens": 0}
 
     async def generate():
-        nonlocal collected_text, collected_thinking, collected_tool_calls, collected_edits
+        nonlocal collected_text, collected_thinking, collected_tool_calls, collected_edits, collected_usage
 
         current_tool = None
         timeout_seconds = settings.streaming_timeout_seconds
@@ -508,14 +517,38 @@ async def chat_stream(
                         current_tool = None
                 elif event_type == "edit":
                     collected_edits.append(event.get("edit"))
+                elif event_type == "usage":
+                    collected_usage["input_tokens"] = event.get("input_tokens", 0)
+                    collected_usage["output_tokens"] = event.get("output_tokens", 0)
+                    continue  # Don't send usage event to frontend
 
                 # Yield SSE formatted data with immediate flush
                 data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 yield data.encode("utf-8")
 
-            # Send summary event with collected data for frontend to save
+            # Save assistant message to database with token usage
+            message_id = None
+            if conversation:
+                assistant_message = Message(
+                    id=str(uuid.uuid4()),
+                    conversation_id=conversation.id,
+                    role="assistant",
+                    content="".join(collected_text),
+                    thinking="".join(collected_thinking) if collected_thinking else None,
+                    tool_calls=collected_tool_calls if collected_tool_calls else None,
+                    edits=collected_edits if collected_edits else None,
+                    model=settings.default_model,
+                    input_tokens=str(collected_usage["input_tokens"]) if collected_usage["input_tokens"] else None,
+                    output_tokens=str(collected_usage["output_tokens"]) if collected_usage["output_tokens"] else None,
+                )
+                db.add(assistant_message)
+                await db.commit()
+                message_id = assistant_message.id
+
+            # Send summary event with collected data
             summary = {
                 "type": "summary",
+                "messageId": message_id,
                 "content": "".join(collected_text),
                 "thinking": "".join(collected_thinking) if collected_thinking else None,
                 "toolCalls": collected_tool_calls if collected_tool_calls else None,

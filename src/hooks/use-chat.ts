@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { useChatStore, type ChatMessage, type ToolCall, type MessageContextItem } from "@/stores/chat-store";
+import {
+  useChatStore,
+  type ChatMessage,
+  type ToolCall,
+  type MessageContextItem,
+} from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
@@ -52,26 +57,32 @@ export function useChat() {
 
       // Build the full message for AI (include text contexts)
       let messageForAI = message;
-      const textContexts = contexts?.filter(c => c.type === 'selection') || [];
+      const textContexts = contexts?.filter((c) => c.type === "selection") || [];
       if (textContexts.length > 0) {
-        const contextTexts = textContexts.map((c, i) => {
-          const prefix = textContexts.length > 1 ? `[Reference ${i + 1}:]\n` : '';
-          return `${prefix}${c.text}`;
-        }).join('\n\n');
+        const contextTexts = textContexts
+          .map((c, i) => {
+            const prefix = textContexts.length > 1 ? `[Reference ${i + 1}:]\n` : "";
+            return `${prefix}${c.text}`;
+          })
+          .join("\n\n");
         messageForAI = `${message}\n\n[Selected content for reference:]\n${contextTexts}`;
       }
 
       // Extract image contexts with base64 data for multimodal API
-      const imageContexts = contexts
-        ?.filter((c): c is MessageContextItem & { type: 'image'; base64: string; mediaType: string } =>
-          c.type === 'image' && !!(c as { base64?: string }).base64 && !!(c as { mediaType?: string }).mediaType
-        )
-        .map(c => ({
-          src: c.src,
-          alt: (c as { alt?: string }).alt,
-          base64: c.base64,
-          mediaType: c.mediaType,
-        })) || [];
+      const imageContexts =
+        contexts
+          ?.filter(
+            (c): c is MessageContextItem & { type: "image"; base64: string; mediaType: string } =>
+              c.type === "image" &&
+              !!(c as { base64?: string }).base64 &&
+              !!(c as { mediaType?: string }).mediaType
+          )
+          .map((c) => ({
+            src: c.src,
+            alt: (c as { alt?: string }).alt,
+            base64: c.base64,
+            mediaType: c.mediaType,
+          })) || [];
 
       // Add user message
       const userMessageId = addMessage(conversationId, {
@@ -84,13 +95,14 @@ export function useChat() {
       // Save user message to backend
       // Strip base64 data from contexts before saving (too large for DB storage)
       // The src URL is preserved so images can still be displayed
-      const contextsForStorage = contexts?.map(ctx => {
-        if (ctx.type === 'image') {
-          // Keep src and alt, remove base64 and mediaType (only needed for AI API)
-          return { type: ctx.type, src: ctx.src, alt: (ctx as { alt?: string }).alt };
-        }
-        return ctx;
-      }) || null;
+      const contextsForStorage =
+        contexts?.map((ctx) => {
+          if (ctx.type === "image") {
+            // Keep src and alt, remove base64 and mediaType (only needed for AI API)
+            return { type: ctx.type, src: ctx.src, alt: (ctx as { alt?: string }).alt };
+          }
+          return ctx;
+        }) || null;
 
       const userMessage: ChatMessage = {
         id: userMessageId,
@@ -151,7 +163,7 @@ export function useChat() {
           body: JSON.stringify({
             message: messageForAI,
             files,
-            images: imageContexts,  // Include image data for multimodal support
+            images: imageContexts, // Include image data for multimodal support
             conversationId,
             // Web search toggle (web fetch is always enabled)
             webSearchEnabled: webToolsSettings.webSearchEnabled,
@@ -184,15 +196,15 @@ export function useChat() {
 
             case "thinking":
               if (parsed.content) {
-                setThinking(prev => ({
+                setThinking((prev) => ({
                   isThinking: true,
-                  content: prev.content + parsed.content
+                  content: prev.content + parsed.content,
                 }));
               }
               break;
 
             case "thinking_end":
-              setThinking(prev => ({ ...prev, isThinking: false }));
+              setThinking((prev) => ({ ...prev, isThinking: false }));
               break;
 
             case "tool_start": {
@@ -204,16 +216,20 @@ export function useChat() {
                 input: "",
               };
               setCurrentTool(toolStatus);
-              setToolHistory(prev => [...prev, toolStatus]);
+              setToolHistory((prev) => [...prev, toolStatus]);
               break;
             }
 
             case "tool_input_delta": {
               toolInputRef.current += parsed.delta || "";
-              setCurrentTool(prev => prev ? {
-                ...prev,
-                input: toolInputRef.current,
-              } : null);
+              setCurrentTool((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      input: toolInputRef.current,
+                    }
+                  : null
+              );
               break;
             }
 
@@ -226,10 +242,12 @@ export function useChat() {
               };
               setCurrentTool(completedTool);
               toolInputRef.current = "";
-              setToolHistory(prev => {
+              setToolHistory((prev) => {
                 const newHistory = [...prev];
                 const lastIndex = newHistory.findLastIndex(
-                  t => (t.toolId === parsed.tool_id || t.name === parsed.tool) && t.status === "running"
+                  (t) =>
+                    (t.toolId === parsed.tool_id || t.name === parsed.tool) &&
+                    t.status === "running"
                 );
                 if (lastIndex >= 0) {
                   newHistory[lastIndex] = completedTool;
@@ -248,7 +266,7 @@ export function useChat() {
                   message: `Editing ${parsed.edit.file_name}`,
                 };
                 setCurrentTool(editTool);
-                setToolHistory(prev => [...prev, editTool]);
+                setToolHistory((prev) => [...prev, editTool]);
               }
               break;
 
@@ -261,7 +279,7 @@ export function useChat() {
                   message: applied > 0 ? `Applied ${applied} edit(s)` : "No edits applied",
                 };
                 setCurrentTool(applyTool);
-                setToolHistory(prev => [...prev, applyTool]);
+                setToolHistory((prev) => [...prev, applyTool]);
               }
               break;
 
@@ -282,7 +300,7 @@ export function useChat() {
                 message: parsed.content,
               };
               setCurrentTool(errorTool);
-              setToolHistory(prev => [...prev, errorTool]);
+              setToolHistory((prev) => [...prev, errorTool]);
               break;
             }
 
@@ -295,20 +313,20 @@ export function useChat() {
                 message: parsed.tool === "web_search" ? "Searching the web..." : "Fetching URL...",
               };
               setCurrentTool(serverToolStatus);
-              setToolHistory(prev => [...prev, serverToolStatus]);
+              setToolHistory((prev) => [...prev, serverToolStatus]);
               break;
             }
 
             case "web_search_result": {
               const resultCount = (parsed as { results?: Array<unknown> }).results?.length || 0;
-              setToolHistory(prev => {
+              setToolHistory((prev) => {
                 const newHistory = [...prev];
-                const idx = newHistory.findLastIndex(t => t.toolId === parsed.tool_id);
+                const idx = newHistory.findLastIndex((t) => t.toolId === parsed.tool_id);
                 if (idx >= 0) {
                   newHistory[idx] = {
                     ...newHistory[idx],
                     status: "completed",
-                    message: `Found ${resultCount} result${resultCount !== 1 ? 's' : ''}`,
+                    message: `Found ${resultCount} result${resultCount !== 1 ? "s" : ""}`,
                   };
                 }
                 return newHistory;
@@ -320,9 +338,9 @@ export function useChat() {
             case "web_fetch_result": {
               const url = (parsed as { url?: string }).url || "";
               const displayUrl = url.length > 40 ? url.substring(0, 40) + "..." : url;
-              setToolHistory(prev => {
+              setToolHistory((prev) => {
                 const newHistory = [...prev];
-                const idx = newHistory.findLastIndex(t => t.toolId === parsed.tool_id);
+                const idx = newHistory.findLastIndex((t) => t.toolId === parsed.tool_id);
                 if (idx >= 0) {
                   newHistory[idx] = {
                     ...newHistory[idx],
@@ -354,33 +372,19 @@ export function useChat() {
               message: `Applied ${applied} edit(s)`,
             };
             setCurrentTool(finalTool);
-            setToolHistory(prev => [...prev, finalTool]);
+            setToolHistory((prev) => [...prev, finalTool]);
           }
         }
 
-        // Save assistant message to backend with full data
+        // Update frontend state with full message data (backend saves message with token usage)
         if (summaryRef.data) {
-          const assistantMessage: ChatMessage = {
-            id: assistantMessageId,
-            role: "assistant",
-            content: summaryRef.data.content,
-            createdAt: new Date().toISOString(),
-            thinking: summaryRef.data.thinking,
-            toolCalls: summaryRef.data.toolCalls,
-            edits: summaryRef.data.edits,
-            model: summaryRef.data.model,
-          };
-
           updateMessageFull(conversationId, assistantMessageId, {
             thinking: summaryRef.data.thinking,
             toolCalls: summaryRef.data.toolCalls,
             edits: summaryRef.data.edits,
             model: summaryRef.data.model,
           });
-
-          saveMessageToBackend(conversationId, assistantMessage);
         }
-
       } catch (error) {
         const errorMessage = isAbortError(error)
           ? "\n\n*[Stopped]*"
@@ -395,7 +399,20 @@ export function useChat() {
         toolInputRef.current = "";
       }
     },
-    [ensureConversation, addMessage, appendToMessage, setMessageStreaming, getFile, applyEdits, saveMessageToBackend, updateMessageFull, setStreaming, setCurrentTool, setToolHistory, setThinking, setTodos]
+    [
+      ensureConversation,
+      addMessage,
+      appendToMessage,
+      setMessageStreaming,
+      getFile,
+      applyEdits,
+      updateMessageFull,
+      setStreaming,
+      setCurrentTool,
+      setToolHistory,
+      setThinking,
+      setTodos,
+    ]
   );
 
   const stopStreaming = useCallback(() => {

@@ -196,6 +196,7 @@ class Message(Base):
     output_tokens = Column(String(20), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=utcnow)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete for statistics
 
     conversation = relationship("Conversation", back_populates="messages")
 

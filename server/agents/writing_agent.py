@@ -237,6 +237,8 @@ class WritingAgent:
     ) -> AsyncIterator[dict[str, Any]]:
         """Main agent loop handling streaming and tool execution."""
         iteration = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         while iteration < self.MAX_ITERATIONS:
             iteration += 1
@@ -248,6 +250,12 @@ class WritingAgent:
             async for event, response_update, tool_use in self._stream_response_realtime(
                 system_prompt, messages
             ):
+                # Accumulate token usage from each API call
+                if event and event.get("type") == "usage":
+                    total_input_tokens += event.get("input_tokens", 0)
+                    total_output_tokens += event.get("output_tokens", 0)
+                    continue  # Don't yield usage events yet
+
                 # Yield event immediately for real-time streaming
                 if event:
                     yield event
@@ -280,6 +288,9 @@ class WritingAgent:
 
             # Add tool results to messages
             messages.append({"role": "user", "content": tool_results})
+
+        # Yield accumulated usage after all iterations
+        yield {"type": "usage", "input_tokens": total_input_tokens, "output_tokens": total_output_tokens}
 
     async def _stream_response_realtime(
         self,
@@ -485,6 +496,14 @@ class WritingAgent:
                         # Don't add to tool_uses - server tools are handled by API
                         yield None, current_server_tool, None
                         current_server_tool = None
+
+            # After stream iteration, get usage from final message
+            final_message = await stream.get_final_message()
+            yield {
+                "type": "usage",
+                "input_tokens": final_message.usage.input_tokens,
+                "output_tokens": final_message.usage.output_tokens,
+            }, None, None
 
     async def _execute_tool(
         self,
