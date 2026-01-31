@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, get_db
 from services.auth_service import TokenData, require_auth
+from services.llm_service import LLMService
 from services.rag_service import DEFAULT_STRATEGY_FACTORY, RAGService
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class FileUpdate(BaseModel):
 
     name: str | None = None
     content: str | None = None
+    is_favorite: bool | None = None
 
 
 class FileResponse(BaseModel):
@@ -56,6 +58,8 @@ class FileResponse(BaseModel):
     id: str
     name: str
     content: str
+    summary: str | None = None
+    is_favorite: bool = False
     created_at: str
     updated_at: str
 
@@ -80,6 +84,8 @@ async def list_files(db: AsyncSession = Depends(get_db), token: TokenData = Depe
             id=f.id,
             name=f.name,
             content=f.content,
+            summary=f.summary,
+            is_favorite=f.is_favorite or False,
             created_at=f.created_at.isoformat(),
             updated_at=f.updated_at.isoformat(),
         )
@@ -134,6 +140,8 @@ async def create_file(
             id=file_id,
             name=cast(str, created["name"]),
             content=cast(str, created["content"]),
+            summary=None,
+            is_favorite=False,
             created_at=cast(datetime, created["created_at"]).isoformat(),
             updated_at=cast(datetime, created["updated_at"]).isoformat(),
         )
@@ -170,6 +178,8 @@ async def get_file(
         id=file.id,
         name=file.name,
         content=file.content,
+        summary=file.summary,
+        is_favorite=file.is_favorite or False,
         created_at=file.created_at.isoformat(),
         updated_at=file.updated_at.isoformat(),
     )
@@ -208,6 +218,9 @@ async def update_file(
             file.content_hash = new_hash
             need_reindex = True
 
+    if update.is_favorite is not None:
+        file.is_favorite = update.is_favorite
+
     await db.commit()
     await db.refresh(file)
 
@@ -215,6 +228,8 @@ async def update_file(
     file_id = file.id
     file_name = file.name
     file_content = file.content
+    file_summary = file.summary
+    file_is_favorite = file.is_favorite or False
     file_created_at = file.created_at.isoformat()
     file_updated_at = file.updated_at.isoformat()
 
@@ -243,6 +258,8 @@ async def update_file(
         id=file_id,
         name=file_name,
         content=file_content,
+        summary=file_summary,
+        is_favorite=file_is_favorite,
         created_at=file_created_at,
         updated_at=file_updated_at,
     )
@@ -392,3 +409,61 @@ async def search_in_document(
     except Exception as e:
         logger.error(f"In-document search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class SummaryResponse(BaseModel):
+    """Summary generation response."""
+
+    summary: str
+
+
+@router.post("/{file_id}/summarize", response_model=SummaryResponse)
+async def generate_summary(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Generate an AI summary for a file."""
+    user_id = get_user_id(token)
+
+    query = select(File).where(File.id == file_id)
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    result = await db.execute(query)
+    file = result.scalar_one_or_none()
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Skip if content is too short
+    if not file.content or len(file.content.strip()) < 50:
+        return SummaryResponse(summary="")
+
+    try:
+        llm = LLMService()
+        prompt = f"""Summarize this document in one evocative sentence (max 80 characters).
+Write in the same tone as the document. Be poetic, not descriptive.
+Do not start with "This document..." or similar. Just give the summary.
+
+Document:
+{file.content[:2000]}"""
+
+        summary = await llm.complete(
+            prompt=prompt,
+            max_tokens=100,
+            temperature=0.7,
+        )
+
+        # Clean up the summary
+        summary = summary.strip().strip('"').strip("'")
+        if len(summary) > 100:
+            summary = summary[:97] + "..."
+
+        # Save to database
+        file.summary = summary
+        await db.commit()
+
+        return SummaryResponse(summary=summary)
+    except Exception as e:
+        logger.error(f"Summary generation error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate summary")

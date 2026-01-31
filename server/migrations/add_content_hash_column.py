@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text
 
-from db.database import DATABASE_URL, engine
+from config import get_settings
+from db.database import engine
 
 
 def compute_content_hash(content: str) -> str:
@@ -28,7 +29,9 @@ def compute_content_hash(content: str) -> str:
 
 async def migrate():
     """Add content_hash column to files table if it doesn't exist."""
-    is_sqlite = DATABASE_URL.startswith("sqlite")
+    settings = get_settings()
+    database_url = settings.async_database_url
+    is_sqlite = database_url.startswith("sqlite")
 
     async with engine.begin() as conn:
         # Check if column already exists

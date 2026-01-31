@@ -112,6 +112,8 @@ class File(Base):
     name = Column(String(255), nullable=False)
     content = Column(Text, default="")
     content_hash = Column(String(64), nullable=True)  # SHA-256 hash for change detection
+    summary = Column(Text, nullable=True)  # AI-generated document summary
+    is_favorite = Column(Boolean, default=False)  # Pinned/favorite status
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
