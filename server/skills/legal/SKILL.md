@@ -1,7 +1,7 @@
 ---
-name: legal-writing
-display_name: "Legal Writing"
-description: "Draft clear legal documents including privacy policies, terms of service, contracts, and disclaimers. Balance legal precision with readability using plain language principles."
+name: legal
+display_name: "Legal"
+description: "Legal research, case law search, and drafting legal documents. Access to CourtListener for searching court opinions when API is configured."
 category: legal
 version: "1.0.0"
 author: doxmind
@@ -276,3 +276,24 @@ You have access to these templates and knowledge files:
 - `knowledge/plain_language_legal.md` - Plain language legal writing
 - `knowledge/contract_terminology.md` - Legal terms glossary
 - `knowledge/compliance_checklist.md` - GDPR/CCPA compliance guide
+
+## External Tools
+
+When CourtListener API is configured, you have access to:
+
+### search_court_opinions
+Search millions of court opinions from CourtListener's database.
+
+**Usage:**
+- Search for relevant case law: `search_court_opinions("First Amendment free speech")`
+- Filter by court: `court="scotus"` for Supreme Court, `court="ca9"` for 9th Circuit
+- Filter by date: `filed_after="2020-01-01"`
+- Find influential cases: `cited_gt=100` for cases cited 100+ times
+- Sort options: `"score desc"` (relevance), `"dateFiled desc"` (newest), `"citeCount desc"` (most cited)
+
+**Example queries:**
+- "breach of contract damages California"
+- "First Amendment religious freedom schools"
+- "GDPR privacy rights enforcement"
+
+The tool uses semantic search by default for better understanding of legal concepts.

@@ -13,6 +13,9 @@ import {
   BookOpen,
   Globe,
   Link2,
+  Wand2,
+  FileText,
+  Scale,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToolStatus } from "@/hooks/use-chat";
@@ -22,6 +25,7 @@ import type { ToolStatus } from "@/hooks/use-chat";
  */
 function getToolIcon(toolName: string) {
   switch (toolName) {
+    // Document tools
     case "view_document":
       return Eye;
     case "str_replace_editor":
@@ -34,16 +38,32 @@ function getToolIcon(toolName: string) {
       return Search;
     case "apply_edits":
       return Check;
+    // Knowledge base tools
     case "search_knowledge_base":
       return BookOpen;
     case "read_kb_document":
       return BookOpen;
     case "list_kb_documents":
       return BookOpen;
+    // Web tools
     case "web_search":
       return Globe;
     case "web_fetch":
       return Link2;
+    // Skill tools
+    case "list_skills":
+      return Wand2;
+    case "read_skill_instructions":
+      return Wand2;
+    case "read_skill_template":
+      return FileText;
+    case "read_skill_knowledge":
+      return BookOpen;
+    // Legal tools
+    case "search_court_opinions":
+      return Scale;
+    case "get_court_opinion":
+      return Scale;
     default:
       return Sparkles;
   }
@@ -54,6 +74,7 @@ function getToolIcon(toolName: string) {
  */
 function getToolDisplayName(toolName: string) {
   switch (toolName) {
+    // Document tools
     case "view_document":
       return "Reading document";
     case "str_replace_editor":
@@ -66,18 +87,38 @@ function getToolDisplayName(toolName: string) {
       return "Searching document";
     case "apply_edits":
       return "Applying changes";
+    // Knowledge base tools
     case "search_knowledge_base":
       return "Searching knowledge base";
     case "read_kb_document":
       return "Reading KB document";
     case "list_kb_documents":
       return "Listing KB documents";
+    // Web tools
     case "web_search":
       return "Searching the web";
     case "web_fetch":
       return "Fetching URL";
+    // Skill tools
+    case "list_skills":
+      return "Listing skills";
+    case "read_skill_instructions":
+      return "Loading skill";
+    case "read_skill_template":
+      return "Loading template";
+    case "read_skill_knowledge":
+      return "Loading knowledge";
+    // Legal tools
+    case "search_court_opinions":
+      return "Searching court cases";
+    case "get_court_opinion":
+      return "Reading court opinion";
     default:
-      return toolName;
+      // Format unknown tools: snake_case -> Title Case
+      return toolName
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
   }
 }
 

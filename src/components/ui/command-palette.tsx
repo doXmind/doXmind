@@ -485,18 +485,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             )}
             aria-label="Search commands"
           />
-          {/* ESC hint for desktop */}
-          <kbd className="hidden h-5 items-center gap-1 rounded border border-border bg-muted px-1.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
-            ESC
-          </kbd>
-          {/* Close button for mobile */}
+          {/* Close button */}
           <button
             type="button"
             onClick={onClose}
-            className="sm:hidden flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             aria-label="Close"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 

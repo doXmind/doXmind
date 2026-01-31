@@ -1,7 +1,7 @@
 ---
-name: copywriting
-display_name: "Copywriting"
-description: "Write persuasive, conversion-focused copy for landing pages, ads, product descriptions, and email sequences. Master proven copywriting formulas like AIDA, PAS, and FAB to drive action and results."
+name: marketing
+display_name: "Marketing"
+description: "Persuasive copy for landing pages, ads, product descriptions, and email sequences. Uses formulas like AIDA, PAS, and FAB."
 category: marketing
 version: "1.0.0"
 author: doxmind

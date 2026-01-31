@@ -1,7 +1,7 @@
 ---
-name: essay-writing
-description: "Helps students write academic essays and papers with proper structure, citations, and academic style. Covers argumentative, expository, narrative, and compare/contrast essays with APA, MLA, Chicago, and Harvard citation formats."
-display_name: "Academic Essay Writing"
+name: academic
+description: "Academic essays, research papers, and scholarly writing with proper structure, citations (APA, MLA, Chicago, Harvard), and academic style."
+display_name: "Academic"
 category: academic
 version: "1.0.0"
 author: doxmind

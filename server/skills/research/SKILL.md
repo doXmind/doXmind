@@ -1,7 +1,7 @@
 ---
-name: research-analysis
-description: "Assists researchers with literature reviews, methodology selection, data analysis guidance, and scientific writing. Supports qualitative, quantitative, and mixed methods approaches including IMRAD structure."
-display_name: "Research & Analysis"
+name: research
+description: "Literature reviews, methodology selection, data analysis, and scientific writing. Supports qualitative, quantitative, and mixed methods."
+display_name: "Research"
 category: research
 version: "1.0.0"
 author: doxmind

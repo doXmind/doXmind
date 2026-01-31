@@ -1,7 +1,7 @@
 ---
-name: technical-writing
-display_name: "Technical Writing"
-description: "Create clear, accurate technical documentation including API docs, user guides, READMEs, architecture decision records (ADRs), and changelogs. Follows industry best practices from Google, Microsoft, and other tech leaders."
+name: technical
+display_name: "Technical"
+description: "Technical documentation: API docs, user guides, READMEs, ADRs, and changelogs."
 category: technical
 version: "1.0.0"
 author: doxmind

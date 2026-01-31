@@ -1,7 +1,7 @@
 ---
-name: creative-writing
-display_name: "Creative Writing"
-description: "Craft compelling fiction and creative nonfiction including short stories, character development, dialogue, and scene construction. Master narrative techniques from three-act structure to the hero's journey."
+name: creative
+display_name: "Creative"
+description: "Fiction and creative nonfiction: short stories, character development, dialogue, and narrative techniques."
 category: creative
 version: "1.0.0"
 author: doxmind

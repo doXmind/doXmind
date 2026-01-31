@@ -9,6 +9,8 @@ These tools allow the agent to access all skill resources directly:
 import logging
 from typing import Any
 
+from agents.tools.definitions import SKILL_EXTERNAL_TOOLS
+from config import get_settings
 from services.skills_service import get_skills_service
 
 logger = logging.getLogger(__name__)
@@ -66,7 +68,26 @@ async def execute_skill_tool(
                 "error": f"Skill not found: {skill_name}. Available: {', '.join(available)}"
             }
 
-        return {"result": instructions}
+        # Check if this skill has external tools that should be activated
+        external_tools = SKILL_EXTERNAL_TOOLS.get(skill_name, [])
+        tool_notice = ""
+        if external_tools:
+            settings = get_settings()
+            # Check if required API key is configured
+            if skill_name == "legal" and settings.has_legal_tools:
+                tool_notice = """
+---
+**LEGAL TOOLS AVAILABLE:**
+1. `search_court_opinions(query)` - Search cases. Returns list with opinion_id.
+2. `get_court_opinion(opinion_id)` - Get full opinion text.
+
+Workflow: Search → Pick relevant cases → Get full text for citation.
+---
+
+"""
+
+        # Put tool notice at the BEGINNING so agent sees it first
+        return {"result": tool_notice + instructions}
 
     elif tool_name == "read_skill_template":
         skill_name = tool_input.get("skill_name")

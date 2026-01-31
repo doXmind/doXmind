@@ -1,7 +1,7 @@
 ---
-name: content-writing
-display_name: "Content & Marketing Writing"
-description: "Create engaging digital content including blog posts, social media content, newsletters, and SEO-optimized articles. Covers headline writing, content frameworks (AIDA, PAS), and platform-specific best practices."
+name: content
+display_name: "Content"
+description: "Blog posts, social media, newsletters, and SEO content. Covers headline writing and content frameworks (AIDA, PAS)."
 category: marketing
 version: "1.0.0"
 author: doxmind

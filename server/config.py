@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""  # Required for pgvector embeddings
     google_api_key: str = ""  # For Gemini file conversion (PDF, DOCX, PPTX to markdown)
+    courtlistener_api_key: str = ""  # For legal case search
 
     # =========================================================================
     # Security / JWT
@@ -190,6 +191,11 @@ class Settings(BaseSettings):
     def max_file_size_mb(self) -> float:
         """Get max file size in megabytes."""
         return self.max_file_size / (1024 * 1024)
+
+    @property
+    def has_legal_tools(self) -> bool:
+        """Check if legal tools are available (API key configured)."""
+        return bool(self.courtlistener_api_key)
 
 
 @lru_cache

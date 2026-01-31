@@ -1,7 +1,7 @@
 ---
-name: business-writing
-display_name: "Business Writing"
-description: "Create professional business communications including emails, proposals, meeting minutes, executive summaries, and status reports. Master the art of clear, persuasive, and action-oriented business writing."
+name: business
+display_name: "Business"
+description: "Professional business communications: emails, proposals, meeting minutes, executive summaries, and status reports."
 category: business
 version: "1.0.0"
 author: doxmind

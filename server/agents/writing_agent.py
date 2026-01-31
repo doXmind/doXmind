@@ -22,9 +22,10 @@ from agents.prompts import (
     get_skills_metadata_prompt,
     get_writing_system_prompt,
 )
-from agents.tools.definitions import get_tools_for_mode
+from agents.tools.definitions import get_external_tools_for_skill, get_tools_for_mode
 from agents.tools.document_tools import execute_document_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
+from agents.tools.legal_tools import execute_legal_tool, is_legal_tool
 from agents.tools.skill_tools import execute_skill_tool, is_skill_tool
 from agents.tools.todo_tools import execute_todo_tool, is_todo_tool
 from config import get_settings
@@ -75,7 +76,7 @@ class WritingAgent:
         self.max_tokens = settings.max_output_tokens
         self.settings = settings
 
-        # Get tools
+        # Get tools (external tools like LEGAL_TOOLS are added dynamically when skill is read)
         self.tools = get_tools_for_mode(
             mode,
             bool(self.kb_attachments),
@@ -84,6 +85,9 @@ class WritingAgent:
             settings.web_search_max_uses,
             settings.web_fetch_max_uses,
         )
+
+        # Track which skills have been activated (for dynamic tool loading)
+        self._activated_skill_tools: set[str] = set()
 
     async def stream(
         self,
@@ -495,18 +499,27 @@ class WritingAgent:
         tool_input = tool_use["input"]
         tool_id = tool_use["id"]
 
-        # Execute tool based on type
-        if is_todo_tool(tool_name):
-            result = execute_todo_tool(tool_input)
-            # Emit todo update event for frontend
-            if "todos" in result:
-                yield {"type": "todo_update", "todos": result["todos"]}
-        elif is_kb_tool(tool_name):
-            result = await execute_kb_tool(tool_name, tool_input, kb_context)
-        elif is_skill_tool(tool_name):
-            result = await execute_skill_tool(tool_name, tool_input)
-        else:
-            result = execute_document_tool(tool_name, tool_input, files, current_file_id)
+        # Execute tool based on type, with error handling
+        try:
+            if is_todo_tool(tool_name):
+                result = execute_todo_tool(tool_input)
+                # Emit todo update event for frontend
+                if "todos" in result:
+                    yield {"type": "todo_update", "todos": result["todos"]}
+            elif is_kb_tool(tool_name):
+                result = await execute_kb_tool(tool_name, tool_input, kb_context)
+            elif is_skill_tool(tool_name):
+                result = await execute_skill_tool(tool_name, tool_input)
+                # Dynamically add external tools when skill instructions are read
+                if tool_name == "read_skill_instructions":
+                    self._activate_skill_external_tools(tool_input.get("skill_name", ""))
+            elif is_legal_tool(tool_name):
+                result = await execute_legal_tool(tool_name, tool_input)
+            else:
+                result = execute_document_tool(tool_name, tool_input, files, current_file_id)
+        except Exception as e:
+            logger.error(f"Tool execution error for {tool_name}: {e}")
+            result = {"error": f"Tool execution failed: {str(e)}"}
 
         # Handle result
         # Check if this is an actual edit operation (must have 'type' field with valid edit type)
@@ -534,11 +547,14 @@ class WritingAgent:
             }
         else:
             result_content = result.get("result", str(result))
+            display_output = self._format_tool_output_for_display(
+                tool_name, tool_input, result_content
+            )
             yield {
                 "type": "tool_end",
                 "tool": tool_name,
                 "tool_id": tool_id,
-                "output": result_content[:500] if isinstance(result_content, str) else str(result_content)[:500],
+                "output": display_output,
                 "success": True
             }
 
@@ -557,6 +573,138 @@ class WritingAgent:
                 "content": reinforced_content
             }
         }
+
+    def _format_tool_output_for_display(
+        self, tool_name: str, tool_input: dict[str, Any], result_content: Any
+    ) -> str:
+        """Format tool output for user-friendly display.
+
+        Converts raw tool results into concise, readable summaries.
+
+        Args:
+            tool_name: Name of the tool
+            tool_input: Input parameters passed to the tool
+            result_content: Raw result from the tool
+
+        Returns:
+            Human-readable summary string
+        """
+        # Skill tools
+        if tool_name == "list_skills":
+            if isinstance(result_content, list):
+                count = len(result_content)
+                return f"Found {count} skill{'s' if count != 1 else ''}"
+            return "Listed available skills"
+
+        if tool_name == "read_skill_instructions":
+            skill_name_param = tool_input.get("skill_name", "unknown")
+            return f"Loaded {skill_name_param} skill instructions"
+
+        if tool_name == "read_skill_template":
+            template_name = tool_input.get("template_name", "template")
+            return f"Loaded {template_name} template"
+
+        if tool_name == "read_skill_knowledge":
+            knowledge_name = tool_input.get("knowledge_name", "knowledge")
+            return f"Loaded {knowledge_name} knowledge"
+
+        # KB tools
+        if tool_name == "search_knowledge_base":
+            if isinstance(result_content, str):
+                # Count results in the response
+                if "No relevant content found" in result_content:
+                    return "Found 0 results"
+                # Count markdown headers which indicate results
+                result_count = result_content.count("## ")
+                return f"Found {result_count} result{'s' if result_count != 1 else ''}"
+            return "Searched knowledge base"
+
+        if tool_name == "read_kb_document":
+            doc_title = tool_input.get("document_title", "document")
+            return f"Read {doc_title}"
+
+        if tool_name == "list_kb_documents":
+            if isinstance(result_content, str):
+                # Count documents in the response
+                doc_count = result_content.count("\n- ") + (1 if result_content.strip() else 0)
+                return f"Found {doc_count} document{'s' if doc_count != 1 else ''}"
+            return "Listed KB documents"
+
+        # Web tools
+        if tool_name == "web_search":
+            query = tool_input.get("query", "")
+            if isinstance(result_content, str):
+                if "No results found" in result_content:
+                    return "Found 0 results"
+                result_count = result_content.count("## ")
+                return f"Found {result_count} result{'s' if result_count != 1 else ''}"
+            return f"Searched for: {query[:30]}..." if len(query) > 30 else f"Searched for: {query}"
+
+        if tool_name == "web_fetch":
+            url = tool_input.get("url", "")
+            # Extract domain from URL
+            domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
+            return f"Fetched {domain}"
+
+        # Document tools
+        if tool_name == "view_document":
+            return "Read document content"
+
+        if tool_name == "search_in_document":
+            query = tool_input.get("query", "")
+            if isinstance(result_content, str) and "No matches found" in result_content:
+                return f"No matches for '{query}'"
+            return f"Searched for '{query}'"
+
+        # Legal tools
+        if tool_name == "search_court_opinions":
+            query = tool_input.get("query", "")
+            if isinstance(result_content, str):
+                if "No opinions found" in result_content or not result_content.strip():
+                    return "Found 0 court opinions"
+                # Count results
+                result_count = result_content.count("**Case:**")
+                return f"Found {result_count} court opinion{'s' if result_count != 1 else ''}"
+            return "Searched court opinions"
+
+        if tool_name == "get_court_opinion":
+            return "Retrieved court opinion"
+
+        # Default: truncate if too long
+        if isinstance(result_content, str):
+            if len(result_content) > 100:
+                return result_content[:100] + "..."
+            return result_content
+        return str(result_content)[:100]
+
+    def _activate_skill_external_tools(self, skill_name: str) -> None:
+        """Dynamically add external tools when a skill's instructions are read.
+
+        This enables lazy loading of skill-specific tools (like CourtListener
+        for legal-writing) only when the skill is actually used, saving tokens.
+
+        Args:
+            skill_name: Name of the skill that was activated
+        """
+        if not skill_name or skill_name in self._activated_skill_tools:
+            return  # Already activated or invalid
+
+        external_tools = get_external_tools_for_skill(skill_name)
+        if not external_tools:
+            return  # No external tools for this skill
+
+        # Check if required API keys are configured
+        # For legal skill, check CourtListener API key
+        if skill_name == "legal" and not self.settings.has_legal_tools:
+            return  # API key not configured
+
+        # Add tools to the agent's tool list
+        for tool in external_tools:
+            if tool not in self.tools:
+                self.tools.append(tool)
+
+        self._activated_skill_tools.add(skill_name)
+        logger.info(f"Activated {len(external_tools)} external tool(s) for skill: {skill_name}")
 
     def _add_tool_result_reminder(self, tool_name: str, result_content: str) -> str:
         """Add contextual reminders to tool results to reinforce good behavior.
@@ -585,6 +733,8 @@ class WritingAgent:
             reminder = "\n\n<reminder>Use this information to help the user. If editing is needed, use editing tools directly.</reminder>"
         elif tool_name in ("read_skill_instructions", "read_skill_template", "read_skill_knowledge"):
             reminder = "\n\n<reminder>Apply this guidance. Use editing tools to write content directly into the document.</reminder>"
+        elif tool_name == "search_court_opinions":
+            reminder = "\n\n<reminder>Use these case citations to support legal arguments. Cite the most relevant and authoritative cases.</reminder>"
         else:
             # Generic reminder for other tools
             reminder = "\n\n<reminder>Continue with the task. Prefer using tools over long chat responses.</reminder>"

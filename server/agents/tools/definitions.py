@@ -276,12 +276,85 @@ Example: read_skill_knowledge("essay-writing", "citation_apa.md") returns APA ci
 
 
 # ============================================================================
+# Legal Research Tools Definition
+# ============================================================================
+
+LEGAL_TOOLS = [
+    {
+        "name": "search_court_opinions",
+        "description": """Search CourtListener for court opinions and legal cases.
+Returns a list of matching cases with opinion_id for fetching full text.
+
+Use get_court_opinion to read the full opinion text after finding relevant cases.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query - legal concepts, case names, or keywords",
+                },
+                "court": {
+                    "type": "string",
+                    "description": "Court filter: 'scotus', 'ca1'-'ca11', state abbreviations",
+                },
+                "filed_after": {
+                    "type": "string",
+                    "description": "Cases filed after date (YYYY-MM-DD)",
+                },
+                "filed_before": {
+                    "type": "string",
+                    "description": "Cases filed before date (YYYY-MM-DD)",
+                },
+                "cited_gt": {
+                    "type": "integer",
+                    "description": "Minimum citation count",
+                },
+                "order_by": {
+                    "type": "string",
+                    "enum": ["score desc", "dateFiled desc", "citeCount desc"],
+                    "description": "Sort order",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_court_opinion",
+        "description": """Get the full text of a court opinion by ID.
+Use after search_court_opinions to read the complete opinion text for citation or analysis.""",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "opinion_id": {
+                    "type": "integer",
+                    "description": "The opinion_id from search results",
+                },
+            },
+            "required": ["opinion_id"],
+        },
+    },
+]
+
+
+# ============================================================================
+# Skill-to-External-Tools Mapping
+# ============================================================================
+# Maps skill names to their associated external tools.
+# Tools are only loaded when the skill's instructions are read.
+
+SKILL_EXTERNAL_TOOLS: dict[str, list[dict]] = {
+    "legal": LEGAL_TOOLS,
+}
+
+
+# ============================================================================
 # Tool Names for Quick Lookup
 # ============================================================================
 
 DOCUMENT_TOOL_NAMES = {tool["name"] for tool in DOCUMENT_TOOLS}
 KB_TOOL_NAMES = {tool["name"] for tool in KB_TOOLS}
 SKILL_TOOL_NAMES = {tool["name"] for tool in SKILL_TOOLS}
+LEGAL_TOOL_NAMES = {tool["name"] for tool in LEGAL_TOOLS}
 READONLY_TOOL_NAMES = {tool["name"] for tool in READONLY_TOOLS}
 
 
@@ -305,6 +378,10 @@ def get_tools_for_mode(
 
     Returns:
         List of tool definitions for Claude API
+
+    Note:
+        External tools (like LEGAL_TOOLS) are loaded dynamically when their
+        associated skill is read via SKILL_EXTERNAL_TOOLS mapping.
     """
     base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
     tools = list(base_tools)  # Make a copy
@@ -326,6 +403,18 @@ def get_tools_for_mode(
     tools.append(get_web_fetch_tool(web_fetch_max_uses))
 
     return tools
+
+
+def get_external_tools_for_skill(skill_name: str) -> list[dict]:
+    """Get external tools associated with a skill.
+
+    Args:
+        skill_name: Name of the skill (e.g., 'legal-writing')
+
+    Returns:
+        List of tool definitions, or empty list if none
+    """
+    return SKILL_EXTERNAL_TOOLS.get(skill_name, [])
 
 
 # ============================================================================

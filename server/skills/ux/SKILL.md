@@ -1,7 +1,7 @@
 ---
-name: ux-writing
-display_name: "UX Writing"
-description: "Create user-centered microcopy for digital products including buttons, error messages, onboarding flows, empty states, and notifications. Write clear, helpful interface text that guides users and improves product experience."
+name: ux
+display_name: "UX"
+description: "Microcopy for digital products: buttons, error messages, onboarding flows, and notifications."
 category: design
 version: "1.0.0"
 author: doxmind

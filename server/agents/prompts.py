@@ -93,17 +93,15 @@ When a user's request matches a skill domain, follow this workflow:
 
 <usage_examples>
 Example 1: User asks "Write an argumentative essay"
-→ read_skill_instructions("essay-writing") - get expert guidance
-→ read_skill_template("essay-writing", "argumentative.md") - get structure
-→ read_skill_knowledge("essay-writing", "academic_phrases.md") - get phrases (if needed)
+→ read_skill_instructions("academic") - get expert guidance
+→ read_skill_template("academic", "argumentative.md") - get structure
 
-Example 2: User asks "Format this citation in APA style"
-→ read_skill_knowledge("essay-writing", "citation_apa.md") - get citation rules
+Example 2: User asks "Write a blog post"
+→ read_skill_instructions("content") - get content writing expertise
+→ read_skill_template("content", "blog_post.md") - get blog structure
 
-Example 3: User asks "Write a blog post"
-→ read_skill_instructions("content-writing") - get content writing expertise
-→ read_skill_template("content-writing", "blog_post.md") - get blog structure
-→ read_skill_knowledge("content-writing", "seo_writing.md") - get SEO tips
+Example 3: User asks "Find cases about breach of contract"
+→ read_skill_instructions("legal") - get legal expertise and unlock tools
 </usage_examples>
 
 Available Skills:
@@ -113,6 +111,7 @@ Available Skills:
         description = skill.get("description", "")
         templates = skill.get("templates", [])
         knowledge = skill.get("knowledge", [])
+
         prompt += f"""
 **{name}**: {description}
   - Templates: {', '.join(templates) if templates else 'none'}
