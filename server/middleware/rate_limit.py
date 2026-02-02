@@ -39,7 +39,7 @@ limiter = Limiter(
     key_func=get_client_ip,
     default_limits=[f"{settings.rate_limit_per_minute}/minute"],
     storage_uri="memory://",  # Use Redis URI for production: "redis://localhost:6379"
-    strategy="fixed-window"
+    strategy="fixed-window",
 )
 
 
@@ -51,15 +51,13 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
             "error": {
                 "code": "RATE_LIMIT_EXCEEDED",
                 "message": "Too many requests. Please slow down.",
-                "details": {
-                    "retry_after": exc.detail
-                }
+                "details": {"retry_after": exc.detail},
             }
         },
         headers={
             "Retry-After": str(60),  # Suggest retry after 60 seconds
             "X-RateLimit-Limit": str(settings.rate_limit_per_minute),
-        }
+        },
     )
 
 

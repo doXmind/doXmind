@@ -180,7 +180,7 @@ class TestAutocompleteCache:
         assert stats["size"] == 1
         assert stats["hits"] == 2
         assert stats["misses"] == 1
-        assert stats["hit_rate"] == round(2/3, 3)
+        assert stats["hit_rate"] == round(2 / 3, 3)
 
     def test_get_stats_empty_cache(self):
         """Should handle empty cache stats."""
@@ -284,7 +284,7 @@ class TestAutocompleteRequest:
             file_id="file-123",
             file_name="doc.md",
             cursor_position=5,
-            max_tokens=20
+            max_tokens=20,
         )
 
         assert req.text_before == "Hello"
@@ -308,11 +308,7 @@ class TestAutocompleteResponse:
 
     def test_creates_with_all_fields(self):
         """Should create response with all fields."""
-        resp = AutocompleteResponse(
-            suggestion="hello",
-            cached=True,
-            latency_ms=50
-        )
+        resp = AutocompleteResponse(suggestion="hello", cached=True, latency_ms=50)
 
         assert resp.suggestion == "hello"
         assert resp.cached is True
@@ -435,7 +431,7 @@ class TestAutocompleteEndpoints:
         """Should return empty suggestion for very short text."""
         response = client.post(
             "/api/autocomplete/suggest",
-            json={"text_before": "ab"}  # Less than 3 chars
+            json={"text_before": "ab"},  # Less than 3 chars
         )
 
         assert response.status_code == 200
@@ -446,10 +442,7 @@ class TestAutocompleteEndpoints:
         """Should return cached suggestion when available."""
         mock_cache.get.return_value = "cached value"
 
-        response = client.post(
-            "/api/autocomplete/suggest",
-            json={"text_before": "Hello world"}
-        )
+        response = client.post("/api/autocomplete/suggest", json={"text_before": "Hello world"})
 
         assert response.status_code == 200
         assert response.json()["suggestion"] == "cached value"
@@ -467,10 +460,7 @@ class TestAutocompleteEndpoints:
         mock_llm.complete = AsyncMock(return_value="completion")
         mock_llm_class.return_value = mock_llm
 
-        response = client.post(
-            "/api/autocomplete/suggest",
-            json={"text_before": "Hello world"}
-        )
+        response = client.post("/api/autocomplete/suggest", json={"text_before": "Hello world"})
 
         assert response.status_code == 200
         mock_llm.complete.assert_called_once()
@@ -487,10 +477,7 @@ class TestAutocompleteEndpoints:
         mock_llm.complete = AsyncMock(return_value="suggestion")
         mock_llm_class.return_value = mock_llm
 
-        response = client.post(
-            "/api/autocomplete/suggest",
-            json={"text_before": "Hello world"}
-        )
+        response = client.post("/api/autocomplete/suggest", json={"text_before": "Hello world"})
 
         assert response.status_code == 200
         mock_cache.set.assert_called_once()
@@ -507,10 +494,7 @@ class TestAutocompleteEndpoints:
         mock_llm.complete = AsyncMock(side_effect=Exception("API error"))
         mock_llm_class.return_value = mock_llm
 
-        response = client.post(
-            "/api/autocomplete/suggest",
-            json={"text_before": "Hello world"}
-        )
+        response = client.post("/api/autocomplete/suggest", json={"text_before": "Hello world"})
 
         assert response.status_code == 200
         assert response.json()["suggestion"] == ""
@@ -520,10 +504,7 @@ class TestAutocompleteEndpoints:
         """Should include latency in response."""
         mock_cache.get.return_value = "cached"
 
-        response = client.post(
-            "/api/autocomplete/suggest",
-            json={"text_before": "Hello world"}
-        )
+        response = client.post("/api/autocomplete/suggest", json={"text_before": "Hello world"})
 
         assert "latency_ms" in response.json()
         assert isinstance(response.json()["latency_ms"], int)
@@ -552,7 +533,7 @@ class TestCacheStatsEndpoint:
             "max_size": 1000,
             "hits": 50,
             "misses": 25,
-            "hit_rate": 0.667
+            "hit_rate": 0.667,
         }
 
         response = client.get("/api/autocomplete/stats")

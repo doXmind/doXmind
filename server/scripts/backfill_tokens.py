@@ -15,6 +15,7 @@ Options:
     --database-url  Override database URL (for production use)
     --batch-size    Number of messages to process per batch (default: 50)
 """
+
 import argparse
 import asyncio
 import os
@@ -38,8 +39,7 @@ def count_tokens_for_text(client: anthropic.Anthropic, text: str, model: str) ->
 
     try:
         result = client.messages.count_tokens(
-            model=model,
-            messages=[{"role": "user", "content": text}]
+            model=model, messages=[{"role": "user", "content": text}]
         )
         return result.input_tokens
     except Exception as e:
@@ -55,6 +55,7 @@ async def get_session(database_url: str | None = None):
         return async_session()
     else:
         from db.database import async_session_factory
+
         return async_session_factory()
 
 
@@ -101,9 +102,7 @@ async def count_missing_tokens(db: AsyncSession) -> dict:
 
 
 async def backfill_tokens(
-    database_url: str | None = None,
-    dry_run: bool = False,
-    batch_size: int = 50
+    database_url: str | None = None, dry_run: bool = False, batch_size: int = 50
 ):
     """Backfill token counts for messages with missing data."""
     settings = get_settings()
@@ -154,7 +153,7 @@ async def backfill_tokens(
                            OR (role = 'assistant' AND output_tokens IS NULL)
                         ORDER BY created_at
                         LIMIT :limit OFFSET :offset"""),
-                {"limit": batch_size, "offset": offset if dry_run else 0}
+                {"limit": batch_size, "offset": offset if dry_run else 0},
             )
             rows = result.fetchall()
 
@@ -201,9 +200,13 @@ async def backfill_tokens(
                     content_preview = (content or "")[:50].replace("\n", " ")
                     # Handle encoding issues for Windows console
                     try:
-                        print(f"  {msg_id[:8]}... [{role}] {', '.join(updates)} | {content_preview}...")
+                        print(
+                            f"  {msg_id[:8]}... [{role}] {', '.join(updates)} | {content_preview}..."
+                        )
                     except UnicodeEncodeError:
-                        print(f"  {msg_id[:8]}... [{role}] {', '.join(updates)} | [content contains special chars]")
+                        print(
+                            f"  {msg_id[:8]}... [{role}] {', '.join(updates)} | [content contains special chars]"
+                        )
 
                     # Execute update if not dry run
                     if not dry_run and update_values:
@@ -211,7 +214,7 @@ async def backfill_tokens(
                         update_values["msg_id"] = msg_id
                         await db.execute(
                             text(f"UPDATE messages SET {set_clause} WHERE id = :msg_id"),
-                            update_values
+                            update_values,
                         )
 
             # Commit batch
@@ -260,11 +263,11 @@ def main():
     else:
         print("Using database from config")
 
-    asyncio.run(backfill_tokens(
-        database_url=args.database_url,
-        dry_run=args.dry_run,
-        batch_size=args.batch_size
-    ))
+    asyncio.run(
+        backfill_tokens(
+            database_url=args.database_url, dry_run=args.dry_run, batch_size=args.batch_size
+        )
+    )
 
     print("\nDone!")
 

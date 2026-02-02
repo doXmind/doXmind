@@ -94,11 +94,20 @@ export interface ErrorEvent {
   content: string;
 }
 
-/** Server-side tool (web_search, web_fetch) starts */
+/** Server-side tool (web_search, web_fetch, code_execution) starts */
 export interface ServerToolStartEvent {
   type: "server_tool_start";
   tool: string;
   tool_id?: string;
+}
+
+/** Server-side tool completes */
+export interface ServerToolEndEvent {
+  type: "server_tool_end";
+  tool: string;
+  tool_id?: string;
+  output?: string;
+  success?: boolean;
 }
 
 /** Web search results */
@@ -117,6 +126,23 @@ export interface WebFetchResultEvent {
   type: "web_fetch_result";
   tool_id?: string;
   url?: string;
+}
+
+/** Generated file from code execution */
+export interface GeneratedFile {
+  file_id: string;
+  filename: string;
+  media_type?: string;
+}
+
+/** Code execution result (Python/Bash) */
+export interface CodeExecutionResultEvent {
+  type: "code_execution_result";
+  tool_id?: string;
+  stdout?: string;
+  stderr?: string;
+  return_code: number;
+  files?: GeneratedFile[];
 }
 
 /** Todo list update from AI */
@@ -163,8 +189,10 @@ export type ChatStreamEvent =
   | SummaryEvent
   | ErrorEvent
   | ServerToolStartEvent
+  | ServerToolEndEvent
   | WebSearchResultEvent
   | WebFetchResultEvent
+  | CodeExecutionResultEvent
   | TodoUpdateEvent;
 
 // =============================================================================
@@ -201,4 +229,10 @@ export function isErrorEvent(event: ChatStreamEvent): event is ErrorEvent {
 
 export function isTodoUpdateEvent(event: ChatStreamEvent): event is TodoUpdateEvent {
   return event.type === "todo_update";
+}
+
+export function isCodeExecutionResultEvent(
+  event: ChatStreamEvent
+): event is CodeExecutionResultEvent {
+  return event.type === "code_execution_result";
 }

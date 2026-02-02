@@ -55,7 +55,7 @@ async def transcribe_audio(
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported audio format: {content_type}. "
-                   f"Supported formats: {', '.join(SUPPORTED_FORMATS)}"
+            f"Supported formats: {', '.join(SUPPORTED_FORMATS)}",
         )
 
     # Read file content
@@ -69,7 +69,7 @@ async def transcribe_audio(
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB"
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
 
     # Validate file is not empty
@@ -98,7 +98,9 @@ async def transcribe_audio(
         }
         file_ext = ext_map.get(base_content_type, "webm")
 
-        logger.info(f"Processing audio: content_type={content_type}, base={base_content_type}, ext={file_ext}, size={len(content)}")
+        logger.info(
+            f"Processing audio: content_type={content_type}, base={base_content_type}, ext={file_ext}, size={len(content)}"
+        )
 
         # Create a file-like object for the API
         audio_file = BytesIO(content)
@@ -121,9 +123,7 @@ async def transcribe_audio(
         text = transcription.text if hasattr(transcription, "text") else str(transcription)
         detected_language = getattr(transcription, "language", language or "unknown")
 
-        logger.info(
-            f"Transcription successful: {len(text)} chars, language={detected_language}"
-        )
+        logger.info(f"Transcription successful: {len(text)} chars, language={detected_language}")
 
         return {
             "text": text,
@@ -132,7 +132,4 @@ async def transcribe_audio(
 
     except Exception as e:
         logger.error(f"Whisper API error: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Transcription failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")

@@ -1,6 +1,7 @@
 """
 Tests for health check and root endpoints.
 """
+
 import pytest
 from httpx import AsyncClient
 

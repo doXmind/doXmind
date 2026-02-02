@@ -22,10 +22,7 @@ class TestGetConversation:
         self, client: AsyncClient, db_session, auth_headers
     ):
         """Should create new conversation if none exists for file."""
-        response = await client.get(
-            "/api/chat/conversations/file-123",
-            headers=auth_headers
-        )
+        response = await client.get("/api/chat/conversations/file-123", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -41,33 +38,18 @@ class TestGetConversation:
         """Should return existing conversation with messages."""
         # Create conversation and messages
         conv_id = str(uuid.uuid4())
-        conversation = Conversation(
-            id=conv_id,
-            file_id="file-456",
-            user_id=None
-        )
+        conversation = Conversation(id=conv_id, file_id="file-456", user_id=None)
         db_session.add(conversation)
 
-        msg1 = Message(
-            id=str(uuid.uuid4()),
-            conversation_id=conv_id,
-            role="user",
-            content="Hello"
-        )
+        msg1 = Message(id=str(uuid.uuid4()), conversation_id=conv_id, role="user", content="Hello")
         msg2 = Message(
-            id=str(uuid.uuid4()),
-            conversation_id=conv_id,
-            role="assistant",
-            content="Hi there!"
+            id=str(uuid.uuid4()), conversation_id=conv_id, role="assistant", content="Hi there!"
         )
         db_session.add(msg1)
         db_session.add(msg2)
         await db_session.commit()
 
-        response = await client.get(
-            "/api/chat/conversations/file-456",
-            headers=auth_headers
-        )
+        response = await client.get("/api/chat/conversations/file-456", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -91,15 +73,12 @@ class TestGetConversation:
             thinking="Let me think...",
             tool_calls=[{"name": "search", "input": {}}],
             edits=[{"type": "str_replace", "old_str": "a", "new_str": "b"}],
-            model="claude-3-5-sonnet"
+            model="claude-3-5-sonnet",
         )
         db_session.add(msg)
         await db_session.commit()
 
-        response = await client.get(
-            "/api/chat/conversations/file-789",
-            headers=auth_headers
-        )
+        response = await client.get("/api/chat/conversations/file-789", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -114,14 +93,9 @@ class TestListConversations:
     """Tests for GET /api/chat/conversations."""
 
     @pytest.mark.asyncio
-    async def test_list_conversations_empty(
-        self, client: AsyncClient, auth_headers
-    ):
+    async def test_list_conversations_empty(self, client: AsyncClient, auth_headers):
         """Should return empty list when no conversations."""
-        response = await client.get(
-            "/api/chat/conversations",
-            headers=auth_headers
-        )
+        response = await client.get("/api/chat/conversations", headers=auth_headers)
 
         assert response.status_code == 200
         assert response.json() == []
@@ -133,17 +107,11 @@ class TestListConversations:
         """Should return all conversations."""
         # Create multiple conversations
         for i in range(3):
-            conv = Conversation(
-                id=str(uuid.uuid4()),
-                file_id=f"file-{i}"
-            )
+            conv = Conversation(id=str(uuid.uuid4()), file_id=f"file-{i}")
             db_session.add(conv)
         await db_session.commit()
 
-        response = await client.get(
-            "/api/chat/conversations",
-            headers=auth_headers
-        )
+        response = await client.get("/api/chat/conversations", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -166,11 +134,7 @@ class TestCreateMessage:
         response = await client.post(
             "/api/chat/messages",
             headers=auth_headers,
-            json={
-                "conversationId": conv_id,
-                "role": "user",
-                "content": "Hello AI"
-            }
+            json={"conversationId": conv_id, "role": "user", "content": "Hello AI"},
         )
 
         assert response.status_code == 200
@@ -187,11 +151,7 @@ class TestCreateMessage:
         response = await client.post(
             "/api/chat/messages",
             headers=auth_headers,
-            json={
-                "conversationId": "new-file-id",
-                "role": "user",
-                "content": "First message"
-            }
+            json={"conversationId": "new-file-id", "role": "user", "content": "First message"},
         )
 
         assert response.status_code == 200
@@ -219,8 +179,8 @@ class TestCreateMessage:
                 "toolCalls": [{"name": "read_file", "input": {"path": "test.txt"}}],
                 "edits": [{"type": "insert", "content": "new text", "position": 0}],
                 "model": "claude-3-opus",
-                "contexts": [{"type": "selection", "text": "selected"}]
-            }
+                "contexts": [{"type": "selection", "text": "selected"}],
+            },
         )
 
         assert response.status_code == 200
@@ -247,14 +207,13 @@ class TestClearConversation:
                 id=str(uuid.uuid4()),
                 conversation_id=conv_id,
                 role="user" if i % 2 == 0 else "assistant",
-                content=f"Message {i}"
+                content=f"Message {i}",
             )
             db_session.add(msg)
         await db_session.commit()
 
         response = await client.delete(
-            "/api/chat/conversations/file-to-clear",
-            headers=auth_headers
+            "/api/chat/conversations/file-to-clear", headers=auth_headers
         )
 
         assert response.status_code == 200
@@ -263,13 +222,10 @@ class TestClearConversation:
         assert data["deleted"] == 5
 
     @pytest.mark.asyncio
-    async def test_clear_nonexistent_conversation(
-        self, client: AsyncClient, auth_headers
-    ):
+    async def test_clear_nonexistent_conversation(self, client: AsyncClient, auth_headers):
         """Should return success with 0 deleted for nonexistent conversation."""
         response = await client.delete(
-            "/api/chat/conversations/nonexistent-file",
-            headers=auth_headers
+            "/api/chat/conversations/nonexistent-file", headers=auth_headers
         )
 
         assert response.status_code == 200
@@ -287,9 +243,7 @@ class TestChatStream:
     """Tests for POST /api/chat/stream."""
 
     @pytest.mark.asyncio
-    async def test_stream_returns_sse_format(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_returns_sse_format(self, client: AsyncClient, db_session):
         """Should return Server-Sent Events format."""
         with patch("api.chat.WritingAgent") as MockAgent:
             # Mock agent to yield simple events
@@ -303,11 +257,7 @@ class TestChatStream:
             MockAgent.return_value = mock_agent
 
             response = await client.post(
-                "/api/chat/stream",
-                json={
-                    "message": "Say hello",
-                    "files": []
-                }
+                "/api/chat/stream", json={"message": "Say hello", "files": []}
             )
 
             assert response.status_code == 200
@@ -318,9 +268,7 @@ class TestChatStream:
             assert "data:" in content
 
     @pytest.mark.asyncio
-    async def test_stream_includes_summary_event(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_includes_summary_event(self, client: AsyncClient, db_session):
         """Should include summary event at end of stream."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -331,10 +279,7 @@ class TestChatStream:
             mock_agent.stream = mock_stream
             MockAgent.return_value = mock_agent
 
-            response = await client.post(
-                "/api/chat/stream",
-                json={"message": "Test", "files": []}
-            )
+            response = await client.post("/api/chat/stream", json={"message": "Test", "files": []})
 
             assert response.status_code == 200
             content = response.text
@@ -355,9 +300,7 @@ class TestChatStream:
             assert summary_found, "Summary event not found in stream"
 
     @pytest.mark.asyncio
-    async def test_stream_with_conversation_history(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_with_conversation_history(self, client: AsyncClient, db_session):
         """Should load conversation history when conversationId provided."""
         # Create conversation with messages
         conv_id = str(uuid.uuid4())
@@ -365,10 +308,7 @@ class TestChatStream:
         db_session.add(conversation)
 
         msg = Message(
-            id=str(uuid.uuid4()),
-            conversation_id=conv_id,
-            role="user",
-            content="Previous message"
+            id=str(uuid.uuid4()), conversation_id=conv_id, role="user", content="Previous message"
         )
         db_session.add(msg)
         await db_session.commit()
@@ -387,11 +327,7 @@ class TestChatStream:
 
             response = await client.post(
                 "/api/chat/stream",
-                json={
-                    "message": "New message",
-                    "files": [],
-                    "conversationId": "file-with-history"
-                }
+                json={"message": "New message", "files": [], "conversationId": "file-with-history"},
             )
 
             assert response.status_code == 200
@@ -399,9 +335,7 @@ class TestChatStream:
             assert captured_history[0]["content"] == "Previous message"
 
     @pytest.mark.asyncio
-    async def test_stream_handles_agent_error(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_handles_agent_error(self, client: AsyncClient, db_session):
         """Should return error event when agent fails."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -413,19 +347,14 @@ class TestChatStream:
             mock_agent.stream = mock_stream
             MockAgent.return_value = mock_agent
 
-            response = await client.post(
-                "/api/chat/stream",
-                json={"message": "Test", "files": []}
-            )
+            response = await client.post("/api/chat/stream", json={"message": "Test", "files": []})
 
             assert response.status_code == 200
             content = response.text
             assert "error" in content.lower()
 
     @pytest.mark.asyncio
-    async def test_stream_with_file_context(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_with_file_context(self, client: AsyncClient, db_session):
         """Should pass file context to agent."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -443,10 +372,8 @@ class TestChatStream:
                 "/api/chat/stream",
                 json={
                     "message": "Summarize this",
-                    "files": [
-                        {"id": "f1", "name": "doc.md", "content": "# Hello World"}
-                    ]
-                }
+                    "files": [{"id": "f1", "name": "doc.md", "content": "# Hello World"}],
+                },
             )
 
             assert response.status_code == 200
@@ -461,9 +388,7 @@ class TestSimpleChat:
     """Tests for POST /api/chat/simple."""
 
     @pytest.mark.asyncio
-    async def test_simple_chat_returns_response(
-        self, client: AsyncClient
-    ):
+    async def test_simple_chat_returns_response(self, client: AsyncClient):
         """Should return AI response."""
         # LLMService is imported inside the function, so patch the module path
         with patch("services.llm_service.LLMService") as MockLLM:
@@ -471,19 +396,14 @@ class TestSimpleChat:
             mock_llm.complete = AsyncMock(return_value="Hello! How can I help?")
             MockLLM.return_value = mock_llm
 
-            response = await client.post(
-                "/api/chat/simple",
-                json={"message": "Hello"}
-            )
+            response = await client.post("/api/chat/simple", json={"message": "Hello"})
 
             assert response.status_code == 200
             data = response.json()
             assert data["response"] == "Hello! How can I help?"
 
     @pytest.mark.asyncio
-    async def test_simple_chat_with_system_prompt(
-        self, client: AsyncClient
-    ):
+    async def test_simple_chat_with_system_prompt(self, client: AsyncClient):
         """Should pass system prompt to LLM."""
         with patch("services.llm_service.LLMService") as MockLLM:
             mock_llm = MagicMock()
@@ -492,32 +412,23 @@ class TestSimpleChat:
 
             response = await client.post(
                 "/api/chat/simple",
-                json={
-                    "message": "Test",
-                    "system": "You are a helpful assistant."
-                }
+                json={"message": "Test", "system": "You are a helpful assistant."},
             )
 
             assert response.status_code == 200
             mock_llm.complete.assert_called_once_with(
-                prompt="Test",
-                system="You are a helpful assistant."
+                prompt="Test", system="You are a helpful assistant."
             )
 
     @pytest.mark.asyncio
-    async def test_simple_chat_handles_error(
-        self, client: AsyncClient
-    ):
+    async def test_simple_chat_handles_error(self, client: AsyncClient):
         """Should return 500 on LLM error."""
         with patch("services.llm_service.LLMService") as MockLLM:
             mock_llm = MagicMock()
             mock_llm.complete = AsyncMock(side_effect=Exception("LLM error"))
             MockLLM.return_value = mock_llm
 
-            response = await client.post(
-                "/api/chat/simple",
-                json={"message": "Test"}
-            )
+            response = await client.post("/api/chat/simple", json={"message": "Test"})
 
             assert response.status_code == 500
 
@@ -533,16 +444,19 @@ class TestHelperFunctions:
     def test_normalize_file_id_empty_string(self):
         """Empty string should return None."""
         from api.chat import normalize_file_id
+
         assert normalize_file_id("") is None
 
     def test_normalize_file_id_none(self):
         """None should return None."""
         from api.chat import normalize_file_id
+
         assert normalize_file_id(None) is None
 
     def test_normalize_file_id_valid(self):
         """Valid file_id should be returned as-is."""
         from api.chat import normalize_file_id
+
         assert normalize_file_id("file-123") == "file-123"
 
     def test_get_user_id_anonymous(self):
@@ -605,12 +519,7 @@ class TestPydanticModels:
         """Should create ImageContext with all fields."""
         from api.chat import ImageContext
 
-        ic = ImageContext(
-            src="url",
-            alt="alt text",
-            base64="abc123",
-            mediaType="image/png"
-        )
+        ic = ImageContext(src="url", alt="alt text", base64="abc123", mediaType="image/png")
         assert ic.base64 == "abc123"
         assert ic.mediaType == "image/png"
 
@@ -636,7 +545,7 @@ class TestPydanticModels:
             images=[ImageContext(src="img.png")],
             mode="analyze",
             conversationId="conv-123",
-            fileId="file-456"
+            fileId="file-456",
         )
         assert cr.mode == "analyze"
         assert len(cr.files) == 1
@@ -646,11 +555,7 @@ class TestPydanticModels:
         """Should create MessageCreate model correctly."""
         from api.chat import MessageCreate
 
-        mc = MessageCreate(
-            conversationId="conv-123",
-            role="user",
-            content="Hello"
-        )
+        mc = MessageCreate(conversationId="conv-123", role="user", content="Hello")
         assert mc.conversationId == "conv-123"
         assert mc.role == "user"
         assert mc.content == "Hello"
@@ -672,7 +577,7 @@ class TestPydanticModels:
             thinking="Let me think...",
             toolCalls=[{"name": "search"}],
             edits=[{"type": "insert"}],
-            model="claude-3-opus"
+            model="claude-3-opus",
         )
         assert mc.contexts == [{"type": "selection"}]
         assert mc.thinking == "Let me think..."
@@ -689,7 +594,7 @@ class TestPydanticModels:
             conversationId="conv-123",
             role="assistant",
             content="Hello",
-            createdAt="2024-01-01T00:00:00"
+            createdAt="2024-01-01T00:00:00",
         )
         assert mr.id == "msg-123"
         assert mr.conversationId == "conv-123"
@@ -709,10 +614,10 @@ class TestPydanticModels:
                     conversationId="conv-123",
                     role="user",
                     content="Hi",
-                    createdAt="2024-01-01T00:00:00"
+                    createdAt="2024-01-01T00:00:00",
                 )
             ],
-            createdAt="2024-01-01T00:00:00"
+            createdAt="2024-01-01T00:00:00",
         )
         assert cr.id == "conv-123"
         assert cr.fileId == "file-456"
@@ -730,10 +635,7 @@ class TestPydanticModels:
         """Should create SimpleChatRequest with system prompt."""
         from api.chat import SimpleChatRequest
 
-        scr = SimpleChatRequest(
-            message="Hello",
-            system="You are helpful"
-        )
+        scr = SimpleChatRequest(message="Hello", system="You are helpful")
         assert scr.system == "You are helpful"
 
 
@@ -750,10 +652,7 @@ class TestExtendedConversation:
         self, client: AsyncClient, db_session, auth_headers
     ):
         """Should handle global conversation with actual file_id."""
-        response = await client.get(
-            "/api/chat/conversations/global-doc",
-            headers=auth_headers
-        )
+        response = await client.get("/api/chat/conversations/global-doc", headers=auth_headers)
 
         # Should create a new conversation for this file_id
         assert response.status_code == 200
@@ -777,8 +676,8 @@ class TestExtendedConversation:
             json={
                 "conversationId": "target-file-id",  # Pass file_id
                 "role": "user",
-                "content": "Test message"
-            }
+                "content": "Test message",
+            },
         )
 
         assert response.status_code == 200
@@ -795,9 +694,7 @@ class TestExtendedStreaming:
     """Extended tests for streaming functionality."""
 
     @pytest.mark.asyncio
-    async def test_stream_collects_tool_events(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_collects_tool_events(self, client: AsyncClient, db_session):
         """Should collect tool_start, tool_input_delta, tool_end events."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -812,8 +709,7 @@ class TestExtendedStreaming:
             MockAgent.return_value = mock_agent
 
             response = await client.post(
-                "/api/chat/stream",
-                json={"message": "Search for X", "files": []}
+                "/api/chat/stream", json={"message": "Search for X", "files": []}
             )
 
             assert response.status_code == 200
@@ -833,9 +729,7 @@ class TestExtendedStreaming:
                         pass
 
     @pytest.mark.asyncio
-    async def test_stream_collects_thinking_events(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_collects_thinking_events(self, client: AsyncClient, db_session):
         """Should collect thinking events."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -849,8 +743,7 @@ class TestExtendedStreaming:
             MockAgent.return_value = mock_agent
 
             response = await client.post(
-                "/api/chat/stream",
-                json={"message": "Think about X", "files": []}
+                "/api/chat/stream", json={"message": "Think about X", "files": []}
             )
 
             assert response.status_code == 200
@@ -867,9 +760,7 @@ class TestExtendedStreaming:
                         pass
 
     @pytest.mark.asyncio
-    async def test_stream_collects_edit_events(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_collects_edit_events(self, client: AsyncClient, db_session):
         """Should collect edit events."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -882,8 +773,7 @@ class TestExtendedStreaming:
             MockAgent.return_value = mock_agent
 
             response = await client.post(
-                "/api/chat/stream",
-                json={"message": "Edit this", "files": []}
+                "/api/chat/stream", json={"message": "Edit this", "files": []}
             )
 
             assert response.status_code == 200
@@ -900,9 +790,7 @@ class TestExtendedStreaming:
                         pass
 
     @pytest.mark.asyncio
-    async def test_stream_with_images(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_with_images(self, client: AsyncClient, db_session):
         """Should pass images to agent for multimodal support."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -926,10 +814,10 @@ class TestExtendedStreaming:
                             "src": "data:image/png;base64,abc",
                             "alt": "Test image",
                             "base64": "abc123",
-                            "mediaType": "image/png"
+                            "mediaType": "image/png",
                         }
-                    ]
-                }
+                    ],
+                },
             )
 
             assert response.status_code == 200
@@ -938,9 +826,7 @@ class TestExtendedStreaming:
             assert captured_images[0]["mediaType"] == "image/png"
 
     @pytest.mark.asyncio
-    async def test_stream_truncates_large_file_content(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_truncates_large_file_content(self, client: AsyncClient, db_session):
         """Should truncate file content to 50000 chars."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
@@ -960,19 +846,15 @@ class TestExtendedStreaming:
                 "/api/chat/stream",
                 json={
                     "message": "Process file",
-                    "files": [
-                        {"id": "f1", "name": "large.txt", "content": large_content}
-                    ]
-                }
+                    "files": [{"id": "f1", "name": "large.txt", "content": large_content}],
+                },
             )
 
             assert response.status_code == 200
             # File content is truncated in the stream function
 
     @pytest.mark.asyncio
-    async def test_stream_with_kb_attachments(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_stream_with_kb_attachments(self, client: AsyncClient, db_session):
         """Should load KB attachments for conversation."""
         from db.database import ConversationAttachment
 
@@ -988,7 +870,7 @@ class TestExtendedStreaming:
             file_type="pdf",
             file_size=1024,  # Required field
             status="indexed",
-            chunk_count=5
+            chunk_count=5,
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -1013,11 +895,7 @@ class TestExtendedStreaming:
 
             response = await client.post(
                 "/api/chat/stream",
-                json={
-                    "message": "Search KB",
-                    "files": [],
-                    "conversationId": "file-with-kb"
-                }
+                json={"message": "Search KB", "files": [], "conversationId": "file-with-kb"},
             )
 
             assert response.status_code == 200
@@ -1032,9 +910,7 @@ class TestUserIsolation:
     """Tests for user data isolation in chat."""
 
     @pytest.mark.asyncio
-    async def test_conversation_user_id_filter(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_conversation_user_id_filter(self, client: AsyncClient, db_session, auth_headers):
         """Should filter conversations by user_id in non-debug mode."""
         from db.database import User
 
@@ -1053,19 +929,12 @@ class TestUserIsolation:
         await db_session.commit()
 
         # Create conversation for different user
-        conv = Conversation(
-            id=str(uuid.uuid4()),
-            file_id="user2-file",
-            user_id="user-2"
-        )
+        conv = Conversation(id=str(uuid.uuid4()), file_id="user2-file", user_id="user-2")
         db_session.add(conv)
         await db_session.commit()
 
         # In debug mode, we should still see the conversation
-        response = await client.get(
-            "/api/chat/conversations/user2-file",
-            headers=auth_headers
-        )
+        response = await client.get("/api/chat/conversations/user2-file", headers=auth_headers)
 
         # Debug mode shows all files
         assert response.status_code == 200

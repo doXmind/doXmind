@@ -70,5 +70,5 @@ def format_list(items: list[str], numbered: bool = False) -> str:
         Formatted list string
     """
     if numbered:
-        return "\n".join(f"{i+1}. {item}" for i, item in enumerate(items))
+        return "\n".join(f"{i + 1}. {item}" for i, item in enumerate(items))
     return "\n".join(f"- {item}" for item in items)

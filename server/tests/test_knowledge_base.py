@@ -18,9 +18,7 @@ class TestUploadAttachment:
     """Tests for POST /api/kb/{conversation_id}/attachments."""
 
     @pytest.mark.asyncio
-    async def test_upload_pdf_success(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_upload_pdf_success(self, client: AsyncClient, db_session, auth_headers):
         """Should upload and index a PDF file."""
         # Create conversation
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-123")
@@ -28,8 +26,10 @@ class TestUploadAttachment:
         await db_session.commit()
 
         # Mock RAGService directly
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Extracted PDF content"
             mock_rag = MagicMock()
             mock_rag.index_kb_attachment = AsyncMock(return_value=5)
@@ -40,9 +40,7 @@ class TestUploadAttachment:
             files = {"file": ("test.pdf", io.BytesIO(pdf_content), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/file-123/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/file-123/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -52,28 +50,32 @@ class TestUploadAttachment:
             assert data["status"] == "indexed"
 
     @pytest.mark.asyncio
-    async def test_upload_docx_success(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_upload_docx_success(self, client: AsyncClient, db_session, auth_headers):
         """Should upload and index a DOCX file."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-docx")
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Extracted DOCX content"
             mock_rag = MagicMock()
             mock_rag.index_kb_attachment = AsyncMock(return_value=3)
             mock_rag_class.return_value = mock_rag
 
             docx_content = b"PK\x03\x04 test docx"
-            files = {"file": ("document.docx", io.BytesIO(docx_content), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+            files = {
+                "file": (
+                    "document.docx",
+                    io.BytesIO(docx_content),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            }
 
             response = await client.post(
-                "/api/kb/file-docx/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/file-docx/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -94,9 +96,7 @@ class TestUploadAttachment:
         files = {"file": ("readme.txt", io.BytesIO(txt_content), "text/plain")}
 
         response = await client.post(
-            "/api/kb/file-bad/attachments",
-            files=files,
-            headers=auth_headers
+            "/api/kb/file-bad/attachments", files=files, headers=auth_headers
         )
 
         assert response.status_code == 415  # Unsupported Media Type
@@ -105,9 +105,7 @@ class TestUploadAttachment:
         assert "file type" in data["error"]["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_upload_file_too_large(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_upload_file_too_large(self, client: AsyncClient, db_session, auth_headers):
         """Should reject files exceeding size limit."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-large")
         db_session.add(conv)
@@ -119,9 +117,7 @@ class TestUploadAttachment:
             files = {"file": ("large.pdf", io.BytesIO(large_content), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/file-large/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/file-large/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 413
@@ -131,8 +127,10 @@ class TestUploadAttachment:
         self, client: AsyncClient, db_session, auth_headers
     ):
         """Should create conversation if it doesn't exist."""
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
             mock_rag = AsyncMock()
             mock_rag.index_kb_attachment = AsyncMock(return_value=1)
@@ -142,9 +140,7 @@ class TestUploadAttachment:
             files = {"file": ("new.pdf", io.BytesIO(pdf_content), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/new-conversation-file/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/new-conversation-file/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -158,8 +154,10 @@ class TestUploadAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.side_effect = Exception("Extraction failed")
             mock_rag = AsyncMock()
             mock_rag_class.return_value = mock_rag
@@ -168,9 +166,7 @@ class TestUploadAttachment:
             files = {"file": ("corrupt.pdf", io.BytesIO(pdf_content), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/file-error/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/file-error/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -188,18 +184,13 @@ class TestListAttachments:
     """Tests for GET /api/kb/{conversation_id}/attachments."""
 
     @pytest.mark.asyncio
-    async def test_list_empty_attachments(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_list_empty_attachments(self, client: AsyncClient, db_session, auth_headers):
         """Should return empty list when no attachments."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-empty")
         db_session.add(conv)
         await db_session.commit()
 
-        response = await client.get(
-            "/api/kb/file-empty/attachments",
-            headers=auth_headers
-        )
+        response = await client.get("/api/kb/file-empty/attachments", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -225,15 +216,12 @@ class TestListAttachments:
                 file_type="pdf",
                 file_size=1000 * (i + 1),
                 status="indexed",
-                chunk_count=i + 1
+                chunk_count=i + 1,
             )
             db_session.add(att)
         await db_session.commit()
 
-        response = await client.get(
-            "/api/kb/file-multi/attachments",
-            headers=auth_headers
-        )
+        response = await client.get("/api/kb/file-multi/attachments", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -245,10 +233,7 @@ class TestListAttachments:
         self, client: AsyncClient, auth_headers
     ):
         """Should return empty for nonexistent conversation."""
-        response = await client.get(
-            "/api/kb/nonexistent/attachments",
-            headers=auth_headers
-        )
+        response = await client.get("/api/kb/nonexistent/attachments", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -264,9 +249,7 @@ class TestDeleteAttachment:
     """Tests for DELETE /api/kb/{conversation_id}/attachments/{attachment_id}."""
 
     @pytest.mark.asyncio
-    async def test_delete_attachment_success(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_delete_attachment_success(self, client: AsyncClient, db_session, auth_headers):
         """Should delete attachment and remove from vector store."""
         conv_id = str(uuid.uuid4())
         conv = Conversation(id=conv_id, file_id="file-del")
@@ -280,7 +263,7 @@ class TestDeleteAttachment:
             file_type="pdf",
             file_size=1000,
             status="indexed",
-            chunk_count=5
+            chunk_count=5,
         )
         db_session.add(att)
         await db_session.commit()
@@ -291,8 +274,7 @@ class TestDeleteAttachment:
             mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
-                f"/api/kb/file-del/attachments/{att_id}",
-                headers=auth_headers
+                f"/api/kb/file-del/attachments/{att_id}", headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -314,8 +296,7 @@ class TestDeleteAttachment:
             mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
-                "/api/kb/file-noatt/attachments/nonexistent-id",
-                headers=auth_headers
+                "/api/kb/file-noatt/attachments/nonexistent-id", headers=auth_headers
             )
 
             assert response.status_code == 404
@@ -340,7 +321,7 @@ class TestDeleteAttachment:
             original_filename="test.pdf",
             file_type="pdf",
             file_size=1000,
-            status="indexed"
+            status="indexed",
         )
         db_session.add(att)
         await db_session.commit()
@@ -351,8 +332,7 @@ class TestDeleteAttachment:
 
             # Try to delete from conv2
             response = await client.delete(
-                f"/api/kb/file-2/attachments/{att_id}",
-                headers=auth_headers
+                f"/api/kb/file-2/attachments/{att_id}", headers=auth_headers
             )
 
             assert response.status_code == 404
@@ -367,9 +347,7 @@ class TestSearchKnowledgeBase:
     """Tests for POST /api/kb/{conversation_id}/search."""
 
     @pytest.mark.asyncio
-    async def test_search_returns_results(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_search_returns_results(self, client: AsyncClient, db_session, auth_headers):
         """Should return search results."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-search")
         db_session.add(conv)
@@ -378,16 +356,18 @@ class TestSearchKnowledgeBase:
         # Mock RAGService directly
         with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search_kb = AsyncMock(return_value=[
-                {"content": "Result 1", "source_file": "doc1.pdf", "score": 0.95},
-                {"content": "Result 2", "source_file": "doc2.pdf", "score": 0.85}
-            ])
+            mock_rag.search_kb = AsyncMock(
+                return_value=[
+                    {"content": "Result 1", "source_file": "doc1.pdf", "score": 0.95},
+                    {"content": "Result 2", "source_file": "doc2.pdf", "score": 0.85},
+                ]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
                 "/api/kb/file-search/search",
                 headers=auth_headers,
-                json={"query": "test query", "top_k": 5}
+                json={"query": "test query", "top_k": 5},
             )
 
             assert response.status_code == 200
@@ -397,9 +377,7 @@ class TestSearchKnowledgeBase:
             assert data["results"][0]["score"] == 0.95
 
     @pytest.mark.asyncio
-    async def test_search_empty_results(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_search_empty_results(self, client: AsyncClient, db_session, auth_headers):
         """Should return empty results when no matches."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-noresults")
         db_session.add(conv)
@@ -414,7 +392,7 @@ class TestSearchKnowledgeBase:
             response = await client.post(
                 "/api/kb/file-noresults/search",
                 headers=auth_headers,
-                json={"query": "no match", "top_k": 5}
+                json={"query": "no match", "top_k": 5},
             )
 
             assert response.status_code == 200
@@ -422,14 +400,10 @@ class TestSearchKnowledgeBase:
             assert data["results"] == []
 
     @pytest.mark.asyncio
-    async def test_search_nonexistent_conversation(
-        self, client: AsyncClient, auth_headers
-    ):
+    async def test_search_nonexistent_conversation(self, client: AsyncClient, auth_headers):
         """Should return 404 for nonexistent conversation."""
         response = await client.post(
-            "/api/kb/nonexistent/search",
-            headers=auth_headers,
-            json={"query": "test", "top_k": 5}
+            "/api/kb/nonexistent/search", headers=auth_headers, json={"query": "test", "top_k": 5}
         )
 
         assert response.status_code == 404
@@ -444,9 +418,7 @@ class TestGetAttachmentContent:
     """Tests for GET /api/kb/{conversation_id}/attachments/{attachment_id}/content."""
 
     @pytest.mark.asyncio
-    async def test_get_content_success(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_get_content_success(self, client: AsyncClient, db_session, auth_headers):
         """Should return extracted text content."""
         conv_id = str(uuid.uuid4())
         conv = Conversation(id=conv_id, file_id="file-content")
@@ -461,14 +433,13 @@ class TestGetAttachmentContent:
             file_size=1000,
             status="indexed",
             chunk_count=10,
-            extracted_text="This is the extracted text content."
+            extracted_text="This is the extracted text content.",
         )
         db_session.add(att)
         await db_session.commit()
 
         response = await client.get(
-            f"/api/kb/file-content/attachments/{att_id}/content",
-            headers=auth_headers
+            f"/api/kb/file-content/attachments/{att_id}/content", headers=auth_headers
         )
 
         assert response.status_code == 200
@@ -479,17 +450,14 @@ class TestGetAttachmentContent:
         assert data["chunk_count"] == 10
 
     @pytest.mark.asyncio
-    async def test_get_content_nonexistent(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_get_content_nonexistent(self, client: AsyncClient, db_session, auth_headers):
         """Should return 404 for nonexistent attachment."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-nocontent")
         db_session.add(conv)
         await db_session.commit()
 
         response = await client.get(
-            "/api/kb/file-nocontent/attachments/nonexistent/content",
-            headers=auth_headers
+            "/api/kb/file-nocontent/attachments/nonexistent/content", headers=auth_headers
         )
 
         assert response.status_code == 404
@@ -506,31 +474,37 @@ class TestHelperFunctions:
     def test_get_file_extension_pdf(self):
         """Should extract .pdf extension."""
         from api.knowledge_base import get_file_extension
+
         assert get_file_extension("document.pdf") == ".pdf"
 
     def test_get_file_extension_uppercase(self):
         """Should return lowercase extension."""
         from api.knowledge_base import get_file_extension
+
         assert get_file_extension("Document.PDF") == ".pdf"
 
     def test_get_file_extension_docx(self):
         """Should extract .docx extension."""
         from api.knowledge_base import get_file_extension
+
         assert get_file_extension("report.docx") == ".docx"
 
     def test_get_file_extension_no_extension(self):
         """Should return empty string for no extension."""
         from api.knowledge_base import get_file_extension
+
         assert get_file_extension("noextension") == ""
 
     def test_get_file_extension_multiple_dots(self):
         """Should return only last extension."""
         from api.knowledge_base import get_file_extension
+
         assert get_file_extension("archive.tar.gz") == ".gz"
 
     def test_get_file_extension_pptx(self):
         """Should extract .pptx extension."""
         from api.knowledge_base import get_file_extension
+
         assert get_file_extension("slides.pptx") == ".pptx"
 
 
@@ -553,7 +527,7 @@ class TestPydanticModels:
             file_size=1024,
             status="indexed",
             chunk_count=5,
-            created_at="2024-01-01T00:00:00"
+            created_at="2024-01-01T00:00:00",
         )
         assert resp.id == "att-123"
         assert resp.original_filename == "test.pdf"
@@ -575,7 +549,7 @@ class TestPydanticModels:
             status="error",
             chunk_count=0,
             error_message="Failed to extract text",
-            created_at="2024-01-01T00:00:00"
+            created_at="2024-01-01T00:00:00",
         )
         assert resp.status == "error"
         assert resp.error_message == "Failed to extract text"
@@ -591,14 +565,10 @@ class TestPydanticModels:
             file_size=1000,
             status="indexed",
             chunk_count=3,
-            created_at="2024-01-01T00:00:00"
+            created_at="2024-01-01T00:00:00",
         )
 
-        list_resp = AttachmentListResponse(
-            attachments=[att],
-            total_size=1000,
-            count=1
-        )
+        list_resp = AttachmentListResponse(attachments=[att], total_size=1000, count=1)
         assert len(list_resp.attachments) == 1
         assert list_resp.total_size == 1000
         assert list_resp.count == 1
@@ -622,11 +592,7 @@ class TestPydanticModels:
         """Should create KBSearchResult model correctly."""
         from api.knowledge_base import KBSearchResult
 
-        result = KBSearchResult(
-            content="Found this text",
-            source_file="document.pdf",
-            score=0.95
-        )
+        result = KBSearchResult(content="Found this text", source_file="document.pdf", score=0.95)
         assert result.content == "Found this text"
         assert result.source_file == "document.pdf"
         assert result.score == 0.95
@@ -637,7 +603,7 @@ class TestPydanticModels:
 
         results = [
             KBSearchResult(content="Result 1", source_file="doc1.pdf", score=0.9),
-            KBSearchResult(content="Result 2", source_file="doc2.pdf", score=0.8)
+            KBSearchResult(content="Result 2", source_file="doc2.pdf", score=0.8),
         ]
         resp = KBSearchResponse(results=results)
         assert len(resp.results) == 2
@@ -654,23 +620,27 @@ class TestKBRouterStructure:
     def test_router_exists(self):
         """Should have router defined."""
         from api.knowledge_base import router
+
         assert router is not None
 
     def test_router_has_upload_route(self):
         """Should have upload attachments route."""
         from api.knowledge_base import router
+
         paths = [r.path for r in router.routes]
         assert "/{conversation_id}/attachments" in paths
 
     def test_router_has_search_route(self):
         """Should have search route."""
         from api.knowledge_base import router
+
         paths = [r.path for r in router.routes]
         assert "/{conversation_id}/search" in paths
 
     def test_router_has_content_route(self):
         """Should have content route."""
         from api.knowledge_base import router
+
         paths = [r.path for r in router.routes]
         assert "/{conversation_id}/attachments/{attachment_id}/content" in paths
 
@@ -686,6 +656,7 @@ class TestConfiguration:
     def test_allowed_extensions(self):
         """Should have correct allowed extensions."""
         from api.knowledge_base import ALLOWED_EXTENSIONS
+
         assert ".pdf" in ALLOWED_EXTENSIONS
         assert ".docx" in ALLOWED_EXTENSIONS
         assert ".pptx" in ALLOWED_EXTENSIONS
@@ -694,6 +665,7 @@ class TestConfiguration:
     def test_max_file_size_defined(self):
         """Should have max file size defined."""
         from api.knowledge_base import MAX_FILE_SIZE
+
         assert MAX_FILE_SIZE > 0
 
 
@@ -706,16 +678,16 @@ class TestExtendedUpload:
     """Extended tests for upload functionality."""
 
     @pytest.mark.asyncio
-    async def test_upload_pptx_success(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_upload_pptx_success(self, client: AsyncClient, db_session, auth_headers):
         """Should upload and index a PPTX file."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-pptx")
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Presentation content"
 
             mock_rag = MagicMock()
@@ -723,12 +695,16 @@ class TestExtendedUpload:
             mock_rag_class.return_value = mock_rag
 
             pptx_content = b"PK\x03\x04 test pptx"
-            files = {"file": ("presentation.pptx", io.BytesIO(pptx_content), "application/vnd.openxmlformats-officedocument.presentationml.presentation")}
+            files = {
+                "file": (
+                    "presentation.pptx",
+                    io.BytesIO(pptx_content),
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                )
+            }
 
             response = await client.post(
-                "/api/kb/file-pptx/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/file-pptx/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -746,9 +722,7 @@ class TestExtendedDelete:
     """Extended tests for delete functionality."""
 
     @pytest.mark.asyncio
-    async def test_delete_handles_rag_error(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_delete_handles_rag_error(self, client: AsyncClient, db_session, auth_headers):
         """Should delete attachment even if RAG deletion fails."""
         conv_id = str(uuid.uuid4())
         conv = Conversation(id=conv_id, file_id="file-rag-err")
@@ -762,7 +736,7 @@ class TestExtendedDelete:
             file_type="pdf",
             file_size=1000,
             status="indexed",
-            chunk_count=5
+            chunk_count=5,
         )
         db_session.add(att)
         await db_session.commit()
@@ -773,25 +747,21 @@ class TestExtendedDelete:
             mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
-                f"/api/kb/file-rag-err/attachments/{att_id}",
-                headers=auth_headers
+                f"/api/kb/file-rag-err/attachments/{att_id}", headers=auth_headers
             )
 
             # Should still succeed
             assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_delete_nonexistent_conversation(
-        self, client: AsyncClient, auth_headers
-    ):
+    async def test_delete_nonexistent_conversation(self, client: AsyncClient, auth_headers):
         """Should return 404 for nonexistent conversation."""
         with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = AsyncMock()
             mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
-                "/api/kb/nonexistent-conv/attachments/some-att-id",
-                headers=auth_headers
+                "/api/kb/nonexistent-conv/attachments/some-att-id", headers=auth_headers
             )
 
             assert response.status_code == 404
@@ -806,9 +776,7 @@ class TestExtendedSearch:
     """Extended tests for search functionality."""
 
     @pytest.mark.asyncio
-    async def test_search_handles_rag_error(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_search_handles_rag_error(self, client: AsyncClient, db_session, auth_headers):
         """Should return 500 when RAG search fails."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-search-err")
         db_session.add(conv)
@@ -822,15 +790,13 @@ class TestExtendedSearch:
             response = await client.post(
                 "/api/kb/file-search-err/search",
                 headers=auth_headers,
-                json={"query": "test", "top_k": 5}
+                json={"query": "test", "top_k": 5},
             )
 
             assert response.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_search_with_custom_top_k(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_search_with_custom_top_k(self, client: AsyncClient, db_session, auth_headers):
         """Should pass custom top_k to search."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-topk")
         db_session.add(conv)
@@ -844,7 +810,7 @@ class TestExtendedSearch:
             response = await client.post(
                 "/api/kb/file-topk/search",
                 headers=auth_headers,
-                json={"query": "test", "top_k": 20}
+                json={"query": "test", "top_k": 20},
             )
 
             assert response.status_code == 200
@@ -863,9 +829,7 @@ class TestExtendedContent:
     """Extended tests for content retrieval."""
 
     @pytest.mark.asyncio
-    async def test_get_content_empty_text(
-        self, client: AsyncClient, db_session, auth_headers
-    ):
+    async def test_get_content_empty_text(self, client: AsyncClient, db_session, auth_headers):
         """Should return empty string when no extracted text."""
         conv_id = str(uuid.uuid4())
         conv = Conversation(id=conv_id, file_id="file-empty-text")
@@ -880,14 +844,13 @@ class TestExtendedContent:
             file_size=500,
             status="indexed",
             chunk_count=0,
-            extracted_text=None
+            extracted_text=None,
         )
         db_session.add(att)
         await db_session.commit()
 
         response = await client.get(
-            f"/api/kb/file-empty-text/attachments/{att_id}/content",
-            headers=auth_headers
+            f"/api/kb/file-empty-text/attachments/{att_id}/content", headers=auth_headers
         )
 
         assert response.status_code == 200
@@ -914,15 +877,14 @@ class TestExtendedContent:
             original_filename="doc.pdf",
             file_type="pdf",
             file_size=1000,
-            status="indexed"
+            status="indexed",
         )
         db_session.add(att)
         await db_session.commit()
 
         # Try to get from conv2
         response = await client.get(
-            f"/api/kb/file-c2/attachments/{att_id}/content",
-            headers=auth_headers
+            f"/api/kb/file-c2/attachments/{att_id}/content", headers=auth_headers
         )
 
         assert response.status_code == 404
@@ -941,8 +903,10 @@ class TestExtractTextContent:
         """Should call Gemini converter for extraction."""
         from api.knowledge_base import extract_text_content
 
-        with patch("api.knowledge_base.is_gemini_configured", return_value=True), \
-             patch("api.knowledge_base.convert_file_to_markdown") as mock_convert:
+        with (
+            patch("api.knowledge_base.is_gemini_configured", return_value=True),
+            patch("api.knowledge_base.convert_file_to_markdown") as mock_convert,
+        ):
             mock_convert.return_value = "Extracted text"
 
             result = await extract_text_content(b"content", "test.pdf", ".pdf")
@@ -955,6 +919,8 @@ class TestExtractTextContent:
         """Should raise ValueError when Gemini API key is not configured."""
         from api.knowledge_base import extract_text_content
 
-        with patch("api.knowledge_base.is_gemini_configured", return_value=False), \
-             pytest.raises(ValueError, match="GEMINI_API_KEY"):
+        with (
+            patch("api.knowledge_base.is_gemini_configured", return_value=False),
+            pytest.raises(ValueError, match="GEMINI_API_KEY"),
+        ):
             await extract_text_content(b"content", "test.pdf", ".pdf")

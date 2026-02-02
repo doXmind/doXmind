@@ -28,8 +28,10 @@ router = APIRouter()
 # Request/Response Models
 # =============================================================================
 
+
 class RegisterRequest(BaseModel):
     """Request model for user registration."""
+
     email: EmailStr
     username: str = Field(min_length=2, max_length=100)
     password: str = Field(min_length=8, max_length=128)
@@ -37,46 +39,54 @@ class RegisterRequest(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     """Request model for email verification."""
+
     email: EmailStr
     code: str = Field(min_length=6, max_length=6)
 
 
 class ResendCodeRequest(BaseModel):
     """Request model for resending verification code."""
+
     email: EmailStr
 
 
 class LoginRequest(BaseModel):
     """Request model for login."""
+
     email: EmailStr
     password: str
 
 
 class PasswordResetRequest(BaseModel):
     """Request model for initiating password reset."""
+
     email: EmailStr
 
 
 class PasswordResetConfirm(BaseModel):
     """Request model for confirming password reset."""
+
     token: str
     new_password: str = Field(min_length=8, max_length=128)
 
 
 class ChangePasswordRequest(BaseModel):
     """Request model for changing password."""
+
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
 
 
 class UpdateProfileRequest(BaseModel):
     """Request model for updating profile."""
+
     username: str | None = Field(None, min_length=2, max_length=100)
     avatar_url: str | None = None
 
 
 class TokenResponse(BaseModel):
     """Response model for authentication."""
+
     access_token: str
     token_type: str = "bearer"
     expires_in: int  # seconds
@@ -85,12 +95,14 @@ class TokenResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     """Simple message response."""
+
     success: bool
     message: str
 
 
 class UserResponse(BaseModel):
     """User information response."""
+
     id: str
     email: str
     username: str | None
@@ -102,6 +114,7 @@ class UserResponse(BaseModel):
 
 class AuthStatusResponse(BaseModel):
     """Response model for auth status check."""
+
     authenticated: bool
     auth_type: str | None = None
     user: UserResponse | None = None
@@ -112,6 +125,7 @@ class AuthStatusResponse(BaseModel):
 # Helper Functions
 # =============================================================================
 
+
 def user_to_response(user: User) -> UserResponse:
     """Convert User model to response."""
     return UserResponse(
@@ -121,7 +135,7 @@ def user_to_response(user: User) -> UserResponse:
         avatar_url=user.avatar_url,
         is_verified=user.is_verified,
         oauth_provider=user.oauth_provider,
-        created_at=user.created_at.isoformat() if user.created_at else ""
+        created_at=user.created_at.isoformat() if user.created_at else "",
     )
 
 
@@ -133,7 +147,7 @@ def user_to_dict(user: User) -> dict:
         "username": user.username,
         "avatar_url": user.avatar_url,
         "is_verified": user.is_verified,
-        "oauth_provider": user.oauth_provider
+        "oauth_provider": user.oauth_provider,
     }
 
 
@@ -141,13 +155,10 @@ def user_to_dict(user: User) -> dict:
 # Registration Endpoints
 # =============================================================================
 
+
 @router.post("/register", response_model=MessageResponse)
 @limiter.limit("5/minute")
-async def register(
-    request: Request,
-    body: RegisterRequest,
-    db: AsyncSession = Depends(get_db)
-):
+async def register(request: Request, body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Start user registration by sending verification code.
 
     Sends a 6-digit verification code to the provided email.
@@ -156,16 +167,11 @@ async def register(
     user_service = UserService(db)
 
     success, message = await user_service.initiate_registration(
-        email=body.email,
-        username=body.username,
-        password=body.password
+        email=body.email, username=body.username, password=body.password
     )
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     return MessageResponse(success=True, message=message)
 
@@ -173,9 +179,7 @@ async def register(
 @router.post("/verify-email", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def verify_email(
-    request: Request,
-    body: VerifyEmailRequest,
-    db: AsyncSession = Depends(get_db)
+    request: Request, body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)
 ):
     """Verify email with code and complete registration.
 
@@ -184,16 +188,10 @@ async def verify_email(
     settings = get_settings()
     user_service = UserService(db)
 
-    success, message, user = await user_service.verify_email_code(
-        email=body.email,
-        code=body.code
-    )
+    success, message, user = await user_service.verify_email_code(email=body.email, code=body.code)
 
     if not success or not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     # Generate token
     access_token = create_access_token(subject=user.id)
@@ -202,16 +200,14 @@ async def verify_email(
         access_token=access_token,
         token_type="bearer",
         expires_in=settings.jwt_access_token_expire_minutes * 60,
-        user=user_to_dict(user)
+        user=user_to_dict(user),
     )
 
 
 @router.post("/resend-code", response_model=MessageResponse)
 @limiter.limit("3/minute")
 async def resend_code(
-    request: Request,
-    body: ResendCodeRequest,
-    db: AsyncSession = Depends(get_db)
+    request: Request, body: ResendCodeRequest, db: AsyncSession = Depends(get_db)
 ):
     """Resend verification code for pending registration."""
     user_service = UserService(db)
@@ -219,10 +215,7 @@ async def resend_code(
     success, message = await user_service.resend_verification_code(body.email)
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     return MessageResponse(success=True, message=message)
 
@@ -231,27 +224,23 @@ async def resend_code(
 # Login Endpoints
 # =============================================================================
 
+
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("10/minute")
-async def login(
-    request: Request,
-    body: LoginRequest,
-    db: AsyncSession = Depends(get_db)
-):
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Login with email and password."""
     settings = get_settings()
     user_service = UserService(db)
 
     success, message, token = await user_service.authenticate(
-        email=body.email,
-        password=body.password
+        email=body.email, password=body.password
     )
 
     if not success or not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=message,
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     # Get user info for response
@@ -261,7 +250,7 @@ async def login(
         access_token=token,
         token_type="bearer",
         expires_in=settings.jwt_access_token_expire_minutes * 60,
-        user=user_to_dict(user) if user else None
+        user=user_to_dict(user) if user else None,
     )
 
 
@@ -269,12 +258,11 @@ async def login(
 # Password Reset Endpoints
 # =============================================================================
 
+
 @router.post("/forgot-password", response_model=MessageResponse)
 @limiter.limit("3/minute")
 async def forgot_password(
-    request: Request,
-    body: PasswordResetRequest,
-    db: AsyncSession = Depends(get_db)
+    request: Request, body: PasswordResetRequest, db: AsyncSession = Depends(get_db)
 ):
     """Request password reset email."""
     user_service = UserService(db)
@@ -288,23 +276,17 @@ async def forgot_password(
 @router.post("/reset-password", response_model=MessageResponse)
 @limiter.limit("5/minute")
 async def reset_password(
-    request: Request,
-    body: PasswordResetConfirm,
-    db: AsyncSession = Depends(get_db)
+    request: Request, body: PasswordResetConfirm, db: AsyncSession = Depends(get_db)
 ):
     """Reset password with token from email."""
     user_service = UserService(db)
 
     success, message = await user_service.reset_password(
-        token=body.token,
-        new_password=body.new_password
+        token=body.token, new_password=body.new_password
     )
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     return MessageResponse(success=True, message=message)
 
@@ -312,6 +294,7 @@ async def reset_password(
 # =============================================================================
 # Google OAuth Endpoints
 # =============================================================================
+
 
 def _create_oauth_state(redirect_uri: str | None = None) -> str:
     """Create a signed OAuth state token (stateless approach).
@@ -326,16 +309,16 @@ def _create_oauth_state(redirect_uri: str | None = None) -> str:
     }
     payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
     signature = hmac.new(
-        settings.jwt_secret_key.encode(),
-        payload_b64.encode(),
-        hashlib.sha256
+        settings.jwt_secret_key.encode(), payload_b64.encode(), hashlib.sha256
     ).digest()
     signature_b64 = base64.urlsafe_b64encode(signature).decode()
     state = base64.urlsafe_b64encode(f"{payload_b64}.{signature_b64}".encode()).decode()
     return state
 
 
-def _verify_oauth_state(state: str, max_age_seconds: int = 600) -> dict[str, str | int | None] | None:
+def _verify_oauth_state(
+    state: str, max_age_seconds: int = 600
+) -> dict[str, str | int | None] | None:
     """Verify a signed OAuth state token.
 
     Args:
@@ -358,9 +341,7 @@ def _verify_oauth_state(state: str, max_age_seconds: int = 600) -> dict[str, str
 
         # Verify signature
         expected_signature = hmac.new(
-            settings.jwt_secret_key.encode(),
-            payload_b64.encode(),
-            hashlib.sha256
+            settings.jwt_secret_key.encode(), payload_b64.encode(), hashlib.sha256
         ).digest()
         provided_signature = base64.urlsafe_b64decode(signature_b64.encode())
 
@@ -379,8 +360,7 @@ async def google_auth(request: Request, redirect_uri: str | None = None):
 
     if not oauth_service.is_configured():
         raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Google OAuth is not configured"
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Google OAuth is not configured"
         )
 
     # Generate signed state for CSRF protection (stateless approach)
@@ -396,7 +376,7 @@ async def google_callback(
     request: Request,
     code: str = Query(...),
     state: str = Query(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Handle Google OAuth callback."""
     settings = get_settings()
@@ -405,8 +385,7 @@ async def google_callback(
     state_payload = _verify_oauth_state(state)
     if not state_payload:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired state parameter"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state parameter"
         )
 
     oauth_service = get_google_oauth_service()
@@ -417,8 +396,7 @@ async def google_callback(
 
         if not google_user.get("email"):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to get email from Google"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get email from Google"
             )
 
         # Create or update user
@@ -428,7 +406,7 @@ async def google_callback(
             oauth_id=google_user["sub"],
             email=google_user["email"],
             username=google_user.get("name"),
-            avatar_url=google_user.get("picture")
+            avatar_url=google_user.get("picture"),
         )
 
         # Generate token
@@ -442,22 +420,20 @@ async def google_callback(
         return RedirectResponse(url=redirect_url)
 
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # =============================================================================
 # Token Management Endpoints
 # =============================================================================
 
+
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def refresh_token(
     request: Request,
     token_data: TokenData = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Refresh an existing token."""
     settings = get_settings()
@@ -472,7 +448,7 @@ async def refresh_token(
         access_token=access_token,
         token_type="bearer",
         expires_in=settings.jwt_access_token_expire_minutes * 60,
-        user=user_to_dict(user) if user else None
+        user=user_to_dict(user) if user else None,
     )
 
 
@@ -480,24 +456,16 @@ async def refresh_token(
 async def auth_status(
     request: Request,
     token_data: TokenData | None = Depends(optional_auth),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Check current authentication status."""
     settings = get_settings()
 
     if settings.debug and token_data and token_data.sub == "dev-user":
-        return AuthStatusResponse(
-            authenticated=True,
-            auth_type="dev",
-            user=None,
-            debug_mode=True
-        )
+        return AuthStatusResponse(authenticated=True, auth_type="dev", user=None, debug_mode=True)
 
     if token_data is None:
-        return AuthStatusResponse(
-            authenticated=False,
-            debug_mode=settings.debug
-        )
+        return AuthStatusResponse(authenticated=False, debug_mode=settings.debug)
 
     # Get user info
     user_service = UserService(db)
@@ -507,7 +475,7 @@ async def auth_status(
         authenticated=True,
         auth_type=token_data.token_type,
         user=user_to_response(user) if user else None,
-        debug_mode=settings.debug
+        debug_mode=settings.debug,
     )
 
 
@@ -515,20 +483,17 @@ async def auth_status(
 # User Profile Endpoints
 # =============================================================================
 
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(
-    token_data: TokenData = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    token_data: TokenData = Depends(require_auth), db: AsyncSession = Depends(get_db)
 ):
     """Get current user information."""
     user_service = UserService(db)
     user = await user_service.get_user_by_id(token_data.sub)
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     return user_to_response(user)
 
@@ -537,22 +502,17 @@ async def get_current_user(
 async def update_profile(
     body: UpdateProfileRequest,
     token_data: TokenData = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Update current user profile."""
     user_service = UserService(db)
 
     success, message, user = await user_service.update_profile(
-        user_id=token_data.sub,
-        username=body.username,
-        avatar_url=body.avatar_url
+        user_id=token_data.sub, username=body.username, avatar_url=body.avatar_url
     )
 
     if not success or not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     return user_to_response(user)
 
@@ -563,7 +523,7 @@ async def change_password(
     request: Request,
     body: ChangePasswordRequest,
     token_data: TokenData = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Change current user password."""
     user_service = UserService(db)
@@ -571,22 +531,18 @@ async def change_password(
     success, message = await user_service.change_password(
         user_id=token_data.sub,
         current_password=body.current_password,
-        new_password=body.new_password
+        new_password=body.new_password,
     )
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     return MessageResponse(success=True, message=message)
 
 
 @router.delete("/me", response_model=MessageResponse)
 async def delete_account(
-    token_data: TokenData = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    token_data: TokenData = Depends(require_auth), db: AsyncSession = Depends(get_db)
 ):
     """Delete current user account and all associated data.
 
@@ -598,9 +554,6 @@ async def delete_account(
     success, message = await user_service.delete_user(token_data.sub)
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     return MessageResponse(success=True, message=message)

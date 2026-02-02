@@ -64,16 +64,14 @@ async def execute_skill_tool(
         instructions = service.get_skill_instructions(skill_name)
         if instructions is None:
             available = [s["name"] for s in service.list_skills()]
-            return {
-                "error": f"Skill not found: {skill_name}. Available: {', '.join(available)}"
-            }
+            return {"error": f"Skill not found: {skill_name}. Available: {', '.join(available)}"}
 
         # Check if this skill has external tools that should be activated
         external_tools = SKILL_EXTERNAL_TOOLS.get(skill_name, [])
         tool_notice = ""
         if external_tools:
             settings = get_settings()
-            # Check if required API key is configured
+            # Check if required API key/feature is configured
             if skill_name == "legal" and settings.has_legal_tools:
                 tool_notice = """
 ---
@@ -82,6 +80,19 @@ async def execute_skill_tool(
 2. `get_court_opinion(opinion_id)` - Get full opinion text.
 
 Workflow: Search → Pick relevant cases → Get full text for citation.
+---
+
+"""
+            elif skill_name == "data-analysis" and settings.code_execution_enabled:
+                tool_notice = """
+---
+**DATA ANALYSIS TOOLS AVAILABLE:**
+1. `list_data_files()` - List all data files in this conversation
+
+**Workflow:**
+1. Call `list_data_files()` to discover available files
+2. Use code execution to load and analyze with pandas
+3. Files are at: `/mnt/user/<filename>`
 ---
 
 """

@@ -191,9 +191,7 @@ class TestGetConversationByFileId:
 
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
 
-        result = await get_conversation_by_file_id(
-            "file-123", mock_db, create_if_missing=True
-        )
+        result = await get_conversation_by_file_id("file-123", mock_db, create_if_missing=True)
 
         assert result is not None
         mock_db.add.assert_called_once()

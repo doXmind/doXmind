@@ -26,6 +26,7 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Token Models
 # =============================================================================
 
+
 class TokenData:
     """Data extracted from JWT token."""
 
@@ -39,10 +40,8 @@ class TokenData:
 # Token Functions
 # =============================================================================
 
-def create_access_token(
-    subject: str = "anonymous",
-    expires_delta: timedelta | None = None
-) -> str:
+
+def create_access_token(subject: str = "anonymous", expires_delta: timedelta | None = None) -> str:
     """Create a new JWT access token.
 
     Args:
@@ -57,22 +56,11 @@ def create_access_token(
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(UTC) + timedelta(
-            minutes=settings.jwt_access_token_expire_minutes
-        )
+        expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
 
-    to_encode = {
-        "sub": subject,
-        "exp": expire,
-        "type": "access",
-        "iat": datetime.now(UTC)
-    }
+    to_encode = {"sub": subject, "exp": expire, "type": "access", "iat": datetime.now(UTC)}
 
-    encoded_jwt = jwt.encode(
-        to_encode,
-        settings.jwt_secret_key,
-        algorithm=settings.jwt_algorithm
-    )
+    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
     return encoded_jwt
 
@@ -89,11 +77,7 @@ def verify_token(token: str) -> TokenData | None:
     settings = get_settings()
 
     try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm]
-        )
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
 
         sub: str = payload.get("sub")
         exp: int = payload.get("exp")
@@ -102,11 +86,7 @@ def verify_token(token: str) -> TokenData | None:
         if sub is None or exp is None:
             return None
 
-        return TokenData(
-            sub=sub,
-            exp=datetime.fromtimestamp(exp, tz=UTC),
-            token_type=token_type
-        )
+        return TokenData(sub=sub, exp=datetime.fromtimestamp(exp, tz=UTC), token_type=token_type)
 
     except JWTError:
         return None
@@ -137,8 +117,9 @@ def verify_api_key(api_key: str) -> bool:
 # FastAPI Dependencies
 # =============================================================================
 
+
 async def get_current_token(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> TokenData | None:
     """Extract and validate JWT token from Authorization header.
 
@@ -152,9 +133,7 @@ async def get_current_token(
     return token_data
 
 
-async def get_api_key(
-    api_key: str | None = Depends(api_key_header)
-) -> str | None:
+async def get_api_key(api_key: str | None = Depends(api_key_header)) -> str | None:
     """Extract API key from X-API-Key header.
 
     Returns the API key if valid, None otherwise.
@@ -171,7 +150,7 @@ async def get_api_key(
 async def require_auth(
     request: Request,
     token: TokenData | None = Depends(get_current_token),
-    api_key: str | None = Depends(get_api_key)
+    api_key: str | None = Depends(get_api_key),
 ) -> TokenData:
     """Require authentication via JWT token OR API key.
 
@@ -189,31 +168,26 @@ async def require_auth(
     # Check API key
     if api_key is not None:
         return TokenData(
-            sub="api-key-user",
-            exp=datetime.now(UTC) + timedelta(days=1),
-            token_type="api_key"
+            sub="api-key-user", exp=datetime.now(UTC) + timedelta(days=1), token_type="api_key"
         )
 
     # In debug mode, allow unauthenticated access for development
     if settings.debug:
         # Return a dummy token for development only when no real auth provided
         return TokenData(
-            sub="dev-user",
-            exp=datetime.now(UTC) + timedelta(days=1),
-            token_type="dev"
+            sub="dev-user", exp=datetime.now(UTC) + timedelta(days=1), token_type="dev"
         )
 
     # No valid authentication
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication required. Provide a valid JWT token or API key.",
-        headers={"WWW-Authenticate": "Bearer"}
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 
 async def optional_auth(
-    token: TokenData | None = Depends(get_current_token),
-    api_key: str | None = Depends(get_api_key)
+    token: TokenData | None = Depends(get_current_token), api_key: str | None = Depends(get_api_key)
 ) -> TokenData | None:
     """Optional authentication - returns None if not authenticated.
 
@@ -224,9 +198,7 @@ async def optional_auth(
 
     if api_key is not None:
         return TokenData(
-            sub="api-key-user",
-            exp=datetime.now(UTC) + timedelta(days=1),
-            token_type="api_key"
+            sub="api-key-user", exp=datetime.now(UTC) + timedelta(days=1), token_type="api_key"
         )
 
     return None
@@ -235,6 +207,7 @@ async def optional_auth(
 # =============================================================================
 # Password Utilities (for future user management)
 # =============================================================================
+
 
 def _truncate_password(password: str) -> str:
     """Truncate password to bcrypt's 72-byte limit.

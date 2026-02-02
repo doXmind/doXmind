@@ -20,6 +20,7 @@ from services.reranker_service import (
 # RRF Algorithm Tests
 # =============================================================================
 
+
 class TestReciprocalRankFusion:
     """Tests for the RRF fusion algorithm."""
 
@@ -73,15 +74,13 @@ class TestReciprocalRankFusion:
 
         # Heavy semantic weight
         result_semantic = reciprocal_rank_fusion(
-            semantic, keyword,
-            semantic_weight=0.9, keyword_weight=0.1
+            semantic, keyword, semantic_weight=0.9, keyword_weight=0.1
         )
         assert result_semantic[0]["id"] == "a"
 
         # Heavy keyword weight
         result_keyword = reciprocal_rank_fusion(
-            semantic, keyword,
-            semantic_weight=0.1, keyword_weight=0.9
+            semantic, keyword, semantic_weight=0.1, keyword_weight=0.9
         )
         assert result_keyword[0]["id"] == "b"
 
@@ -104,11 +103,9 @@ class TestReciprocalRankFusion:
 
     def test_preserves_metadata(self):
         """Should preserve document metadata."""
-        semantic = [{
-            "id": "a",
-            "content": "doc a",
-            "metadata": {"file_id": "file1", "extra": "data"}
-        }]
+        semantic = [
+            {"id": "a", "content": "doc a", "metadata": {"file_id": "file1", "extra": "data"}}
+        ]
         result = reciprocal_rank_fusion(semantic, [])
 
         assert result[0]["metadata"]["file_id"] == "file1"
@@ -118,6 +115,7 @@ class TestReciprocalRankFusion:
 # =============================================================================
 # Reranker Tests
 # =============================================================================
+
 
 class TestNoOpReranker:
     """Tests for the no-op reranker."""
@@ -208,9 +206,7 @@ class TestGPTReranker:
 
         # Mock the internal _client attribute to raise an error
         mock_client = MagicMock()
-        mock_client.beta.chat.completions.parse = AsyncMock(
-            side_effect=Exception("API error")
-        )
+        mock_client.beta.chat.completions.parse = AsyncMock(side_effect=Exception("API error"))
         reranker._client = mock_client
 
         result = await reranker.rerank("query", docs, top_n=2)
@@ -273,6 +269,7 @@ class TestGetReranker:
 # Integration Tests
 # =============================================================================
 
+
 class TestHybridSearchIntegration:
     """Integration tests for hybrid search workflow."""
 
@@ -304,13 +301,15 @@ class TestHybridSearchIntegration:
 
     def test_rrf_preserves_all_metadata(self):
         """RRF should preserve all original document metadata."""
-        semantic = [{
-            "id": "a",
-            "content": "test content",
-            "metadata": {"file_id": "f1", "chunk_index": 0, "user_id": "u1"},
-            "distance": 0.1,
-            "extra_field": "extra"
-        }]
+        semantic = [
+            {
+                "id": "a",
+                "content": "test content",
+                "metadata": {"file_id": "f1", "chunk_index": 0, "user_id": "u1"},
+                "distance": 0.1,
+                "extra_field": "extra",
+            }
+        ]
 
         result = reciprocal_rank_fusion(semantic, [])
 

@@ -17,11 +17,7 @@ class AppException(Exception):
     error_code: str = "INTERNAL_ERROR"
     message: str = "An unexpected error occurred"
 
-    def __init__(
-        self,
-        message: str = None,
-        details: dict[str, Any] | None = None
-    ):
+    def __init__(self, message: str = None, details: dict[str, Any] | None = None):
         self.message = message or self.__class__.message
         self.details = details or {}
         super().__init__(self.message)
@@ -42,6 +38,7 @@ class AppException(Exception):
 # ============================================================================
 # Client Errors (4xx)
 # ============================================================================
+
 
 class NotFoundError(AppException):
     """Resource not found (404)."""
@@ -144,6 +141,7 @@ class UnsupportedFileTypeError(AppException):
 # Server Errors (5xx)
 # ============================================================================
 
+
 class InternalError(AppException):
     """Internal server error (500)."""
 
@@ -177,6 +175,7 @@ class ExternalServiceError(AppException):
 # ============================================================================
 # Domain-Specific Errors
 # ============================================================================
+
 
 class LLMError(ExternalServiceError):
     """Error from LLM service (Claude API)."""

@@ -14,11 +14,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # KB tool names for quick lookup
-KB_TOOL_NAMES = frozenset([
-    "search_knowledge_base",
-    "read_kb_document",
-    "list_kb_documents"
-])
+KB_TOOL_NAMES = frozenset(["search_knowledge_base", "read_kb_document", "list_kb_documents"])
 
 
 def is_kb_tool(tool_name: str) -> bool:
@@ -27,8 +23,7 @@ def is_kb_tool(tool_name: str) -> bool:
 
 
 async def execute_list_kb_documents(
-    tool_input: dict[str, Any],
-    kb_context: dict[str, Any]
+    tool_input: dict[str, Any], kb_context: dict[str, Any]
 ) -> dict[str, Any]:
     """Execute list_kb_documents tool.
 
@@ -49,8 +44,7 @@ async def execute_list_kb_documents(
 
 
 async def execute_search_knowledge_base(
-    tool_input: dict[str, Any],
-    kb_context: dict[str, Any]
+    tool_input: dict[str, Any], kb_context: dict[str, Any]
 ) -> dict[str, Any]:
     """Execute search_knowledge_base tool.
 
@@ -91,8 +85,7 @@ async def execute_search_knowledge_base(
 
 
 async def execute_read_kb_document(
-    tool_input: dict[str, Any],
-    kb_context: dict[str, Any]
+    tool_input: dict[str, Any], kb_context: dict[str, Any]
 ) -> dict[str, Any]:
     """Execute read_kb_document tool.
 
@@ -109,18 +102,16 @@ async def execute_read_kb_document(
     # Find attachment by name (exact or partial match)
     attachment = None
     for att in attachments:
-        if att['filename'].lower() == document_name.lower():
+        if att["filename"].lower() == document_name.lower():
             attachment = att
             break
-        if document_name.lower() in att['filename'].lower():
+        if document_name.lower() in att["filename"].lower():
             attachment = att
             break
 
     if not attachment:
-        available = [att['filename'] for att in attachments]
-        return {
-            "error": f"Document '{document_name}' not found. Available: {', '.join(available)}"
-        }
+        available = [att["filename"] for att in attachments]
+        return {"error": f"Document '{document_name}' not found. Available: {', '.join(available)}"}
 
     # Import here to avoid circular imports
     from services.rag_service import RAGService
@@ -132,18 +123,16 @@ async def execute_read_kb_document(
     try:
         rag = RAGService(db)
         result = await rag.get_kb_document_content(
-            attachment['id'],
-            start_section,
-            start_section + num_sections
+            attachment["id"], start_section, start_section + num_sections
         )
 
-        if not result['content']:
+        if not result["content"]:
             return {"result": f"No content found in {document_name}"}
 
         return {
             "result": (
                 f"**{result['filename']}** "
-                f"(sections {start_section+1}-{start_section + result['chunks_returned']} "
+                f"(sections {start_section + 1}-{start_section + result['chunks_returned']} "
                 f"of {result['total_chunks']}):\n\n{result['content']}"
             )
         }
@@ -162,9 +151,7 @@ _KB_TOOL_EXECUTORS = {
 
 
 async def execute_kb_tool(
-    tool_name: str,
-    tool_input: dict[str, Any],
-    kb_context: dict[str, Any] | None
+    tool_name: str, tool_input: dict[str, Any], kb_context: dict[str, Any] | None
 ) -> dict[str, Any]:
     """Execute a KB tool asynchronously.
 

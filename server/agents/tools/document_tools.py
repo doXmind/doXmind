@@ -17,6 +17,7 @@ from lib.markdown_utils import markdown_to_plain_text
 @dataclass
 class FileContext:
     """Represents a file context passed to tools."""
+
     id: str
     name: str
     content: str
@@ -24,9 +25,7 @@ class FileContext:
 
 
 def find_target_file(
-    files: list[dict[str, Any]],
-    file_id: str | None,
-    current_file_id: str | None
+    files: list[dict[str, Any]], file_id: str | None, current_file_id: str | None
 ) -> dict[str, Any] | None:
     """Find the target file from the files list.
 
@@ -51,9 +50,7 @@ def find_target_file(
 
 
 def execute_view_document(
-    tool_input: dict[str, Any],
-    files: list[dict[str, Any]],
-    current_file_id: str | None
+    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
     """Execute view_document tool.
 
@@ -66,17 +63,13 @@ def execute_view_document(
 
     content = target_file.get("content", "")
     lines = content.split("\n")
-    numbered_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines)]
+    numbered_lines = [f"{i + 1:4d} | {line}" for i, line in enumerate(lines)]
 
-    return {
-        "result": f"Document: {target_file['name']}\n{'='*50}\n" + "\n".join(numbered_lines)
-    }
+    return {"result": f"Document: {target_file['name']}\n{'=' * 50}\n" + "\n".join(numbered_lines)}
 
 
 def execute_str_replace(
-    tool_input: dict[str, Any],
-    files: list[dict[str, Any]],
-    current_file_id: str | None
+    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
     """Execute str_replace_editor tool.
 
@@ -113,14 +106,12 @@ def execute_str_replace(
         "old_str": old_str,
         "new_str": new_str,
         "search_text": search_text,
-        "success": True
+        "success": True,
     }
 
 
 def execute_insert_text(
-    tool_input: dict[str, Any],
-    files: list[dict[str, Any]],
-    current_file_id: str | None
+    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
     """Execute insert_text tool.
 
@@ -146,14 +137,12 @@ def execute_insert_text(
         "file_name": target_file["name"],
         "insert_line": insert_line,
         "new_str": new_str,
-        "success": True
+        "success": True,
     }
 
 
 def execute_replace_document(
-    tool_input: dict[str, Any],
-    files: list[dict[str, Any]],
-    current_file_id: str | None
+    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
     """Execute replace_document tool.
 
@@ -172,14 +161,12 @@ def execute_replace_document(
         "file_id": target_file["id"],
         "file_name": target_file["name"],
         "new_content": new_content,
-        "success": True
+        "success": True,
     }
 
 
 def execute_search_in_document(
-    tool_input: dict[str, Any],
-    files: list[dict[str, Any]],
-    current_file_id: str | None
+    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
     """Execute search_in_document tool.
 
@@ -202,7 +189,7 @@ def execute_search_in_document(
             context_lines = []
             for j in range(context_start, context_end):
                 prefix = ">>>" if j == i else "   "
-                context_lines.append(f"{prefix} {j+1:4d} | {lines[j]}")
+                context_lines.append(f"{prefix} {j + 1:4d} | {lines[j]}")
             results.append("\n".join(context_lines))
 
     if results:
@@ -225,7 +212,7 @@ def execute_document_tool(
     tool_name: str,
     tool_input: dict[str, Any],
     files: list[dict[str, Any]],
-    current_file_id: str | None
+    current_file_id: str | None,
 ) -> dict[str, Any]:
     """Execute a document editing tool.
 

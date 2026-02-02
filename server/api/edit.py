@@ -17,6 +17,7 @@ router = APIRouter()
 
 class QuickEditRequest(BaseModel):
     """Quick edit request model."""
+
     text: str
     action: str
     context: str | None = ""
@@ -40,9 +41,7 @@ async def quick_edit(request: QuickEditRequest, http_request: Request):
             user_prompt = f"{instruction}\n\n{request.text}"
 
             async for chunk in llm.stream(
-                user=user_prompt,
-                system=QUICK_EDIT_SYSTEM,
-                temperature=temperature
+                user=user_prompt, system=QUICK_EDIT_SYSTEM, temperature=temperature
             ):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
 
@@ -60,12 +59,13 @@ async def quick_edit(request: QuickEditRequest, http_request: Request):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             **get_cors_headers(origin),
-        }
+        },
     )
 
 
 class CustomEditRequest(BaseModel):
     """Custom edit request with user-defined instruction."""
+
     text: str
     instruction: str
 
@@ -83,9 +83,7 @@ async def custom_edit(request: CustomEditRequest, http_request: Request):
             user_prompt = f"Instruction: {request.instruction}\n\nText to edit:\n{request.text}"
 
             async for chunk in llm.stream(
-                user=user_prompt,
-                system=QUICK_EDIT_SYSTEM,
-                temperature=0.5
+                user=user_prompt, system=QUICK_EDIT_SYSTEM, temperature=0.5
             ):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
 
@@ -103,5 +101,5 @@ async def custom_edit(request: CustomEditRequest, http_request: Request):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             **get_cors_headers(origin),
-        }
+        },
     )

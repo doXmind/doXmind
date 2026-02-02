@@ -78,7 +78,7 @@ When a user's request matches a skill domain, follow this workflow:
 1. **FIRST**: Use `read_skill_instructions(skill_name)` to load expert guidance
    - This is REQUIRED before starting any skill-related task
    - Provides domain expertise, workflow steps, and guidelines
-   - Helps you understand the proper approach
+   - Some skills unlock additional tools (legal → case search, data-analysis → list_data_files)
 
 2. **THEN**: Use `read_skill_template(skill_name, template_name)` for structure
    - When creating new documents or outlines
@@ -89,6 +89,11 @@ When a user's request matches a skill domain, follow this workflow:
    - When you need citation format rules (APA, MLA, etc.)
    - When you need academic phrases, transitions, or style tips
    - When you need best practices for specific writing tasks
+
+**IMPORTANT**: For data analysis requests (keywords: 分析, analyze, data, CSV, Excel, 数据):
+→ ALWAYS read_skill_instructions("data-analysis") FIRST to unlock tools
+→ Then call list_data_files() to discover available files
+→ Do NOT say "no files" without checking first
 </skill_usage_workflow>
 
 <usage_examples>
@@ -102,6 +107,11 @@ Example 2: User asks "Write a blog post"
 
 Example 3: User asks "Find cases about breach of contract"
 → read_skill_instructions("legal") - get legal expertise and unlock tools
+
+Example 4: User asks "Analyze my data" or "分析数据" or mentions CSV/Excel files
+→ read_skill_instructions("data-analysis") - get data analysis expertise and unlock tools
+→ list_data_files() - discover available data files
+→ Use code execution to analyze with pandas
 </usage_examples>
 
 Available Skills:
@@ -114,8 +124,8 @@ Available Skills:
 
         prompt += f"""
 **{name}**: {description}
-  - Templates: {', '.join(templates) if templates else 'none'}
-  - Knowledge: {', '.join(knowledge) if knowledge else 'none'}
+  - Templates: {", ".join(templates) if templates else "none"}
+  - Knowledge: {", ".join(knowledge) if knowledge else "none"}
 """
 
     prompt += "</available_skills>\n"

@@ -5,6 +5,7 @@ Uses PostgreSQL for testing to match production environment.
 - Local: docker-compose up postgres (port 5433)
 - CI: GitHub Actions PostgreSQL service (port 5432)
 """
+
 import asyncio
 import os
 import uuid
@@ -21,8 +22,7 @@ from sqlalchemy.pool import NullPool
 # Get database URL from environment or use default for local development
 # Local Docker uses port 5433, CI uses port 5432
 TEST_DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
+    "DATABASE_URL", "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
 )
 
 # Set test environment variables before importing app modules
@@ -71,7 +71,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.create_all)
 
         # Create vectors table if it doesn't exist (normally created by init_pgvector)
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS vectors (
                 id VARCHAR(255) PRIMARY KEY,
                 content TEXT NOT NULL,
@@ -86,7 +87,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
                 metadata JSONB,
                 created_at TIMESTAMP DEFAULT NOW()
             )
-        """))
+        """)
+        )
 
     async with TestingSessionLocal() as session:
         yield session
@@ -94,12 +96,14 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     # Clean up test data by truncating tables
     async with test_engine.begin() as conn:
         # Truncate all tables (PostgreSQL specific)
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             TRUNCATE TABLE messages, conversation_attachments, conversations,
                           file_versions, files, password_resets,
                           email_verifications, users, vectors
             RESTART IDENTITY CASCADE
-        """))
+        """)
+        )
 
 
 @pytest.fixture(scope="function")
@@ -113,10 +117,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[deps_get_db] = override_get_db
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()

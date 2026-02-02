@@ -8,7 +8,6 @@ Tests the document editing tool executors:
 - search_in_document
 """
 
-
 from agents.tools.document_tools import (
     execute_document_tool,
     execute_insert_text,
@@ -146,9 +145,7 @@ class TestStrReplace:
         files = create_sample_files()
 
         result = execute_str_replace(
-            {"old_str": "Line 2", "new_str": "Modified Line 2"},
-            files,
-            "file-1"
+            {"old_str": "Line 2", "new_str": "Modified Line 2"}, files, "file-1"
         )
 
         assert result.get("success") is True
@@ -171,11 +168,7 @@ class TestStrReplace:
             }
         ]
 
-        result = execute_str_replace(
-            {"old_str": "**bold**", "new_str": "plain"},
-            files,
-            "file-1"
-        )
+        result = execute_str_replace({"old_str": "**bold**", "new_str": "plain"}, files, "file-1")
 
         assert result.get("success") is True
         # search_text should be the plain text version for matching in doc.textContent
@@ -186,9 +179,7 @@ class TestStrReplace:
         files = create_sample_files()
 
         result = execute_str_replace(
-            {"old_str": "Nonexistent text", "new_str": "New text"},
-            files,
-            "file-1"
+            {"old_str": "Nonexistent text", "new_str": "New text"}, files, "file-1"
         )
 
         assert "error" in result
@@ -205,22 +196,14 @@ class TestStrReplace:
             }
         ]
 
-        result = execute_str_replace(
-            {"old_str": "word", "new_str": "thing"},
-            files,
-            "file-1"
-        )
+        result = execute_str_replace({"old_str": "word", "new_str": "thing"}, files, "file-1")
 
         assert "error" in result
         assert "3 times" in result["error"]
 
     def test_str_replace_no_file_open(self):
         """Should return error when no file is open."""
-        result = execute_str_replace(
-            {"old_str": "old", "new_str": "new"},
-            [],
-            None
-        )
+        result = execute_str_replace({"old_str": "old", "new_str": "new"}, [], None)
 
         assert "error" in result
         assert "No document" in result["error"]
@@ -230,9 +213,7 @@ class TestStrReplace:
         files = create_sample_files()
 
         result = execute_str_replace(
-            {"file_id": "file-2", "old_str": "Note B", "new_str": "Note X"},
-            files,
-            "file-1"
+            {"file_id": "file-2", "old_str": "Note B", "new_str": "Note X"}, files, "file-1"
         )
 
         assert result.get("success") is True
@@ -252,9 +233,7 @@ class TestInsertText:
         files = create_sample_files()
 
         result = execute_insert_text(
-            {"insert_line": 2, "new_str": "New inserted line"},
-            files,
-            "file-1"
+            {"insert_line": 2, "new_str": "New inserted line"}, files, "file-1"
         )
 
         assert result.get("success") is True
@@ -266,11 +245,7 @@ class TestInsertText:
         """Should allow insert at line 0 (beginning)."""
         files = create_sample_files()
 
-        result = execute_insert_text(
-            {"insert_line": 0, "new_str": "First line"},
-            files,
-            "file-1"
-        )
+        result = execute_insert_text({"insert_line": 0, "new_str": "First line"}, files, "file-1")
 
         assert result.get("success") is True
         assert result["insert_line"] == 0
@@ -282,7 +257,7 @@ class TestInsertText:
         result = execute_insert_text(
             {"insert_line": 5, "new_str": "Last line"},  # 5 lines in doc
             files,
-            "file-1"
+            "file-1",
         )
 
         assert result.get("success") is True
@@ -292,11 +267,7 @@ class TestInsertText:
         """Should return error for negative line number."""
         files = create_sample_files()
 
-        result = execute_insert_text(
-            {"insert_line": -1, "new_str": "Text"},
-            files,
-            "file-1"
-        )
+        result = execute_insert_text({"insert_line": -1, "new_str": "Text"}, files, "file-1")
 
         assert "error" in result
         assert "out of range" in result["error"].lower()
@@ -305,22 +276,14 @@ class TestInsertText:
         """Should return error for line number beyond document."""
         files = create_sample_files()
 
-        result = execute_insert_text(
-            {"insert_line": 100, "new_str": "Text"},
-            files,
-            "file-1"
-        )
+        result = execute_insert_text({"insert_line": 100, "new_str": "Text"}, files, "file-1")
 
         assert "error" in result
         assert "out of range" in result["error"].lower()
 
     def test_insert_text_no_file_open(self):
         """Should return error when no file is open."""
-        result = execute_insert_text(
-            {"insert_line": 0, "new_str": "Text"},
-            [],
-            None
-        )
+        result = execute_insert_text({"insert_line": 0, "new_str": "Text"}, [], None)
 
         assert "error" in result
 
@@ -338,9 +301,7 @@ class TestReplaceDocument:
         files = create_sample_files()
 
         result = execute_replace_document(
-            {"new_content": "Completely new content"},
-            files,
-            "file-1"
+            {"new_content": "Completely new content"}, files, "file-1"
         )
 
         assert result.get("success") is True
@@ -352,22 +313,14 @@ class TestReplaceDocument:
         """Should allow replacing with empty content."""
         files = create_sample_files()
 
-        result = execute_replace_document(
-            {"new_content": ""},
-            files,
-            "file-1"
-        )
+        result = execute_replace_document({"new_content": ""}, files, "file-1")
 
         assert result.get("success") is True
         assert result["new_content"] == ""
 
     def test_replace_document_no_file_open(self):
         """Should return error when no file is open."""
-        result = execute_replace_document(
-            {"new_content": "New content"},
-            [],
-            None
-        )
+        result = execute_replace_document({"new_content": "New content"}, [], None)
 
         assert "error" in result
 
@@ -384,11 +337,7 @@ class TestSearchInDocument:
         """Should find matching lines."""
         files = create_sample_files()
 
-        result = execute_search_in_document(
-            {"query": "Line 3"},
-            files,
-            "file-1"
-        )
+        result = execute_search_in_document({"query": "Line 3"}, files, "file-1")
 
         assert "result" in result
         assert "1 match" in result["result"]
@@ -401,7 +350,7 @@ class TestSearchInDocument:
         result = execute_search_in_document(
             {"query": "line 3"},  # lowercase
             files,
-            "file-1"
+            "file-1",
         )
 
         assert "result" in result
@@ -411,11 +360,7 @@ class TestSearchInDocument:
         """Should indicate no matches found."""
         files = create_sample_files()
 
-        result = execute_search_in_document(
-            {"query": "nonexistent"},
-            files,
-            "file-1"
-        )
+        result = execute_search_in_document({"query": "nonexistent"}, files, "file-1")
 
         assert "result" in result
         assert "No matches" in result["result"]
@@ -424,11 +369,7 @@ class TestSearchInDocument:
         """Should include context lines around match."""
         files = create_sample_files()
 
-        result = execute_search_in_document(
-            {"query": "Line 3"},
-            files,
-            "file-1"
-        )
+        result = execute_search_in_document({"query": "Line 3"}, files, "file-1")
 
         # Should have context lines (Line 2, Line 3, Line 4)
         assert "Line 2" in result["result"]
@@ -438,11 +379,7 @@ class TestSearchInDocument:
         """Should highlight the matching line with >>>."""
         files = create_sample_files()
 
-        result = execute_search_in_document(
-            {"query": "Line 3"},
-            files,
-            "file-1"
-        )
+        result = execute_search_in_document({"query": "Line 3"}, files, "file-1")
 
         assert ">>>" in result["result"]
 
@@ -457,21 +394,13 @@ class TestSearchInDocument:
             }
         ]
 
-        result = execute_search_in_document(
-            {"query": "apple"},
-            files,
-            "file-1"
-        )
+        result = execute_search_in_document({"query": "apple"}, files, "file-1")
 
         assert "3 match" in result["result"]
 
     def test_search_no_file_open(self):
         """Should return message when no file is open."""
-        result = execute_search_in_document(
-            {"query": "test"},
-            [],
-            None
-        )
+        result = execute_search_in_document({"query": "test"}, [], None)
 
         assert "No document" in result["result"]
 
@@ -498,10 +427,7 @@ class TestExecuteDocumentTool:
         files = create_sample_files()
 
         result = execute_document_tool(
-            "str_replace_editor",
-            {"old_str": "Line 1", "new_str": "First Line"},
-            files,
-            "file-1"
+            "str_replace_editor", {"old_str": "Line 1", "new_str": "First Line"}, files, "file-1"
         )
 
         assert result.get("success") is True
@@ -511,10 +437,7 @@ class TestExecuteDocumentTool:
         files = create_sample_files()
 
         result = execute_document_tool(
-            "insert_text",
-            {"insert_line": 1, "new_str": "Inserted"},
-            files,
-            "file-1"
+            "insert_text", {"insert_line": 1, "new_str": "Inserted"}, files, "file-1"
         )
 
         assert result.get("success") is True
@@ -524,10 +447,7 @@ class TestExecuteDocumentTool:
         files = create_sample_files()
 
         result = execute_document_tool(
-            "replace_document",
-            {"new_content": "New content"},
-            files,
-            "file-1"
+            "replace_document", {"new_content": "New content"}, files, "file-1"
         )
 
         assert result.get("success") is True
@@ -536,12 +456,7 @@ class TestExecuteDocumentTool:
         """Should execute search_in_document tool."""
         files = create_sample_files()
 
-        result = execute_document_tool(
-            "search_in_document",
-            {"query": "Line"},
-            files,
-            "file-1"
-        )
+        result = execute_document_tool("search_in_document", {"query": "Line"}, files, "file-1")
 
         assert "result" in result
 
@@ -549,12 +464,7 @@ class TestExecuteDocumentTool:
         """Should return error for unknown tool."""
         files = create_sample_files()
 
-        result = execute_document_tool(
-            "unknown_tool",
-            {},
-            files,
-            "file-1"
-        )
+        result = execute_document_tool("unknown_tool", {}, files, "file-1")
 
         assert "error" in result
         assert "Unknown" in result["error"]

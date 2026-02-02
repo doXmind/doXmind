@@ -19,8 +19,10 @@ from fpdf import FPDF
 # Document Node Model (Intermediate Representation)
 # ============================================================================
 
+
 class NodeType(Enum):
     """Types of document nodes."""
+
     TEXT = "text"
     HEADING = "heading"
     PARAGRAPH = "paragraph"
@@ -41,6 +43,7 @@ class NodeType(Enum):
 @dataclass
 class DocumentNode:
     """Represents a node in the document tree."""
+
     node_type: NodeType
     content: str = ""
     children: list["DocumentNode"] = field(default_factory=list)
@@ -56,12 +59,13 @@ class DocumentNode:
 # HTML Parser (converts HTML to DocumentNode tree)
 # ============================================================================
 
+
 class HTMLToDocumentParser:
     """Parses HTML into a DocumentNode tree."""
 
     def parse(self, html: str) -> list[DocumentNode]:
         """Parse HTML string into document nodes."""
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, "html.parser")
         return self._parse_children(soup)
 
     def _parse_children(self, element) -> list[DocumentNode]:
@@ -85,56 +89,38 @@ class HTMLToDocumentParser:
         name = element.name
 
         # Headings
-        if name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+        if name in ["h1", "h2", "h3", "h4", "h5", "h6"]:
             level = int(name[1])
-            return DocumentNode(
-                NodeType.HEADING,
-                content=element.get_text().strip(),
-                level=level
-            )
+            return DocumentNode(NodeType.HEADING, content=element.get_text().strip(), level=level)
 
         # Paragraph
-        if name == 'p':
-            return DocumentNode(
-                NodeType.PARAGRAPH,
-                children=self._parse_inline_elements(element)
-            )
+        if name == "p":
+            return DocumentNode(NodeType.PARAGRAPH, children=self._parse_inline_elements(element))
 
         # Code block
-        if name == 'pre':
-            return DocumentNode(
-                NodeType.CODE_BLOCK,
-                content=element.get_text()
-            )
+        if name == "pre":
+            return DocumentNode(NodeType.CODE_BLOCK, content=element.get_text())
 
         # Blockquote
-        if name == 'blockquote':
-            return DocumentNode(
-                NodeType.BLOCKQUOTE,
-                content=element.get_text().strip()
-            )
+        if name == "blockquote":
+            return DocumentNode(NodeType.BLOCKQUOTE, content=element.get_text().strip())
 
         # Lists
-        if name in ['ul', 'ol']:
+        if name in ["ul", "ol"]:
             return DocumentNode(
-                NodeType.LIST,
-                ordered=(name == 'ol'),
-                children=self._parse_list_items(element)
+                NodeType.LIST, ordered=(name == "ol"), children=self._parse_list_items(element)
             )
 
         # Table
-        if name == 'table':
-            return DocumentNode(
-                NodeType.TABLE,
-                children=self._parse_table_rows(element)
-            )
+        if name == "table":
+            return DocumentNode(NodeType.TABLE, children=self._parse_table_rows(element))
 
         # Horizontal rule
-        if name == 'hr':
+        if name == "hr":
             return DocumentNode(NodeType.HORIZONTAL_RULE)
 
         # Div - recurse
-        if name == 'div':
+        if name == "div":
             children = self._parse_children(element)
             if len(children) == 1:
                 return children[0]
@@ -152,29 +138,20 @@ class HTMLToDocumentParser:
                 text = str(child)
                 if text:
                     nodes.append(DocumentNode(NodeType.TEXT, content=text))
-            elif child.name in ['strong', 'b']:
-                nodes.append(DocumentNode(
-                    NodeType.INLINE_BOLD,
-                    content=child.get_text()
-                ))
-            elif child.name in ['em', 'i']:
-                nodes.append(DocumentNode(
-                    NodeType.INLINE_ITALIC,
-                    content=child.get_text()
-                ))
-            elif child.name == 'code':
-                nodes.append(DocumentNode(
-                    NodeType.INLINE_CODE,
-                    content=child.get_text()
-                ))
-            elif child.name == 'a':
-                nodes.append(DocumentNode(
-                    NodeType.INLINE_LINK,
-                    content=child.get_text(),
-                    url=child.get('href', '')
-                ))
-            elif child.name == 'br':
-                nodes.append(DocumentNode(NodeType.TEXT, content='\n'))
+            elif child.name in ["strong", "b"]:
+                nodes.append(DocumentNode(NodeType.INLINE_BOLD, content=child.get_text()))
+            elif child.name in ["em", "i"]:
+                nodes.append(DocumentNode(NodeType.INLINE_ITALIC, content=child.get_text()))
+            elif child.name == "code":
+                nodes.append(DocumentNode(NodeType.INLINE_CODE, content=child.get_text()))
+            elif child.name == "a":
+                nodes.append(
+                    DocumentNode(
+                        NodeType.INLINE_LINK, content=child.get_text(), url=child.get("href", "")
+                    )
+                )
+            elif child.name == "br":
+                nodes.append(DocumentNode(NodeType.TEXT, content="\n"))
             else:
                 # Recurse for other elements
                 nodes.extend(self._parse_inline_elements(child))
@@ -183,7 +160,7 @@ class HTMLToDocumentParser:
     def _parse_list_items(self, element) -> list[DocumentNode]:
         """Parse list items."""
         items = []
-        for li in element.find_all('li', recursive=False):
+        for li in element.find_all("li", recursive=False):
             # Get direct text content
             text_parts = []
             nested_lists = []
@@ -191,15 +168,15 @@ class HTMLToDocumentParser:
             for child in li.children:
                 if child.name is None:
                     text_parts.append(str(child))
-                elif child.name in ['ul', 'ol']:
+                elif child.name in ["ul", "ol"]:
                     nested_lists.append(self._parse_element(child))
-                elif child.name not in ['ul', 'ol']:
+                elif child.name not in ["ul", "ol"]:
                     text_parts.append(child.get_text())
 
             item = DocumentNode(
                 NodeType.LIST_ITEM,
-                content=''.join(text_parts).strip(),
-                children=[n for n in nested_lists if n]
+                content="".join(text_parts).strip(),
+                children=[n for n in nested_lists if n],
             )
             items.append(item)
         return items
@@ -207,14 +184,16 @@ class HTMLToDocumentParser:
     def _parse_table_rows(self, element) -> list[DocumentNode]:
         """Parse table rows."""
         rows = []
-        for tr in element.find_all('tr'):
+        for tr in element.find_all("tr"):
             cells = []
-            for cell in tr.find_all(['th', 'td']):
-                cells.append(DocumentNode(
-                    NodeType.TABLE_CELL,
-                    content=cell.get_text().strip(),
-                    is_header=(cell.name == 'th')
-                ))
+            for cell in tr.find_all(["th", "td"]):
+                cells.append(
+                    DocumentNode(
+                        NodeType.TABLE_CELL,
+                        content=cell.get_text().strip(),
+                        is_header=(cell.name == "th"),
+                    )
+                )
             if cells:
                 rows.append(DocumentNode(NodeType.TABLE_ROW, children=cells))
         return rows
@@ -223,6 +202,7 @@ class HTMLToDocumentParser:
 # ============================================================================
 # PDF Renderer
 # ============================================================================
+
 
 class PDFRenderer:
     """Renders DocumentNodes to PDF."""
@@ -244,22 +224,22 @@ class PDFRenderer:
         # Fallback to specific file names
         font_candidates = [
             # Linux (fonts-noto-cjk package) - various possible names
-            ('NotoSansCJK-Regular.ttc', 'Noto Sans CJK'),
-            ('NotoSansCJKsc-Regular.ttc', 'Noto Sans CJK SC'),
-            ('NotoSansCJKsc-Regular.otf', 'Noto Sans CJK SC'),
-            ('NotoSansSC-Regular.otf', 'Noto Sans SC'),
-            ('NotoSansSC-Regular.ttf', 'Noto Sans SC'),
+            ("NotoSansCJK-Regular.ttc", "Noto Sans CJK"),
+            ("NotoSansCJKsc-Regular.ttc", "Noto Sans CJK SC"),
+            ("NotoSansCJKsc-Regular.otf", "Noto Sans CJK SC"),
+            ("NotoSansSC-Regular.otf", "Noto Sans SC"),
+            ("NotoSansSC-Regular.ttf", "Noto Sans SC"),
             # Windows
-            ('msyh.ttc', 'Microsoft YaHei'),
-            ('msyhbd.ttc', 'Microsoft YaHei Bold'),
-            ('simhei.ttf', 'SimHei'),
-            ('simsun.ttc', 'SimSun'),
+            ("msyh.ttc", "Microsoft YaHei"),
+            ("msyhbd.ttc", "Microsoft YaHei Bold"),
+            ("simhei.ttf", "SimHei"),
+            ("simsun.ttc", "SimSun"),
             # macOS
-            ('PingFang.ttc', 'PingFang SC'),
-            ('STHeiti Light.ttc', 'STHeiti'),
+            ("PingFang.ttc", "PingFang SC"),
+            ("STHeiti Light.ttc", "STHeiti"),
             # Linux fallbacks
-            ('DroidSansFallbackFull.ttf', 'Droid Sans Fallback'),
-            ('DejaVuSans.ttf', 'DejaVu Sans'),
+            ("DroidSansFallbackFull.ttf", "Droid Sans Fallback"),
+            ("DejaVuSans.ttf", "DejaVu Sans"),
         ]
 
         for font_file, font_name in font_candidates:
@@ -273,16 +253,16 @@ class PDFRenderer:
         """Scan font directories for any CJK-capable font."""
         font_dirs = [
             # Linux - where fonts-noto-cjk installs fonts
-            '/usr/share/fonts/opentype/noto',
-            '/usr/share/fonts/truetype/noto',
-            '/usr/share/fonts/noto-cjk',
-            '/usr/share/fonts/opentype',
-            '/usr/share/fonts/truetype',
-            '/usr/share/fonts',
+            "/usr/share/fonts/opentype/noto",
+            "/usr/share/fonts/truetype/noto",
+            "/usr/share/fonts/noto-cjk",
+            "/usr/share/fonts/opentype",
+            "/usr/share/fonts/truetype",
+            "/usr/share/fonts",
         ]
 
         # Patterns that indicate CJK support
-        cjk_patterns = ['notosanscjk', 'notoserifcjk', 'notosanssc', 'notosc', 'cjk']
+        cjk_patterns = ["notosanscjk", "notoserifcjk", "notosanssc", "notosc", "cjk"]
 
         for font_dir in font_dirs:
             if not os.path.exists(font_dir):
@@ -291,7 +271,7 @@ class PDFRenderer:
                 for filename in files:
                     lower_name = filename.lower()
                     # Check if it's a font file with CJK support
-                    if lower_name.endswith(('.ttc', '.ttf', '.otf')):
+                    if lower_name.endswith((".ttc", ".ttf", ".otf")):
                         for pattern in cjk_patterns:
                             if pattern in lower_name:
                                 return os.path.join(root, filename)
@@ -301,24 +281,26 @@ class PDFRenderer:
         """Get the path to a system font file."""
         font_dirs = []
 
-        if os.name == 'nt':
-            font_dirs.append(os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'))
+        if os.name == "nt":
+            font_dirs.append(os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts"))
 
-        font_dirs.extend([
-            # macOS
-            '/System/Library/Fonts',
-            '/Library/Fonts',
-            os.path.expanduser('~/Library/Fonts'),
-            # Linux - common font directories
-            '/usr/share/fonts/opentype/noto',
-            '/usr/share/fonts/truetype/noto',
-            '/usr/share/fonts/noto-cjk',
-            '/usr/share/fonts/opentype',
-            '/usr/share/fonts/truetype',
-            '/usr/share/fonts',
-            '/usr/local/share/fonts',
-            os.path.expanduser('~/.fonts'),
-        ])
+        font_dirs.extend(
+            [
+                # macOS
+                "/System/Library/Fonts",
+                "/Library/Fonts",
+                os.path.expanduser("~/Library/Fonts"),
+                # Linux - common font directories
+                "/usr/share/fonts/opentype/noto",
+                "/usr/share/fonts/truetype/noto",
+                "/usr/share/fonts/noto-cjk",
+                "/usr/share/fonts/opentype",
+                "/usr/share/fonts/truetype",
+                "/usr/share/fonts",
+                "/usr/local/share/fonts",
+                os.path.expanduser("~/.fonts"),
+            ]
+        )
 
         font_name_lower = font_name.lower()
 
@@ -414,7 +396,7 @@ class PDFRenderer:
         parts = []
         for child in node.children:
             parts.append(child.content)
-        return ''.join(parts) if parts else node.content
+        return "".join(parts) if parts else node.content
 
     def _render_list(self, pdf: FPDF, node: DocumentNode, font: str, level: int = 0):
         """Render a list to the PDF."""
@@ -476,6 +458,7 @@ class PDFRenderer:
 # DOCX Renderer
 # ============================================================================
 
+
 class DOCXRenderer:
     """Renders DocumentNodes to DOCX."""
 
@@ -484,8 +467,8 @@ class DOCXRenderer:
         doc = Document()
 
         # Set default font
-        style = doc.styles['Normal']
-        style.font.name = 'Calibri'
+        style = doc.styles["Normal"]
+        style.font.name = "Calibri"
         style.font.size = Pt(11)
 
         for node in nodes:
@@ -511,7 +494,7 @@ class DOCXRenderer:
         elif node.node_type == NodeType.CODE_BLOCK:
             para = doc.add_paragraph()
             run = para.add_run(node.content)
-            run.font.name = 'Consolas'
+            run.font.name = "Consolas"
             run.font.size = Pt(10)
             para.paragraph_format.left_indent = Inches(0.25)
 
@@ -530,7 +513,7 @@ class DOCXRenderer:
 
         elif node.node_type == NodeType.HORIZONTAL_RULE:
             para = doc.add_paragraph()
-            para.add_run('_' * 50)
+            para.add_run("_" * 50)
 
     def _render_inline_content(self, para, children: list[DocumentNode]):
         """Render inline content to a paragraph."""
@@ -545,7 +528,7 @@ class DOCXRenderer:
                 run.italic = True
             elif child.node_type == NodeType.INLINE_CODE:
                 run = para.add_run(child.content)
-                run.font.name = 'Consolas'
+                run.font.name = "Consolas"
                 run.font.size = Pt(10)
             elif child.node_type == NodeType.INLINE_LINK:
                 run = para.add_run(child.content)
@@ -577,7 +560,7 @@ class DOCXRenderer:
             return
 
         table = doc.add_table(rows=len(node.children), cols=col_count)
-        table.style = 'Table Grid'
+        table.style = "Table Grid"
 
         for i, row in enumerate(node.children):
             for j, cell in enumerate(row.children):
@@ -595,18 +578,19 @@ class DOCXRenderer:
 # Export Service (Public Interface)
 # ============================================================================
 
+
 class ExportService:
     """Service for exporting content to various formats."""
 
     def __init__(self):
-        self.md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc'])
+        self.md = markdown.Markdown(extensions=["tables", "fenced_code", "toc"])
         self.parser = HTMLToDocumentParser()
         self.pdf_renderer = PDFRenderer()
         self.docx_renderer = DOCXRenderer()
 
     def export_markdown(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as Markdown."""
-        return content.encode('utf-8')
+        return content.encode("utf-8")
 
     def export_pdf(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as PDF."""

@@ -9,7 +9,7 @@ Provides prompts for quick text editing operations like:
 """
 
 # System prompt for quick edit operations
-QUICK_EDIT_SYSTEM = '''You are doXmind Quick Editor, a professional text editing assistant.
+QUICK_EDIT_SYSTEM = """You are doXmind Quick Editor, a professional text editing assistant.
 
 <identity>
 - You edit text according to specific instructions
@@ -23,7 +23,7 @@ QUICK_EDIT_SYSTEM = '''You are doXmind Quick Editor, a professional text editing
 - NEVER wrap output in quotes or formatting
 - ALWAYS preserve original meaning unless instructed otherwise
 - NEVER start with phrases like "Here is..." or "The edited text is..."
-</constraints>'''
+</constraints>"""
 
 # Edit action configurations with instructions and temperature
 EDIT_ACTIONS: dict[str, dict[str, str | float]] = {

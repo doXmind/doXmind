@@ -52,7 +52,12 @@ export function useChat() {
   const { applyEdits } = useEditOperations();
 
   const sendMessage = useCallback(
-    async (message: string, fileIds: string[], contexts?: MessageContextItem[] | null) => {
+    async (
+      message: string,
+      fileIds: string[],
+      contexts?: MessageContextItem[] | null,
+      dataFileIds?: string[]
+    ) => {
       const conversationId = ensureConversation(fileIds[0] || null);
 
       // Build the full message for AI (include text contexts)
@@ -167,6 +172,8 @@ export function useChat() {
             conversationId,
             // Web search toggle (web fetch is always enabled)
             webSearchEnabled: webToolsSettings.webSearchEnabled,
+            // Data files for code execution sandbox
+            dataFileIds: dataFileIds || [],
           }),
           signal,
         });
@@ -304,16 +311,56 @@ export function useChat() {
               break;
             }
 
-            // Handle server-side tools (web_search, web_fetch)
+            // Handle server-side tools (web_search, web_fetch, code_execution)
             case "server_tool_start": {
+              let displayName = parsed.tool || "";
+              let message = "Processing...";
+              if (parsed.tool === "web_search") {
+                displayName = "Web Search";
+                message = "Searching the web...";
+              } else if (parsed.tool === "web_fetch") {
+                displayName = "Web Fetch";
+                message = "Fetching URL...";
+              } else if (
+                parsed.tool === "bash_code_execution" ||
+                parsed.tool === "code_execution"
+              ) {
+                displayName = "Code Execution";
+                message = "Running code...";
+              }
               const serverToolStatus: ToolStatus = {
-                name: parsed.tool || "",
+                name: displayName,
                 status: "running",
                 toolId: parsed.tool_id,
-                message: parsed.tool === "web_search" ? "Searching the web..." : "Fetching URL...",
+                message,
               };
               setCurrentTool(serverToolStatus);
               setToolHistory((prev) => [...prev, serverToolStatus]);
+              break;
+            }
+
+            case "server_tool_end": {
+              const endedTool: ToolStatus = {
+                name: parsed.tool || "",
+                status: parsed.success === false ? "error" : "completed",
+                message: parsed.output,
+                toolId: parsed.tool_id,
+              };
+              setToolHistory((prev) => {
+                const newHistory = [...prev];
+                const idx = newHistory.findLastIndex(
+                  (t) => t.toolId === parsed.tool_id && t.status === "running"
+                );
+                if (idx >= 0) {
+                  newHistory[idx] = {
+                    ...newHistory[idx],
+                    status: endedTool.status,
+                    message: endedTool.message,
+                  };
+                }
+                return newHistory;
+              });
+              setCurrentTool(null);
               break;
             }
 
@@ -346,6 +393,31 @@ export function useChat() {
                     ...newHistory[idx],
                     status: "completed",
                     message: displayUrl ? `Fetched: ${displayUrl}` : "Content fetched",
+                  };
+                }
+                return newHistory;
+              });
+              setCurrentTool(null);
+              break;
+            }
+
+            case "code_execution_result": {
+              const returnCode = (parsed as { return_code?: number }).return_code ?? 0;
+              const files = (parsed as { files?: { filename: string }[] }).files || [];
+              const fileCount = files.length;
+              setToolHistory((prev) => {
+                const newHistory = [...prev];
+                const idx = newHistory.findLastIndex((t) => t.toolId === parsed.tool_id);
+                if (idx >= 0) {
+                  newHistory[idx] = {
+                    ...newHistory[idx],
+                    status: returnCode === 0 ? "completed" : "error",
+                    message:
+                      returnCode === 0
+                        ? fileCount > 0
+                          ? `Executed (${fileCount} file(s) created)`
+                          : "Executed successfully"
+                        : "Execution failed",
                   };
                 }
                 return newHistory;

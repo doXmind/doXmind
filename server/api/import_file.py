@@ -19,7 +19,7 @@ router = APIRouter()
 
 # Configuration
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.md', '.markdown'}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".md", ".markdown"}
 
 
 def get_file_extension(filename: str) -> str:
@@ -35,17 +35,14 @@ def markdown_to_html(md_content: str) -> str:
     parse correctly. TipTap expects simple <pre><code class="language-xxx">
     format. Frontend uses lowlight for syntax highlighting instead.
     """
-    return markdown.markdown(
-        md_content,
-        extensions=['tables', 'fenced_code']
-    )
+    return markdown.markdown(md_content, extensions=["tables", "fenced_code"])
 
 
 @router.post("/")
 async def import_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    token: TokenData = Depends(require_auth),
 ):
     """
     Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
@@ -60,7 +57,7 @@ async def import_file(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+            detail=f"Unsupported file type: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
     # Read file content
@@ -70,29 +67,26 @@ async def import_file(
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
 
     # Convert to markdown
     try:
-        if ext in {'.md', '.markdown'}:
+        if ext in {".md", ".markdown"}:
             # Already markdown, just decode
-            md_content = content.decode('utf-8')
+            md_content = content.decode("utf-8")
         else:
             # Check if Gemini is configured
             if not is_gemini_configured():
                 raise HTTPException(
                     status_code=500,
-                    detail="File conversion requires GEMINI_API_KEY to be configured"
+                    detail="File conversion requires GEMINI_API_KEY to be configured",
                 )
             # Use Gemini API for PDF and DOCX conversion
             md_content = await convert_file_to_markdown(content, file.filename, ext)
     except Exception as e:
         logger.error(f"Conversion failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to convert file: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to convert file: {str(e)}")
 
     # Convert markdown to HTML for TipTap editor
     html_content = markdown_to_html(md_content)
@@ -114,12 +108,12 @@ async def import_file(
             await rag.index_file(
                 file_id=new_file.id,
                 content=html_content,
-                metadata={"name": new_name, "user_id": user_id}
+                metadata={"name": new_name, "user_id": user_id},
             )
             await rag.index_file_sentences(
                 file_id=new_file.id,
                 content=html_content,
-                metadata={"name": new_name, "user_id": user_id}
+                metadata={"name": new_name, "user_id": user_id},
             )
         except Exception as e:
             logger.warning(f"Failed to index imported file: {e}")
@@ -129,7 +123,7 @@ async def import_file(
             "name": new_file.name,
             "content": new_file.content,
             "created_at": new_file.created_at.isoformat(),
-            "updated_at": new_file.updated_at.isoformat()
+            "updated_at": new_file.updated_at.isoformat(),
         }
     except Exception as e:
         logger.error(f"Failed to create file: {e}")

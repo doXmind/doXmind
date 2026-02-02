@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Request/Response Models
 # =============================================================================
 
+
 class TelemetryEventData(BaseModel):
     """A single telemetry event."""
 
@@ -106,6 +107,7 @@ class TelemetrySettingsRequest(BaseModel):
 # Helper Functions
 # =============================================================================
 
+
 def extract_rlhf_fields(event: TelemetryEventData) -> tuple[str | None, str | None, str | None]:
     """Extract chosen/rejected content and context from event for RLHF training.
 
@@ -145,6 +147,7 @@ def extract_rlhf_fields(event: TelemetryEventData) -> tuple[str | None, str | No
 # API Endpoints
 # =============================================================================
 
+
 @router.post("/events")
 async def submit_events(
     request: TelemetryEventsRequest,
@@ -173,11 +176,18 @@ async def submit_events(
         # Check if this event type is enabled
         if settings:
             # Skip events based on settings - only allow aggregate stats if product improvement disabled
-            if not settings.product_improvement_enabled and event_data.event_type not in ("session_summary", "feature_used"):
+            if not settings.product_improvement_enabled and event_data.event_type not in (
+                "session_summary",
+                "feature_used",
+            ):
                 continue
 
             event_type = event_data.event_type
-            if event_type.startswith("diff_") or event_type in ("edit_applied", "post_ai_edit", "undo_after_ai"):
+            if event_type.startswith("diff_") or event_type in (
+                "edit_applied",
+                "post_ai_edit",
+                "undo_after_ai",
+            ):
                 if not settings.collect_edit_feedback:
                     continue
             elif event_type.startswith("chat_"):

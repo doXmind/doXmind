@@ -145,9 +145,7 @@ describe("useChat", () => {
   // ============================================================================
   describe("sendMessage", () => {
     it("ensures conversation exists", async () => {
-      mockFetch.mockResolvedValueOnce(
-        createMockSSEResponse([{ type: "text", content: "Hello" }])
-      );
+      mockFetch.mockResolvedValueOnce(createMockSSEResponse([{ type: "text", content: "Hello" }]));
 
       const { result } = renderHook(() => useChat());
 
@@ -201,9 +199,7 @@ describe("useChat", () => {
       const _streamingDuringFetch = false;
       mockFetch.mockImplementationOnce(() => {
         // Can't easily check isStreaming during fetch in this test setup
-        return Promise.resolve(
-          createMockSSEResponse([{ type: "text", content: "Response" }])
-        );
+        return Promise.resolve(createMockSSEResponse([{ type: "text", content: "Response" }]));
       });
 
       const { result } = renderHook(() => useChat());
@@ -264,9 +260,7 @@ describe("useChat", () => {
         content: `Content of ${id}`,
       }));
 
-      mockFetch.mockResolvedValueOnce(
-        createMockSSEResponse([{ type: "text", content: "Done" }])
-      );
+      mockFetch.mockResolvedValueOnce(createMockSSEResponse([{ type: "text", content: "Done" }]));
 
       const { result } = renderHook(() => useChat());
 
@@ -508,11 +502,12 @@ describe("useChat", () => {
         })
       );
 
+      // saveMessageToBackend is only called for user messages, not assistant messages
       expect(mockSaveMessageToBackend).toHaveBeenCalledWith(
         "conv-123",
         expect.objectContaining({
-          role: "assistant",
-          thinking: "I thought about it",
+          role: "user",
+          content: "Hello",
         })
       );
     });
@@ -523,9 +518,7 @@ describe("useChat", () => {
   // ============================================================================
   describe("error handling", () => {
     it("handles HTTP error", async () => {
-      mockFetch.mockResolvedValueOnce(
-        new Response(null, { status: 500 })
-      );
+      mockFetch.mockResolvedValueOnce(new Response(null, { status: 500 }));
 
       const { result } = renderHook(() => useChat());
 
@@ -542,9 +535,7 @@ describe("useChat", () => {
 
     it("handles error event in stream", async () => {
       mockFetch.mockResolvedValueOnce(
-        createMockSSEResponse([
-          { type: "error", content: "Something went wrong" },
-        ])
+        createMockSSEResponse([{ type: "error", content: "Something went wrong" }])
       );
 
       const { result } = renderHook(() => useChat());
@@ -652,9 +643,7 @@ describe("useChat", () => {
   // ============================================================================
   describe("cleanup", () => {
     it("sets streaming to false after completion", async () => {
-      mockFetch.mockResolvedValueOnce(
-        createMockSSEResponse([{ type: "text", content: "Done" }])
-      );
+      mockFetch.mockResolvedValueOnce(createMockSSEResponse([{ type: "text", content: "Done" }]));
 
       const { result } = renderHook(() => useChat());
 
@@ -684,9 +673,7 @@ describe("useChat", () => {
     });
 
     it("calls setMessageStreaming false after completion", async () => {
-      mockFetch.mockResolvedValueOnce(
-        createMockSSEResponse([{ type: "text", content: "Done" }])
-      );
+      mockFetch.mockResolvedValueOnce(createMockSSEResponse([{ type: "text", content: "Done" }]));
 
       const { result } = renderHook(() => useChat());
 

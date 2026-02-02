@@ -28,7 +28,7 @@ async def export_file(
     format: ExportFormat,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth)
+    token: TokenData = Depends(require_auth),
 ):
     """Export a file in the specified format.
 
@@ -54,7 +54,7 @@ async def export_file(
 
     # Get filename without extension
     base_filename = file.name
-    if base_filename.endswith('.md'):
+    if base_filename.endswith(".md"):
         base_filename = base_filename[:-3]
 
     try:
@@ -84,7 +84,7 @@ async def export_file(
             headers={
                 "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
                 **get_cors_headers(request.headers.get("origin")),
-            }
+            },
         )
 
     except Exception as e:

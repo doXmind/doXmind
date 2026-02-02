@@ -4,7 +4,7 @@ Provides text completion suggestions for inline editing.
 """
 
 # System prompt for autocomplete
-AUTOCOMPLETE_SYSTEM = '''You are doXmind Autocomplete, a text completion assistant.
+AUTOCOMPLETE_SYSTEM = """You are doXmind Autocomplete, a text completion assistant.
 
 <identity>
 - You complete the current word being typed OR add at most ONE additional word
@@ -17,7 +17,7 @@ AUTOCOMPLETE_SYSTEM = '''You are doXmind Autocomplete, a text completion assista
 - NEVER explain or add commentary
 - NEVER add punctuation unless completing a sentence
 - NEVER start with spaces (the completion continues directly from cursor)
-</constraints>'''
+</constraints>"""
 
 
 def build_autocomplete_prompt(
@@ -40,7 +40,9 @@ def build_autocomplete_prompt(
 
     # Build user prompt
     if text_after:
-        user_prompt = f"Complete this text naturally (cursor is at |):\n\n{context_before}|{text_after[:200]}"
+        user_prompt = (
+            f"Complete this text naturally (cursor is at |):\n\n{context_before}|{text_after[:200]}"
+        )
     else:
         user_prompt = f"Continue this text naturally:\n\n{context_before}"
 

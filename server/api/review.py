@@ -24,6 +24,7 @@ router = APIRouter()
 
 class TextReviewRequest(BaseModel):
     """Request for full document review."""
+
     content: str
     file_id: str
     language: str | None = "en"
@@ -68,7 +69,7 @@ Analyze the entire document and return your suggestions. Remember to:
                 json_schema=REVIEW_JSON_SCHEMA,
                 system=REVIEW_SYSTEM_PROMPT,
                 temperature=0.2,
-                max_tokens=4096
+                max_tokens=4096,
             )
 
             # Validate and clean suggestions
@@ -90,7 +91,9 @@ Analyze the entire document and return your suggestions. Remember to:
                             s["start_offset"] = found_pos
                             s["end_offset"] = found_pos + len(original)
                             validated_suggestions.append(s)
-                            logger.debug(f"Corrected position for '{original}': {start} -> {found_pos}")
+                            logger.debug(
+                                f"Corrected position for '{original}': {start} -> {found_pos}"
+                            )
                 else:
                     # Invalid position, try to find the text
                     found_pos = content.find(original)
@@ -101,11 +104,13 @@ Analyze the entire document and return your suggestions. Remember to:
 
             result = {
                 "suggestions": validated_suggestions,
-                "summary": parsed.get("summary", "Review complete.")
+                "summary": parsed.get("summary", "Review complete."),
             }
 
             yield f"data: {json.dumps({'result': result})}\n\n"
-            logger.info(f"Review complete: {len(validated_suggestions)} suggestions for file {request.file_id}")
+            logger.info(
+                f"Review complete: {len(validated_suggestions)} suggestions for file {request.file_id}"
+            )
 
             yield "data: [DONE]\n\n"
 
@@ -122,5 +127,5 @@ Analyze the entire document and return your suggestions. Remember to:
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
             **get_cors_headers(origin),
-        }
+        },
     )

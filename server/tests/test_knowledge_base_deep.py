@@ -40,7 +40,7 @@ class TestAttachmentDatabaseIntegrity:
             original_filename="test.pdf",
             file_type="pdf",
             file_size=1000,
-            status="processing"
+            status="processing",
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -62,7 +62,7 @@ class TestAttachmentDatabaseIntegrity:
             original_filename="doc.pdf",
             file_type="pdf",
             file_size=2000,
-            status="indexed"
+            status="indexed",
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -83,14 +83,14 @@ class TestAttachmentDatabaseIntegrity:
             original_filename="file1.pdf",
             file_type="pdf",
             file_size=100,
-            status="indexed"
+            status="indexed",
         )
         att2 = ConversationAttachment(
             conversation_id=conv_id,
             original_filename="file2.docx",
             file_type="docx",
             file_size=200,
-            status="indexed"
+            status="indexed",
         )
         db_session.add(att1)
         db_session.add(att2)
@@ -98,8 +98,7 @@ class TestAttachmentDatabaseIntegrity:
 
         # Query attachments by conversation
         result = await db_session.execute(
-            select(ConversationAttachment)
-            .where(ConversationAttachment.conversation_id == conv_id)
+            select(ConversationAttachment).where(ConversationAttachment.conversation_id == conv_id)
         )
         attachments = result.scalars().all()
 
@@ -126,7 +125,7 @@ class TestAttachmentDatabaseIntegrity:
             file_size=5000,
             status="indexed",
             extracted_text=extracted_text,
-            chunk_count=3
+            chunk_count=3,
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -151,7 +150,7 @@ class TestAttachmentDatabaseIntegrity:
             file_type="pdf",
             file_size=100,
             status="error",
-            error_message="Failed to extract text: PDF is corrupted"
+            error_message="Failed to extract text: PDF is corrupted",
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -179,8 +178,10 @@ class TestAttachmentLifecycle:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Extracted content from PDF"
 
             mock_rag = MagicMock()
@@ -191,9 +192,7 @@ class TestAttachmentLifecycle:
             files = {"file": ("test.pdf", io.BytesIO(pdf_content), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/lifecycle-test/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/lifecycle-test/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -223,16 +222,19 @@ class TestAttachmentLifecycle:
         async def mock_index_that_checks_db(*args, **kwargs):
             # During indexing, verify attachment exists in DB
             result = await db_session.execute(
-                select(ConversationAttachment)
-                .where(ConversationAttachment.conversation_id == conv.id)
+                select(ConversationAttachment).where(
+                    ConversationAttachment.conversation_id == conv.id
+                )
             )
             attachments = result.scalars().all()
             if attachments:
                 attachment_id_holder.append(attachments[0].id)
             return 3
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -242,9 +244,7 @@ class TestAttachmentLifecycle:
             files = {"file": ("check.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/db-first-test/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/db-first-test/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -268,7 +268,7 @@ class TestAttachmentLifecycle:
             file_type="pdf",
             file_size=1000,
             status="indexed",
-            chunk_count=5
+            chunk_count=5,
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -279,8 +279,7 @@ class TestAttachmentLifecycle:
             mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
-                f"/api/kb/delete-lifecycle/attachments/{att_id}",
-                headers=auth_headers
+                f"/api/kb/delete-lifecycle/attachments/{att_id}", headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -313,9 +312,7 @@ class TestFileTypeValidation:
         files = {"file": ("malware.exe", io.BytesIO(b"MZ\x90\x00"), "application/x-msdownload")}
 
         response = await client.post(
-            "/api/kb/exe-test/attachments",
-            files=files,
-            headers=auth_headers
+            "/api/kb/exe-test/attachments", files=files, headers=auth_headers
         )
 
         assert response.status_code == 415
@@ -334,9 +331,7 @@ class TestFileTypeValidation:
         files = {"file": ("script.js", io.BytesIO(b"alert('xss')"), "text/javascript")}
 
         response = await client.post(
-            "/api/kb/js-test/attachments",
-            files=files,
-            headers=auth_headers
+            "/api/kb/js-test/attachments", files=files, headers=auth_headers
         )
 
         assert response.status_code == 415
@@ -350,8 +345,10 @@ class TestFileTypeValidation:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -362,9 +359,7 @@ class TestFileTypeValidation:
             files = {"file": ("DOC.PDF", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/case-test/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/case-test/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -384,9 +379,7 @@ class TestFileTypeValidation:
         files = {"file": ("document.pdf.exe", io.BytesIO(b"MZ"), "application/pdf")}
 
         response = await client.post(
-            "/api/kb/double-ext/attachments",
-            files=files,
-            headers=auth_headers
+            "/api/kb/double-ext/attachments", files=files, headers=auth_headers
         )
 
         # Should be rejected because final extension is .exe
@@ -404,9 +397,7 @@ class TestFileTypeValidation:
         files = {"file": ("noextension", io.BytesIO(b"content"), "application/octet-stream")}
 
         response = await client.post(
-            "/api/kb/no-ext/attachments",
-            files=files,
-            headers=auth_headers
+            "/api/kb/no-ext/attachments", files=files, headers=auth_headers
         )
 
         assert response.status_code == 415
@@ -435,9 +426,7 @@ class TestFileSizeValidation:
             files = {"file": ("big.pdf", io.BytesIO(content), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/size-edge/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/size-edge/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 413
@@ -451,9 +440,11 @@ class TestFileSizeValidation:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.MAX_FILE_SIZE", 100), \
-             patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.MAX_FILE_SIZE", 100),
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -465,9 +456,7 @@ class TestFileSizeValidation:
             files = {"file": ("exact.pdf", io.BytesIO(content), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/size-exact/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/size-exact/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -492,28 +481,30 @@ class TestSearchFunctionality:
 
         with patch("api.knowledge_base.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search_kb = AsyncMock(return_value=[
-                {
-                    "id": "chunk-1",
-                    "content": "This is the matched content",
-                    "source_file": "document.pdf",
-                    "score": 0.95,
-                    "metadata": {"chunk_index": 0}
-                },
-                {
-                    "id": "chunk-2",
-                    "content": "Another matching section",
-                    "source_file": "report.docx",
-                    "score": 0.82,
-                    "metadata": {"chunk_index": 3}
-                }
-            ])
+            mock_rag.search_kb = AsyncMock(
+                return_value=[
+                    {
+                        "id": "chunk-1",
+                        "content": "This is the matched content",
+                        "source_file": "document.pdf",
+                        "score": 0.95,
+                        "metadata": {"chunk_index": 0},
+                    },
+                    {
+                        "id": "chunk-2",
+                        "content": "Another matching section",
+                        "source_file": "report.docx",
+                        "score": 0.82,
+                        "metadata": {"chunk_index": 3},
+                    },
+                ]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
                 "/api/kb/search-format/search",
                 headers=auth_headers,
-                json={"query": "test query", "top_k": 5}
+                json={"query": "test query", "top_k": 5},
             )
 
             assert response.status_code == 200
@@ -549,7 +540,7 @@ class TestSearchFunctionality:
             response = await client.post(
                 "/api/kb/conv-id-test/search",
                 headers=auth_headers,
-                json={"query": "test", "top_k": 3}
+                json={"query": "test", "top_k": 3},
             )
 
             assert response.status_code == 200
@@ -573,7 +564,7 @@ class TestSearchFunctionality:
             await client.post(
                 "/api/kb/topk-test/search",
                 headers=auth_headers,
-                json={"query": "search term", "top_k": 15}
+                json={"query": "search term", "top_k": 15},
             )
 
             call_kwargs = mock_rag.search_kb.call_args.kwargs
@@ -594,9 +585,7 @@ class TestSearchFunctionality:
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/kb/empty-query/search",
-                headers=auth_headers,
-                json={"query": "", "top_k": 5}
+                "/api/kb/empty-query/search", headers=auth_headers, json={"query": "", "top_k": 5}
             )
 
             # Should still work, RAG handles empty query
@@ -625,7 +614,7 @@ class TestSearchFunctionality:
             response = await client.post(
                 "/api/kb/unicode-search/search",
                 headers=auth_headers,
-                json={"query": "中文搜索词 émoji 🔍", "top_k": 5}
+                json={"query": "中文搜索词 émoji 🔍", "top_k": 5},
             )
 
             assert response.status_code == 200
@@ -649,8 +638,10 @@ class TestErrorHandling:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.side_effect = ValueError("Cannot parse PDF structure")
 
             mock_rag = MagicMock()
@@ -659,9 +650,7 @@ class TestErrorHandling:
             files = {"file": ("bad.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/extract-fail/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/extract-fail/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -678,8 +667,10 @@ class TestErrorHandling:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Good content"
 
             mock_rag = MagicMock()
@@ -691,9 +682,7 @@ class TestErrorHandling:
             files = {"file": ("doc.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/index-fail/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/index-fail/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -718,7 +707,7 @@ class TestErrorHandling:
             response = await client.post(
                 "/api/kb/search-error/search",
                 headers=auth_headers,
-                json={"query": "test", "top_k": 5}
+                json={"query": "test", "top_k": 5},
             )
 
             assert response.status_code == 500
@@ -741,7 +730,7 @@ class TestErrorHandling:
             original_filename="orphan.pdf",
             file_type="pdf",
             file_size=500,
-            status="indexed"
+            status="indexed",
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -752,8 +741,7 @@ class TestErrorHandling:
             mock_rag_class.return_value = mock_rag
 
             response = await client.delete(
-                f"/api/kb/vec-fail-delete/attachments/{att_id}",
-                headers=auth_headers
+                f"/api/kb/vec-fail-delete/attachments/{att_id}", headers=auth_headers
             )
 
             # Should still succeed
@@ -792,23 +780,17 @@ class TestConversationIsolation:
                 original_filename=f"doc{i}.pdf",
                 file_type="pdf",
                 file_size=100,
-                status="indexed"
+                status="indexed",
             )
             db_session.add(att)
         await db_session.commit()
 
         # Query conv1 should return 3
-        response1 = await client.get(
-            "/api/kb/isolated-1/attachments",
-            headers=auth_headers
-        )
+        response1 = await client.get("/api/kb/isolated-1/attachments", headers=auth_headers)
         assert response1.json()["count"] == 3
 
         # Query conv2 should return 0
-        response2 = await client.get(
-            "/api/kb/isolated-2/attachments",
-            headers=auth_headers
-        )
+        response2 = await client.get("/api/kb/isolated-2/attachments", headers=auth_headers)
         assert response2.json()["count"] == 0
 
     @pytest.mark.asyncio
@@ -830,7 +812,7 @@ class TestConversationIsolation:
             original_filename="private.pdf",
             file_type="pdf",
             file_size=100,
-            status="indexed"
+            status="indexed",
         )
         db_session.add(attachment)
         await db_session.commit()
@@ -842,8 +824,7 @@ class TestConversationIsolation:
 
             # Try to delete via conv2
             response = await client.delete(
-                f"/api/kb/other-conv/attachments/{att_id}",
-                headers=auth_headers
+                f"/api/kb/other-conv/attachments/{att_id}", headers=auth_headers
             )
 
             assert response.status_code == 404
@@ -872,15 +853,14 @@ class TestConversationIsolation:
             file_type="pdf",
             file_size=100,
             status="indexed",
-            extracted_text="This is secret content"
+            extracted_text="This is secret content",
         )
         db_session.add(attachment)
         await db_session.commit()
 
         # Try to get content via conv2
         response = await client.get(
-            f"/api/kb/content-seeker/attachments/{att_id}/content",
-            headers=auth_headers
+            f"/api/kb/content-seeker/attachments/{att_id}/content", headers=auth_headers
         )
 
         assert response.status_code == 404
@@ -910,15 +890,12 @@ class TestListAttachments:
                 original_filename=f"file{i}.pdf",
                 file_type="pdf",
                 file_size=size,
-                status="indexed"
+                status="indexed",
             )
             db_session.add(att)
         await db_session.commit()
 
-        response = await client.get(
-            "/api/kb/size-calc/attachments",
-            headers=auth_headers
-        )
+        response = await client.get("/api/kb/size-calc/attachments", headers=auth_headers)
 
         data = response.json()
         assert data["total_size"] == sum(sizes)  # 7680
@@ -944,16 +921,13 @@ class TestListAttachments:
                 original_filename=filename,
                 file_type="pdf",
                 file_size=100,
-                status="indexed"
+                status="indexed",
             )
             db_session.add(att)
             await db_session.commit()
             await asyncio.sleep(0.01)  # Small delay to ensure different timestamps
 
-        response = await client.get(
-            "/api/kb/order-test/attachments",
-            headers=auth_headers
-        )
+        response = await client.get("/api/kb/order-test/attachments", headers=auth_headers)
 
         data = response.json()
         # Most recent should be first (third.pdf)
@@ -975,7 +949,7 @@ class TestListAttachments:
             file_type="pdf",
             file_size=1000,
             status="indexed",
-            chunk_count=5
+            chunk_count=5,
         )
         att_err = ConversationAttachment(
             conversation_id=conv_id,
@@ -983,16 +957,13 @@ class TestListAttachments:
             file_type="pdf",
             file_size=500,
             status="error",
-            error_message="Failed to process"
+            error_message="Failed to process",
         )
         db_session.add(att_ok)
         db_session.add(att_err)
         await db_session.commit()
 
-        response = await client.get(
-            "/api/kb/error-list/attachments",
-            headers=auth_headers
-        )
+        response = await client.get("/api/kb/error-list/attachments", headers=auth_headers)
 
         data = response.json()
         assert data["count"] == 2
@@ -1031,14 +1002,13 @@ class TestContentRetrieval:
             file_size=100000,
             status="indexed",
             extracted_text=large_text,
-            chunk_count=50
+            chunk_count=50,
         )
         db_session.add(attachment)
         await db_session.commit()
 
         response = await client.get(
-            f"/api/kb/large-content/attachments/{att_id}/content",
-            headers=auth_headers
+            f"/api/kb/large-content/attachments/{att_id}/content", headers=auth_headers
         )
 
         assert response.status_code == 200
@@ -1072,14 +1042,13 @@ class TestContentRetrieval:
             file_type="pdf",
             file_size=1000,
             status="indexed",
-            extracted_text=special_text
+            extracted_text=special_text,
         )
         db_session.add(attachment)
         await db_session.commit()
 
         response = await client.get(
-            f"/api/kb/special-chars/attachments/{att_id}/content",
-            headers=auth_headers
+            f"/api/kb/special-chars/attachments/{att_id}/content", headers=auth_headers
         )
 
         assert response.status_code == 200
@@ -1110,8 +1079,10 @@ class TestConversationAutoCreation:
         )
         assert result.scalar_one_or_none() is None
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -1121,9 +1092,7 @@ class TestConversationAutoCreation:
             files = {"file": ("new.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                f"/api/kb/{file_id}/attachments",
-                files=files,
-                headers=auth_headers
+                f"/api/kb/{file_id}/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -1146,8 +1115,10 @@ class TestConversationAutoCreation:
         db_session.add(existing_conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -1157,9 +1128,7 @@ class TestConversationAutoCreation:
             files = {"file": ("doc.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/existing-conv/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/existing-conv/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -1190,8 +1159,10 @@ class TestEdgeCases:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = ""  # Empty content
 
             mock_rag = MagicMock()
@@ -1201,9 +1172,7 @@ class TestEdgeCases:
             files = {"file": ("empty.pdf", io.BytesIO(b""), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/empty-file/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/empty-file/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -1223,8 +1192,10 @@ class TestEdgeCases:
         # Very long filename (250 chars before extension)
         long_name = "a" * 250 + ".pdf"
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -1234,9 +1205,7 @@ class TestEdgeCases:
             files = {"file": (long_name, io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/long-name/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/long-name/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -1254,8 +1223,10 @@ class TestEdgeCases:
 
         special_name = "文档 (copy) [2024] #1.pdf"
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -1265,9 +1236,7 @@ class TestEdgeCases:
             files = {"file": (special_name, io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/special-name/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/special-name/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -1283,8 +1252,10 @@ class TestEdgeCases:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -1295,9 +1266,7 @@ class TestEdgeCases:
             files = {"file": ("document.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/just-ext/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/just-ext/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200
@@ -1311,8 +1280,10 @@ class TestEdgeCases:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.extract_text_content") as mock_extract, \
-             patch("api.knowledge_base.RAGService") as mock_rag_class:
+        with (
+            patch("api.knowledge_base.extract_text_content") as mock_extract,
+            patch("api.knowledge_base.RAGService") as mock_rag_class,
+        ):
             mock_extract.return_value = "Content"
 
             mock_rag = MagicMock()
@@ -1323,9 +1294,7 @@ class TestEdgeCases:
             files = {"file": (".hidden.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
 
             response = await client.post(
-                "/api/kb/hidden-file/attachments",
-                files=files,
-                headers=auth_headers
+                "/api/kb/hidden-file/attachments", files=files, headers=auth_headers
             )
 
             assert response.status_code == 200

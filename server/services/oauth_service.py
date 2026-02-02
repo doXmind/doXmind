@@ -41,7 +41,7 @@ class GoogleOAuthService:
         client = AsyncOAuth2Client(
             client_id=self.settings.google_client_id,
             client_secret=self.settings.google_client_secret,
-            redirect_uri=self.settings.google_redirect_uri
+            redirect_uri=self.settings.google_redirect_uri,
         )
 
         url, _ = client.create_authorization_url(
@@ -49,7 +49,7 @@ class GoogleOAuthService:
             scope="openid email profile",
             state=state,
             access_type="offline",
-            prompt="select_account"
+            prompt="select_account",
         )
 
         return url
@@ -74,8 +74,8 @@ class GoogleOAuthService:
                     "client_secret": self.settings.google_client_secret,
                     "code": code,
                     "grant_type": "authorization_code",
-                    "redirect_uri": self.settings.google_redirect_uri
-                }
+                    "redirect_uri": self.settings.google_redirect_uri,
+                },
             )
 
             if response.status_code != 200:
@@ -95,8 +95,7 @@ class GoogleOAuthService:
         """
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                self.GOOGLE_USERINFO_URL,
-                headers={"Authorization": f"Bearer {access_token}"}
+                self.GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
             )
 
             if response.status_code != 200:
@@ -130,7 +129,7 @@ class GoogleOAuthService:
             "email": user_info.get("email"),
             "name": user_info.get("name"),
             "picture": user_info.get("picture"),
-            "email_verified": user_info.get("email_verified", False)
+            "email_verified": user_info.get("email_verified", False),
         }
 
 

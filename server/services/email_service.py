@@ -18,11 +18,7 @@ class EmailService:
         self.settings = get_settings()
 
     async def send_email(
-        self,
-        to_email: str,
-        subject: str,
-        html_content: str,
-        text_content: str | None = None
+        self, to_email: str, subject: str, html_content: str, text_content: str | None = None
     ) -> bool:
         """Send an email.
 
@@ -42,7 +38,9 @@ class EmailService:
         try:
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
-            message["From"] = f"{self.settings.smtp_from_name} <{self.settings.smtp_from_email or self.settings.smtp_user}>"
+            message["From"] = (
+                f"{self.settings.smtp_from_name} <{self.settings.smtp_from_email or self.settings.smtp_user}>"
+            )
             message["To"] = to_email
 
             # Add plain text part
@@ -69,7 +67,9 @@ class EmailService:
             logger.error(f"Failed to send email to {to_email}: {e}")
             return False
 
-    async def send_verification_code(self, to_email: str, code: str, expire_minutes: int = 15) -> bool:
+    async def send_verification_code(
+        self, to_email: str, code: str, expire_minutes: int = 15
+    ) -> bool:
         """Send a verification code email.
 
         Args:
@@ -126,7 +126,9 @@ This email was sent by doXmind. Please do not reply to this email.
 
         return await self.send_email(to_email, subject, html_content, text_content)
 
-    async def send_password_reset(self, to_email: str, reset_link: str, expire_hours: int = 1) -> bool:
+    async def send_password_reset(
+        self, to_email: str, reset_link: str, expire_hours: int = 1
+    ) -> bool:
         """Send a password reset email.
 
         Args:

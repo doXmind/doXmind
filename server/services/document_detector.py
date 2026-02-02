@@ -34,19 +34,19 @@ class DocumentTypeDetector:
 
     # Markdown indicators (patterns that suggest Markdown content)
     MARKDOWN_PATTERNS = [
-        r"^#{1,6}\s+",              # Headers (# H1, ## H2, etc.)
-        r"^\s*[-*+]\s+",            # Unordered list items
-        r"^\s*\d+\.\s+",            # Ordered list items
-        r"\[.+\]\(.+\)",            # Links [text](url)
-        r"!\[.*\]\(.+\)",           # Images ![alt](url)
-        r"```[\w]*\n",              # Fenced code blocks
-        r"\*\*[^*]+\*\*",           # Bold **text**
-        r"__[^_]+__",               # Bold __text__
+        r"^#{1,6}\s+",  # Headers (# H1, ## H2, etc.)
+        r"^\s*[-*+]\s+",  # Unordered list items
+        r"^\s*\d+\.\s+",  # Ordered list items
+        r"\[.+\]\(.+\)",  # Links [text](url)
+        r"!\[.*\]\(.+\)",  # Images ![alt](url)
+        r"```[\w]*\n",  # Fenced code blocks
+        r"\*\*[^*]+\*\*",  # Bold **text**
+        r"__[^_]+__",  # Bold __text__
         r"(?<!\*)\*[^*]+\*(?!\*)",  # Italic *text*
-        r"~~[^~]+~~",               # Strikethrough ~~text~~
-        r"^\s*>\s+",                # Blockquotes
-        r"\|[^\n]+\|",              # Tables
-        r"`[^`]+`",                 # Inline code
+        r"~~[^~]+~~",  # Strikethrough ~~text~~
+        r"^\s*>\s+",  # Blockquotes
+        r"\|[^\n]+\|",  # Tables
+        r"`[^`]+`",  # Inline code
     ]
 
     # Code indicators (patterns that suggest source code)
@@ -74,17 +74,44 @@ class DocumentTypeDetector:
     # File extensions that indicate document type
     MARKDOWN_EXTENSIONS = {"md", "markdown", "mdown", "mkd", "mdx"}
     CODE_EXTENSIONS = {
-        "py", "js", "ts", "jsx", "tsx", "java", "cpp", "c", "h", "hpp",
-        "go", "rs", "rb", "php", "swift", "kt", "scala", "cs", "fs",
-        "lua", "r", "sql", "sh", "bash", "zsh", "ps1", "yaml", "yml",
-        "json", "xml", "html", "css", "scss", "sass", "less"
+        "py",
+        "js",
+        "ts",
+        "jsx",
+        "tsx",
+        "java",
+        "cpp",
+        "c",
+        "h",
+        "hpp",
+        "go",
+        "rs",
+        "rb",
+        "php",
+        "swift",
+        "kt",
+        "scala",
+        "cs",
+        "fs",
+        "lua",
+        "r",
+        "sql",
+        "sh",
+        "bash",
+        "zsh",
+        "ps1",
+        "yaml",
+        "yml",
+        "json",
+        "xml",
+        "html",
+        "css",
+        "scss",
+        "sass",
+        "less",
     }
 
-    def __init__(
-        self,
-        markdown_threshold: float = 0.15,
-        code_threshold: float = 0.2
-    ):
+    def __init__(self, markdown_threshold: float = 0.15, code_threshold: float = 0.2):
         """Initialize the detector with configurable thresholds.
 
         Args:
@@ -95,18 +122,10 @@ class DocumentTypeDetector:
         """
         self.markdown_threshold = markdown_threshold
         self.code_threshold = code_threshold
-        self.markdown_regexes = [
-            re.compile(p, re.MULTILINE) for p in self.MARKDOWN_PATTERNS
-        ]
-        self.code_regexes = [
-            re.compile(p, re.MULTILINE) for p in self.CODE_PATTERNS
-        ]
+        self.markdown_regexes = [re.compile(p, re.MULTILINE) for p in self.MARKDOWN_PATTERNS]
+        self.code_regexes = [re.compile(p, re.MULTILINE) for p in self.CODE_PATTERNS]
 
-    def detect(
-        self,
-        content: str,
-        filename: str | None = None
-    ) -> DocumentType:
+    def detect(self, content: str, filename: str | None = None) -> DocumentType:
         """Detect document type from content and optional filename.
 
         Args:
@@ -156,9 +175,7 @@ class DocumentTypeDetector:
         Returns a score between 0 and 1 representing the density
         of Markdown patterns in the content.
         """
-        matches = sum(
-            len(regex.findall(content)) for regex in self.markdown_regexes
-        )
+        matches = sum(len(regex.findall(content)) for regex in self.markdown_regexes)
         # Normalize by total lines, cap at 1.0
         return min(matches / max(total_lines, 1), 1.0)
 
@@ -168,9 +185,7 @@ class DocumentTypeDetector:
         Returns a score between 0 and 1 representing the density
         of code patterns in the content.
         """
-        matches = sum(
-            len(regex.findall(content)) for regex in self.code_regexes
-        )
+        matches = sum(len(regex.findall(content)) for regex in self.code_regexes)
         return min(matches / max(total_lines, 1), 1.0)
 
 

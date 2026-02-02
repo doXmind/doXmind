@@ -23,6 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from services.document_detector import DocumentType, DocumentTypeDetector
+from services.token_utils import (
+    SAFE_TOKEN_LIMIT,
+    count_tokens,
+    split_code_block_by_tokens,
+    split_table_by_tokens,
+    truncate_to_token_limit,
+    validate_chunks_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +38,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # HTML Utilities
 # ============================================================================
+
 
 def strip_html_tags(html: str) -> str:
     """Strip HTML tags and return plain text.
@@ -60,12 +69,13 @@ def strip_html_tags(html: str) -> str:
 # Hybrid Search Utilities
 # ============================================================================
 
+
 def reciprocal_rank_fusion(
     semantic_results: list[dict],
     keyword_results: list[dict],
     k: int = 60,
     semantic_weight: float = 0.7,
-    keyword_weight: float = 0.3
+    keyword_weight: float = 0.3,
 ) -> list[dict]:
     """Combine semantic and keyword search results using Reciprocal Rank Fusion.
 
@@ -93,7 +103,7 @@ def reciprocal_rank_fusion(
             "doc": result,
             "score": semantic_weight / (k + rank),
             "semantic_rank": rank,
-            "keyword_rank": None
+            "keyword_rank": None,
         }
 
     # Score keyword results
@@ -104,18 +114,14 @@ def reciprocal_rank_fusion(
                 "doc": result,
                 "score": 0,
                 "semantic_rank": None,
-                "keyword_rank": rank
+                "keyword_rank": rank,
             }
         else:
             scores[doc_id]["keyword_rank"] = rank
         scores[doc_id]["score"] += keyword_weight / (k + rank)
 
     # Sort by combined score
-    sorted_results = sorted(
-        scores.values(),
-        key=lambda x: x["score"],
-        reverse=True
-    )
+    sorted_results = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
 
     # Return documents with RRF metadata
     return [
@@ -123,10 +129,11 @@ def reciprocal_rank_fusion(
             **item["doc"],
             "rrf_score": item["score"],
             "semantic_rank": item["semantic_rank"],
-            "keyword_rank": item["keyword_rank"]
+            "keyword_rank": item["keyword_rank"],
         }
         for item in sorted_results
     ]
+
 
 # Embedding dimension for text-embedding-3-small
 EMBEDDING_DIMENSION = 1536
@@ -135,6 +142,7 @@ EMBEDDING_DIMENSION = 1536
 # ============================================================================
 # Chunking Strategies
 # ============================================================================
+
 
 class ChunkingStrategy(ABC):
     """Abstract base class for text chunking strategies."""
@@ -171,7 +179,7 @@ class OverlapChunkingStrategy(ChunkingStrategy):
                 for sep in ["\u3002", ".", "\n\n", "\n"]:
                     last_sep = chunk.rfind(sep)
                     if last_sep > self.chunk_size // 2:
-                        chunk = chunk[:last_sep + 1]
+                        chunk = chunk[: last_sep + 1]
                         end = start + last_sep + 1
                         break
 
@@ -216,20 +224,29 @@ class MarkdownSentenceChunkingStrategy(ChunkingStrategy):
 
         # Convert headers
         for i in range(1, 7):
-            text = re.sub(rf"<h{i}[^>]*>(.*?)</h{i}>", rf"{'#' * i} \1\n", text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(
+                rf"<h{i}[^>]*>(.*?)</h{i}>",
+                rf"{'#' * i} \1\n",
+                text,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
 
         # Convert HTML tables to markdown-style rows (each row on its own line)
         def convert_table_row(match: re.Match) -> str:
             row_html = match.group(1)
             # Extract cell contents
-            cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, flags=re.DOTALL | re.IGNORECASE)
+            cells = re.findall(
+                r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, flags=re.DOTALL | re.IGNORECASE
+            )
             if cells:
                 # Strip HTML from cells and join with |
                 clean_cells = [re.sub(r"<[^>]+>", "", cell).strip() for cell in cells]
                 return "| " + " | ".join(clean_cells) + " |\n"
             return ""
 
-        text = re.sub(r"<tr[^>]*>(.*?)</tr>", convert_table_row, text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(
+            r"<tr[^>]*>(.*?)</tr>", convert_table_row, text, flags=re.DOTALL | re.IGNORECASE
+        )
 
         # Remove table wrapper tags
         text = re.sub(r"</?table[^>]*>", "\n", text, flags=re.IGNORECASE)
@@ -246,17 +263,29 @@ class MarkdownSentenceChunkingStrategy(ChunkingStrategy):
         text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
 
         # Convert code blocks
-        text = re.sub(r"<pre[^>]*><code[^>]*>(.*?)</code></pre>", r"```\n\1\n```", text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(
+            r"<pre[^>]*><code[^>]*>(.*?)</code></pre>",
+            r"```\n\1\n```",
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
         text = re.sub(r"<code[^>]*>(.*?)</code>", r"`\1`", text, flags=re.DOTALL | re.IGNORECASE)
 
         # Convert bold/italic
-        text = re.sub(r"<strong[^>]*>(.*?)</strong>", r"**\1**", text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(
+            r"<strong[^>]*>(.*?)</strong>", r"**\1**", text, flags=re.DOTALL | re.IGNORECASE
+        )
         text = re.sub(r"<b[^>]*>(.*?)</b>", r"**\1**", text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r"<em[^>]*>(.*?)</em>", r"*\1*", text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r"<i[^>]*>(.*?)</i>", r"*\1*", text, flags=re.DOTALL | re.IGNORECASE)
 
         # Convert links
-        text = re.sub(r"<a[^>]*href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", r"[\2](\1)", text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(
+            r"<a[^>]*href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>",
+            r"[\2](\1)",
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
 
         # Remove remaining HTML tags
         text = re.sub(r"<[^>]+>", "", text)
@@ -351,11 +380,7 @@ class MarkdownSentenceChunkingStrategy(ChunkingStrategy):
                 # Start new section
                 level = len(header_match.group(1))
                 header_text = header_match.group(2).strip()
-                current_section = {
-                    "header": header_text,
-                    "level": level,
-                    "content": []
-                }
+                current_section = {"header": header_text, "level": level, "content": []}
             else:
                 current_section["content"].append(line)
 
@@ -625,7 +650,7 @@ class SemanticChunkingStrategy(ChunkingStrategy):
         self,
         max_chunk_size: int = 2000,  # Larger chunks for semantic coherence
         min_chunk_size: int = 200,
-        overlap_ratio: float = 0.0  # No overlap - cleaner search results
+        overlap_ratio: float = 0.0,  # No overlap - cleaner search results
     ):
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
@@ -756,7 +781,7 @@ class SemanticChunkingStrategy(ChunkingStrategy):
             for sep in [". ", "。", "! ", "? ", "\n"]:
                 idx = text.rfind(sep)
                 if idx > len(text) // 2:
-                    return text[:idx + 1].strip()
+                    return text[: idx + 1].strip()
             # Fall back to word boundary
             idx = text.rfind(" ")
             if idx > len(text) // 2:
@@ -766,11 +791,11 @@ class SemanticChunkingStrategy(ChunkingStrategy):
             for sep in [". ", "。", "! ", "? ", "\n"]:
                 idx = text.find(sep)
                 if idx >= 0 and idx < len(text) // 2:
-                    return text[idx + 1:].strip()
+                    return text[idx + 1 :].strip()
             # Fall back to word boundary
             idx = text.find(" ")
             if idx >= 0 and idx < len(text) // 2:
-                return text[idx + 1:].strip()
+                return text[idx + 1 :].strip()
 
         return text.strip()
 
@@ -798,7 +823,7 @@ class RecursiveMarkdownChunkingStrategy(ChunkingStrategy):
         min_chunk_size: int = 200,
         overlap_ratio: float = 0.0,  # No overlap - cleaner search results
         preserve_code_blocks: bool = True,
-        preserve_tables: bool = True
+        preserve_tables: bool = True,
     ):
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
@@ -869,11 +894,7 @@ class RecursiveMarkdownChunkingStrategy(ChunkingStrategy):
                 # Start new section
                 level = len(header_match.group(1))
                 title = header_match.group(2)
-                current_section = {
-                    "level": level,
-                    "title": title,
-                    "content": line + "\n"
-                }
+                current_section = {"level": level, "title": title, "content": line + "\n"}
             else:
                 current_section["content"] += line + "\n"
 
@@ -884,9 +905,7 @@ class RecursiveMarkdownChunkingStrategy(ChunkingStrategy):
         return sections
 
     def _process_section(
-        self,
-        section: dict[str, Any],
-        protected_blocks: dict[str, str]
+        self, section: dict[str, Any], protected_blocks: dict[str, str]
     ) -> list[str]:
         """Process a section, splitting text while keeping code/tables intact.
 
@@ -922,7 +941,9 @@ class RecursiveMarkdownChunkingStrategy(ChunkingStrategy):
                 # Regular text paragraph - apply size limits
                 if len(current_text_chunk) + len(para) + 2 <= self.max_chunk_size:
                     # Fits in current chunk
-                    current_text_chunk = f"{current_text_chunk}\n\n{para}" if current_text_chunk else para
+                    current_text_chunk = (
+                        f"{current_text_chunk}\n\n{para}" if current_text_chunk else para
+                    )
                 else:
                     # Doesn't fit - flush current and handle this paragraph
                     if current_text_chunk:
@@ -968,19 +989,44 @@ class RecursiveMarkdownChunkingStrategy(ChunkingStrategy):
         return chunks
 
     def _restore_protected_blocks(
-        self,
-        chunks: list[str],
-        protected_blocks: dict[str, str]
+        self, chunks: list[str], protected_blocks: dict[str, str]
     ) -> list[str]:
-        """Restore protected blocks in chunks."""
+        """Restore protected blocks in chunks, splitting oversized ones.
+
+        Checks token count after restoration and splits code blocks/tables
+        that exceed the embedding API token limit.
+        """
         final_chunks: list[str] = []
 
         for chunk in chunks:
             # Restore protected blocks
             for placeholder, original in protected_blocks.items():
-                chunk = chunk.replace(placeholder, original)
+                if placeholder in chunk:
+                    # Check if the original block exceeds token limit
+                    token_count = count_tokens(original)
+                    if token_count > SAFE_TOKEN_LIMIT:
+                        # Split oversized block
+                        logger.warning(
+                            f"Protected block exceeds token limit ({token_count} tokens), splitting"
+                        )
+                        if placeholder.startswith("__CODE_BLOCK_"):
+                            sub_chunks = split_code_block_by_tokens(original)
+                        elif placeholder.startswith("__TABLE_"):
+                            sub_chunks = split_table_by_tokens(original)
+                        else:
+                            # Fallback: truncate
+                            sub_chunks = [truncate_to_token_limit(original)]
 
-            if chunk.strip():
+                        # Replace placeholder with first sub-chunk, add rest as new chunks
+                        chunk = chunk.replace(placeholder, sub_chunks[0])
+                        final_chunks.append(chunk.strip())
+                        final_chunks.extend(sub_chunks[1:])
+                        chunk = ""  # Already added
+                        break
+                    else:
+                        chunk = chunk.replace(placeholder, original)
+
+            if chunk and chunk.strip():
                 final_chunks.append(chunk.strip())
 
         return final_chunks
@@ -1000,6 +1046,7 @@ RECURSIVE_MARKDOWN_STRATEGY = RecursiveMarkdownChunkingStrategy()
 # ============================================================================
 # Chunking Strategy Selection
 # ============================================================================
+
 
 class ChunkingStrategyType(Enum):
     """Enumeration of available chunking strategies."""
@@ -1037,7 +1084,7 @@ class ChunkingStrategyFactory:
         self,
         content: str,
         filename: str | None = None,
-        strategy_type: ChunkingStrategyType | None = None
+        strategy_type: ChunkingStrategyType | None = None,
     ) -> ChunkingStrategy:
         """Get the optimal chunking strategy for content.
 
@@ -1070,47 +1117,41 @@ class ChunkingStrategyFactory:
         if doc_type == DocumentType.MARKDOWN:
             return RecursiveMarkdownChunkingStrategy(
                 max_chunk_size=getattr(self.settings, "markdown_max_chunk_size", 2000),
-                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size
+                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size,
             )
         elif doc_type == DocumentType.CODE:
             # For code, use semantic chunking which respects function boundaries
             return SemanticChunkingStrategy(
                 max_chunk_size=self.settings.chunk_size,
                 min_chunk_size=getattr(self.settings, "semantic_min_chunk_size", 200),
-                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size
+                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size,
             )
         else:
             # Default: semantic chunking for general text
             return SemanticChunkingStrategy(
                 max_chunk_size=self.settings.chunk_size,
                 min_chunk_size=getattr(self.settings, "semantic_min_chunk_size", 200),
-                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size
+                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size,
             )
 
-    def _create_strategy(
-        self,
-        strategy_type: ChunkingStrategyType
-    ) -> ChunkingStrategy:
+    def _create_strategy(self, strategy_type: ChunkingStrategyType) -> ChunkingStrategy:
         """Create a strategy by explicit type."""
         if strategy_type == ChunkingStrategyType.OVERLAP:
             return OverlapChunkingStrategy(
-                chunk_size=self.settings.chunk_size,
-                overlap=self.settings.chunk_overlap
+                chunk_size=self.settings.chunk_size, overlap=self.settings.chunk_overlap
             )
         elif strategy_type == ChunkingStrategyType.SENTENCE:
-            return SentenceChunkingStrategy(
-                min_length=self.settings.sentence_min_length
-            )
+            return SentenceChunkingStrategy(min_length=self.settings.sentence_min_length)
         elif strategy_type == ChunkingStrategyType.SEMANTIC:
             return SemanticChunkingStrategy(
                 max_chunk_size=self.settings.chunk_size,
                 min_chunk_size=getattr(self.settings, "semantic_min_chunk_size", 200),
-                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size
+                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size,
             )
         elif strategy_type == ChunkingStrategyType.RECURSIVE_MARKDOWN:
             return RecursiveMarkdownChunkingStrategy(
                 max_chunk_size=getattr(self.settings, "markdown_max_chunk_size", 2000),
-                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size
+                overlap_ratio=self.settings.chunk_overlap / self.settings.chunk_size,
             )
         else:
             # Fallback to default
@@ -1125,18 +1166,25 @@ DEFAULT_STRATEGY_FACTORY = ChunkingStrategyFactory()
 # Embedding Functions
 # ============================================================================
 
+
 async def get_embedding(text_content: str) -> list[float]:
-    """Generate embedding vector for text using OpenAI."""
+    """Generate embedding vector for text using OpenAI.
+
+    Validates token count before sending to API and truncates if needed.
+    """
     settings = get_settings()
 
     if not settings.openai_api_key:
         raise RuntimeError("OpenAI API key required for pgvector embeddings")
 
+    # Validate token count before sending to API
+    token_count = count_tokens(text_content)
+    if token_count > SAFE_TOKEN_LIMIT:
+        logger.warning(f"Text exceeds token limit ({token_count} > {SAFE_TOKEN_LIMIT}), truncating")
+        text_content = truncate_to_token_limit(text_content)
+
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-    response = await client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text_content
-    )
+    response = await client.embeddings.create(model="text-embedding-3-small", input=text_content)
     return response.data[0].embedding
 
 
@@ -1170,14 +1218,13 @@ async def _embed_single_batch_with_retry(
         for attempt in range(max_retries):
             try:
                 response = await client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=texts
+                    model="text-embedding-3-small", input=texts
                 )
                 return (batch_index, [item.embedding for item in response.data])
 
             except openai.RateLimitError as e:
                 if attempt < max_retries - 1:
-                    delay = retry_delay * (retry_backoff ** attempt)
+                    delay = retry_delay * (retry_backoff**attempt)
                     logger.warning(
                         f"Embedding batch {batch_index} rate limited, "
                         f"retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
@@ -1191,7 +1238,7 @@ async def _embed_single_batch_with_retry(
 
             except openai.APIConnectionError as e:
                 if attempt < max_retries - 1:
-                    delay = retry_delay * (retry_backoff ** attempt)
+                    delay = retry_delay * (retry_backoff**attempt)
                     logger.warning(
                         f"Embedding batch {batch_index} connection error, "
                         f"retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
@@ -1206,7 +1253,7 @@ async def _embed_single_batch_with_retry(
                     raise RuntimeError(f"Embedding API error: {e}") from e
 
                 if attempt < max_retries - 1:
-                    delay = retry_delay * (retry_backoff ** attempt)
+                    delay = retry_delay * (retry_backoff**attempt)
                     logger.warning(
                         f"Embedding batch {batch_index} API error ({e.status_code}), "
                         f"retrying in {delay:.1f}s"
@@ -1243,13 +1290,12 @@ async def _batch_embeddings_parallel(
         List of embeddings in same order as input texts
     """
     # Split texts into batches
-    batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
+    batches = [texts[i : i + batch_size] for i in range(0, len(texts), batch_size)]
 
     if len(batches) == 1:
         # Single batch: skip overhead of parallel processing
         _, embeddings = await _embed_single_batch_with_retry(
-            client, batches[0], 0, asyncio.Semaphore(1),
-            max_retries, retry_delay, retry_backoff
+            client, batches[0], 0, asyncio.Semaphore(1), max_retries, retry_delay, retry_backoff
         )
         return embeddings
 
@@ -1264,8 +1310,7 @@ async def _batch_embeddings_parallel(
     # Create tasks for all batches
     tasks = [
         _embed_single_batch_with_retry(
-            client, batch, i, semaphore,
-            max_retries, retry_delay, retry_backoff
+            client, batch, i, semaphore, max_retries, retry_delay, retry_backoff
         )
         for i, batch in enumerate(batches)
     ]
@@ -1296,11 +1341,14 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
     Splits large text lists into smaller batches and processes them
     in parallel with concurrency control and retry logic.
 
+    Validates token counts and splits oversized chunks before sending to API.
+
     Args:
         texts: List of texts to embed
 
     Returns:
         List of embeddings in same order as input texts
+        Note: If chunks were split, the returned list may be longer than input
 
     Raises:
         RuntimeError: If OpenAI API key is missing or API calls fail
@@ -1313,11 +1361,20 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
     if not settings.openai_api_key:
         raise RuntimeError("OpenAI API key required for pgvector embeddings")
 
+    # Validate and fix oversized chunks before sending to API
+    validated_texts, split_indices = validate_chunks_tokens(texts)
+
+    if split_indices:
+        logger.warning(
+            f"Split {len(split_indices)} oversized chunks before embedding. "
+            f"Original: {len(texts)}, After validation: {len(validated_texts)}"
+        )
+
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
     return await _batch_embeddings_parallel(
         client=client,
-        texts=texts,
+        texts=validated_texts,
         batch_size=settings.embedding_batch_size,
         max_concurrent=settings.embedding_max_concurrent,
         max_retries=settings.embedding_max_retries,
@@ -1329,6 +1386,7 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
 # ============================================================================
 # Database Initialization
 # ============================================================================
+
 
 async def init_pgvector(db: AsyncSession):
     """Initialize pgvector extension and create vector table.
@@ -1347,19 +1405,22 @@ async def init_pgvector(db: AsyncSession):
 
         # Check if vectors table exists with wrong column type (e.g., TEXT instead of VECTOR)
         # This can happen if tests created the table with a mock schema
-        result = await db.execute(text("""
+        result = await db.execute(
+            text("""
             SELECT data_type FROM information_schema.columns
             WHERE table_name = 'vectors' AND column_name = 'embedding'
-        """))
+        """)
+        )
         row = result.fetchone()
 
-        if row and row[0] == 'text':
+        if row and row[0] == "text":
             # Table exists with wrong type, drop and recreate
             logger.warning("Vectors table has TEXT embedding column, recreating with VECTOR type")
             await db.execute(text("DROP TABLE IF EXISTS vectors CASCADE"))
 
         # Create vectors table for storing all embeddings
-        await db.execute(text(f"""
+        await db.execute(
+            text(f"""
             CREATE TABLE IF NOT EXISTS vectors (
                 id VARCHAR(255) PRIMARY KEY,
                 content TEXT NOT NULL,
@@ -1374,34 +1435,38 @@ async def init_pgvector(db: AsyncSession):
                 metadata JSONB,
                 created_at TIMESTAMP DEFAULT NOW()
             )
-        """))
+        """)
+        )
 
         # Create indexes for efficient querying
-        await db.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_vectors_file_id ON vectors(file_id)"
-        ))
-        await db.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_vectors_conversation_id ON vectors(conversation_id)"
-        ))
-        await db.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_vectors_chunk_type ON vectors(chunk_type)"
-        ))
-        await db.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_vectors_attachment_id ON vectors(attachment_id)"
-        ))
+        await db.execute(text("CREATE INDEX IF NOT EXISTS idx_vectors_file_id ON vectors(file_id)"))
+        await db.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_vectors_conversation_id ON vectors(conversation_id)"
+            )
+        )
+        await db.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_vectors_chunk_type ON vectors(chunk_type)")
+        )
+        await db.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_vectors_attachment_id ON vectors(attachment_id)")
+        )
 
         # Create HNSW index for vector similarity search (cosine distance)
-        await db.execute(text("""
+        await db.execute(
+            text("""
             CREATE INDEX IF NOT EXISTS idx_vectors_embedding
             ON vectors USING hnsw (embedding vector_cosine_ops)
-        """))
+        """)
+        )
 
         # =====================================================================
         # Full-Text Search Setup (for Hybrid Search)
         # =====================================================================
 
         # Add tsvector column for keyword search (if not exists)
-        await db.execute(text("""
+        await db.execute(
+            text("""
             DO $$
             BEGIN
                 IF NOT EXISTS (
@@ -1411,40 +1476,51 @@ async def init_pgvector(db: AsyncSession):
                     ALTER TABLE vectors ADD COLUMN search_vector tsvector;
                 END IF;
             END $$;
-        """))
+        """)
+        )
 
         # Create GIN index for fast full-text search
-        await db.execute(text("""
+        await db.execute(
+            text("""
             CREATE INDEX IF NOT EXISTS idx_vectors_search_vector
             ON vectors USING GIN (search_vector)
-        """))
+        """)
+        )
 
         # Create trigger function to auto-update tsvector on content changes
-        await db.execute(text("""
+        await db.execute(
+            text("""
             CREATE OR REPLACE FUNCTION vectors_search_vector_update() RETURNS trigger AS $$
             BEGIN
                 NEW.search_vector := to_tsvector('english', COALESCE(NEW.content, ''));
                 RETURN NEW;
             END
             $$ LANGUAGE plpgsql;
-        """))
+        """)
+        )
 
         # Create trigger (drop first to avoid duplicate)
-        await db.execute(text("""
+        await db.execute(
+            text("""
             DROP TRIGGER IF EXISTS vectors_search_vector_trigger ON vectors;
-        """))
-        await db.execute(text("""
+        """)
+        )
+        await db.execute(
+            text("""
             CREATE TRIGGER vectors_search_vector_trigger
             BEFORE INSERT OR UPDATE ON vectors
             FOR EACH ROW EXECUTE FUNCTION vectors_search_vector_update();
-        """))
+        """)
+        )
 
         # Populate search_vector for existing rows that don't have it
-        await db.execute(text("""
+        await db.execute(
+            text("""
             UPDATE vectors
             SET search_vector = to_tsvector('english', COALESCE(content, ''))
             WHERE search_vector IS NULL
-        """))
+        """)
+        )
 
         await db.commit()
         logger.info("pgvector initialized successfully with full-text search support")
@@ -1458,6 +1534,7 @@ async def init_pgvector(db: AsyncSession):
 # ============================================================================
 # RAG Service
 # ============================================================================
+
 
 class RAGService:
     """RAG service using PostgreSQL pgvector.
@@ -1478,7 +1555,7 @@ class RAGService:
         file_id: str,
         content: str,
         metadata: dict[str, Any] | None = None,
-        strategy: ChunkingStrategy | None = None
+        strategy: ChunkingStrategy | None = None,
     ):
         """Index a file's content at chunk level with position tracking."""
         try:
@@ -1533,8 +1610,8 @@ class RAGService:
                         "embedding": str(embedding),
                         "file_id": file_id,
                         "chunk_index": i,
-                        "metadata": metadata_json
-                    }
+                        "metadata": metadata_json,
+                    },
                 )
 
             await self.db.commit()
@@ -1545,9 +1622,7 @@ class RAGService:
             logger.error(f"Failed to index file {file_id}: {e}")
             raise
 
-    def _find_chunk_positions(
-        self, content: str, chunks: list[str]
-    ) -> list[tuple[int, int]]:
+    def _find_chunk_positions(self, content: str, chunks: list[str]) -> list[tuple[int, int]]:
         """Find start/end positions of each chunk in the original content.
 
         Uses sequential search to handle overlapping chunks correctly.
@@ -1589,7 +1664,7 @@ class RAGService:
         query: str,
         file_ids: list[str] | None = None,
         top_k: int = 5,
-        user_id: str | None = None
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search for relevant document chunks using cosine similarity.
 
@@ -1614,7 +1689,9 @@ class RAGService:
 
             if user_id:
                 # Filter by user_id in metadata, also include vectors without user_id for backward compatibility
-                conditions.append("(metadata->>'user_id' = :user_id OR metadata->>'user_id' IS NULL)")
+                conditions.append(
+                    "(metadata->>'user_id' = :user_id OR metadata->>'user_id' IS NULL)"
+                )
                 params["user_id"] = user_id
 
             where_clause = " AND ".join(conditions)
@@ -1628,7 +1705,7 @@ class RAGService:
                     ORDER BY embedding <=> :embedding
                     LIMIT :limit
                 """),
-                params
+                params,
             )
 
             rows = result.fetchall()
@@ -1647,12 +1724,18 @@ class RAGService:
                 if distance > 0.7:
                     continue
 
-                results.append({
-                    "id": row.id,
-                    "content": plain_content,
-                    "metadata": {"file_id": row.file_id, "chunk_index": row.chunk_index, **(row.metadata or {})},
-                    "distance": distance
-                })
+                results.append(
+                    {
+                        "id": row.id,
+                        "content": plain_content,
+                        "metadata": {
+                            "file_id": row.file_id,
+                            "chunk_index": row.chunk_index,
+                            **(row.metadata or {}),
+                        },
+                        "distance": distance,
+                    }
+                )
 
             return results
 
@@ -1670,7 +1753,7 @@ class RAGService:
         chunk_type: str = "document",
         file_ids: list[str] | None = None,
         user_id: str | None = None,
-        top_k: int = 15
+        top_k: int = 15,
     ) -> list[dict[str, Any]]:
         """Full-text keyword search using PostgreSQL tsvector.
 
@@ -1713,7 +1796,7 @@ class RAGService:
                     ORDER BY rank DESC
                     LIMIT :limit
                 """),
-                params
+                params,
             )
 
             rows = result.fetchall()
@@ -1726,16 +1809,18 @@ class RAGService:
                 if not plain_content or len(plain_content) < 3:
                     continue
 
-                results.append({
-                    "id": row.id,
-                    "content": plain_content,
-                    "metadata": {
-                        "file_id": row.file_id,
-                        "chunk_index": row.chunk_index,
-                        **(row.metadata or {})
-                    },
-                    "keyword_rank": row.rank
-                })
+                results.append(
+                    {
+                        "id": row.id,
+                        "content": plain_content,
+                        "metadata": {
+                            "file_id": row.file_id,
+                            "chunk_index": row.chunk_index,
+                            **(row.metadata or {}),
+                        },
+                        "keyword_rank": row.rank,
+                    }
+                )
 
             return results
 
@@ -1748,7 +1833,7 @@ class RAGService:
         query: str,
         file_ids: list[str] | None = None,
         top_k: int = 5,
-        user_id: str | None = None
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search combining semantic (vector) and keyword (BM25) search.
 
@@ -1777,9 +1862,7 @@ class RAGService:
         semantic_task = self.search(query, file_ids, expanded_k, user_id)
         keyword_task = self._keyword_search(query, "document", file_ids, user_id, expanded_k)
 
-        semantic_results, keyword_results = await asyncio.gather(
-            semantic_task, keyword_task
-        )
+        semantic_results, keyword_results = await asyncio.gather(semantic_task, keyword_task)
 
         # If no keyword results, fall back to semantic only
         if not keyword_results:
@@ -1791,7 +1874,7 @@ class RAGService:
             keyword_results,
             k=getattr(settings, "rrf_k", 60),
             semantic_weight=getattr(settings, "semantic_weight", 0.7),
-            keyword_weight=getattr(settings, "keyword_weight", 0.3)
+            keyword_weight=getattr(settings, "keyword_weight", 0.3),
         )
 
         logger.info(
@@ -1806,7 +1889,7 @@ class RAGService:
         query: str,
         file_ids: list[str] | None = None,
         top_k: int = 5,
-        user_id: str | None = None
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search with GPT-based reranking for improved relevance.
 
@@ -1826,14 +1909,13 @@ class RAGService:
         candidates_k = getattr(settings, "reranking_candidates", 20)
 
         # Get initial candidates via hybrid search
-        candidates = await self.hybrid_search(
-            query, file_ids, candidates_k, user_id
-        )
+        candidates = await self.hybrid_search(query, file_ids, candidates_k, user_id)
 
         # Rerank if enabled and we have candidates
         if getattr(settings, "reranking_enabled", False) and len(candidates) > 1:
             try:
                 from services.reranker_service import GPTReranker
+
                 reranker = GPTReranker()
                 candidates = await reranker.rerank(query, candidates, top_k)
                 logger.info(f"Reranked {len(candidates)} candidates")
@@ -1846,8 +1928,7 @@ class RAGService:
         """Delete all vectors for a file."""
         try:
             result = await self.db.execute(
-                text("DELETE FROM vectors WHERE file_id = :file_id"),
-                {"file_id": file_id}
+                text("DELETE FROM vectors WHERE file_id = :file_id"), {"file_id": file_id}
             )
             await self.db.commit()
             if result.rowcount > 0:
@@ -1861,10 +1942,7 @@ class RAGService:
     # -------------------------------------------------------------------------
 
     async def index_file_sentences(
-        self,
-        file_id: str,
-        content: str,
-        metadata: dict[str, Any] | None = None
+        self, file_id: str, content: str, metadata: dict[str, Any] | None = None
     ):
         """Index a file at sentence level for precise in-document search."""
         try:
@@ -1896,8 +1974,8 @@ class RAGService:
                         "embedding": str(embedding),
                         "file_id": file_id,
                         "chunk_index": i,
-                        "metadata": metadata_json
-                    }
+                        "metadata": metadata_json,
+                    },
                 )
 
             await self.db.commit()
@@ -1922,7 +2000,7 @@ class RAGService:
         file_id: str,
         top_k: int = 10,
         min_score: float = 0.3,
-        use_hybrid: bool = True
+        use_hybrid: bool = True,
     ) -> list[dict[str, Any]]:
         """Search for relevant sentences within a specific file.
 
@@ -1938,11 +2016,7 @@ class RAGService:
         return await self._semantic_search_sentences(query, file_id, top_k, min_score)
 
     async def _semantic_search_sentences(
-        self,
-        query: str,
-        file_id: str,
-        top_k: int = 10,
-        min_score: float = 0.3
+        self, query: str, file_id: str, top_k: int = 10, min_score: float = 0.3
     ) -> list[dict[str, Any]]:
         """Pure semantic (vector) search for sentences."""
         try:
@@ -1958,7 +2032,7 @@ class RAGService:
                     ORDER BY embedding <=> :embedding
                     LIMIT :limit
                 """),
-                {"embedding": str(query_embedding), "file_id": file_id, "limit": top_k * 2}
+                {"embedding": str(query_embedding), "file_id": file_id, "limit": top_k * 2},
             )
 
             rows = result.fetchall()
@@ -1970,12 +2044,18 @@ class RAGService:
                 plain_content = strip_html_tags(row.content)
                 if not plain_content or len(plain_content) < 3:
                     continue
-                results.append({
-                    "id": row.id,
-                    "content": plain_content,
-                    "metadata": {"file_id": file_id, "chunk_index": row.chunk_index, **(row.metadata or {})},
-                    "distance": 1 - row.score
-                })
+                results.append(
+                    {
+                        "id": row.id,
+                        "content": plain_content,
+                        "metadata": {
+                            "file_id": file_id,
+                            "chunk_index": row.chunk_index,
+                            **(row.metadata or {}),
+                        },
+                        "distance": 1 - row.score,
+                    }
+                )
 
             return results[:top_k]
 
@@ -1984,10 +2064,7 @@ class RAGService:
             return []
 
     async def _keyword_search_sentences(
-        self,
-        query: str,
-        file_id: str,
-        top_k: int = 15
+        self, query: str, file_id: str, top_k: int = 15
     ) -> list[dict[str, Any]]:
         """Full-text keyword search for sentences within a file."""
         try:
@@ -2003,7 +2080,7 @@ class RAGService:
                     ORDER BY rank DESC
                     LIMIT :limit
                 """),
-                {"query": query, "file_id": file_id, "limit": top_k}
+                {"query": query, "file_id": file_id, "limit": top_k},
             )
 
             rows = result.fetchall()
@@ -2012,12 +2089,18 @@ class RAGService:
                 plain_content = strip_html_tags(row.content)
                 if not plain_content or len(plain_content) < 3:
                     continue
-                results.append({
-                    "id": row.id,
-                    "content": plain_content,
-                    "metadata": {"file_id": file_id, "chunk_index": row.chunk_index, **(row.metadata or {})},
-                    "keyword_rank": row.rank
-                })
+                results.append(
+                    {
+                        "id": row.id,
+                        "content": plain_content,
+                        "metadata": {
+                            "file_id": file_id,
+                            "chunk_index": row.chunk_index,
+                            **(row.metadata or {}),
+                        },
+                        "keyword_rank": row.rank,
+                    }
+                )
 
             return results
 
@@ -2026,11 +2109,7 @@ class RAGService:
             return []
 
     async def _hybrid_search_sentences(
-        self,
-        query: str,
-        file_id: str,
-        top_k: int = 10,
-        min_score: float = 0.3
+        self, query: str, file_id: str, top_k: int = 10, min_score: float = 0.3
     ) -> list[dict[str, Any]]:
         """Hybrid search for sentences combining semantic and keyword search.
 
@@ -2047,13 +2126,13 @@ class RAGService:
         semantic_task = self._semantic_search_sentences(query, file_id, expanded_k, min_score)
         keyword_task = self._keyword_search_sentences(query, file_id, expanded_k)
 
-        semantic_results, keyword_results = await asyncio.gather(
-            semantic_task, keyword_task
-        )
+        semantic_results, keyword_results = await asyncio.gather(semantic_task, keyword_task)
 
         # If no keyword results, fall back to semantic only
         if not keyword_results:
-            logger.info(f"Hybrid sentence search: {len(semantic_results)} semantic only (no keyword matches)")
+            logger.info(
+                f"Hybrid sentence search: {len(semantic_results)} semantic only (no keyword matches)"
+            )
             return semantic_results[:top_k]
 
         # Fuse results using RRF
@@ -2062,7 +2141,7 @@ class RAGService:
             keyword_results,
             k=getattr(settings, "rrf_k", 60),
             semantic_weight=getattr(settings, "semantic_weight", 0.7),
-            keyword_weight=getattr(settings, "keyword_weight", 0.3)
+            keyword_weight=getattr(settings, "keyword_weight", 0.3),
         )
 
         logger.info(
@@ -2077,7 +2156,7 @@ class RAGService:
         try:
             result = await self.db.execute(
                 text("DELETE FROM vectors WHERE file_id = :file_id AND chunk_type = 'sentence'"),
-                {"file_id": file_id}
+                {"file_id": file_id},
             )
             await self.db.commit()
             if result.rowcount > 0:
@@ -2096,7 +2175,7 @@ class RAGService:
         conversation_id: str,
         content: str,
         filename: str,
-        strategy: ChunkingStrategy | None = None
+        strategy: ChunkingStrategy | None = None,
     ) -> int:
         """Index a knowledge base attachment.
 
@@ -2139,8 +2218,8 @@ class RAGService:
                         "attachment_id": attachment_id,
                         "filename": filename,
                         "chunk_index": i,
-                        "total_chunks": total_chunks
-                    }
+                        "total_chunks": total_chunks,
+                    },
                 )
 
             await self.db.commit()
@@ -2158,7 +2237,7 @@ class RAGService:
         query: str,
         top_k: int = 5,
         use_hybrid: bool = True,
-        use_rerank: bool = True
+        use_rerank: bool = True,
     ) -> list[dict[str, Any]]:
         """Search within a conversation's knowledge base.
 
@@ -2186,10 +2265,7 @@ class RAGService:
             return await self._semantic_search_kb(conversation_id, query, top_k)
 
     async def _semantic_search_kb(
-        self,
-        conversation_id: str,
-        query: str,
-        top_k: int = 5
+        self, conversation_id: str, query: str, top_k: int = 5
     ) -> list[dict[str, Any]]:
         """Pure semantic (vector) search within KB."""
         try:
@@ -2205,7 +2281,11 @@ class RAGService:
                     ORDER BY embedding <=> :embedding
                     LIMIT :limit
                 """),
-                {"embedding": str(query_embedding), "conversation_id": conversation_id, "limit": top_k}
+                {
+                    "embedding": str(query_embedding),
+                    "conversation_id": conversation_id,
+                    "limit": top_k,
+                },
             )
 
             rows = result.fetchall()
@@ -2217,10 +2297,10 @@ class RAGService:
                         "attachment_id": row.attachment_id,
                         "filename": row.filename,
                         "chunk_index": row.chunk_index,
-                        "total_chunks": row.total_chunks
+                        "total_chunks": row.total_chunks,
                     },
                     "score": row.score,
-                    "source_file": row.filename
+                    "source_file": row.filename,
                 }
                 for row in rows
             ]
@@ -2230,10 +2310,7 @@ class RAGService:
             return []
 
     async def _keyword_search_kb(
-        self,
-        conversation_id: str,
-        query: str,
-        top_k: int = 15
+        self, conversation_id: str, query: str, top_k: int = 15
     ) -> list[dict[str, Any]]:
         """Full-text keyword search within KB using PostgreSQL tsvector.
 
@@ -2255,7 +2332,7 @@ class RAGService:
                     ORDER BY rank DESC
                     LIMIT :limit
                 """),
-                {"query": query, "conversation_id": conversation_id, "limit": top_k}
+                {"query": query, "conversation_id": conversation_id, "limit": top_k},
             )
 
             rows = result.fetchall()
@@ -2267,10 +2344,10 @@ class RAGService:
                         "attachment_id": row.attachment_id,
                         "filename": row.filename,
                         "chunk_index": row.chunk_index,
-                        "total_chunks": row.total_chunks
+                        "total_chunks": row.total_chunks,
                     },
                     "score": row.rank,
-                    "source_file": row.filename
+                    "source_file": row.filename,
                 }
                 for row in rows
             ]
@@ -2280,10 +2357,7 @@ class RAGService:
             return []
 
     async def hybrid_search_kb(
-        self,
-        conversation_id: str,
-        query: str,
-        top_k: int = 5
+        self, conversation_id: str, query: str, top_k: int = 5
     ) -> list[dict[str, Any]]:
         """Hybrid search combining semantic and keyword search for KB.
 
@@ -2306,13 +2380,13 @@ class RAGService:
         semantic_task = self._semantic_search_kb(conversation_id, query, expanded_k)
         keyword_task = self._keyword_search_kb(conversation_id, query, expanded_k)
 
-        semantic_results, keyword_results = await asyncio.gather(
-            semantic_task, keyword_task
-        )
+        semantic_results, keyword_results = await asyncio.gather(semantic_task, keyword_task)
 
         # If no keyword results, fall back to semantic only
         if not keyword_results:
-            logger.info(f"KB hybrid search: {len(semantic_results)} semantic only (no keyword matches)")
+            logger.info(
+                f"KB hybrid search: {len(semantic_results)} semantic only (no keyword matches)"
+            )
             return semantic_results[:top_k]
 
         # Fuse results using RRF
@@ -2321,7 +2395,7 @@ class RAGService:
             keyword_results,
             k=getattr(settings, "rrf_k", 60),
             semantic_weight=getattr(settings, "semantic_weight", 0.7),
-            keyword_weight=getattr(settings, "keyword_weight", 0.3)
+            keyword_weight=getattr(settings, "keyword_weight", 0.3),
         )
 
         logger.info(
@@ -2332,10 +2406,7 @@ class RAGService:
         return fused[:top_k]
 
     async def hybrid_search_kb_with_rerank(
-        self,
-        conversation_id: str,
-        query: str,
-        top_k: int = 5
+        self, conversation_id: str, query: str, top_k: int = 5
     ) -> list[dict[str, Any]]:
         """Hybrid search with GPT-based reranking for KB.
 
@@ -2360,6 +2431,7 @@ class RAGService:
         if len(candidates) > 1:
             try:
                 from services.reranker_service import GPTReranker
+
                 reranker = GPTReranker()
                 candidates = await reranker.rerank(query, candidates, top_k)
                 logger.info(f"KB reranked {len(candidates)} candidates")
@@ -2373,7 +2445,7 @@ class RAGService:
         try:
             result = await self.db.execute(
                 text("DELETE FROM vectors WHERE attachment_id = :attachment_id"),
-                {"attachment_id": attachment_id}
+                {"attachment_id": attachment_id},
             )
             await self.db.commit()
             if result.rowcount > 0:
@@ -2383,10 +2455,7 @@ class RAGService:
             logger.error(f"Failed to delete KB attachment {attachment_id}: {e}")
 
     async def get_kb_document_content(
-        self,
-        attachment_id: str,
-        start_chunk: int = 0,
-        end_chunk: int | None = None
+        self, attachment_id: str, start_chunk: int = 0, end_chunk: int | None = None
     ) -> dict[str, Any]:
         """Get ordered content chunks from a KB attachment."""
         try:
@@ -2397,12 +2466,17 @@ class RAGService:
                     WHERE attachment_id = :attachment_id
                     ORDER BY chunk_index
                 """),
-                {"attachment_id": attachment_id}
+                {"attachment_id": attachment_id},
             )
 
             rows = result.fetchall()
             if not rows:
-                return {"content": "", "total_chunks": 0, "filename": "Unknown", "chunks_returned": 0}
+                return {
+                    "content": "",
+                    "total_chunks": 0,
+                    "filename": "Unknown",
+                    "chunks_returned": 0,
+                }
 
             total_chunks = rows[0].total_chunks or len(rows)
             filename = rows[0].filename or "Unknown"
@@ -2416,7 +2490,7 @@ class RAGService:
                 "content": content,
                 "total_chunks": total_chunks,
                 "filename": filename,
-                "chunks_returned": len(rows)
+                "chunks_returned": len(rows),
             }
 
         except Exception as e:

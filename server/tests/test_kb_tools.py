@@ -114,18 +114,19 @@ class TestSearchKnowledgeBase:
     async def test_returns_formatted_results(self, mock_rag_class):
         """Should return formatted search results."""
         mock_rag = MagicMock()
-        mock_rag.search_kb = AsyncMock(return_value=[
-            {"content": "Result 1 content", "source_file": "doc1.pdf", "score": 0.95},
-            {"content": "Result 2 content", "source_file": "doc2.pdf", "score": 0.85},
-        ])
+        mock_rag.search_kb = AsyncMock(
+            return_value=[
+                {"content": "Result 1 content", "source_file": "doc1.pdf", "score": 0.95},
+                {"content": "Result 2 content", "source_file": "doc2.pdf", "score": 0.85},
+            ]
+        )
         mock_rag_class.return_value = mock_rag
 
         mock_db = MagicMock()  # Mock database session
         kb_context = {"conversation_id": "conv-1", "db": mock_db}
 
         result = await execute_search_knowledge_base(
-            {"query": "test query", "top_k": 5},
-            kb_context
+            {"query": "test query", "top_k": 5}, kb_context
         )
 
         assert "result" in result
@@ -145,10 +146,7 @@ class TestSearchKnowledgeBase:
         mock_db = MagicMock()  # Mock database session
         kb_context = {"conversation_id": "conv-1", "db": mock_db}
 
-        result = await execute_search_knowledge_base(
-            {"query": "nonexistent"},
-            kb_context
-        )
+        result = await execute_search_knowledge_base({"query": "nonexistent"}, kb_context)
 
         assert "result" in result
         assert "No relevant results" in result["result"]
@@ -166,7 +164,7 @@ class TestSearchKnowledgeBase:
 
         await execute_search_knowledge_base(
             {"query": "test", "top_k": 100},  # Request 100, should be limited to 10
-            kb_context
+            kb_context,
         )
 
         mock_rag.search_kb.assert_called_once_with("conv-1", "test", 10)
@@ -182,10 +180,7 @@ class TestSearchKnowledgeBase:
         mock_db = MagicMock()  # Mock database session
         kb_context = {"conversation_id": "conv-1", "db": mock_db}
 
-        result = await execute_search_knowledge_base(
-            {"query": "test"},
-            kb_context
-        )
+        result = await execute_search_knowledge_base({"query": "test"}, kb_context)
 
         assert "error" in result
         assert "Search failed" in result["error"]
@@ -218,10 +213,7 @@ class TestReadKBDocument:
             ]
         }
 
-        result = await execute_read_kb_document(
-            {"document_name": "nonexistent.pdf"},
-            kb_context
-        )
+        result = await execute_read_kb_document({"document_name": "nonexistent.pdf"}, kb_context)
 
         assert "error" in result
         assert "not found" in result["error"]
@@ -236,23 +228,22 @@ class TestReadKBDocument:
                 {"filename": "doc1.pdf", "id": "att-1"},
                 {"filename": "doc2.pdf", "id": "att-2"},
             ],
-            "db": mock_db
+            "db": mock_db,
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.get_kb_document_content = AsyncMock(return_value={
-                "content": "Document content",
-                "filename": "doc1.pdf",
-                "total_chunks": 5,
-                "chunks_returned": 3
-            })
+            mock_rag.get_kb_document_content = AsyncMock(
+                return_value={
+                    "content": "Document content",
+                    "filename": "doc1.pdf",
+                    "total_chunks": 5,
+                    "chunks_returned": 3,
+                }
+            )
             mock_rag_class.return_value = mock_rag
 
-            result = await execute_read_kb_document(
-                {"document_name": "doc1.pdf"},
-                kb_context
-            )
+            result = await execute_read_kb_document({"document_name": "doc1.pdf"}, kb_context)
 
             assert "result" in result
             mock_rag.get_kb_document_content.assert_called_once_with("att-1", 0, 5)
@@ -265,22 +256,24 @@ class TestReadKBDocument:
             "attachments": [
                 {"filename": "my_document_2024.pdf", "id": "att-1"},
             ],
-            "db": mock_db
+            "db": mock_db,
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.get_kb_document_content = AsyncMock(return_value={
-                "content": "Content",
-                "filename": "my_document_2024.pdf",
-                "total_chunks": 3,
-                "chunks_returned": 3
-            })
+            mock_rag.get_kb_document_content = AsyncMock(
+                return_value={
+                    "content": "Content",
+                    "filename": "my_document_2024.pdf",
+                    "total_chunks": 3,
+                    "chunks_returned": 3,
+                }
+            )
             mock_rag_class.return_value = mock_rag
 
             result = await execute_read_kb_document(
                 {"document_name": "document"},  # Partial match
-                kb_context
+                kb_context,
             )
 
             assert "result" in result
@@ -293,22 +286,24 @@ class TestReadKBDocument:
             "attachments": [
                 {"filename": "MyDocument.PDF", "id": "att-1"},
             ],
-            "db": mock_db
+            "db": mock_db,
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.get_kb_document_content = AsyncMock(return_value={
-                "content": "Content",
-                "filename": "MyDocument.PDF",
-                "total_chunks": 2,
-                "chunks_returned": 2
-            })
+            mock_rag.get_kb_document_content = AsyncMock(
+                return_value={
+                    "content": "Content",
+                    "filename": "MyDocument.PDF",
+                    "total_chunks": 2,
+                    "chunks_returned": 2,
+                }
+            )
             mock_rag_class.return_value = mock_rag
 
             result = await execute_read_kb_document(
                 {"document_name": "mydocument.pdf"},  # Different case
-                kb_context
+                kb_context,
             )
 
             assert "result" in result
@@ -321,22 +316,23 @@ class TestReadKBDocument:
             "attachments": [
                 {"filename": "doc.pdf", "id": "att-1"},
             ],
-            "db": mock_db
+            "db": mock_db,
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.get_kb_document_content = AsyncMock(return_value={
-                "content": "Content",
-                "filename": "doc.pdf",
-                "total_chunks": 10,
-                "chunks_returned": 3
-            })
+            mock_rag.get_kb_document_content = AsyncMock(
+                return_value={
+                    "content": "Content",
+                    "filename": "doc.pdf",
+                    "total_chunks": 10,
+                    "chunks_returned": 3,
+                }
+            )
             mock_rag_class.return_value = mock_rag
 
             await execute_read_kb_document(
-                {"document_name": "doc.pdf", "start_section": 5, "num_sections": 3},
-                kb_context
+                {"document_name": "doc.pdf", "start_section": 5, "num_sections": 3}, kb_context
             )
 
             mock_rag.get_kb_document_content.assert_called_once_with("att-1", 5, 8)
@@ -349,23 +345,22 @@ class TestReadKBDocument:
             "attachments": [
                 {"filename": "empty.pdf", "id": "att-1"},
             ],
-            "db": mock_db
+            "db": mock_db,
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.get_kb_document_content = AsyncMock(return_value={
-                "content": "",
-                "filename": "empty.pdf",
-                "total_chunks": 0,
-                "chunks_returned": 0
-            })
+            mock_rag.get_kb_document_content = AsyncMock(
+                return_value={
+                    "content": "",
+                    "filename": "empty.pdf",
+                    "total_chunks": 0,
+                    "chunks_returned": 0,
+                }
+            )
             mock_rag_class.return_value = mock_rag
 
-            result = await execute_read_kb_document(
-                {"document_name": "empty.pdf"},
-                kb_context
-            )
+            result = await execute_read_kb_document({"document_name": "empty.pdf"}, kb_context)
 
             assert "result" in result
             assert "No content" in result["result"]
@@ -378,20 +373,15 @@ class TestReadKBDocument:
             "attachments": [
                 {"filename": "doc.pdf", "id": "att-1"},
             ],
-            "db": mock_db
+            "db": mock_db,
         }
 
         with patch("services.rag_service.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.get_kb_document_content = AsyncMock(
-                side_effect=Exception("Read error")
-            )
+            mock_rag.get_kb_document_content = AsyncMock(side_effect=Exception("Read error"))
             mock_rag_class.return_value = mock_rag
 
-            result = await execute_read_kb_document(
-                {"document_name": "doc.pdf"},
-                kb_context
-            )
+            result = await execute_read_kb_document({"document_name": "doc.pdf"}, kb_context)
 
             assert "error" in result
             assert "Failed to read" in result["error"]
@@ -419,7 +409,7 @@ class TestExecuteKBTool:
         result = await execute_kb_tool(
             "list_kb_documents",
             {},
-            {"attachments": []}  # No conversation_id
+            {"attachments": []},  # No conversation_id
         )
 
         assert "error" in result
@@ -429,9 +419,7 @@ class TestExecuteKBTool:
     async def test_returns_error_for_unknown_tool(self):
         """Should return error for unknown tool name."""
         result = await execute_kb_tool(
-            "unknown_kb_tool",
-            {},
-            {"conversation_id": "conv-1", "attachments": []}
+            "unknown_kb_tool", {}, {"conversation_id": "conv-1", "attachments": []}
         )
 
         assert "error" in result
@@ -441,9 +429,7 @@ class TestExecuteKBTool:
     async def test_executes_list_kb_documents(self):
         """Should execute list_kb_documents tool."""
         result = await execute_kb_tool(
-            "list_kb_documents",
-            {},
-            {"conversation_id": "conv-1", "attachments": []}
+            "list_kb_documents", {}, {"conversation_id": "conv-1", "attachments": []}
         )
 
         assert "result" in result
@@ -461,7 +447,7 @@ class TestExecuteKBTool:
             result = await execute_kb_tool(
                 "search_knowledge_base",
                 {"query": "test"},
-                {"conversation_id": "conv-1", "attachments": [], "db": mock_db}
+                {"conversation_id": "conv-1", "attachments": [], "db": mock_db},
             )
 
             assert "result" in result
@@ -472,7 +458,7 @@ class TestExecuteKBTool:
         result = await execute_kb_tool(
             "read_kb_document",
             {"document_name": "test.pdf"},
-            {"conversation_id": "conv-1", "attachments": []}
+            {"conversation_id": "conv-1", "attachments": []},
         )
 
         # Should return error since document not found

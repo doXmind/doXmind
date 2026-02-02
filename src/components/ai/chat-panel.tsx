@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Send, Square, Trash2, Sparkles, Loader2, Mic } from "lucide-react";
+import { Send, Square, Trash2, Sparkles, Loader2, Mic, Upload } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChatMessage } from "./chat-message";
 import { ThinkingIndicator } from "./thinking-indicator";
-import { ToolIndicator } from "./tool-indicator";
+import { ToolHistoryList } from "./tool-history-list";
 import { TodoProgress } from "./todo-progress";
 import { ContextPill } from "./context-pill";
 import { SuggestionButton } from "./suggestion-button";
@@ -18,6 +18,8 @@ import { ChatSettings } from "./chat-settings";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useDataFilesStore, isDataFile, isKBFile } from "@/stores/data-files-store";
+import { useKBStore } from "@/stores/kb-store";
 import { useChat } from "@/hooks/use-chat";
 import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
 import { haptics } from "@/lib/haptics";
@@ -28,9 +30,11 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dragCounterRef = useRef(0);
 
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
@@ -76,6 +80,12 @@ export function ChatPanel() {
   // Import editor store for chat context feature (Context Pills)
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
     useEditorStore();
+
+  // Data files store for code execution
+  const { uploadDataFile, getDataFiles } = useDataFilesStore();
+
+  // KB store for document uploads
+  const { uploadAttachments: uploadKBFiles } = useKBStore();
 
   // Get conversation key without triggering store updates during render
   const conversationKey = currentFileId || "global";
@@ -149,6 +159,13 @@ export function ChatPanel() {
           })
         : null;
 
+    // Get all data file IDs for this conversation
+    const dataFilesForConversation =
+      conversation.isLoaded && conversation.id ? getDataFiles(conversation.id) : [];
+    const dataFileIdsToSend = dataFilesForConversation
+      .filter((f) => f.status === "ready")
+      .map((f) => f.id);
+
     setInput("");
     clearAllChatContexts(); // Clear all contexts after sending
 
@@ -157,7 +174,12 @@ export function ChatPanel() {
       textareaRef.current.style.height = "auto";
     }
 
-    await sendMessage(message, currentFileId ? [currentFileId] : [], contextsToSend);
+    await sendMessage(
+      message,
+      currentFileId ? [currentFileId] : [],
+      contextsToSend,
+      dataFileIdsToSend
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -269,6 +291,87 @@ export function ChatPanel() {
     }
   };
 
+  // Handle drag-and-drop for files with automatic classification
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+
+      // Only allow drops when conversation is properly loaded with a real backend ID
+      if (!conversation.isLoaded || !conversation.id) return;
+
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length === 0) return;
+
+      // Classify files
+      const kbFiles: File[] = [];
+      const dataFilesToUpload: File[] = [];
+      const imageFiles: File[] = [];
+
+      for (const file of files) {
+        const filename = file.name.toLowerCase();
+        if (isKBFile(filename)) {
+          // PDF, DOCX, PPTX -> KB system
+          kbFiles.push(file);
+        } else if (isDataFile(filename)) {
+          // CSV, XLSX, JSON, TXT, images -> Data files for code execution
+          if (file.type.startsWith("image/")) {
+            // Images can go to chat context OR data files
+            // For now, small images go to context, others to data files
+            if (file.size <= CHAT_MAX_IMAGE_SIZE) {
+              imageFiles.push(file);
+            } else {
+              dataFilesToUpload.push(file);
+            }
+          } else {
+            dataFilesToUpload.push(file);
+          }
+        }
+      }
+
+      // Upload KB files
+      if (kbFiles.length > 0) {
+        await uploadKBFiles(conversation.id, kbFiles);
+      }
+
+      // Upload data files (they'll be automatically included when sending messages)
+      for (const file of dataFilesToUpload) {
+        await uploadDataFile(conversation.id, file);
+      }
+
+      // Process image files for chat context
+      for (const file of imageFiles) {
+        processImageFile(file);
+      }
+    },
+    [conversation.isLoaded, conversation.id, uploadKBFiles, uploadDataFile, processImageFile]
+  );
+
   return (
     <div className="flex h-full flex-col">
       {/* Header - Hidden on mobile (title shown in mobile header) */}
@@ -351,10 +454,8 @@ export function ChatPanel() {
 
             {/* Tool indicators - shown during streaming */}
             {isStreaming && toolHistory.length > 0 && (
-              <div className="ml-11 space-y-1">
-                {toolHistory.map((tool, index) => (
-                  <ToolIndicator key={`${tool.name}-${index}`} tool={tool} />
-                ))}
+              <div className="ml-11">
+                <ToolHistoryList tools={toolHistory} collapseThreshold={2} />
               </div>
             )}
 
@@ -373,9 +474,25 @@ export function ChatPanel() {
       {/* Input - with safe area padding on mobile */}
       <form
         onSubmit={handleSubmit}
-        className="border-t border-border p-3 md:p-3"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={cn(
+          "relative border-t border-border p-3 transition-colors md:p-3",
+          isDragging && "border-primary bg-primary/5"
+        )}
         style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
       >
+        {/* Drag overlay */}
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex items-center gap-2 text-primary">
+              <Upload className="h-5 w-5" />
+              <span className="text-sm font-medium">Drop files here</span>
+            </div>
+          </div>
+        )}
         {/* Context Pills - shows attached images and selected text */}
         {chatContexts.length > 0 && (
           <div className="mb-2 space-y-1">
@@ -402,9 +519,7 @@ export function ChatPanel() {
                   <span className="text-muted-foreground">Transcribing...</span>
                 </>
               )}
-              {recordingError && (
-                <span className="text-destructive text-xs">{recordingError}</span>
-              )}
+              {recordingError && <span className="text-xs text-destructive">{recordingError}</span>}
             </div>
 
             {/* Press-and-hold button */}
@@ -412,8 +527,8 @@ export function ChatPanel() {
               <motion.button
                 type="button"
                 className={cn(
-                  "flex w-full items-center justify-center gap-2 rounded-full py-3 px-6",
-                  "transition-all duration-150 select-none touch-none",
+                  "flex w-full items-center justify-center gap-2 rounded-full px-6 py-3",
+                  "touch-none select-none transition-all duration-150",
                   isRecording || isPressing
                     ? "bg-destructive text-destructive-foreground"
                     : "bg-muted text-muted-foreground"
@@ -457,7 +572,7 @@ export function ChatPanel() {
           <div className="relative flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1.5">
             {/* Unified attachment menu */}
             <AttachmentMenu
-              conversationId={conversation.id}
+              conversationId={conversation.isLoaded ? conversation.id : null}
               onImageSelect={handleImageFilesFromMenu}
               imageCount={currentImageCount}
               maxImages={CHAT_MAX_IMAGES}
@@ -487,7 +602,7 @@ export function ChatPanel() {
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               placeholder="Ask AI anything..."
-              className="max-h-[200px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base md:text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="max-h-[200px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
               disabled={isStreaming}
               rows={1}
             />

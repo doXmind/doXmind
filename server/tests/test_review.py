@@ -35,21 +35,13 @@ class TestTextReviewRequest:
 
     def test_creates_with_custom_language(self):
         """Should allow custom language."""
-        req = TextReviewRequest(
-            content="Test",
-            file_id="file-123",
-            language="zh"
-        )
+        req = TextReviewRequest(content="Test", file_id="file-123", language="zh")
 
         assert req.language == "zh"
 
     def test_allows_none_language(self):
         """Should allow None as language."""
-        req = TextReviewRequest(
-            content="Test",
-            file_id="file-123",
-            language=None
-        )
+        req = TextReviewRequest(content="Test", file_id="file-123", language=None)
 
         assert req.language is None
 
@@ -72,8 +64,13 @@ class TestSystemPrompt:
     def test_system_prompt_contains_required_fields(self):
         """Should mention required output fields."""
         required_fields = [
-            "category", "type", "original_text", "replacement",
-            "explanation", "start_offset", "end_offset"
+            "category",
+            "type",
+            "original_text",
+            "replacement",
+            "explanation",
+            "start_offset",
+            "end_offset",
         ]
 
         for field in required_fields:
@@ -104,8 +101,13 @@ class TestJSONSchema:
         required = item_schema["required"]
 
         expected_required = [
-            "category", "type", "original_text", "replacement",
-            "explanation", "start_offset", "end_offset"
+            "category",
+            "type",
+            "original_text",
+            "replacement",
+            "explanation",
+            "start_offset",
+            "end_offset",
         ]
 
         for field in expected_required:
@@ -142,10 +144,7 @@ class TestReviewEndpoint:
 
     def test_short_document_returns_empty_suggestions(self, client):
         """Should return empty suggestions for very short documents."""
-        response = client.post(
-            "/api/review",
-            json={"content": "Short", "file_id": "file-123"}
-        )
+        response = client.post("/api/review", json={"content": "Short", "file_id": "file-123"})
 
         assert response.status_code == 200
 
@@ -171,25 +170,27 @@ class TestReviewEndpoint:
 
         # Mock LLM response
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [
-                {
-                    "category": "correctness",
-                    "type": "spelling_error",
-                    "original_text": "teh",
-                    "replacement": "the",
-                    "explanation": "Spelling error",
-                    "start_offset": 0,
-                    "end_offset": 3
-                }
-            ],
-            "summary": "Found 1 spelling error."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={
+                "suggestions": [
+                    {
+                        "category": "correctness",
+                        "type": "spelling_error",
+                        "original_text": "teh",
+                        "replacement": "the",
+                        "explanation": "Spelling error",
+                        "start_offset": 0,
+                        "end_offset": 3,
+                    }
+                ],
+                "summary": "Found 1 spelling error.",
+            }
+        )
         mock_llm_class.return_value = mock_llm
 
         response = client.post(
             "/api/review",
-            json={"content": "teh quick brown fox jumps over the lazy dog", "file_id": "file-123"}
+            json={"content": "teh quick brown fox jumps over the lazy dog", "file_id": "file-123"},
         )
 
         assert response.status_code == 200
@@ -221,26 +222,25 @@ class TestReviewEndpoint:
 
         # Mock LLM with incorrect position but valid text
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [
-                {
-                    "category": "engagement",
-                    "type": "word_choice",
-                    "original_text": "quick",
-                    "replacement": "swift",
-                    "explanation": "More engaging word",
-                    "start_offset": 100,  # Wrong position
-                    "end_offset": 105
-                }
-            ],
-            "summary": "Review complete."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={
+                "suggestions": [
+                    {
+                        "category": "engagement",
+                        "type": "word_choice",
+                        "original_text": "quick",
+                        "replacement": "swift",
+                        "explanation": "More engaging word",
+                        "start_offset": 100,  # Wrong position
+                        "end_offset": 105,
+                    }
+                ],
+                "summary": "Review complete.",
+            }
+        )
         mock_llm_class.return_value = mock_llm
 
-        response = client.post(
-            "/api/review",
-            json={"content": content, "file_id": "file-123"}
-        )
+        response = client.post("/api/review", json={"content": content, "file_id": "file-123"})
 
         assert response.status_code == 200
 
@@ -265,26 +265,25 @@ class TestReviewEndpoint:
 
         # Mock LLM with non-existent text
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [
-                {
-                    "category": "clarity",
-                    "type": "unclear",
-                    "original_text": "nonexistent text",
-                    "replacement": "clear text",
-                    "explanation": "This text doesn't exist",
-                    "start_offset": 0,
-                    "end_offset": 16
-                }
-            ],
-            "summary": "Review complete."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={
+                "suggestions": [
+                    {
+                        "category": "clarity",
+                        "type": "unclear",
+                        "original_text": "nonexistent text",
+                        "replacement": "clear text",
+                        "explanation": "This text doesn't exist",
+                        "start_offset": 0,
+                        "end_offset": 16,
+                    }
+                ],
+                "summary": "Review complete.",
+            }
+        )
         mock_llm_class.return_value = mock_llm
 
-        response = client.post(
-            "/api/review",
-            json={"content": content, "file_id": "file-123"}
-        )
+        response = client.post("/api/review", json={"content": content, "file_id": "file-123"})
 
         assert response.status_code == 200
 
@@ -308,7 +307,10 @@ class TestReviewEndpoint:
 
         response = client.post(
             "/api/review",
-            json={"content": "A long enough document for review testing purposes.", "file_id": "file-123"}
+            json={
+                "content": "A long enough document for review testing purposes.",
+                "file_id": "file-123",
+            },
         )
 
         assert response.status_code == 200
@@ -335,26 +337,25 @@ class TestReviewEndpoint:
 
         # Mock LLM with correct position
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [
-                {
-                    "category": "correctness",
-                    "type": "typo",
-                    "original_text": "quick",
-                    "replacement": "swift",
-                    "explanation": "Better word",
-                    "start_offset": 4,
-                    "end_offset": 9
-                }
-            ],
-            "summary": "Review complete."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={
+                "suggestions": [
+                    {
+                        "category": "correctness",
+                        "type": "typo",
+                        "original_text": "quick",
+                        "replacement": "swift",
+                        "explanation": "Better word",
+                        "start_offset": 4,
+                        "end_offset": 9,
+                    }
+                ],
+                "summary": "Review complete.",
+            }
+        )
         mock_llm_class.return_value = mock_llm
 
-        response = client.post(
-            "/api/review",
-            json={"content": content, "file_id": "file-123"}
-        )
+        response = client.post("/api/review", json={"content": content, "file_id": "file-123"})
 
         assert response.status_code == 200
 
@@ -376,26 +377,25 @@ class TestReviewEndpoint:
 
         # Mock LLM with negative position
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [
-                {
-                    "category": "clarity",
-                    "type": "unclear",
-                    "original_text": "Test",
-                    "replacement": "Example",
-                    "explanation": "Clearer word",
-                    "start_offset": -1,
-                    "end_offset": 4
-                }
-            ],
-            "summary": "Review complete."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={
+                "suggestions": [
+                    {
+                        "category": "clarity",
+                        "type": "unclear",
+                        "original_text": "Test",
+                        "replacement": "Example",
+                        "explanation": "Clearer word",
+                        "start_offset": -1,
+                        "end_offset": 4,
+                    }
+                ],
+                "summary": "Review complete.",
+            }
+        )
         mock_llm_class.return_value = mock_llm
 
-        response = client.post(
-            "/api/review",
-            json={"content": content, "file_id": "file-123"}
-        )
+        response = client.post("/api/review", json={"content": content, "file_id": "file-123"})
 
         # Should correct the position
         assert response.status_code == 200
@@ -407,15 +407,14 @@ class TestReviewEndpoint:
         mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
 
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [],
-            "summary": "No issues found."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={"suggestions": [], "summary": "No issues found."}
+        )
         mock_llm_class.return_value = mock_llm
 
         response = client.post(
             "/api/review",
-            json={"content": "A perfectly written document with no issues.", "file_id": "file-123"}
+            json={"content": "A perfectly written document with no issues.", "file_id": "file-123"},
         )
 
         assert response.status_code == 200
@@ -430,10 +429,7 @@ class TestReviewEndpoint:
 
     def test_response_headers(self, client):
         """Should set correct SSE headers."""
-        response = client.post(
-            "/api/review",
-            json={"content": "Short", "file_id": "file-123"}
-        )
+        response = client.post("/api/review", json={"content": "Short", "file_id": "file-123"})
 
         assert response.status_code == 200
         assert "text/event-stream" in response.headers.get("content-type", "")
@@ -445,15 +441,14 @@ class TestReviewEndpoint:
         mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
 
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [],
-            "summary": "Review complete."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={"suggestions": [], "summary": "Review complete."}
+        )
         mock_llm_class.return_value = mock_llm
 
         response = client.post(
             "/api/review",
-            json={"content": "A document long enough for review.", "file_id": "file-123"}
+            json={"content": "A document long enough for review.", "file_id": "file-123"},
         )
 
         assert "data: [DONE]" in response.text
@@ -465,15 +460,20 @@ class TestReviewEndpoint:
         mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
 
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": []
-            # Missing summary
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={
+                "suggestions": []
+                # Missing summary
+            }
+        )
         mock_llm_class.return_value = mock_llm
 
         response = client.post(
             "/api/review",
-            json={"content": "A document for testing missing summary field.", "file_id": "file-123"}
+            json={
+                "content": "A document for testing missing summary field.",
+                "file_id": "file-123",
+            },
         )
 
         assert response.status_code == 200
@@ -509,8 +509,7 @@ class TestEdgeCases:
     def test_whitespace_only_content(self, client):
         """Should handle whitespace-only content."""
         response = client.post(
-            "/api/review",
-            json={"content": "   \n\t\n   ", "file_id": "file-123"}
+            "/api/review", json={"content": "   \n\t\n   ", "file_id": "file-123"}
         )
 
         assert response.status_code == 200
@@ -527,10 +526,7 @@ class TestEdgeCases:
         """Should handle exactly 20 character content."""
         content = "12345678901234567890"  # Exactly 20 chars
 
-        response = client.post(
-            "/api/review",
-            json={"content": content, "file_id": "file-123"}
-        )
+        response = client.post("/api/review", json={"content": content, "file_id": "file-123"})
 
         # Should be treated as too short (strip makes it still short)
         assert response.status_code == 200
@@ -542,15 +538,14 @@ class TestEdgeCases:
         mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
 
         mock_llm = MagicMock()
-        mock_llm.json_complete = AsyncMock(return_value={
-            "suggestions": [],
-            "summary": "No issues."
-        })
+        mock_llm.json_complete = AsyncMock(
+            return_value={"suggestions": [], "summary": "No issues."}
+        )
         mock_llm_class.return_value = mock_llm
 
         response = client.post(
             "/api/review",
-            json={"content": "这是一段中文内容，用于测试Unicode支持。", "file_id": "file-123"}
+            json={"content": "这是一段中文内容，用于测试Unicode支持。", "file_id": "file-123"},
         )
 
         assert response.status_code == 200

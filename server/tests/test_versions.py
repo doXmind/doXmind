@@ -34,7 +34,7 @@ class TestVersionResponse:
             diff=None,
             edit_type="manual",
             summary=None,
-            created_at="2024-01-01T00:00:00"
+            created_at="2024-01-01T00:00:00",
         )
 
         assert resp.id == "ver-123"
@@ -51,7 +51,7 @@ class TestVersionResponse:
             diff='["--- a", "+++ b"]',
             edit_type="ai_edit",
             summary="Fixed typo",
-            created_at="2024-01-01T00:00:00"
+            created_at="2024-01-01T00:00:00",
         )
 
         assert resp.diff == '["--- a", "+++ b"]'
@@ -63,10 +63,7 @@ class TestCreateVersionRequest:
 
     def test_creates_with_required_fields(self):
         """Should create request with required fields."""
-        req = CreateVersionRequest(
-            file_id="file-123",
-            content="<p>Content</p>"
-        )
+        req = CreateVersionRequest(file_id="file-123", content="<p>Content</p>")
 
         assert req.file_id == "file-123"
         assert req.content == "<p>Content</p>"
@@ -79,7 +76,7 @@ class TestCreateVersionRequest:
             file_id="file-123",
             content="<p>Content</p>",
             edit_type="ai_edit",
-            summary="AI improvements"
+            summary="AI improvements",
         )
 
         assert req.edit_type == "ai_edit"
@@ -265,10 +262,7 @@ class TestCreateVersionEndpoint:
 
         with patch("api.versions._cleanup_old_versions", new=AsyncMock()):
             request = CreateVersionRequest(
-                file_id="file-123",
-                content="New content",
-                edit_type="ai_edit",
-                summary="AI changes"
+                file_id="file-123", content="New content", edit_type="ai_edit", summary="AI changes"
             )
             result = await create_version(request, mock_db)
 

@@ -198,23 +198,21 @@ class CourtListenerService:
         - html: Basic HTML
         """
         # Get the best available text format
-        text = (
-            data.get("plain_text")
-            or data.get("html_with_citations")
-            or data.get("html")
-            or ""
-        )
+        text = data.get("plain_text") or data.get("html_with_citations") or data.get("html") or ""
 
         # Clean HTML if present (basic strip)
         if "<" in text and ">" in text:
             import re
+
             text = re.sub(r"<[^>]+>", "", text)
             text = re.sub(r"\s+", " ", text).strip()
 
         # Truncate very long opinions (keep first 8000 chars to save context)
         max_length = 8000
         if len(text) > max_length:
-            text = text[:max_length] + f"\n\n[...truncated, full opinion has {len(text)} characters]"
+            text = (
+                text[:max_length] + f"\n\n[...truncated, full opinion has {len(text)} characters]"
+            )
 
         return {
             "opinion_id": data.get("id"),

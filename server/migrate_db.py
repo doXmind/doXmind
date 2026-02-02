@@ -67,7 +67,9 @@ def migrate():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            cursor.execute("CREATE INDEX ix_email_verifications_email ON email_verifications(email)")
+            cursor.execute(
+                "CREATE INDEX ix_email_verifications_email ON email_verifications(email)"
+            )
             print("  [OK] Created 'email_verifications' table")
 
         # 3. Create password_resets table if not exists
@@ -106,7 +108,9 @@ def migrate():
             if "user_id" not in columns:
                 print("Adding 'user_id' column to 'conversations' table...")
                 cursor.execute("ALTER TABLE conversations ADD COLUMN user_id VARCHAR(36)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS ix_conversations_user_id ON conversations(user_id)")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_conversations_user_id ON conversations(user_id)"
+                )
                 print("  [OK] Added 'user_id' column to 'conversations' table")
             else:
                 print("  - 'conversations.user_id' column already exists")

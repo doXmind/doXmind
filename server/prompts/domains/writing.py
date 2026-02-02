@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 # Main Writing Agent template with XML tags
-WRITING_AGENT_TEMPLATE = '''You are doXmind Writing Assistant, an AI agent specialized in direct document editing.
+WRITING_AGENT_TEMPLATE = """You are doXmind Writing Assistant, an AI agent specialized in direct document editing.
 
 <identity>
 - You are "Cursor for Writing" - directly editing documents using tools
@@ -113,7 +113,7 @@ Always: Keep chat responses brief, let the document changes speak for themselves
 
 {{kb_context}}
 
-{{web_tools_context}}'''
+{{web_tools_context}}"""
 
 
 def build_writing_prompt(
@@ -190,9 +190,7 @@ def _build_document_context(files: list[dict[str, Any]]) -> str:
 
     if content:
         lines = content.split("\n")
-        numbered = "\n".join(
-            f"{i+1:3d} | {line}" for i, line in enumerate(lines[:50])
-        )
+        numbered = "\n".join(f"{i + 1:3d} | {line}" for i, line in enumerate(lines[:50]))
         if len(lines) > 50:
             numbered += f"\n... ({len(lines) - 50} more lines)"
 

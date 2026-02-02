@@ -81,10 +81,21 @@ class TestNodeType:
     def test_all_node_types_exist(self):
         """Should define all node types."""
         expected_types = [
-            "TEXT", "HEADING", "PARAGRAPH", "CODE_BLOCK", "BLOCKQUOTE",
-            "LIST", "LIST_ITEM", "TABLE", "TABLE_ROW", "TABLE_CELL",
-            "HORIZONTAL_RULE", "INLINE_BOLD", "INLINE_ITALIC",
-            "INLINE_CODE", "INLINE_LINK"
+            "TEXT",
+            "HEADING",
+            "PARAGRAPH",
+            "CODE_BLOCK",
+            "BLOCKQUOTE",
+            "LIST",
+            "LIST_ITEM",
+            "TABLE",
+            "TABLE_ROW",
+            "TABLE_CELL",
+            "HORIZONTAL_RULE",
+            "INLINE_BOLD",
+            "INLINE_ITALIC",
+            "INLINE_CODE",
+            "INLINE_LINK",
         ]
         for type_name in expected_types:
             assert hasattr(NodeType, type_name)
@@ -330,10 +341,7 @@ class TestPDFRenderer:
     def test_render_all_heading_levels(self):
         """Should render all heading levels."""
         renderer = PDFRenderer()
-        nodes = [
-            DocumentNode(NodeType.HEADING, content=f"H{i}", level=i)
-            for i in range(1, 7)
-        ]
+        nodes = [DocumentNode(NodeType.HEADING, content=f"H{i}", level=i) for i in range(1, 7)]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -341,10 +349,11 @@ class TestPDFRenderer:
     def test_render_paragraph_node(self):
         """Should render paragraph node."""
         renderer = PDFRenderer()
-        nodes = [DocumentNode(
-            NodeType.PARAGRAPH,
-            children=[DocumentNode(NodeType.TEXT, content="Paragraph text")]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.PARAGRAPH, children=[DocumentNode(NodeType.TEXT, content="Paragraph text")]
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -368,14 +377,16 @@ class TestPDFRenderer:
     def test_render_unordered_list(self):
         """Should render unordered list with bullets."""
         renderer = PDFRenderer()
-        nodes = [DocumentNode(
-            NodeType.LIST,
-            ordered=False,
-            children=[
-                DocumentNode(NodeType.LIST_ITEM, content="Item 1"),
-                DocumentNode(NodeType.LIST_ITEM, content="Item 2"),
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.LIST,
+                ordered=False,
+                children=[
+                    DocumentNode(NodeType.LIST_ITEM, content="Item 1"),
+                    DocumentNode(NodeType.LIST_ITEM, content="Item 2"),
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -383,14 +394,16 @@ class TestPDFRenderer:
     def test_render_ordered_list(self):
         """Should render ordered list with numbers."""
         renderer = PDFRenderer()
-        nodes = [DocumentNode(
-            NodeType.LIST,
-            ordered=True,
-            children=[
-                DocumentNode(NodeType.LIST_ITEM, content="First"),
-                DocumentNode(NodeType.LIST_ITEM, content="Second"),
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.LIST,
+                ordered=True,
+                children=[
+                    DocumentNode(NodeType.LIST_ITEM, content="First"),
+                    DocumentNode(NodeType.LIST_ITEM, content="Second"),
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -398,23 +411,23 @@ class TestPDFRenderer:
     def test_render_nested_list(self):
         """Should render nested lists."""
         renderer = PDFRenderer()
-        nodes = [DocumentNode(
-            NodeType.LIST,
-            children=[
-                DocumentNode(
-                    NodeType.LIST_ITEM,
-                    content="Parent",
-                    children=[
-                        DocumentNode(
-                            NodeType.LIST,
-                            children=[
-                                DocumentNode(NodeType.LIST_ITEM, content="Child")
-                            ]
-                        )
-                    ]
-                )
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.LIST,
+                children=[
+                    DocumentNode(
+                        NodeType.LIST_ITEM,
+                        content="Parent",
+                        children=[
+                            DocumentNode(
+                                NodeType.LIST,
+                                children=[DocumentNode(NodeType.LIST_ITEM, content="Child")],
+                            )
+                        ],
+                    )
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -422,25 +435,27 @@ class TestPDFRenderer:
     def test_render_table(self):
         """Should render table."""
         renderer = PDFRenderer()
-        nodes = [DocumentNode(
-            NodeType.TABLE,
-            children=[
-                DocumentNode(
-                    NodeType.TABLE_ROW,
-                    children=[
-                        DocumentNode(NodeType.TABLE_CELL, content="H1", is_header=True),
-                        DocumentNode(NodeType.TABLE_CELL, content="H2", is_header=True),
-                    ]
-                ),
-                DocumentNode(
-                    NodeType.TABLE_ROW,
-                    children=[
-                        DocumentNode(NodeType.TABLE_CELL, content="C1"),
-                        DocumentNode(NodeType.TABLE_CELL, content="C2"),
-                    ]
-                ),
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.TABLE,
+                children=[
+                    DocumentNode(
+                        NodeType.TABLE_ROW,
+                        children=[
+                            DocumentNode(NodeType.TABLE_CELL, content="H1", is_header=True),
+                            DocumentNode(NodeType.TABLE_CELL, content="H2", is_header=True),
+                        ],
+                    ),
+                    DocumentNode(
+                        NodeType.TABLE_ROW,
+                        children=[
+                            DocumentNode(NodeType.TABLE_CELL, content="C1"),
+                            DocumentNode(NodeType.TABLE_CELL, content="C2"),
+                        ],
+                    ),
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -456,10 +471,9 @@ class TestPDFRenderer:
     def test_render_table_empty_first_row(self):
         """Should handle table with empty first row."""
         renderer = PDFRenderer()
-        nodes = [DocumentNode(
-            NodeType.TABLE,
-            children=[DocumentNode(NodeType.TABLE_ROW, children=[])]
-        )]
+        nodes = [
+            DocumentNode(NodeType.TABLE, children=[DocumentNode(NodeType.TABLE_ROW, children=[])])
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -476,17 +490,19 @@ class TestPDFRenderer:
         """Should truncate long cell content."""
         renderer = PDFRenderer()
         long_text = "A" * 100  # Very long text
-        nodes = [DocumentNode(
-            NodeType.TABLE,
-            children=[
-                DocumentNode(
-                    NodeType.TABLE_ROW,
-                    children=[
-                        DocumentNode(NodeType.TABLE_CELL, content=long_text),
-                    ]
-                ),
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.TABLE,
+                children=[
+                    DocumentNode(
+                        NodeType.TABLE_ROW,
+                        children=[
+                            DocumentNode(NodeType.TABLE_CELL, content=long_text),
+                        ],
+                    ),
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, (bytes, bytearray))
@@ -499,7 +515,7 @@ class TestPDFRenderer:
             children=[
                 DocumentNode(NodeType.TEXT, content="Hello "),
                 DocumentNode(NodeType.INLINE_BOLD, content="World"),
-            ]
+            ],
         )
         text = renderer._get_paragraph_text(node)
 
@@ -563,16 +579,18 @@ class TestDOCXRenderer:
     def test_render_paragraph_with_inline(self):
         """Should render paragraph with inline elements."""
         renderer = DOCXRenderer()
-        nodes = [DocumentNode(
-            NodeType.PARAGRAPH,
-            children=[
-                DocumentNode(NodeType.TEXT, content="Normal "),
-                DocumentNode(NodeType.INLINE_BOLD, content="bold "),
-                DocumentNode(NodeType.INLINE_ITALIC, content="italic "),
-                DocumentNode(NodeType.INLINE_CODE, content="code "),
-                DocumentNode(NodeType.INLINE_LINK, content="link", url="https://test.com"),
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.PARAGRAPH,
+                children=[
+                    DocumentNode(NodeType.TEXT, content="Normal "),
+                    DocumentNode(NodeType.INLINE_BOLD, content="bold "),
+                    DocumentNode(NodeType.INLINE_ITALIC, content="italic "),
+                    DocumentNode(NodeType.INLINE_CODE, content="code "),
+                    DocumentNode(NodeType.INLINE_LINK, content="link", url="https://test.com"),
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, bytes)
@@ -596,14 +614,16 @@ class TestDOCXRenderer:
     def test_render_list(self):
         """Should render list."""
         renderer = DOCXRenderer()
-        nodes = [DocumentNode(
-            NodeType.LIST,
-            ordered=True,
-            children=[
-                DocumentNode(NodeType.LIST_ITEM, content="One"),
-                DocumentNode(NodeType.LIST_ITEM, content="Two"),
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.LIST,
+                ordered=True,
+                children=[
+                    DocumentNode(NodeType.LIST_ITEM, content="One"),
+                    DocumentNode(NodeType.LIST_ITEM, content="Two"),
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, bytes)
@@ -611,21 +631,23 @@ class TestDOCXRenderer:
     def test_render_nested_list(self):
         """Should render nested list."""
         renderer = DOCXRenderer()
-        nodes = [DocumentNode(
-            NodeType.LIST,
-            children=[
-                DocumentNode(
-                    NodeType.LIST_ITEM,
-                    content="Parent",
-                    children=[
-                        DocumentNode(
-                            NodeType.LIST,
-                            children=[DocumentNode(NodeType.LIST_ITEM, content="Child")]
-                        )
-                    ]
-                )
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.LIST,
+                children=[
+                    DocumentNode(
+                        NodeType.LIST_ITEM,
+                        content="Parent",
+                        children=[
+                            DocumentNode(
+                                NodeType.LIST,
+                                children=[DocumentNode(NodeType.LIST_ITEM, content="Child")],
+                            )
+                        ],
+                    )
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, bytes)
@@ -633,25 +655,27 @@ class TestDOCXRenderer:
     def test_render_table(self):
         """Should render table."""
         renderer = DOCXRenderer()
-        nodes = [DocumentNode(
-            NodeType.TABLE,
-            children=[
-                DocumentNode(
-                    NodeType.TABLE_ROW,
-                    children=[
-                        DocumentNode(NodeType.TABLE_CELL, content="H1", is_header=True),
-                        DocumentNode(NodeType.TABLE_CELL, content="H2", is_header=True),
-                    ]
-                ),
-                DocumentNode(
-                    NodeType.TABLE_ROW,
-                    children=[
-                        DocumentNode(NodeType.TABLE_CELL, content="C1"),
-                        DocumentNode(NodeType.TABLE_CELL, content="C2"),
-                    ]
-                ),
-            ]
-        )]
+        nodes = [
+            DocumentNode(
+                NodeType.TABLE,
+                children=[
+                    DocumentNode(
+                        NodeType.TABLE_ROW,
+                        children=[
+                            DocumentNode(NodeType.TABLE_CELL, content="H1", is_header=True),
+                            DocumentNode(NodeType.TABLE_CELL, content="H2", is_header=True),
+                        ],
+                    ),
+                    DocumentNode(
+                        NodeType.TABLE_ROW,
+                        children=[
+                            DocumentNode(NodeType.TABLE_CELL, content="C1"),
+                            DocumentNode(NodeType.TABLE_CELL, content="C2"),
+                        ],
+                    ),
+                ],
+            )
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, bytes)
@@ -667,10 +691,9 @@ class TestDOCXRenderer:
     def test_render_table_empty_first_row(self):
         """Should handle table with empty first row."""
         renderer = DOCXRenderer()
-        nodes = [DocumentNode(
-            NodeType.TABLE,
-            children=[DocumentNode(NodeType.TABLE_ROW, children=[])]
-        )]
+        nodes = [
+            DocumentNode(NodeType.TABLE, children=[DocumentNode(NodeType.TABLE_ROW, children=[])])
+        ]
         result = renderer.render(nodes)
 
         assert isinstance(result, bytes)
@@ -708,7 +731,7 @@ class TestExportService:
 
         result = service.export_markdown(content, "test")
 
-        assert result == content.encode('utf-8')
+        assert result == content.encode("utf-8")
 
     def test_export_markdown_unicode(self):
         """Should handle unicode in markdown export."""
@@ -717,7 +740,7 @@ class TestExportService:
 
         result = service.export_markdown(content, "test")
 
-        assert result == content.encode('utf-8')
+        assert result == content.encode("utf-8")
 
     def test_export_pdf(self):
         """Should export as PDF."""
@@ -823,6 +846,7 @@ class TestExportAPIEndpoints:
         from datetime import UTC, datetime, timedelta
 
         from services.auth_service import TokenData
+
         return TokenData(sub="dev-user", exp=datetime.now(UTC) + timedelta(hours=1))
 
     @pytest.fixture
@@ -1009,7 +1033,7 @@ This is a paragraph with **bold** and *italic* text.
         assert isinstance(result, bytes)
         # DOCX files are ZIP archives with specific structure
         # First bytes should be PK (ZIP signature)
-        assert result[:2] == b'PK'
+        assert result[:2] == b"PK"
 
     def test_empty_content_export(self):
         """Should handle empty content."""
@@ -1040,4 +1064,4 @@ This is a paragraph with **bold** and *italic* text.
         md_result = export_service.export_markdown(content, "unicode")
 
         assert isinstance(docx_result, bytes)
-        assert md_result == content.encode('utf-8')
+        assert md_result == content.encode("utf-8")

@@ -86,9 +86,7 @@ class SkillsService:
         content = skill_path.read_text(encoding="utf-8")
 
         # Extract YAML frontmatter between --- markers
-        frontmatter_match = re.match(
-            r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL
-        )
+        frontmatter_match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
         if not frontmatter_match:
             raise ValueError(f"No frontmatter found in {skill_path}")
 
@@ -97,9 +95,7 @@ class SkillsService:
 
         metadata = SkillMetadata(
             name=frontmatter.get("name", skill_path.parent.name),
-            display_name=frontmatter.get(
-                "display_name", frontmatter.get("name", "")
-            ),
+            display_name=frontmatter.get("display_name", frontmatter.get("name", "")),
             description=frontmatter.get("description", ""),
             category=frontmatter.get("category", "general"),
             version=frontmatter.get("version", "1.0.0"),
@@ -224,9 +220,7 @@ class SkillsService:
         skill = self._skills.get(name)
         return skill.instructions if skill else None
 
-    def load_skill_resource(
-        self, skill_name: str, resource_name: str
-    ) -> str | None:
+    def load_skill_resource(self, skill_name: str, resource_name: str) -> str | None:
         """Load a specific resource file content (progressive disclosure).
 
         Args:
@@ -247,9 +241,7 @@ class SkillsService:
                     # Load on demand
                     resource_path = SKILLS_DIR / skill_name / resource.path
                     if resource_path.exists():
-                        resource.content = resource_path.read_text(
-                            encoding="utf-8"
-                        )
+                        resource.content = resource_path.read_text(encoding="utf-8")
                 return resource.content
 
         return None
@@ -263,9 +255,7 @@ class SkillsService:
         Returns:
             List of skills in the category
         """
-        return [
-            s for s in self._skills.values() if s.metadata.category == category
-        ]
+        return [s for s in self._skills.values() if s.metadata.category == category]
 
 
 @lru_cache

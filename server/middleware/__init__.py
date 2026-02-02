@@ -20,5 +20,5 @@ __all__ = [
     "limit_ai",
     "limit_auth",
     "limit_upload",
-    "limit_burst"
+    "limit_burst",
 ]

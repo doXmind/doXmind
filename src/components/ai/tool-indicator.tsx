@@ -16,6 +16,7 @@ import {
   Wand2,
   FileText,
   Scale,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToolStatus } from "@/hooks/use-chat";
@@ -64,6 +65,16 @@ function getToolIcon(toolName: string) {
       return Scale;
     case "get_court_opinion":
       return Scale;
+    // Code execution tool
+    case "code_execution":
+    case "Code Execution":
+    case "bash_code_execution":
+      return Terminal;
+    // Web tools (display names)
+    case "Web Search":
+      return Globe;
+    case "Web Fetch":
+      return Link2;
     default:
       return Sparkles;
   }
@@ -113,6 +124,16 @@ function getToolDisplayName(toolName: string) {
       return "Searching court cases";
     case "get_court_opinion":
       return "Reading court opinion";
+    // Code execution tool
+    case "code_execution":
+    case "Code Execution":
+    case "bash_code_execution":
+      return "Running code";
+    // Web tools (display names)
+    case "Web Search":
+      return "Searching the web";
+    case "Web Fetch":
+      return "Fetching URL";
     default:
       // Format unknown tools: snake_case -> Title Case
       return toolName
@@ -125,20 +146,20 @@ function getToolDisplayName(toolName: string) {
 /** Status-based styling configuration */
 const STATUS_STYLES = {
   running: {
-    bg: 'rgba(59, 130, 246, 0.1)',
-    border: 'rgba(59, 130, 246, 0.3)',
-    text: 'text-blue-600 dark:text-blue-400'
+    bg: "rgba(59, 130, 246, 0.1)",
+    border: "rgba(59, 130, 246, 0.3)",
+    text: "text-blue-600 dark:text-blue-400",
   },
   completed: {
-    bg: 'rgba(34, 197, 94, 0.1)',
-    border: 'rgba(34, 197, 94, 0.3)',
-    text: 'text-green-600 dark:text-green-400'
+    bg: "rgba(34, 197, 94, 0.1)",
+    border: "rgba(34, 197, 94, 0.3)",
+    text: "text-green-600 dark:text-green-400",
   },
   error: {
-    bg: 'rgba(239, 68, 68, 0.1)',
-    border: 'rgba(239, 68, 68, 0.3)',
-    text: 'text-red-600 dark:text-red-400'
-  }
+    bg: "rgba(239, 68, 68, 0.1)",
+    border: "rgba(239, 68, 68, 0.3)",
+    text: "text-red-600 dark:text-red-400",
+  },
 } as const;
 
 interface ToolIndicatorProps {
@@ -162,11 +183,11 @@ export function ToolIndicator({ tool }: ToolIndicatorProps) {
         y: 0,
         scale: 1,
         backgroundColor: currentStyle.bg,
-        borderColor: currentStyle.border
+        borderColor: currentStyle.border,
       }}
       transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
       className={cn(
-        "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border",
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
         currentStyle.text
       )}
     >
@@ -175,16 +196,16 @@ export function ToolIndicator({ tool }: ToolIndicatorProps) {
           <div className="relative">
             <Icon className="h-4 w-4 flex-shrink-0" />
             <motion.span
-              className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full"
+              className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-blue-500"
               animate={{
                 scale: [1, 1.2, 1],
-                opacity: [1, 0.7, 1]
+                opacity: [1, 0.7, 1],
               }}
               transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
             />
           </div>
           <span className="truncate font-medium">{displayName}...</span>
-          <Loader2 className="h-3 w-3 animate-spin ml-auto" />
+          <Loader2 className="ml-auto h-3 w-3 animate-spin" />
         </>
       )}
       {tool.status === "completed" && (
@@ -192,7 +213,7 @@ export function ToolIndicator({ tool }: ToolIndicatorProps) {
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
           >
             <Icon className="h-4 w-4 flex-shrink-0" />
           </motion.div>
@@ -200,18 +221,15 @@ export function ToolIndicator({ tool }: ToolIndicatorProps) {
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 15, delay: 0.1 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15, delay: 0.1 }}
           >
-            <Check className="h-3 w-3 ml-auto" />
+            <Check className="ml-auto h-3 w-3" />
           </motion.div>
         </>
       )}
       {tool.status === "error" && (
         <>
-          <motion.div
-            animate={{ x: [0, -2, 2, -2, 0] }}
-            transition={{ duration: 0.4 }}
-          >
+          <motion.div animate={{ x: [0, -2, 2, -2, 0] }} transition={{ duration: 0.4 }}>
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
           </motion.div>
           <span className="truncate">{tool.message || "Error"}</span>

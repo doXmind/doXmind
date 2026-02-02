@@ -1,6 +1,7 @@
 """
 Tests for authentication API endpoints.
 """
+
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -130,9 +131,7 @@ class TestRegisterEndpoint:
         assert data["success"] is True
         assert "message" in data
 
-    async def test_register_duplicate_email(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_register_duplicate_email(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for duplicate email."""
         # Create existing user
         user = User(
@@ -206,9 +205,7 @@ class TestRegisterEndpoint:
 class TestVerifyEmailEndpoint:
     """Tests for POST /api/auth/verify-email endpoint."""
 
-    async def test_verify_email_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_verify_email_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should verify email and return token on success."""
         # Create pending verification
         verification = EmailVerification(
@@ -232,9 +229,7 @@ class TestVerifyEmailEndpoint:
         assert data["token_type"] == "bearer"
         assert "user" in data
 
-    async def test_verify_email_invalid_code(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_verify_email_invalid_code(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for invalid verification code."""
         verification = EmailVerification(
             email="verify2@example.com",
@@ -254,9 +249,7 @@ class TestVerifyEmailEndpoint:
         assert response.status_code == 400
         assert "Invalid code" in response.json()["detail"]
 
-    async def test_verify_email_expired_code(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_verify_email_expired_code(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for expired verification code."""
         verification = EmailVerification(
             email="expired@example.com",
@@ -296,9 +289,7 @@ class TestVerifyEmailEndpoint:
 class TestResendCodeEndpoint:
     """Tests for POST /api/auth/resend-code endpoint."""
 
-    async def test_resend_code_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_resend_code_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should resend verification code successfully."""
         verification = EmailVerification(
             email="resend@example.com",
@@ -310,9 +301,7 @@ class TestResendCodeEndpoint:
         db_session.add(verification)
         await db_session.commit()
 
-        response = await client.post(
-            "/api/auth/resend-code", json={"email": "resend@example.com"}
-        )
+        response = await client.post("/api/auth/resend-code", json={"email": "resend@example.com"})
 
         assert response.status_code == 200
         data = response.json()
@@ -358,9 +347,7 @@ class TestResendCodeEndpoint:
 class TestLoginEndpoint:
     """Tests for POST /api/auth/login endpoint."""
 
-    async def test_login_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_login_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should login successfully with valid credentials."""
         user = User(
             email="login@example.com",
@@ -383,9 +370,7 @@ class TestLoginEndpoint:
         assert data["token_type"] == "bearer"
         assert "user" in data
 
-    async def test_login_invalid_password(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_login_invalid_password(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for invalid password."""
         user = User(
             email="loginbad@example.com",
@@ -414,9 +399,7 @@ class TestLoginEndpoint:
 
         assert response.status_code == 401
 
-    async def test_login_unverified_user(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_login_unverified_user(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for unverified user."""
         user = User(
             email="unverified@example.com",
@@ -436,9 +419,7 @@ class TestLoginEndpoint:
         assert response.status_code == 401
         assert "verify" in response.json()["detail"].lower()
 
-    async def test_login_inactive_user(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_login_inactive_user(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for inactive/disabled user."""
         user = User(
             email="inactive@example.com",
@@ -458,9 +439,7 @@ class TestLoginEndpoint:
         assert response.status_code == 401
         assert "disabled" in response.json()["detail"].lower()
 
-    async def test_login_oauth_only_user(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_login_oauth_only_user(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for OAuth-only user trying password login."""
         user = User(
             email="oauth@example.com",
@@ -528,9 +507,7 @@ class TestForgotPasswordEndpoint:
 class TestResetPasswordEndpoint:
     """Tests for POST /api/auth/reset-password endpoint."""
 
-    async def test_reset_password_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_reset_password_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should reset password with valid token."""
         user = User(
             email="resetpw@example.com",
@@ -647,9 +624,7 @@ class TestGoogleOAuthEndpoints:
         assert response.status_code == 400
         assert "Invalid" in response.json()["detail"]
 
-    async def test_google_callback_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_google_callback_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should complete OAuth and redirect with token."""
         # Create valid state
         from api.auth import _create_oauth_state
@@ -678,9 +653,7 @@ class TestGoogleOAuthEndpoints:
             assert response.status_code == 307
             assert "token=" in response.headers.get("location", "")
 
-    async def test_google_callback_no_email(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_google_callback_no_email(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error if Google doesn't provide email."""
         from api.auth import _create_oauth_state
 
@@ -714,9 +687,7 @@ class TestGoogleOAuthEndpoints:
 class TestRefreshTokenEndpoint:
     """Tests for POST /api/auth/refresh endpoint."""
 
-    async def test_refresh_token_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_refresh_token_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should refresh token for authenticated user."""
         user = User(
             id="refresh-user-id",
@@ -751,9 +722,7 @@ class TestRefreshTokenEndpoint:
 class TestAuthStatusEndpoint:
     """Tests for GET /api/auth/status endpoint."""
 
-    async def test_auth_status_authenticated(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_auth_status_authenticated(self, client: AsyncClient, db_session: AsyncSession):
         """Should return authenticated status for valid token."""
         user = User(
             id="status-user-id",
@@ -795,9 +764,7 @@ class TestAuthStatusEndpoint:
 class TestGetMeEndpoint:
     """Tests for GET /api/auth/me endpoint."""
 
-    async def test_get_me_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_get_me_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should return current user info."""
         user = User(
             id="me-user-id",
@@ -821,9 +788,7 @@ class TestGetMeEndpoint:
         assert data["email"] == "me@example.com"
         assert data["username"] == "meuser"
 
-    async def test_get_me_not_found(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_get_me_not_found(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error if user not found in database."""
         # Create token for non-existent user
         token = create_access_token(subject="nonexistent-user-id")
@@ -839,9 +804,7 @@ class TestGetMeEndpoint:
 class TestUpdateProfileEndpoint:
     """Tests for PATCH /api/auth/me endpoint."""
 
-    async def test_update_profile_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_update_profile_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should update user profile."""
         user = User(
             id="update-user-id",
@@ -867,9 +830,7 @@ class TestUpdateProfileEndpoint:
         data = response.json()
         assert data["username"] == "newusername"
 
-    async def test_update_profile_partial(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_update_profile_partial(self, client: AsyncClient, db_session: AsyncSession):
         """Should update only provided fields."""
         user = User(
             id="partial-user-id",
@@ -905,9 +866,7 @@ class TestUpdateProfileEndpoint:
 class TestChangePasswordEndpoint:
     """Tests for POST /api/auth/change-password endpoint."""
 
-    async def test_change_password_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_change_password_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should change password with correct current password."""
         user = User(
             id="changepw-user-id",
@@ -959,9 +918,7 @@ class TestChangePasswordEndpoint:
         assert response.status_code == 400
         assert "incorrect" in response.json()["detail"].lower()
 
-    async def test_change_password_oauth_user(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_change_password_oauth_user(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for OAuth-only user."""
         user = User(
             id="oauth-changepw-user-id",
@@ -998,9 +955,7 @@ class TestChangePasswordEndpoint:
 class TestDeleteAccountEndpoint:
     """Tests for DELETE /api/auth/me endpoint."""
 
-    async def test_delete_account_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_delete_account_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should delete user account and all associated data."""
         user = User(
             id="delete-user-id",
@@ -1021,9 +976,7 @@ class TestDeleteAccountEndpoint:
         assert response.status_code == 200
         assert response.json()["success"] is True
 
-    async def test_delete_account_not_found(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_delete_account_not_found(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error if user not found."""
         token = create_access_token(subject="nonexistent-delete-id")
         headers = {"Authorization": f"Bearer {token}"}
@@ -1107,9 +1060,7 @@ class TestOAuthState:
         decoded = base64.urlsafe_b64decode(state.encode()).decode()
         payload_b64, _ = decoded.split(".", 1)
         # Use wrong signature
-        tampered = base64.urlsafe_b64encode(
-            f"{payload_b64}.wrong-signature".encode()
-        ).decode()
+        tampered = base64.urlsafe_b64encode(f"{payload_b64}.wrong-signature".encode()).decode()
 
         assert _verify_oauth_state(tampered) is None
 

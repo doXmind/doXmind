@@ -16,6 +16,7 @@ from api import (
     auth,
     autocomplete,
     chat,
+    data_files,
     edit,
     export,
     files,
@@ -36,8 +37,7 @@ from services.rag_service import init_pgvector
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -124,35 +124,29 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 # Global Exception Handlers
 # ============================================================================
 
+
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
     """Handle all custom application exceptions."""
     logger.error(
         f"AppException: {exc.error_code} - {exc.message}",
-        extra={"path": request.url.path, "details": exc.details}
+        extra={"path": request.url.path, "details": exc.details},
     )
     return JSONResponse(
         status_code=exc.status_code,
         content=exc.to_dict(),
-        headers=get_cors_headers(request.headers.get("origin"))
+        headers=get_cors_headers(request.headers.get("origin")),
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle unexpected exceptions."""
-    logger.exception(
-        f"Unhandled exception on {request.url.path}: {str(exc)}"
-    )
+    logger.exception(f"Unhandled exception on {request.url.path}: {str(exc)}")
     return JSONResponse(
         status_code=500,
-        content={
-            "error": {
-                "code": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred"
-            }
-        },
-        headers=get_cors_headers(request.headers.get("origin"))
+        content={"error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred"}},
+        headers=get_cors_headers(request.headers.get("origin")),
     )
 
 
@@ -242,6 +236,7 @@ app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
+app.include_router(data_files.router, tags=["data_files"])
 app.include_router(shares.router, prefix="/api/shares", tags=["shares"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
@@ -252,14 +247,11 @@ app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"]
 # Root Endpoints
 # ============================================================================
 
+
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {
-        "name": "doXmind Mini API",
-        "version": "1.0.0",
-        "status": "running"
-    }
+    return {"name": "doXmind Mini API", "version": "1.0.0", "status": "running"}
 
 
 @app.get("/health")
@@ -270,9 +262,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.debug
-    )
+
+    uvicorn.run("main:app", host=settings.host, port=settings.port, reload=settings.debug)

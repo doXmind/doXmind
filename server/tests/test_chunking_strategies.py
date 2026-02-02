@@ -18,6 +18,7 @@ from services.rag_service import (
 # SemanticChunkingStrategy Tests
 # =============================================================================
 
+
 class TestSemanticChunkingStrategy:
     """Tests for semantic chunking with paragraph-based splitting."""
 
@@ -69,12 +70,10 @@ class TestSemanticChunkingStrategy:
 
     def test_overlap_between_chunks(self):
         """Chunks should have overlap for context preservation."""
-        strategy = SemanticChunkingStrategy(
-            max_chunk_size=50,
-            min_chunk_size=10,
-            overlap_ratio=0.2
+        strategy = SemanticChunkingStrategy(max_chunk_size=50, min_chunk_size=10, overlap_ratio=0.2)
+        text = (
+            "First paragraph with content.\n\nSecond paragraph with more.\n\nThird paragraph here."
         )
-        text = "First paragraph with content.\n\nSecond paragraph with more.\n\nThird paragraph here."
         chunks = strategy.chunk(text)
         # Should have multiple chunks
         assert len(chunks) >= 2
@@ -99,6 +98,7 @@ class TestSemanticChunkingStrategy:
 # RecursiveMarkdownChunkingStrategy Tests
 # =============================================================================
 
+
 class TestRecursiveMarkdownChunkingStrategy:
     """Tests for Markdown-aware hierarchical chunking."""
 
@@ -118,10 +118,7 @@ class TestRecursiveMarkdownChunkingStrategy:
 
     def test_preserves_code_blocks(self):
         """Code blocks should not be split."""
-        strategy = RecursiveMarkdownChunkingStrategy(
-            max_chunk_size=100,
-            preserve_code_blocks=True
-        )
+        strategy = RecursiveMarkdownChunkingStrategy(max_chunk_size=100, preserve_code_blocks=True)
         text = """Intro text.
 
 ```python
@@ -139,7 +136,7 @@ After code."""
         code_chunk = code_chunks[0]
         assert "def hello():" in code_chunk
         assert "return 42" in code_chunk
-        assert '```' in code_chunk
+        assert "```" in code_chunk
 
     def test_handles_nested_headers(self):
         """Should handle nested header structure correctly."""
@@ -168,10 +165,7 @@ Final content."""
 
     def test_preserves_tables(self):
         """Tables should be kept together."""
-        strategy = RecursiveMarkdownChunkingStrategy(
-            max_chunk_size=200,
-            preserve_tables=True
-        )
+        strategy = RecursiveMarkdownChunkingStrategy(max_chunk_size=200, preserve_tables=True)
         text = """# Data
 
 | Name | Age |
@@ -227,6 +221,7 @@ Third paragraph with even more content."""
 # =============================================================================
 # DocumentTypeDetector Tests
 # =============================================================================
+
 
 class TestDocumentTypeDetector:
     """Tests for document type detection."""
@@ -304,6 +299,7 @@ class Foo:
 # ChunkingStrategyFactory Tests
 # =============================================================================
 
+
 class TestChunkingStrategyFactory:
     """Tests for the strategy factory."""
 
@@ -327,10 +323,7 @@ class TestChunkingStrategyFactory:
         content = "# Markdown content here"
 
         # Override to use overlap strategy
-        strategy = factory.get_strategy(
-            content,
-            strategy_type=ChunkingStrategyType.OVERLAP
-        )
+        strategy = factory.get_strategy(content, strategy_type=ChunkingStrategyType.OVERLAP)
         assert isinstance(strategy, OverlapChunkingStrategy)
 
     def test_creates_overlap_strategy(self):
@@ -361,6 +354,7 @@ class TestChunkingStrategyFactory:
 # =============================================================================
 # Existing Strategy Tests (Regression)
 # =============================================================================
+
 
 class TestOverlapChunkingStrategy:
     """Regression tests for existing overlap chunking strategy."""
@@ -476,6 +470,7 @@ This text comes after the table."""
 # =============================================================================
 # Integration Tests
 # =============================================================================
+
 
 class TestChunkingIntegration:
     """Integration tests for chunking workflow."""

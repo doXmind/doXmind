@@ -124,6 +124,11 @@ class Settings(BaseSettings):
     web_fetch_max_uses: int = 10  # Max fetches per request
 
     # =========================================================================
+    # Code Execution Settings (Anthropic server-side tool)
+    # =========================================================================
+    code_execution_enabled: bool = False  # Default off, user can enable
+
+    # =========================================================================
     # Limits - Centralized configuration values
     # =========================================================================
     # Token limits
@@ -149,14 +154,17 @@ class Settings(BaseSettings):
     autocomplete_cache_ttl_seconds: int = 300  # 5 minutes
 
     # RAG settings
-    chunk_size: int = 4000
+    # Note: OpenAI embedding API has 8192 token limit. These character limits
+    # are set conservatively to account for varying token density (code/CJK text
+    # can have 1 token per 1-2 chars vs ~4 chars per token for English).
+    chunk_size: int = 3000  # Reduced from 4000 for token safety
     chunk_overlap: int = 0  # No overlap - cleaner search results
     sentence_min_length: int = 5
 
     # Advanced chunking settings
     chunking_strategy: str = "auto"  # "auto", "overlap", "semantic", "recursive_markdown"
     semantic_min_chunk_size: int = 200
-    markdown_max_chunk_size: int = 2000  # Max size for TEXT chunks (code/tables always kept whole)
+    markdown_max_chunk_size: int = 1500  # Reduced from 2000 for token safety
     preserve_code_blocks: bool = True
     preserve_tables: bool = True
 
@@ -196,6 +204,11 @@ class Settings(BaseSettings):
     def has_legal_tools(self) -> bool:
         """Check if legal tools are available (API key configured)."""
         return bool(self.courtlistener_api_key)
+
+    @property
+    def has_data_analysis_tools(self) -> bool:
+        """Check if data analysis tools are available (code execution enabled)."""
+        return self.code_execution_enabled
 
 
 @lru_cache

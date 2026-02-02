@@ -4,6 +4,7 @@
 
 运行方式: python test_web_search.py
 """
+
 import os
 import sys
 
@@ -15,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 尝试从 config 获取 API key，否则从环境变量
 try:
     from config import get_settings
+
     API_KEY = get_settings().anthropic_api_key
 except Exception:
     API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -25,13 +27,7 @@ def test_web_search_with_beta():
     client = anthropic.Anthropic(api_key=API_KEY)
 
     # 定义 web search 工具
-    tools = [
-        {
-            "type": "web_search_20250305",
-            "name": "web_search",
-            "max_uses": 5
-        }
-    ]
+    tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
 
     print("=" * 70)
     print("TEST 1: Web Search WITH beta header (web-search-2025-03-05)")
@@ -44,29 +40,36 @@ def test_web_search_with_beta():
             max_tokens=1024,
             tools=tools,
             messages=[
-                {"role": "user", "content": "Use web_search to find information about Kobe Bryant's NBA career statistics. You MUST use the web_search tool."}
+                {
+                    "role": "user",
+                    "content": "Use web_search to find information about Kobe Bryant's NBA career statistics. You MUST use the web_search tool.",
+                }
             ],
-            extra_headers={"anthropic-beta": "web-search-2025-03-05"}
+            extra_headers={"anthropic-beta": "web-search-2025-03-05"},
         ) as stream:
             for event in stream:
-                event_type = getattr(event, 'type', 'unknown')
+                event_type = getattr(event, "type", "unknown")
 
                 # 打印所有事件类型
                 print(f"Event: {event_type}", end="")
 
                 # 详细打印 web_search 相关事件
-                if 'web_search' in str(event_type) or 'server_tool' in str(event_type) or 'content_block_start' in str(event_type):
+                if (
+                    "web_search" in str(event_type)
+                    or "server_tool" in str(event_type)
+                    or "content_block_start" in str(event_type)
+                ):
                     print(f"\n--- Event Type: {event_type} ---")
                     print(f"Event: {event}")
 
                     # 检查 content_block
-                    if hasattr(event, 'content_block'):
+                    if hasattr(event, "content_block"):
                         block = event.content_block
                         print(f"Content block type: {getattr(block, 'type', 'N/A')}")
                         print(f"Content block: {block}")
 
                         # 检查 content
-                        if hasattr(block, 'content'):
+                        if hasattr(block, "content"):
                             print(f"Block content: {block.content}")
                             print(f"Block content type: {type(block.content)}")
                             if block.content:
@@ -83,6 +86,7 @@ def test_web_search_with_beta():
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -90,13 +94,7 @@ def test_web_search_without_beta():
     """测试不带 web-search beta header 的 web search (当前代码的行为)"""
     client = anthropic.Anthropic(api_key=API_KEY)
 
-    tools = [
-        {
-            "type": "web_search_20250305",
-            "name": "web_search",
-            "max_uses": 5
-        }
-    ]
+    tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
 
     print("\n" + "=" * 70)
     print("TEST 2: Web Search WITHOUT web-search beta header")
@@ -109,23 +107,21 @@ def test_web_search_without_beta():
             model="claude-sonnet-4-20250514",
             max_tokens=1024,
             tools=tools,
-            messages=[
-                {"role": "user", "content": "Search for Kobe Bryant basketball career"}
-            ],
-            extra_headers={"anthropic-beta": "web-fetch-2025-09-10"}  # 只有 web-fetch
+            messages=[{"role": "user", "content": "Search for Kobe Bryant basketball career"}],
+            extra_headers={"anthropic-beta": "web-fetch-2025-09-10"},  # 只有 web-fetch
         ) as stream:
             for event in stream:
-                event_type = getattr(event, 'type', 'unknown')
+                event_type = getattr(event, "type", "unknown")
 
-                if 'web_search' in str(event_type) or 'server_tool' in str(event_type):
+                if "web_search" in str(event_type) or "server_tool" in str(event_type):
                     print(f"\n--- Event Type: {event_type} ---")
                     print("*** WEB SEARCH/SERVER TOOL EVENT ***")
 
-                    if hasattr(event, 'content_block'):
+                    if hasattr(event, "content_block"):
                         block = event.content_block
                         print(f"Content block type: {getattr(block, 'type', 'N/A')}")
                         print(f"Content block: {block}")
-                        if hasattr(block, 'content'):
+                        if hasattr(block, "content"):
                             print(f"Block content: {block.content}")
                             if block.content:
                                 for i, item in enumerate(block.content):
@@ -136,6 +132,7 @@ def test_web_search_without_beta():
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -143,13 +140,7 @@ def test_web_search_no_header():
     """测试完全不带 beta header 的 web search"""
     client = anthropic.Anthropic(api_key=API_KEY)
 
-    tools = [
-        {
-            "type": "web_search_20250305",
-            "name": "web_search",
-            "max_uses": 5
-        }
-    ]
+    tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
 
     print("\n" + "=" * 70)
     print("TEST 3: Web Search with NO beta headers at all")
@@ -160,22 +151,20 @@ def test_web_search_no_header():
             model="claude-sonnet-4-20250514",
             max_tokens=1024,
             tools=tools,
-            messages=[
-                {"role": "user", "content": "Search for Kobe Bryant basketball career"}
-            ]
+            messages=[{"role": "user", "content": "Search for Kobe Bryant basketball career"}],
         ) as stream:
             for event in stream:
-                event_type = getattr(event, 'type', 'unknown')
+                event_type = getattr(event, "type", "unknown")
 
-                if 'web_search' in str(event_type) or 'server_tool' in str(event_type):
+                if "web_search" in str(event_type) or "server_tool" in str(event_type):
                     print(f"\n--- Event Type: {event_type} ---")
                     print("*** WEB SEARCH/SERVER TOOL EVENT ***")
 
-                    if hasattr(event, 'content_block'):
+                    if hasattr(event, "content_block"):
                         block = event.content_block
                         print(f"Content block type: {getattr(block, 'type', 'N/A')}")
                         print(f"Content block: {block}")
-                        if hasattr(block, 'content'):
+                        if hasattr(block, "content"):
                             print(f"Block content: {block.content}")
                             if block.content:
                                 for i, item in enumerate(block.content):
@@ -186,6 +175,7 @@ def test_web_search_no_header():
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

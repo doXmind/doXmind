@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Pydantic Models for Structured Output
 # ============================================================================
 
+
 class RankedDocument(BaseModel):
     """A single document with its relevance score."""
 
@@ -41,6 +42,7 @@ class RerankResponse(BaseModel):
 # ============================================================================
 # GPT Reranker
 # ============================================================================
+
 
 class GPTReranker:
     """Rerank documents using GPT with structured outputs.
@@ -66,6 +68,7 @@ class GPTReranker:
         """Lazy initialization of OpenAI client."""
         if self._client is None:
             from openai import AsyncOpenAI
+
             self._client = AsyncOpenAI(api_key=self.settings.openai_api_key)
         return self._client
 
@@ -74,7 +77,7 @@ class GPTReranker:
         query: str,
         documents: list[dict[str, Any]],
         top_n: int = 10,
-        min_relevance_score: float = 0.2
+        min_relevance_score: float = 0.2,
     ) -> list[dict[str, Any]]:
         """Rerank documents by relevance to query using GPT.
 
@@ -95,10 +98,9 @@ class GPTReranker:
             return documents[:top_n]
 
         # Build prompt with numbered documents (truncate content for token efficiency)
-        docs_text = "\n\n".join([
-            f"[{i}] {doc.get('content', '')[:500]}"
-            for i, doc in enumerate(documents)
-        ])
+        docs_text = "\n\n".join(
+            [f"[{i}] {doc.get('content', '')[:500]}" for i, doc in enumerate(documents)]
+        )
 
         system_prompt = """You are a search relevance expert. Given a query and candidate documents,
 rank each document by its relevance to the query.
@@ -126,11 +128,11 @@ Rank all {len(documents)} documents by relevance."""
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 response_format=RerankResponse,
                 max_tokens=1500,
-                temperature=0.0  # Deterministic for consistent rankings
+                temperature=0.0,  # Deterministic for consistent rankings
             )
 
             # Parse the structured response
@@ -142,9 +144,7 @@ Rank all {len(documents)} documents by relevance."""
 
             # Sort by relevance score (descending) and filter out irrelevant docs
             sorted_rankings = sorted(
-                parsed.ranked_documents,
-                key=lambda x: x.relevance_score,
-                reverse=True
+                parsed.ranked_documents, key=lambda x: x.relevance_score, reverse=True
             )
 
             # Build reranked results, filtering out low-relevance documents
@@ -186,7 +186,7 @@ class NoOpReranker:
         _query: str,
         documents: list[dict[str, Any]],
         top_n: int = 10,
-        min_relevance_score: float = 0.2  # Unused, for API compatibility
+        min_relevance_score: float = 0.2,  # Unused, for API compatibility
     ) -> list[dict[str, Any]]:
         """Return documents unchanged."""
         del min_relevance_score  # Unused in no-op reranker

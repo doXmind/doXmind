@@ -39,11 +39,11 @@ class TestInitiateRegistration:
         """Should create verification record for new user."""
         service = UserService(db_session)
 
-        with patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=True)):
+        with patch.object(
+            service.email_service, "send_verification_code", new=AsyncMock(return_value=True)
+        ):
             success, message = await service.initiate_registration(
-                email="new@example.com",
-                username="newuser",
-                password="SecurePass123!"
+                email="new@example.com", username="newuser", password="SecurePass123!"
             )
 
         assert success is True
@@ -57,16 +57,14 @@ class TestInitiateRegistration:
             username="existing",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message = await service.initiate_registration(
-            email="existing@example.com",
-            username="newuser",
-            password="SecurePass123!"
+            email="existing@example.com", username="newuser", password="SecurePass123!"
         )
 
         assert success is False
@@ -80,17 +78,17 @@ class TestInitiateRegistration:
             code="111111",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
             pending_username="old",
-            pending_hashed_password="old_hash"
+            pending_hashed_password="old_hash",
         )
         db_session.add(old_verification)
         await db_session.commit()
 
         service = UserService(db_session)
-        with patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=True)):
+        with patch.object(
+            service.email_service, "send_verification_code", new=AsyncMock(return_value=True)
+        ):
             success, message = await service.initiate_registration(
-                email="cleanup@example.com",
-                username="newuser",
-                password="SecurePass123!"
+                email="cleanup@example.com", username="newuser", password="SecurePass123!"
             )
 
         assert success is True
@@ -99,14 +97,16 @@ class TestInitiateRegistration:
         """Should return code in debug mode if email fails."""
         service = UserService(db_session)
 
-        with patch.object(service, "settings", MagicMock(
-            debug=True,
-            email_verification_expire_minutes=15
-        )), patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=False)):
+        with (
+            patch.object(
+                service, "settings", MagicMock(debug=True, email_verification_expire_minutes=15)
+            ),
+            patch.object(
+                service.email_service, "send_verification_code", new=AsyncMock(return_value=False)
+            ),
+        ):
             success, message = await service.initiate_registration(
-                email="debug@example.com",
-                username="debuguser",
-                password="SecurePass123!"
+                email="debug@example.com", username="debuguser", password="SecurePass123!"
             )
 
         assert success is True
@@ -117,14 +117,16 @@ class TestInitiateRegistration:
         """Should return error if email fails in production mode."""
         service = UserService(db_session)
 
-        with patch.object(service, "settings", MagicMock(
-            debug=False,
-            email_verification_expire_minutes=15
-        )), patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=False)):
+        with (
+            patch.object(
+                service, "settings", MagicMock(debug=False, email_verification_expire_minutes=15)
+            ),
+            patch.object(
+                service.email_service, "send_verification_code", new=AsyncMock(return_value=False)
+            ),
+        ):
             success, message = await service.initiate_registration(
-                email="prod@example.com",
-                username="produser",
-                password="SecurePass123!"
+                email="prod@example.com", username="produser", password="SecurePass123!"
             )
 
         assert success is False
@@ -143,16 +145,17 @@ class TestVerifyEmailCode:
             code="123456",
             expires_at=datetime.now(UTC) + timedelta(minutes=15),
             pending_username="verifyuser",
-            pending_hashed_password=hash_password("SecurePass123!")
+            pending_hashed_password=hash_password("SecurePass123!"),
         )
         db_session.add(verification)
         await db_session.commit()
 
         service = UserService(db_session)
-        with patch.object(service.email_service, "send_welcome_email", new=AsyncMock(return_value=True)):
+        with patch.object(
+            service.email_service, "send_welcome_email", new=AsyncMock(return_value=True)
+        ):
             success, message, user = await service.verify_email_code(
-                email="verify@example.com",
-                code="123456"
+                email="verify@example.com", code="123456"
             )
 
         assert success is True
@@ -164,8 +167,7 @@ class TestVerifyEmailCode:
         """Should return error if no pending verification."""
         service = UserService(db_session)
         success, message, user = await service.verify_email_code(
-            email="noexist@example.com",
-            code="123456"
+            email="noexist@example.com", code="123456"
         )
 
         assert success is False
@@ -179,15 +181,14 @@ class TestVerifyEmailCode:
             code="123456",
             expires_at=datetime.now(UTC) - timedelta(minutes=1),
             pending_username="expireduser",
-            pending_hashed_password="hash"
+            pending_hashed_password="hash",
         )
         db_session.add(verification)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message, user = await service.verify_email_code(
-            email="expired@example.com",
-            code="123456"
+            email="expired@example.com", code="123456"
         )
 
         assert success is False
@@ -201,7 +202,7 @@ class TestVerifyEmailCode:
             code="123456",
             expires_at=datetime.now(UTC) + timedelta(minutes=15),
             pending_username="wronguser",
-            pending_hashed_password="hash"
+            pending_hashed_password="hash",
         )
         db_session.add(verification)
         await db_session.commit()
@@ -209,7 +210,7 @@ class TestVerifyEmailCode:
         service = UserService(db_session)
         success, message, user = await service.verify_email_code(
             email="wrong@example.com",
-            code="000000"  # Wrong code
+            code="000000",  # Wrong code
         )
 
         assert success is False
@@ -224,15 +225,14 @@ class TestVerifyEmailCode:
             expires_at=datetime.now(UTC) + timedelta(minutes=15),
             pending_username="attemptsuser",
             pending_hashed_password="hash",
-            attempts=5  # Max attempts reached
+            attempts=5,  # Max attempts reached
         )
         db_session.add(verification)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message, user = await service.verify_email_code(
-            email="attempts@example.com",
-            code="123456"
+            email="attempts@example.com", code="123456"
         )
 
         assert success is False
@@ -251,13 +251,15 @@ class TestResendVerificationCode:
             code="111111",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
             pending_username="resenduser",
-            pending_hashed_password="hash"
+            pending_hashed_password="hash",
         )
         db_session.add(verification)
         await db_session.commit()
 
         service = UserService(db_session)
-        with patch.object(service.email_service, "send_verification_code", new=AsyncMock(return_value=True)):
+        with patch.object(
+            service.email_service, "send_verification_code", new=AsyncMock(return_value=True)
+        ):
             success, message = await service.resend_verification_code("resend@example.com")
 
         assert success is True
@@ -270,7 +272,7 @@ class TestResendVerificationCode:
             username="registered",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -306,15 +308,14 @@ class TestAuthenticate:
             username="authuser",
             hashed_password=hash_password("SecurePass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message, token = await service.authenticate(
-            email="auth@example.com",
-            password="SecurePass123!"
+            email="auth@example.com", password="SecurePass123!"
         )
 
         assert success is True
@@ -325,8 +326,7 @@ class TestAuthenticate:
         """Should return error for non-existent email."""
         service = UserService(db_session)
         success, message, token = await service.authenticate(
-            email="noexist@example.com",
-            password="SomePass123!"
+            email="noexist@example.com", password="SomePass123!"
         )
 
         assert success is False
@@ -340,15 +340,14 @@ class TestAuthenticate:
             username="wrongpwuser",
             hashed_password=hash_password("CorrectPass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message, token = await service.authenticate(
-            email="wrongpw@example.com",
-            password="WrongPass123!"
+            email="wrongpw@example.com", password="WrongPass123!"
         )
 
         assert success is False
@@ -363,15 +362,14 @@ class TestAuthenticate:
             oauth_provider="google",
             oauth_id="google-123",
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message, token = await service.authenticate(
-            email="oauthonly@example.com",
-            password="SomePass123!"
+            email="oauthonly@example.com", password="SomePass123!"
         )
 
         assert success is False
@@ -385,15 +383,14 @@ class TestAuthenticate:
             username="inactiveuser",
             hashed_password=hash_password("SecurePass123!"),
             is_verified=True,
-            is_active=False
+            is_active=False,
         )
         db_session.add(user)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message, token = await service.authenticate(
-            email="inactive@example.com",
-            password="SecurePass123!"
+            email="inactive@example.com", password="SecurePass123!"
         )
 
         assert success is False
@@ -407,15 +404,14 @@ class TestAuthenticate:
             username="unverifieduser",
             hashed_password=hash_password("SecurePass123!"),
             is_verified=False,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message, token = await service.authenticate(
-            email="unverified@example.com",
-            password="SecurePass123!"
+            email="unverified@example.com", password="SecurePass123!"
         )
 
         assert success is False
@@ -439,13 +435,15 @@ class TestInitiatePasswordReset:
             username="resetuser",
             hashed_password=hash_password("OldPass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
 
         service = UserService(db_session)
-        with patch.object(service.email_service, "send_password_reset", new=AsyncMock(return_value=True)):
+        with patch.object(
+            service.email_service, "send_password_reset", new=AsyncMock(return_value=True)
+        ):
             success, message = await service.initiate_password_reset("reset@example.com")
 
         assert success is True
@@ -466,7 +464,7 @@ class TestInitiatePasswordReset:
             hashed_password=None,
             oauth_provider="google",
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -488,7 +486,7 @@ class TestResetPassword:
             username="validresetuser",
             hashed_password=hash_password("OldPass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -497,15 +495,14 @@ class TestResetPassword:
         reset = PasswordReset(
             user_id=user.id,
             token="valid-token-123",
-            expires_at=datetime.now(UTC) + timedelta(hours=1)
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
         db_session.add(reset)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message = await service.reset_password(
-            token="valid-token-123",
-            new_password="NewSecurePass123!"
+            token="valid-token-123", new_password="NewSecurePass123!"
         )
 
         assert success is True
@@ -516,8 +513,7 @@ class TestResetPassword:
         """Should return error for invalid token."""
         service = UserService(db_session)
         success, message = await service.reset_password(
-            token="invalid-token",
-            new_password="NewPass123!"
+            token="invalid-token", new_password="NewPass123!"
         )
 
         assert success is False
@@ -530,7 +526,7 @@ class TestResetPassword:
             username="expiredresetuser",
             hashed_password=hash_password("OldPass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -539,15 +535,14 @@ class TestResetPassword:
         reset = PasswordReset(
             user_id=user.id,
             token="expired-token",
-            expires_at=datetime.now(UTC) - timedelta(hours=1)
+            expires_at=datetime.now(UTC) - timedelta(hours=1),
         )
         db_session.add(reset)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message = await service.reset_password(
-            token="expired-token",
-            new_password="NewPass123!"
+            token="expired-token", new_password="NewPass123!"
         )
 
         assert success is False
@@ -560,7 +555,7 @@ class TestResetPassword:
             username="usedresetuser",
             hashed_password=hash_password("OldPass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -570,15 +565,14 @@ class TestResetPassword:
             user_id=user.id,
             token="used-token",
             expires_at=datetime.now(UTC) + timedelta(hours=1),
-            used=True
+            used=True,
         )
         db_session.add(reset)
         await db_session.commit()
 
         service = UserService(db_session)
         success, message = await service.reset_password(
-            token="used-token",
-            new_password="NewPass123!"
+            token="used-token", new_password="NewPass123!"
         )
 
         assert success is False
@@ -600,7 +594,7 @@ class TestUserQueries:
             username="finduser",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -625,7 +619,7 @@ class TestUserQueries:
             username="findiduser",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -652,7 +646,7 @@ class TestUserQueries:
             oauth_provider="google",
             oauth_id="google-12345",
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -684,13 +678,15 @@ class TestCreateOrUpdateOAuthUser:
     async def test_creates_new_user(self, db_session: AsyncSession):
         """Should create new user for new OAuth login."""
         service = UserService(db_session)
-        with patch.object(service.email_service, "send_welcome_email", new=AsyncMock(return_value=True)):
+        with patch.object(
+            service.email_service, "send_welcome_email", new=AsyncMock(return_value=True)
+        ):
             user, is_new = await service.create_or_update_oauth_user(
                 provider="google",
                 oauth_id="new-google-123",
                 email="newoauth@example.com",
                 username="New OAuth User",
-                avatar_url="https://example.com/avatar.jpg"
+                avatar_url="https://example.com/avatar.jpg",
             )
 
         assert is_new is True
@@ -707,7 +703,7 @@ class TestCreateOrUpdateOAuthUser:
             oauth_provider="google",
             oauth_id="existing-google-123",
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(existing)
         await db_session.commit()
@@ -717,7 +713,7 @@ class TestCreateOrUpdateOAuthUser:
             provider="google",
             oauth_id="existing-google-123",
             email="existingoauth@example.com",
-            username="Updated Name"
+            username="Updated Name",
         )
 
         assert is_new is False
@@ -730,7 +726,7 @@ class TestCreateOrUpdateOAuthUser:
             username="existinguser",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(existing)
         await db_session.commit()
@@ -740,7 +736,7 @@ class TestCreateOrUpdateOAuthUser:
             provider="google",
             oauth_id="link-google-123",
             email="linkoauth@example.com",
-            username="Google Name"
+            username="Google Name",
         )
 
         assert is_new is False
@@ -764,7 +760,7 @@ class TestUpdateProfile:
             username="oldname",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -772,8 +768,7 @@ class TestUpdateProfile:
 
         service = UserService(db_session)
         success, message, updated = await service.update_profile(
-            user_id=user.id,
-            username="newname"
+            user_id=user.id, username="newname"
         )
 
         assert success is True
@@ -786,7 +781,7 @@ class TestUpdateProfile:
             username="avataruser",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -794,8 +789,7 @@ class TestUpdateProfile:
 
         service = UserService(db_session)
         success, message, updated = await service.update_profile(
-            user_id=user.id,
-            avatar_url="https://example.com/new-avatar.jpg"
+            user_id=user.id, avatar_url="https://example.com/new-avatar.jpg"
         )
 
         assert success is True
@@ -805,8 +799,7 @@ class TestUpdateProfile:
         """Should return error if user not found."""
         service = UserService(db_session)
         success, message, updated = await service.update_profile(
-            user_id="nonexistent-id",
-            username="newname"
+            user_id="nonexistent-id", username="newname"
         )
 
         assert success is False
@@ -824,7 +817,7 @@ class TestChangePassword:
             username="changepwuser",
             hashed_password=hash_password("OldPass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -832,9 +825,7 @@ class TestChangePassword:
 
         service = UserService(db_session)
         success, message = await service.change_password(
-            user_id=user.id,
-            current_password="OldPass123!",
-            new_password="NewPass456!"
+            user_id=user.id, current_password="OldPass123!", new_password="NewPass456!"
         )
 
         assert success is True
@@ -848,7 +839,7 @@ class TestChangePassword:
             username="wrongcurrentuser",
             hashed_password=hash_password("CorrectPass123!"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -856,9 +847,7 @@ class TestChangePassword:
 
         service = UserService(db_session)
         success, message = await service.change_password(
-            user_id=user.id,
-            current_password="WrongPass123!",
-            new_password="NewPass456!"
+            user_id=user.id, current_password="WrongPass123!", new_password="NewPass456!"
         )
 
         assert success is False
@@ -873,7 +862,7 @@ class TestChangePassword:
             oauth_provider="google",
             oauth_id="google-pw-123",
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -881,9 +870,7 @@ class TestChangePassword:
 
         service = UserService(db_session)
         success, message = await service.change_password(
-            user_id=user.id,
-            current_password="SomePass123!",
-            new_password="NewPass456!"
+            user_id=user.id, current_password="SomePass123!", new_password="NewPass456!"
         )
 
         assert success is False
@@ -893,9 +880,7 @@ class TestChangePassword:
         """Should return error if user not found."""
         service = UserService(db_session)
         success, message = await service.change_password(
-            user_id="nonexistent-id",
-            current_password="OldPass123!",
-            new_password="NewPass456!"
+            user_id="nonexistent-id", current_password="OldPass123!", new_password="NewPass456!"
         )
 
         assert success is False
@@ -918,7 +903,7 @@ class TestDeleteUser:
             username="deleteuser",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
@@ -941,34 +926,24 @@ class TestDeleteUser:
             username="deletealluser",
             hashed_password=hash_password("password"),
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
         db_session.add(user)
         await db_session.commit()
         await db_session.refresh(user)
 
         # Create associated files
-        file = File(
-            name="User File",
-            content="Content",
-            user_id=user.id
-        )
+        file = File(name="User File", content="Content", user_id=user.id)
         db_session.add(file)
 
         # Create conversation
-        conv = Conversation(
-            user_id=user.id
-        )
+        conv = Conversation(user_id=user.id)
         db_session.add(conv)
         await db_session.commit()
         await db_session.refresh(conv)
 
         # Create message
-        msg = Message(
-            conversation_id=conv.id,
-            role="user",
-            content="Test message"
-        )
+        msg = Message(conversation_id=conv.id, role="user", content="Test message")
         db_session.add(msg)
         await db_session.commit()
 

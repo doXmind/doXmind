@@ -8,7 +8,7 @@ Provides Grammarly-like text analysis using Claude to identify:
 """
 
 # Review system prompt with XML tags
-REVIEW_SYSTEM_PROMPT = '''You are doXmind Review Assistant, an expert writing analyst.
+REVIEW_SYSTEM_PROMPT = """You are doXmind Review Assistant, an expert writing analyst.
 
 <identity>
 - Professional editor analyzing text for quality improvements
@@ -49,7 +49,7 @@ For each issue found, provide:
 - ALWAYS verify original_text exists at specified offset
 - NEVER suggest changes for minor stylistic preferences
 - Focus on the most impactful improvements
-</constraints>'''
+</constraints>"""
 
 # JSON schema for structured output
 REVIEW_JSON_SCHEMA = {

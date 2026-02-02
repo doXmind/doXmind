@@ -28,8 +28,7 @@ class TestQuickEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/quick",
-                json={"text": "Test text", "action": "improve"}
+                "/api/edit/quick", json={"text": "Test text", "action": "improve"}
             )
 
             assert response.status_code == 200
@@ -49,8 +48,7 @@ class TestQuickEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/quick",
-                json={"text": "Original text", "action": "improve"}
+                "/api/edit/quick", json={"text": "Original text", "action": "improve"}
             )
 
             assert response.status_code == 200
@@ -82,17 +80,14 @@ class TestQuickEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/quick",
-                json={"text": "Test", "action": "fix-grammar"}
+                "/api/edit/quick", json={"text": "Test", "action": "fix-grammar"}
             )
 
             assert response.status_code == 200
             assert "data: [DONE]" in response.text
 
     @pytest.mark.asyncio
-    async def test_quick_edit_uses_correct_prompt_for_action(
-        self, client: AsyncClient
-    ):
+    async def test_quick_edit_uses_correct_prompt_for_action(self, client: AsyncClient):
         """Should use correct prompt based on action type."""
         with patch("api.edit.LLMService") as MockLLM:
             mock_llm = MagicMock()
@@ -107,17 +102,14 @@ class TestQuickEdit:
 
             # Test fix-grammar action
             await client.post(
-                "/api/edit/quick",
-                json={"text": "Test text", "action": "fix-grammar"}
+                "/api/edit/quick", json={"text": "Test text", "action": "fix-grammar"}
             )
 
             assert len(captured_prompts) == 1
             assert "grammar" in captured_prompts[0].lower()
 
     @pytest.mark.asyncio
-    async def test_quick_edit_fallback_for_unknown_action(
-        self, client: AsyncClient
-    ):
+    async def test_quick_edit_fallback_for_unknown_action(self, client: AsyncClient):
         """Should use fallback prompt for unknown action."""
         with patch("api.edit.LLMService") as MockLLM:
             mock_llm = MagicMock()
@@ -130,10 +122,7 @@ class TestQuickEdit:
             mock_llm.stream = mock_stream
             MockLLM.return_value = mock_llm
 
-            await client.post(
-                "/api/edit/quick",
-                json={"text": "Test", "action": "unknown-action"}
-            )
+            await client.post("/api/edit/quick", json={"text": "Test", "action": "unknown-action"})
 
             assert len(captured_prompts) == 1
             # Should use fallback "Improve" prompt
@@ -153,8 +142,7 @@ class TestQuickEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/quick",
-                json={"text": "Test", "action": "improve"}
+                "/api/edit/quick", json={"text": "Test", "action": "improve"}
             )
 
             assert response.status_code == 200
@@ -175,10 +163,7 @@ class TestQuickEdit:
             mock_llm.stream = mock_stream
             MockLLM.return_value = mock_llm
 
-            await client.post(
-                "/api/edit/quick",
-                json={"text": "Hello", "action": "translate-zh"}
-            )
+            await client.post("/api/edit/quick", json={"text": "Hello", "action": "translate-zh"})
 
             assert len(captured_prompts) == 1
             assert "chinese" in captured_prompts[0].lower()
@@ -197,10 +182,7 @@ class TestQuickEdit:
             mock_llm.stream = mock_stream
             MockLLM.return_value = mock_llm
 
-            await client.post(
-                "/api/edit/quick",
-                json={"text": "Test", "action": "professional"}
-            )
+            await client.post("/api/edit/quick", json={"text": "Test", "action": "professional"})
 
             assert len(captured_prompts) == 1
             assert "professional" in captured_prompts[0].lower()
@@ -219,10 +201,7 @@ class TestQuickEdit:
             mock_llm.stream = mock_stream
             MockLLM.return_value = mock_llm
 
-            await client.post(
-                "/api/edit/quick",
-                json={"text": "Test", "action": "improve"}
-            )
+            await client.post("/api/edit/quick", json={"text": "Test", "action": "improve"})
 
             assert len(captured_kwargs) == 1
             # "improve" action uses temperature 0.4 in new prompts module
@@ -250,8 +229,7 @@ class TestCustomEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/custom",
-                json={"text": "Original", "instruction": "Make it funny"}
+                "/api/edit/custom", json={"text": "Original", "instruction": "Make it funny"}
             )
 
             assert response.status_code == 200
@@ -272,11 +250,7 @@ class TestCustomEdit:
             MockLLM.return_value = mock_llm
 
             await client.post(
-                "/api/edit/custom",
-                json={
-                    "text": "Original text",
-                    "instruction": "Add more emojis"
-                }
+                "/api/edit/custom", json={"text": "Original text", "instruction": "Add more emojis"}
             )
 
             assert len(captured_prompts) == 1
@@ -297,8 +271,7 @@ class TestCustomEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/custom",
-                json={"text": "Test", "instruction": "Edit this"}
+                "/api/edit/custom", json={"text": "Test", "instruction": "Edit this"}
             )
 
             assert response.status_code == 200
@@ -329,8 +302,7 @@ class TestCustomEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/custom",
-                json={"text": "Test", "instruction": "Edit"}
+                "/api/edit/custom", json={"text": "Test", "instruction": "Edit"}
             )
 
             assert "data: [DONE]" in response.text
@@ -349,17 +321,14 @@ class TestCustomEdit:
             MockLLM.return_value = mock_llm
 
             response = await client.post(
-                "/api/edit/custom",
-                json={"text": "Test", "instruction": "Edit"}
+                "/api/edit/custom", json={"text": "Test", "instruction": "Edit"}
             )
 
             assert response.status_code == 200
             assert "error" in response.text.lower()
 
     @pytest.mark.asyncio
-    async def test_custom_edit_uses_moderate_temperature(
-        self, client: AsyncClient
-    ):
+    async def test_custom_edit_uses_moderate_temperature(self, client: AsyncClient):
         """Should use moderate temperature for custom edits."""
         with patch("api.edit.LLMService") as MockLLM:
             mock_llm = MagicMock()
@@ -373,8 +342,7 @@ class TestCustomEdit:
             MockLLM.return_value = mock_llm
 
             await client.post(
-                "/api/edit/custom",
-                json={"text": "Test", "instruction": "Make creative"}
+                "/api/edit/custom", json={"text": "Test", "instruction": "Make creative"}
             )
 
             assert len(captured_kwargs) == 1
@@ -392,40 +360,28 @@ class TestRequestValidation:
     @pytest.mark.asyncio
     async def test_quick_edit_requires_text(self, client: AsyncClient):
         """Should reject request without text."""
-        response = await client.post(
-            "/api/edit/quick",
-            json={"action": "improve"}
-        )
+        response = await client.post("/api/edit/quick", json={"action": "improve"})
 
         assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_quick_edit_requires_action(self, client: AsyncClient):
         """Should reject request without action."""
-        response = await client.post(
-            "/api/edit/quick",
-            json={"text": "Test text"}
-        )
+        response = await client.post("/api/edit/quick", json={"text": "Test text"})
 
         assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_custom_edit_requires_text(self, client: AsyncClient):
         """Should reject request without text."""
-        response = await client.post(
-            "/api/edit/custom",
-            json={"instruction": "Edit this"}
-        )
+        response = await client.post("/api/edit/custom", json={"instruction": "Edit this"})
 
         assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_custom_edit_requires_instruction(self, client: AsyncClient):
         """Should reject request without instruction."""
-        response = await client.post(
-            "/api/edit/custom",
-            json={"text": "Test text"}
-        )
+        response = await client.post("/api/edit/custom", json={"text": "Test text"})
 
         assert response.status_code == 422
 
@@ -443,11 +399,7 @@ class TestRequestValidation:
 
             response = await client.post(
                 "/api/edit/quick",
-                json={
-                    "text": "Test",
-                    "action": "improve",
-                    "context": "This is additional context"
-                }
+                json={"text": "Test", "action": "improve", "context": "This is additional context"},
             )
 
             assert response.status_code == 200
@@ -466,16 +418,31 @@ class TestEditPrompts:
         from prompts.domains.edit import EDIT_ACTIONS
 
         expected_actions = [
-            "fix-grammar", "improve", "simplify", "expand", "shorten",
-            "translate-en", "translate-zh", "translate-es",
-            "translate-fr", "translate-de", "translate-ja",
-            "professional", "casual", "friendly", "confident"
+            "fix-grammar",
+            "improve",
+            "simplify",
+            "expand",
+            "shorten",
+            "translate-en",
+            "translate-zh",
+            "translate-es",
+            "translate-fr",
+            "translate-de",
+            "translate-ja",
+            "professional",
+            "casual",
+            "friendly",
+            "confident",
         ]
 
         for action in expected_actions:
             assert action in EDIT_ACTIONS, f"Missing config for action: {action}"
-            assert "instruction" in EDIT_ACTIONS[action], f"Missing instruction for action: {action}"
-            assert len(EDIT_ACTIONS[action]["instruction"]) > 0, f"Empty instruction for action: {action}"
+            assert "instruction" in EDIT_ACTIONS[action], (
+                f"Missing instruction for action: {action}"
+            )
+            assert len(EDIT_ACTIONS[action]["instruction"]) > 0, (
+                f"Empty instruction for action: {action}"
+            )
 
     def test_prompts_have_temperature(self):
         """Action configs should have temperature settings."""

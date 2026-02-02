@@ -79,10 +79,7 @@ class LLMService:
             # Convert messages to Anthropic format
             anthropic_messages = []
             for msg in messages:
-                anthropic_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+                anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
 
             async with self.client.messages.stream(
                 model=self.model,
@@ -114,12 +111,10 @@ class LLMService:
                 system=system or "You are a helpful AI writing assistant.",
                 messages=[{"role": "user", "content": prompt}],
                 betas=["structured-outputs-2025-11-13"],
-                output_format={
-                    "type": "json_schema",
-                    "schema": json_schema
-                }
+                output_format={"type": "json_schema", "schema": json_schema},
             )
             import json
+
             return json.loads(message.content[0].text)
         except Exception as e:
             logger.error(f"LLM JSON completion error: {e}")

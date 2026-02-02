@@ -51,9 +51,7 @@ def build_prompt(request: AutocompleteRequest) -> tuple[str, str]:
     """
     # Use the new structured prompt builder
     system_prompt, user_prompt = build_autocomplete_prompt(
-        text_before=request.text_before,
-        text_after=request.text_after,
-        max_context=1500
+        text_before=request.text_before, text_after=request.text_after, max_context=1500
     )
     # Return in expected order (user, system) to maintain compatibility
     return user_prompt, system_prompt
@@ -110,17 +108,13 @@ async def suggest(request: AutocompleteRequest) -> AutocompleteResponse:
         return AutocompleteResponse(suggestion="", latency_ms=0)
 
     # Check cache first
-    cache_key = AutocompleteCache.create_cache_key(
-        request.text_before, request.file_name
-    )
+    cache_key = AutocompleteCache.create_cache_key(request.text_before, request.file_name)
     cached_suggestion = cache.get(cache_key)
 
     if cached_suggestion:
         latency = int((time.time() - start_time) * 1000)
         logger.debug(f"Cache hit for autocomplete, latency: {latency}ms")
-        return AutocompleteResponse(
-            suggestion=cached_suggestion, cached=True, latency_ms=latency
-        )
+        return AutocompleteResponse(suggestion=cached_suggestion, cached=True, latency_ms=latency)
 
     try:
         settings = get_settings()
@@ -136,8 +130,12 @@ async def suggest(request: AutocompleteRequest) -> AutocompleteResponse:
             stop=None,  # No stop sequences - rely on max_tokens
         )
 
-        logger.info(f"[Autocomplete] Raw LLM response: '{raw_suggestion[:200] if raw_suggestion else '(empty)'}...'")
-        logger.info(f"[Autocomplete] text_before ends with: '{request.text_before[-50:] if request.text_before else '(empty)'}'")
+        logger.info(
+            f"[Autocomplete] Raw LLM response: '{raw_suggestion[:200] if raw_suggestion else '(empty)'}...'"
+        )
+        logger.info(
+            f"[Autocomplete] text_before ends with: '{request.text_before[-50:] if request.text_before else '(empty)'}'"
+        )
 
         # Clean the suggestion
         suggestion = clean_suggestion(raw_suggestion, request.text_before)
@@ -149,9 +147,7 @@ async def suggest(request: AutocompleteRequest) -> AutocompleteResponse:
         latency = int((time.time() - start_time) * 1000)
         logger.debug(f"Autocomplete generated in {latency}ms: '{suggestion[:50]}...'")
 
-        return AutocompleteResponse(
-            suggestion=suggestion, cached=False, latency_ms=latency
-        )
+        return AutocompleteResponse(suggestion=suggestion, cached=False, latency_ms=latency)
 
     except Exception as e:
         logger.error(f"Autocomplete error: {e}")

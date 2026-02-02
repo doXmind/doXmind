@@ -163,6 +163,9 @@ class Conversation(Base):
     attachments = relationship(
         "ConversationAttachment", back_populates="conversation", cascade="all, delete-orphan"
     )
+    data_files = relationship(
+        "ConversationDataFile", back_populates="conversation", cascade="all, delete-orphan"
+    )
 
 
 class Message(Base):
@@ -233,6 +236,61 @@ class ConversationAttachment(Base):
 
     # Relationships
     conversation = relationship("Conversation", back_populates="attachments")
+
+
+class ConversationDataFile(Base):
+    """Data file for code execution analysis.
+
+    Stores uploaded data files (CSV, XLSX, JSON, TXT, images) that are passed
+    to Claude's code execution sandbox for data analysis and visualization.
+
+    Unlike ConversationAttachment (KB files), these are NOT vectorized.
+    Instead, they are directly passed to the API as base64 content.
+
+    Upload strategy:
+    - Small files (<500KB): stored as base64, sent inline (no Files API)
+    - Large files: uploaded to Claude Files API asynchronously after local upload
+    """
+
+    __tablename__ = "conversation_data_files"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id = Column(String(36), ForeignKey("conversations.id"), nullable=False)
+
+    # File metadata
+    original_filename = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=False)  # csv, xlsx, json, txt, png, jpg
+    file_size = Column(Integer, nullable=False)  # bytes
+    mime_type = Column(String(100), nullable=True)
+
+    # Temporary storage path (files are stored temporarily)
+    storage_path = Column(String(500), nullable=True)
+
+    # Preview data for spreadsheets (first 5 rows as JSON)
+    preview_data = Column(JSON, nullable=True)
+    column_names = Column(JSON, nullable=True)
+    row_count = Column(Integer, default=0)
+
+    # Status (local upload)
+    status = Column(String(20), default="ready")  # uploading, ready, error
+    error_message = Column(Text, nullable=True)
+
+    # Claude Files API integration
+    # For large files, we upload to Claude asynchronously after local upload
+    claude_file_id = Column(String(100), nullable=True)  # Anthropic file ID
+    claude_upload_status = Column(
+        String(20), default="pending"
+    )  # pending, uploading, ready, error, skipped
+    claude_upload_error = Column(Text, nullable=True)
+
+    # Content hash for deduplication (SHA-256)
+    content_hash = Column(String(64), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    conversation = relationship("Conversation", back_populates="data_files")
 
 
 # =============================================================================

@@ -26,5 +26,5 @@ def execute_todo_tool(tool_input: dict[str, Any]) -> dict[str, Any]:
     return {
         "success": True,
         "count": len(todos),
-        "todos": todos  # Include raw data for event emission
+        "todos": todos,  # Include raw data for event emission
     }

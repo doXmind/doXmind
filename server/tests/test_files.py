@@ -1,6 +1,7 @@
 """
 Tests for file management API endpoints.
 """
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -35,7 +36,10 @@ class TestFilesAPI:
         assert "updated_at" in data
 
     async def test_get_file(
-        self, client: AsyncClient, db_session: AsyncSession, sample_file_data: dict  # noqa: ARG002
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        sample_file_data: dict,  # noqa: ARG002
     ):
         """Test getting a file by ID."""
         # Create a file first
@@ -56,19 +60,14 @@ class TestFilesAPI:
 
         assert response.status_code == 404
 
-    async def test_update_file(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_update_file(self, client: AsyncClient, sample_file_data: dict):
         """Test updating a file."""
         # Create a file first
         create_response = await client.post("/api/files/", json=sample_file_data)
         file_id = create_response.json()["id"]
 
         # Update the file
-        update_data = {
-            "name": "Updated Name",
-            "content": "Updated content"
-        }
+        update_data = {"name": "Updated Name", "content": "Updated content"}
         response = await client.put(f"/api/files/{file_id}", json=update_data)
 
         assert response.status_code == 200
@@ -76,9 +75,7 @@ class TestFilesAPI:
         assert data["name"] == update_data["name"]
         assert data["content"] == update_data["content"]
 
-    async def test_update_file_partial(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_update_file_partial(self, client: AsyncClient, sample_file_data: dict):
         """Test partially updating a file (only name)."""
         # Create a file first
         create_response = await client.post("/api/files/", json=sample_file_data)
@@ -93,9 +90,7 @@ class TestFilesAPI:
         assert data["name"] == "New Name Only"
         assert data["content"] == sample_file_data["content"]  # Content unchanged
 
-    async def test_delete_file(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_delete_file(self, client: AsyncClient, sample_file_data: dict):
         """Test deleting a file."""
         # Create a file first
         create_response = await client.post("/api/files/", json=sample_file_data)
@@ -118,15 +113,14 @@ class TestFilesAPI:
         assert response.status_code == 404
 
     async def test_list_files_multiple(
-        self, client: AsyncClient, sample_file_data: dict  # noqa: ARG002
+        self,
+        client: AsyncClient,
+        sample_file_data: dict,  # noqa: ARG002
     ):
         """Test listing multiple files."""
         # Create multiple files
         for i in range(3):
-            file_data = {
-                "name": f"Test File {i}",
-                "content": f"Content {i}"
-            }
+            file_data = {"name": f"Test File {i}", "content": f"Content {i}"}
             await client.post("/api/files/", json=file_data)
 
         # List all files
@@ -175,6 +169,7 @@ class TestGetUserId:
     def _create_token(self, sub: str) -> TokenData:
         """Helper to create TokenData with required fields."""
         from datetime import UTC, datetime, timedelta
+
         return TokenData(sub=sub, exp=datetime.now(UTC) + timedelta(hours=1))
 
     def test_returns_none_for_dev_user(self):
@@ -247,14 +242,9 @@ class TestUserDataIsolation:
         assert len(files) == 1
         assert files[0]["name"] == "Shared File"
 
-    async def test_update_nonexistent_file_returns_404(
-        self, client: AsyncClient
-    ):
+    async def test_update_nonexistent_file_returns_404(self, client: AsyncClient):
         """Should return 404 when updating non-existent file."""
-        response = await client.put(
-            "/api/files/nonexistent-id",
-            json={"name": "New Name"}
-        )
+        response = await client.put("/api/files/nonexistent-id", json={"name": "New Name"})
 
         assert response.status_code == 404
 
@@ -273,15 +263,16 @@ class TestSearchFilesEndpoint:
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
             # Default is use_hybrid=True, so hybrid_search is called
-            mock_rag.hybrid_search = AsyncMock(return_value=[
-                {"content": "Result 1", "file_id": "file-1", "score": 0.95},
-                {"content": "Result 2", "file_id": "file-2", "score": 0.85},
-            ])
+            mock_rag.hybrid_search = AsyncMock(
+                return_value=[
+                    {"content": "Result 1", "file_id": "file-1", "score": 0.95},
+                    {"content": "Result 2", "file_id": "file-2", "score": 0.85},
+                ]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/files/search",
-                json={"query": "test query", "top_k": 5}
+                "/api/files/search", json={"query": "test query", "top_k": 5}
             )
 
             assert response.status_code == 200
@@ -302,16 +293,13 @@ class TestSearchFilesEndpoint:
                     "query": "test query",
                     "file_ids": ["file-1", "file-2"],
                     "top_k": 3,
-                    "use_hybrid": False  # Test basic search mode
-                }
+                    "use_hybrid": False,  # Test basic search mode
+                },
             )
 
             assert response.status_code == 200
             mock_rag.search.assert_called_once_with(
-                query="test query",
-                file_ids=["file-1", "file-2"],
-                top_k=3,
-                user_id=None
+                query="test query", file_ids=["file-1", "file-2"], top_k=3, user_id=None
             )
 
     async def test_search_files_error(self, client: AsyncClient):
@@ -321,10 +309,7 @@ class TestSearchFilesEndpoint:
             mock_rag.hybrid_search = AsyncMock(side_effect=Exception("Search failed"))
             mock_rag_class.return_value = mock_rag
 
-            response = await client.post(
-                "/api/files/search",
-                json={"query": "test query"}
-            )
+            response = await client.post("/api/files/search", json={"query": "test query"})
 
             assert response.status_code == 500
 
@@ -342,17 +327,12 @@ class TestInDocumentSearchEndpoint:
         """Should return 404 when file not found."""
         response = await client.post(
             "/api/files/search/in-document",
-            json={
-                "query": "test query",
-                "file_id": "nonexistent-file"
-            }
+            json={"query": "test query", "file_id": "nonexistent-file"},
         )
 
         assert response.status_code == 404
 
-    async def test_in_document_search_success(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_in_document_search_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should return search results filtered by file_id."""
         # Create file
         file = File(name="Test File", content="This is test content for searching.")
@@ -363,19 +343,16 @@ class TestInDocumentSearchEndpoint:
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
             # Uses search_sentences for in-document search
-            mock_rag.search_sentences = AsyncMock(return_value=[
-                {"content": "This is test content", "distance": 0.1}  # score = 0.9
-            ])
+            mock_rag.search_sentences = AsyncMock(
+                return_value=[
+                    {"content": "This is test content", "distance": 0.1}  # score = 0.9
+                ]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
                 "/api/files/search/in-document",
-                json={
-                    "query": "test content",
-                    "file_id": file.id,
-                    "top_k": 10,
-                    "min_score": 0.4
-                }
+                json={"query": "test content", "file_id": file.id, "top_k": 10, "min_score": 0.4},
             )
 
             assert response.status_code == 200
@@ -397,9 +374,11 @@ class TestInDocumentSearchEndpoint:
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
             # RAG service returns already-filtered results based on min_score
-            mock_rag.search_sentences = AsyncMock(return_value=[
-                {"content": "High score result", "distance": 0.1}   # score = 0.9
-            ])
+            mock_rag.search_sentences = AsyncMock(
+                return_value=[
+                    {"content": "High score result", "distance": 0.1}  # score = 0.9
+                ]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
@@ -407,8 +386,8 @@ class TestInDocumentSearchEndpoint:
                 json={
                     "query": "content",
                     "file_id": file.id,
-                    "min_score": 0.5  # Passed to RAG service for filtering
-                }
+                    "min_score": 0.5,  # Passed to RAG service for filtering
+                },
             )
 
             assert response.status_code == 200
@@ -418,9 +397,7 @@ class TestInDocumentSearchEndpoint:
             call_kwargs = mock_rag.search_sentences.call_args[1]
             assert call_kwargs["min_score"] == 0.5
 
-    async def test_in_document_search_error(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_in_document_search_error(self, client: AsyncClient, db_session: AsyncSession):
         """Should return 500 on search error."""
         # Create file
         file = File(name="Test File", content="Content")
@@ -434,11 +411,7 @@ class TestInDocumentSearchEndpoint:
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/files/search/in-document",
-                json={
-                    "query": "test",
-                    "file_id": file.id
-                }
+                "/api/files/search/in-document", json={"query": "test", "file_id": file.id}
             )
 
             assert response.status_code == 500
@@ -462,8 +435,7 @@ class TestRAGIntegration:
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/files/",
-                json={"name": "Test", "content": "Test content"}
+                "/api/files/", json={"name": "Test", "content": "Test content"}
             )
 
             assert response.status_code == 200
@@ -479,17 +451,14 @@ class TestRAGIntegration:
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/files/",
-                json={"name": "Test", "content": "Test content"}
+                "/api/files/", json={"name": "Test", "content": "Test content"}
             )
 
             # File should still be created
             assert response.status_code == 200
             assert "id" in response.json()
 
-    async def test_update_file_reindexes_in_rag(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_update_file_reindexes_in_rag(self, client: AsyncClient, sample_file_data: dict):
         """Should re-index file in RAG on update."""
         # Create file first
         create_response = await client.post("/api/files/", json=sample_file_data)
@@ -502,8 +471,7 @@ class TestRAGIntegration:
             mock_rag_class.return_value = mock_rag
 
             response = await client.put(
-                f"/api/files/{file_id}",
-                json={"content": "Updated content"}
+                f"/api/files/{file_id}", json={"content": "Updated content"}
             )
 
             assert response.status_code == 200
@@ -525,17 +493,14 @@ class TestRAGIntegration:
             mock_rag_class.return_value = mock_rag
 
             response = await client.put(
-                f"/api/files/{file_id}",
-                json={"content": "Updated content"}
+                f"/api/files/{file_id}", json={"content": "Updated content"}
             )
 
             # File should still be updated
             assert response.status_code == 200
             assert response.json()["content"] == "Updated content"
 
-    async def test_delete_file_removes_from_rag(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_delete_file_removes_from_rag(self, client: AsyncClient, sample_file_data: dict):
         """Should remove file from RAG on deletion."""
         # Create file first
         create_response = await client.post("/api/files/", json=sample_file_data)
@@ -638,9 +603,7 @@ class TestFileModels:
         """Should create InDocSearchRequest model correctly."""
         from api.files import InDocSearchRequest
 
-        request = InDocSearchRequest(
-            query="test", file_id="file-1", top_k=20, min_score=0.5
-        )
+        request = InDocSearchRequest(query="test", file_id="file-1", top_k=20, min_score=0.5)
         assert request.query == "test"
         assert request.file_id == "file-1"
         assert request.top_k == 20
@@ -676,17 +639,12 @@ class TestFileErrorHandling:
             # Just verify the endpoint handles errors gracefully
             pass  # Endpoint error handling is tested via integration tests
 
-    async def test_update_file_only_name(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_update_file_only_name(self, client: AsyncClient, sample_file_data: dict):
         """Should only update name when only name provided."""
         create_response = await client.post("/api/files/", json=sample_file_data)
         file_id = create_response.json()["id"]
 
-        response = await client.put(
-            f"/api/files/{file_id}",
-            json={"name": "Only Name Updated"}
-        )
+        response = await client.put(f"/api/files/{file_id}", json={"name": "Only Name Updated"})
 
         assert response.status_code == 200
         data = response.json()
@@ -694,16 +652,13 @@ class TestFileErrorHandling:
         # Content should remain unchanged
         assert data["content"] == sample_file_data["content"]
 
-    async def test_update_file_only_content(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_update_file_only_content(self, client: AsyncClient, sample_file_data: dict):
         """Should only update content when only content provided."""
         create_response = await client.post("/api/files/", json=sample_file_data)
         file_id = create_response.json()["id"]
 
         response = await client.put(
-            f"/api/files/{file_id}",
-            json={"content": "Only content updated"}
+            f"/api/files/{file_id}", json={"content": "Only content updated"}
         )
 
         assert response.status_code == 200
@@ -730,7 +685,7 @@ class TestFileResponseModel:
             name="test.md",
             content="# Hello",
             created_at="2024-01-01T00:00:00",
-            updated_at="2024-01-01T00:00:00"
+            updated_at="2024-01-01T00:00:00",
         )
         assert response.id == "file-123"
         assert response.name == "test.md"
@@ -741,8 +696,9 @@ class TestFileResponseModel:
         from api.files import FileResponse
 
         # The Config.from_attributes enables ORM mode
-        assert FileResponse.model_config.get("from_attributes", False) or \
-               hasattr(FileResponse, "Config")
+        assert FileResponse.model_config.get("from_attributes", False) or hasattr(
+            FileResponse, "Config"
+        )
 
 
 # =============================================================================
@@ -757,11 +713,7 @@ class TestSearchRequestModel:
         """Should create SearchRequest with all parameters."""
         from api.files import SearchRequest
 
-        req = SearchRequest(
-            query="find documents",
-            file_ids=["f1", "f2", "f3"],
-            top_k=10
-        )
+        req = SearchRequest(query="find documents", file_ids=["f1", "f2", "f3"], top_k=10)
         assert req.query == "find documents"
         assert len(req.file_ids) == 3
         assert req.top_k == 10
@@ -774,11 +726,7 @@ class TestInDocSearchRequestModel:
         """Should create InDocSearchRequest with custom min_score."""
         from api.files import InDocSearchRequest
 
-        req = InDocSearchRequest(
-            query="test",
-            file_id="f1",
-            min_score=0.8
-        )
+        req = InDocSearchRequest(query="test", file_id="f1", min_score=0.8)
         assert req.min_score == 0.8
 
 
@@ -808,9 +756,7 @@ class TestExtendedFileOperations:
         assert len(files) >= 3
         assert files[0]["name"] == "Third"
 
-    async def test_get_file_response_format(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_get_file_response_format(self, client: AsyncClient, sample_file_data: dict):
         """Should return file with all required fields."""
         create_response = await client.post("/api/files/", json=sample_file_data)
         file_id = create_response.json()["id"]
@@ -827,9 +773,7 @@ class TestExtendedFileOperations:
         assert "created_at" in data
         assert "updated_at" in data
 
-    async def test_create_file_with_empty_content(
-        self, client: AsyncClient
-    ):
+    async def test_create_file_with_empty_content(self, client: AsyncClient):
         """Should create file with empty content."""
         response = await client.post("/api/files/", json={"name": "Empty Doc"})
 
@@ -838,9 +782,7 @@ class TestExtendedFileOperations:
         assert data["name"] == "Empty Doc"
         assert data["content"] == ""
 
-    async def test_update_file_empty_update(
-        self, client: AsyncClient, sample_file_data: dict
-    ):
+    async def test_update_file_empty_update(self, client: AsyncClient, sample_file_data: dict):
         """Should handle empty update (no changes)."""
         create_response = await client.post("/api/files/", json=sample_file_data)
         file_id = create_response.json()["id"]
@@ -875,17 +817,15 @@ class TestExtendedInDocumentSearch:
 
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search_sentences = AsyncMock(return_value=[
-                {"content": "Test", "distance": 0.1}  # score = 0.9
-            ])
+            mock_rag.search_sentences = AsyncMock(
+                return_value=[
+                    {"content": "Test", "distance": 0.1}  # score = 0.9
+                ]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/files/search/in-document",
-                json={
-                    "query": "test",
-                    "file_id": file.id
-                }
+                "/api/files/search/in-document", json={"query": "test", "file_id": file.id}
             )
 
             assert response.status_code == 200
@@ -902,19 +842,16 @@ class TestExtendedInDocumentSearch:
 
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search_sentences = AsyncMock(return_value=[
-                {"content": "Result", "distance": 0.2}  # score = 0.8
-            ])
+            mock_rag.search_sentences = AsyncMock(
+                return_value=[
+                    {"content": "Result", "distance": 0.2}  # score = 0.8
+                ]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
                 "/api/files/search/in-document",
-                json={
-                    "query": "test",
-                    "file_id": file.id,
-                    "top_k": 20,
-                    "min_score": 0.5
-                }
+                json={"query": "test", "file_id": file.id, "top_k": 20, "min_score": 0.5},
             )
 
             assert response.status_code == 200
@@ -931,29 +868,34 @@ class TestFilesRouterStructure:
     def test_router_exists(self):
         """Should have router defined."""
         from api.files import router
+
         assert router is not None
 
     def test_router_has_list_route(self):
         """Should have list files route."""
         from api.files import router
+
         routes = [r.path for r in router.routes]
         assert "/" in routes
 
     def test_router_has_get_route(self):
         """Should have get file route."""
         from api.files import router
+
         routes = [r.path for r in router.routes]
         assert "/{file_id}" in routes
 
     def test_router_has_search_route(self):
         """Should have search route."""
         from api.files import router
+
         routes = [r.path for r in router.routes]
         assert "/search" in routes
 
     def test_router_has_in_doc_search_route(self):
         """Should have in-document search route."""
         from api.files import router
+
         routes = [r.path for r in router.routes]
         assert "/search/in-document" in routes
 
@@ -969,6 +911,7 @@ class TestGetUserIdExtended:
     def _create_token(self, sub: str) -> TokenData:
         """Helper to create TokenData."""
         from datetime import UTC, datetime, timedelta
+
         return TokenData(sub=sub, exp=datetime.now(UTC) + timedelta(hours=1))
 
     def test_multiple_special_users(self):
@@ -1005,11 +948,7 @@ class TestFileDatabaseModel:
         # Create user first (foreign key constraint)
         await create_test_user(db_session, "user-123")
 
-        file = File(
-            name="Test File",
-            content="File content",
-            user_id="user-123"
-        )
+        file = File(name="Test File", content="File content", user_id="user-123")
         db_session.add(file)
         await db_session.commit()
         await db_session.refresh(file)

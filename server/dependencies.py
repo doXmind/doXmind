@@ -19,6 +19,7 @@ from services.rag_service import RAGService
 # Database Dependencies
 # ============================================================================
 
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Get database session dependency.
 
@@ -39,6 +40,7 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 # Service Dependencies
 # ============================================================================
 
+
 async def get_rag_service(db: AsyncSession = Depends(get_db)) -> RAGService:
     """Get RAG service with database session.
 
@@ -58,6 +60,7 @@ async def get_rag_service(db: AsyncSession = Depends(get_db)) -> RAGService:
 # Conversation Lookup Helpers
 # ============================================================================
 
+
 def normalize_file_id(file_id: str | None) -> str | None:
     """Normalize file_id: empty string becomes None."""
     if file_id == "" or file_id is None:
@@ -66,9 +69,7 @@ def normalize_file_id(file_id: str | None) -> str | None:
 
 
 async def get_conversation_by_file_id(
-    file_id: str,
-    db: AsyncSession,
-    create_if_missing: bool = False
+    file_id: str, db: AsyncSession, create_if_missing: bool = False
 ):
     """Get or optionally create a conversation by file_id.
 
@@ -110,10 +111,7 @@ async def get_conversation_by_file_id(
 
     # Create if requested
     if create_if_missing:
-        conv = Conversation(
-            id=str(uuid.uuid4()),
-            file_id=normalized_file_id
-        )
+        conv = Conversation(id=str(uuid.uuid4()), file_id=normalized_file_id)
         db.add(conv)
         await db.commit()
         await db.refresh(conv)

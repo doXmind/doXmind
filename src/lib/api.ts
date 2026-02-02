@@ -128,10 +128,7 @@ export class ApiClient {
     this.tokenExpiry = Date.now() + (expiresIn - 300) * 1000;
 
     if (typeof window !== "undefined") {
-      localStorage.setItem(
-        TOKEN_STORAGE_KEY,
-        JSON.stringify({ token, expiry: this.tokenExpiry })
-      );
+      localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiry: this.tokenExpiry }));
       // Also set a cookie for middleware auth check
       const maxAge = expiresIn - 300;
       document.cookie = `${AUTH_COOKIE_NAME}=1; path=/; max-age=${maxAge}; SameSite=Lax`;
@@ -179,10 +176,7 @@ export class ApiClient {
   // Core Request Method
   // ==========================================================================
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const response = await fetch(url, {
       ...options,
@@ -393,13 +387,15 @@ export class ApiClient {
   // ==========================================================================
 
   async listFiles() {
-    return this.request<Array<{
-      id: string;
-      name: string;
-      content: string;
-      created_at: string;
-      updated_at: string;
-    }>>("/api/files/");
+    return this.request<
+      Array<{
+        id: string;
+        name: string;
+        content: string;
+        created_at: string;
+        updated_at: string;
+      }>
+    >("/api/files/");
   }
 
   async getFile(id: string) {
@@ -460,7 +456,13 @@ export class ApiClient {
    * @param topK - Maximum number of results (default 10)
    * @param minScore - Minimum similarity score 0-1 (default 0.15 for sentence-level search)
    */
-  async searchInDocument(query: string, fileId: string, topK: number = 10, minScore: number = 0.15, signal?: AbortSignal) {
+  async searchInDocument(
+    query: string,
+    fileId: string,
+    topK: number = 10,
+    minScore: number = 0.15,
+    signal?: AbortSignal
+  ) {
     return this.request<SearchResults>("/api/files/search/in-document", {
       method: "POST",
       body: JSON.stringify({ query, file_id: fileId, top_k: topK, min_score: minScore }),
@@ -470,15 +472,17 @@ export class ApiClient {
 
   // Versions API
   async listVersions(fileId: string, limit: number = 50) {
-    return this.request<Array<{
-      id: string;
-      file_id: string;
-      content: string;
-      diff?: string;
-      edit_type?: string;
-      summary?: string;
-      created_at: string;
-    }>>(`/api/versions/${fileId}?limit=${limit}`);
+    return this.request<
+      Array<{
+        id: string;
+        file_id: string;
+        content: string;
+        diff?: string;
+        edit_type?: string;
+        summary?: string;
+        created_at: string;
+      }>
+    >(`/api/versions/${fileId}?limit=${limit}`);
   }
 
   async createVersion(
@@ -533,7 +537,7 @@ export class ApiClient {
    * @param format - The export format: 'markdown', 'pdf', or 'docx'
    * @returns A Blob containing the exported file
    */
-  async exportFile(fileId: string, format: 'markdown' | 'pdf' | 'docx'): Promise<Blob> {
+  async exportFile(fileId: string, format: "markdown" | "pdf" | "docx"): Promise<Blob> {
     const url = `${this.baseUrl}/api/export/${fileId}/${format}`;
     const response = await fetch(url, {
       headers: this.getAuthHeaders(),
@@ -554,11 +558,11 @@ export class ApiClient {
    */
   async importFile(file: File) {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
 
     const url = `${this.baseUrl}/api/import/`;
     const response = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       body: formData,
       headers: this.getAuthHeaders(),
     });
@@ -586,11 +590,11 @@ export class ApiClient {
    */
   async uploadKBAttachment(conversationId: string, file: File) {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
 
     const url = `${this.baseUrl}/api/kb/${conversationId}/attachments`;
     const response = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       body: formData,
       headers: this.getAuthHeaders(),
     });
@@ -619,12 +623,12 @@ export class ApiClient {
   async uploadKBAttachmentsBatch(conversationId: string, files: File[]) {
     const formData = new FormData();
     for (const file of files) {
-      formData.append('files', file);
+      formData.append("files", file);
     }
 
     const url = `${this.baseUrl}/api/kb/${conversationId}/attachments/batch`;
     const response = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       body: formData,
       headers: this.getAuthHeaders(),
     });
@@ -676,7 +680,7 @@ export class ApiClient {
   async deleteKBAttachment(conversationId: string, attachmentId: string) {
     return this.request<{ status: string; id: string }>(
       `/api/kb/${conversationId}/attachments/${attachmentId}`,
-      { method: 'DELETE' }
+      { method: "DELETE" }
     );
   }
 
@@ -691,7 +695,7 @@ export class ApiClient {
         score: number;
       }>;
     }>(`/api/kb/${conversationId}/search`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ query, top_k: topK }),
     });
   }
@@ -730,7 +734,10 @@ export class ApiClient {
    * @param includeExpired - Whether to include expired shares (default: false)
    * @returns List of shares for the file
    */
-  async listFileShares(fileId: string, includeExpired: boolean = false): Promise<ShareListResponse> {
+  async listFileShares(
+    fileId: string,
+    includeExpired: boolean = false
+  ): Promise<ShareListResponse> {
     return this.request<ShareListResponse>(
       `/api/shares/file/${fileId}?include_expired=${includeExpired}`
     );
@@ -759,12 +766,101 @@ export class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({
-        detail: "Document not found or expired"
+        detail: "Document not found or expired",
       }));
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
 
     return response.json();
+  }
+
+  // =========================================================================
+  // Data Files API (for Code Execution)
+  // =========================================================================
+
+  /**
+   * Upload a data file for code execution analysis.
+   * Supports CSV, XLSX, JSON, TXT, and image files.
+   */
+  async uploadDataFile(conversationId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const url = `${this.baseUrl}/api/data-files/${conversationId}/files`;
+    const response = await fetch(url, {
+      method: "POST",
+      body: formData,
+      headers: this.getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json() as Promise<{
+      id: string;
+      filename: string;
+      fileType: string;
+      fileSize: number;
+      mimeType?: string;
+      status: string;
+      previewData?: Record<string, unknown>[];
+      columnNames?: string[];
+      rowCount?: number;
+      claudeUploadStatus?: string;
+      claudeFileId?: string;
+    }>;
+  }
+
+  /**
+   * List all data files in a conversation.
+   */
+  async listDataFiles(conversationId: string) {
+    return this.request<{
+      files: Array<{
+        id: string;
+        filename: string;
+        fileType: string;
+        fileSize: number;
+        mimeType?: string;
+        status: string;
+        previewData?: Record<string, unknown>[];
+        columnNames?: string[];
+        rowCount?: number;
+        claudeUploadStatus?: string;
+        claudeFileId?: string;
+      }>;
+    }>(`/api/data-files/${conversationId}/files`);
+  }
+
+  /**
+   * Get a specific data file.
+   */
+  async getDataFile(conversationId: string, fileId: string) {
+    return this.request<{
+      id: string;
+      filename: string;
+      fileType: string;
+      fileSize: number;
+      mimeType?: string;
+      status: string;
+      previewData?: Record<string, unknown>[];
+      columnNames?: string[];
+      rowCount?: number;
+      claudeUploadStatus?: string;
+      claudeFileId?: string;
+    }>(`/api/data-files/${conversationId}/files/${fileId}`);
+  }
+
+  /**
+   * Delete a data file from a conversation.
+   */
+  async deleteDataFile(conversationId: string, fileId: string) {
+    return this.request<{ status: string; id: string }>(
+      `/api/data-files/${conversationId}/files/${fileId}`,
+      { method: "DELETE" }
+    );
   }
 }
 

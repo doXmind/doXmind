@@ -41,6 +41,8 @@ ignore = [
     "B008",   # do not perform function calls in argument defaults
     "B904",   # Within an `except` clause, raise exceptions with `raise ... from err`
     "ARG001", # Unused function argument (common in FastAPI)
+    "SIM108", # Use ternary operator (prefer readable if-else blocks)
+    "SIM117", # Use single with statement (nested with is more readable for complex mocks)
 ]
 
 # Allow autofix for all enabled rules
@@ -62,7 +64,7 @@ known-first-party = ["api", "db", "services", "agents", "middleware"]
 
 [tool.ruff.lint.per-file-ignores]
 # Ignore unused arguments in tests (mock parameters are required by decorators)
-"tests/*" = ["ARG002"]
+"tests/*" = ["ARG002", "ARG005"]
 # conftest.py needs to set environment variables before imports
 "tests/conftest.py" = ["E402"]
 # telemetry.py has elif chains that are more readable as-is

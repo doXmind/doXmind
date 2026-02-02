@@ -29,28 +29,19 @@ from services.auth_service import TokenData
 @pytest.fixture
 def user1_token() -> TokenData:
     """Create token for user 1."""
-    return TokenData(
-        sub="user-1-uuid",
-        exp=datetime.now(UTC) + timedelta(hours=1)
-    )
+    return TokenData(sub="user-1-uuid", exp=datetime.now(UTC) + timedelta(hours=1))
 
 
 @pytest.fixture
 def user2_token() -> TokenData:
     """Create token for user 2."""
-    return TokenData(
-        sub="user-2-uuid",
-        exp=datetime.now(UTC) + timedelta(hours=1)
-    )
+    return TokenData(sub="user-2-uuid", exp=datetime.now(UTC) + timedelta(hours=1))
 
 
 @pytest.fixture
 def dev_token() -> TokenData:
     """Create dev-user token (no filtering)."""
-    return TokenData(
-        sub="dev-user",
-        exp=datetime.now(UTC) + timedelta(hours=1)
-    )
+    return TokenData(sub="dev-user", exp=datetime.now(UTC) + timedelta(hours=1))
 
 
 # ============================================================================
@@ -62,9 +53,7 @@ class TestUserIsolationDeep:
     """Deep tests for user data isolation."""
 
     @pytest.mark.asyncio
-    async def test_user_cannot_see_other_users_files(
-        self, db_session: AsyncSession
-    ):
+    async def test_user_cannot_see_other_users_files(self, db_session: AsyncSession):
         """User 1 should NOT see files created by User 2."""
         from tests.conftest import create_test_user
 
@@ -91,9 +80,7 @@ class TestUserIsolationDeep:
         assert "User2 File" not in [f.name for f in user1_files]
 
     @pytest.mark.asyncio
-    async def test_user_cannot_update_other_users_file(
-        self, db_session: AsyncSession
-    ):
+    async def test_user_cannot_update_other_users_file(self, db_session: AsyncSession):
         """User should NOT be able to update another user's file.
 
         Note: This tests the get_user_id logic directly.
@@ -111,10 +98,7 @@ class TestUserIsolationDeep:
         await db_session.refresh(file)
 
         # User 2 token
-        user2_token = TokenData(
-            sub="user-2-specific",
-            exp=datetime.now(UTC) + timedelta(hours=1)
-        )
+        user2_token = TokenData(sub="user-2-specific", exp=datetime.now(UTC) + timedelta(hours=1))
 
         # Get user ID for user 2
         user_id = get_user_id(user2_token)
@@ -133,9 +117,7 @@ class TestUserIsolationDeep:
         assert found_file is None, "User 2 should not be able to access User 1's file"
 
     @pytest.mark.asyncio
-    async def test_user_cannot_delete_other_users_file(
-        self, db_session: AsyncSession
-    ):
+    async def test_user_cannot_delete_other_users_file(self, db_session: AsyncSession):
         """User should NOT be able to delete another user's file.
 
         Note: This tests the get_user_id logic directly.
@@ -154,8 +136,7 @@ class TestUserIsolationDeep:
 
         # Different user token
         other_user_token = TokenData(
-            sub="user-attacker",
-            exp=datetime.now(UTC) + timedelta(hours=1)
+            sub="user-attacker", exp=datetime.now(UTC) + timedelta(hours=1)
         )
 
         user_id = get_user_id(other_user_token)
@@ -260,13 +241,7 @@ class TestDatabaseIntegrity:
     @pytest.mark.asyncio
     async def test_file_name_unicode(self, db_session: AsyncSession):
         """Files should handle Unicode in names."""
-        unicode_names = [
-            "文档.md",
-            "документ.md",
-            "📝 Notes.md",
-            "日本語ファイル.md",
-            "مستند.md"
-        ]
+        unicode_names = ["文档.md", "документ.md", "📝 Notes.md", "日本語ファイル.md", "مستند.md"]
 
         for name in unicode_names:
             file = File(name=name, content=f"Content for {name}")
@@ -299,10 +274,7 @@ class TestErrorHandling:
     async def test_update_nonexistent_file(self, client: AsyncClient):
         """Updating a nonexistent file should return 404."""
         fake_id = str(uuid.uuid4())
-        response = await client.put(
-            f"/api/files/{fake_id}",
-            json={"name": "New Name"}
-        )
+        response = await client.put(f"/api/files/{fake_id}", json={"name": "New Name"})
 
         assert response.status_code == 404
 
@@ -324,10 +296,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_search_with_empty_query(self, client: AsyncClient):
         """Search with empty query should handle gracefully."""
-        response = await client.post(
-            "/api/files/search",
-            json={"query": "", "top_k": 5}
-        )
+        response = await client.post("/api/files/search", json={"query": "", "top_k": 5})
 
         # Should either succeed with empty results or fail gracefully
         assert response.status_code in [200, 400, 422, 500]
@@ -337,11 +306,7 @@ class TestErrorHandling:
         """In-document search on nonexistent file should return 404."""
         fake_id = str(uuid.uuid4())
         response = await client.post(
-            "/api/files/search/in-document",
-            json={
-                "query": "test",
-                "file_id": fake_id
-            }
+            "/api/files/search/in-document", json={"query": "test", "file_id": fake_id}
         )
 
         assert response.status_code == 404
@@ -356,9 +321,7 @@ class TestRAGIntegration:
     """Tests for RAG service integration."""
 
     @pytest.mark.asyncio
-    async def test_create_file_indexes_in_rag(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_create_file_indexes_in_rag(self, client: AsyncClient, db_session: AsyncSession):
         """Creating a file should trigger RAG indexing."""
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
@@ -367,8 +330,7 @@ class TestRAGIntegration:
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/files/",
-                json={"name": "Test Doc", "content": "This is test content."}
+                "/api/files/", json={"name": "Test Doc", "content": "This is test content."}
             )
 
             assert response.status_code == 200
@@ -400,8 +362,7 @@ class TestRAGIntegration:
             mock_rag_class.return_value = mock_rag
 
             response = await client.put(
-                f"/api/files/{file.id}",
-                json={"content": "Updated content"}
+                f"/api/files/{file.id}", json={"content": "Updated content"}
             )
 
             assert response.status_code == 200
@@ -434,9 +395,7 @@ class TestRAGIntegration:
             mock_rag.delete_file.assert_called_once_with(file_id)
 
     @pytest.mark.asyncio
-    async def test_rag_error_does_not_break_file_creation(
-        self, client: AsyncClient
-    ):
+    async def test_rag_error_does_not_break_file_creation(self, client: AsyncClient):
         """RAG errors should not prevent file creation."""
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
@@ -444,10 +403,7 @@ class TestRAGIntegration:
             mock_rag.index_file_sentences = AsyncMock(side_effect=Exception("RAG failure"))
             mock_rag_class.return_value = mock_rag
 
-            response = await client.post(
-                "/api/files/",
-                json={"name": "Test", "content": "Content"}
-            )
+            response = await client.post("/api/files/", json={"name": "Test", "content": "Content"})
 
             # File creation should still succeed
             assert response.status_code == 200
@@ -468,15 +424,12 @@ class TestConcurrentAccess:
     """
 
     @pytest.mark.asyncio
-    async def test_sequential_file_creation(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_sequential_file_creation(self, client: AsyncClient, db_session: AsyncSession):
         """Multiple files can be created sequentially."""
         created_ids = []
         for i in range(3):
             response = await client.post(
-                "/api/files/",
-                json={"name": f"Sequential {i}", "content": f"Content {i}"}
+                "/api/files/", json={"name": f"Sequential {i}", "content": f"Content {i}"}
             )
             assert response.status_code == 200, f"File {i} creation failed"
             created_ids.append(response.json()["id"])
@@ -490,19 +443,13 @@ class TestConcurrentAccess:
     ):
         """Sequential updates to same file should work correctly."""
         # Create file
-        response = await client.post(
-            "/api/files/",
-            json={"name": "Shared", "content": "Original"}
-        )
+        response = await client.post("/api/files/", json={"name": "Shared", "content": "Original"})
         assert response.status_code == 200
         file_id = response.json()["id"]
 
         # Update sequentially
         for i in range(3):
-            response = await client.put(
-                f"/api/files/{file_id}",
-                json={"content": f"Update {i}"}
-            )
+            response = await client.put(f"/api/files/{file_id}", json={"content": f"Update {i}"})
             assert response.status_code == 200
 
         # Verify final state
@@ -511,23 +458,17 @@ class TestConcurrentAccess:
         assert response.json()["content"] == "Update 2"
 
     @pytest.mark.asyncio
-    async def test_create_update_delete_cycle(
-        self, client: AsyncClient
-    ):
+    async def test_create_update_delete_cycle(self, client: AsyncClient):
         """Complete create-update-delete cycle should work."""
         # Create
         response = await client.post(
-            "/api/files/",
-            json={"name": "Lifecycle Test", "content": "Initial"}
+            "/api/files/", json={"name": "Lifecycle Test", "content": "Initial"}
         )
         assert response.status_code == 200
         file_id = response.json()["id"]
 
         # Update
-        response = await client.put(
-            f"/api/files/{file_id}",
-            json={"content": "Updated"}
-        )
+        response = await client.put(f"/api/files/{file_id}", json={"content": "Updated"})
         assert response.status_code == 200
         assert response.json()["content"] == "Updated"
 
@@ -554,18 +495,14 @@ class TestSearchFunctionality:
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
             # Default search uses hybrid_search (use_hybrid=True)
-            mock_rag.hybrid_search = AsyncMock(return_value=[
-                {"content": "Result", "file_id": "f1", "score": 0.9}
-            ])
+            mock_rag.hybrid_search = AsyncMock(
+                return_value=[{"content": "Result", "file_id": "f1", "score": 0.9}]
+            )
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
                 "/api/files/search",
-                json={
-                    "query": "test query",
-                    "file_ids": ["f1", "f2"],
-                    "top_k": 3
-                }
+                json={"query": "test query", "file_ids": ["f1", "f2"], "top_k": 3},
             )
 
             assert response.status_code == 200
@@ -592,11 +529,7 @@ class TestSearchFunctionality:
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
-                "/api/files/search/in-document",
-                json={
-                    "query": "content",
-                    "file_id": file.id
-                }
+                "/api/files/search/in-document", json={"query": "content", "file_id": file.id}
             )
 
             assert response.status_code == 200
@@ -615,18 +548,12 @@ class TestSearchFunctionality:
 
         with patch("api.files.RAGService") as mock_rag_class:
             mock_rag = MagicMock()
-            mock_rag.search_sentences = AsyncMock(return_value=[
-                {"content": "Test", "score": 0.9}
-            ])
+            mock_rag.search_sentences = AsyncMock(return_value=[{"content": "Test", "score": 0.9}])
             mock_rag_class.return_value = mock_rag
 
             response = await client.post(
                 "/api/files/search/in-document",
-                json={
-                    "query": "test",
-                    "file_id": file.id,
-                    "min_score": 0.7
-                }
+                json={"query": "test", "file_id": file.id, "min_score": 0.7},
             )
 
             assert response.status_code == 200
@@ -647,13 +574,10 @@ class TestAPIResponseFormat:
     """Tests for API response format correctness."""
 
     @pytest.mark.asyncio
-    async def test_file_response_has_all_fields(
-        self, client: AsyncClient
-    ):
+    async def test_file_response_has_all_fields(self, client: AsyncClient):
         """FileResponse should contain all required fields."""
         response = await client.post(
-            "/api/files/",
-            json={"name": "Complete", "content": "All fields"}
+            "/api/files/", json={"name": "Complete", "content": "All fields"}
         )
 
         assert response.status_code == 200
@@ -695,10 +619,7 @@ class TestAPIResponseFormat:
             mock_rag.hybrid_search = AsyncMock(return_value=[])
             mock_rag_class.return_value = mock_rag
 
-            response = await client.post(
-                "/api/files/search",
-                json={"query": "test"}
-            )
+            response = await client.post("/api/files/search", json={"query": "test"})
 
             assert response.status_code == 200
             data = response.json()
@@ -715,9 +636,7 @@ class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
     @pytest.mark.asyncio
-    async def test_file_with_special_characters_in_name(
-        self, client: AsyncClient
-    ):
+    async def test_file_with_special_characters_in_name(self, client: AsyncClient):
         """Files with special characters in name should work."""
         special_names = [
             "file (1).md",
@@ -730,10 +649,7 @@ class TestEdgeCases:
         ]
 
         for name in special_names:
-            response = await client.post(
-                "/api/files/",
-                json={"name": name, "content": "Test"}
-            )
+            response = await client.post("/api/files/", json={"name": name, "content": "Test"})
 
             assert response.status_code == 200, f"Failed for name: {name}"
             assert response.json()["name"] == name
@@ -759,8 +675,7 @@ def hello():
 | A    | B    |
 """
         response = await client.post(
-            "/api/files/",
-            json={"name": "markdown.md", "content": markdown_content}
+            "/api/files/", json={"name": "markdown.md", "content": markdown_content}
         )
 
         assert response.status_code == 200
@@ -776,8 +691,7 @@ def hello():
 </div>"""
 
         response = await client.post(
-            "/api/files/",
-            json={"name": "html.html", "content": html_content}
+            "/api/files/", json={"name": "html.html", "content": html_content}
         )
 
         assert response.status_code == 200
@@ -795,10 +709,7 @@ def hello():
         await db_session.refresh(file)
 
         # Update with only content (name should be preserved)
-        response = await client.put(
-            f"/api/files/{file.id}",
-            json={"content": "New Content"}
-        )
+        response = await client.put(f"/api/files/{file.id}", json={"content": "New Content"})
 
         assert response.status_code == 200
         data = response.json()
@@ -810,10 +721,7 @@ def hello():
         """Very long file names should be handled."""
         long_name = "x" * 1000 + ".md"
 
-        response = await client.post(
-            "/api/files/",
-            json={"name": long_name, "content": "Content"}
-        )
+        response = await client.post("/api/files/", json={"name": long_name, "content": "Content"})
 
         # Should either succeed or fail gracefully (no crash)
         assert response.status_code in [200, 400, 422, 500]
@@ -824,8 +732,7 @@ def hello():
         content_with_newlines = "Line 1\nLine 2\r\nLine 3\rLine 4"
 
         response = await client.post(
-            "/api/files/",
-            json={"name": "newlines.txt", "content": content_with_newlines}
+            "/api/files/", json={"name": "newlines.txt", "content": content_with_newlines}
         )
 
         assert response.status_code == 200

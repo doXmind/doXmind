@@ -111,7 +111,7 @@ class TestConfiguration:
 
     def test_allowed_extensions(self):
         """Should allow correct extensions."""
-        expected = {'.pdf', '.docx', '.md', '.markdown'}
+        expected = {".pdf", ".docx", ".md", ".markdown"}
         assert expected == ALLOWED_EXTENSIONS
 
 
@@ -140,8 +140,7 @@ class TestImportEndpoint:
         file_content = b"test content"
 
         response = client.post(
-            "/api/import/",
-            files={"file": ("test.txt", io.BytesIO(file_content), "text/plain")}
+            "/api/import/", files={"file": ("test.txt", io.BytesIO(file_content), "text/plain")}
         )
 
         assert response.status_code == 400
@@ -153,8 +152,7 @@ class TestImportEndpoint:
         file_content = b"x" * (MAX_FILE_SIZE + 1)
 
         response = client.post(
-            "/api/import/",
-            files={"file": ("test.md", io.BytesIO(file_content), "text/markdown")}
+            "/api/import/", files={"file": ("test.md", io.BytesIO(file_content), "text/markdown")}
         )
 
         assert response.status_code == 400
@@ -177,7 +175,7 @@ class TestImportEndpoint:
 
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
-        mock_db.refresh = AsyncMock(side_effect=lambda f: setattr(f, 'id', 'file-123'))
+        mock_db.refresh = AsyncMock(side_effect=lambda f: setattr(f, "id", "file-123"))
 
         async def override_get_db():
             yield mock_db
@@ -198,14 +196,16 @@ class TestImportEndpoint:
         file_content = b"# Title\n\nContent here."
 
         # Use patched database
-        with patch("api.import_file.get_db", override_get_db), \
-             patch("api.import_file.FileModel") as mock_file_model:
+        with (
+            patch("api.import_file.get_db", override_get_db),
+            patch("api.import_file.FileModel") as mock_file_model,
+        ):
             mock_file_model.return_value = mock_file
 
             response = client.post(
-                    "/api/import/",
-                    files={"file": ("document.md", io.BytesIO(file_content), "text/markdown")}
-                )
+                "/api/import/",
+                files={"file": ("document.md", io.BytesIO(file_content), "text/markdown")},
+            )
 
         # Response should be 200 or may fail due to DB mock complexity
         # Just verify the endpoint doesn't crash on valid input
@@ -224,7 +224,7 @@ class TestImportEndpoint:
         # Will fail during conversion, not extension check
         response = client.post(
             "/api/import/",
-            files={"file": ("test.pdf", io.BytesIO(file_content), "application/pdf")}
+            files={"file": ("test.pdf", io.BytesIO(file_content), "application/pdf")},
         )
 
         # Should pass extension check, fail on conversion
@@ -236,7 +236,13 @@ class TestImportEndpoint:
 
         response = client.post(
             "/api/import/",
-            files={"file": ("test.docx", io.BytesIO(file_content), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+            files={
+                "file": (
+                    "test.docx",
+                    io.BytesIO(file_content),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
         )
 
         # Should pass extension check, fail on conversion
@@ -250,7 +256,7 @@ class TestImportEndpoint:
         # DB issues may cause 500, but extension check passes
         response = client.post(
             "/api/import/",
-            files={"file": ("test.markdown", io.BytesIO(file_content), "text/markdown")}
+            files={"file": ("test.markdown", io.BytesIO(file_content), "text/markdown")},
         )
 
         assert response.status_code in [200, 500]
@@ -288,7 +294,9 @@ class TestGeminiConverter:
         content = b"invalid content"
 
         with patch("services.gemini_converter.get_gemini_client") as mock_client:
-            mock_client.return_value.models.generate_content.side_effect = Exception("Conversion failed")
+            mock_client.return_value.models.generate_content.side_effect = Exception(
+                "Conversion failed"
+            )
 
             with pytest.raises(Exception, match="Conversion failed"):
                 await convert_file_to_markdown(content, "test.pdf", ".pdf")
@@ -311,6 +319,7 @@ class TestGeminiConverter:
             mock_settings.return_value.google_api_key = ""
             # Clear the lru_cache to ensure fresh settings
             from services.gemini_converter import get_gemini_client
+
             get_gemini_client.cache_clear()
 
             assert is_gemini_configured() is False
@@ -371,7 +380,7 @@ class TestIntegration:
         """Should list allowed extensions in error message."""
         response = client.post(
             "/api/import/",
-            files={"file": ("test.exe", io.BytesIO(b"content"), "application/octet-stream")}
+            files={"file": ("test.exe", io.BytesIO(b"content"), "application/octet-stream")},
         )
 
         error_detail = response.json()["detail"]
@@ -383,8 +392,7 @@ class TestIntegration:
         large_content = b"x" * (MAX_FILE_SIZE + 1)
 
         response = client.post(
-            "/api/import/",
-            files={"file": ("test.md", io.BytesIO(large_content), "text/markdown")}
+            "/api/import/", files={"file": ("test.md", io.BytesIO(large_content), "text/markdown")}
         )
 
         error_detail = response.json()["detail"]
@@ -414,8 +422,7 @@ class TestEdgeCases:
     def test_empty_filename(self, client):
         """Should handle empty filename."""
         response = client.post(
-            "/api/import/",
-            files={"file": ("", io.BytesIO(b"content"), "text/plain")}
+            "/api/import/", files={"file": ("", io.BytesIO(b"content"), "text/plain")}
         )
 
         # Empty filename results in validation error or bad request
@@ -426,8 +433,7 @@ class TestEdgeCases:
         file_content = b"# Title"
 
         response = client.post(
-            "/api/import/",
-            files={"file": ("文档.md", io.BytesIO(file_content), "text/markdown")}
+            "/api/import/", files={"file": ("文档.md", io.BytesIO(file_content), "text/markdown")}
         )
 
         # Should pass extension check
@@ -439,7 +445,7 @@ class TestEdgeCases:
 
         response = client.post(
             "/api/import/",
-            files={"file": ("my document.md", io.BytesIO(file_content), "text/markdown")}
+            files={"file": ("my document.md", io.BytesIO(file_content), "text/markdown")},
         )
 
         assert response.status_code in [200, 500]
@@ -449,8 +455,7 @@ class TestEdgeCases:
         file_content = b"# Title"
 
         response = client.post(
-            "/api/import/",
-            files={"file": ("test.MD", io.BytesIO(file_content), "text/markdown")}
+            "/api/import/", files={"file": ("test.MD", io.BytesIO(file_content), "text/markdown")}
         )
 
         # Should be case-insensitive
@@ -461,8 +466,7 @@ class TestEdgeCases:
         file_content = b"#" * MAX_FILE_SIZE
 
         response = client.post(
-            "/api/import/",
-            files={"file": ("test.md", io.BytesIO(file_content), "text/markdown")}
+            "/api/import/", files={"file": ("test.md", io.BytesIO(file_content), "text/markdown")}
         )
 
         # Should not reject for size
@@ -474,7 +478,7 @@ class TestEdgeCases:
 
         response = client.post(
             "/api/import/",
-            files={"file": ("unicode.md", io.BytesIO(file_content), "text/markdown")}
+            files={"file": ("unicode.md", io.BytesIO(file_content), "text/markdown")},
         )
 
         assert response.status_code in [200, 500]

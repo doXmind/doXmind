@@ -117,10 +117,7 @@ def extract_docx_content(content: bytes) -> str:
 
 
 async def convert_file_to_markdown(
-    content: bytes,
-    filename: str,
-    extension: str,
-    model: str = DEFAULT_MODEL
+    content: bytes, filename: str, extension: str, model: str = DEFAULT_MODEL
 ) -> str:
     """Convert file content to Markdown using Gemini API.
 
@@ -164,8 +161,8 @@ async def convert_file_to_markdown(
                     data=content,
                     mime_type=mime_type,
                 ),
-                CONVERSION_PROMPT
-            ]
+                CONVERSION_PROMPT,
+            ],
         )
         return response.text
 
@@ -184,9 +181,7 @@ async def convert_file_to_markdown(
 
 
 async def _convert_docx_to_markdown(
-    content: bytes,
-    filename: str,
-    model: str = DEFAULT_MODEL
+    content: bytes, filename: str, model: str = DEFAULT_MODEL
 ) -> str:
     """Convert DOCX file to Markdown by extracting text and formatting with Gemini.
 
@@ -212,8 +207,7 @@ async def _convert_docx_to_markdown(
     def _sync_format() -> str:
         client = get_gemini_client()
         response = client.models.generate_content(
-            model=model,
-            contents=[TEXT_CONVERSION_PROMPT + extracted_text]
+            model=model, contents=[TEXT_CONVERSION_PROMPT + extracted_text]
         )
         return response.text
 

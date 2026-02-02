@@ -66,14 +66,8 @@ class MockStreamContext:
 def create_text_stream_events(text: str) -> list:
     """Create stream events for a simple text response."""
     return [
-        MockStreamEvent(
-            "content_block_start",
-            content_block=MockContentBlock("text")
-        ),
-        MockStreamEvent(
-            "content_block_delta",
-            delta=MockDelta("text_delta", text=text)
-        ),
+        MockStreamEvent("content_block_start", content_block=MockContentBlock("text")),
+        MockStreamEvent("content_block_delta", delta=MockDelta("text_delta", text=text)),
         MockStreamEvent("content_block_stop"),
     ]
 
@@ -84,11 +78,10 @@ def create_tool_use_events(tool_name: str, tool_id: str, tool_input: dict) -> li
     return [
         MockStreamEvent(
             "content_block_start",
-            content_block=MockContentBlock("tool_use", id=tool_id, name=tool_name)
+            content_block=MockContentBlock("tool_use", id=tool_id, name=tool_name),
         ),
         MockStreamEvent(
-            "content_block_delta",
-            delta=MockDelta("input_json_delta", partial_json=input_json)
+            "content_block_delta", delta=MockDelta("input_json_delta", partial_json=input_json)
         ),
         MockStreamEvent("content_block_stop"),
     ]
@@ -97,13 +90,9 @@ def create_tool_use_events(tool_name: str, tool_id: str, tool_input: dict) -> li
 def create_thinking_events(thinking_text: str) -> list:
     """Create stream events for thinking content."""
     return [
+        MockStreamEvent("content_block_start", content_block=MockContentBlock("thinking")),
         MockStreamEvent(
-            "content_block_start",
-            content_block=MockContentBlock("thinking")
-        ),
-        MockStreamEvent(
-            "content_block_delta",
-            delta=MockDelta("thinking_delta", thinking=thinking_text)
+            "content_block_delta", delta=MockDelta("thinking_delta", thinking=thinking_text)
         ),
         MockStreamEvent("content_block_stop"),
     ]
@@ -124,7 +113,7 @@ class TestWritingAgentInit:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         agent = WritingAgent()
@@ -140,7 +129,7 @@ class TestWritingAgentInit:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         agent = WritingAgent(mode="analyze")
@@ -154,7 +143,7 @@ class TestWritingAgentInit:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         agent = WritingAgent(enable_thinking=True)
@@ -168,7 +157,7 @@ class TestWritingAgentInit:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
 
@@ -193,61 +182,61 @@ class TestWritingAgentInit:
 class TestMessageBuilding:
     """Tests for message building methods."""
 
+    @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
     @patch("agents.writing_agent.AsyncAnthropic")
-    def test_build_messages_simple(self, mock_anthropic, mock_settings):
+    async def test_build_messages_simple(self, mock_anthropic, mock_settings):
         """Should build simple text messages."""
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         agent = WritingAgent()
 
-        messages = agent._build_messages("Hello")
+        messages = await agent._build_messages("Hello")
 
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "Hello"
 
+    @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
     @patch("agents.writing_agent.AsyncAnthropic")
-    def test_build_messages_with_history(self, mock_anthropic, mock_settings):
+    async def test_build_messages_with_history(self, mock_anthropic, mock_settings):
         """Should include history in messages."""
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         agent = WritingAgent()
         history = [
             {"role": "user", "content": "Previous question"},
-            {"role": "assistant", "content": "Previous answer"}
+            {"role": "assistant", "content": "Previous answer"},
         ]
 
-        messages = agent._build_messages("New question", history=history)
+        messages = await agent._build_messages("New question", history=history)
 
         assert len(messages) == 3
         assert messages[0]["content"] == "Previous question"
         assert messages[1]["content"] == "Previous answer"
         assert messages[2]["content"] == "New question"
 
+    @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
     @patch("agents.writing_agent.AsyncAnthropic")
-    def test_build_messages_with_images(self, mock_anthropic, mock_settings):
+    async def test_build_messages_with_images(self, mock_anthropic, mock_settings):
         """Should build multimodal messages with images."""
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         agent = WritingAgent()
-        images = [{
-            "base64": "iVBORw0KGgo=",
-            "mediaType": "image/png"
-        }]
+        images = [{"base64": "iVBORw0KGgo=", "mediaType": "image/png"}]
 
-        messages = agent._build_messages("Describe this image", images=images)
+        messages = await agent._build_messages("Describe this image", images=images)
 
         assert len(messages) == 1
         assert isinstance(messages[0]["content"], list)
@@ -255,16 +244,15 @@ class TestMessageBuilding:
         assert messages[0]["content"][0]["type"] == "image"
         assert messages[0]["content"][-1]["type"] == "text"
 
+    @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
     @patch("agents.writing_agent.AsyncAnthropic")
-    def test_build_multimodal_content_multiple_images(
-        self, mock_anthropic, mock_settings
-    ):
+    async def test_build_multimodal_content_multiple_images(self, mock_anthropic, mock_settings):
         """Should add labels for multiple images."""
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         agent = WritingAgent()
         images = [
@@ -272,7 +260,7 @@ class TestMessageBuilding:
             {"base64": "def", "mediaType": "image/png", "alt": "Second"},
         ]
 
-        content = agent._build_multimodal_content("Compare these", images)
+        content = await agent._build_multimodal_content("Compare these", images)
 
         # Should have: image1, label1, image2, label2, text
         assert len(content) == 5
@@ -292,14 +280,12 @@ class TestKBContext:
 
     @patch("agents.writing_agent.get_settings")
     @patch("agents.writing_agent.AsyncAnthropic")
-    def test_build_kb_context_returns_none_without_attachments(
-        self, mock_anthropic, mock_settings
-    ):
+    def test_build_kb_context_returns_none_without_attachments(self, mock_anthropic, mock_settings):
         """Should return None when no attachments."""
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         agent = WritingAgent()
 
@@ -316,7 +302,7 @@ class TestKBContext:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         agent = WritingAgent(kb_attachments=[{"id": "att-1"}])
 
@@ -331,7 +317,7 @@ class TestKBContext:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
         agent = WritingAgent(kb_attachments=attachments)
@@ -359,7 +345,7 @@ class TestStreaming:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         # Create mock stream
@@ -389,7 +375,7 @@ class TestStreaming:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         # Create thinking + text events
@@ -418,7 +404,7 @@ class TestStreaming:
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         mock_client = MagicMock()
@@ -440,14 +426,12 @@ class TestStreaming:
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
     @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_stream_marks_first_file_as_current(
-        self, mock_anthropic, mock_settings
-    ):
+    async def test_stream_marks_first_file_as_current(self, mock_anthropic, mock_settings):
         """Should mark first file as current."""
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         events = create_text_stream_events("Done")
@@ -480,14 +464,12 @@ class TestRunMethod:
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
     @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_run_collects_response_and_edits(
-        self, mock_anthropic, mock_settings
-    ):
+    async def test_run_collects_response_and_edits(self, mock_anthropic, mock_settings):
         """Should collect full response and edits."""
         mock_settings.return_value = MagicMock(
             anthropic_api_key="test-key",
             default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096
+            max_output_tokens=4096,
         )
 
         # Mock stream to yield text events

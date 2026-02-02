@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.writing_agent import WritingAgent
 from api.files import get_user_id
 from config import get_cors_headers, get_settings
-from db.database import Conversation, ConversationAttachment, Message, get_db
+from db.database import Conversation, ConversationAttachment, ConversationDataFile, Message, get_db
 from services.auth_service import TokenData, require_auth
 from services.history_compressor import HistoryCompressor
 
@@ -62,6 +62,8 @@ class ChatRequest(BaseModel):
     fileId: str | None = None  # For associating conversation with a file
     # Web search toggle (web fetch is always enabled)
     webSearchEnabled: bool = False
+    # Data file IDs to pass to code execution sandbox
+    dataFileIds: list[str] = []
 
 
 class MessageCreate(BaseModel):
@@ -301,8 +303,7 @@ async def clear_conversation(
 
     messages_result = await db.execute(
         select(Message).where(
-            Message.conversation_id == conversation.id,
-            Message.deleted_at.is_(None)
+            Message.conversation_id == conversation.id, Message.deleted_at.is_(None)
         )
     )
     messages = messages_result.scalars().all()
@@ -337,6 +338,8 @@ async def chat_stream(
     history = []
     conversation = None
     kb_attachments = []
+    data_files_metadata = []
+    data_files_content = []
 
     if request.conversationId:
         # Find conversation by file_id (conversationId from frontend is actually file_id)
@@ -395,6 +398,55 @@ async def chat_stream(
             if kb_attachments:
                 logger.info(f"Loaded {len(kb_attachments)} KB attachment(s) for conversation")
 
+            # Load ALL data files metadata for this conversation (so AI knows what's available)
+            data_files_result = await db.execute(
+                select(ConversationDataFile)
+                .where(ConversationDataFile.conversation_id == conversation.id)
+                .where(ConversationDataFile.status == "ready")
+            )
+            all_data_files = data_files_result.scalars().all()
+
+            # Data files metadata (for system prompt - tells AI what files are available)
+            data_files_metadata = [
+                {
+                    "id": df.id,
+                    "filename": df.original_filename,
+                    "file_type": df.file_type,
+                    "row_count": df.row_count,
+                    "column_names": df.column_names,
+                }
+                for df in all_data_files
+            ]
+
+            if data_files_metadata:
+                logger.info(f"Found {len(data_files_metadata)} data file(s) in conversation")
+
+            # Load data files CONTENT for code execution (all ready files)
+            data_files_content = []
+            if all_data_files:
+                import os
+
+                for data_file in all_data_files:
+                    if data_file.storage_path and os.path.exists(data_file.storage_path):
+                        with open(data_file.storage_path, "rb") as f:
+                            content = f.read()
+                        data_files_content.append(
+                            {
+                                "id": data_file.id,
+                                "filename": data_file.original_filename,
+                                "mime_type": data_file.mime_type,
+                                "content": content,
+                                # Claude Files API info for optimized upload
+                                "claude_file_id": data_file.claude_file_id,
+                                "claude_upload_status": data_file.claude_upload_status or "pending",
+                                "file_size": data_file.file_size,
+                            }
+                        )
+                if data_files_content:
+                    logger.info(
+                        f"Loaded {len(data_files_content)} data file(s) content for analysis"
+                    )
+
     # Collector for building the complete response
     collected_text = []
     collected_thinking = []
@@ -403,7 +455,12 @@ async def chat_stream(
     collected_usage = {"input_tokens": 0, "output_tokens": 0}
 
     async def generate():
-        nonlocal collected_text, collected_thinking, collected_tool_calls, collected_edits, collected_usage
+        nonlocal \
+            collected_text, \
+            collected_thinking, \
+            collected_tool_calls, \
+            collected_edits, \
+            collected_usage
 
         current_tool = None
         timeout_seconds = settings.streaming_timeout_seconds
@@ -411,12 +468,17 @@ async def chat_stream(
         heartbeat_interval = 25  # Send heartbeat every 25 seconds (Heroku timeout is 55s)
 
         try:
-            # Create agent with KB attachments and web tools if available
+            # Create agent with KB attachments, data files metadata, and web tools
             # Skills are auto-detected by the agent based on context
+            # Code execution is auto-enabled when data files are present
             agent = WritingAgent(
                 mode=request.mode,
                 kb_attachments=kb_attachments if kb_attachments else None,
+                data_files_metadata=data_files_metadata if data_files_metadata else None,
                 web_search_enabled=request.webSearchEnabled,
+                code_execution_enabled=bool(
+                    data_files_content
+                ),  # Auto-enable when data files present
                 db=db,
             )
 
@@ -454,33 +516,53 @@ async def chat_stream(
                 message=request.message,
                 files=files,
                 images=images,  # Pass images for multimodal support
+                data_files=data_files_content if data_files_content else None,
                 history=history,
                 conversation_id=conversation.id if conversation else None,
             ).__aiter__()
 
+            # Use a persistent task to avoid cancelling the generator on heartbeat timeout
+            pending_task = None
+
             while True:
                 try:
-                    # Wait for next event with heartbeat timeout
-                    event = await asyncio.wait_for(
-                        agent_stream.__anext__(), timeout=heartbeat_interval
-                    )
-                except TimeoutError:
-                    # No event received within heartbeat interval, send heartbeat to keep connection alive
-                    heartbeat_data = f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
-                    yield heartbeat_data.encode("utf-8")
+                    # Create a task for __anext__() if we don't have one pending
+                    if pending_task is None:
+                        pending_task = asyncio.create_task(agent_stream.__anext__())
 
-                    # Check overall timeout
-                    elapsed = asyncio.get_event_loop().time() - start_time
-                    if elapsed > timeout_seconds:
-                        logger.warning(f"Streaming timeout after {elapsed:.1f}s")
-                        error_data = f"data: {json.dumps({'type': 'error', 'content': 'Streaming timeout exceeded'})}\n\n"
-                        yield error_data.encode("utf-8")
-                        yield b"data: [DONE]\n\n"
-                        return
-                    continue
-                except StopAsyncIteration:
-                    # Stream completed
-                    break
+                    # Wait for the task with heartbeat timeout
+                    done, _ = await asyncio.wait({pending_task}, timeout=heartbeat_interval)
+
+                    if pending_task in done:
+                        # Task completed, get the result
+                        try:
+                            event = pending_task.result()
+                            pending_task = None  # Reset for next iteration
+                        except StopAsyncIteration:
+                            # Stream completed
+                            break
+                    else:
+                        # Timeout - send heartbeat but DON'T cancel the task
+                        heartbeat_data = f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                        yield heartbeat_data.encode("utf-8")
+
+                        # Check overall timeout
+                        elapsed = asyncio.get_event_loop().time() - start_time
+                        if elapsed > timeout_seconds:
+                            logger.warning(f"Streaming timeout after {elapsed:.1f}s")
+                            error_data = f"data: {json.dumps({'type': 'error', 'content': 'Streaming timeout exceeded'})}\n\n"
+                            yield error_data.encode("utf-8")
+                            yield b"data: [DONE]\n\n"
+                            if pending_task:
+                                pending_task.cancel()
+                            return
+                        continue
+
+                except Exception as e:
+                    logger.error(f"Error in stream processing: {e}")
+                    if pending_task:
+                        pending_task.cancel()
+                    raise
 
                 # Check timeout
                 elapsed = asyncio.get_event_loop().time() - start_time
@@ -538,8 +620,12 @@ async def chat_stream(
                     tool_calls=collected_tool_calls if collected_tool_calls else None,
                     edits=collected_edits if collected_edits else None,
                     model=settings.default_model,
-                    input_tokens=str(collected_usage["input_tokens"]) if collected_usage["input_tokens"] else None,
-                    output_tokens=str(collected_usage["output_tokens"]) if collected_usage["output_tokens"] else None,
+                    input_tokens=str(collected_usage["input_tokens"])
+                    if collected_usage["input_tokens"]
+                    else None,
+                    output_tokens=str(collected_usage["output_tokens"])
+                    if collected_usage["output_tokens"]
+                    else None,
                 )
                 db.add(assistant_message)
                 await db.commit()

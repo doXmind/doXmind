@@ -160,9 +160,7 @@ async def list_file_shares(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     # Get shares
     query = select(DocumentShare).where(DocumentShare.file_id == file_id)
@@ -173,9 +171,7 @@ async def list_file_shares(
         query = query.where(
             and_(
                 DocumentShare.is_active == True,  # noqa: E712
-                or_(
-                    DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now
-                ),
+                or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
             )
         )
 
@@ -223,9 +219,7 @@ async def revoke_share(
     share = result.scalar_one_or_none()
 
     if not share:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Share not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
 
     # Deactivate (soft delete)
     share.is_active = False

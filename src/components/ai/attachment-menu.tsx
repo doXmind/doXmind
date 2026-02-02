@@ -1,43 +1,49 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Plus, ImageIcon, FileText, BookOpen, ChevronRight, X, Globe, Check } from "lucide-react";
+import { Plus, ImageIcon, FileText, FolderOpen, ChevronRight, X, Globe, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useKBStore, formatFileSize } from "@/stores/kb-store";
+import { useDataFilesStore, isKBFile, isDataFile } from "@/stores/data-files-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { KBAttachmentItem } from "@/components/kb/kb-attachment-item";
+import { DataFileItem } from "@/components/data-files/data-file-item";
 
-// Allowed document types for Knowledge Base
-const ALLOWED_DOC_EXTENSIONS = [".pdf", ".docx", ".pptx"];
-const ALLOWED_DOC_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+// All allowed file extensions (KB + Data files)
+const ALLOWED_EXTENSIONS = [
+  // KB files (vectorized for RAG)
+  ".pdf",
+  ".docx",
+  ".pptx",
+  // Data files (for code execution)
+  ".csv",
+  ".xlsx",
+  ".xls",
+  ".json",
+  ".txt",
 ];
-const MAX_DOC_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export interface AttachmentMenuProps {
   conversationId: string | null;
   onImageSelect: (files: FileList) => void;
+  onDataFileSelect?: (fileIds: string[]) => void;
   imageCount: number;
   maxImages: number;
   disabled?: boolean;
   className?: string;
 }
 
-type MenuView = "main" | "kb";
+type MenuView = "main" | "files";
 
 export function AttachmentMenu({
   conversationId,
   onImageSelect,
+  onDataFileSelect,
   imageCount,
   maxImages,
   disabled,
@@ -49,40 +55,60 @@ export function AttachmentMenu({
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const docInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // KB store for PDF, DOCX, PPTX
   const {
-    isLoading,
+    isLoading: isKBLoading,
     loadAttachments,
-    uploadAttachments,
-    deleteAttachment,
+    uploadAttachments: uploadKBAttachments,
+    deleteAttachment: deleteKBAttachment,
     getAttachments,
   } = useKBStore();
 
+  // Data files store for CSV, XLSX, JSON, TXT
+  const {
+    isLoading: isDataLoading,
+    loadDataFiles,
+    uploadDataFile,
+    deleteDataFile,
+    getDataFiles,
+  } = useDataFilesStore();
+
   const { webSearchEnabled, setWebSearchEnabled } = useSettingsStore();
 
-  const attachments = conversationId ? getAttachments(conversationId) : [];
-  const attachmentCount = attachments.filter(a => a.status !== "error").length;
-  const totalSize = attachments.reduce((sum, a) => sum + a.fileSize, 0);
+  // Get both KB attachments and data files
+  const kbAttachments = conversationId ? getAttachments(conversationId) : [];
+  const dataFiles = conversationId ? getDataFiles(conversationId) : [];
 
-  // Total indicator count (images + kb docs)
-  const totalIndicator = imageCount + attachmentCount;
+  const kbCount = kbAttachments.filter((a) => a.status !== "error").length;
+  const dataCount = dataFiles.filter((f) => f.status !== "error").length;
+  const totalFileCount = kbCount + dataCount;
+  const totalSize =
+    kbAttachments.reduce((sum, a) => sum + a.fileSize, 0) +
+    dataFiles.reduce((sum, f) => sum + f.fileSize, 0);
 
-  // Preload KB attachments when conversation changes
+  // Total indicator count (images + all files)
+  const totalIndicator = imageCount + totalFileCount;
+  const isLoading = isKBLoading || isDataLoading;
+
+  // Preload all files when conversation changes
   // This ensures the badge count is accurate without requiring user to open the menu
   useEffect(() => {
     if (conversationId) {
       loadAttachments(conversationId);
+      loadDataFiles(conversationId);
     }
-  }, [conversationId, loadAttachments]);
+  }, [conversationId, loadAttachments, loadDataFiles]);
 
-  // Load KB attachments when opening KB view (refresh)
-  const handleOpenKB = useCallback(() => {
+  // Load all files when opening files view (refresh)
+  const handleOpenFiles = useCallback(() => {
     if (conversationId) {
       loadAttachments(conversationId);
+      loadDataFiles(conversationId);
     }
-    setView("kb");
-  }, [conversationId, loadAttachments]);
+    setView("files");
+  }, [conversationId, loadAttachments, loadDataFiles]);
 
   // Handle image selection
   const handleImageClick = () => {
@@ -97,64 +123,100 @@ export function AttachmentMenu({
     setIsOpen(false);
   };
 
-  // Handle document upload
-  const handleDocClick = () => {
-    docInputRef.current?.click();
+  // Handle file upload (unified for all types)
+  const handleFileClick = () => {
+    fileInputRef.current?.click();
   };
 
-  const validateDocFile = (file: File): string | null => {
+  const validateFile = (file: File): string | null => {
     const extension = "." + file.name.split(".").pop()?.toLowerCase();
-    if (!ALLOWED_DOC_EXTENSIONS.includes(extension) && !ALLOWED_DOC_TYPES.includes(file.type)) {
-      return `Unsupported file type. Allowed: ${ALLOWED_DOC_EXTENSIONS.join(", ")}`;
+    if (!ALLOWED_EXTENSIONS.includes(extension)) {
+      return `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}`;
     }
-    if (file.size > MAX_DOC_SIZE) {
-      return `File too large. Maximum size: ${MAX_DOC_SIZE / (1024 * 1024)}MB`;
+    if (file.size > MAX_FILE_SIZE) {
+      return `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`;
     }
     return null;
   };
 
-  const handleDocChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !conversationId) return;
 
     setUploadError(null);
 
-    const filesToUpload: File[] = [];
+    // Classify files by type
+    const kbFiles: File[] = [];
+    const dataFilesToUpload: File[] = [];
 
     for (const file of Array.from(e.target.files)) {
-      const error = validateDocFile(file);
+      const error = validateFile(file);
       if (error) {
         setUploadError(error);
         continue;
       }
-      filesToUpload.push(file);
-    }
 
-    if (filesToUpload.length > 0) {
-      // Use batch upload from destructuring above (need to add it)
-      try {
-        await uploadAttachments(conversationId, filesToUpload);
-      } catch (err) {
-        setUploadError(err instanceof Error ? err.message : "Upload failed");
+      // Route to appropriate backend based on file type
+      if (isKBFile(file.name)) {
+        kbFiles.push(file);
+      } else if (isDataFile(file.name)) {
+        dataFilesToUpload.push(file);
       }
     }
 
+    try {
+      // Upload KB files (PDF, DOCX, PPTX) -> vectorized for RAG
+      if (kbFiles.length > 0) {
+        await uploadKBAttachments(conversationId, kbFiles);
+      }
+
+      // Upload data files (CSV, XLSX, JSON, TXT) -> for code execution
+      const uploadedDataFileIds: string[] = [];
+      for (const file of dataFilesToUpload) {
+        const uploaded = await uploadDataFile(conversationId, file);
+        if (uploaded && uploaded.status === "ready") {
+          uploadedDataFileIds.push(uploaded.id);
+        }
+      }
+
+      // Notify parent of new data files (for auto-selection)
+      if (uploadedDataFileIds.length > 0 && onDataFileSelect) {
+        onDataFileSelect(uploadedDataFileIds);
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    }
+
     e.target.value = "";
-    // Switch to KB view to show uploaded files
-    setView("kb");
+    // Switch to files view to show uploaded files
+    setView("files");
   };
 
   // Handle KB attachment deletion
-  const handleDelete = useCallback(
+  const handleDeleteKB = useCallback(
     async (attachmentId: string) => {
       if (!conversationId) return;
       setDeletingId(attachmentId);
       try {
-        await deleteAttachment(conversationId, attachmentId);
+        await deleteKBAttachment(conversationId, attachmentId);
       } finally {
         setDeletingId(null);
       }
     },
-    [conversationId, deleteAttachment]
+    [conversationId, deleteKBAttachment]
+  );
+
+  // Handle data file deletion
+  const handleDeleteDataFile = useCallback(
+    async (fileId: string) => {
+      if (!conversationId) return;
+      setDeletingId(fileId);
+      try {
+        await deleteDataFile(conversationId, fileId);
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [conversationId, deleteDataFile]
   );
 
   // Reset view when closing
@@ -178,11 +240,11 @@ export function AttachmentMenu({
         className="hidden"
       />
       <input
-        ref={docInputRef}
+        ref={fileInputRef}
         type="file"
-        accept={ALLOWED_DOC_EXTENSIONS.join(",")}
+        accept={ALLOWED_EXTENSIONS.join(",")}
         multiple
-        onChange={handleDocChange}
+        onChange={handleFileChange}
         className="hidden"
       />
 
@@ -204,7 +266,7 @@ export function AttachmentMenu({
             {totalIndicator > 0 && (
               <Badge
                 variant="secondary"
-                className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 text-[10px] font-medium"
+                className="absolute -right-0.5 -top-0.5 h-4 min-w-[16px] px-1 text-[10px] font-medium"
               >
                 {totalIndicator}
               </Badge>
@@ -212,12 +274,7 @@ export function AttachmentMenu({
           </Button>
         </PopoverTrigger>
 
-        <PopoverContent
-          align="start"
-          side="top"
-          className="w-72 p-0"
-          sideOffset={8}
-        >
+        <PopoverContent align="start" side="top" className="w-72 p-0" sideOffset={8}>
           {view === "main" ? (
             // Main menu view
             <div className="py-1">
@@ -225,23 +282,21 @@ export function AttachmentMenu({
               <button
                 type="button"
                 onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent"
               >
-                <div className={cn(
-                  "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
-                  webSearchEnabled ? "bg-blue-500 text-white" : "bg-muted"
-                )}>
+                <div
+                  className={cn(
+                    "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg",
+                    webSearchEnabled ? "bg-blue-500 text-white" : "bg-muted"
+                  )}
+                >
                   <Globe className="h-4 w-4" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">Web Search</div>
-                  <div className="text-xs text-muted-foreground">
-                    Find real-time news and info
-                  </div>
+                  <div className="text-xs text-muted-foreground">Find real-time news and info</div>
                 </div>
-                {webSearchEnabled && (
-                  <Check className="h-4 w-4 text-blue-500" />
-                )}
+                {webSearchEnabled && <Check className="h-4 w-4 text-blue-500" />}
               </button>
 
               {/* Attach Image option */}
@@ -250,14 +305,14 @@ export function AttachmentMenu({
                 onClick={handleImageClick}
                 disabled={imageCount >= maxImages}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors",
-                  imageCount >= maxImages && "opacity-50 cursor-not-allowed"
+                  "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent",
+                  imageCount >= maxImages && "cursor-not-allowed opacity-50"
                 )}
               >
-                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-green-500/10">
                   <ImageIcon className="h-4 w-4 text-green-500" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">Attach Image</div>
                   <div className="text-xs text-muted-foreground">
                     {imageCount >= maxImages
@@ -272,66 +327,62 @@ export function AttachmentMenu({
                 )}
               </button>
 
-              {/* Upload Document option */}
+              {/* Upload Files option */}
               <button
                 type="button"
-                onClick={handleDocClick}
+                onClick={handleFileClick}
                 disabled={!conversationId}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors",
-                  !conversationId && "opacity-50 cursor-not-allowed"
+                  "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent",
+                  !conversationId && "cursor-not-allowed opacity-50"
                 )}
               >
-                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-orange-500/10">
                   <FileText className="h-4 w-4 text-orange-500" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">Upload Document</div>
-                  <div className="text-xs text-muted-foreground">
-                    PDF, DOCX, PPTX
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">Upload Files</div>
+                  <div className="text-xs text-muted-foreground">PDF, DOCX, CSV, Excel, etc.</div>
                 </div>
               </button>
 
-              {/* Knowledge Base option */}
+              {/* Uploaded Files option (view/manage) */}
               <button
                 type="button"
-                onClick={handleOpenKB}
+                onClick={handleOpenFiles}
                 disabled={!conversationId}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors",
-                  !conversationId && "opacity-50 cursor-not-allowed"
+                  "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent",
+                  !conversationId && "cursor-not-allowed opacity-50"
                 )}
               >
-                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                  <BookOpen className="h-4 w-4 text-purple-500" />
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-purple-500/10">
+                  <FolderOpen className="h-4 w-4 text-purple-500" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">Knowledge Base</div>
-                  <div className="text-xs text-muted-foreground">
-                    Manage uploaded docs
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">Uploaded Files</div>
+                  <div className="text-xs text-muted-foreground">Manage your files</div>
                 </div>
-                {attachmentCount > 0 && (
+                {totalFileCount > 0 && (
                   <Badge variant="secondary" className="text-xs">
-                    {attachmentCount}
+                    {totalFileCount}
                   </Badge>
                 )}
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
           ) : (
-            // Knowledge Base view
+            // Files view (unified KB + data files)
             <div>
-              {/* KB Header */}
-              <div className="flex items-center justify-between px-3 py-2.5 border-b">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b px-3 py-2.5">
                 <button
                   type="button"
                   onClick={() => setView("main")}
-                  className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
+                  className="flex items-center gap-2 text-sm font-medium transition-colors hover:text-primary"
                 >
                   <ChevronRight className="h-4 w-4 rotate-180" />
-                  Knowledge Base
+                  Uploaded Files
                 </button>
                 <Button
                   variant="ghost"
@@ -343,40 +394,50 @@ export function AttachmentMenu({
                 </Button>
               </div>
 
-              {/* KB Content */}
-              <div className="p-3 space-y-3">
+              {/* Content */}
+              <div className="space-y-3 p-3">
                 {/* Upload button */}
                 <Button
                   variant="outline"
                   size="sm"
                   className="w-full gap-2"
-                  onClick={handleDocClick}
+                  onClick={handleFileClick}
                   disabled={isLoading || !conversationId}
                 >
                   <Plus className="h-4 w-4" />
                   Add files
                 </Button>
 
-                {uploadError && (
-                  <p className="text-xs text-destructive">{uploadError}</p>
-                )}
+                {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
 
-                {/* Attachments list */}
-                {attachments.length > 0 && (
+                {/* Files list */}
+                {(kbAttachments.length > 0 || dataFiles.length > 0) && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{attachmentCount} document{attachmentCount !== 1 ? "s" : ""}</span>
+                      <span>
+                        {totalFileCount} file{totalFileCount !== 1 ? "s" : ""}
+                      </span>
                       <span>{formatFileSize(totalSize)}</span>
                     </div>
 
                     <ScrollArea className="max-h-[200px]">
                       <div className="space-y-2">
-                        {attachments.map((attachment) => (
+                        {/* KB attachments (PDF, DOCX, PPTX) */}
+                        {kbAttachments.map((attachment) => (
                           <KBAttachmentItem
                             key={attachment.id}
                             attachment={attachment}
-                            onDelete={handleDelete}
+                            onDelete={handleDeleteKB}
                             isDeleting={deletingId === attachment.id}
+                          />
+                        ))}
+                        {/* Data files (CSV, XLSX, JSON, TXT) */}
+                        {dataFiles.map((file) => (
+                          <DataFileItem
+                            key={file.id}
+                            file={file}
+                            onDelete={handleDeleteDataFile}
+                            isDeleting={deletingId === file.id}
                           />
                         ))}
                       </div>
@@ -385,9 +446,10 @@ export function AttachmentMenu({
                 )}
 
                 {/* Empty state */}
-                {attachments.length === 0 && !isLoading && (
-                  <p className="text-xs text-center text-muted-foreground py-2">
-                    Upload documents to create a knowledge base. The AI will be able to search and reference them.
+                {kbAttachments.length === 0 && dataFiles.length === 0 && !isLoading && (
+                  <p className="py-2 text-center text-xs text-muted-foreground">
+                    Upload files to give the AI context. PDFs and documents are searchable, data
+                    files can be analyzed.
                   </p>
                 )}
               </div>

@@ -1,6 +1,7 @@
 """
 Tests for LLM Service.
 """
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -56,12 +57,8 @@ def mock_client():
     """Create a mock Anthropic client."""
     mock = MagicMock()
     mock.messages.create = AsyncMock(return_value=MockMessage("Test response"))
-    mock.messages.stream = MagicMock(
-        return_value=MockStreamManager(["Hello ", "World!"])
-    )
-    mock.beta.messages.create = AsyncMock(
-        return_value=MockMessage('{"key": "value"}')
-    )
+    mock.messages.stream = MagicMock(return_value=MockStreamManager(["Hello ", "World!"]))
+    mock.beta.messages.create = AsyncMock(return_value=MockMessage('{"key": "value"}'))
     return mock
 
 
@@ -304,9 +301,7 @@ class TestLLMServiceJSONComplete:
         """Test json_complete passes system prompt."""
         schema = {"type": "object"}
 
-        await llm_service.json_complete(
-            "Get JSON", json_schema=schema, system="Return valid JSON"
-        )
+        await llm_service.json_complete("Get JSON", json_schema=schema, system="Return valid JSON")
 
         call_kwargs = mock_client.beta.messages.create.call_args.kwargs
         assert call_kwargs["system"] == "Return valid JSON"
@@ -317,9 +312,7 @@ class TestLLMServiceJSONComplete:
         mock_client.beta.messages.create.return_value = MockMessage("not valid json")
 
         with pytest.raises((json.JSONDecodeError, ValueError)):
-            await llm_service.json_complete(
-                "Get JSON", json_schema={"type": "object"}
-            )
+            await llm_service.json_complete("Get JSON", json_schema={"type": "object"})
 
     @pytest.mark.asyncio
     async def test_json_complete_handles_api_error(self, llm_service, mock_client):
@@ -327,6 +320,4 @@ class TestLLMServiceJSONComplete:
         mock_client.beta.messages.create.side_effect = Exception("API Error")
 
         with pytest.raises(Exception, match="API Error"):
-            await llm_service.json_complete(
-                "Get JSON", json_schema={"type": "object"}
-            )
+            await llm_service.json_complete("Get JSON", json_schema={"type": "object"})

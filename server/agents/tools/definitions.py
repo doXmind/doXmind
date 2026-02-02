@@ -18,11 +18,11 @@ DOCUMENT_TOOLS = [
             "properties": {
                 "file_id": {
                     "type": "string",
-                    "description": "The ID of the file to view (optional, uses current file if not provided)"
+                    "description": "The ID of the file to view (optional, uses current file if not provided)",
                 }
             },
-            "required": []
-        }
+            "required": [],
+        },
     },
     {
         "name": "str_replace_editor",
@@ -32,19 +32,19 @@ DOCUMENT_TOOLS = [
             "properties": {
                 "old_str": {
                     "type": "string",
-                    "description": "The exact string to find and replace (must be unique in document)"
+                    "description": "The exact string to find and replace (must be unique in document)",
                 },
                 "new_str": {
                     "type": "string",
-                    "description": "The new string to replace it with (use Markdown format)"
+                    "description": "The new string to replace it with (use Markdown format)",
                 },
                 "file_id": {
                     "type": "string",
-                    "description": "The ID of the file to edit (optional)"
-                }
+                    "description": "The ID of the file to edit (optional)",
+                },
             },
-            "required": ["old_str", "new_str"]
-        }
+            "required": ["old_str", "new_str"],
+        },
     },
     {
         "name": "insert_text",
@@ -54,19 +54,19 @@ DOCUMENT_TOOLS = [
             "properties": {
                 "insert_line": {
                     "type": "integer",
-                    "description": "The line number after which to insert (0 = beginning of file)"
+                    "description": "The line number after which to insert (0 = beginning of file)",
                 },
                 "new_str": {
                     "type": "string",
-                    "description": "The text to insert (use Markdown format)"
+                    "description": "The text to insert (use Markdown format)",
                 },
                 "file_id": {
                     "type": "string",
-                    "description": "The ID of the file to edit (optional)"
-                }
+                    "description": "The ID of the file to edit (optional)",
+                },
             },
-            "required": ["insert_line", "new_str"]
-        }
+            "required": ["insert_line", "new_str"],
+        },
     },
     {
         "name": "replace_document",
@@ -76,15 +76,15 @@ DOCUMENT_TOOLS = [
             "properties": {
                 "new_content": {
                     "type": "string",
-                    "description": "The complete new content for the document (use Markdown format)"
+                    "description": "The complete new content for the document (use Markdown format)",
                 },
                 "file_id": {
                     "type": "string",
-                    "description": "The ID of the file to edit (optional)"
-                }
+                    "description": "The ID of the file to edit (optional)",
+                },
             },
-            "required": ["new_content"]
-        }
+            "required": ["new_content"],
+        },
     },
     {
         "name": "search_in_document",
@@ -94,16 +94,16 @@ DOCUMENT_TOOLS = [
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The text to search for (case-insensitive)"
+                    "description": "The text to search for (case-insensitive)",
                 },
                 "file_id": {
                     "type": "string",
-                    "description": "The ID of the file to search (optional)"
-                }
+                    "description": "The ID of the file to search (optional)",
+                },
             },
-            "required": ["query"]
-        }
-    }
+            "required": ["query"],
+        },
+    },
 ]
 
 # Backward compatibility alias
@@ -128,16 +128,16 @@ Returns the most relevant excerpts from the documents.""",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query - be specific about what information you need"
+                    "description": "The search query - be specific about what information you need",
                 },
                 "top_k": {
                     "type": "integer",
                     "description": "Number of results to return (default: 5, max: 10)",
-                    "default": 5
-                }
+                    "default": 5,
+                },
             },
-            "required": ["query"]
-        }
+            "required": ["query"],
+        },
     },
     {
         "name": "read_kb_document",
@@ -148,31 +148,27 @@ Use this when you need to read through a document, or when search_knowledge_base
             "properties": {
                 "document_name": {
                     "type": "string",
-                    "description": "The filename of the document to read (e.g., 'research-paper.pdf')"
+                    "description": "The filename of the document to read (e.g., 'research-paper.pdf')",
                 },
                 "start_section": {
                     "type": "integer",
                     "description": "Starting section/chunk to read from (0-indexed, default: 0)",
-                    "default": 0
+                    "default": 0,
                 },
                 "num_sections": {
                     "type": "integer",
                     "description": "Number of sections to read (default: 5)",
-                    "default": 5
-                }
+                    "default": 5,
+                },
             },
-            "required": ["document_name"]
-        }
+            "required": ["document_name"],
+        },
     },
     {
         "name": "list_kb_documents",
         "description": "List all documents in the conversation's knowledge base. Use this to see what reference materials are available.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-    }
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 
@@ -276,6 +272,21 @@ Example: read_skill_knowledge("essay-writing", "citation_apa.md") returns APA ci
 
 
 # ============================================================================
+# Data Files Tools Definition (for code execution analysis)
+# ============================================================================
+
+DATA_FILES_TOOLS = [
+    {
+        "name": "list_data_files",
+        "description": """List all data files uploaded to this conversation.
+Use this to see what data files (CSV, Excel, JSON, etc.) are available for analysis.
+The files can be analyzed using code execution when enabled.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    }
+]
+
+
+# ============================================================================
 # Legal Research Tools Definition
 # ============================================================================
 
@@ -344,6 +355,7 @@ Use after search_court_opinions to read the complete opinion text for citation o
 
 SKILL_EXTERNAL_TOOLS: dict[str, list[dict]] = {
     "legal": LEGAL_TOOLS,
+    "data-analysis": DATA_FILES_TOOLS,
 }
 
 
@@ -355,6 +367,7 @@ DOCUMENT_TOOL_NAMES = {tool["name"] for tool in DOCUMENT_TOOLS}
 KB_TOOL_NAMES = {tool["name"] for tool in KB_TOOLS}
 SKILL_TOOL_NAMES = {tool["name"] for tool in SKILL_TOOLS}
 LEGAL_TOOL_NAMES = {tool["name"] for tool in LEGAL_TOOLS}
+DATA_FILES_TOOL_NAMES = {tool["name"] for tool in DATA_FILES_TOOLS}
 READONLY_TOOL_NAMES = {tool["name"] for tool in READONLY_TOOLS}
 
 
@@ -365,6 +378,7 @@ def get_tools_for_mode(
     web_search_enabled: bool = False,
     web_search_max_uses: int = 5,
     web_fetch_max_uses: int = 10,
+    code_execution_enabled: bool = False,
 ) -> list[dict]:
     """Get the appropriate tools based on mode and feature flags.
 
@@ -375,13 +389,14 @@ def get_tools_for_mode(
         web_search_enabled: Whether web search tool is enabled
         web_search_max_uses: Max number of web searches per request
         web_fetch_max_uses: Max number of web fetches per request (always enabled)
+        code_execution_enabled: Whether code execution tool is enabled
 
     Returns:
         List of tool definitions for Claude API
 
     Note:
-        External tools (like LEGAL_TOOLS) are loaded dynamically when their
-        associated skill is read via SKILL_EXTERNAL_TOOLS mapping.
+        External tools (like LEGAL_TOOLS, DATA_FILES_TOOLS) are loaded dynamically
+        when their associated skill is read via SKILL_EXTERNAL_TOOLS mapping.
     """
     base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
     tools = list(base_tools)  # Make a copy
@@ -392,6 +407,9 @@ def get_tools_for_mode(
     if has_kb_attachments:
         tools = tools + KB_TOOLS
 
+    # Note: DATA_FILES_TOOLS are loaded via data-analysis skill activation
+    # See SKILL_EXTERNAL_TOOLS mapping
+
     if has_skills:
         tools = tools + SKILL_TOOLS
 
@@ -401,6 +419,11 @@ def get_tools_for_mode(
         tools.append(get_web_search_tool(web_search_max_uses))
     # Web fetch is always enabled (free, only costs tokens)
     tools.append(get_web_fetch_tool(web_fetch_max_uses))
+
+    # Add code execution tool (Anthropic server-side tool)
+    # Enables running Python/Bash code for data analysis
+    if code_execution_enabled:
+        tools.append(get_code_execution_tool())
 
     return tools
 
@@ -445,36 +468,34 @@ Fields:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "Unique identifier for the todo"
-                        },
+                        "id": {"type": "string", "description": "Unique identifier for the todo"},
                         "content": {
                             "type": "string",
-                            "description": "Imperative form: what to do (e.g., 'Run tests')"
+                            "description": "Imperative form: what to do (e.g., 'Run tests')",
                         },
                         "status": {
                             "type": "string",
                             "enum": ["pending", "in_progress", "completed"],
-                            "description": "Current status of the task"
+                            "description": "Current status of the task",
                         },
                         "activeForm": {
                             "type": "string",
-                            "description": "Present continuous form shown during execution (e.g., 'Running tests')"
-                        }
+                            "description": "Present continuous form shown during execution (e.g., 'Running tests')",
+                        },
                     },
-                    "required": ["id", "content", "status", "activeForm"]
-                }
+                    "required": ["id", "content", "status", "activeForm"],
+                },
             }
         },
-        "required": ["todos"]
-    }
+        "required": ["todos"],
+    },
 }
 
 
 # ============================================================================
 # Web Tools Definition (Anthropic server-side tools)
 # ============================================================================
+
 
 def get_web_search_tool(max_uses: int = 5) -> dict:
     """Get web search tool definition for Anthropic API.
@@ -484,11 +505,7 @@ def get_web_search_tool(max_uses: int = 5) -> dict:
 
     Pricing: $10 per 1,000 searches + standard token costs.
     """
-    return {
-        "type": "web_search_20250305",
-        "name": "web_search",
-        "max_uses": max_uses
-    }
+    return {"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}
 
 
 def get_web_fetch_tool(max_uses: int = 10) -> dict:
@@ -504,5 +521,29 @@ def get_web_fetch_tool(max_uses: int = 10) -> dict:
         "type": "web_fetch_20250910",
         "name": "web_fetch",
         "max_uses": max_uses,
-        "citations": {"enabled": True}
+        "citations": {"enabled": True},
     }
+
+
+# ============================================================================
+# Code Execution Tool Definition (Anthropic server-side tool)
+# ============================================================================
+
+
+def get_code_execution_tool() -> dict:
+    """Get code execution tool definition for Anthropic API.
+
+    This is a server-side tool that enables Claude to run Bash commands
+    and manipulate files in a secure sandboxed environment.
+
+    Requires beta header: anthropic-beta: code-execution-2025-08-25
+
+    Sandbox environment:
+    - Ubuntu 24.04, Python 3.12, Node.js 18.19
+    - 9GB RAM, 5GB disk
+    - 30 second execution timeout
+    - No network access
+
+    Pricing: First 1,550 hours/month free, then $0.05/hour.
+    """
+    return {"type": "code_execution_20250825", "name": "code_execution"}

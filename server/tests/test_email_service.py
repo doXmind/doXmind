@@ -29,16 +29,11 @@ class TestSendEmail:
     async def test_returns_false_without_smtp_credentials(self):
         """Should return False when SMTP credentials not configured."""
         with patch("services.email_service.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                smtp_user=None,
-                smtp_password=None
-            )
+            mock_settings.return_value = MagicMock(smtp_user=None, smtp_password=None)
             service = EmailService()
 
             result = await service.send_email(
-                to_email="test@example.com",
-                subject="Test",
-                html_content="<p>Test</p>"
+                to_email="test@example.com", subject="Test", html_content="<p>Test</p>"
             )
 
             assert result is False
@@ -46,16 +41,11 @@ class TestSendEmail:
     async def test_returns_false_with_partial_credentials(self):
         """Should return False when only partial SMTP credentials."""
         with patch("services.email_service.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                smtp_user="user@example.com",
-                smtp_password=None
-            )
+            mock_settings.return_value = MagicMock(smtp_user="user@example.com", smtp_password=None)
             service = EmailService()
 
             result = await service.send_email(
-                to_email="test@example.com",
-                subject="Test",
-                html_content="<p>Test</p>"
+                to_email="test@example.com", subject="Test", html_content="<p>Test</p>"
             )
 
             assert result is False
@@ -70,7 +60,7 @@ class TestSendEmail:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="Test App",
-                smtp_from_email="noreply@example.com"
+                smtp_from_email="noreply@example.com",
             )
 
             with patch("services.email_service.aiosmtplib.send", new=AsyncMock()) as mock_send:
@@ -80,7 +70,7 @@ class TestSendEmail:
                     to_email="recipient@example.com",
                     subject="Test Subject",
                     html_content="<p>HTML content</p>",
-                    text_content="Plain text content"
+                    text_content="Plain text content",
                 )
 
                 assert result is True
@@ -96,17 +86,17 @@ class TestSendEmail:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="Test App",
-                smtp_from_email=None
+                smtp_from_email=None,
             )
 
-            with patch("services.email_service.aiosmtplib.send",
-                       new=AsyncMock(side_effect=Exception("SMTP error"))):
+            with patch(
+                "services.email_service.aiosmtplib.send",
+                new=AsyncMock(side_effect=Exception("SMTP error")),
+            ):
                 service = EmailService()
 
                 result = await service.send_email(
-                    to_email="recipient@example.com",
-                    subject="Test",
-                    html_content="<p>Content</p>"
+                    to_email="recipient@example.com", subject="Test", html_content="<p>Content</p>"
                 )
 
                 assert result is False
@@ -121,15 +111,13 @@ class TestSendEmail:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="Test App",
-                smtp_from_email=None  # Not configured
+                smtp_from_email=None,  # Not configured
             )
 
             with patch("services.email_service.aiosmtplib.send", new=AsyncMock()) as mock_send:
                 service = EmailService()
                 await service.send_email(
-                    to_email="recipient@example.com",
-                    subject="Test",
-                    html_content="<p>Content</p>"
+                    to_email="recipient@example.com", subject="Test", html_content="<p>Content</p>"
                 )
 
                 # Check that from email used smtp_user
@@ -152,16 +140,14 @@ class TestSendVerificationCode:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="doXmind",
-                smtp_from_email="noreply@example.com"
+                smtp_from_email="noreply@example.com",
             )
 
             with patch("services.email_service.aiosmtplib.send", new=AsyncMock()):
                 service = EmailService()
 
                 result = await service.send_verification_code(
-                    to_email="user@example.com",
-                    code="123456",
-                    expire_minutes=15
+                    to_email="user@example.com", code="123456", expire_minutes=15
                 )
 
                 assert result is True
@@ -176,15 +162,12 @@ class TestSendVerificationCode:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="doXmind",
-                smtp_from_email="noreply@example.com"
+                smtp_from_email="noreply@example.com",
             )
 
             with patch("services.email_service.aiosmtplib.send", new=AsyncMock()) as mock_send:
                 service = EmailService()
-                await service.send_verification_code(
-                    to_email="user@example.com",
-                    code="654321"
-                )
+                await service.send_verification_code(to_email="user@example.com", code="654321")
 
                 message = mock_send.call_args[0][0]
                 assert "654321" in message["Subject"]
@@ -204,7 +187,7 @@ class TestSendPasswordReset:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="doXmind",
-                smtp_from_email="noreply@example.com"
+                smtp_from_email="noreply@example.com",
             )
 
             with patch("services.email_service.aiosmtplib.send", new=AsyncMock()):
@@ -213,7 +196,7 @@ class TestSendPasswordReset:
                 result = await service.send_password_reset(
                     to_email="user@example.com",
                     reset_link="https://example.com/reset?token=abc123",
-                    expire_hours=1
+                    expire_hours=1,
                 )
 
                 assert result is True
@@ -233,15 +216,14 @@ class TestSendWelcomeEmail:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="doXmind",
-                smtp_from_email="noreply@example.com"
+                smtp_from_email="noreply@example.com",
             )
 
             with patch("services.email_service.aiosmtplib.send", new=AsyncMock()):
                 service = EmailService()
 
                 result = await service.send_welcome_email(
-                    to_email="user@example.com",
-                    username="TestUser"
+                    to_email="user@example.com", username="TestUser"
                 )
 
                 assert result is True
@@ -256,15 +238,12 @@ class TestSendWelcomeEmail:
                 smtp_port=587,
                 smtp_use_tls=True,
                 smtp_from_name="doXmind",
-                smtp_from_email="noreply@example.com"
+                smtp_from_email="noreply@example.com",
             )
 
             with patch("services.email_service.aiosmtplib.send", new=AsyncMock()) as mock_send:
                 service = EmailService()
-                await service.send_welcome_email(
-                    to_email="user@example.com",
-                    username="JohnDoe"
-                )
+                await service.send_welcome_email(to_email="user@example.com", username="JohnDoe")
 
                 # Check that email was sent (username is in HTML content)
                 mock_send.assert_called_once()
@@ -285,6 +264,7 @@ class TestGetEmailService:
 
             # Reset singleton
             import services.email_service
+
             services.email_service._email_service = None
 
             service1 = get_email_service()
@@ -302,6 +282,7 @@ class TestGetEmailService:
 
             # Reset singleton
             import services.email_service
+
             services.email_service._email_service = None
 
             service = get_email_service()

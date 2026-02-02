@@ -35,10 +35,7 @@ class UserService:
     # =========================================================================
 
     async def initiate_registration(
-        self,
-        email: str,
-        username: str,
-        password: str
+        self, email: str, username: str, password: str
     ) -> tuple[bool, str]:
         """Start the registration process by sending a verification code.
 
@@ -56,22 +53,19 @@ class UserService:
             return False, "Email already registered"
 
         # Clean up any existing verification for this email
-        await self.db.execute(
-            delete(EmailVerification).where(EmailVerification.email == email)
-        )
+        await self.db.execute(delete(EmailVerification).where(EmailVerification.email == email))
 
         # Generate 6-digit code
-        code = ''.join(random.choices(string.digits, k=6))
+        code = "".join(random.choices(string.digits, k=6))
 
         # Create verification record
         verification = EmailVerification(
             email=email,
             code=code,
-            expires_at=datetime.now(UTC) + timedelta(
-                minutes=self.settings.email_verification_expire_minutes
-            ),
+            expires_at=datetime.now(UTC)
+            + timedelta(minutes=self.settings.email_verification_expire_minutes),
             pending_username=username,
-            pending_hashed_password=hash_password(password)
+            pending_hashed_password=hash_password(password),
         )
 
         self.db.add(verification)
@@ -90,11 +84,7 @@ class UserService:
 
         return True, "Verification code sent to your email"
 
-    async def verify_email_code(
-        self,
-        email: str,
-        code: str
-    ) -> tuple[bool, str, User | None]:
+    async def verify_email_code(self, email: str, code: str) -> tuple[bool, str, User | None]:
         """Verify the email code and complete registration.
 
         Args:
@@ -106,10 +96,9 @@ class UserService:
         """
         # Find verification record
         result = await self.db.execute(
-            select(EmailVerification).where(
-                EmailVerification.email == email,
-                EmailVerification.verified.is_(False)
-            ).order_by(EmailVerification.created_at.desc())
+            select(EmailVerification)
+            .where(EmailVerification.email == email, EmailVerification.verified.is_(False))
+            .order_by(EmailVerification.created_at.desc())
         )
         verification = result.scalar_one_or_none()
 
@@ -137,7 +126,7 @@ class UserService:
             username=verification.pending_username,
             hashed_password=verification.pending_hashed_password,
             is_verified=True,
-            is_active=True
+            is_active=True,
         )
 
         self.db.add(user)
@@ -168,10 +157,9 @@ class UserService:
 
         # Find existing verification
         result = await self.db.execute(
-            select(EmailVerification).where(
-                EmailVerification.email == email,
-                EmailVerification.verified.is_(False)
-            ).order_by(EmailVerification.created_at.desc())
+            select(EmailVerification)
+            .where(EmailVerification.email == email, EmailVerification.verified.is_(False))
+            .order_by(EmailVerification.created_at.desc())
         )
         verification = result.scalar_one_or_none()
 
@@ -179,7 +167,7 @@ class UserService:
             return False, "No pending registration found"
 
         # Generate new code
-        code = ''.join(random.choices(string.digits, k=6))
+        code = "".join(random.choices(string.digits, k=6))
         verification.code = code
         verification.expires_at = datetime.now(UTC) + timedelta(
             minutes=self.settings.email_verification_expire_minutes
@@ -204,11 +192,7 @@ class UserService:
     # Authentication
     # =========================================================================
 
-    async def authenticate(
-        self,
-        email: str,
-        password: str
-    ) -> tuple[bool, str, str | None]:
+    async def authenticate(self, email: str, password: str) -> tuple[bool, str, str | None]:
         """Authenticate user with email and password.
 
         Args:
@@ -264,9 +248,7 @@ class UserService:
             return True, "If an account exists, a reset link will be sent"
 
         # Clean up old reset tokens
-        await self.db.execute(
-            delete(PasswordReset).where(PasswordReset.user_id == user.id)
-        )
+        await self.db.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
 
         # Generate reset token
         token = secrets.token_urlsafe(32)
@@ -274,9 +256,8 @@ class UserService:
         reset = PasswordReset(
             user_id=user.id,
             token=token,
-            expires_at=datetime.now(UTC) + timedelta(
-                hours=self.settings.password_reset_expire_hours
-            )
+            expires_at=datetime.now(UTC)
+            + timedelta(hours=self.settings.password_reset_expire_hours),
         )
 
         self.db.add(reset)
@@ -295,11 +276,7 @@ class UserService:
 
         return True, "If an account exists, a reset link will be sent"
 
-    async def reset_password(
-        self,
-        token: str,
-        new_password: str
-    ) -> tuple[bool, str]:
+    async def reset_password(self, token: str, new_password: str) -> tuple[bool, str]:
         """Reset password using reset token.
 
         Args:
@@ -310,10 +287,7 @@ class UserService:
             Tuple of (success, message)
         """
         result = await self.db.execute(
-            select(PasswordReset).where(
-                PasswordReset.token == token,
-                PasswordReset.used.is_(False)
-            )
+            select(PasswordReset).where(PasswordReset.token == token, PasswordReset.used.is_(False))
         )
         reset = result.scalar_one_or_none()
 
@@ -342,29 +316,18 @@ class UserService:
 
     async def get_user_by_email(self, email: str) -> User | None:
         """Get user by email."""
-        result = await self.db.execute(
-            select(User).where(User.email == email)
-        )
+        result = await self.db.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
     async def get_user_by_id(self, user_id: str) -> User | None:
         """Get user by ID."""
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
-    async def get_user_by_oauth(
-        self,
-        provider: str,
-        oauth_id: str
-    ) -> User | None:
+    async def get_user_by_oauth(self, provider: str, oauth_id: str) -> User | None:
         """Get user by OAuth provider and ID."""
         result = await self.db.execute(
-            select(User).where(
-                User.oauth_provider == provider,
-                User.oauth_id == oauth_id
-            )
+            select(User).where(User.oauth_provider == provider, User.oauth_id == oauth_id)
         )
         return result.scalar_one_or_none()
 
@@ -378,7 +341,7 @@ class UserService:
         oauth_id: str,
         email: str,
         username: str | None = None,
-        avatar_url: str | None = None
+        avatar_url: str | None = None,
     ) -> tuple[User, bool]:
         """Create or update user from OAuth login.
 
@@ -424,7 +387,7 @@ class UserService:
             oauth_id=oauth_id,
             avatar_url=avatar_url,
             is_verified=True,  # OAuth verifies email
-            is_active=True
+            is_active=True,
         )
 
         self.db.add(user)
@@ -441,10 +404,7 @@ class UserService:
     # =========================================================================
 
     async def update_profile(
-        self,
-        user_id: str,
-        username: str | None = None,
-        avatar_url: str | None = None
+        self, user_id: str, username: str | None = None, avatar_url: str | None = None
     ) -> tuple[bool, str, User | None]:
         """Update user profile.
 
@@ -474,10 +434,7 @@ class UserService:
         return True, "Profile updated", user
 
     async def change_password(
-        self,
-        user_id: str,
-        current_password: str,
-        new_password: str
+        self, user_id: str, current_password: str, new_password: str
     ) -> tuple[bool, str]:
         """Change user password.
 
@@ -552,14 +509,10 @@ class UserService:
                 )
 
             # Delete conversations
-            await self.db.execute(
-                delete(Conversation).where(Conversation.user_id == user_id)
-            )
+            await self.db.execute(delete(Conversation).where(Conversation.user_id == user_id))
 
             # Delete files
-            await self.db.execute(
-                delete(File).where(File.user_id == user_id)
-            )
+            await self.db.execute(delete(File).where(File.user_id == user_id))
 
             # Delete email verifications
             await self.db.execute(
@@ -567,9 +520,7 @@ class UserService:
             )
 
             # Delete password resets
-            await self.db.execute(
-                delete(PasswordReset).where(PasswordReset.user_id == user_id)
-            )
+            await self.db.execute(delete(PasswordReset).where(PasswordReset.user_id == user_id))
 
             # Delete user
             await self.db.delete(user)

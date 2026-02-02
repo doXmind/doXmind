@@ -29,8 +29,7 @@ class TestIsConfigured:
         """Should return True when OAuth is fully configured."""
         with patch("services.oauth_service.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
-                google_client_id="client-id-123",
-                google_client_secret="client-secret-456"
+                google_client_id="client-id-123", google_client_secret="client-secret-456"
             )
             service = GoogleOAuthService()
 
@@ -40,8 +39,7 @@ class TestIsConfigured:
         """Should return False when client ID is missing."""
         with patch("services.oauth_service.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
-                google_client_id=None,
-                google_client_secret="client-secret-456"
+                google_client_id=None, google_client_secret="client-secret-456"
             )
             service = GoogleOAuthService()
 
@@ -51,8 +49,7 @@ class TestIsConfigured:
         """Should return False when client secret is missing."""
         with patch("services.oauth_service.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
-                google_client_id="client-id-123",
-                google_client_secret=None
+                google_client_id="client-id-123", google_client_secret=None
             )
             service = GoogleOAuthService()
 
@@ -61,10 +58,7 @@ class TestIsConfigured:
     def test_returns_false_when_both_missing(self):
         """Should return False when both are missing."""
         with patch("services.oauth_service.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                google_client_id=None,
-                google_client_secret=None
-            )
+            mock_settings.return_value = MagicMock(google_client_id=None, google_client_secret=None)
             service = GoogleOAuthService()
 
             assert service.is_configured() is False
@@ -72,10 +66,7 @@ class TestIsConfigured:
     def test_returns_false_for_empty_strings(self):
         """Should return False for empty string credentials."""
         with patch("services.oauth_service.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                google_client_id="",
-                google_client_secret=""
-            )
+            mock_settings.return_value = MagicMock(google_client_id="", google_client_secret="")
             service = GoogleOAuthService()
 
             assert service.is_configured() is False
@@ -87,10 +78,7 @@ class TestGetAuthorizationUrl:
     def test_raises_when_not_configured(self):
         """Should raise ValueError when not configured."""
         with patch("services.oauth_service.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                google_client_id=None,
-                google_client_secret=None
-            )
+            mock_settings.return_value = MagicMock(google_client_id=None, google_client_secret=None)
             service = GoogleOAuthService()
 
             with pytest.raises(ValueError, match="not configured"):
@@ -102,7 +90,7 @@ class TestGetAuthorizationUrl:
             mock_settings.return_value = MagicMock(
                 google_client_id="client-id-123",
                 google_client_secret="client-secret-456",
-                google_redirect_uri="https://example.com/callback"
+                google_redirect_uri="https://example.com/callback",
             )
             service = GoogleOAuthService()
 
@@ -117,7 +105,7 @@ class TestGetAuthorizationUrl:
             mock_settings.return_value = MagicMock(
                 google_client_id="client-id-123",
                 google_client_secret="client-secret-456",
-                google_redirect_uri="https://example.com/callback"
+                google_redirect_uri="https://example.com/callback",
             )
             service = GoogleOAuthService()
 
@@ -131,7 +119,7 @@ class TestGetAuthorizationUrl:
             mock_settings.return_value = MagicMock(
                 google_client_id="client-id-123",
                 google_client_secret="client-secret-456",
-                google_redirect_uri="https://example.com/callback"
+                google_redirect_uri="https://example.com/callback",
             )
             service = GoogleOAuthService()
 
@@ -147,10 +135,7 @@ class TestGetTokens:
     async def test_raises_when_not_configured(self):
         """Should raise ValueError when not configured."""
         with patch("services.oauth_service.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                google_client_id=None,
-                google_client_secret=None
-            )
+            mock_settings.return_value = MagicMock(google_client_id=None, google_client_secret=None)
             service = GoogleOAuthService()
 
             with pytest.raises(ValueError, match="not configured"):
@@ -162,7 +147,7 @@ class TestGetTokens:
             mock_settings.return_value = MagicMock(
                 google_client_id="client-id-123",
                 google_client_secret="client-secret-456",
-                google_redirect_uri="https://example.com/callback"
+                google_redirect_uri="https://example.com/callback",
             )
 
             mock_response = MagicMock()
@@ -170,7 +155,7 @@ class TestGetTokens:
             mock_response.json.return_value = {
                 "access_token": "access-token-123",
                 "refresh_token": "refresh-token-456",
-                "id_token": "id-token-789"
+                "id_token": "id-token-789",
             }
 
             with patch("services.oauth_service.httpx.AsyncClient") as mock_client_class:
@@ -192,7 +177,7 @@ class TestGetTokens:
             mock_settings.return_value = MagicMock(
                 google_client_id="client-id-123",
                 google_client_secret="client-secret-456",
-                google_redirect_uri="https://example.com/callback"
+                google_redirect_uri="https://example.com/callback",
             )
 
             mock_response = MagicMock()
@@ -227,7 +212,7 @@ class TestGetUserInfo:
                 "sub": "google-user-123",
                 "email": "user@gmail.com",
                 "name": "Test User",
-                "picture": "https://example.com/avatar.jpg"
+                "picture": "https://example.com/avatar.jpg",
             }
 
             with patch("services.oauth_service.httpx.AsyncClient") as mock_client_class:
@@ -275,15 +260,13 @@ class TestAuthenticate:
             mock_settings.return_value = MagicMock(
                 google_client_id="client-id-123",
                 google_client_secret="client-secret-456",
-                google_redirect_uri="https://example.com/callback"
+                google_redirect_uri="https://example.com/callback",
             )
 
             # Mock token response
             mock_token_response = MagicMock()
             mock_token_response.status_code = 200
-            mock_token_response.json.return_value = {
-                "access_token": "access-token-123"
-            }
+            mock_token_response.json.return_value = {"access_token": "access-token-123"}
 
             # Mock user info response
             mock_user_response = MagicMock()
@@ -293,7 +276,7 @@ class TestAuthenticate:
                 "email": "user@gmail.com",
                 "name": "Test User",
                 "picture": "https://example.com/pic.jpg",
-                "email_verified": True
+                "email_verified": True,
             }
 
             with patch("services.oauth_service.httpx.AsyncClient") as mock_client_class:
@@ -320,7 +303,7 @@ class TestAuthenticate:
             mock_settings.return_value = MagicMock(
                 google_client_id="client-id-123",
                 google_client_secret="client-secret-456",
-                google_redirect_uri="https://example.com/callback"
+                google_redirect_uri="https://example.com/callback",
             )
 
             mock_token_response = MagicMock()
@@ -331,7 +314,7 @@ class TestAuthenticate:
             mock_user_response.status_code = 200
             mock_user_response.json.return_value = {
                 "sub": "google-123",
-                "email": "user@gmail.com"
+                "email": "user@gmail.com",
                 # No email_verified field
             }
 
@@ -364,6 +347,7 @@ class TestGetGoogleOAuthService:
 
             # Reset singleton
             import services.oauth_service
+
             services.oauth_service._google_oauth_service = None
 
             service1 = get_google_oauth_service()
@@ -381,6 +365,7 @@ class TestGetGoogleOAuthService:
 
             # Reset singleton
             import services.oauth_service
+
             services.oauth_service._google_oauth_service = None
 
             service = get_google_oauth_service()

@@ -96,9 +96,7 @@ async def get_skill(skill_name: str):
     skill = service.get_skill(skill_name)
 
     if not skill:
-        raise HTTPException(
-            status_code=404, detail=f"Skill not found: {skill_name}"
-        )
+        raise HTTPException(status_code=404, detail=f"Skill not found: {skill_name}")
 
     return SkillDetailResponse(
         name=skill.metadata.name,
@@ -136,16 +134,12 @@ async def get_skill_resource(skill_name: str, resource_name: str):
     # Check skill exists
     skill = service.get_skill(skill_name)
     if not skill:
-        raise HTTPException(
-            status_code=404, detail=f"Skill not found: {skill_name}"
-        )
+        raise HTTPException(status_code=404, detail=f"Skill not found: {skill_name}")
 
     # Load resource content
     content = service.load_skill_resource(skill_name, resource_name)
     if content is None:
-        raise HTTPException(
-            status_code=404, detail=f"Resource not found: {resource_name}"
-        )
+        raise HTTPException(status_code=404, detail=f"Resource not found: {resource_name}")
 
     # Determine resource type
     resource_type = "unknown"

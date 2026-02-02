@@ -54,6 +54,11 @@ const nextConfig: NextConfig = {
         source: "/api/kb/:path*",
         destination: `${backendUrl}/api/kb/:path*`,
       },
+      // Data files routes (for code execution)
+      {
+        source: "/api/data-files/:path*",
+        destination: `${backendUrl}/api/data-files/:path*`,
+      },
       // Review routes
       {
         source: "/api/review/:path*",

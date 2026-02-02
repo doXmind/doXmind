@@ -29,7 +29,7 @@ router = APIRouter()
 # Configuration from settings
 settings = get_settings()
 MAX_FILE_SIZE = settings.max_file_size
-ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx'}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx"}
 
 
 # Pydantic models
@@ -85,9 +85,7 @@ async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
 
 @router.post("/{conversation_id}/attachments", response_model=AttachmentResponse)
 async def upload_attachment(
-    conversation_id: str,
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    conversation_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
 ):
     """Upload a document to the conversation's knowledge base.
 
@@ -101,20 +99,14 @@ async def upload_attachment(
     # Validate file extension
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:
-        raise UnsupportedFileTypeError(
-            file_type=ext,
-            allowed_types=list(ALLOWED_EXTENSIONS)
-        )
+        raise UnsupportedFileTypeError(file_type=ext, allowed_types=list(ALLOWED_EXTENSIONS))
 
     # Read file content
     content = await file.read()
 
     # Validate file size
     if len(content) > MAX_FILE_SIZE:
-        raise FileTooLargeError(
-            max_size=MAX_FILE_SIZE,
-            actual_size=len(content)
-        )
+        raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
 
     # Create attachment record
     file_type = ext[1:]  # Remove the dot
@@ -123,7 +115,7 @@ async def upload_attachment(
         original_filename=file.filename or "unknown",
         file_type=file_type,
         file_size=len(content),
-        status="processing"
+        status="processing",
     )
     db.add(attachment)
     await db.commit()
@@ -139,7 +131,7 @@ async def upload_attachment(
             attachment_id=attachment.id,
             conversation_id=conv.id,
             content=extracted_text,
-            filename=file.filename or "unknown"
+            filename=file.filename or "unknown",
         )
 
         attachment.chunk_count = chunk_count
@@ -164,7 +156,7 @@ async def upload_attachment(
         status=attachment.status,
         chunk_count=attachment.chunk_count,
         error_message=attachment.error_message,
-        created_at=attachment.created_at.isoformat()
+        created_at=attachment.created_at.isoformat(),
     )
 
 
@@ -172,7 +164,7 @@ async def upload_attachment(
 async def upload_attachments_batch(
     conversation_id: str,
     files: Annotated[list[UploadFile], File(...)],
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Upload multiple documents to the conversation's knowledge base.
 
@@ -185,10 +177,7 @@ async def upload_attachments_batch(
     MAX_FILES = 10
 
     if len(files) > MAX_FILES:
-        raise FileTooLargeError(
-            max_size=MAX_FILES,
-            actual_size=len(files)
-        )
+        raise FileTooLargeError(max_size=MAX_FILES, actual_size=len(files))
 
     # Get or create conversation
     conv = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
@@ -203,16 +192,18 @@ async def upload_attachments_batch(
         # Validate file extension
         ext = get_file_extension(file.filename or "")
         if ext not in ALLOWED_EXTENSIONS:
-            results.append(AttachmentResponse(
-                id="",
-                original_filename=file.filename or "unknown",
-                file_type="unknown",
-                file_size=0,
-                status="error",
-                chunk_count=0,
-                error_message=f"Unsupported file type: {ext}",
-                created_at=""
-            ))
+            results.append(
+                AttachmentResponse(
+                    id="",
+                    original_filename=file.filename or "unknown",
+                    file_type="unknown",
+                    file_size=0,
+                    status="error",
+                    chunk_count=0,
+                    error_message=f"Unsupported file type: {ext}",
+                    created_at="",
+                )
+            )
             continue
 
         # Read file content
@@ -220,16 +211,18 @@ async def upload_attachments_batch(
 
         # Validate file size
         if len(content) > MAX_FILE_SIZE:
-            results.append(AttachmentResponse(
-                id="",
-                original_filename=file.filename or "unknown",
-                file_type="unknown",
-                file_size=len(content),
-                status="error",
-                chunk_count=0,
-                error_message=f"File too large: {len(content)} bytes (max {MAX_FILE_SIZE})",
-                created_at=""
-            ))
+            results.append(
+                AttachmentResponse(
+                    id="",
+                    original_filename=file.filename or "unknown",
+                    file_type="unknown",
+                    file_size=len(content),
+                    status="error",
+                    chunk_count=0,
+                    error_message=f"File too large: {len(content)} bytes (max {MAX_FILE_SIZE})",
+                    created_at="",
+                )
+            )
             continue
 
         # Create attachment record with "processing" status
@@ -239,22 +232,24 @@ async def upload_attachments_batch(
             original_filename=file.filename or "unknown",
             file_type=file_type,
             file_size=len(content),
-            status="processing"
+            status="processing",
         )
         db.add(attachment)
         await db.commit()
         await db.refresh(attachment)
 
-        results.append(AttachmentResponse(
-            id=attachment.id,
-            original_filename=attachment.original_filename,
-            file_type=attachment.file_type,
-            file_size=attachment.file_size,
-            status=attachment.status,
-            chunk_count=attachment.chunk_count,
-            error_message=attachment.error_message,
-            created_at=attachment.created_at.isoformat()
-        ))
+        results.append(
+            AttachmentResponse(
+                id=attachment.id,
+                original_filename=attachment.original_filename,
+                file_type=attachment.file_type,
+                file_size=attachment.file_size,
+                status=attachment.status,
+                chunk_count=attachment.chunk_count,
+                error_message=attachment.error_message,
+                created_at=attachment.created_at.isoformat(),
+            )
+        )
 
         file_data.append((attachment.id, content, file.filename or "unknown"))
 
@@ -265,16 +260,11 @@ async def upload_attachments_batch(
     successful = sum(1 for r in results if r.status == "processing")
     failed = sum(1 for r in results if r.status == "error")
 
-    return BatchUploadResponse(
-        results=results,
-        successful=successful,
-        failed=failed
-    )
+    return BatchUploadResponse(results=results, successful=successful, failed=failed)
 
 
 async def _process_files_background(
-    conv_db_id: str,
-    file_data: list[tuple[str, bytes, str]]
+    conv_db_id: str, file_data: list[tuple[str, bytes, str]]
 ) -> None:
     """Process files in the background after the API has returned.
 
@@ -302,14 +292,16 @@ async def _process_files_background(
                     attachment_id=attachment.id,
                     conversation_id=conv_db_id,
                     content=extracted_text,
-                    filename=filename
+                    filename=filename,
                 )
 
                 attachment.chunk_count = chunk_count
                 attachment.status = "indexed"
                 await file_db.commit()
 
-                logger.info(f"Successfully indexed KB attachment: {filename} ({chunk_count} chunks)")
+                logger.info(
+                    f"Successfully indexed KB attachment: {filename} ({chunk_count} chunks)"
+                )
 
             except Exception as e:
                 logger.error(f"Failed to process KB attachment {filename}: {e}")
@@ -319,18 +311,15 @@ async def _process_files_background(
 
     # Process files in batches with concurrency limit
     for i in range(0, len(file_data), MAX_CONCURRENT):
-        batch = file_data[i:i + MAX_CONCURRENT]
+        batch = file_data[i : i + MAX_CONCURRENT]
         await asyncio.gather(
             *[process_single_file(att_id, content, fname) for att_id, content, fname in batch],
-            return_exceptions=True  # Don't let one failure stop others
+            return_exceptions=True,  # Don't let one failure stop others
         )
 
 
 @router.get("/{conversation_id}/attachments", response_model=AttachmentListResponse)
-async def list_attachments(
-    conversation_id: str,
-    db: AsyncSession = Depends(get_db)
-):
+async def list_attachments(conversation_id: str, db: AsyncSession = Depends(get_db)):
     """List all attachments in a conversation's knowledge base."""
     conv = await get_conversation_by_file_id(conversation_id, db)
     if not conv:
@@ -352,7 +341,7 @@ async def list_attachments(
             status=att.status,
             chunk_count=att.chunk_count,
             error_message=att.error_message,
-            created_at=att.created_at.isoformat()
+            created_at=att.created_at.isoformat(),
         )
         for att in attachments
     ]
@@ -360,17 +349,13 @@ async def list_attachments(
     total_size = sum(att.file_size for att in attachments)
 
     return AttachmentListResponse(
-        attachments=attachment_list,
-        total_size=total_size,
-        count=len(attachment_list)
+        attachments=attachment_list, total_size=total_size, count=len(attachment_list)
     )
 
 
 @router.delete("/{conversation_id}/attachments/{attachment_id}")
 async def delete_attachment(
-    conversation_id: str,
-    attachment_id: str,
-    db: AsyncSession = Depends(get_db)
+    conversation_id: str, attachment_id: str, db: AsyncSession = Depends(get_db)
 ):
     """Delete an attachment from the knowledge base."""
     conv = await get_conversation_by_file_id(conversation_id, db)
@@ -396,9 +381,7 @@ async def delete_attachment(
 
 @router.post("/{conversation_id}/search", response_model=KBSearchResponse)
 async def search_knowledge_base(
-    conversation_id: str,
-    request: KBSearchRequest,
-    db: AsyncSession = Depends(get_db)
+    conversation_id: str, request: KBSearchRequest, db: AsyncSession = Depends(get_db)
 ):
     """Search within the conversation's knowledge base."""
     conv = await get_conversation_by_file_id(conversation_id, db)
@@ -408,18 +391,12 @@ async def search_knowledge_base(
     try:
         rag = RAGService(db)
         results = await rag.search_kb(
-            conversation_id=conv.id,
-            query=request.query,
-            top_k=request.top_k
+            conversation_id=conv.id, query=request.query, top_k=request.top_k
         )
 
         return KBSearchResponse(
             results=[
-                KBSearchResult(
-                    content=r["content"],
-                    source_file=r["source_file"],
-                    score=r["score"]
-                )
+                KBSearchResult(content=r["content"], source_file=r["source_file"], score=r["score"])
                 for r in results
             ]
         )
@@ -430,9 +407,7 @@ async def search_knowledge_base(
 
 @router.get("/{conversation_id}/attachments/{attachment_id}/content")
 async def get_attachment_content(
-    conversation_id: str,
-    attachment_id: str,
-    db: AsyncSession = Depends(get_db)
+    conversation_id: str, attachment_id: str, db: AsyncSession = Depends(get_db)
 ):
     """Get the extracted text content of an attachment."""
     conv = await get_conversation_by_file_id(conversation_id, db)
@@ -447,5 +422,5 @@ async def get_attachment_content(
         "id": attachment.id,
         "filename": attachment.original_filename,
         "content": attachment.extracted_text or "",
-        "chunk_count": attachment.chunk_count
+        "chunk_count": attachment.chunk_count,
     }
