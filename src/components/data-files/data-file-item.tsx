@@ -8,7 +8,7 @@ import {
   FileSpreadsheet,
   FileText,
   FileJson,
-  Image,
+  Image as ImageIcon,
   Cloud,
   CloudOff,
 } from "lucide-react";
@@ -40,7 +40,7 @@ function getFileIcon(fileType: string) {
     case "jpeg":
     case "gif":
     case "webp":
-      return <Image className="h-4 w-4 text-purple-500" />;
+      return <ImageIcon className="h-4 w-4 text-purple-500" />;
     default:
       return <FileText className="h-4 w-4 text-gray-500" />;
   }

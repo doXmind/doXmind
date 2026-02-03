@@ -8,6 +8,7 @@ import {
   type MessageContextItem,
 } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
+import { useDemoStore } from "@/stores/demo-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
@@ -49,6 +50,7 @@ export function useChat() {
     saveMessageToBackend,
   } = useChatStore();
   const { getFile } = useFileStore();
+  const { demoFile } = useDemoStore();
   const { applyEdits } = useEditOperations();
 
   const sendMessage = useCallback(
@@ -147,8 +149,9 @@ export function useChat() {
 
       try {
         // Get file contents and convert HTML to markdown for AI
+        // Support demo mode by checking demoFile for "demo-file" id
         const files = fileIds
-          .map((id) => getFile(id))
+          .map((id) => (id === "demo-file" ? demoFile : getFile(id)))
           .filter(Boolean)
           .map((f) => ({
             id: f!.id,
@@ -179,12 +182,21 @@ export function useChat() {
         });
 
         if (!response.ok) {
-          // Handle 401 Unauthorized - trigger redirect to login
+          // Handle 401 Unauthorized
           if (response.status === 401) {
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+            // Check if we're in demo mode (fileIds contains "demo-file")
+            const isDemoMode = fileIds.includes("demo-file");
+            if (!isDemoMode) {
+              // Only trigger auth redirect for non-demo mode
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+              }
             }
-            throw new Error("Session expired. Please log in again.");
+            throw new Error(
+              isDemoMode
+                ? "Demo mode requires backend configuration for anonymous access."
+                : "Session expired. Please log in again."
+            );
           }
           throw new Error(`HTTP ${response.status}`);
         }
@@ -458,9 +470,14 @@ export function useChat() {
           });
         }
       } catch (error) {
-        const errorMessage = isAbortError(error)
-          ? "\n\n*[Stopped]*"
-          : "\n\n*Error: Failed to get response.*";
+        let errorMessage: string;
+        if (isAbortError(error)) {
+          errorMessage = "\n\n*[Stopped]*";
+        } else if (error instanceof Error && error.message) {
+          errorMessage = `\n\n*Error: ${error.message}*`;
+        } else {
+          errorMessage = "\n\n*Error: Failed to get response.*";
+        }
         appendToMessage(conversationId, assistantMessageId, errorMessage);
       } finally {
         setMessageStreaming(conversationId, assistantMessageId, false);
@@ -484,6 +501,8 @@ export function useChat() {
       setToolHistory,
       setThinking,
       setTodos,
+      demoFile,
+      saveMessageToBackend,
     ]
   );
 

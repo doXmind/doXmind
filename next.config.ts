@@ -8,6 +8,21 @@ const nextConfig: NextConfig = {
   experimental: {
     // Enable React 19 features
   },
+  async headers() {
+    return [
+      {
+        // Allow demo page to be embedded in iframes from doxmind.com
+        source: "/demo",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "frame-ancestors 'self' https://doxmind.com https://www.doxmind.com https://beta.doxmind.com http://localhost:* http://127.0.0.1:*",
+          },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [
       // Note: /api/chat/stream is handled by Next.js API route for proper streaming

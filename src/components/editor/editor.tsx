@@ -20,9 +20,11 @@ import { getReviewState } from "@/extensions/text-review-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useTextReview } from "@/hooks/use-text-review";
+import { useMockTextReview } from "@/hooks/use-mock-text-review";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
+import { useDemoStore } from "@/stores/demo-store";
 import { useEditorStore, type LastAIOperation } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { telemetry, type UndoAfterAIEvent } from "@/lib/telemetry";
@@ -35,12 +37,17 @@ import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 
 interface EditorProps {
   file: FileItem;
+  isDemoMode?: boolean;
 }
 
-export function Editor({ file: initialFile }: EditorProps) {
+export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   // Subscribe directly to file store to get real-time updates (for AI edits)
   const { updateFile, files } = useFileStore();
-  const file = files.find((f) => f.id === initialFile.id) || initialFile;
+  const { updateDemoContent, demoFile } = useDemoStore();
+  // In demo mode, use demoFile; otherwise use file from store
+  const file = isDemoMode
+    ? demoFile || initialFile
+    : files.find((f) => f.id === initialFile.id) || initialFile;
   const {
     setDirty,
     setSelection,
@@ -73,20 +80,30 @@ export function Editor({ file: initialFile }: EditorProps) {
         setDirty(false);
         return;
       }
-      setSaving(true);
-      updateFile(file.id, { content });
-      setSaving(false);
-      setLastSavedAt(new Date().toISOString());
-      setDirty(false);
-      lastContentRef.current = content;
+
+      if (isDemoMode) {
+        // Demo mode: only update in-memory state, no API calls
+        updateDemoContent(content);
+        setDirty(false);
+        lastContentRef.current = content;
+      } else {
+        // Normal mode: persist to server
+        setSaving(true);
+        updateFile(file.id, { content });
+        setSaving(false);
+        setLastSavedAt(new Date().toISOString());
+        setDirty(false);
+        lastContentRef.current = content;
+      }
     }, EDITOR_DEBOUNCE_DELAY),
-    [file.id, updateFile, setSaving, setLastSavedAt, setDirty]
+    [file.id, updateFile, updateDemoContent, isDemoMode, setSaving, setLastSavedAt, setDirty]
   );
 
   const editor = useEditor({
     extensions: getEditorExtensions({ enableBlockSelection: isMobile, isMobile }),
     content: file.content,
     editorProps: defaultEditorProps,
+    editable: !isDemoMode, // Demo mode: read-only to ensure mock scenarios work
     immediatelyRender: false, // Prevent SSR hydration mismatch
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
@@ -118,6 +135,14 @@ export function Editor({ file: initialFile }: EditorProps) {
       editor.commands.setBlockSelectionEnabled(isMobile);
     }
   }, [editor, isMobile]);
+
+  // Sync editable state with isDemoMode
+  // Demo mode: read-only to ensure mock scenarios work correctly
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!isDemoMode);
+    }
+  }, [editor, isDemoMode]);
 
   // Reset when file changes
   useEffect(() => {
@@ -157,11 +182,18 @@ export function Editor({ file: initialFile }: EditorProps) {
   useSpellcheck({ editor, enabled: spellcheckEnabled });
   const { headings } = useHeadings(editor);
 
-  const { triggerReview, clearReview } = useTextReview({
+  // Use mock text review in demo mode, real API otherwise
+  const realTextReview = useTextReview({
     editor,
     fileId: file.id,
     onReviewStart: () => setReviewPanelOpen(true),
   });
+  const mockTextReview = useMockTextReview({
+    editor,
+    fileId: file.id,
+    onReviewStart: () => setReviewPanelOpen(true),
+  });
+  const { triggerReview, clearReview } = isDemoMode ? mockTextReview : realTextReview;
 
   // Get review state for toolbar
   const reviewState = getReviewState(editor);
@@ -190,10 +222,19 @@ export function Editor({ file: initialFile }: EditorProps) {
     const UNDO_TRACKING_WINDOW_MS = 10000; // 10 seconds
 
     // Listen for transactions to detect undo operations
-    const handleTransaction = ({ transaction }: { transaction: { getMeta: (key: string) => unknown } }) => {
+    const handleTransaction = ({
+      transaction,
+    }: {
+      transaction: { getMeta: (key: string) => unknown };
+    }) => {
       // Check if this is an undo operation from the history plugin
       const historyMeta = transaction.getMeta("history$");
-      if (historyMeta && typeof historyMeta === "object" && "redo" in historyMeta && !historyMeta.redo) {
+      if (
+        historyMeta &&
+        typeof historyMeta === "object" &&
+        "redo" in historyMeta &&
+        !historyMeta.redo
+      ) {
         // This is an undo operation
         const lastOp = lastAIOperationRef.current;
         if (lastOp && Date.now() - lastOp.timestamp < UNDO_TRACKING_WINDOW_MS) {
@@ -294,15 +335,27 @@ export function Editor({ file: initialFile }: EditorProps) {
         {/* Mindlines outline - hidden on mobile */}
         {!isMobile && <Mindlines editor={editor} />}
         {/* Main editor content area */}
-        <div className={cn("relative flex flex-col", !isMobile && "min-h-0 min-w-0 flex-1 overflow-hidden")}>
+        <div
+          className={cn(
+            "relative flex flex-col",
+            !isMobile && "min-h-0 min-w-0 flex-1 overflow-hidden"
+          )}
+        >
+          {/* Demo mode indicator */}
+          {isDemoMode && (
+            <div className="flex items-center justify-center gap-2 border-b border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
+              <span className="inline-block h-2 w-2 rounded-full bg-yellow-500" />
+              <span>Demo Mode - Use the AI actions to see changes. Editor is read-only.</span>
+            </div>
+          )}
           {/* On mobile, parent MobileEditorLayout handles scrolling, so skip ScrollArea entirely */}
           {isMobile ? (
-            <div className="mx-auto w-full px-4 pt-0 pb-2 sm:max-w-4xl">
+            <div className="mx-auto w-full px-4 pb-2 pt-0 sm:max-w-4xl">
               <EditorContent editor={editor} />
             </div>
           ) : (
             <ScrollArea className="min-h-0 flex-1">
-              <div className="mx-auto max-w-4xl px-4 pt-0 pb-2 md:px-8 md:py-6">
+              <div className="mx-auto max-w-4xl px-4 pb-2 pt-0 md:px-8 md:py-6">
                 <EditorContent editor={editor} />
               </div>
             </ScrollArea>
@@ -330,7 +383,7 @@ export function Editor({ file: initialFile }: EditorProps) {
           <ImageBubbleMenu editor={editor} />
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />
-          <QuickEditMenu onApply={handleQuickEditApply} />
+          <QuickEditMenu onApply={handleQuickEditApply} isDemoMode={isDemoMode} />
         </>
       )}
 

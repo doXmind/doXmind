@@ -8,11 +8,12 @@ optimized for low latency and high-quality suggestions.
 import logging
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from config import get_settings
 from prompts.domains.autocomplete import build_autocomplete_prompt
+from services.auth_service import TokenData, require_auth
 from services.autocomplete_cache import AutocompleteCache
 from services.llm_service import LLMService
 
@@ -94,7 +95,10 @@ def clean_suggestion(suggestion: str, text_before: str) -> str:
 
 
 @router.post("/suggest", response_model=AutocompleteResponse)
-async def suggest(request: AutocompleteRequest) -> AutocompleteResponse:
+async def suggest(
+    request: AutocompleteRequest,
+    token: TokenData = Depends(require_auth),
+) -> AutocompleteResponse:
     """
     Get autocomplete suggestion.
 
@@ -156,13 +160,13 @@ async def suggest(request: AutocompleteRequest) -> AutocompleteResponse:
 
 
 @router.get("/stats")
-async def get_cache_stats():
+async def get_cache_stats(token: TokenData = Depends(require_auth)):
     """Get autocomplete cache statistics."""
     return cache.get_stats()
 
 
 @router.post("/clear-cache")
-async def clear_cache():
+async def clear_cache(token: TokenData = Depends(require_auth)):
     """Clear the autocomplete cache."""
     cache.clear()
     return {"status": "ok", "message": "Cache cleared"}

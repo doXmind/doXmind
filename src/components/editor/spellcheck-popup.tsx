@@ -4,10 +4,7 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react
 import { Editor } from "@tiptap/react";
 import { X, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  SpellcheckPluginKey,
-  type SpellcheckMatch,
-} from "@/extensions/spellcheck-extension";
+import { SpellcheckPluginKey, type SpellcheckMatch } from "@/extensions/spellcheck-extension";
 
 interface SpellcheckPopupProps {
   editor: Editor;
@@ -15,10 +12,8 @@ interface SpellcheckPopupProps {
 
 export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
   const [activeMatch, setActiveMatch] = useState<SpellcheckMatch | null>(null);
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(
-    null
-  );
-  const [showAbove, setShowAbove] = useState(false);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [_showAbove, setShowAbove] = useState(false);
   const [errorRect, setErrorRect] = useState<DOMRect | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -153,11 +148,7 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
         return;
       }
 
-      editor.commands.applyCorrection(
-        activeMatch.from,
-        activeMatch.to,
-        replacement
-      );
+      editor.commands.applyCorrection(activeMatch.from, activeMatch.to, replacement);
       setActiveMatch(null);
       setPosition(null);
       setErrorRect(null);
@@ -182,10 +173,7 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
 
     // Get the word text
     try {
-      const word = editor.state.doc.textBetween(
-        activeMatch.from,
-        activeMatch.to
-      );
+      const word = editor.state.doc.textBetween(activeMatch.from, activeMatch.to);
       editor.commands.ignoreWord(word);
     } catch {
       // Position invalid, just close popup
@@ -208,11 +196,7 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
 
   // Validate positions are within document bounds
   const docSize = editor.state.doc.content.size;
-  if (
-    activeMatch.from < 0 ||
-    activeMatch.to > docSize ||
-    activeMatch.from >= activeMatch.to
-  ) {
+  if (activeMatch.from < 0 || activeMatch.to > docSize || activeMatch.from >= activeMatch.to) {
     return null;
   }
 
@@ -227,44 +211,37 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
   return (
     <div
       ref={popupRef}
-      className="fixed z-50 bg-popover border border-border rounded-lg shadow-lg w-72 spellcheck-popup"
+      className="spellcheck-popup fixed z-50 w-72 rounded-lg border border-border bg-popover shadow-lg"
       style={{ left: position.x, top: position.y }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-          <span className="underline decoration-wavy decoration-red-500">
-            {word}
-          </span>
+          <span className="underline decoration-red-500 decoration-wavy">{word}</span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleClose}
-          className="h-6 w-6 -mr-1"
-        >
+        <Button variant="ghost" size="icon" onClick={handleClose} className="-mr-1 h-6 w-6">
           <X className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Error message */}
-      <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border">
+      <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
         {activeMatch.message}
       </div>
 
       {/* Suggestions */}
       {activeMatch.replacements.length > 0 && (
         <div className="py-1">
-          <div className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wide">
+          <div className="px-3 py-1 text-xs uppercase tracking-wide text-muted-foreground">
             Suggestions
           </div>
           {activeMatch.replacements.map((replacement, i) => (
             <button
               key={i}
-              className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent transition-colors flex items-center gap-2"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
               onClick={() => handleApplyCorrection(replacement)}
             >
-              <span className="text-primary font-medium">{replacement}</span>
+              <span className="font-medium text-primary">{replacement}</span>
             </button>
           ))}
         </div>
@@ -273,7 +250,7 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       {/* Actions */}
       <div className="border-t border-border py-1">
         <button
-          className="w-full px-3 py-1.5 text-xs text-left text-muted-foreground hover:bg-accent hover:text-foreground transition-colors flex items-center gap-2"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           onClick={handleIgnore}
         >
           <BookOpen className="h-3.5 w-3.5" />

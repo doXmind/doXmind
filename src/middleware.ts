@@ -14,8 +14,8 @@ const skipAuth = process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public shared document routes (no auth required)
-  if (pathname.startsWith("/shared")) {
+  // Allow public routes (no auth required)
+  if (pathname.startsWith("/shared") || pathname.startsWith("/demo")) {
     return NextResponse.next();
   }
 
@@ -30,9 +30,7 @@ export function middleware(request: NextRequest) {
   const isAuthenticated = !!authCookie?.value;
 
   // Check if this is a protected route
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    pathname.startsWith(route)
-  );
+  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
 
   // Check if this is an auth route (login, register, etc.)
   const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));

@@ -26,7 +26,11 @@ import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  isDemoMode?: boolean;
+}
+
+export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
@@ -88,27 +92,30 @@ export function ChatPanel() {
   const { uploadAttachments: uploadKBFiles } = useKBStore();
 
   // Get conversation key without triggering store updates during render
-  const conversationKey = currentFileId || "global";
+  // In demo mode, use a fixed "demo-file" key
+  const effectiveFileId = isDemoMode ? "demo-file" : currentFileId;
+  const conversationKey = effectiveFileId || "global";
   const conversation = useMemo(() => {
     return (
       conversations[conversationKey] || {
         id: conversationKey,
-        fileId: currentFileId,
+        fileId: effectiveFileId,
         messages: [],
         createdAt: new Date().toISOString(),
       }
     );
-  }, [conversations, conversationKey, currentFileId]);
+  }, [conversations, conversationKey, effectiveFileId]);
 
   const { sendMessage, isStreaming, stopStreaming, currentTool, toolHistory, thinking, todos } =
     useChat();
 
   // Load conversation history from backend when file changes
+  // Skip in demo mode to avoid unnecessary API calls
   useEffect(() => {
-    if (currentFileId) {
+    if (currentFileId && !isDemoMode) {
       loadConversation(currentFileId);
     }
-  }, [currentFileId, loadConversation]);
+  }, [currentFileId, isDemoMode, loadConversation]);
 
   // Focus textarea when chat context is added (from Quick Edit "Ask in Chat")
   // Only on desktop to avoid keyboard popup on mobile
@@ -176,7 +183,7 @@ export function ChatPanel() {
 
     await sendMessage(
       message,
-      currentFileId ? [currentFileId] : [],
+      effectiveFileId ? [effectiveFileId] : [],
       contextsToSend,
       dataFileIdsToSend
     );
@@ -235,38 +242,41 @@ export function ChatPanel() {
   const currentImageCount = chatContexts.filter((c) => c.type === "image").length;
 
   // Process image file and add to context
-  const processImageFile = (file: File) => {
-    // Only accept image files
-    if (!file.type.startsWith("image/")) return;
+  const processImageFile = useCallback(
+    (file: File) => {
+      // Only accept image files
+      if (!file.type.startsWith("image/")) return;
 
-    // Check image count limit
-    const imageCount = chatContexts.filter((c) => c.type === "image").length;
-    if (imageCount >= CHAT_MAX_IMAGES) {
-      return;
-    }
+      // Check image count limit
+      const imageCount = chatContexts.filter((c) => c.type === "image").length;
+      if (imageCount >= CHAT_MAX_IMAGES) {
+        return;
+      }
 
-    // Check file size (5MB limit for Anthropic API)
-    if (file.size > CHAT_MAX_IMAGE_SIZE) {
-      return;
-    }
+      // Check file size (5MB limit for Anthropic API)
+      if (file.size > CHAT_MAX_IMAGE_SIZE) {
+        return;
+      }
 
-    // Convert to base64
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(",")[1];
-      const mediaType = file.type;
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        const mediaType = file.type;
 
-      addChatContext({
-        type: "image",
-        src: dataUrl, // Data URL for preview display
-        alt: file.name || "Pasted image",
-        base64,
-        mediaType,
-      });
-    };
-    reader.readAsDataURL(file);
-  };
+        addChatContext({
+          type: "image",
+          src: dataUrl, // Data URL for preview display
+          alt: file.name || "Pasted image",
+          base64,
+          mediaType,
+        });
+      };
+      reader.readAsDataURL(file);
+    },
+    [chatContexts, addChatContext]
+  );
 
   // Handle image files from AttachmentMenu
   const handleImageFilesFromMenu = (files: FileList) => {

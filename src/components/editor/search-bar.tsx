@@ -30,8 +30,8 @@ export function SearchBar() {
   // AI Search state
   const [isAIMode, setIsAIMode] = useState(false);
   const [isAISearching, setIsAISearching] = useState(false);
-  const [aiResults, setAIResults] = useState<SearchResultItem[]>([]);
-  const [showAIResults, setShowAIResults] = useState(false);
+  const [_aiResults, setAIResults] = useState<SearchResultItem[]>([]);
+  const [_showAIResults, setShowAIResults] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const { editor } = useEditorRefStore();
@@ -61,13 +61,7 @@ export function SearchBar() {
     setIsAISearching(true);
 
     try {
-      const response = await api.searchInDocument(
-        query,
-        currentFileId,
-        10,
-        0.3,
-        controller.signal
-      );
+      const response = await api.searchInDocument(query, currentFileId, 10, 0.3, controller.signal);
 
       if (response.results.length > 0) {
         setAIResults(response.results);
@@ -269,7 +263,7 @@ export function SearchBar() {
           <div className="flex items-center gap-2 px-3 py-2.5">
             {/* Search icon / AI loading indicator */}
             {isAISearching ? (
-              <Loader2 className="h-4 w-4 flex-shrink-0 text-purple-500 animate-spin" />
+              <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-purple-500" />
             ) : isAIMode ? (
               <Sparkles className="h-4 w-4 flex-shrink-0 text-purple-500" />
             ) : (
@@ -283,14 +277,14 @@ export function SearchBar() {
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={isAIMode ? "AI semantic search..." : "Find in document..."}
               className={cn(
-                "flex-1 min-w-0 bg-transparent text-base md:text-sm focus:outline-none placeholder:text-muted-foreground",
+                "min-w-0 flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm",
                 isAIMode && "placeholder:text-purple-400"
               )}
               aria-label="Search text"
             />
 
             {/* Match counter - different display for AI vs keyword mode */}
-            <span className="text-xs text-muted-foreground whitespace-nowrap min-w-[60px] text-center">
+            <span className="min-w-[60px] whitespace-nowrap text-center text-xs text-muted-foreground">
               {searchTerm ? (
                 isAIMode ? (
                   isAISearching ? (
@@ -314,10 +308,10 @@ export function SearchBar() {
             <button
               onClick={toggleAIMode}
               className={cn(
-                "p-1.5 rounded-md transition-colors",
+                "rounded-md p-1.5 transition-colors",
                 isAIMode
                   ? "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400"
-                  : "hover:bg-accent text-muted-foreground"
+                  : "text-muted-foreground hover:bg-accent"
               )}
               aria-label="Toggle AI search"
               aria-pressed={isAIMode}
@@ -331,7 +325,7 @@ export function SearchBar() {
               <button
                 onClick={() => setCaseSensitive(!caseSensitive)}
                 className={cn(
-                  "p-1.5 rounded-md hover:bg-accent transition-colors",
+                  "rounded-md p-1.5 transition-colors hover:bg-accent",
                   caseSensitive && "bg-accent text-accent-foreground"
                 )}
                 aria-label="Toggle case sensitivity"
@@ -346,7 +340,7 @@ export function SearchBar() {
             <button
               onClick={isAIMode ? handlePreviousSemantic : handlePrevious}
               disabled={isAIMode ? semanticResultsCount === 0 : resultsCount === 0}
-              className="p-1.5 rounded-md hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="rounded-md p-1.5 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Previous result"
               title="Previous (Shift+Enter)"
             >
@@ -355,7 +349,7 @@ export function SearchBar() {
             <button
               onClick={isAIMode ? handleNextSemantic : handleNext}
               disabled={isAIMode ? semanticResultsCount === 0 : resultsCount === 0}
-              className="p-1.5 rounded-md hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="rounded-md p-1.5 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Next result"
               title="Next (Enter)"
             >
@@ -367,7 +361,7 @@ export function SearchBar() {
               <button
                 onClick={() => setShowReplace(!showReplace)}
                 className={cn(
-                  "p-1.5 rounded-md hover:bg-accent transition-colors",
+                  "rounded-md p-1.5 transition-colors hover:bg-accent",
                   showReplace && "bg-accent text-accent-foreground"
                 )}
                 aria-label="Toggle replace"
@@ -381,7 +375,7 @@ export function SearchBar() {
             {/* Close */}
             <button
               onClick={handleClose}
-              className="p-1.5 rounded-md hover:bg-accent transition-colors"
+              className="rounded-md p-1.5 transition-colors hover:bg-accent"
               aria-label="Close search"
               title="Close (Escape)"
             >
@@ -406,20 +400,20 @@ export function SearchBar() {
                     value={replaceTerm}
                     onChange={(e) => setReplaceTerm(e.target.value)}
                     placeholder="Replace with..."
-                    className="flex-1 min-w-0 bg-transparent text-base md:text-sm focus:outline-none placeholder:text-muted-foreground"
+                    className="min-w-0 flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
                     aria-label="Replace text"
                   />
                   <button
                     onClick={handleReplace}
                     disabled={resultsCount === 0}
-                    className="px-2.5 py-1 text-xs font-medium rounded-md bg-secondary hover:bg-secondary/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="rounded-md bg-secondary px-2.5 py-1 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Replace
                   </button>
                   <button
                     onClick={handleReplaceAll}
                     disabled={resultsCount === 0}
-                    className="px-2.5 py-1 text-xs font-medium rounded-md bg-secondary hover:bg-secondary/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="rounded-md bg-secondary px-2.5 py-1 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Replace All
                   </button>
@@ -439,7 +433,7 @@ export function SearchBar() {
                 className="overflow-hidden border-t border-purple-200 dark:border-purple-800"
               >
                 <div className="max-h-[200px] overflow-y-auto">
-                  <div className="px-3 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 sticky top-0">
+                  <div className="sticky top-0 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-600 dark:bg-purple-900/20 dark:text-purple-400">
                     AI Results ({semanticResultsCount})
                   </div>
                   {pluginState?.semanticResults.map((result, index) => {
@@ -452,7 +446,7 @@ export function SearchBar() {
                         key={`semantic-result-${index}`}
                         onClick={() => handleSemanticResultClick(index)}
                         className={cn(
-                          "w-full text-left px-3 py-2 text-sm transition-colors",
+                          "w-full px-3 py-2 text-left text-sm transition-colors",
                           "hover:bg-purple-50 dark:hover:bg-purple-900/30",
                           "border-b border-border/50 last:border-b-0",
                           isCurrentResult && "bg-purple-100 dark:bg-purple-900/40"
@@ -461,7 +455,7 @@ export function SearchBar() {
                         <div className="flex items-start gap-2">
                           <div
                             className={cn(
-                              "flex-1 min-w-0 line-clamp-2 text-foreground/80",
+                              "line-clamp-2 min-w-0 flex-1 text-foreground/80",
                               isCurrentResult && "text-purple-700 dark:text-purple-300"
                             )}
                           >
@@ -469,7 +463,7 @@ export function SearchBar() {
                           </div>
                           <span
                             className={cn(
-                              "flex-shrink-0 text-xs px-1.5 py-0.5 rounded",
+                              "flex-shrink-0 rounded px-1.5 py-0.5 text-xs",
                               score >= 70
                                 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                                 : score >= 50

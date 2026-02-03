@@ -3,12 +3,13 @@
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import get_cors_headers, get_settings
 from prompts.domains.edit import EDIT_ACTIONS, QUICK_EDIT_SYSTEM, get_edit_instruction
+from services.auth_service import TokenData, require_auth
 from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,11 @@ class QuickEditRequest(BaseModel):
 
 
 @router.post("/quick")
-async def quick_edit(request: QuickEditRequest, http_request: Request):
+async def quick_edit(
+    request: QuickEditRequest,
+    http_request: Request,
+    token: TokenData = Depends(require_auth),
+):
     """Stream quick edit response."""
 
     # Get instruction and temperature from new prompts module
@@ -71,7 +76,11 @@ class CustomEditRequest(BaseModel):
 
 
 @router.post("/custom")
-async def custom_edit(request: CustomEditRequest, http_request: Request):
+async def custom_edit(
+    request: CustomEditRequest,
+    http_request: Request,
+    token: TokenData = Depends(require_auth),
+):
     """Stream custom edit based on user instruction."""
     origin = http_request.headers.get("origin")
 
