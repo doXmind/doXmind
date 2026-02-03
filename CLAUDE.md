@@ -88,6 +88,41 @@ ChromaDB-based vector search with two chunking strategies:
 
 Collections exist for documents, KB attachments, and conversation-scoped data.
 
+## Database Migrations (Alembic)
+
+**IMPORTANT:** Never modify database schema by editing models alone. Always use Alembic migrations.
+
+### Workflow for Schema Changes
+
+```bash
+cd server
+
+# 1. Modify model in server/db/database.py
+
+# 2. Generate migration
+alembic revision --autogenerate -m "add xxx column"
+
+# 3. Review generated file in server/alembic/versions/
+#    - Verify upgrade() and downgrade() are correct
+#    - Note: 'vectors' table is auto-excluded (configured in env.py)
+
+# 4. Test locally
+alembic upgrade head
+alembic downgrade -1
+alembic upgrade head
+
+# 5. Commit and push - Heroku release phase runs migrations automatically
+```
+
+### Useful Commands
+
+```bash
+alembic current           # Show current database version
+alembic history           # Show migration chain
+alembic upgrade head      # Apply all pending migrations
+alembic downgrade -1      # Rollback one migration
+```
+
 ## Environment Variables
 
 Backend requires `ANTHROPIC_API_KEY` in `server/.env`. For local development, `DATABASE_URL` defaults to SQLite. See `server/.env.example` for all options.
