@@ -46,7 +46,13 @@ export const useFileStore = create<FileState>()(
             updatedAt: f.updated_at,
           }));
 
-          set({ files, isSynced: true, isLoading: false });
+          // Clear currentFileId if it no longer exists in the loaded files
+          const { currentFileId } = get();
+          const fileIds = new Set(files.map((f) => f.id));
+          const validCurrentFileId =
+            currentFileId && fileIds.has(currentFileId) ? currentFileId : null;
+
+          set({ files, currentFileId: validCurrentFileId, isSynced: true, isLoading: false });
         } catch (error) {
           log.error("Failed to load files from server", error);
           // Keep local files if server is unavailable
@@ -106,9 +112,7 @@ export const useFileStore = create<FileState>()(
         // Optimistic update
         set((state) => ({
           files: state.files.map((file) =>
-            file.id === id
-              ? { ...file, ...updates, updatedAt: new Date().toISOString() }
-              : file
+            file.id === id ? { ...file, ...updates, updatedAt: new Date().toISOString() } : file
           ),
         }));
 

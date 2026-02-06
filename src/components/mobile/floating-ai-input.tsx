@@ -38,7 +38,7 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { currentFileId } = useFileStore();
-  const { conversations } = useChatStore();
+  const { conversations, loadConversation } = useChatStore();
   const { pendingSelectionForAI, clearPendingSelectionForAI } = useLayoutStore();
   const { sendMessage, isStreaming } = useChat();
 
@@ -46,7 +46,6 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
   const {
     selectedBlocks,
     isSelectionActive,
-    getSelectedText: getBlockSelectedText,
     clearSelection: clearBlockSelection,
   } = useBlockSelectionStore();
 
@@ -58,49 +57,56 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
     useEditorStore();
 
   // Sync block selection with chat context
-  // - When blocks are selected, add a selection context
+  // - Each selected block becomes its own context pill (section-level chunking)
   // - When blocks are unselected (tap again), remove the selection context
   useEffect(() => {
-    const selectedText = getBlockSelectedText();
     const selectionContexts = chatContexts.filter((c) => c.type === "selection");
 
-    // Allow empty blocks to be selected (for deletion)
     if (isSelectionActive && selectedBlocks.length > 0) {
-      // Check if we already have this exact selection as a context
-      const existingSelectionContext = selectionContexts.find((c) => c.text === selectedText);
-      if (!existingSelectionContext) {
-        // Clear any old selection contexts first (selection changed)
+      // Check if existing contexts already match current block positions
+      const existingPositions = new Set(selectionContexts.map((c) => `${c.from}-${c.to}`));
+      const currentPositions = new Set(selectedBlocks.map((b) => `${b.from}-${b.to}`));
+      const isMatch =
+        existingPositions.size === currentPositions.size &&
+        [...existingPositions].every((p) => currentPositions.has(p));
+
+      if (!isMatch) {
+        // Clear old selection contexts
         selectionContexts.forEach((c) => removeChatContext(c.id));
-        // Add the new selected text as a chat context
-        const firstBlock = selectedBlocks[0];
-        const lastBlock = selectedBlocks[selectedBlocks.length - 1];
-        addChatContext({
-          type: "selection",
-          text: selectedText,
-          from: firstBlock.from,
-          to: lastBlock.to,
-        });
+        // Add one context per selected block
+        for (const block of selectedBlocks) {
+          addChatContext({
+            type: "selection",
+            text: block.text,
+            from: block.from,
+            to: block.to,
+          });
+        }
         haptics.light();
       }
     } else if (!isSelectionActive && selectionContexts.length > 0) {
       // No blocks selected - remove all selection contexts
       selectionContexts.forEach((c) => removeChatContext(c.id));
     }
-  }, [
-    isSelectionActive,
-    selectedBlocks,
-    getBlockSelectedText,
-    chatContexts,
-    addChatContext,
-    removeChatContext,
-  ]);
+  }, [isSelectionActive, selectedBlocks, chatContexts, addChatContext, removeChatContext]);
+
+  // Load conversation from backend when file changes (enables KB uploads)
+  useEffect(() => {
+    if (currentFileId) {
+      loadConversation(currentFileId);
+    }
+  }, [currentFileId, loadConversation]);
 
   // Get conversation for attachment menu
   const conversationKey = currentFileId || "global";
   const conversation = conversations[conversationKey];
 
   // Speech-to-text hook
-  const { isTranscribing, transcribe, reset: resetTranscription } = useSpeechToText({
+  const {
+    isTranscribing,
+    transcribe,
+    reset: resetTranscription,
+  } = useSpeechToText({
     onComplete: (text) => {
       if (text) {
         setInput((prev) => (prev ? `${prev} ${text}` : text));
@@ -267,72 +273,29 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
     [chatContexts, removeChatContext, clearBlockSelection]
   );
 
-  // Copy selected text to clipboard
-  const handleCopySelection = useCallback(async () => {
-    const selectedText = getBlockSelectedText();
-    if (selectedText) {
-      try {
-        await navigator.clipboard.writeText(selectedText);
-        haptics.light();
-      } catch (err) {
-        console.error("Failed to copy:", err);
-      }
-    }
-  }, [getBlockSelectedText]);
-
-  // Delete selected blocks
-  const handleDeleteSelection = useCallback(() => {
-    if (!editor || selectedBlocks.length === 0) return;
-
-    // Get the range of all selected blocks
-    const from = selectedBlocks[0].from;
-    const to = selectedBlocks[selectedBlocks.length - 1].to;
-
-    // Delete the selected content
-    editor
-      .chain()
-      .focus()
-      .setTextSelection({ from, to })
-      .deleteSelection()
-      .run();
-
-    haptics.medium();
-    clearBlockSelection();
-    // Remove selection contexts
-    chatContexts
-      .filter((c) => c.type === "selection")
-      .forEach((c) => removeChatContext(c.id));
-  }, [editor, selectedBlocks, clearBlockSelection, chatContexts, removeChatContext]);
-
-  // Cut = Copy + Delete
-  const handleCutSelection = useCallback(async () => {
-    const selectedText = getBlockSelectedText();
-    if (!editor || selectedBlocks.length === 0 || !selectedText) return;
-
+  // Per-block copy
+  const handleCopyBlock = useCallback(async (text: string) => {
+    if (!text) return;
     try {
-      // Copy to clipboard first
-      await navigator.clipboard.writeText(selectedText);
+      await navigator.clipboard.writeText(text);
+      haptics.light();
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  }, []);
 
-      // Then delete
-      const from = selectedBlocks[0].from;
-      const to = selectedBlocks[selectedBlocks.length - 1].to;
+  // Per-block delete
+  const handleDeleteBlock = useCallback(
+    (from: number, to: number) => {
+      if (!editor) return;
 
-      editor
-        .chain()
-        .focus()
-        .setTextSelection({ from, to })
-        .deleteSelection()
-        .run();
+      editor.chain().focus().setTextSelection({ from, to }).deleteSelection().run();
 
       haptics.medium();
       clearBlockSelection();
-      chatContexts
-        .filter((c) => c.type === "selection")
-        .forEach((c) => removeChatContext(c.id));
-    } catch (err) {
-      console.error("Failed to cut:", err);
-    }
-  }, [editor, selectedBlocks, getBlockSelectedText, clearBlockSelection, chatContexts, removeChatContext]);
+    },
+    [editor, clearBlockSelection]
+  );
 
   return (
     <div data-ai-input-area className="space-y-2">
@@ -350,9 +313,10 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
                 key={ctx.id}
                 context={ctx}
                 onRemove={() => handleRemoveContext(ctx.id)}
-                onCopy={ctx.type === "selection" ? handleCopySelection : undefined}
-                onCut={ctx.type === "selection" ? handleCutSelection : undefined}
-                onDelete={ctx.type === "selection" ? handleDeleteSelection : undefined}
+                onCopy={ctx.type === "selection" ? () => handleCopyBlock(ctx.text) : undefined}
+                onDelete={
+                  ctx.type === "selection" ? () => handleDeleteBlock(ctx.from, ctx.to) : undefined
+                }
                 showActions={ctx.type === "selection"}
               />
             ))}
@@ -389,7 +353,7 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
         {/* Plus button - separate from input */}
         <motion.div whileTap={{ scale: 0.95 }}>
           <AttachmentMenu
-            conversationId={conversation?.id || ""}
+            conversationId={conversation?.isLoaded ? conversation.id : null}
             onImageSelect={handleImageFilesFromMenu}
             imageCount={currentImageCount}
             maxImages={CHAT_MAX_IMAGES}
@@ -410,12 +374,12 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
               )}
             />
           )}
-          {isStreaming && <div className="absolute inset-0 rounded-3xl animate-border-wave" />}
+          {isStreaming && <div className="animate-border-wave absolute inset-0 rounded-3xl" />}
           {isRecording && (
             <div
               className={cn(
                 "absolute inset-0 -m-[2px] rounded-3xl blur-[3px]",
-                "bg-destructive/60 animate-pulse"
+                "animate-pulse bg-destructive/60"
               )}
             />
           )}
@@ -423,7 +387,7 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
             <div
               className={cn(
                 "absolute inset-0 -m-[2px] rounded-3xl blur-[2px]",
-                "bg-primary/40 animate-pulse"
+                "animate-pulse bg-primary/40"
               )}
             />
           )}
@@ -471,8 +435,8 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
                   "placeholder:text-muted-foreground/60",
                   "focus:outline-none",
                   "disabled:opacity-50",
-                  isRecording && "text-destructive font-medium",
-                  isTranscribing && "text-primary font-medium"
+                  isRecording && "font-medium text-destructive",
+                  isTranscribing && "font-medium text-primary"
                 )}
               />
             </div>

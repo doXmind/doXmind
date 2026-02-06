@@ -8,7 +8,15 @@
  */
 
 import { useState } from "react";
-import { FolderOpen, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
+import {
+  FolderOpen,
+  MoreHorizontal,
+  Moon,
+  Sun,
+  ListTree,
+  PenLine,
+  MousePointerClick,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -24,9 +32,15 @@ interface MoreMenuProps {
 
 function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
   const { theme, setTheme } = useTheme();
-  const { toggleMobileOutline } = useLayoutStore();
+  const { toggleMobileOutline, isMobileEditMode, toggleMobileEditMode } = useLayoutStore();
 
   if (!isOpen) return null;
+
+  const handleEditModeToggle = () => {
+    haptics.light();
+    toggleMobileEditMode();
+    onClose();
+  };
 
   const handleThemeToggle = () => {
     haptics.light();
@@ -57,6 +71,26 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
         )}
         style={{ zIndex: Z_INDEX.MOBILE_PANEL }}
       >
+        <button
+          type="button"
+          onClick={handleEditModeToggle}
+          className={cn(
+            "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent",
+            isMobileEditMode && "bg-primary/10 text-primary"
+          )}
+        >
+          {isMobileEditMode ? (
+            <MousePointerClick className="h-5 w-5" />
+          ) : (
+            <PenLine className="h-5 w-5" />
+          )}
+          <span className="text-sm font-medium">
+            {isMobileEditMode ? "Selection Mode" : "Edit Mode"}
+          </span>
+        </button>
+
+        <div className="h-px bg-border" />
+
         <button
           type="button"
           onClick={handleThemeToggle}
@@ -110,13 +144,7 @@ export function MobileHeader() {
       <MoreMenu isOpen={isMoreMenuOpen} onClose={() => setIsMoreMenuOpen(false)} />
 
       {/* Header Bar */}
-      <header
-        className={cn(
-          "w-full md:hidden",
-          "bg-background border-b border-border",
-          "px-2"
-        )}
-      >
+      <header className={cn("w-full md:hidden", "border-b border-border bg-background", "px-2")}>
         <div className="flex h-12 items-center justify-between">
           {/* Files button */}
           <Button

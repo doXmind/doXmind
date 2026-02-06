@@ -5,14 +5,20 @@ Supports both stateless JWT auth and simple API key auth for flexibility.
 """
 
 import hmac
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
+from db.database import User, get_db
+
+logger = logging.getLogger(__name__)
 
 # Password hashing context (for future user management)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -151,6 +157,7 @@ async def require_auth(
     request: Request,
     token: TokenData | None = Depends(get_current_token),
     api_key: str | None = Depends(get_api_key),
+    db: AsyncSession = Depends(get_db),
 ) -> TokenData:
     """Require authentication via JWT token OR API key.
 
@@ -163,6 +170,16 @@ async def require_auth(
 
     # Check JWT token first
     if token is not None:
+        # For real user tokens, verify the user still exists in DB
+        if token.sub not in ("dev-user", "api-key-user", "anonymous"):
+            result = await db.execute(select(User.id).where(User.id == token.sub))
+            if result.scalar_one_or_none() is None:
+                logger.warning("JWT token references non-existent user: %s", token.sub)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User no longer exists. Please log in again.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
         return token
 
     # Check API key

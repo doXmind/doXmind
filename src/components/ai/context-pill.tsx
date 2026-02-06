@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, X, FileText, ImageIcon, Copy, Scissors, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, X, FileText, ImageIcon, Copy, Trash2 } from "lucide-react";
 import type { ChatContextItem } from "@/stores/editor-store";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,6 @@ interface ContextPillProps {
   context: ChatContextItem;
   onRemove: () => void;
   onCopy?: () => void;
-  onCut?: () => void;
   onDelete?: () => void;
   showActions?: boolean;
 }
@@ -22,7 +21,6 @@ export function ContextPill({
   context,
   onRemove,
   onCopy,
-  onCut,
   onDelete,
   showActions,
 }: ContextPillProps) {
@@ -58,7 +56,7 @@ export function ContextPill({
           )}
         </button>
 
-        {/* Action buttons: Copy, Cut, Delete */}
+        {/* Action buttons: Copy, Delete */}
         {shouldShowActions && (
           <div className="flex items-center gap-1">
             {onCopy && !isEmptySelection && (
@@ -67,24 +65,11 @@ export function ContextPill({
                 onClick={onCopy}
                 className={cn(
                   "flex-shrink-0 rounded p-1.5 transition-colors",
-                  "bg-primary/10 hover:bg-primary/20 text-primary"
+                  "bg-primary/10 text-primary hover:bg-primary/20"
                 )}
                 title="Copy"
               >
                 <Copy className="h-3.5 w-3.5" />
-              </button>
-            )}
-            {onCut && !isEmptySelection && (
-              <button
-                type="button"
-                onClick={onCut}
-                className={cn(
-                  "flex-shrink-0 rounded p-1.5 transition-colors",
-                  "bg-orange-500/10 hover:bg-orange-500/20 text-orange-500"
-                )}
-                title="Cut"
-              >
-                <Scissors className="h-3.5 w-3.5" />
               </button>
             )}
             {onDelete && (
@@ -93,7 +78,7 @@ export function ContextPill({
                 onClick={onDelete}
                 className={cn(
                   "flex-shrink-0 rounded p-1.5 transition-colors",
-                  "bg-destructive/10 hover:bg-destructive/20 text-destructive"
+                  "bg-destructive/10 text-destructive hover:bg-destructive/20"
                 )}
                 title="Delete"
               >

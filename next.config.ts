@@ -38,7 +38,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://api.anthropic.com",
+              `connect-src 'self' ${backendUrl} https://api.anthropic.com https://api.languagetool.org`,
               "frame-ancestors 'none'",
             ].join("; "),
           },

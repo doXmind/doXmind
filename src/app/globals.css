@@ -361,6 +361,13 @@
   @apply my-4 overflow-x-auto;
 }
 
+/* Table wrapper mobile constraint */
+@media (max-width: 767px) {
+  .ProseMirror .tableWrapper {
+    max-width: calc(100vw - 2rem);
+  }
+}
+
 /* Table bubble menu animation */
 .table-bubble-menu {
   animation:
@@ -1207,7 +1214,8 @@ html {
    ==================================== */
 @media (max-width: 767px) {
   /* Prevent body scroll - only main content should scroll */
-  html, body {
+  html,
+  body {
     overflow: hidden;
     width: 100%;
     height: 100vh; /* Fallback for browsers without dvh */
@@ -1215,7 +1223,8 @@ html {
 
   /* Support for dvh */
   @supports (height: 100dvh) {
-    html, body {
+    html,
+    body {
       height: 100dvh;
     }
   }
@@ -1354,19 +1363,33 @@ html {
 
 /* Mobile block selection mode */
 @media (max-width: 767px) {
-  /* Disable native text selection on mobile to enable block selection */
+  /* Common mobile styles (always applied) */
   .ProseMirror {
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-    /* Prevent text selection cursor */
-    cursor: default;
-    /* Hide the blinking caret on mobile */
-    caret-color: transparent;
     /* Reduce padding on mobile - header already provides spacing */
     padding-top: 0;
     padding-bottom: 0.5rem;
     min-height: auto;
+    /* Prevent text overflow on mobile */
+    overflow-wrap: break-word;
+    word-break: break-word;
+    overflow-x: hidden;
+  }
+
+  /* Block selection mode styles (disabled in edit mode) */
+  :not(.mobile-edit-mode) .ProseMirror {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    cursor: default;
+    caret-color: transparent;
+  }
+
+  /* Edit mode: restore normal editing behavior */
+  .mobile-edit-mode .ProseMirror {
+    -webkit-user-select: auto;
+    user-select: auto;
+    cursor: text;
+    caret-color: auto;
   }
 
   /* Remove top margin from first element on mobile to save space */
@@ -1374,21 +1397,20 @@ html {
     margin-top: 0 !important;
   }
 
-  /* Make all top-level blocks tappable with visual feedback */
-  .ProseMirror > * {
+  /* Make all top-level blocks tappable with visual feedback (only in selection mode) */
+  :not(.mobile-edit-mode) .ProseMirror > * {
     transition:
       background-color 0.1s ease,
       transform 0.1s ease;
     border-radius: 4px;
-    /* Add padding for better tap targets */
     margin-left: -4px;
     margin-right: -4px;
     padding-left: 4px;
     padding-right: 4px;
   }
 
-  /* Tap feedback - brief highlight on touch */
-  .ProseMirror > *:active:not(.block-selected) {
+  /* Tap feedback - brief highlight on touch (only in selection mode) */
+  :not(.mobile-edit-mode) .ProseMirror > *:active:not(.block-selected) {
     background-color: hsl(var(--accent) / 0.3);
     transform: scale(0.995);
   }

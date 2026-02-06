@@ -29,6 +29,7 @@ interface LayoutState {
   mobileAnswerBubbleContent: string;
   mobileEditCount: number; // Number of edits applied in last operation
   showMobileEditSuccess: boolean;
+  isMobileEditMode: boolean; // When true, editor uses desktop-style cursor editing instead of block selection
 
   // Keyboard shortcuts modal
   isKeyboardShortcutsOpen: boolean;
@@ -92,6 +93,8 @@ interface LayoutState {
   hideMobileAnswerBubble: () => void;
   showMobileEditSuccessIndicator: (editCount: number) => void;
   hideMobileEditSuccessIndicator: () => void;
+  toggleMobileEditMode: () => void;
+  setMobileEditMode: (enabled: boolean) => void;
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -123,6 +126,7 @@ export const useLayoutStore = create<LayoutState>()(
       mobileAnswerBubbleContent: "",
       mobileEditCount: 0,
       showMobileEditSuccess: false,
+      isMobileEditMode: false,
 
       // Keyboard shortcuts modal
       isKeyboardShortcutsOpen: false,
@@ -341,6 +345,14 @@ export const useLayoutStore = create<LayoutState>()(
           showMobileEditSuccess: false,
           mobileEditCount: 0,
         });
+      },
+
+      toggleMobileEditMode: () => {
+        set((state) => ({ isMobileEditMode: !state.isMobileEditMode }));
+      },
+
+      setMobileEditMode: (enabled: boolean) => {
+        set({ isMobileEditMode: enabled });
       },
     }),
     {

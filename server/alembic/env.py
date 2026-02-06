@@ -61,9 +61,7 @@ def include_object(object, name, type_, _reflected, _compare_to):
     if type_ == "table" and name in EXCLUDED_TABLES:
         return False
     # Also exclude indexes on excluded tables
-    if type_ == "index" and object.table.name in EXCLUDED_TABLES:
-        return False
-    return True
+    return not (type_ == "index" and object.table.name in EXCLUDED_TABLES)
 
 
 def run_migrations_offline() -> None:

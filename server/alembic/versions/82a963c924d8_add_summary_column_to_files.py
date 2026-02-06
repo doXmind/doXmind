@@ -8,16 +8,17 @@ Note: This migration only adds 'summary'. The 'is_favorite' column
 was added in a later migration (0002_add_is_favorite_deleted_at).
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "82a963c924d8"
-down_revision: Union[str, Sequence[str], None] = "0001_initial_baseline"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "0001_initial_baseline"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

@@ -9,16 +9,17 @@ Revises: None
 Create Date: 2026-02-03
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0001_initial_baseline"
-down_revision: Union[str, Sequence[str], None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -70,9 +71,7 @@ def upgrade() -> None:
     op.create_table(
         "files",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column(
-            "user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=True, index=True
-        ),
+        sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=True, index=True),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("content", sa.Text(), default=""),
         sa.Column("content_hash", sa.String(64), nullable=True),
@@ -96,9 +95,7 @@ def upgrade() -> None:
     op.create_table(
         "conversations",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column(
-            "user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=True, index=True
-        ),
+        sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=True, index=True),
         sa.Column("file_id", sa.String(255), nullable=True, index=True),
         sa.Column("created_at", sa.DateTime(timezone=True)),
     )
@@ -172,9 +169,7 @@ def upgrade() -> None:
     op.create_table(
         "telemetry_events",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column(
-            "user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=True, index=True
-        ),
+        sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=True, index=True),
         sa.Column("event_type", sa.String(50), nullable=False, index=True),
         sa.Column("event_data", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), index=True),
@@ -182,9 +177,7 @@ def upgrade() -> None:
         sa.Column("rejected_content", sa.Text(), nullable=True),
         sa.Column("context", sa.Text(), nullable=True),
     )
-    op.create_index(
-        "idx_telemetry_user_type", "telemetry_events", ["user_id", "event_type"]
-    )
+    op.create_index("idx_telemetry_user_type", "telemetry_events", ["user_id", "event_type"])
     op.create_index("idx_telemetry_created", "telemetry_events", ["created_at"])
 
     # User telemetry settings table
@@ -226,9 +219,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True)),
         sa.Column("updated_at", sa.DateTime(timezone=True)),
     )
-    op.create_index(
-        "idx_shares_active_expires", "document_shares", ["is_active", "expires_at"]
-    )
+    op.create_index("idx_shares_active_expires", "document_shares", ["is_active", "expires_at"])
     op.create_index("idx_shares_file_active", "document_shares", ["file_id", "is_active"])
 
 

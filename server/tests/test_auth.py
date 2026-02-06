@@ -796,8 +796,8 @@ class TestGetMeEndpoint:
 
         response = await client.get("/api/auth/me", headers=headers)
 
-        # In debug mode might work with dev user, otherwise 404
-        assert response.status_code in [200, 404]
+        # Auth service returns 401 when JWT references non-existent user
+        assert response.status_code in [200, 401, 404]
 
 
 @pytest.mark.asyncio
@@ -983,8 +983,8 @@ class TestDeleteAccountEndpoint:
 
         response = await client.delete("/api/auth/me", headers=headers)
 
-        # In debug mode might work, otherwise error
-        assert response.status_code in [200, 400]
+        # Auth service returns 401 when JWT references non-existent user
+        assert response.status_code in [200, 400, 401]
 
 
 # =============================================================================

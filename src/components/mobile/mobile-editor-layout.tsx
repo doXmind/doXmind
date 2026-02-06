@@ -7,7 +7,7 @@
  * Includes header, bottom bar, answer bubble, and overlays.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { MobileHeader } from "./mobile-header";
 import { MobileBottomBar } from "./mobile-bottom-bar";
 import { AIAnswerBubble } from "./ai-answer-bubble";
@@ -15,8 +15,6 @@ import { EditSuccessIndicator } from "./edit-success-indicator";
 import { MobileChatOverlay } from "./mobile-chat-overlay";
 import { MobileSidebar } from "./mobile-sidebar";
 import { MobileOutlineSheet } from "./mobile-outline-sheet";
-import { BlockDragHandle } from "./block-drag-handle";
-import { BlockDndContext } from "./dnd";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
@@ -31,8 +29,6 @@ interface MobileEditorLayoutProps {
 const EDIT_TOOLS = ["str_replace", "insert", "replace_all", "apply_edits"];
 
 export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
-  const mainContentRef = useRef<HTMLElement>(null);
-
   const {
     isMobileSidebarOpen,
     isMobileOutlineOpen,
@@ -56,10 +52,7 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   // Track the last response to detect when AI finishes
   const conversationKey = currentFileId || "global";
   const conversation = conversations[conversationKey];
-  const messages = useMemo(
-    () => conversation?.messages || [],
-    [conversation?.messages]
-  );
+  const messages = useMemo(() => conversation?.messages || [], [conversation?.messages]);
 
   // Find the last assistant message (not necessarily the very last message)
   const lastAssistantMessage = useMemo(() => {
@@ -189,28 +182,24 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   return (
     <div className="flex h-full flex-col bg-background md:hidden">
       {/* Header - flex child, not fixed */}
-      <div className="flex-shrink-0 h-12">
+      <div className="h-12 flex-shrink-0">
         <MobileHeader />
       </div>
 
       {/* Main scroll container - SINGLE source of scrolling */}
-      <BlockDndContext>
-        <main
-          ref={mainContentRef}
-          className="relative flex-1 overflow-y-auto overflow-x-hidden"
-          style={{ WebkitOverflowScrolling: 'touch' }}
-        >
-          {children}
+      <main
+        className="relative flex-1 overflow-y-auto overflow-x-hidden"
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
+        {children}
+      </main>
 
-          {/* Block Drag Handle - shows when a block is selected */}
-          <BlockDragHandle containerRef={mainContentRef} />
-        </main>
-      </BlockDndContext>
-
-      {/* Bottom bar - flex child, not fixed */}
-      <div className="flex-shrink-0">
-        <MobileBottomBar onViewChat={handleOpenChatOverlay} />
-      </div>
+      {/* Bottom bar - only show when a file is open */}
+      {currentFileId && (
+        <div className="flex-shrink-0">
+          <MobileBottomBar onViewChat={handleOpenChatOverlay} />
+        </div>
+      )}
 
       {/* AI Answer Bubble */}
       <AIAnswerBubble

@@ -128,13 +128,14 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     return () => setEditor(null);
   }, [editor, setEditor]);
 
-  // Sync block selection enabled state with isMobile
-  // This is needed because useEditor doesn't re-initialize on prop changes
+  // Sync block selection enabled state with isMobile and edit mode
+  // Block selection is active on mobile UNLESS edit mode is toggled on
+  const { isMobileEditMode } = useLayoutStore();
   useEffect(() => {
     if (editor && editor.commands.setBlockSelectionEnabled) {
-      editor.commands.setBlockSelectionEnabled(isMobile);
+      editor.commands.setBlockSelectionEnabled(isMobile && !isMobileEditMode);
     }
-  }, [editor, isMobile]);
+  }, [editor, isMobile, isMobileEditMode]);
 
   // Sync editable state with isDemoMode
   // Demo mode: read-only to ensure mock scenarios work correctly
@@ -329,7 +330,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         onRejectAll={handleRejectAll}
       />
 
-      <div className={cn("flex", !isMobile && "min-h-0 flex-1 overflow-x-hidden")}>
+      <div className={cn("flex min-w-0 overflow-x-hidden", !isMobile && "min-h-0 flex-1")}>
         {/* Outline toggle button - shows when outline is closed */}
         {!isMobile && <OutlineToggle headingsCount={headings.length} />}
         {/* Mindlines outline - hidden on mobile */}
@@ -337,8 +338,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         {/* Main editor content area */}
         <div
           className={cn(
-            "relative flex flex-col",
-            !isMobile && "min-h-0 min-w-0 flex-1 overflow-hidden"
+            "relative flex min-w-0 flex-col overflow-hidden",
+            !isMobile && "min-h-0 flex-1"
           )}
         >
           {/* Demo mode indicator */}
@@ -350,7 +351,12 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
           )}
           {/* On mobile, parent MobileEditorLayout handles scrolling, so skip ScrollArea entirely */}
           {isMobile ? (
-            <div className="mx-auto w-full px-4 pb-2 pt-0 sm:max-w-4xl">
+            <div
+              className={cn(
+                "mx-auto w-full max-w-full px-4 pb-2 pt-0 sm:max-w-4xl",
+                isMobileEditMode && "mobile-edit-mode"
+              )}
+            >
               <EditorContent editor={editor} />
             </div>
           ) : (
