@@ -116,6 +116,20 @@ class Settings(BaseSettings):
     fast_model: str = "claude-haiku-4-5-20251001"
 
     # =========================================================================
+    # User API Key Settings
+    # =========================================================================
+    # Encryption key for user API keys (Fernet, 32 bytes base64 encoded)
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    api_key_encryption_key: str = ""
+
+    # Models available when user has their own API key
+    available_models: list[str] = [
+        "claude-sonnet-4-5-20250929",
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+    ]
+
+    # =========================================================================
     # Web Tools Settings (Anthropic server-side tools)
     # =========================================================================
     web_search_enabled: bool = False  # Default off, user can enable

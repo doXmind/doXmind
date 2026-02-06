@@ -52,6 +52,8 @@ class WritingAgent:
         web_search_enabled: bool = False,
         code_execution_enabled: bool = False,
         db=None,
+        api_key: str | None = None,
+        model: str | None = None,
     ):
         """Initialize the writing agent.
 
@@ -63,6 +65,8 @@ class WritingAgent:
             web_search_enabled: Enable Anthropic web search tool
             code_execution_enabled: Enable Anthropic code execution tool
             db: Database session for RAG operations
+            api_key: User's Anthropic API key (uses server key if not provided)
+            model: User's preferred model (uses default if not provided)
         """
         self.mode = mode
         self.enable_thinking = enable_thinking
@@ -76,9 +80,14 @@ class WritingAgent:
         self.has_skills = bool(get_skills_service().list_skills())
 
         settings = get_settings()
-        api_key = settings.anthropic_api_key
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY is not set")
+
+        # Use user's API key if provided, otherwise fall back to server key
+        effective_api_key = api_key or settings.anthropic_api_key
+        if not effective_api_key:
+            raise ValueError("No API key available")
+
+        # Use user's model preference if provided, otherwise use default
+        effective_model = model or settings.default_model
 
         # Configure longer timeout for streaming responses
         # Default httpx timeout is 5 minutes, but streaming large content may need more
@@ -88,10 +97,11 @@ class WritingAgent:
             write=30.0,  # Write timeout
             pool=30.0,  # Pool timeout
         )
-        self.client = AsyncAnthropic(api_key=api_key, timeout=timeout)
-        self.model = settings.default_model
+        self.client = AsyncAnthropic(api_key=effective_api_key, timeout=timeout)
+        self.model = effective_model
         self.max_tokens = settings.max_output_tokens
         self.settings = settings
+        self.using_user_key = bool(api_key)
 
         # Files service for uploading data files to Anthropic (for code execution)
         self.files_service = AnthropicFilesService(self.client)

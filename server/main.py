@@ -27,6 +27,7 @@ from api import (
     skills,
     speech,
     telemetry,
+    user_settings,
     versions,
 )
 from config import CORS_ORIGINS, get_cors_headers, get_settings
@@ -41,12 +42,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Configure audit logger with structured format for security-sensitive operations
+audit_logger = logging.getLogger("audit")
+audit_handler = logging.StreamHandler()
+audit_handler.setFormatter(
+    logging.Formatter("%(asctime)s - AUDIT - %(levelname)s - %(message)s [%(user_id)s] %(action)s")
+)
+audit_logger.addHandler(audit_handler)
+audit_logger.setLevel(logging.INFO)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting doXmind Mini server...")
+
+    # Validate encryption configuration
+    settings = get_settings()
+    if not settings.api_key_encryption_key:
+        if settings.debug:
+            logger.warning(
+                "API_KEY_ENCRYPTION_KEY not configured. "
+                "User API key storage will be disabled in development mode."
+            )
+        else:
+            logger.warning(
+                "API_KEY_ENCRYPTION_KEY not configured. "
+                "Users will not be able to store their own API keys."
+            )
+
     await init_db()
 
     # Initialize pgvector for vector search
@@ -241,6 +266,7 @@ app.include_router(shares.router, prefix="/api/shares", tags=["shares"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])
+app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
 
 
 # ============================================================================

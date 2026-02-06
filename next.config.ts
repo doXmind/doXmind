@@ -11,9 +11,51 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Security headers for all pages
+        source: "/((?!demo).*)",
+        headers: [
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "X-Frame-Options",
+            value: "DENY",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(self), geolocation=()",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https:",
+              "font-src 'self' data:",
+              "connect-src 'self' https://api.anthropic.com",
+              "frame-ancestors 'none'",
+            ].join("; "),
+          },
+        ],
+      },
+      {
         // Allow demo page to be embedded in iframes from doxmind.com
         source: "/demo",
         headers: [
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
           {
             key: "Content-Security-Policy",
             value:
@@ -98,6 +140,15 @@ const nextConfig: NextConfig = {
       {
         source: "/api/telemetry/:path*",
         destination: `${backendUrl}/api/telemetry/:path*`,
+      },
+      // User settings routes - for API key and model preferences
+      {
+        source: "/api/user-settings",
+        destination: `${backendUrl}/api/user-settings/`,
+      },
+      {
+        source: "/api/user-settings/:path*",
+        destination: `${backendUrl}/api/user-settings/:path*`,
       },
       // Health check
       {

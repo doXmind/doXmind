@@ -15,7 +15,8 @@ from agents.writing_agent import WritingAgent
 from api.files import get_user_id
 from config import get_cors_headers, get_settings
 from db.database import Conversation, ConversationAttachment, ConversationDataFile, Message, get_db
-from services.auth_service import TokenData, require_auth
+from services.api_key_service import APIKeyService
+from services.auth_service import TokenData, optional_auth, require_auth
 from services.history_compressor import HistoryCompressor
 
 logger = logging.getLogger(__name__)
@@ -324,7 +325,10 @@ async def clear_conversation(
 
 @router.post("/stream")
 async def chat_stream(
-    request: ChatRequest, http_request: Request, db: AsyncSession = Depends(get_db)
+    request: ChatRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(optional_auth),
 ):
     """Stream AI chat response with real-time token output.
 
@@ -333,6 +337,19 @@ async def chat_stream(
     """
     settings = get_settings()
     origin = http_request.headers.get("origin")
+
+    # Resolve user's API key and model preference
+    user_api_key = None
+    user_model = None
+
+    if auth and auth.sub and auth.sub != "anonymous":
+        api_key_service = APIKeyService(db)
+        user_api_settings = await api_key_service.get_user_settings(auth.sub)
+
+        if api_key_service.has_api_key(user_api_settings):
+            user_api_key = await api_key_service.get_decrypted_key(auth.sub)
+            user_model = user_api_settings.preferred_model
+            logger.info(f"Using user's API key with model: {user_model}")
 
     # Load conversation history with 3-1-3 compression
     history = []
@@ -480,6 +497,8 @@ async def chat_stream(
                     data_files_content
                 ),  # Auto-enable when data files present
                 db=db,
+                api_key=user_api_key,
+                model=user_model,
             )
 
             # Prepare file context

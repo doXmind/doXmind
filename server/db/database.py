@@ -345,6 +345,22 @@ class UserTelemetrySettings(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class UserAPISettings(Base):
+    """User's API key and model preferences.
+
+    Allows users to use their own Anthropic API key and select models.
+    API keys are encrypted using Fernet symmetric encryption.
+    """
+
+    __tablename__ = "user_api_settings"
+
+    user_id = Column(String(36), ForeignKey("users.id"), primary_key=True)
+    encrypted_anthropic_key = Column(Text, nullable=True)  # Fernet encrypted
+    preferred_model = Column(String(100), default="claude-sonnet-4-5-20250929")
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 # =============================================================================
 # Document Sharing Models
 # =============================================================================

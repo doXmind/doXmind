@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useAuthStore } from "@/stores/auth-store";
+import { APISettings } from "@/components/settings/api-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
 
 export function UserMenu() {
@@ -148,7 +149,11 @@ export function UserMenu() {
             Settings
           </span>
         </ModalHeader>
-        <TelemetrySettings />
+        <div className="space-y-6">
+          <APISettings />
+          <hr />
+          <TelemetrySettings />
+        </div>
       </Modal>
     </DropdownMenu>
   );

@@ -170,7 +170,7 @@ class TestWritingAgentInit:
         """Should raise error when API key is missing."""
         mock_settings.return_value = MagicMock(anthropic_api_key=None)
 
-        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        with pytest.raises(ValueError, match="No API key available"):
             WritingAgent()
 
 
