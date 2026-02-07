@@ -32,6 +32,9 @@ interface LayoutState {
   // Command palette
   isCommandPaletteOpen: boolean;
 
+  // Home page
+  homeViewMode: "grid" | "list";
+
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
   shouldOpenSearchWithAI: boolean; // Flag to open search in AI mode
@@ -65,6 +68,9 @@ interface LayoutState {
   setCommandPaletteOpen: (open: boolean) => void;
   openCommandPalette: () => void;
   toggleCommandPalette: () => void;
+
+  // Home page actions
+  setHomeViewMode: (mode: "grid" | "list") => void;
 
   // Search bar actions
   setSearchBarOpen: (open: boolean) => void;
@@ -116,6 +122,9 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Command palette
       isCommandPaletteOpen: false,
+
+      // Home page
+      homeViewMode: "grid" as const,
 
       // Search bar
       isSearchBarOpen: false,
@@ -231,6 +240,11 @@ export const useLayoutStore = create<LayoutState>()(
         set((state) => ({ isCommandPaletteOpen: !state.isCommandPaletteOpen }));
       },
 
+      // Home page actions
+      setHomeViewMode: (mode: "grid" | "list") => {
+        set({ homeViewMode: mode });
+      },
+
       // Search bar actions
       setSearchBarOpen: (open: boolean) => {
         set({ isSearchBarOpen: open, shouldOpenSearchWithAI: false });
@@ -303,6 +317,7 @@ export const useLayoutStore = create<LayoutState>()(
         isMindlinesCollapsed: state.isMindlinesCollapsed,
         theme: state.theme,
         isHighContrast: state.isHighContrast,
+        homeViewMode: state.homeViewMode,
       }),
     }
   )

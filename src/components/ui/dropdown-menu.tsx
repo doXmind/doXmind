@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface DropdownMenuProps {
@@ -12,14 +13,12 @@ interface DropdownMenuTriggerProps {
   asChild?: boolean;
 }
 
-interface DropdownMenuContentProps
-  extends React.HTMLAttributes<HTMLDivElement> {
+interface DropdownMenuContentProps extends React.HTMLAttributes<HTMLDivElement> {
   align?: "start" | "center" | "end";
   sideOffset?: number;
 }
 
-interface DropdownMenuItemProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface DropdownMenuItemProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   inset?: boolean;
 }
 
@@ -94,10 +93,7 @@ export function DropdownMenu({ children }: DropdownMenuProps) {
   );
 }
 
-export function DropdownMenuTrigger({
-  children,
-  asChild,
-}: DropdownMenuTriggerProps) {
+export function DropdownMenuTrigger({ children, asChild }: DropdownMenuTriggerProps) {
   const { open, setOpen, triggerRef } = React.useContext(DropdownMenuContext);
 
   const handleClick = () => setOpen(!open);
@@ -145,19 +141,34 @@ export function DropdownMenuContent({
   children,
   className,
   align = "center",
+  sideOffset = 4,
   ...props
 }: DropdownMenuContentProps) {
-  const { open, setOpen, focusedId, setFocusedId, itemIds } =
+  const { open, setOpen, triggerRef, focusedId, setFocusedId, itemIds } =
     React.useContext(DropdownMenuContext);
   const contentRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+
+  // Calculate position from trigger element
+  React.useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const top = rect.bottom + sideOffset;
+    let left: number;
+    if (align === "end") {
+      left = rect.right;
+    } else if (align === "start") {
+      left = rect.left;
+    } else {
+      left = rect.left + rect.width / 2;
+    }
+    setPos({ top, left });
+  }, [open, triggerRef, align, sideOffset]);
 
   // Handle click outside
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        contentRef.current &&
-        !contentRef.current.contains(event.target as Node)
-      ) {
+      if (contentRef.current && !contentRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
@@ -219,28 +230,32 @@ export function DropdownMenuContent({
     };
   }, [open, setOpen, setFocusedId, focusedId, itemIds]);
 
+  if (!open || !pos) return null;
 
-  if (!open) return null;
-
-  return (
+  return createPortal(
     <div
       ref={contentRef}
       role="menu"
       aria-orientation="vertical"
       className={cn(
-        "absolute z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+        "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         "animate-in fade-in-0 zoom-in-95",
         "max-h-[300px] overflow-y-auto",
-        align === "start" && "left-0",
-        align === "center" && "left-1/2 -translate-x-1/2",
-        align === "end" && "right-0",
-        "top-full mt-1",
         className
       )}
+      style={{
+        top: pos.top,
+        ...(align === "end"
+          ? { right: window.innerWidth - pos.left }
+          : align === "start"
+            ? { left: pos.left }
+            : { left: pos.left, transform: "translateX(-50%)" }),
+      }}
       {...props}
     >
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -336,11 +351,7 @@ export function DropdownMenuLabel({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <div className={cn("px-2 py-1.5 text-sm font-semibold", className)}>
-      {children}
-    </div>
-  );
+  return <div className={cn("px-2 py-1.5 text-sm font-semibold", className)}>{children}</div>;
 }
 
 // SubMenu context
@@ -391,11 +402,7 @@ export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
 
   return (
     <DropdownMenuSubContext.Provider value={{ open, setOpen }}>
-      <div
-        className="relative"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-      >
+      <div className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
         {children}
       </div>
     </DropdownMenuSubContext.Provider>
@@ -466,12 +473,7 @@ export function DropdownMenuSubTrigger({
         viewBox="0 0 24 24"
         aria-hidden="true"
       >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M9 5l7 7-7 7"
-        />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>
     </button>
   );
@@ -508,9 +510,7 @@ export function DropdownMenuSubContent({
   if (!open) return null;
 
   return (
-    <div
-      className={cn("absolute left-full top-0 ml-[-4px] pl-[4px] z-50", className)}
-    >
+    <div className={cn("absolute left-full top-0 z-50 ml-[-4px] pl-[4px]", className)}>
       <div
         role="menu"
         aria-orientation="vertical"
