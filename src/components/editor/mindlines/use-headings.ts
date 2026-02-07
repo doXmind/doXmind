@@ -1,38 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { Editor } from "@tiptap/react";
 import type { Heading } from "./types";
-import { findActiveHeading } from "./utils/heading-utils";
+import { getScrollParent } from "./utils/heading-utils";
+
+/** Scroll-spy threshold: fraction of viewport height from top */
+const SCROLLSPY_THRESHOLD = 0.2;
 
 /**
  * Hook to extract and track headings from a TipTap editor
- * Provides headings array, active heading ID, and navigation function
+ * Provides headings array, active heading ID (scroll-spy), and navigation function
  */
 export function useHeadings(editor: Editor | null) {
   const [headings, setHeadings] = useState<Heading[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Track if user has interacted with editor (clicked/selected)
-  const hasInteractedRef = useRef(false);
-
-  // Track previous document size to detect file switches
-  const prevDocSizeRef = useRef<number | null>(null);
 
   // Extract headings from editor content
   useEffect(() => {
     if (!editor) return;
 
     const updateHeadings = () => {
-      const currentDocSize = editor.state.doc.content.size;
-      const prevDocSize = prevDocSizeRef.current;
-
-      // Detect significant content change (likely a file switch)
-      // Reset interaction state so activeId defaults to first heading
-      if (prevDocSize !== null && Math.abs(currentDocSize - prevDocSize) > 50) {
-        hasInteractedRef.current = false;
-      }
-      prevDocSizeRef.current = currentDocSize;
-
       const found: Heading[] = [];
       editor.state.doc.descendants((node, pos) => {
         if (node.type.name === "heading" && node.attrs.level <= 3) {
@@ -54,33 +42,51 @@ export function useHeadings(editor: Editor | null) {
     };
   }, [editor]);
 
-  // Track cursor position to highlight active heading
-  // Uses binary search for better performance on large documents
-  // Default to first heading until user focuses the editor
+  // Scroll-spy: track active heading based on scroll position
+  // Finds the last heading whose top is above the threshold line (top ~20% of viewport)
   useEffect(() => {
     if (!editor || headings.length === 0) return;
 
-    // Set initial active to first heading
-    setActiveId(headings[0]?.id ?? null);
+    const scrollParent = getScrollParent(editor.view.dom as HTMLElement);
+    let rafId: number | null = null;
 
-    const onFocus = () => {
-      hasInteractedRef.current = true;
+    const findTopHeading = () => {
+      rafId = null;
+      const containerRect = scrollParent.getBoundingClientRect();
+      const threshold = containerRect.top + containerRect.height * SCROLLSPY_THRESHOLD;
+
+      let best: Heading | null = null;
+      for (const heading of headings) {
+        try {
+          const dom = editor.view.nodeDOM(heading.pos);
+          if (!(dom instanceof HTMLElement)) continue;
+          if (dom.getBoundingClientRect().top <= threshold) {
+            best = heading;
+          } else {
+            break; // Headings are in document order
+          }
+        } catch {
+          // nodeDOM may throw if pos is stale during a transaction
+          continue;
+        }
+      }
+
+      setActiveId(best?.id ?? headings[0]?.id ?? null);
     };
 
-    const trackPosition = () => {
-      // Only track position after user has focused the editor
-      if (!hasInteractedRef.current) return;
-      const { from } = editor.state.selection;
-      const active = findActiveHeading(headings, from);
-      // Default to first heading if cursor is before all headings
-      setActiveId(active?.id ?? headings[0]?.id ?? null);
+    const handleScroll = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(findTopHeading);
     };
 
-    editor.on("focus", onFocus);
-    editor.on("selectionUpdate", trackPosition);
+    scrollParent.addEventListener("scroll", handleScroll, { passive: true });
+
+    // Initial check for pre-scrolled state
+    findTopHeading();
+
     return () => {
-      editor.off("focus", onFocus);
-      editor.off("selectionUpdate", trackPosition);
+      scrollParent.removeEventListener("scroll", handleScroll);
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [editor, headings]);
 

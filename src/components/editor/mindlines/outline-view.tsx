@@ -44,12 +44,12 @@ function OutlineItem({
   const isSelected = node.id === selectedId;
   const itemRef = useRef<HTMLDivElement>(null);
 
-  // Scroll selected item into view
+  // Scroll active or selected item into view within the outline panel
   useEffect(() => {
-    if (isSelected && itemRef.current) {
+    if ((isActive || isSelected) && itemRef.current) {
       itemRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [isSelected]);
+  }, [isActive, isSelected]);
 
   const handleToggle = useCallback(
     (e: React.MouseEvent) => {
@@ -79,10 +79,10 @@ function OutlineItem({
       <div
         ref={itemRef}
         className={cn(
-          "group flex items-start gap-1 py-1.5 px-2 rounded-md cursor-pointer transition-colors",
+          "group flex cursor-pointer items-start gap-1 rounded-md px-2 py-1.5 transition-colors",
           "hover:bg-accent/50",
-          isActive && "bg-accent/30 border-l-2 border-primary",
-          isSelected && "ring-2 ring-primary/50 ring-inset"
+          isActive && "border-l-2 border-primary bg-accent/30",
+          isSelected && "ring-2 ring-inset ring-primary/50"
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
@@ -97,15 +97,12 @@ function OutlineItem({
           <button
             onClick={handleToggle}
             className={cn(
-              "flex-shrink-0 p-0.5 rounded transition-colors mt-0.5",
+              "mt-0.5 flex-shrink-0 rounded p-0.5 transition-colors",
               "hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary"
             )}
             aria-label={collapsed ? "Expand" : "Collapse"}
           >
-            <motion.div
-              animate={{ rotate: collapsed ? 0 : 90 }}
-              transition={{ duration: 0.15 }}
-            >
+            <motion.div animate={{ rotate: collapsed ? 0 : 90 }} transition={{ duration: 0.15 }}>
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
             </motion.div>
           </button>
@@ -116,7 +113,7 @@ function OutlineItem({
         {/* Heading text - allow 2 lines before truncating */}
         <span
           className={cn(
-            "flex-1 min-w-0 line-clamp-2 break-words text-sm leading-snug",
+            "line-clamp-2 min-w-0 flex-1 break-words text-sm leading-snug",
             node.level === 1 && "font-semibold",
             node.level === 2 && "font-medium",
             node.level === 3 && "text-muted-foreground"
@@ -127,7 +124,7 @@ function OutlineItem({
 
         {/* Child count badge when collapsed */}
         {hasChildren && collapsed && (
-          <span className="flex-shrink-0 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full mt-0.5">
+          <span className="mt-0.5 flex-shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
             {node.children.length}
           </span>
         )}
@@ -170,17 +167,20 @@ function OutlineItem({
  * - Keyboard navigation support
  * - Shared collapse state with Mindmap
  */
-export function OutlineView({
-  headings,
-  activeId,
-  onNavigate,
-}: OutlineViewProps) {
+export function OutlineView({ headings, activeId, onNavigate }: OutlineViewProps) {
   const { currentFileId } = useFileStore();
   const { selectedNodeId, setSelectedNode } = useOutlineStore();
   const documentId = currentFileId || "default";
 
   // Build tree structure from flat headings
   const tree = useMemo(() => buildTree(headings), [headings]);
+
+  // Clear selected state when activeId changes (user scrolled away)
+  useEffect(() => {
+    if (activeId && selectedNodeId && activeId !== selectedNodeId) {
+      setSelectedNode(null);
+    }
+  }, [activeId, selectedNodeId, setSelectedNode]);
 
   // Handle selection
   const handleSelect = useCallback(
@@ -192,14 +192,12 @@ export function OutlineView({
 
   if (headings.length === 0) {
     return (
-      <div className="py-4 px-3 text-sm text-muted-foreground">
-        Add headings to see outline
-      </div>
+      <div className="px-3 py-4 text-sm text-muted-foreground">Add headings to see outline</div>
     );
   }
 
   return (
-    <div className="py-2 px-1 flex flex-col min-w-0">
+    <div className="flex min-w-0 flex-col px-1 py-2">
       <nav className="flex flex-col" role="tree" aria-label="Document outline">
         {tree.map((node) => (
           <OutlineItem

@@ -180,7 +180,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   // Initialize hooks
   // Disable autocomplete on mobile - it interferes with touch input
   useAutocomplete({ editor, fileId: file.id, fileName: file.name, enabled: !isMobile });
-  useSpellcheck({ editor, enabled: spellcheckEnabled });
+  useSpellcheck({ editor, enabled: spellcheckEnabled && !isMobile });
   const { headings } = useHeadings(editor);
 
   // Use mock text review in demo mode, real API otherwise

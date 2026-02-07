@@ -139,7 +139,7 @@
 
 /* Editor Styles */
 .ProseMirror {
-  @apply min-h-[500px] px-4 py-2 outline-none;
+  @apply min-h-[500px] px-4 pb-2 pt-4 outline-none;
 }
 
 .ProseMirror > * + * {
@@ -1365,8 +1365,8 @@ html {
 @media (max-width: 767px) {
   /* Common mobile styles (always applied) */
   .ProseMirror {
-    /* Reduce padding on mobile - header already provides spacing */
-    padding-top: 0;
+    /* Small top padding so content doesn't touch the header */
+    padding-top: 0.5rem;
     padding-bottom: 0.5rem;
     min-height: auto;
     /* Prevent text overflow on mobile */

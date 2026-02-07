@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Trash2, MoreHorizontal, FileDown, Pencil, Share2 } from "lucide-react";
+import { FileText, Trash2, MoreHorizontal, FileDown, Pencil, Share2, Check, X } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { cn, formatDate } from "@/lib/utils";
@@ -168,12 +168,16 @@ export function FileItem({ file }: FileItemProps) {
     setIsRenaming(false);
   };
 
+  const cancelRename = () => {
+    setNewName(getNameWithoutExtension(file.name));
+    setIsRenaming(false);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleRename();
     } else if (e.key === "Escape") {
-      setNewName(getNameWithoutExtension(file.name));
-      setIsRenaming(false);
+      cancelRename();
     }
   };
 
@@ -248,15 +252,38 @@ export function FileItem({ file }: FileItemProps) {
 
       <div className="min-w-0 flex-1">
         {isRenaming ? (
-          <Input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onBlur={handleRename}
-            onKeyDown={handleKeyDown}
-            onClick={(e) => e.stopPropagation()}
-            className="h-8 px-2 py-0 text-base md:h-6 md:px-1 md:text-sm"
-            autoFocus={window.innerWidth >= 768}
-          />
+          <div className="flex items-center gap-1">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={handleKeyDown}
+              onFocus={(e) => e.target.select()}
+              onClick={(e) => e.stopPropagation()}
+              className="h-8 flex-1 px-2 py-0 text-base md:h-6 md:px-1 md:text-sm"
+              autoFocus
+            />
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault(); // Prevent blur before click fires
+                handleRename();
+              }}
+              className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+              aria-label="Confirm rename"
+            >
+              <Check className="h-4 w-4 text-primary" />
+            </button>
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault(); // Prevent blur before click fires
+                cancelRename();
+              }}
+              className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+              aria-label="Cancel rename"
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </div>
         ) : (
           <>
             <p className="truncate text-base md:text-sm">{getNameWithoutExtension(file.name)}</p>

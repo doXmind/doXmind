@@ -43,9 +43,7 @@ export function findHeadingsWithChildren(headings: Heading[]): Heading[] {
  * @returns Array of heading IDs that should be collapsed by default
  */
 export function findCollapsibleHeadingIds(headings: Heading[]): string[] {
-  return headings
-    .filter((h) => h.level >= 2 && hasChildren(h, headings))
-    .map((h) => h.id);
+  return headings.filter((h) => h.level >= 2 && hasChildren(h, headings)).map((h) => h.id);
 }
 
 /**
@@ -56,10 +54,7 @@ export function findCollapsibleHeadingIds(headings: Heading[]): string[] {
  * @param position - The cursor position
  * @returns The active heading or null if none found
  */
-export function findActiveHeading(
-  headings: Heading[],
-  position: number
-): Heading | null {
+export function findActiveHeading(headings: Heading[], position: number): Heading | null {
   if (headings.length === 0) return null;
 
   // Binary search for the last heading with pos <= position
@@ -139,4 +134,21 @@ export function getDirectChildren(heading: Heading, headings: Heading[]): Headin
     }
   }
   return children;
+}
+
+/**
+ * Find the nearest scrollable ancestor of an element.
+ * Walks up the DOM tree checking for overflow-y: auto or scroll.
+ *
+ * @param element - The starting element
+ * @returns The scrollable parent, or document.documentElement as fallback
+ */
+export function getScrollParent(element: HTMLElement): HTMLElement {
+  let current = element.parentElement;
+  while (current) {
+    const { overflowY } = getComputedStyle(current);
+    if (overflowY === "auto" || overflowY === "scroll") return current;
+    current = current.parentElement;
+  }
+  return document.documentElement;
 }
