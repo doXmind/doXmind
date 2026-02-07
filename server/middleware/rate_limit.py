@@ -38,7 +38,7 @@ settings = get_settings()
 limiter = Limiter(
     key_func=get_client_ip,
     default_limits=[f"{settings.rate_limit_per_minute}/minute"],
-    storage_uri="memory://",  # Use Redis URI for production: "redis://localhost:6379"
+    storage_uri=settings.rate_limit_storage_uri,
     strategy="fixed-window",
 )
 

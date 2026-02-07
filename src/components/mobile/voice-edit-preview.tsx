@@ -25,7 +25,7 @@ import { ChatSettings } from "@/components/ai/chat-settings";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
-import { useEditorStore } from "@/stores/editor-store";
+import { useChatContextStore } from "@/stores/chat-context-store";
 import { useChat } from "@/hooks/use-chat";
 import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
 import type { ToolStatus, ThinkingStatus } from "@/hooks/use-chat";
@@ -85,7 +85,7 @@ export function VoiceEditPreview({
   const { conversations, loadConversation, isLoadingHistory, clearConversation } = useChatStore();
   const { currentFileId } = useFileStore();
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
-    useEditorStore();
+    useChatContextStore();
 
   // Speech-to-text hook
   const {
@@ -535,8 +535,8 @@ export function VoiceEditPreview({
                   <motion.button
                     type="button"
                     className={cn(
-                      "flex flex-1 items-center justify-center gap-2 rounded-md py-1.5 px-3",
-                      "transition-all duration-150 select-none touch-none text-sm",
+                      "flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5",
+                      "touch-none select-none text-sm transition-all duration-150",
                       isRecording || isPressing
                         ? "bg-destructive text-destructive-foreground"
                         : "bg-muted text-muted-foreground"

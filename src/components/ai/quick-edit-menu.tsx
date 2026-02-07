@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Wand2, MessageCircle, ChevronRight } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
+import { useChatContextStore } from "@/stores/chat-context-store";
 import { useQuickEdit } from "@/hooks/use-quick-edit";
 import { useMockQuickEdit } from "@/hooks/use-mock-quick-edit";
 import { useMenuPosition, getSubmenuPosition } from "@/hooks/use-menu-position";
@@ -21,8 +22,8 @@ interface QuickEditMenuProps {
 }
 
 export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProps) {
-  const { quickEditOpen, quickEditPosition, selection, closeQuickEdit, addChatContext } =
-    useEditorStore();
+  const { quickEditOpen, quickEditPosition, selection, closeQuickEdit } = useEditorStore();
+  const { addChatContext } = useChatContextStore();
   // Use mock quick edit in demo mode, real API otherwise
   const realQuickEdit = useQuickEdit();
   const mockQuickEdit = useMockQuickEdit();

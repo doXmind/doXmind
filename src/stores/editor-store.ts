@@ -1,38 +1,10 @@
 import { create } from "zustand";
 
-// Re-export diff review store for backward compatibility
-export { useDiffReviewStore } from "./diff-review-store";
-
 interface Selection {
   from: number;
   to: number;
   text: string;
 }
-
-// Single context item for "Ask in Chat" feature
-export type SelectionContext = {
-  id: string;
-  type: 'selection';
-  text: string;
-  from: number;
-  to: number;
-};
-
-export type ImageContext = {
-  id: string;
-  type: 'image';
-  src: string;
-  alt?: string;
-  base64?: string;      // Base64 encoded image data (without data:... prefix)
-  mediaType?: string;   // MIME type (image/jpeg, image/png, etc.)
-};
-
-export type ChatContextItem = SelectionContext | ImageContext;
-
-// Input type for adding context (without id)
-export type ChatContextInput =
-  | Omit<SelectionContext, 'id'>
-  | Omit<ImageContext, 'id'>;
 
 // Pending edit operation that should be applied through the editor (for undo support)
 export interface PendingEdit {
@@ -55,7 +27,7 @@ export type ImageModalCallback = (url: string, alt?: string) => void;
 export interface LastAIOperation {
   type: "diff_accept" | "autocomplete" | "quick_edit";
   timestamp: number;
-  content?: string;  // For RLHF context
+  content?: string; // For RLHF context
 }
 
 interface EditorState {
@@ -76,9 +48,6 @@ interface EditorState {
 
   // Spellcheck State
   spellcheckEnabled: boolean;
-
-  // Chat Context State (for "Ask in Chat" feature - shown as Context Pills)
-  chatContexts: ChatContextItem[];
 
   // Pending edits from AI/Agent that need to be applied through editor
   pendingEdits: PendingEdit[];
@@ -111,11 +80,6 @@ interface EditorState {
   // Spellcheck Actions
   setSpellcheckEnabled: (enabled: boolean) => void;
 
-  // Chat Context Actions
-  addChatContext: (context: ChatContextInput) => void;
-  removeChatContext: (id: string) => void;
-  clearAllChatContexts: () => void;
-
   // Pending Edit Actions (for undo-able AI edits)
   queueEdit: (edit: PendingEdit) => void;
   clearPendingEdit: (id: string) => void;
@@ -145,7 +109,6 @@ export const useEditorStore = create<EditorState>()((set) => ({
   autocompleteSuggestion: null,
   autocompleteTriggerMode: "auto",
   spellcheckEnabled: true,
-  chatContexts: [],
   pendingEdits: [],
   imageModalOpen: false,
   imageModalCallback: null,
@@ -159,32 +122,19 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setLastSavedAt: (date) => set({ lastSavedAt: date }),
 
   // Quick Edit Actions
-  openQuickEdit: (position) =>
-    set({ quickEditOpen: true, quickEditPosition: position }),
-  closeQuickEdit: () =>
-    set({ quickEditOpen: false, quickEditPosition: null }),
+  openQuickEdit: (position) => set({ quickEditOpen: true, quickEditPosition: position }),
+  closeQuickEdit: () => set({ quickEditOpen: false, quickEditPosition: null }),
 
   // Autocomplete Actions
   setAutocompleteEnabled: (enabled) => set({ autocompleteEnabled: enabled }),
-  setAutocompleteSuggestion: (suggestion) =>
-    set({ autocompleteSuggestion: suggestion }),
+  setAutocompleteSuggestion: (suggestion) => set({ autocompleteSuggestion: suggestion }),
   setAutocompleteTriggerMode: (mode) => set({ autocompleteTriggerMode: mode }),
 
   // Spellcheck Actions
   setSpellcheckEnabled: (enabled) => set({ spellcheckEnabled: enabled }),
 
-  // Chat Context Actions
-  addChatContext: (context) => set((state) => ({
-    chatContexts: [...state.chatContexts, { ...context, id: crypto.randomUUID() } as ChatContextItem]
-  })),
-  removeChatContext: (id) => set((state) => ({
-    chatContexts: state.chatContexts.filter((c) => c.id !== id)
-  })),
-  clearAllChatContexts: () => set({ chatContexts: [] }),
-
   // Pending Edit Actions
-  queueEdit: (edit) =>
-    set((state) => ({ pendingEdits: [...state.pendingEdits, edit] })),
+  queueEdit: (edit) => set((state) => ({ pendingEdits: [...state.pendingEdits, edit] })),
   clearPendingEdit: (id) =>
     set((state) => ({
       pendingEdits: state.pendingEdits.filter((e) => e.id !== id),

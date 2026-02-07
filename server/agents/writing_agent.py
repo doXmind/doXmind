@@ -13,6 +13,7 @@ Supports:
 import json
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -35,6 +36,23 @@ from services.anthropic_files_service import AnthropicFilesService
 from services.skills_service import get_skills_service
 
 logger = logging.getLogger(__name__)
+
+# Type alias for the 3-tuple yielded by stream handlers
+StreamEvent = tuple[dict | None, dict | None, dict | None]
+
+
+@dataclass
+class StreamState:
+    """Mutable state tracked during a single streaming API response."""
+
+    current_text: str = ""
+    current_thinking: str = ""
+    current_tool_use: dict | None = None
+    current_server_tool: dict | None = None
+    in_thinking_block: bool = False
+    stop_reason: str | None = None
+    event_count: int = 0
+    tool_uses_started: list = field(default_factory=list)
 
 
 class WritingAgent:
@@ -496,348 +514,43 @@ class WritingAgent:
 
         # Track stream state for debugging
         stop_reason = None
-        event_count = 0
         tool_uses_started = []
 
         logger.info(f"Starting Claude API stream: model={self.model}, max_tokens={self.max_tokens}")
 
         async with self.client.messages.stream(**api_params) as stream:
-            current_text = ""
-            current_thinking = ""
-            current_tool_use = None
-            current_server_tool = None
-            in_thinking_block = False
+            state = StreamState()
 
             async for event in stream:
-                event_count += 1
-                # Debug: log all event types to understand the stream
+                state.event_count += 1
+
                 if event.type == "content_block_start":
                     block = event.content_block
                     logger.debug(
                         f"content_block_start: type={block.type}, id={getattr(block, 'id', None)}"
                     )
+                    for ev in self._handle_block_start(block, state):
+                        yield ev
 
-                # Handle content block start
-                if event.type == "content_block_start":
-                    block = event.content_block
-
-                    if block.type == "thinking":
-                        in_thinking_block = True
-                        current_thinking = ""
-                        yield {"type": "thinking_start"}, None, None
-
-                    elif block.type == "text":
-                        current_text = ""
-
-                    elif block.type == "tool_use":
-                        current_tool_use = {
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": {},
-                        }
-                        tool_uses_started.append(block.name)
-                        logger.info(f"Tool started: {block.name}")
-                        yield (
-                            {
-                                "type": "tool_start",
-                                "tool": block.name,
-                                "tool_id": block.id,
-                                "input": {},
-                            },
-                            None,
-                            None,
-                        )
-
-                    # Handle server-side tools (web_search, web_fetch)
-                    elif block.type == "server_tool_use":
-                        current_server_tool = {
-                            "type": "server_tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": {},
-                        }
-                        yield (
-                            {
-                                "type": "server_tool_start",
-                                "tool": block.name,
-                                "tool_id": block.id,
-                            },
-                            None,
-                            None,
-                        )
-
-                    # Handle web search results
-                    # Server tool results must be included in message history
-                    elif block.type == "web_search_tool_result":
-                        results = []
-                        # Serialize content for message history
-                        serialized_content = []
-                        if hasattr(block, "content") and block.content:
-                            for r in block.content:
-                                if hasattr(r, "type") and r.type == "web_search_result":
-                                    results.append(
-                                        {
-                                            "url": getattr(r, "url", ""),
-                                            "title": getattr(r, "title", ""),
-                                        }
-                                    )
-                                    serialized_content.append(
-                                        {
-                                            "type": "web_search_result",
-                                            "url": getattr(r, "url", ""),
-                                            "title": getattr(r, "title", ""),
-                                            "encrypted_content": getattr(
-                                                r, "encrypted_content", ""
-                                            ),
-                                            "page_age": getattr(r, "page_age", None),
-                                        }
-                                    )
-                        # Emit end event for UI to show completion
-                        yield (
-                            {
-                                "type": "server_tool_end",
-                                "tool": "web_search",
-                                "tool_id": block.tool_use_id,
-                                "output": f"Found {len(results)} results",
-                                "success": True,
-                            },
-                            None,
-                            None,
-                        )
-                        yield (
-                            {
-                                "type": "web_search_result",
-                                "tool_id": block.tool_use_id,
-                                "results": results,
-                            },
-                            {
-                                "type": "web_search_tool_result",
-                                "tool_use_id": block.tool_use_id,
-                                "content": serialized_content,
-                            },
-                            None,
-                        )
-
-                    # Handle web fetch results
-                    # Server tool results must be included in message history
-                    elif block.type == "web_fetch_tool_result":
-                        url = ""
-                        serialized_content = {}
-                        if hasattr(block, "content"):
-                            content = block.content
-                            url = getattr(content, "url", "")
-                            serialized_content = {
-                                "url": url,
-                                "content": getattr(content, "content", ""),
-                                "title": getattr(content, "title", ""),
-                            }
-                        # Extract domain for display
-                        domain = (
-                            url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
-                        )
-                        # Emit end event for UI to show completion
-                        yield (
-                            {
-                                "type": "server_tool_end",
-                                "tool": "web_fetch",
-                                "tool_id": block.tool_use_id,
-                                "output": f"Fetched {domain}",
-                                "success": True,
-                            },
-                            None,
-                            None,
-                        )
-                        yield (
-                            {"type": "web_fetch_result", "tool_id": block.tool_use_id, "url": url},
-                            {
-                                "type": "web_fetch_tool_result",
-                                "tool_use_id": block.tool_use_id,
-                                "content": serialized_content,
-                            },
-                            None,
-                        )
-
-                    # Handle code execution results (bash)
-                    # Note: The block type is "bash_code_execution_tool_result" for the newer API
-                    elif block.type in (
-                        "code_execution_tool_result",
-                        "bash_code_execution_tool_result",
-                    ):
-                        result_content = {}
-                        generated_files = []
-                        logger.info(
-                            f"Code execution result received: type={block.type}, tool_use_id={getattr(block, 'tool_use_id', None)}"
-                        )
-
-                        if hasattr(block, "content"):
-                            content = block.content
-                            # Handle list-based content (bash_code_execution_result items)
-                            if isinstance(content, list):
-                                for item in content:
-                                    item_type = getattr(item, "type", None)
-                                    if item_type in (
-                                        "bash_code_execution_result",
-                                        "code_execution_result",
-                                    ):
-                                        result_content = {
-                                            "stdout": getattr(item, "stdout", ""),
-                                            "stderr": getattr(item, "stderr", ""),
-                                            "return_code": getattr(item, "return_code", 0),
-                                        }
-                                        # Handle generated files
-                                        if hasattr(item, "files") and item.files:
-                                            for f in item.files:
-                                                generated_files.append(
-                                                    {
-                                                        "file_id": getattr(f, "file_id", ""),
-                                                        "filename": getattr(f, "filename", ""),
-                                                        "media_type": getattr(f, "media_type", ""),
-                                                    }
-                                                )
-                            else:
-                                # Handle direct content structure (legacy)
-                                result_content = {
-                                    "stdout": getattr(content, "stdout", ""),
-                                    "stderr": getattr(content, "stderr", ""),
-                                    "return_code": getattr(content, "return_code", 0),
-                                }
-                                # Handle generated files if any
-                                if hasattr(content, "files") and content.files:
-                                    for f in content.files:
-                                        generated_files.append(
-                                            {
-                                                "file_id": getattr(f, "file_id", ""),
-                                                "filename": getattr(f, "filename", ""),
-                                                "media_type": getattr(f, "media_type", ""),
-                                            }
-                                        )
-                        # Determine success based on return code
-                        return_code = result_content.get("return_code", 0)
-                        success = return_code == 0
-                        # Format output summary
-                        if generated_files:
-                            output_summary = f"Generated {len(generated_files)} file(s)"
-                        elif result_content.get("stderr"):
-                            output_summary = "Execution completed with errors"
-                        else:
-                            output_summary = "Execution completed"
-                        # Emit end event for UI to show completion
-                        yield (
-                            {
-                                "type": "server_tool_end",
-                                "tool": "code_execution",
-                                "tool_id": block.tool_use_id,
-                                "output": output_summary,
-                                "success": success,
-                            },
-                            None,
-                            None,
-                        )
-                        # Yield event for UI but DON'T add to message history
-                        # Server-side tool results are already in the API's response
-                        # and are automatically included in subsequent turns
-                        # Adding them manually causes format validation errors
-                        yield (
-                            {
-                                "type": "code_execution_result",
-                                "tool_id": block.tool_use_id,
-                                "stdout": result_content.get("stdout", ""),
-                                "stderr": result_content.get("stderr", ""),
-                                "return_code": return_code,
-                                "files": generated_files,
-                            },
-                            None,
-                            None,
-                        )
-
-                    else:
-                        # Log unknown block types for debugging
-                        logger.warning(
-                            f"Unknown content_block type: {block.type}, attrs: {dir(block)}"
-                        )
-
-                # Handle content block delta
                 elif event.type == "content_block_delta":
-                    delta = event.delta
+                    for ev in self._handle_block_delta(event.delta, state):
+                        yield ev
 
-                    if delta.type == "thinking_delta":
-                        current_thinking += delta.thinking
-                        yield {"type": "thinking", "content": delta.thinking}, None, None
-
-                    elif delta.type == "text_delta":
-                        current_text += delta.text
-                        yield {"type": "text", "content": delta.text}, None, None
-
-                    elif delta.type == "input_json_delta":
-                        if current_tool_use:
-                            if "partial_json" not in current_tool_use:
-                                current_tool_use["partial_json"] = ""
-                            current_tool_use["partial_json"] += delta.partial_json
-                            yield (
-                                {
-                                    "type": "tool_input_delta",
-                                    "tool": current_tool_use["name"],
-                                    "delta": delta.partial_json,
-                                },
-                                None,
-                                None,
-                            )
-
-                # Handle content block stop
                 elif event.type == "content_block_stop":
-                    if in_thinking_block:
-                        in_thinking_block = False
-                        response_update = None
-                        if current_thinking:
-                            response_update = {"type": "thinking", "thinking": current_thinking}
-                        yield {"type": "thinking_end"}, response_update, None
-                        current_thinking = ""
+                    for ev in self._handle_block_stop(state):
+                        yield ev
 
-                    elif current_text:
-                        yield None, {"type": "text", "text": current_text}, None
-                        current_text = ""
-
-                    elif current_tool_use:
-                        # Parse accumulated JSON
-                        if "partial_json" in current_tool_use:
-                            try:
-                                current_tool_use["input"] = json.loads(
-                                    current_tool_use["partial_json"]
-                                )
-                            except json.JSONDecodeError:
-                                current_tool_use["input"] = {}
-                            del current_tool_use["partial_json"]
-
-                        # Yield response update and tool_use for execution
-                        yield None, current_tool_use, current_tool_use
-                        current_tool_use = None
-
-                    elif current_server_tool:
-                        # Server tool completed (web_search, web_fetch)
-                        # Parse accumulated JSON if any
-                        if "partial_json" in current_server_tool:
-                            try:
-                                current_server_tool["input"] = json.loads(
-                                    current_server_tool["partial_json"]
-                                )
-                            except json.JSONDecodeError:
-                                current_server_tool["input"] = {}
-                            del current_server_tool["partial_json"]
-
-                        # Don't add to tool_uses - server tools are handled by API
-                        yield None, current_server_tool, None
-                        current_server_tool = None
-
-                # Handle message_delta to capture stop_reason
                 elif event.type == "message_delta":
                     if hasattr(event, "delta") and hasattr(event.delta, "stop_reason"):
-                        stop_reason = event.delta.stop_reason
-                        logger.info(f"Message stop_reason: {stop_reason}")
+                        state.stop_reason = event.delta.stop_reason
+                        logger.info(f"Message stop_reason: {state.stop_reason}")
+
+            stop_reason = state.stop_reason
+            tool_uses_started = state.tool_uses_started
 
             # Log stream completion details
             logger.info(
-                f"Claude API stream completed: events={event_count}, "
+                f"Claude API stream completed: events={state.event_count}, "
                 f"tools_started={tool_uses_started}, stop_reason={stop_reason}"
             )
 
@@ -886,6 +599,308 @@ class WritingAgent:
                 None,
                 None,
             )
+
+    # -------------------------------------------------------------------------
+    # Stream Event Handlers
+    # -------------------------------------------------------------------------
+
+    def _handle_block_start(self, block: Any, state: StreamState) -> list[StreamEvent]:
+        """Handle content_block_start events, dispatching by block type."""
+        if block.type == "thinking":
+            state.in_thinking_block = True
+            state.current_thinking = ""
+            return [({"type": "thinking_start"}, None, None)]
+
+        elif block.type == "text":
+            state.current_text = ""
+            return []
+
+        elif block.type == "tool_use":
+            state.current_tool_use = {
+                "type": "tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": {},
+            }
+            state.tool_uses_started.append(block.name)
+            logger.info(f"Tool started: {block.name}")
+            return [
+                (
+                    {
+                        "type": "tool_start",
+                        "tool": block.name,
+                        "tool_id": block.id,
+                        "input": {},
+                    },
+                    None,
+                    None,
+                )
+            ]
+
+        elif block.type == "server_tool_use":
+            state.current_server_tool = {
+                "type": "server_tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": {},
+            }
+            return [
+                (
+                    {
+                        "type": "server_tool_start",
+                        "tool": block.name,
+                        "tool_id": block.id,
+                    },
+                    None,
+                    None,
+                )
+            ]
+
+        elif block.type == "web_search_tool_result":
+            return self._handle_web_search_result(block)
+
+        elif block.type == "web_fetch_tool_result":
+            return self._handle_web_fetch_result(block)
+
+        elif block.type in ("code_execution_tool_result", "bash_code_execution_tool_result"):
+            return self._handle_code_execution_result(block)
+
+        else:
+            logger.warning(f"Unknown content_block type: {block.type}, attrs: {dir(block)}")
+            return []
+
+    def _handle_web_search_result(self, block: Any) -> list[StreamEvent]:
+        """Handle web_search_tool_result blocks."""
+        results = []
+        serialized_content = []
+        if hasattr(block, "content") and block.content:
+            for r in block.content:
+                if hasattr(r, "type") and r.type == "web_search_result":
+                    results.append({"url": getattr(r, "url", ""), "title": getattr(r, "title", "")})
+                    serialized_content.append(
+                        {
+                            "type": "web_search_result",
+                            "url": getattr(r, "url", ""),
+                            "title": getattr(r, "title", ""),
+                            "encrypted_content": getattr(r, "encrypted_content", ""),
+                            "page_age": getattr(r, "page_age", None),
+                        }
+                    )
+        return [
+            (
+                {
+                    "type": "server_tool_end",
+                    "tool": "web_search",
+                    "tool_id": block.tool_use_id,
+                    "output": f"Found {len(results)} results",
+                    "success": True,
+                },
+                None,
+                None,
+            ),
+            (
+                {
+                    "type": "web_search_result",
+                    "tool_id": block.tool_use_id,
+                    "results": results,
+                },
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": block.tool_use_id,
+                    "content": serialized_content,
+                },
+                None,
+            ),
+        ]
+
+    def _handle_web_fetch_result(self, block: Any) -> list[StreamEvent]:
+        """Handle web_fetch_tool_result blocks."""
+        url = ""
+        serialized_content = {}
+        if hasattr(block, "content"):
+            content = block.content
+            url = getattr(content, "url", "")
+            serialized_content = {
+                "url": url,
+                "content": getattr(content, "content", ""),
+                "title": getattr(content, "title", ""),
+            }
+        domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
+        return [
+            (
+                {
+                    "type": "server_tool_end",
+                    "tool": "web_fetch",
+                    "tool_id": block.tool_use_id,
+                    "output": f"Fetched {domain}",
+                    "success": True,
+                },
+                None,
+                None,
+            ),
+            (
+                {"type": "web_fetch_result", "tool_id": block.tool_use_id, "url": url},
+                {
+                    "type": "web_fetch_tool_result",
+                    "tool_use_id": block.tool_use_id,
+                    "content": serialized_content,
+                },
+                None,
+            ),
+        ]
+
+    def _handle_code_execution_result(self, block: Any) -> list[StreamEvent]:
+        """Handle code_execution_tool_result / bash_code_execution_tool_result blocks."""
+        result_content = {}
+        generated_files = []
+        logger.info(
+            f"Code execution result received: type={block.type}, "
+            f"tool_use_id={getattr(block, 'tool_use_id', None)}"
+        )
+
+        if hasattr(block, "content"):
+            content = block.content
+            if isinstance(content, list):
+                for item in content:
+                    item_type = getattr(item, "type", None)
+                    if item_type in ("bash_code_execution_result", "code_execution_result"):
+                        result_content = {
+                            "stdout": getattr(item, "stdout", ""),
+                            "stderr": getattr(item, "stderr", ""),
+                            "return_code": getattr(item, "return_code", 0),
+                        }
+                        if hasattr(item, "files") and item.files:
+                            for f in item.files:
+                                generated_files.append(
+                                    {
+                                        "file_id": getattr(f, "file_id", ""),
+                                        "filename": getattr(f, "filename", ""),
+                                        "media_type": getattr(f, "media_type", ""),
+                                    }
+                                )
+            else:
+                result_content = {
+                    "stdout": getattr(content, "stdout", ""),
+                    "stderr": getattr(content, "stderr", ""),
+                    "return_code": getattr(content, "return_code", 0),
+                }
+                if hasattr(content, "files") and content.files:
+                    for f in content.files:
+                        generated_files.append(
+                            {
+                                "file_id": getattr(f, "file_id", ""),
+                                "filename": getattr(f, "filename", ""),
+                                "media_type": getattr(f, "media_type", ""),
+                            }
+                        )
+
+        return_code = result_content.get("return_code", 0)
+        success = return_code == 0
+        if generated_files:
+            output_summary = f"Generated {len(generated_files)} file(s)"
+        elif result_content.get("stderr"):
+            output_summary = "Execution completed with errors"
+        else:
+            output_summary = "Execution completed"
+
+        return [
+            (
+                {
+                    "type": "server_tool_end",
+                    "tool": "code_execution",
+                    "tool_id": block.tool_use_id,
+                    "output": output_summary,
+                    "success": success,
+                },
+                None,
+                None,
+            ),
+            (
+                {
+                    "type": "code_execution_result",
+                    "tool_id": block.tool_use_id,
+                    "stdout": result_content.get("stdout", ""),
+                    "stderr": result_content.get("stderr", ""),
+                    "return_code": return_code,
+                    "files": generated_files,
+                },
+                None,
+                None,
+            ),
+        ]
+
+    def _handle_block_delta(self, delta: Any, state: StreamState) -> list[StreamEvent]:
+        """Handle content_block_delta events."""
+        if delta.type == "thinking_delta":
+            state.current_thinking += delta.thinking
+            return [({"type": "thinking", "content": delta.thinking}, None, None)]
+
+        elif delta.type == "text_delta":
+            state.current_text += delta.text
+            return [({"type": "text", "content": delta.text}, None, None)]
+
+        elif delta.type == "input_json_delta":
+            if state.current_tool_use:
+                if "partial_json" not in state.current_tool_use:
+                    state.current_tool_use["partial_json"] = ""
+                state.current_tool_use["partial_json"] += delta.partial_json
+                return [
+                    (
+                        {
+                            "type": "tool_input_delta",
+                            "tool": state.current_tool_use["name"],
+                            "delta": delta.partial_json,
+                        },
+                        None,
+                        None,
+                    )
+                ]
+
+        return []
+
+    def _handle_block_stop(self, state: StreamState) -> list[StreamEvent]:
+        """Handle content_block_stop events."""
+        if state.in_thinking_block:
+            state.in_thinking_block = False
+            response_update = None
+            if state.current_thinking:
+                response_update = {"type": "thinking", "thinking": state.current_thinking}
+            result = [({"type": "thinking_end"}, response_update, None)]
+            state.current_thinking = ""
+            return result
+
+        elif state.current_text:
+            result = [(None, {"type": "text", "text": state.current_text}, None)]
+            state.current_text = ""
+            return result
+
+        elif state.current_tool_use:
+            if "partial_json" in state.current_tool_use:
+                try:
+                    state.current_tool_use["input"] = json.loads(
+                        state.current_tool_use["partial_json"]
+                    )
+                except json.JSONDecodeError:
+                    state.current_tool_use["input"] = {}
+                del state.current_tool_use["partial_json"]
+            result = [(None, state.current_tool_use, state.current_tool_use)]
+            state.current_tool_use = None
+            return result
+
+        elif state.current_server_tool:
+            if "partial_json" in state.current_server_tool:
+                try:
+                    state.current_server_tool["input"] = json.loads(
+                        state.current_server_tool["partial_json"]
+                    )
+                except json.JSONDecodeError:
+                    state.current_server_tool["input"] = {}
+                del state.current_server_tool["partial_json"]
+            result = [(None, state.current_server_tool, None)]
+            state.current_server_tool = None
+            return result
+
+        return []
 
     async def _execute_tool(
         self,

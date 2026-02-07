@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { MobileNavMode, AIPanelState } from "@/lib/constants";
 
 interface LayoutState {
   // Desktop panel visibility
@@ -16,11 +15,7 @@ interface LayoutState {
   isMobileChatOpen: boolean;
   isMobileOutlineOpen: boolean;
 
-  // Mobile V2 state
-  mobileNavMode: MobileNavMode;
-  aiPanelState: AIPanelState;
-  isFloatingToolbarVisible: boolean;
-  isBlockSelectorOpen: boolean;
+  // Mobile selection state
   pendingSelectionForAI: string | null; // Selected text to pass to AI panel
 
   // Mobile V3 state (new design)
@@ -76,15 +71,7 @@ interface LayoutState {
   toggleSearchBar: () => void;
   openSearchBarWithAI: () => void; // Opens search bar in AI mode
 
-  // Mobile V2 actions
-  setMobileNavMode: (mode: MobileNavMode) => void;
-  setAIPanelState: (state: AIPanelState) => void;
-  setFloatingToolbarVisible: (visible: boolean) => void;
-  setBlockSelectorOpen: (open: boolean) => void;
-  openAIPanel: () => void;
-  openAIPanelWithSelection: (text: string) => void;
-  closeAIPanel: () => void;
-  expandAIPanel: () => void;
+  // Mobile selection actions
   clearPendingSelectionForAI: () => void;
 
   // Mobile V3 actions (new design)
@@ -113,11 +100,7 @@ export const useLayoutStore = create<LayoutState>()(
       isMobileChatOpen: false,
       isMobileOutlineOpen: false,
 
-      // Mobile V2 state
-      mobileNavMode: "idle" as MobileNavMode,
-      aiPanelState: "closed" as AIPanelState,
-      isFloatingToolbarVisible: false,
-      isBlockSelectorOpen: false,
+      // Mobile selection state
       pendingSelectionForAI: null,
 
       // Mobile V3 state (new design)
@@ -264,52 +247,7 @@ export const useLayoutStore = create<LayoutState>()(
         set({ isSearchBarOpen: true, shouldOpenSearchWithAI: true });
       },
 
-      // Mobile V2 actions
-      setMobileNavMode: (mode: MobileNavMode) => {
-        set({ mobileNavMode: mode });
-      },
-
-      setAIPanelState: (state: AIPanelState) => {
-        set({ aiPanelState: state });
-      },
-
-      setFloatingToolbarVisible: (visible: boolean) => {
-        set({ isFloatingToolbarVisible: visible });
-      },
-
-      setBlockSelectorOpen: (open: boolean) => {
-        set({ isBlockSelectorOpen: open });
-      },
-
-      openAIPanel: () => {
-        set({ aiPanelState: "peek" as AIPanelState, isMobileChatOpen: true });
-      },
-
-      openAIPanelWithSelection: (text: string) => {
-        set({
-          aiPanelState: "peek" as AIPanelState,
-          isMobileChatOpen: true,
-          pendingSelectionForAI: text,
-        });
-      },
-
-      closeAIPanel: () => {
-        set({
-          aiPanelState: "closed" as AIPanelState,
-          isMobileChatOpen: false,
-          pendingSelectionForAI: null,
-        });
-      },
-
-      expandAIPanel: () => {
-        set((state) => {
-          const currentState = state.aiPanelState;
-          if (currentState === "peek") return { aiPanelState: "chat" as AIPanelState };
-          if (currentState === "chat") return { aiPanelState: "full" as AIPanelState };
-          return state;
-        });
-      },
-
+      // Mobile selection actions
       clearPendingSelectionForAI: () => {
         set({ pendingSelectionForAI: null });
       },

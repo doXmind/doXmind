@@ -17,7 +17,7 @@ import { AttachmentMenu } from "./attachment-menu";
 import { ChatSettings } from "./chat-settings";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
-import { useEditorStore } from "@/stores/editor-store";
+import { useChatContextStore } from "@/stores/chat-context-store";
 import { useDataFilesStore, isDataFile, isKBFile } from "@/stores/data-files-store";
 import { useKBStore } from "@/stores/kb-store";
 import { useChat } from "@/hooks/use-chat";
@@ -81,9 +81,9 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     },
   });
 
-  // Import editor store for chat context feature (Context Pills)
+  // Chat context store for "Ask in Chat" feature (Context Pills)
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
-    useEditorStore();
+    useChatContextStore();
 
   // Data files store for code execution
   const { uploadDataFile, getDataFiles } = useDataFilesStore();

@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useBlockSelectionStore } from "@/stores/block-selection-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { useEditorStore } from "@/stores/editor-store";
+import { useChatContextStore } from "@/stores/chat-context-store";
 
 /**
  * Hook for managing mobile editor actions (copy, cut, delete, AI)
@@ -13,7 +13,7 @@ import { useEditorStore } from "@/stores/editor-store";
 export function useMobileEditorActions() {
   const { selectedBlocks, getSelectedText, clearSelection } = useBlockSelectionStore();
   const { editor } = useEditorRefStore();
-  const { addChatContext } = useEditorStore();
+  const { addChatContext } = useChatContextStore();
 
   // Mobile: Handle copy
   const handleCopy = useCallback(() => {

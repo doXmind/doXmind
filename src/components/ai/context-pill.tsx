@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, X, FileText, ImageIcon, Copy, Trash2 } from "lucide-react";
-import type { ChatContextItem } from "@/stores/editor-store";
+import type { ChatContextItem } from "@/stores/chat-context-store";
 import { cn } from "@/lib/utils";
 
 interface ContextPillProps {

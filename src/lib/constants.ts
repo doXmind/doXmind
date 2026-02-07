@@ -285,25 +285,6 @@ export const MOBILE_SPRINGS = {
   BOUNCY: { stiffness: 500, damping: 15, mass: 0.5 },
 } as const;
 
-/** Mobile navigation modes */
-export const MOBILE_NAV_MODES = {
-  IDLE: "idle",
-  EDITING: "editing",
-  SELECTION: "selection",
-} as const;
-
-export type MobileNavMode = (typeof MOBILE_NAV_MODES)[keyof typeof MOBILE_NAV_MODES];
-
-/** AI Panel height states */
-export const AI_PANEL_STATES = {
-  CLOSED: "closed",
-  PEEK: "peek",
-  CHAT: "chat",
-  FULL: "full",
-} as const;
-
-export type AIPanelState = (typeof AI_PANEL_STATES)[keyof typeof AI_PANEL_STATES];
-
 // =============================================================================
 // Chat/AI Configuration
 // =============================================================================

@@ -443,19 +443,19 @@ class TestHelperFunctions:
 
     def test_normalize_file_id_empty_string(self):
         """Empty string should return None."""
-        from api.chat import normalize_file_id
+        from dependencies import normalize_file_id
 
         assert normalize_file_id("") is None
 
     def test_normalize_file_id_none(self):
         """None should return None."""
-        from api.chat import normalize_file_id
+        from dependencies import normalize_file_id
 
         assert normalize_file_id(None) is None
 
     def test_normalize_file_id_valid(self):
         """Valid file_id should be returned as-is."""
-        from api.chat import normalize_file_id
+        from dependencies import normalize_file_id
 
         assert normalize_file_id("file-123") == "file-123"
 
@@ -553,7 +553,7 @@ class TestPydanticModels:
 
     def test_message_create_model(self):
         """Should create MessageCreate model correctly."""
-        from api.chat import MessageCreate
+        from api.conversations import MessageCreate
 
         mc = MessageCreate(conversationId="conv-123", role="user", content="Hello")
         assert mc.conversationId == "conv-123"
@@ -567,7 +567,7 @@ class TestPydanticModels:
 
     def test_message_create_model_full(self):
         """Should create MessageCreate with all fields."""
-        from api.chat import MessageCreate
+        from api.conversations import MessageCreate
 
         mc = MessageCreate(
             conversationId="conv-123",
@@ -587,7 +587,7 @@ class TestPydanticModels:
 
     def test_message_response_model(self):
         """Should create MessageResponse model."""
-        from api.chat import MessageResponse
+        from api.conversations import MessageResponse
 
         mr = MessageResponse(
             id="msg-123",
@@ -603,7 +603,7 @@ class TestPydanticModels:
 
     def test_conversation_response_model(self):
         """Should create ConversationResponse model."""
-        from api.chat import ConversationResponse, MessageResponse
+        from api.conversations import ConversationResponse, MessageResponse
 
         cr = ConversationResponse(
             id="conv-123",

@@ -16,6 +16,7 @@ from api import (
     auth,
     autocomplete,
     chat,
+    conversations,
     data_files,
     edit,
     export,
@@ -34,7 +35,7 @@ from config import CORS_ORIGINS, get_cors_headers, get_settings
 from db.database import async_session, init_db
 from exceptions import AppException
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
-from services.rag_service import init_pgvector
+from services.rag import init_pgvector
 
 # Configure logging
 logging.basicConfig(
@@ -58,8 +59,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting doXmind Mini server...")
 
-    # Validate encryption configuration
+    # Validate critical configuration
     settings = get_settings()
+    settings.validate_for_production()
+
     if not settings.api_key_encryption_key:
         if settings.debug:
             logger.warning(
@@ -253,6 +256,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 # Protected API routes
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(conversations.router, prefix="/api/chat", tags=["chat"])
 app.include_router(edit.router, prefix="/api/edit", tags=["edit"])
 app.include_router(autocomplete.router, prefix="/api/autocomplete", tags=["autocomplete"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])

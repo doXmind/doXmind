@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useEditorStore } from "@/stores/editor-store";
+import { useChatContextStore } from "@/stores/chat-context-store";
 
 interface ImageBubbleMenuProps {
   editor: Editor;
@@ -26,7 +26,7 @@ type EditMode = "none" | "url" | "alt";
 export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
   const [editMode, setEditMode] = useState<EditMode>("none");
   const [inputValue, setInputValue] = useState("");
-  const { addChatContext } = useEditorStore();
+  const { addChatContext } = useChatContextStore();
 
   // Get current image attributes
   const getImageAttrs = () => {
@@ -76,7 +76,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
   const handleAskInChat = useCallback(() => {
     if (src) {
       addChatContext({
-        type: 'image',
+        type: "image",
         src,
         alt: alt || undefined,
       });
@@ -170,7 +170,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
               </Button>
             </div>
 
-            <div className="w-px h-5 bg-border mx-0.5" />
+            <div className="mx-0.5 h-5 w-px bg-border" />
 
             {/* Edit buttons */}
             <Button
@@ -192,7 +192,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
               <Type className="h-4 w-4" />
             </Button>
 
-            <div className="w-px h-5 bg-border mx-0.5" />
+            <div className="mx-0.5 h-5 w-px bg-border" />
 
             {/* Ask in Chat button */}
             <Button
@@ -205,7 +205,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
               <MessageSquare className="h-4 w-4" />
             </Button>
 
-            <div className="w-px h-5 bg-border mx-0.5" />
+            <div className="mx-0.5 h-5 w-px bg-border" />
 
             {/* Delete button */}
             <Button

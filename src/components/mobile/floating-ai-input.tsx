@@ -19,7 +19,7 @@ import { AttachmentMenu } from "@/components/ai/attachment-menu";
 import { ContextPill } from "@/components/ai/context-pill";
 import { useChat } from "@/hooks/use-chat";
 import { useFileStore } from "@/stores/file-store";
-import { useEditorStore } from "@/stores/editor-store";
+import { useChatContextStore } from "@/stores/chat-context-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useBlockSelectionStore } from "@/stores/block-selection-store";
@@ -52,9 +52,9 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
   // Editor ref for copy/paste/delete operations
   const { editor } = useEditorRefStore();
 
-  // Chat context (selected text, images) from editor store
+  // Chat context (selected text, images)
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
-    useEditorStore();
+    useChatContextStore();
 
   // Sync block selection with chat context
   // - Each selected block becomes its own context pill (section-level chunking)

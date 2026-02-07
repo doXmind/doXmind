@@ -4,10 +4,13 @@ Centralized settings management with environment variable support.
 All configurable values should be defined here.
 """
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 # Get the directory where config.py is located (server/)
 _BASE_DIR = Path(__file__).resolve().parent
@@ -42,6 +45,7 @@ class Settings(BaseSettings):
     # Rate limiting
     rate_limit_per_minute: int = 60
     rate_limit_burst: int = 10
+    rate_limit_storage_uri: str = "memory://"  # Use "redis://localhost:6379" for multi-worker
 
     # =========================================================================
     # Email Service (SMTP)
@@ -223,6 +227,34 @@ class Settings(BaseSettings):
     def has_data_analysis_tools(self) -> bool:
         """Check if data analysis tools are available (code execution enabled)."""
         return self.code_execution_enabled
+
+    def validate_for_production(self) -> None:
+        """Validate critical settings for production deployment.
+
+        Raises warnings in debug mode, errors in production.
+        """
+        issues = []
+
+        if not self.jwt_secret_key or len(self.jwt_secret_key) < 32:
+            issues.append(
+                "JWT_SECRET_KEY must be set and at least 32 characters. "
+                "Generate one with: openssl rand -hex 32"
+            )
+
+        if not self.anthropic_api_key:
+            # Only warn — BYOK mode may not need a server key
+            logger.warning(
+                "ANTHROPIC_API_KEY not configured. "
+                "Server-side AI features will be unavailable unless users provide their own key."
+            )
+
+        if self.debug:
+            for issue in issues:
+                logger.warning(f"Config validation (debug mode): {issue}")
+        elif issues:
+            raise ValueError(
+                "Production configuration errors:\n" + "\n".join(f"  - {i}" for i in issues)
+            )
 
 
 @lru_cache
