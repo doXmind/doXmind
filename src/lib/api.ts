@@ -862,6 +862,37 @@ export class ApiClient {
       { method: "DELETE" }
     );
   }
+
+  // ==========================================================================
+  // KB Agent API
+  // ==========================================================================
+
+  /**
+   * Stream a KB agent response. Returns the raw fetch Response for SSE processing.
+   */
+  async kbAgentStream(
+    question: string,
+    conversationId?: string | null,
+    signal?: AbortSignal
+  ): Promise<Response> {
+    const url = `${this.baseUrl}/api/kb-agent/stream`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.getAuthHeaders(),
+      },
+      body: JSON.stringify({ question, conversationId }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "KB Agent request failed" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response;
+  }
 }
 
 // Default client instance

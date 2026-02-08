@@ -156,7 +156,7 @@ export function FileCard({ file, index, searchMatch }: FileCardProps) {
       <motion.div
         className="group relative cursor-pointer pb-1.5"
         onClick={handleOpen}
-        style={searchMatch ? { rotate: 0, y: 0 } : { rotate: scatter.rotate, y: scatter.y }}
+        style={{ rotate: scatter.rotate, y: scatter.y }}
         whileHover={{
           rotate: 0,
           y: -6,
@@ -304,7 +304,7 @@ export function FileCard({ file, index, searchMatch }: FileCardProps) {
 
             {/* Preview text — like typewritten text on paper */}
             <p className="mt-3 line-clamp-4 flex-1 text-[12.5px] leading-[26px] text-foreground/35">
-              {searchMatch ? (
+              {searchMatch?.snippet ? (
                 <span className="text-foreground/45">
                   {highlightQuery(searchMatch.snippet, searchMatch.query)}
                 </span>

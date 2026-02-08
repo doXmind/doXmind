@@ -30,6 +30,8 @@ interface FileGridProps {
   searchQuery: string;
   searchResults: SearchResultItem[];
   isSearching: boolean;
+  hideActions?: boolean;
+  maxColumns?: number;
 }
 
 // Layout constants for page size calculation
@@ -83,6 +85,8 @@ export function FileGrid({
   searchQuery,
   searchResults,
   isSearching,
+  hideActions,
+  maxColumns,
 }: FileGridProps) {
   const { createFile, importFile } = useFileStore();
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
@@ -183,7 +187,12 @@ export function FileGrid({
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-8 w-36" />
         </div>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-6 sm:grid-cols-2",
+            maxColumns !== 2 && "lg:grid-cols-3"
+          )}
+        >
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton
               key={i}
@@ -258,29 +267,33 @@ export function FileGrid({
           )}
 
           {/* Actions */}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 gap-1.5 text-xs font-medium"
-            onClick={handleCreate}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 gap-1.5 text-xs font-medium text-muted-foreground"
-            onClick={handleImportClick}
-            disabled={isImporting}
-          >
-            {isImporting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5" />
-            )}
-            Import
-          </Button>
+          {!hideActions && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 gap-1.5 text-xs font-medium"
+                onClick={handleCreate}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 gap-1.5 text-xs font-medium text-muted-foreground"
+                onClick={handleImportClick}
+                disabled={isImporting}
+              >
+                {isImporting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                Import
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -315,7 +328,10 @@ export function FileGrid({
             <>
               {/* Desktop: paginated grid */}
               <motion.div
-                className="hidden gap-8 py-2 sm:grid sm:grid-cols-2 lg:grid-cols-3"
+                className={cn(
+                  "hidden gap-8 py-2 sm:grid sm:grid-cols-2",
+                  maxColumns !== 2 && "lg:grid-cols-3"
+                )}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 key={`${isSearchActive ? "search-grid" : "grid"}-${page}`}
