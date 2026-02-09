@@ -213,11 +213,11 @@ export function VoiceRecordingOverlay({
                 <motion.button
                   type="button"
                   className={cn(
-                    "flex w-full max-w-xs items-center justify-center gap-2 rounded-full py-4 px-6",
+                    "flex w-full max-w-xs items-center justify-center gap-2 rounded-full px-6 py-4",
                     "transition-all duration-150",
-                    "select-none touch-none",
+                    "touch-none select-none",
                     isRecording || isPressing
-                      ? "bg-destructive text-destructive-foreground scale-[0.98]"
+                      ? "scale-[0.98] bg-destructive text-destructive-foreground"
                       : "bg-muted text-muted-foreground active:bg-muted/80"
                   )}
                   onTouchStart={(e) => {

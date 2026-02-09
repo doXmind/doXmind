@@ -135,19 +135,12 @@ export function withErrorHandling<T extends unknown[], R>(
 /**
  * Create a safe fetch wrapper that handles common errors
  */
-export async function safeFetch(
-  url: string,
-  options?: RequestInit
-): Promise<Response> {
+export async function safeFetch(url: string, options?: RequestInit): Promise<Response> {
   try {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      throw new ApiError(
-        `HTTP ${response.status}: ${response.statusText}`,
-        response.status,
-        url
-      );
+      throw new ApiError(`HTTP ${response.status}: ${response.statusText}`, response.status, url);
     }
 
     return response;

@@ -86,12 +86,7 @@ export function MindlinesHeader({
     >
       {/* Title with icon - pointer-events-none so clicks pass through to header */}
       <div className="pointer-events-none flex items-center gap-2">
-        <Icon
-          className={cn(
-            "text-muted-foreground",
-            isExpanded ? "h-5 w-5" : "h-4 w-4"
-          )}
-        />
+        <Icon className={cn("text-muted-foreground", isExpanded ? "h-5 w-5" : "h-4 w-4")} />
         <span
           className={cn(
             "font-medium uppercase tracking-wide text-muted-foreground",
@@ -101,18 +96,13 @@ export function MindlinesHeader({
           {title}
         </span>
         {headingsCount > 0 && (
-          <span className="text-xs text-muted-foreground/60">
-            ({headingsCount})
-          </span>
+          <span className="text-xs text-muted-foreground/60">({headingsCount})</span>
         )}
       </div>
 
       {/* Action buttons - only show in expanded outline mode, use stopPropagation */}
       {!isExpanded && (
-        <div
-          className="flex items-center gap-1"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           <Button
             variant="ghost"
             size="icon"

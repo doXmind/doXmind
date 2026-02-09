@@ -67,9 +67,7 @@ export function useEditOperations() {
             allHunks.push(...hunks);
             totalApplied++;
           } else {
-            console.warn(
-              `[useEditOperations] No diff hunks computed for ${edit.type} edit`
-            );
+            console.warn(`[useEditOperations] No diff hunks computed for ${edit.type} edit`);
           }
         }
 

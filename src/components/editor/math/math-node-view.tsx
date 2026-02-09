@@ -33,8 +33,7 @@ export function MathNodeView({
     const latexToRender = latex || "";
 
     if (!latexToRender.trim()) {
-      renderedRef.current.innerHTML =
-        '<span class="math-empty-placeholder">Empty equation</span>';
+      renderedRef.current.innerHTML = '<span class="math-empty-placeholder">Empty equation</span>';
       return;
     }
 
@@ -120,10 +119,7 @@ export function MathNodeView({
     return (
       <NodeViewWrapper
         as={isBlock ? "div" : "span"}
-        className={cn(
-          "math-node-wrapper",
-          isBlock && "block my-4"
-        )}
+        className={cn("math-node-wrapper", isBlock && "my-4 block")}
         data-drag-handle={undefined}
       >
         <MathEditorPanel
@@ -143,10 +139,7 @@ export function MathNodeView({
   return (
     <NodeViewWrapper
       as={isBlock ? "div" : "span"}
-      className={cn(
-        "math-node-wrapper",
-        isBlock && "block my-4"
-      )}
+      className={cn("math-node-wrapper", isBlock && "my-4 block")}
     >
       <span
         ref={renderedRef}
@@ -154,8 +147,8 @@ export function MathNodeView({
         className={cn(
           "math-rendered cursor-pointer transition-all duration-150",
           isBlock
-            ? "block text-center py-2 px-4 rounded-lg hover:bg-accent/30"
-            : "inline-block px-1 rounded hover:bg-accent/50",
+            ? "block rounded-lg px-4 py-2 text-center hover:bg-accent/30"
+            : "inline-block rounded px-1 hover:bg-accent/50",
           selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           renderError && "text-destructive"
         )}

@@ -1,11 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import {
-  streamingFetch,
-  isAbortError,
-  createStreamController,
-} from "@/lib/streaming";
+import { streamingFetch, isAbortError, createStreamController } from "@/lib/streaming";
 import { editorLogger } from "@/lib/logger";
 
 const log = editorLogger.child("QuickEdit");

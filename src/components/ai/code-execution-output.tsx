@@ -35,7 +35,7 @@ export function CodeExecutionOutput({
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className="mb-2 ml-11"
+      className="mb-2 ml-2 md:ml-11"
     >
       <button
         type="button"

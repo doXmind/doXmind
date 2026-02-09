@@ -63,9 +63,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       const hunk = state.diffSession.hunks.find((h) => h.id === hunkId);
       if (hunk) {
         // Calculate time to decision
-        const timeToDecision = hunk.displayedAt
-          ? Date.now() - hunk.displayedAt
-          : undefined;
+        const timeToDecision = hunk.displayedAt ? Date.now() - hunk.displayedAt : undefined;
 
         // Track accept event for RLHF training
         telemetry.trackDiffReview({
@@ -104,9 +102,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       const hunk = state.diffSession.hunks.find((h) => h.id === hunkId);
       if (hunk) {
         // Calculate time to decision
-        const timeToDecision = hunk.displayedAt
-          ? Date.now() - hunk.displayedAt
-          : undefined;
+        const timeToDecision = hunk.displayedAt ? Date.now() - hunk.displayedAt : undefined;
 
         // Track reject event for RLHF training
         telemetry.trackDiffReview({
@@ -135,14 +131,10 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       if (!state.diffSession) return state;
 
       // Track each pending hunk individually for RLHF training
-      const pendingHunks = state.diffSession.hunks.filter(
-        (h) => h.status === "pending"
-      );
+      const pendingHunks = state.diffSession.hunks.filter((h) => h.status === "pending");
       const now = Date.now();
       for (const hunk of pendingHunks) {
-        const timeToDecision = hunk.displayedAt
-          ? now - hunk.displayedAt
-          : undefined;
+        const timeToDecision = hunk.displayedAt ? now - hunk.displayedAt : undefined;
         telemetry.trackDiffReview({
           event_type: "diff_hunk_accepted",
           hunk_id: hunk.id,
@@ -170,14 +162,10 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       if (!state.diffSession) return state;
 
       // Track each pending hunk individually for RLHF training
-      const pendingHunks = state.diffSession.hunks.filter(
-        (h) => h.status === "pending"
-      );
+      const pendingHunks = state.diffSession.hunks.filter((h) => h.status === "pending");
       const now = Date.now();
       for (const hunk of pendingHunks) {
-        const timeToDecision = hunk.displayedAt
-          ? now - hunk.displayedAt
-          : undefined;
+        const timeToDecision = hunk.displayedAt ? now - hunk.displayedAt : undefined;
         telemetry.trackDiffReview({
           event_type: "diff_hunk_rejected",
           hunk_id: hunk.id,

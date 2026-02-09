@@ -271,9 +271,7 @@ describe("ApiClient", () => {
 
       await client.refreshToken();
 
-      expect(client.getAuthorizationHeaders()["Authorization"]).toBe(
-        "Bearer refreshed-token"
-      );
+      expect(client.getAuthorizationHeaders()["Authorization"]).toBe("Bearer refreshed-token");
     });
 
     it("login saves token and returns user", async () => {
@@ -473,7 +471,8 @@ describe("ApiClient", () => {
     it("createFile uses empty content by default", async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "1", name: "File", content: "", created_at: "", updated_at: "" }),
+        json: () =>
+          Promise.resolve({ id: "1", name: "File", content: "", created_at: "", updated_at: "" }),
       });
 
       await client.createFile("File");
@@ -832,10 +831,7 @@ describe("ApiClient", () => {
       const result = await client.healthCheck();
 
       expect(result.status).toBe("healthy");
-      expect(global.fetch).toHaveBeenCalledWith(
-        "http://test-api.com/health",
-        expect.any(Object)
-      );
+      expect(global.fetch).toHaveBeenCalledWith("http://test-api.com/health", expect.any(Object));
     });
 
     it("getAuthStatus checks authentication", async () => {

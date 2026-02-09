@@ -187,7 +187,7 @@ export function ToolIndicator({ tool }: ToolIndicatorProps) {
       }}
       transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
+        "flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm md:px-3 md:py-2",
         currentStyle.text
       )}
     >

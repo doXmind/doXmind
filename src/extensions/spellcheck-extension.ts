@@ -61,12 +61,7 @@ function saveIgnoredWords(words: Set<string>): void {
  * - codeBlock/code: Programming code, not natural language
  * - inlineMath/blockMath: LaTeX formulas, not natural language
  */
-const SKIP_NODE_TYPES = new Set([
-  "codeBlock",
-  "code",
-  "inlineMath",
-  "blockMath",
-]);
+const SKIP_NODE_TYPES = new Set(["codeBlock", "code", "inlineMath", "blockMath"]);
 
 /**
  * Extract plain text from ProseMirror document with position mapping.

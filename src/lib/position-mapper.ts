@@ -61,10 +61,7 @@ export function findTextInDoc(
  * @param lineNumber - 0-indexed line number
  * @returns Position or document end if line doesn't exist
  */
-export function findLinePosition(
-  doc: DocWithContent,
-  lineNumber: number
-): number {
+export function findLinePosition(doc: DocWithContent, lineNumber: number): number {
   const text = doc.textContent;
   const lines = text.split("\n");
 

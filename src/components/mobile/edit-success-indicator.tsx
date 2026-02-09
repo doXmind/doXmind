@@ -100,9 +100,7 @@ export function EditSuccessIndicator({
             </span>
 
             {/* Tap hint */}
-            {onViewDetails && (
-              <span className="text-xs opacity-70">Tap to view</span>
-            )}
+            {onViewDetails && <span className="text-xs opacity-70">Tap to view</span>}
           </button>
         </motion.div>
       )}

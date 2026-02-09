@@ -75,9 +75,8 @@ function shouldTrigger(editor: Editor): boolean {
   }
 
   // Also trigger after space/newline (for next word prediction)
-  const charBefore = selection.from > 0
-    ? state.doc.textBetween(selection.from - 1, selection.from)
-    : "";
+  const charBefore =
+    selection.from > 0 ? state.doc.textBetween(selection.from - 1, selection.from) : "";
 
   return charBefore === " " || charBefore === "\n" || selection.from === 1;
 }
@@ -104,7 +103,12 @@ function getContext(editor: Editor): { textBefore: string; textAfter: string } {
   return { textBefore, textAfter };
 }
 
-export function useAutocomplete({ editor, fileId, fileName, enabled = true }: UseAutocompleteOptions) {
+export function useAutocomplete({
+  editor,
+  fileId,
+  fileName,
+  enabled = true,
+}: UseAutocompleteOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

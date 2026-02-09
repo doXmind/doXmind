@@ -79,10 +79,7 @@ export function LoadingScreen({ isLoading, children, isMobile = false }: Loading
           {isMobile ? (
             <MobileSkeletonLayout />
           ) : (
-            <DesktopSkeletonLayout
-              isSidebarOpen={isSidebarOpen}
-              isChatOpen={isChatOpen}
-            />
+            <DesktopSkeletonLayout isSidebarOpen={isSidebarOpen} isChatOpen={isChatOpen} />
           )}
         </motion.div>
       )}
@@ -114,23 +111,23 @@ function DesktopSkeletonLayout({
         {/* Sidebar skeleton */}
         <aside
           className={cn(
-            "w-64 border-r border-border bg-card flex-shrink-0 transition-all duration-300",
-            !isSidebarOpen && "w-0 opacity-0 overflow-hidden"
+            "w-64 flex-shrink-0 border-r border-border bg-card transition-all duration-300",
+            !isSidebarOpen && "w-0 overflow-hidden opacity-0"
           )}
         >
           <SidebarSkeleton />
         </aside>
 
         {/* Main Editor skeleton */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <EditorSkeleton />
         </main>
 
         {/* Chat Panel skeleton */}
         <aside
           className={cn(
-            "w-96 border-l border-border bg-card flex-shrink-0 transition-all duration-300",
-            !isChatOpen && "w-0 opacity-0 overflow-hidden"
+            "w-96 flex-shrink-0 border-l border-border bg-card transition-all duration-300",
+            !isChatOpen && "w-0 overflow-hidden opacity-0"
           )}
         >
           <ChatSkeleton />
@@ -143,7 +140,7 @@ function DesktopSkeletonLayout({
 function MobileSkeletonLayout() {
   return (
     <AppShell>
-      <div className="flex flex-col h-full pb-14">
+      <div className="flex h-full flex-col pb-14">
         {/* Editor skeleton - always visible on mobile */}
         <main className="flex-1 overflow-hidden">
           <EditorSkeleton />
@@ -151,11 +148,11 @@ function MobileSkeletonLayout() {
       </div>
 
       {/* Mobile bottom nav skeleton */}
-      <div className="fixed bottom-0 left-0 right-0 h-14 bg-card border-t border-border flex items-center justify-around px-4">
+      <div className="fixed bottom-0 left-0 right-0 flex h-14 items-center justify-around border-t border-border bg-card px-4">
         {[...Array(4)].map((_, i) => (
           <div key={i} className="flex flex-col items-center gap-1">
-            <div className="h-6 w-6 rounded-md bg-muted animate-pulse" />
-            <div className="h-2 w-8 rounded bg-muted animate-pulse" />
+            <div className="h-6 w-6 animate-pulse rounded-md bg-muted" />
+            <div className="h-2 w-8 animate-pulse rounded bg-muted" />
           </div>
         ))}
       </div>

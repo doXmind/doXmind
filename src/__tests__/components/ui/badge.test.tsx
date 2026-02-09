@@ -32,7 +32,11 @@ describe("Badge", () => {
 
   describe("Variants", () => {
     it("renders default variant", () => {
-      render(<Badge variant="default" data-testid="badge">Default</Badge>);
+      render(
+        <Badge variant="default" data-testid="badge">
+          Default
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveClass("bg-primary");
       expect(badge).toHaveClass("text-primary-foreground");
@@ -40,7 +44,11 @@ describe("Badge", () => {
     });
 
     it("renders secondary variant", () => {
-      render(<Badge variant="secondary" data-testid="badge">Secondary</Badge>);
+      render(
+        <Badge variant="secondary" data-testid="badge">
+          Secondary
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveClass("bg-secondary");
       expect(badge).toHaveClass("text-secondary-foreground");
@@ -48,7 +56,11 @@ describe("Badge", () => {
     });
 
     it("renders destructive variant", () => {
-      render(<Badge variant="destructive" data-testid="badge">Destructive</Badge>);
+      render(
+        <Badge variant="destructive" data-testid="badge">
+          Destructive
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveClass("bg-destructive");
       expect(badge).toHaveClass("text-destructive-foreground");
@@ -56,7 +68,11 @@ describe("Badge", () => {
     });
 
     it("renders outline variant", () => {
-      render(<Badge variant="outline" data-testid="badge">Outline</Badge>);
+      render(
+        <Badge variant="outline" data-testid="badge">
+          Outline
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveClass("text-foreground");
       expect(badge).not.toHaveClass("bg-primary");
@@ -100,13 +116,21 @@ describe("Badge", () => {
     });
 
     it("applies custom className", () => {
-      render(<Badge className="custom-class" data-testid="badge">Test</Badge>);
+      render(
+        <Badge className="custom-class" data-testid="badge">
+          Test
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveClass("custom-class");
     });
 
     it("merges custom className with base classes", () => {
-      render(<Badge className="custom-class" data-testid="badge">Test</Badge>);
+      render(
+        <Badge className="custom-class" data-testid="badge">
+          Test
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveClass("custom-class");
       expect(badge).toHaveClass("inline-flex");
@@ -116,32 +140,52 @@ describe("Badge", () => {
 
   describe("HTML Attributes", () => {
     it("accepts id prop", () => {
-      render(<Badge id="my-badge" data-testid="badge">Test</Badge>);
+      render(
+        <Badge id="my-badge" data-testid="badge">
+          Test
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveAttribute("id", "my-badge");
     });
 
     it("accepts data attributes", () => {
-      render(<Badge data-testid="badge" data-status="active">Test</Badge>);
+      render(
+        <Badge data-testid="badge" data-status="active">
+          Test
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveAttribute("data-status", "active");
     });
 
     it("accepts aria attributes", () => {
-      render(<Badge aria-label="Status badge" data-testid="badge">Test</Badge>);
+      render(
+        <Badge aria-label="Status badge" data-testid="badge">
+          Test
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveAttribute("aria-label", "Status badge");
     });
 
     it("accepts role attribute", () => {
-      render(<Badge role="status" data-testid="badge">Test</Badge>);
+      render(
+        <Badge role="status" data-testid="badge">
+          Test
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       expect(badge).toHaveAttribute("role", "status");
     });
 
     it("accepts onClick handler", () => {
       const handleClick = vi.fn();
-      render(<Badge onClick={handleClick} data-testid="badge">Click me</Badge>);
+      render(
+        <Badge onClick={handleClick} data-testid="badge">
+          Click me
+        </Badge>
+      );
       const badge = screen.getByTestId("badge");
       badge.click();
       expect(handleClick).toHaveBeenCalledTimes(1);

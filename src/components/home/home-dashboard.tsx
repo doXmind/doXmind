@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { api, type SearchResultItem } from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useKBAgent } from "@/hooks/use-kb-agent";
+import { telemetry } from "@/lib/telemetry";
 import { HomeHeader } from "./home-header";
 import { HomeSearch, type SearchMode } from "./home-search";
 import { FileGrid } from "./file-grid";
@@ -44,6 +45,56 @@ function getGreeting(): { title: string; subtitle: string } {
   };
 }
 
+function TypewriterText({
+  text,
+  speed = 80,
+  onDone,
+}: {
+  text: string;
+  speed?: number;
+  onDone?: () => void;
+}) {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
+  const prevText = useRef(text);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  const startTyping = useCallback(() => {
+    setDisplayed("");
+    setDone(false);
+    let i = 0;
+    const interval = setInterval(() => {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i >= text.length) {
+        clearInterval(interval);
+        setDone(true);
+        onDoneRef.current?.();
+      }
+    }, speed);
+    return interval;
+  }, [text, speed]);
+
+  useEffect(() => {
+    // Only re-type when the text actually changes (e.g. time-of-day shift)
+    if (prevText.current !== text) {
+      prevText.current = text;
+    }
+    const interval = startTyping();
+    return () => clearInterval(interval);
+  }, [text, startTyping]);
+
+  return (
+    <>
+      {displayed}
+      {!done && (
+        <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-foreground/60 align-middle" />
+      )}
+    </>
+  );
+}
+
 export function HomeDashboard() {
   const { files, loadFiles, isLoading } = useFileStore();
   const { user } = useAuthStore();
@@ -54,6 +105,13 @@ export function HomeDashboard() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchMode, setSearchMode] = useState<SearchMode>("ask");
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Telemetry refs
+  const searchResultClickedRef = useRef(false);
+  const searchResultsShownAtRef = useRef<number | null>(null);
+  const searchQueryCountRef = useRef(0);
+  const searchModeEnteredAtRef = useRef<number | null>(null);
+  const recentQueriesRef = useRef<string[]>([]);
 
   // KB Agent state
   const kbAgent = useKBAgent();
@@ -70,17 +128,39 @@ export function HomeDashboard() {
       return;
     }
 
+    // Track results_no_click: previous search results existed but none were clicked
+    if (
+      searchResultsShownAtRef.current &&
+      !searchResultClickedRef.current &&
+      searchResults.length > 0
+    ) {
+      telemetry.trackFeature("file_search", "completed", undefined, {
+        event: "results_no_click",
+        results_count: searchResults.length,
+        dwell_time_ms: Date.now() - searchResultsShownAtRef.current,
+      });
+    }
+
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
     setIsSearching(true);
+    searchQueryCountRef.current++;
+    const startTime = Date.now();
     try {
       const res = await api.searchFiles(q, undefined, 10, controller.signal);
       if (res) setSearchResults(res.results);
+      searchResultClickedRef.current = false;
+      searchResultsShownAtRef.current = Date.now();
+      telemetry.trackFeature("file_search", "completed", Date.now() - startTime, {
+        results_count: res?.results.length ?? 0,
+        query_length: q.trim().length,
+      });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setSearchResults([]);
+      telemetry.trackFeature("file_search", "error", Date.now() - startTime);
     } finally {
       setIsSearching(false);
     }
@@ -101,7 +181,57 @@ export function HomeDashboard() {
     };
   }, []);
 
+  const handleModeChange = (newMode: SearchMode) => {
+    if (searchMode === "search" && newMode === "ask" && searchQueryCountRef.current > 0) {
+      telemetry.trackFeature("kb_search", "completed", undefined, {
+        event: "search_then_ask",
+        search_query_count: searchQueryCountRef.current,
+        time_in_search_mode_ms: searchModeEnteredAtRef.current
+          ? Date.now() - searchModeEnteredAtRef.current
+          : undefined,
+      });
+    }
+    if (newMode === "search") {
+      searchModeEnteredAtRef.current = Date.now();
+      searchQueryCountRef.current = 0;
+    }
+    setSearchMode(newMode);
+  };
+
+  const checkQueryRephrase = (q: string, feature: "kb_search" | "file_search") => {
+    const words = new Set(q.toLowerCase().trim().split(/\s+/).filter(Boolean));
+    if (words.size < 2) {
+      recentQueriesRef.current = [...recentQueriesRef.current.slice(-2), q];
+      return;
+    }
+    for (const prev of recentQueriesRef.current) {
+      const prevWords = new Set(prev.toLowerCase().trim().split(/\s+/).filter(Boolean));
+      const intersection = [...words].filter((w) => prevWords.has(w)).length;
+      const union = new Set([...words, ...prevWords]).size;
+      const jaccard = union > 0 ? intersection / union : 0;
+      if (q.toLowerCase().trim() === prev.toLowerCase().trim()) {
+        telemetry.trackFeature(feature, "completed", undefined, {
+          event: "query_rephrased",
+          similarity: "exact_retry",
+          original_length: prev.length,
+          new_length: q.length,
+        });
+        break;
+      } else if (jaccard > 0.7) {
+        telemetry.trackFeature(feature, "completed", undefined, {
+          event: "query_rephrased",
+          similarity: "likely_rephrase",
+          original_length: prev.length,
+          new_length: q.length,
+        });
+        break;
+      }
+    }
+    recentQueriesRef.current = [...recentQueriesRef.current.slice(-2), q];
+  };
+
   const handleAskAgent = (question: string) => {
+    checkQueryRephrase(question, "kb_search");
     kbAgent.ask(question);
   };
 
@@ -109,26 +239,31 @@ export function HomeDashboard() {
     kbAgent.clear();
   };
 
-  // In Ask AI mode: show source files from agent response in the FileGrid
+  const handleSearchResultClick = useCallback(
+    (fileId: string, position: number, score: number) => {
+      searchResultClickedRef.current = true;
+      telemetry.trackFeature("file_search", "completed", undefined, {
+        event: "result_clicked",
+        file_id: fileId,
+        position,
+        result_score: score,
+        total_results: searchResults.length,
+      });
+    },
+    [searchResults.length]
+  );
+
+  // Clear KB agent when query is emptied
+  const handleQueryChange = (q: string) => {
+    setQuery(q);
+    if (!q.trim() && showAnswerCard) {
+      kbAgent.clear();
+    }
+  };
+
   const isAskMode = searchMode === "ask";
-  const agentSourceResults = useMemo<SearchResultItem[]>(() => {
-    if (!isAskMode || kbAgent.sources.length === 0) return [];
-    return kbAgent.sources.map((s) => ({
-      id: s.file_id,
-      content: "",
-      metadata: { file_id: s.file_id, chunk_index: 0, name: s.file_name },
-      distance: 1 - s.score,
-    }));
-  }, [isAskMode, kbAgent.sources]);
 
-  const gridSearchQuery = isAskMode
-    ? agentSourceResults.length > 0
-      ? query || "kb-agent"
-      : ""
-    : query;
-
-  const gridSearchResults = isAskMode ? agentSourceResults : searchResults;
-
+  const [titleDone, setTitleDone] = useState(false);
   const { title: greeting, subtitle: greetingSubtitle } = getGreeting();
   const firstName = user?.username?.split(" ")[0];
 
@@ -156,62 +291,57 @@ export function HomeDashboard() {
             transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           >
             <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-              <span className="animate-text-wave">{greeting}</span>
-              {firstName ? `, ${firstName}` : ""}
+              <TypewriterText
+                text={firstName ? `${greeting}, ${firstName}` : greeting}
+                onDone={() => setTitleDone(true)}
+              />
             </h1>
             <p className="mt-2 text-sm text-muted-foreground/50">
-              {files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
+              {titleDone && (
+                <TypewriterText
+                  text={files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
+                  speed={30}
+                />
+              )}
             </p>
           </motion.div>
 
           {/* Search */}
           <HomeSearch
             query={query}
-            onQueryChange={setQuery}
+            onQueryChange={handleQueryChange}
             isSearching={isSearching}
             isAnswering={kbAgent.isAnswering}
             onAskAgent={handleAskAgent}
-            onModeChange={setSearchMode}
+            onModeChange={handleModeChange}
           />
         </div>
 
-        {/* Content area: two-column when answer is showing */}
+        {/* Content area */}
         {showAnswerCard ? (
-          <div className="mx-auto mt-6 flex max-w-6xl gap-6">
-            {/* Left: Documents */}
-            <div className="min-w-0 flex-1">
-              <FileGrid
-                files={files}
-                isLoading={isLoading}
-                searchQuery={gridSearchQuery}
-                searchResults={gridSearchResults}
-                isSearching={false}
-                hideActions
-                maxColumns={2}
-              />
-            </div>
-            {/* Right: Answer */}
-            <div className="hidden w-[440px] flex-shrink-0 md:block lg:w-[500px]">
-              <KBAnswerCard
-                question={kbAgent.question}
-                answer={kbAgent.answer}
-                sources={kbAgent.sources}
-                activeTool={kbAgent.activeTool}
-                isAnswering={kbAgent.isAnswering}
-                error={kbAgent.error}
-                onClose={handleCloseAnswer}
-                onStop={kbAgent.stop}
-                onAsk={handleAskAgent}
-              />
-            </div>
+          <div className="mx-auto mt-6 max-w-2xl">
+            <KBAnswerCard
+              question={kbAgent.question}
+              answer={kbAgent.answer}
+              sources={kbAgent.sources}
+              activeTool={kbAgent.activeTool}
+              isAnswering={kbAgent.isAnswering}
+              error={kbAgent.error}
+              onClose={handleCloseAnswer}
+              onStop={kbAgent.stop}
+              onAsk={handleAskAgent}
+              history={kbAgent.history}
+              conversationId={kbAgent.conversationId}
+            />
           </div>
         ) : (
           <FileGrid
             files={files}
             isLoading={isLoading}
-            searchQuery={gridSearchQuery}
-            searchResults={gridSearchResults}
+            searchQuery={isAskMode ? "" : query}
+            searchResults={searchResults}
             isSearching={isAskMode ? false : isSearching}
+            onResultClick={handleSearchResultClick}
           />
         )}
       </main>

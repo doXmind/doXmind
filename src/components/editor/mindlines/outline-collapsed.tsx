@@ -55,12 +55,7 @@ export function OutlineCollapsed({
           title={`${heading.text || "Untitled"} - Click to navigate and expand`}
           aria-label={`Navigate to: ${heading.text || "Untitled"}`}
         >
-          <div
-            className={cn(
-              "outline-line-indicator",
-              heading.id === activeId && "active"
-            )}
-          />
+          <div className={cn("outline-line-indicator", heading.id === activeId && "active")} />
         </button>
       ))}
     </div>

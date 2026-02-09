@@ -15,11 +15,8 @@ interface ReviewPopupProps {
 }
 
 export function ReviewPopup({ editor }: ReviewPopupProps) {
-  const [activeSuggestion, setActiveSuggestion] =
-    useState<ReviewSuggestion | null>(null);
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(
-    null
-  );
+  const [activeSuggestion, setActiveSuggestion] = useState<ReviewSuggestion | null>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
   // Handle click on review suggestion
@@ -48,9 +45,7 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
 
       // Get suggestion data from plugin state
       const pluginState = TextReviewPluginKey.getState(editor.state);
-      const suggestion = pluginState?.suggestions.find(
-        (s) => s.id === suggestionId
-      );
+      const suggestion = pluginState?.suggestions.find((s) => s.id === suggestionId);
 
       if (suggestion && suggestion.status === "pending") {
         setActiveSuggestion(suggestion);
@@ -133,19 +128,16 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
   return (
     <div
       ref={popupRef}
-      className="fixed z-50 bg-popover border border-border rounded-lg shadow-lg w-[calc(100vw-2rem)] max-w-[340px] review-popup"
+      className="review-popup fixed z-50 w-[calc(100vw-2rem)] max-w-[340px] rounded-lg border border-border bg-popover shadow-lg"
       style={{ left: position.x, top: position.y }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-2">
-          <div
-            className="w-2.5 h-2.5 rounded-full"
-            style={{ backgroundColor: category.color }}
-          />
+          <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: category.color }} />
           <span className="text-sm font-medium">{category.label}</span>
           <span
-            className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded"
+            className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
             style={{
               backgroundColor: `${category.color}15`,
               color: category.color,
@@ -154,12 +146,7 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
             {activeSuggestion.type.replace(/_/g, " ")}
           </span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleClose}
-          className="h-6 w-6"
-        >
+        <Button variant="ghost" size="icon" onClick={handleClose} className="h-6 w-6">
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -167,38 +154,29 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
       {/* Content */}
       <div className="p-3">
         {/* Original -> Replacement */}
-        <div className="flex items-start gap-2 mb-3">
-          <span className="line-through text-red-500/80 bg-red-500/10 px-2 py-1 rounded text-sm max-w-[45%] break-words">
+        <div className="mb-3 flex items-start gap-2">
+          <span className="max-w-[45%] break-words rounded bg-red-500/10 px-2 py-1 text-sm text-red-500/80 line-through">
             {activeSuggestion.originalText}
           </span>
-          <ArrowRight className="h-4 w-4 text-muted-foreground mt-1.5 flex-shrink-0" />
-          <span className="text-green-600 dark:text-green-400 bg-green-500/10 px-2 py-1 rounded text-sm max-w-[45%] break-words">
+          <ArrowRight className="mt-1.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <span className="max-w-[45%] break-words rounded bg-green-500/10 px-2 py-1 text-sm text-green-600 dark:text-green-400">
             {activeSuggestion.replacement}
           </span>
         </div>
 
         {/* Explanation */}
-        <p className="text-xs text-muted-foreground leading-relaxed">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {activeSuggestion.explanation}
         </p>
       </div>
 
       {/* Actions */}
       <div className="flex gap-2 p-3 pt-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleDismiss}
-          className="flex-1"
-        >
+        <Button variant="ghost" size="sm" onClick={handleDismiss} className="flex-1">
           Dismiss
         </Button>
-        <Button
-          size="sm"
-          className="flex-1 bg-green-600 hover:bg-green-700"
-          onClick={handleAccept}
-        >
-          <Check className="h-4 w-4 mr-1" />
+        <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={handleAccept}>
+          <Check className="mr-1 h-4 w-4" />
           Accept
         </Button>
       </div>

@@ -20,10 +20,7 @@ interface UseOutlineKeyboardOptions {
 /**
  * Flatten visible nodes (respecting collapsed state)
  */
-function flattenVisibleNodes(
-  nodes: HeadingNode[],
-  collapsedNodes: Set<string>
-): HeadingNode[] {
+function flattenVisibleNodes(nodes: HeadingNode[], collapsedNodes: Set<string>): HeadingNode[] {
   const result: HeadingNode[] = [];
 
   function traverse(node: HeadingNode) {
@@ -57,18 +54,9 @@ function findNodeById(nodes: HeadingNode[], id: string): HeadingNode | null {
 /**
  * Hook for handling keyboard navigation in the outline
  */
-export function useOutlineKeyboard({
-  headings,
-  onNavigate,
-  isActive,
-}: UseOutlineKeyboardOptions) {
+export function useOutlineKeyboard({ headings, onNavigate, isActive }: UseOutlineKeyboardOptions) {
   const { currentFileId } = useFileStore();
-  const {
-    selectedNodeId,
-    setSelectedNode,
-    toggleCollapse,
-    getCollapsedNodes,
-  } = useOutlineStore();
+  const { selectedNodeId, setSelectedNode, toggleCollapse, getCollapsedNodes } = useOutlineStore();
 
   const documentId = currentFileId || "default";
 
@@ -141,10 +129,7 @@ export function useOutlineKeyboard({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't capture if user is typing in an input
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
 

@@ -32,6 +32,7 @@ interface FileGridProps {
   isSearching: boolean;
   hideActions?: boolean;
   maxColumns?: number;
+  onResultClick?: (fileId: string, position: number, score: number) => void;
 }
 
 // Layout constants for page size calculation
@@ -87,6 +88,7 @@ export function FileGrid({
   isSearching,
   hideActions,
   maxColumns,
+  onResultClick,
 }: FileGridProps) {
   const { createFile, importFile } = useFileStore();
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
@@ -364,6 +366,7 @@ export function FileGrid({
                               }
                             : undefined
                         }
+                        onResultClick={onResultClick}
                       />
                     </motion.div>
                   ))}
@@ -376,6 +379,7 @@ export function FileGrid({
                 isSearchActive={isSearchActive}
                 searchMatchMap={searchMatchMap}
                 searchQuery={searchQuery}
+                onResultClick={onResultClick}
               />
             </>
           ) : (
@@ -463,11 +467,13 @@ function MobileCarousel({
   isSearchActive,
   searchMatchMap,
   searchQuery,
+  onResultClick,
 }: {
   files: FileItem[];
   isSearchActive: boolean;
   searchMatchMap: Map<string, { snippet: string; score: number }>;
   searchQuery: string;
+  onResultClick?: (fileId: string, position: number, score: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -538,6 +544,7 @@ function MobileCarousel({
                     }
                   : undefined
               }
+              onResultClick={onResultClick}
             />
           </motion.div>
         ))}

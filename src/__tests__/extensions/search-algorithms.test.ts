@@ -2,11 +2,7 @@
  * Tests for Search Algorithm Functions
  */
 import { describe, it, expect } from "vitest";
-import {
-  escapeRegExp,
-  getRegex,
-  dedupeRanges,
-} from "@/extensions/search/search-algorithms";
+import { escapeRegExp, getRegex, dedupeRanges } from "@/extensions/search/search-algorithms";
 
 describe("Search Algorithms", () => {
   describe("escapeRegExp", () => {
@@ -43,9 +39,7 @@ describe("Search Algorithms", () => {
     });
 
     it("escapes multiple special characters", () => {
-      expect(escapeRegExp(".*+?^${}()|[]\\")).toBe(
-        "\\.\\*\\+\\?\\^\\$\\{\\}\\(\\)\\|\\[\\]\\\\"
-      );
+      expect(escapeRegExp(".*+?^${}()|[]\\")).toBe("\\.\\*\\+\\?\\^\\$\\{\\}\\(\\)\\|\\[\\]\\\\");
     });
   });
 

@@ -217,8 +217,7 @@ export function useMobileGestures(options: UseMobileGesturesOptions = {}) {
         }
 
         const completed =
-          swipeDistance >= edgeSwipeThreshold ||
-          velocity >= MOBILE_V2.SWIPE_VELOCITY_THRESHOLD;
+          swipeDistance >= edgeSwipeThreshold || velocity >= MOBILE_V2.SWIPE_VELOCITY_THRESHOLD;
 
         if (completed) {
           haptics.tick();

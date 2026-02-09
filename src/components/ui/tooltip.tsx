@@ -11,12 +11,7 @@ interface TooltipProps {
   delayDuration?: number;
 }
 
-export function Tooltip({
-  children,
-  content,
-  side = "top",
-  delayDuration = 200,
-}: TooltipProps) {
+export function Tooltip({ children, content, side = "top", delayDuration = 200 }: TooltipProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const [position, setPosition] = React.useState<{ top: number; left: number } | null>(null);
@@ -118,23 +113,25 @@ export function Tooltip({
       onMouseDown={handleClick}
     >
       {children}
-      {mounted && isOpen && createPortal(
-        <div
-          ref={tooltipRef}
-          style={{
-            position: "fixed",
-            top: position?.top ?? -9999,
-            left: position?.left ?? -9999,
-            visibility: position ? "visible" : "hidden",
-          }}
-          className={cn(
-            "z-[9999] overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 whitespace-nowrap pointer-events-none"
-          )}
-        >
-          {content}
-        </div>,
-        document.body
-      )}
+      {mounted &&
+        isOpen &&
+        createPortal(
+          <div
+            ref={tooltipRef}
+            style={{
+              position: "fixed",
+              top: position?.top ?? -9999,
+              left: position?.left ?? -9999,
+              visibility: position ? "visible" : "hidden",
+            }}
+            className={cn(
+              "animate-in fade-in-0 zoom-in-95 pointer-events-none z-[9999] overflow-hidden whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground"
+            )}
+          >
+            {content}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

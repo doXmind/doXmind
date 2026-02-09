@@ -67,11 +67,7 @@ export function GlitchProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  return (
-    <GlitchContext.Provider value={{ subscribe }}>
-      {children}
-    </GlitchContext.Provider>
-  );
+  return <GlitchContext.Provider value={{ subscribe }}>{children}</GlitchContext.Provider>;
 }
 
 export function AnimatedLogoIcon({ size = 80 }: { size?: number }) {
@@ -116,7 +112,7 @@ export function AnimatedLogoIcon({ size = 80 }: { size?: number }) {
         width={size}
         height={size}
         aria-hidden="true"
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         animate={cyanControls}
         initial={{ opacity: 0, x: 0 }}
       >
@@ -131,7 +127,7 @@ export function AnimatedLogoIcon({ size = 80 }: { size?: number }) {
         width={size}
         height={size}
         aria-hidden="true"
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         animate={redControls}
         initial={{ opacity: 0, x: 0 }}
       >
@@ -237,11 +233,7 @@ function GlitchX({ char }: { char: string }) {
   );
 }
 
-export function AnimatedLogo({
-  size = "lg",
-  className,
-  onAnimationComplete,
-}: AnimatedLogoProps) {
+export function AnimatedLogo({ size = "lg", className, onAnimationComplete }: AnimatedLogoProps) {
   const config = sizeConfig[size];
 
   React.useEffect(() => {

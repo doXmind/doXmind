@@ -33,9 +33,7 @@ export function MessageFeedback({
   hadToolCalls,
   className,
 }: MessageFeedbackProps) {
-  const [feedback, setFeedback] = useState<"positive" | "negative" | null>(
-    null
-  );
+  const [feedback, setFeedback] = useState<"positive" | "negative" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFeedback = async (rating: "positive" | "negative") => {
@@ -82,9 +80,7 @@ export function MessageFeedback({
         title="Good response"
         aria-label="Mark as good response"
       >
-        <ThumbsUp
-          className={cn("h-3.5 w-3.5", feedback === "positive" && "fill-current")}
-        />
+        <ThumbsUp className={cn("h-3.5 w-3.5", feedback === "positive" && "fill-current")} />
       </button>
       <button
         type="button"
@@ -100,9 +96,7 @@ export function MessageFeedback({
         title="Poor response"
         aria-label="Mark as poor response"
       >
-        <ThumbsDown
-          className={cn("h-3.5 w-3.5", feedback === "negative" && "fill-current")}
-        />
+        <ThumbsDown className={cn("h-3.5 w-3.5", feedback === "negative" && "fill-current")} />
       </button>
     </div>
   );

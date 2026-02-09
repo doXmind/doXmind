@@ -13,11 +13,7 @@
 
 import { useCallback, useRef, useEffect } from "react";
 import { Editor } from "@tiptap/react";
-import {
-  checkSpelling,
-  hashText,
-  type LanguageToolMatch,
-} from "@/lib/languagetool";
+import { checkSpelling, hashText, type LanguageToolMatch } from "@/lib/languagetool";
 import { editorLogger } from "@/lib/logger";
 
 const log = editorLogger.child("Spellcheck");
@@ -69,18 +65,13 @@ function convertMatch(
     to,
     message: match.message,
     shortMessage: match.shortMessage || match.rule.category.name,
-    replacements: match.replacements
-      .slice(0, CONFIG.MAX_REPLACEMENTS)
-      .map((r) => r.value),
+    replacements: match.replacements.slice(0, CONFIG.MAX_REPLACEMENTS).map((r) => r.value),
     ruleId: match.rule.id,
     category: match.rule.category.id,
   };
 }
 
-export function useSpellcheck({
-  editor,
-  enabled = true,
-}: UseSpellcheckOptions) {
+export function useSpellcheck({ editor, enabled = true }: UseSpellcheckOptions) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
@@ -138,9 +129,7 @@ export function useSpellcheck({
     const cached = cacheRef.current.get(textHash);
     if (cached && Date.now() - cached.timestamp < CONFIG.CACHE_TTL) {
       // Use cached matches (positions should still be valid if text hash matches)
-      const validMatches = cached.matches.filter(
-        (match) => match.from < match.to
-      );
+      const validMatches = cached.matches.filter((match) => match.from < match.to);
       editor.commands.setSpellcheckMatches(validMatches);
       lastTextHashRef.current = textHash;
       return;
@@ -153,11 +142,7 @@ export function useSpellcheck({
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await checkSpelling(
-        textToCheck,
-        "auto",
-        abortControllerRef.current.signal
-      );
+      const response = await checkSpelling(textToCheck, "auto", abortControllerRef.current.signal);
 
       // Get document size for validation
       const docSize = editor.state.doc.content.size;

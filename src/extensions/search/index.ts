@@ -52,8 +52,7 @@ function scrollToPosition(editor: Editor, pos: number): void {
       // Only scroll if the position is outside the visible area
       if (relativeTop < 50 || relativeTop > containerHeight - 50) {
         // Scroll to center the match in the viewport
-        const targetScrollTop =
-          scrollContainer.scrollTop + relativeTop - containerHeight / 2;
+        const targetScrollTop = scrollContainer.scrollTop + relativeTop - containerHeight / 2;
         scrollContainer.scrollTo({
           top: targetScrollTop,
           behavior: "smooth",
@@ -177,8 +176,7 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
 
               const pluginState: SearchPluginState = {
                 searchTerm: updatedSearchTerm,
-                replaceTerm:
-                  meta.replaceTerm !== undefined ? meta.replaceTerm : value.replaceTerm,
+                replaceTerm: meta.replaceTerm !== undefined ? meta.replaceTerm : value.replaceTerm,
                 results: updatedResults,
                 semanticResults: updatedSemanticResults,
                 currentIndex: updatedIndex,

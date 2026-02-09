@@ -128,10 +128,7 @@ export function diffParagraphArrays(
     for (let oldIdx = 0; oldIdx < oldParagraphs.length; oldIdx++) {
       if (matchedOld.has(oldIdx)) continue;
 
-      const similarity = calculateSimilarity(
-        normalizedOld[oldIdx],
-        normalizedNew[newIdx]
-      );
+      const similarity = calculateSimilarity(normalizedOld[oldIdx], normalizedNew[newIdx]);
 
       if (similarity > bestSimilarity && similarity > SIMILARITY_THRESHOLD) {
         bestSimilarity = similarity;
@@ -272,10 +269,7 @@ export function diffByParagraphs(
     } else if (change.type === "added") {
       // Insert new paragraph
       // Find the position to insert (after the last matched paragraph or at start)
-      const insertPos =
-        oldPositions.length > 0
-          ? oldPositions[oldPositions.length - 1].to + 1
-          : 1;
+      const insertPos = oldPositions.length > 0 ? oldPositions[oldPositions.length - 1].to + 1 : 1;
       hunks.push({
         id: generateId(),
         type: "insert",

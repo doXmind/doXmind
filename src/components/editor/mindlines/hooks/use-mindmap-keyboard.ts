@@ -14,11 +14,7 @@ interface UseMindmapKeyboardOptions {
   nodes: Node[];
   selectedNodeId: string | null;
   setSelectedNodeId: (id: string | null) => void;
-  setCenter: (
-    x: number,
-    y: number,
-    options?: { zoom?: number; duration?: number }
-  ) => void;
+  setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
   onNodeClick: (heading: Heading) => void;
   setCollapsedNodes: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
@@ -87,9 +83,7 @@ export function useMindmapKeyboard({
       if (!nodes.length) return;
 
       // Find current node index
-      const currentIndex = selectedNodeId
-        ? nodes.findIndex((n) => n.id === selectedNodeId)
-        : -1;
+      const currentIndex = selectedNodeId ? nodes.findIndex((n) => n.id === selectedNodeId) : -1;
 
       let nextIndex = currentIndex;
 

@@ -84,9 +84,7 @@ describe("useChatStore", () => {
     it("throws error without file ID", () => {
       const { ensureConversation } = useChatStore.getState();
 
-      expect(() => ensureConversation(null)).toThrow(
-        "Cannot create conversation without a file"
-      );
+      expect(() => ensureConversation(null)).toThrow("Cannot create conversation without a file");
     });
 
     it("sets active conversation", () => {
@@ -643,7 +641,16 @@ describe("useChatStore", () => {
         createdAt: "2024-01-01T00:00:00Z",
         thinking: "Thinking...",
         toolCalls: [{ name: "search", input: "{}", output: "results", success: true }],
-        edits: [{ type: "str_replace" as const, old_str: "old", new_str: "new", file_id: "f1", file_name: "test.md", success: true }],
+        edits: [
+          {
+            type: "str_replace" as const,
+            old_str: "old",
+            new_str: "new",
+            file_id: "f1",
+            file_name: "test.md",
+            success: true,
+          },
+        ],
         model: "claude-3-5-sonnet",
       };
 

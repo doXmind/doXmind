@@ -70,13 +70,16 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
     [onUpload, validateFile]
   );
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!disabled) {
-      setIsDragging(true);
-    }
-  }, [disabled]);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!disabled) {
+        setIsDragging(true);
+      }
+    },
+    [disabled]
+  );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -133,11 +136,11 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
     <div className="space-y-2">
       <div
         className={cn(
-          "relative border-2 border-dashed rounded-lg p-4 transition-colors cursor-pointer",
+          "relative cursor-pointer rounded-lg border-2 border-dashed p-4 transition-colors",
           isDragging
             ? "border-primary bg-primary/5"
             : "border-muted-foreground/25 hover:border-primary/50",
-          disabled && "opacity-50 cursor-not-allowed"
+          disabled && "cursor-not-allowed opacity-50"
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -155,15 +158,11 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
             <span className="font-medium text-primary">Click to upload</span>
             <span className="text-muted-foreground"> or drag and drop</span>
           </div>
-          <p className="text-xs text-muted-foreground">
-            PDF, DOCX, PPTX (max 50MB)
-          </p>
+          <p className="text-xs text-muted-foreground">PDF, DOCX, PPTX (max 50MB)</p>
         </div>
       </div>
 
-      {error && (
-        <p className="text-xs text-destructive">{error}</p>
-      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

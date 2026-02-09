@@ -11,7 +11,7 @@ import { useState } from "react";
 function TestModal({
   initialOpen = false,
   onCloseCallback,
-  children
+  children,
 }: {
   initialOpen?: boolean;
   onCloseCallback?: () => void;
@@ -35,7 +35,9 @@ function TestModal({
             <ModalHeader onClose={handleClose}>Test Modal</ModalHeader>
             <div>Modal content</div>
             <ModalFooter>
-              <button data-testid="cancel" onClick={handleClose}>Cancel</button>
+              <button data-testid="cancel" onClick={handleClose}>
+                Cancel
+              </button>
               <button data-testid="confirm">Confirm</button>
             </ModalFooter>
           </>
@@ -62,12 +64,20 @@ describe("Modal", () => {
 
   describe("Rendering", () => {
     it("renders nothing when closed", () => {
-      render(<Modal open={false} onClose={() => {}}>Content</Modal>);
+      render(
+        <Modal open={false} onClose={() => {}}>
+          Content
+        </Modal>
+      );
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
     it("renders modal when open", () => {
-      render(<Modal open={true} onClose={() => {}}>Content</Modal>);
+      render(
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
+      );
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
 
@@ -81,7 +91,11 @@ describe("Modal", () => {
     });
 
     it("has correct aria attributes", () => {
-      render(<Modal open={true} onClose={() => {}}>Content</Modal>);
+      render(
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
+      );
       const dialog = screen.getByRole("dialog");
       expect(dialog).toHaveAttribute("aria-modal", "true");
     });
@@ -113,24 +127,36 @@ describe("Modal", () => {
   describe("Opening and Closing", () => {
     it("opens when open prop changes to true", async () => {
       const { rerender } = render(
-        <Modal open={false} onClose={() => {}}>Content</Modal>
+        <Modal open={false} onClose={() => {}}>
+          Content
+        </Modal>
       );
 
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-      rerender(<Modal open={true} onClose={() => {}}>Content</Modal>);
+      rerender(
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
+      );
 
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
 
     it("closes when open prop changes to false", async () => {
       const { rerender } = render(
-        <Modal open={true} onClose={() => {}}>Content</Modal>
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
       );
 
       expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-      rerender(<Modal open={false} onClose={() => {}}>Content</Modal>);
+      rerender(
+        <Modal open={false} onClose={() => {}}>
+          Content
+        </Modal>
+      );
 
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
@@ -166,18 +192,28 @@ describe("Modal", () => {
 
   describe("Focus Management", () => {
     it("locks body scroll when open", () => {
-      render(<Modal open={true} onClose={() => {}}>Content</Modal>);
+      render(
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
+      );
       expect(document.body.style.overflow).toBe("hidden");
     });
 
     it("restores body scroll when closed", async () => {
       const { rerender } = render(
-        <Modal open={true} onClose={() => {}}>Content</Modal>
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
       );
 
       expect(document.body.style.overflow).toBe("hidden");
 
-      rerender(<Modal open={false} onClose={() => {}}>Content</Modal>);
+      rerender(
+        <Modal open={false} onClose={() => {}}>
+          Content
+        </Modal>
+      );
 
       expect(document.body.style.overflow).toBe("");
     });
@@ -255,13 +291,21 @@ describe("Modal", () => {
 
   describe("Styling", () => {
     it("has backdrop blur effect", () => {
-      render(<Modal open={true} onClose={() => {}}>Content</Modal>);
+      render(
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
+      );
       const backdrop = document.querySelector('[aria-hidden="true"]');
       expect(backdrop).toHaveClass("backdrop-blur-sm");
     });
 
     it("modal has proper container classes", () => {
-      render(<Modal open={true} onClose={() => {}}>Content</Modal>);
+      render(
+        <Modal open={true} onClose={() => {}}>
+          Content
+        </Modal>
+      );
       const dialog = screen.getByRole("dialog");
       expect(dialog).toHaveClass("rounded-lg");
       expect(dialog).toHaveClass("border");

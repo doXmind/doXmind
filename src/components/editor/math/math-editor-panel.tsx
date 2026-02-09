@@ -130,9 +130,9 @@ export function MathEditorPanel({
     <div
       className={cn(
         "math-editor-panel relative",
-        "border border-border rounded-lg bg-popover shadow-lg",
+        "rounded-lg border border-border bg-popover shadow-lg",
         "animate-in fade-in-0 zoom-in-95 duration-150",
-        displayMode ? "p-4 max-w-2xl mx-auto" : "p-2 inline-block"
+        displayMode ? "mx-auto max-w-2xl p-4" : "inline-block p-2"
       )}
       onClick={(e) => e.stopPropagation()}
     >
@@ -142,26 +142,28 @@ export function MathEditorPanel({
         className={cn(
           "math-preview overflow-x-auto",
           displayMode
-            ? "py-4 text-center text-xl border-b border-border mb-3 min-h-[3rem]"
-            : "min-w-[60px] px-2 mb-2 text-center min-h-[1.5rem]"
+            ? "mb-3 min-h-[3rem] border-b border-border py-4 text-center text-xl"
+            : "mb-2 min-h-[1.5rem] min-w-[60px] px-2 text-center"
         )}
       />
 
       {/* Input area */}
       <div className={cn("flex gap-2", displayMode ? "flex-col" : "items-start")}>
-        <div className="flex-1 relative">
+        <div className="relative flex-1">
           <textarea
             ref={inputRef}
             value={latex}
             onChange={handleInput}
             onKeyDown={handleKeyDownInternal}
-            placeholder={displayMode ? "e.g., \\frac{1}{2} + \\sum_{i=1}^{n} x_i" : "e.g., x^2 + y^2"}
+            placeholder={
+              displayMode ? "e.g., \\frac{1}{2} + \\sum_{i=1}^{n} x_i" : "e.g., x^2 + y^2"
+            }
             className={cn(
-              "w-full font-mono text-base md:text-sm resize-none",
-              "bg-background border border-input rounded-md px-3 py-2",
+              "w-full resize-none font-mono text-base md:text-sm",
+              "rounded-md border border-input bg-background px-3 py-2",
               "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
               "placeholder:text-muted-foreground",
-              displayMode ? "min-h-[80px]" : "min-h-[36px] h-[36px]"
+              displayMode ? "min-h-[80px]" : "h-[36px] min-h-[36px]"
             )}
             rows={displayMode ? 3 : 1}
           />
@@ -178,7 +180,7 @@ export function MathEditorPanel({
             className="h-8 w-8 text-muted-foreground hover:text-foreground"
             title="Insert symbol"
           >
-            <span className="text-lg font-serif">Σ</span>
+            <span className="font-serif text-lg">Σ</span>
           </Button>
 
           {/* Save button */}
@@ -187,7 +189,7 @@ export function MathEditorPanel({
             size="icon"
             variant="ghost"
             onClick={onSave}
-            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-900/30"
+            className="h-8 w-8 text-green-600 hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/30"
             title="Save (Enter)"
           >
             <Check className="h-4 w-4" />
@@ -211,7 +213,7 @@ export function MathEditorPanel({
             size="icon"
             variant="ghost"
             onClick={onDelete}
-            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
             title="Delete"
           >
             <Trash2 className="h-4 w-4" />
@@ -222,24 +224,21 @@ export function MathEditorPanel({
       {/* Keyboard hints */}
       <div className="mt-2 text-xs text-muted-foreground">
         <span className="mr-3">
-          <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Enter</kbd> to save
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Enter</kbd> to save
         </span>
         <span className="mr-3">
-          <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Esc</kbd> to cancel
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Esc</kbd> to cancel
         </span>
         {displayMode && (
           <span>
-            <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Shift+Enter</kbd> for newline
+            <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Shift+Enter</kbd> for newline
           </span>
         )}
       </div>
 
       {/* Symbol picker dropdown */}
       {showSymbols && (
-        <SymbolPicker
-          onSelect={insertSymbol}
-          onClose={() => setShowSymbols(false)}
-        />
+        <SymbolPicker onSelect={insertSymbol} onClose={() => setShowSymbols(false)} />
       )}
     </div>
   );

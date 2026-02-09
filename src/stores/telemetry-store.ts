@@ -120,10 +120,7 @@ export const useTelemetryStore = create<TelemetryState>()(
             telemetry.updateSettings(settings);
           }
         } catch (error) {
-          console.warn(
-            "[TelemetryStore] Failed to load settings from backend:",
-            error
-          );
+          console.warn("[TelemetryStore] Failed to load settings from backend:", error);
         } finally {
           set({ isLoading: false });
         }

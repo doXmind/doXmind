@@ -124,8 +124,8 @@ export default function SharedDocumentPage() {
     return (
       <AppShell hideHeader>
         <div className="flex h-screen items-center justify-center bg-background">
-          <div className="text-center space-y-4 max-w-md px-6">
-            <AlertCircle className="w-16 h-16 text-destructive mx-auto" />
+          <div className="max-w-md space-y-4 px-6 text-center">
+            <AlertCircle className="mx-auto h-16 w-16 text-destructive" />
             <h1 className="text-2xl font-bold text-foreground">Document Not Found</h1>
             <p className="text-muted-foreground">
               {error || "This shared document may have expired or been removed."}
@@ -141,7 +141,7 @@ export default function SharedDocumentPage() {
       <div className="flex h-screen flex-col bg-background">
         {/* Header - Document Title */}
         <header className="border-b border-border bg-card px-6 py-4 shadow-sm">
-          <div className="max-w-4xl mx-auto">
+          <div className="mx-auto max-w-4xl">
             <div className="flex items-center justify-between">
               {/* Logo and Title */}
               <div className="flex items-center gap-3">
@@ -153,28 +153,28 @@ export default function SharedDocumentPage() {
                   className="flex-shrink-0"
                 />
                 <h1 className="text-2xl font-bold text-foreground">
-                  {document.name.replace(/\.md$/, '')}
+                  {document.name.replace(/\.md$/, "")}
                 </h1>
               </div>
 
               {/* Search Button */}
               <button
                 onClick={handleSearchClick}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 title="Search in document"
               >
-                <Search className="w-4 h-4" />
+                <Search className="h-4 w-4" />
                 <span className="hidden sm:inline">Search</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground">
+            <div className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <Lock className="w-4 h-4" />
+                <Lock className="h-4 w-4" />
                 Shared Document (Read-Only)
               </span>
               {document.is_snapshot && (
-                <span className="bg-muted px-2 py-1 rounded text-xs font-medium">
+                <span className="rounded bg-muted px-2 py-1 text-xs font-medium">
                   Snapshot from {new Date(document.created_at).toLocaleDateString()}
                 </span>
               )}
@@ -187,7 +187,7 @@ export default function SharedDocumentPage() {
 
         {/* Editor Content - Read-Only */}
         <main className="flex-1 overflow-auto">
-          <div className="relative max-w-4xl mx-auto px-6 py-8">
+          <div className="relative mx-auto max-w-4xl px-6 py-8">
             <EditorContent editor={editor} />
             {/* Search Bar - positioned within editor content area */}
             <SearchBar />
@@ -199,7 +199,7 @@ export default function SharedDocumentPage() {
           Powered by{" "}
           <a
             href="https://doxmind.com"
-            className="text-primary hover:underline font-medium"
+            className="font-medium text-primary hover:underline"
             target="_blank"
             rel="noopener noreferrer"
           >

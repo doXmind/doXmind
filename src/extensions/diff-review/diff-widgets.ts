@@ -84,9 +84,7 @@ export function createActionWidget(hunk: DiffHunk): HTMLElement {
   acceptBtn.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    document.dispatchEvent(
-      new CustomEvent("diff-accept", { detail: { hunkId: hunk.id } })
-    );
+    document.dispatchEvent(new CustomEvent("diff-accept", { detail: { hunkId: hunk.id } }));
   };
 
   const rejectBtn = document.createElement("button");
@@ -97,9 +95,7 @@ export function createActionWidget(hunk: DiffHunk): HTMLElement {
   rejectBtn.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    document.dispatchEvent(
-      new CustomEvent("diff-reject", { detail: { hunkId: hunk.id } })
-    );
+    document.dispatchEvent(new CustomEvent("diff-reject", { detail: { hunkId: hunk.id } }));
   };
 
   // Add label

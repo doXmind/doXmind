@@ -22,6 +22,7 @@ import { useDataFilesStore, isDataFile, isKBFile } from "@/stores/data-files-sto
 import { useKBStore } from "@/stores/kb-store";
 import { useChat } from "@/hooks/use-chat";
 import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
+import { useIsMobile } from "@/hooks/use-device-type";
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
@@ -40,6 +41,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounterRef = useRef(0);
 
+  const isMobile = useIsMobile();
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
 
@@ -410,7 +412,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
       {/* Mobile Header Actions - removed, now in input bar */}
 
       {/* Messages */}
-      <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 p-4">
+      <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 p-2.5 md:p-4">
         {isLoadingHistory ? (
           <div className="flex h-full flex-col items-center justify-center py-8 text-center">
             <Loader2 className="mb-4 h-8 w-8 animate-spin text-muted-foreground" />
@@ -464,14 +466,14 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
 
             {/* Tool indicators - shown during streaming */}
             {isStreaming && toolHistory.length > 0 && (
-              <div className="ml-11">
-                <ToolHistoryList tools={toolHistory} collapseThreshold={2} />
+              <div className="ml-2 md:ml-11">
+                <ToolHistoryList tools={toolHistory} collapseThreshold={isMobile ? 1 : 2} />
               </div>
             )}
 
             {/* TODO progress - shown when agent is tracking tasks */}
             {todos.length > 0 && (
-              <div className="ml-11">
+              <div className="ml-2 md:ml-11">
                 <TodoProgress todos={todos} />
               </div>
             )}

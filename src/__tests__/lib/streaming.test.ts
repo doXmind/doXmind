@@ -127,9 +127,7 @@ describe("streaming", () => {
     });
 
     it("handles unicode in JSON", () => {
-      const result = parseSSELine<{ text: string }>(
-        'data: {"text":"你好世界"}'
-      );
+      const result = parseSSELine<{ text: string }>('data: {"text":"你好世界"}');
       expect(result).toEqual({ text: "你好世界" });
     });
   });
@@ -212,9 +210,7 @@ describe("streaming", () => {
     it("throws error when response has no body", async () => {
       const response = new Response(null);
 
-      await expect(
-        processSSEStream(response, vi.fn())
-      ).rejects.toThrow("No response body");
+      await expect(processSSEStream(response, vi.fn())).rejects.toThrow("No response body");
     });
 
     it("calls onDone even if stream processing fails", async () => {
@@ -228,9 +224,7 @@ describe("streaming", () => {
 
       const onDone = vi.fn();
 
-      await expect(
-        processSSEStream(response, vi.fn(), onDone)
-      ).rejects.toThrow("Stream error");
+      await expect(processSSEStream(response, vi.fn(), onDone)).rejects.toThrow("Stream error");
 
       expect(onDone).toHaveBeenCalledTimes(1);
     });
@@ -285,10 +279,7 @@ describe("streaming", () => {
       const mockResponse = createMockSSEResponse([{ type: "test" }]);
       global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-      await streamingFetch(
-        { url: "https://api.test.com/stream", method: "GET" },
-        vi.fn()
-      );
+      await streamingFetch({ url: "https://api.test.com/stream", method: "GET" }, vi.fn());
 
       expect(global.fetch).toHaveBeenCalledWith(
         "https://api.test.com/stream",
@@ -343,9 +334,9 @@ describe("streaming", () => {
       });
       global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-      await expect(
-        streamingFetch({ url: "https://api.test.com/chat" }, vi.fn())
-      ).rejects.toThrow("HTTP 404: Not Found");
+      await expect(streamingFetch({ url: "https://api.test.com/chat" }, vi.fn())).rejects.toThrow(
+        "HTTP 404: Not Found"
+      );
     });
 
     it("throws error for server error response", async () => {
@@ -355,9 +346,9 @@ describe("streaming", () => {
       });
       global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-      await expect(
-        streamingFetch({ url: "https://api.test.com/chat" }, vi.fn())
-      ).rejects.toThrow("HTTP 500: Internal Server Error");
+      await expect(streamingFetch({ url: "https://api.test.com/chat" }, vi.fn())).rejects.toThrow(
+        "HTTP 500: Internal Server Error"
+      );
     });
 
     it("processes events and calls onDone", async () => {
@@ -558,7 +549,7 @@ describe("streaming", () => {
 
       accumulator.append("Line 1\n");
       accumulator.append("Line 2\t");
-      accumulator.append("\"quoted\"");
+      accumulator.append('"quoted"');
 
       expect(accumulator.text).toBe('Line 1\nLine 2\t"quoted"');
     });

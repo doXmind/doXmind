@@ -100,9 +100,6 @@ export function useTree(headings: Heading[]) {
  */
 export function useTreeLayout(headings: Heading[], width: number, height: number) {
   const tree = useMemo(() => buildTree(headings), [headings]);
-  const layout = useMemo(
-    () => calculateTreeLayout(tree, width, height),
-    [tree, width, height]
-  );
+  const layout = useMemo(() => calculateTreeLayout(tree, width, height), [tree, width, height]);
   return { tree, ...layout };
 }

@@ -81,7 +81,7 @@ export function WelcomeScreen() {
   return (
     <div
       className={cn(
-        "relative flex-1 flex items-center justify-center p-6 md:p-8",
+        "relative flex flex-1 items-center justify-center p-6 md:p-8",
         "transition-colors duration-300",
         isDragging && "bg-primary/5"
       )}
@@ -91,7 +91,7 @@ export function WelcomeScreen() {
     >
       <motion.div
         className={cn(
-          "max-w-md w-full text-center space-y-8",
+          "w-full max-w-md space-y-8 text-center",
           // Offset downward on mobile to visually center accounting for bottom navigation (64px nav + FAB)
           "translate-y-16 md:translate-y-0"
         )}
@@ -116,7 +116,7 @@ export function WelcomeScreen() {
               onClick={handleCreateFile}
               disabled={isCreating}
               className={cn(
-                "h-14 px-8 text-base font-medium gap-2",
+                "h-14 gap-2 px-8 text-base font-medium",
                 "shadow-lg shadow-primary/20 dark:shadow-primary/10",
                 "transition-shadow duration-300"
               )}
@@ -126,7 +126,7 @@ export function WelcomeScreen() {
               ) : (
                 <>
                   Start Writing
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="h-4 w-4" />
                 </>
               )}
             </Button>
@@ -139,10 +139,10 @@ export function WelcomeScreen() {
           className={cn(
             "flex items-center justify-center gap-2 text-sm text-muted-foreground",
             "transition-colors duration-200",
-            isDragging && "text-primary font-medium"
+            isDragging && "font-medium text-primary"
           )}
         >
-          <Upload className="w-4 h-4" />
+          <Upload className="h-4 w-4" />
           <span>{isDragging ? "Drop to import" : "or drop a file here"}</span>
         </motion.div>
       </motion.div>
@@ -151,7 +151,7 @@ export function WelcomeScreen() {
       <AnimatePresence>
         {isDragging && (
           <motion.div
-            className="absolute inset-4 border-2 border-dashed border-primary/50 rounded-xl pointer-events-none"
+            className="pointer-events-none absolute inset-4 rounded-xl border-2 border-dashed border-primary/50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

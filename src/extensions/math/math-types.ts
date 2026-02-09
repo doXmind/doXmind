@@ -112,7 +112,12 @@ export const MATH_SYMBOLS: MathSymbol[] = [
   { id: "leftrightarrow", name: "Left-Right Arrow", latex: "\\leftrightarrow", category: "arrows" },
   { id: "Rightarrow", name: "Double Right Arrow", latex: "\\Rightarrow", category: "arrows" },
   { id: "Leftarrow", name: "Double Left Arrow", latex: "\\Leftarrow", category: "arrows" },
-  { id: "Leftrightarrow", name: "Double Left-Right", latex: "\\Leftrightarrow", category: "arrows" },
+  {
+    id: "Leftrightarrow",
+    name: "Double Left-Right",
+    latex: "\\Leftrightarrow",
+    category: "arrows",
+  },
   { id: "uparrow", name: "Up Arrow", latex: "\\uparrow", category: "arrows" },
   { id: "downarrow", name: "Down Arrow", latex: "\\downarrow", category: "arrows" },
   { id: "mapsto", name: "Maps To", latex: "\\mapsto", category: "arrows" },
@@ -130,8 +135,18 @@ export const MATH_SYMBOLS: MathSymbol[] = [
   { id: "bar", name: "Bar", latex: "\\bar{x}", category: "structures" },
   { id: "dot", name: "Dot", latex: "\\dot{x}", category: "structures" },
   { id: "ddot", name: "Double Dot", latex: "\\ddot{x}", category: "structures" },
-  { id: "matrix", name: "Matrix", latex: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}", category: "structures" },
-  { id: "bmatrix", name: "Bracket Matrix", latex: "\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}", category: "structures" },
+  {
+    id: "matrix",
+    name: "Matrix",
+    latex: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}",
+    category: "structures",
+  },
+  {
+    id: "bmatrix",
+    name: "Bracket Matrix",
+    latex: "\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}",
+    category: "structures",
+  },
 ];
 
 export const SYMBOL_CATEGORIES = [

@@ -32,7 +32,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "create-file",
     title: "Create a Document",
-    description: "Click here to create a new document. You can also import PDF, DOCX, or Markdown files.",
+    description:
+      "Click here to create a new document. You can also import PDF, DOCX, or Markdown files.",
     icon: <FileText className="h-5 w-5" />,
     targetSelector: '[aria-label="Create New File"]',
     position: "bottom",
@@ -41,7 +42,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "search",
     title: "Search Your Files",
-    description: "Use the search bar to find files by name or content. AI semantic search helps find related content.",
+    description:
+      "Use the search bar to find files by name or content. AI semantic search helps find related content.",
     icon: <Search className="h-5 w-5" />,
     targetSelector: '[aria-label="Search files"]',
     position: "bottom",
@@ -50,7 +52,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "ai-chat",
     title: "AI Chat Assistant",
-    description: "Click to open the AI chat panel. Ask questions, get writing suggestions, or let AI help improve your text.",
+    description:
+      "Click to open the AI chat panel. Ask questions, get writing suggestions, or let AI help improve your text.",
     icon: <MessageSquare className="h-5 w-5" />,
     targetSelector: '[aria-label="Show AI Chat"], [aria-label="Hide AI Chat"]',
     position: "left",
@@ -59,7 +62,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "knowledge-base",
     title: "Knowledge Base",
-    description: "Click the + button to upload reference documents (PDF, DOCX, PPTX). AI will search and reference them for more accurate answers.",
+    description:
+      "Click the + button to upload reference documents (PDF, DOCX, PPTX). AI will search and reference them for more accurate answers.",
     icon: <BookOpen className="h-5 w-5" />,
     targetSelector: '[aria-label="Add attachment"]',
     position: "top",
@@ -68,7 +72,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "shortcuts",
     title: "Keyboard Shortcuts",
-    description: "Press Ctrl+K for the command palette, Ctrl+? for all shortcuts. Use Ctrl+B for bold, Ctrl+I for italic.",
+    description:
+      "Press Ctrl+K for the command palette, Ctrl+? for all shortcuts. Use Ctrl+B for bold, Ctrl+I for italic.",
     icon: <Keyboard className="h-5 w-5" />,
     targetSelector: '[aria-label="Keyboard Shortcuts"]',
     position: "bottom",
@@ -150,8 +155,14 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
 
         // Keep tooltip in viewport
         const viewportPadding = 16;
-        top = Math.max(viewportPadding, Math.min(top, window.innerHeight - tooltipHeight - viewportPadding));
-        left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipWidth - viewportPadding));
+        top = Math.max(
+          viewportPadding,
+          Math.min(top, window.innerHeight - tooltipHeight - viewportPadding)
+        );
+        left = Math.max(
+          viewportPadding,
+          Math.min(left, window.innerWidth - tooltipWidth - viewportPadding)
+        );
 
         setTooltipPosition({ top, left });
       } else {
@@ -196,16 +207,16 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
 
   return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[60] pointer-events-none">
+      <div className="pointer-events-none fixed inset-0 z-[60]">
         {/* Backdrop with cutout for spotlight */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="absolute inset-0 pointer-events-auto"
+          className="pointer-events-auto absolute inset-0"
           onClick={handleSkip}
         >
-          <svg className="w-full h-full">
+          <svg className="h-full w-full">
             <defs>
               <mask id="spotlight-mask">
                 <rect x="0" y="0" width="100%" height="100%" fill="white" />
@@ -240,7 +251,7 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="absolute border-2 border-primary rounded-lg pointer-events-none"
+            className="pointer-events-none absolute rounded-lg border-2 border-primary"
             style={{
               top: targetRect.top - 8,
               left: targetRect.left - 8,
@@ -249,7 +260,7 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
             }}
           >
             {/* Pulsing ring */}
-            <div className="absolute inset-0 border-2 border-primary rounded-lg animate-ping opacity-50" />
+            <div className="absolute inset-0 animate-ping rounded-lg border-2 border-primary opacity-50" />
           </motion.div>
         )}
 
@@ -260,8 +271,8 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
           className={cn(
-            "absolute w-80 pointer-events-auto",
-            "bg-popover border border-border rounded-xl shadow-2xl",
+            "pointer-events-auto absolute w-80",
+            "rounded-xl border border-border bg-popover shadow-2xl",
             "overflow-hidden"
           )}
           style={{
@@ -273,9 +284,9 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
           <button
             onClick={handleSkip}
             className={cn(
-              "absolute top-3 right-3 p-1 rounded-full z-10",
+              "absolute right-3 top-3 z-10 rounded-full p-1",
               "text-muted-foreground hover:text-foreground",
-              "hover:bg-muted transition-colors"
+              "transition-colors hover:bg-muted"
             )}
             aria-label="Skip tour"
           >
@@ -298,14 +309,12 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
           {/* Content */}
           <div className="p-4 pt-3">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 {step.icon}
               </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-sm mb-1">{step.title}</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {step.description}
-                </p>
+              <div className="min-w-0 flex-1">
+                <h3 className="mb-1 text-sm font-semibold">{step.title}</h3>
+                <p className="text-xs leading-relaxed text-muted-foreground">{step.description}</p>
               </div>
             </div>
           </div>
@@ -318,7 +327,7 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
             <div className="flex items-center gap-2">
               {!isFirstStep && (
                 <Button variant="ghost" size="sm" onClick={handlePrev}>
-                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  <ChevronLeft className="mr-1 h-4 w-4" />
                   Back
                 </Button>
               )}
@@ -326,12 +335,12 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
                 {isLastStep ? (
                   <>
                     Done
-                    <Check className="h-4 w-4 ml-1" />
+                    <Check className="ml-1 h-4 w-4" />
                   </>
                 ) : (
                   <>
                     Next
-                    <ChevronRight className="h-4 w-4 ml-1" />
+                    <ChevronRight className="ml-1 h-4 w-4" />
                   </>
                 )}
               </Button>

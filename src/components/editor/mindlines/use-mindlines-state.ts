@@ -20,9 +20,7 @@ interface UseMindlinesStateReturn {
  * State machine hook for Mindlines component
  * Manages transitions between collapsed and expanded states
  */
-export function useMindlinesState(
-  options: UseMindlinesStateOptions = {}
-): UseMindlinesStateReturn {
+export function useMindlinesState(options: UseMindlinesStateOptions = {}): UseMindlinesStateReturn {
   const { defaultMode = "collapsed", onModeChange } = options;
 
   const [mode, setModeInternal] = useState<MindlinesMode>(defaultMode);

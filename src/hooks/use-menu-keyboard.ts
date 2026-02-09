@@ -59,15 +59,11 @@ export function useMenuKeyboard({
         switch (e.key) {
           case "ArrowDown":
             e.preventDefault();
-            setSubmenuFocusedIndex((prev) =>
-              prev < submenuItems.length - 1 ? prev + 1 : 0
-            );
+            setSubmenuFocusedIndex((prev) => (prev < submenuItems.length - 1 ? prev + 1 : 0));
             break;
           case "ArrowUp":
             e.preventDefault();
-            setSubmenuFocusedIndex((prev) =>
-              prev > 0 ? prev - 1 : submenuItems.length - 1
-            );
+            setSubmenuFocusedIndex((prev) => (prev > 0 ? prev - 1 : submenuItems.length - 1));
             break;
           case "ArrowLeft":
           case "Escape":

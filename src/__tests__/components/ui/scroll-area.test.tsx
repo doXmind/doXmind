@@ -116,7 +116,11 @@ describe("ScrollArea", () => {
     });
 
     it("accepts id prop", () => {
-      render(<ScrollArea id="my-scroll-area" data-testid="scroll-area">Content</ScrollArea>);
+      render(
+        <ScrollArea id="my-scroll-area" data-testid="scroll-area">
+          Content
+        </ScrollArea>
+      );
       const scrollArea = screen.getByTestId("scroll-area");
       expect(scrollArea).toHaveAttribute("id", "my-scroll-area");
     });
@@ -185,7 +189,7 @@ describe("ScrollArea", () => {
         <ScrollArea orientation="horizontal" className="w-96" data-testid="scroll-area">
           <div className="flex gap-4">
             {Array.from({ length: 10 }, (_, i) => (
-              <div key={i} className="w-48 h-32 flex-shrink-0" data-testid={`image-${i}`}>
+              <div key={i} className="h-32 w-48 flex-shrink-0" data-testid={`image-${i}`}>
                 Image {i + 1}
               </div>
             ))}

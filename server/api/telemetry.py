@@ -75,6 +75,7 @@ class TelemetryEventData(BaseModel):
     autocomplete_dismisses: int | None = None
     edit_type: str | None = None
     success: bool | None = None
+    metadata: dict | None = None
 
 
 class TelemetryEventsRequest(BaseModel):
@@ -123,8 +124,8 @@ def extract_rlhf_fields(event: TelemetryEventData) -> tuple[str | None, str | No
         # User rejected AI suggestion: original wins
         return event.original_content, event.ai_suggestion, None
 
-    # Chat feedback
-    elif event_type == "chat_feedback":
+    # Chat feedback / KB feedback
+    elif event_type in ("chat_feedback", "kb_feedback"):
         if event.rating == "positive":
             return event.ai_response, None, event.user_prompt
         elif event.rating == "negative":
@@ -190,7 +191,7 @@ async def submit_events(
             ):
                 if not settings.collect_edit_feedback:
                     continue
-            elif event_type.startswith("chat_"):
+            elif event_type.startswith("chat_") or event_type.startswith("kb_"):
                 if not settings.collect_chat_feedback:
                     continue
             elif event_type.startswith("autocomplete_"):

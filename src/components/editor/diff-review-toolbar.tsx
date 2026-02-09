@@ -30,9 +30,9 @@ export function DiffReviewToolbar({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       className={cn(
-        "flex items-center bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800",
+        "flex items-center border-b border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30",
         // Desktop: normal padding
         "gap-3 px-4 py-2",
         // Mobile: compact styling (not fixed - stays in document flow)
@@ -40,23 +40,22 @@ export function DiffReviewToolbar({
       )}
     >
       {/* Status indicator with pulse */}
-      <div className={cn(
-        "flex items-center gap-2",
-        isMobile ? "text-xs" : "text-sm"
-      )}>
+      <div className={cn("flex items-center gap-2", isMobile ? "text-xs" : "text-sm")}>
         <div className="relative">
-          <Eye className={cn(
-            "text-amber-600 dark:text-amber-400",
-            isMobile ? "h-3.5 w-3.5" : "h-4 w-4"
-          )} />
+          <Eye
+            className={cn(
+              "text-amber-600 dark:text-amber-400",
+              isMobile ? "h-3.5 w-3.5" : "h-4 w-4"
+            )}
+          />
           <motion.span
             className={cn(
-              "absolute bg-amber-500 rounded-full",
-              isMobile ? "-top-0.5 -right-0.5 h-1.5 w-1.5" : "-top-0.5 -right-0.5 h-2 w-2"
+              "absolute rounded-full bg-amber-500",
+              isMobile ? "-right-0.5 -top-0.5 h-1.5 w-1.5" : "-right-0.5 -top-0.5 h-2 w-2"
             )}
             animate={{
               scale: [1, 1.2, 1],
-              opacity: [1, 0.7, 1]
+              opacity: [1, 0.7, 1],
             }}
             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
           />
@@ -70,7 +69,8 @@ export function DiffReviewToolbar({
           animate={{ scale: 1 }}
           className="text-amber-600 dark:text-amber-400"
         >
-          {pendingCount} {isMobile ? "" : "change"}{isMobile ? "" : (pendingCount !== 1 ? "s" : "")} pending
+          {pendingCount} {isMobile ? "" : "change"}
+          {isMobile ? "" : pendingCount !== 1 ? "s" : ""} pending
         </motion.span>
       </div>
 
@@ -83,9 +83,9 @@ export function DiffReviewToolbar({
         onClick={onRejectAll}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+        transition={{ type: "spring", stiffness: 400, damping: 20 }}
         className={cn(
-          "inline-flex items-center font-medium rounded-md",
+          "inline-flex items-center rounded-md font-medium",
           "text-red-600 dark:text-red-400",
           "hover:text-red-700 dark:hover:text-red-300",
           "hover:bg-red-100 dark:hover:bg-red-900/30",
@@ -93,7 +93,7 @@ export function DiffReviewToolbar({
           isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
         )}
       >
-        <X className={cn(isMobile ? "h-3.5 w-3.5" : "h-4 w-4 mr-1")} />
+        <X className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-4 w-4")} />
         {!isMobile && "Reject All"}
       </motion.button>
 
@@ -102,16 +102,16 @@ export function DiffReviewToolbar({
         onClick={onAcceptAll}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+        transition={{ type: "spring", stiffness: 400, damping: 20 }}
         className={cn(
-          "inline-flex items-center font-medium rounded-md text-white",
+          "inline-flex items-center rounded-md font-medium text-white",
           "bg-green-600 hover:bg-green-700",
           "dark:bg-green-700 dark:hover:bg-green-600",
           "transition-colors",
           isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
         )}
       >
-        <Check className={cn(isMobile ? "h-3.5 w-3.5" : "h-4 w-4 mr-1")} />
+        <Check className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-4 w-4")} />
         {!isMobile && "Accept All"}
       </motion.button>
     </motion.div>

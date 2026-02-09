@@ -57,7 +57,7 @@ export function LanguageSelector({ value, onChange }: LanguageSelectorProps) {
           variant="ghost"
           size="sm"
           onClick={() => handleOpenChange(!open)}
-          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+          className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           {getLanguageDisplayName(value)}
           <ChevronDown className="h-3 w-3" />
@@ -67,7 +67,7 @@ export function LanguageSelector({ value, onChange }: LanguageSelectorProps) {
         {/* Search Input */}
         <div className="px-2 py-2">
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search language..."
               value={search}

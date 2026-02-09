@@ -104,7 +104,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       const [filesRes, docRes] = await Promise.all([
         api.searchFiles(searchQuery, undefined, 10, controller.signal).catch(() => null),
         currentFileId
-          ? api.searchInDocument(searchQuery, currentFileId, 10, 0.4, controller.signal).catch(() => null)
+          ? api
+              .searchInDocument(searchQuery, currentFileId, 10, 0.4, controller.signal)
+              .catch(() => null)
           : Promise.resolve(null),
       ]);
 
@@ -489,7 +491,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           <button
             type="button"
             onClick={onClose}
-            className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -498,14 +500,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
         {/* Search status */}
         {isSearching && (
-          <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground border-b border-border">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             Searching...
           </div>
         )}
 
         {searchError && (
-          <div className="flex items-center gap-2 px-4 py-2 text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 border-b border-border">
+          <div className="flex items-center gap-2 border-b border-border bg-yellow-50 px-4 py-2 text-xs text-yellow-600 dark:bg-yellow-900/20">
             <AlertTriangle className="h-3 w-3" />
             <span className="flex-1">{searchError}</span>
             <button
@@ -555,16 +557,16 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       onMouseEnter={() => setSelectedIndex(currentIndex)}
                     >
                       <span className="flex-shrink-0 text-muted-foreground">{cmd.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <span className="truncate block text-left">{cmd.label}</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-left">{cmd.label}</span>
                         {cmd.preview && (
-                          <span className="text-xs text-muted-foreground truncate block text-left">
+                          <span className="block truncate text-left text-xs text-muted-foreground">
                             {cmd.preview}
                           </span>
                         )}
                       </div>
                       {cmd.score !== undefined && (
-                        <span className="text-xs text-muted-foreground flex-shrink-0">
+                        <span className="flex-shrink-0 text-xs text-muted-foreground">
                           {cmd.score}%
                         </span>
                       )}

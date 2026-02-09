@@ -57,11 +57,7 @@ export function computeDiffHunks(
       // Position finding will be handled by the diff-review-extension using findTextInDocument
 
       const hunkType: DiffChangeType =
-        edit.new_str === ""
-          ? "delete"
-          : edit.old_str === ""
-            ? "insert"
-            : "replace";
+        edit.new_str === "" ? "delete" : edit.old_str === "" ? "insert" : "replace";
 
       // Use a placeholder position - the actual position will be found
       // by findTextInDocument in diff-review-extension.ts when rendering

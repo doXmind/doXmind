@@ -193,7 +193,7 @@ export function PanelContainer({
         className={cn(getHandleStyles(), "cursor-grab touch-none active:cursor-grabbing")}
         onPointerDown={(e) => dragControls.start(e)}
       >
-        <div className="w-1 h-10 rounded-full bg-border" />
+        <div className="h-10 w-1 rounded-full bg-border" />
       </div>
     );
   };

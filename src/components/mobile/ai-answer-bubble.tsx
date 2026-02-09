@@ -96,7 +96,8 @@ export function AIAnswerBubble({
                 "bg-background/95 backdrop-blur-2xl",
                 "border border-border/50",
                 "shadow-[0_8px_40px_rgba(0,0,0,0.12)]",
-                "ring-1 ring-black/5"
+                "ring-1 ring-black/5",
+                isLoading && "border-primary/30"
               )}
             >
               {/* Header */}
@@ -144,22 +145,24 @@ export function AIAnswerBubble({
 
               {/* User Question Context */}
               {(userQuestion || selectedContext) && (
-                <div className="border-b border-border/30 px-4 py-2 bg-muted/30">
+                <div className="border-b border-border/30 bg-muted/30 px-4 py-2.5">
                   {userQuestion && (
-                    <p className="text-xs text-muted-foreground truncate">
+                    <p className="line-clamp-3 text-xs text-muted-foreground">
                       <span className="font-medium">Q:</span> {userQuestion}
                     </p>
                   )}
                   {selectedContext && (
-                    <p className="text-xs text-muted-foreground/70 truncate mt-0.5">
-                      <span className="font-medium">Context:</span> &quot;{selectedContext.slice(0, 50)}{selectedContext.length > 50 ? "..." : ""}&quot;
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/70">
+                      <span className="font-medium">Context:</span> &quot;
+                      {selectedContext.slice(0, 120)}
+                      {selectedContext.length > 120 ? "..." : ""}&quot;
                     </p>
                   )}
                 </div>
               )}
 
               {/* Content */}
-              <div className="max-h-[300px] min-h-[60px] overflow-y-auto p-4">
+              <div className="max-h-[50vh] min-h-[60px] overflow-y-auto p-4">
                 {isLoading && !response ? (
                   <div className="flex flex-col gap-2">
                     {/* Thinking dots */}
@@ -187,12 +190,12 @@ export function AIAnswerBubble({
                 ) : (
                   <div className="relative">
                     <div
-                      className="prose prose-sm max-w-none dark:prose-invert text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                      className="prose prose-sm max-w-none text-foreground dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
                       dangerouslySetInnerHTML={{ __html: htmlContent }}
                     />
                     {/* Streaming cursor indicator */}
                     {isLoading && response && (
-                      <span className="inline-block w-2 h-4 bg-primary/60 animate-pulse ml-0.5 align-middle" />
+                      <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-primary/60 align-middle" />
                     )}
                   </div>
                 )}
@@ -200,18 +203,19 @@ export function AIAnswerBubble({
 
               {/* Footer - View Chat button */}
               {!isLoading && response && onViewChat && (
-                <div className="border-t border-border/30 px-4 py-2">
+                <div className="border-t border-border/30 px-4 py-2.5">
                   <button
                     type="button"
                     onClick={handleViewChat}
                     className={cn(
-                      "flex w-full items-center justify-center gap-1",
-                      "py-1 text-xs font-medium text-muted-foreground",
-                      "transition-colors hover:text-foreground"
+                      "flex w-full items-center justify-center gap-1.5",
+                      "rounded-lg bg-muted/50 py-2.5 text-sm font-medium text-muted-foreground",
+                      "transition-colors hover:bg-muted hover:text-foreground",
+                      "active:scale-[0.98]"
                     )}
                   >
                     <span>View full chat</span>
-                    <ChevronDown className="h-3 w-3" />
+                    <ChevronDown className="h-4 w-4" />
                   </button>
                 </div>
               )}

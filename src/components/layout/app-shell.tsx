@@ -12,7 +12,7 @@ export function AppShell({ children, hideHeader = false }: AppShellProps) {
     <div
       className="flex flex-col bg-background"
       style={{
-        height: '100dvh'
+        height: "100dvh",
       }}
     >
       {!hideHeader && <Header />}

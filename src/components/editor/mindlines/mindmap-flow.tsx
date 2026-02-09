@@ -15,14 +15,20 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowDownUp, Expand, Shrink, RotateCcw, ZoomIn, ZoomOut, Maximize, Minimize2, X } from "lucide-react";
+import {
+  ArrowDownUp,
+  Expand,
+  Shrink,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  Minimize2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  MINDMAP_FIT_VIEW,
-  MINDMAP_CENTER_VIEW,
-  ANIMATION_DURATION,
-} from "@/lib/constants";
+import { MINDMAP_FIT_VIEW, MINDMAP_CENTER_VIEW, ANIMATION_DURATION } from "@/lib/constants";
 import { useOutlineStore } from "@/stores/outline-store";
 import { useFileStore } from "@/stores/file-store";
 import { HeadingNode } from "./flow-nodes/heading-node";
@@ -50,18 +56,19 @@ interface MindmapFlowProps {
 /**
  * Inner component that uses React Flow hooks
  */
-function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClose }: MindmapFlowProps) {
+function MindmapFlowInner({
+  headings,
+  activeId,
+  onNodeClick,
+  onToggleView,
+  onClose,
+}: MindmapFlowProps) {
   const { fitView, setCenter, getNode, zoomIn, zoomOut } = useReactFlow();
   const { currentFileId } = useFileStore();
   const documentId = currentFileId || "default";
 
   // Use shared store for collapsed nodes
-  const {
-    setCollapsed,
-    toggleCollapse,
-    selectedNodeId,
-    setSelectedNode,
-  } = useOutlineStore();
+  const { setCollapsed, toggleCollapse, selectedNodeId, setSelectedNode } = useOutlineStore();
 
   // Get raw collapsed nodes array from store (stable reference)
   const collapsedNodesArray = useOutlineStore(
@@ -69,10 +76,7 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
   );
 
   // Create Set from array for use in components
-  const collapsedNodes = useMemo(
-    () => new Set(collapsedNodesArray),
-    [collapsedNodesArray]
-  );
+  const collapsedNodes = useMemo(() => new Set(collapsedNodesArray), [collapsedNodesArray]);
 
   // Initialize collapsed nodes on first render if empty
   useEffect(() => {
@@ -314,9 +318,7 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
         </Button>
 
         {/* Separator */}
-        {(onToggleView || onClose) && (
-          <div className="w-px h-8 bg-border/50 mx-1" />
-        )}
+        {(onToggleView || onClose) && <div className="mx-1 h-8 w-px bg-border/50" />}
 
         {/* Toggle to outline view */}
         {onToggleView && (
@@ -377,7 +379,10 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
       </Panel>
 
       {/* Keyboard shortcuts hint - bottom center */}
-      <Panel position="bottom-center" className="text-xs text-muted-foreground bg-background/60 backdrop-blur-sm px-2 py-1 rounded mb-2">
+      <Panel
+        position="bottom-center"
+        className="mb-2 rounded bg-background/60 px-2 py-1 text-xs text-muted-foreground backdrop-blur-sm"
+      >
         <span className="opacity-70">
           Click to select • Double-click to go • Space to collapse • ↑↓ Navigate
         </span>
@@ -389,7 +394,7 @@ function MindmapFlowInner({ headings, activeId, onNodeClick, onToggleView, onClo
         zoomable
         nodeStrokeWidth={3}
         position="bottom-right"
-        className="!bg-background/80 !backdrop-blur-sm !border !shadow-sm"
+        className="!border !bg-background/80 !shadow-sm !backdrop-blur-sm"
         maskColor="hsl(var(--background) / 0.8)"
       />
     </ReactFlow>

@@ -89,28 +89,28 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
       ref={containerRef}
       className={cn(
         "symbol-picker absolute z-50",
-        "top-full left-0 mt-2",
-        "w-80 max-h-96",
-        "border border-border rounded-lg bg-popover shadow-xl",
+        "left-0 top-full mt-2",
+        "max-h-96 w-80",
+        "rounded-lg border border-border bg-popover shadow-xl",
         "animate-in fade-in-0 slide-in-from-top-2 duration-150"
       )}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <span className="text-sm font-medium">Insert Symbol</span>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
       {/* Search */}
-      <div className="p-2 border-b border-border">
+      <div className="border-b border-border p-2">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             ref={searchInputRef}
             type="text"
@@ -118,8 +118,8 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={cn(
-              "w-full pl-9 pr-3 py-1.5 text-base md:text-sm",
-              "bg-background border border-input rounded-md",
+              "w-full py-1.5 pl-9 pr-3 text-base md:text-sm",
+              "rounded-md border border-input bg-background",
               "focus:outline-none focus:ring-2 focus:ring-ring",
               "placeholder:text-muted-foreground"
             )}
@@ -129,16 +129,16 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
 
       {/* Category tabs */}
       {!search.trim() && (
-        <div className="flex gap-1 p-2 border-b border-border overflow-x-auto scrollbar-thin">
+        <div className="scrollbar-thin flex gap-1 overflow-x-auto border-b border-border p-2">
           {SYMBOL_CATEGORIES.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setCategory(cat.id)}
               className={cn(
-                "px-2 py-1 text-xs rounded whitespace-nowrap transition-colors",
+                "whitespace-nowrap rounded px-2 py-1 text-xs transition-colors",
                 category === cat.id
                   ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >
               {cat.name}
@@ -148,11 +148,9 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
       )}
 
       {/* Symbol grid */}
-      <div className="p-2 max-h-48 overflow-y-auto">
+      <div className="max-h-48 overflow-y-auto p-2">
         {filteredSymbols.length === 0 ? (
-          <div className="text-center py-4 text-sm text-muted-foreground">
-            No symbols found
-          </div>
+          <div className="py-4 text-center text-sm text-muted-foreground">No symbols found</div>
         ) : (
           <div className="grid grid-cols-5 gap-1">
             {filteredSymbols.map((symbol) => (
@@ -161,7 +159,7 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
                 onClick={() => onSelect(symbol.latex)}
                 title={`${symbol.name}\n${symbol.latex}`}
                 className={cn(
-                  "p-2 rounded text-center transition-colors",
+                  "rounded p-2 text-center transition-colors",
                   "hover:bg-accent focus:bg-accent focus:outline-none",
                   "text-lg"
                 )}
@@ -178,7 +176,7 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
       </div>
 
       {/* Footer hint */}
-      <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground">
+      <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
         Click a symbol to insert • Hover for LaTeX code
       </div>
     </div>

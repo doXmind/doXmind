@@ -54,12 +54,7 @@ export function VoiceWaveform({
   }, [audioLevel, barCount, isActive]);
 
   return (
-    <div
-      className={cn(
-        "voice-waveform flex items-center justify-center gap-[3px]",
-        className
-      )}
-    >
+    <div className={cn("voice-waveform flex items-center justify-center gap-[3px]", className)}>
       {barHeights.map((height, index) => (
         <motion.div
           key={index}
@@ -95,15 +90,12 @@ interface RecordingIndicatorProps {
   className?: string;
 }
 
-export function RecordingIndicator({
-  isRecording,
-  className,
-}: RecordingIndicatorProps) {
+export function RecordingIndicator({ isRecording, className }: RecordingIndicatorProps) {
   return (
     <motion.div
       className={cn(
-        "w-3 h-3 rounded-full",
-        isRecording ? "bg-destructive recording-indicator" : "bg-muted-foreground/30",
+        "h-3 w-3 rounded-full",
+        isRecording ? "recording-indicator bg-destructive" : "bg-muted-foreground/30",
         className
       )}
       animate={

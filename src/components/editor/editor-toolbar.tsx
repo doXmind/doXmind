@@ -81,15 +81,11 @@ export function EditorToolbar({
   };
 
   const addTable = () => {
-    editor
-      .chain()
-      .focus()
-      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-      .run();
+    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
   };
 
   return (
-    <div className="border-b border-border px-4 py-2 flex items-center gap-1 flex-wrap bg-card">
+    <div className="flex flex-wrap items-center gap-1 border-b border-border bg-card px-4 py-2">
       {/* History */}
       <ToolbarGroup>
         <ToolbarButton
@@ -148,25 +144,19 @@ export function EditorToolbar({
       <ToolbarGroup>
         <ToolbarButton
           icon={<Heading1 className="h-4 w-4" />}
-          onClick={() =>
-            editor.chain().focus().toggleHeading({ level: 1 }).run()
-          }
+          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           isActive={editor.isActive("heading", { level: 1 })}
           tooltip="Heading 1 (Ctrl+Alt+1)"
         />
         <ToolbarButton
           icon={<Heading2 className="h-4 w-4" />}
-          onClick={() =>
-            editor.chain().focus().toggleHeading({ level: 2 }).run()
-          }
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           isActive={editor.isActive("heading", { level: 2 })}
           tooltip="Heading 2 (Ctrl+Alt+2)"
         />
         <ToolbarButton
           icon={<Heading3 className="h-4 w-4" />}
-          onClick={() =>
-            editor.chain().focus().toggleHeading({ level: 3 }).run()
-          }
+          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           isActive={editor.isActive("heading", { level: 3 })}
           tooltip="Heading 3 (Ctrl+Alt+3)"
         />
@@ -284,17 +274,14 @@ export function EditorToolbar({
             size="sm"
             onClick={() => onReviewClick?.()}
             disabled={isReviewLoading}
-            className={cn(
-              "h-8 gap-1.5 px-2",
-              isReviewActive && "bg-primary/10 text-primary"
-            )}
+            className={cn("h-8 gap-1.5 px-2", isReviewActive && "bg-primary/10 text-primary")}
           >
             {isReviewLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <FileSearch className="h-4 w-4" />
             )}
-            <span className="text-xs hidden sm:inline">Review</span>
+            <span className="hidden text-xs sm:inline">Review</span>
           </Button>
         </Tooltip>
       </ToolbarGroup>
@@ -304,18 +291,22 @@ export function EditorToolbar({
       {/* AI Autocomplete Toggle */}
       <ToolbarGroup>
         <DropdownMenu>
-          <Tooltip content={autocompleteEnabled ? `AI Autocomplete: ${autocompleteTriggerMode === "auto" ? "Auto" : "Manual (Alt+/)"}` : "AI Autocomplete: Off"} side="bottom">
+          <Tooltip
+            content={
+              autocompleteEnabled
+                ? `AI Autocomplete: ${autocompleteTriggerMode === "auto" ? "Auto" : "Manual (Alt+/)"}`
+                : "AI Autocomplete: Off"
+            }
+            side="bottom"
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className={cn(
-                  "h-8 gap-1 px-2",
-                  autocompleteEnabled && "text-primary"
-                )}
+                className={cn("h-8 gap-1 px-2", autocompleteEnabled && "text-primary")}
               >
                 <Sparkles className="h-4 w-4" />
-                <span className="text-xs hidden sm:inline">
+                <span className="hidden text-xs sm:inline">
                   {autocompleteEnabled
                     ? autocompleteTriggerMode === "auto"
                       ? "Auto"
@@ -336,11 +327,9 @@ export function EditorToolbar({
                 autocompleteEnabled && autocompleteTriggerMode === "auto" && "bg-accent"
               )}
             >
-              <Sparkles className="h-4 w-4 mr-2" />
+              <Sparkles className="mr-2 h-4 w-4" />
               Auto
-              <span className="ml-auto text-xs text-muted-foreground">
-                Auto-trigger
-              </span>
+              <span className="ml-auto text-xs text-muted-foreground">Auto-trigger</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
@@ -351,17 +340,15 @@ export function EditorToolbar({
                 autocompleteEnabled && autocompleteTriggerMode === "manual" && "bg-accent"
               )}
             >
-              <Sparkles className="h-4 w-4 mr-2" />
+              <Sparkles className="mr-2 h-4 w-4" />
               Manual
-              <span className="ml-auto text-xs text-muted-foreground">
-                Alt+/
-              </span>
+              <span className="ml-auto text-xs text-muted-foreground">Alt+/</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setAutocompleteEnabled(false)}
               className={cn(!autocompleteEnabled && "bg-accent")}
             >
-              <Sparkles className="h-4 w-4 mr-2 opacity-50" />
+              <Sparkles className="mr-2 h-4 w-4 opacity-50" />
               Off
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -376,7 +363,7 @@ function ToolbarGroup({ children }: { children: React.ReactNode }) {
 }
 
 function ToolbarDivider() {
-  return <div className="w-px h-6 bg-border mx-2" />;
+  return <div className="mx-2 h-6 w-px bg-border" />;
 }
 
 interface ToolbarButtonProps {
@@ -387,13 +374,7 @@ interface ToolbarButtonProps {
   tooltip: string;
 }
 
-function ToolbarButton({
-  icon,
-  onClick,
-  isActive,
-  disabled,
-  tooltip,
-}: ToolbarButtonProps) {
+function ToolbarButton({ icon, onClick, isActive, disabled, tooltip }: ToolbarButtonProps) {
   return (
     <Tooltip content={tooltip} side="bottom">
       <Button
@@ -402,10 +383,7 @@ function ToolbarButton({
         onClick={onClick}
         disabled={disabled}
         aria-label={tooltip}
-        className={cn(
-          "h-8 w-8",
-          isActive && "bg-accent text-accent-foreground"
-        )}
+        className={cn("h-8 w-8", isActive && "bg-accent text-accent-foreground")}
       >
         {icon}
       </Button>

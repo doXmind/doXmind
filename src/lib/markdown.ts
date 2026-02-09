@@ -186,7 +186,8 @@ export function isHtml(content: string): boolean {
 
   // Check for common HTML tags that wouldn't appear in Markdown
   // We're looking for opening tags like <p>, <div>, <table>, <h1>, etc.
-  const htmlTagPattern = /<(p|div|span|table|tr|td|th|thead|tbody|ul|ol|li|h[1-6]|br|hr|img|a|strong|em|code|pre|blockquote)(\s[^>]*)?\/?>/i;
+  const htmlTagPattern =
+    /<(p|div|span|table|tr|td|th|thead|tbody|ul|ol|li|h[1-6]|br|hr|img|a|strong|em|code|pre|blockquote)(\s[^>]*)?\/?>/i;
 
   return htmlTagPattern.test(content);
 }
@@ -237,11 +238,7 @@ export function markdownToPlainText(markdown: string): string {
       // Walk through all nodes and build text content
       // ProseMirror preserves newlines in <pre>/<code> but not between blocks
       let result = "";
-      const walker = document.createTreeWalker(
-        temp,
-        NodeFilter.SHOW_TEXT,
-        null
-      );
+      const walker = document.createTreeWalker(temp, NodeFilter.SHOW_TEXT, null);
 
       let node: Node | null;
       while ((node = walker.nextNode())) {
@@ -272,17 +269,20 @@ export function markdownToPlainText(markdown: string): string {
     // Fallback for SSR: more complex handling needed
     // Extract code blocks first, preserve their newlines
     const codeBlocks: string[] = [];
-    let processed = html.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_, content) => {
-      const decoded = content
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"');
-      const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
-      codeBlocks.push(decoded);
-      return placeholder;
-    });
+    let processed = html.replace(
+      /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi,
+      (_, content) => {
+        const decoded = content
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"');
+        const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+        codeBlocks.push(decoded);
+        return placeholder;
+      }
+    );
 
     // Process rest of HTML
     processed = processed

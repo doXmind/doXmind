@@ -24,43 +24,40 @@ export function ThinkingIndicator({ thinking }: ThinkingIndicatorProps) {
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className="ml-11 mb-2"
+      className="mb-2 ml-2 md:ml-11"
     >
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors duration-200 w-full text-left",
+          "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-sm transition-colors duration-200 md:px-3 md:py-2",
           thinking.isThinking
-            ? "bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400"
-            : "bg-purple-500/5 border-purple-500/15 text-purple-600/70 dark:text-purple-400/70"
+            ? "border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400"
+            : "border-purple-500/15 bg-purple-500/5 text-purple-600/70 dark:text-purple-400/70"
         )}
       >
         <div className="relative flex-shrink-0">
           <Brain className="h-4 w-4" />
           {thinking.isThinking && (
             <motion.span
-              className="absolute -top-1 -right-1 h-2 w-2 bg-purple-500 rounded-full"
+              className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-purple-500"
               animate={{
                 scale: [1, 1.3, 1],
                 boxShadow: [
-                  '0 0 0 0 rgba(168, 85, 247, 0.4)',
-                  '0 0 0 6px rgba(168, 85, 247, 0)',
-                  '0 0 0 0 rgba(168, 85, 247, 0.4)'
-                ]
+                  "0 0 0 0 rgba(168, 85, 247, 0.4)",
+                  "0 0 0 6px rgba(168, 85, 247, 0)",
+                  "0 0 0 0 rgba(168, 85, 247, 0.4)",
+                ],
               }}
               transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
             />
           )}
         </div>
-        <span className="font-medium truncate flex-1">
+        <span className="flex-1 truncate font-medium">
           {thinking.isThinking ? "Thinking..." : "Thought process"}
         </span>
         {thinking.isThinking && <Loader2 className="h-3 w-3 animate-spin" />}
-        <motion.span
-          animate={{ rotate: isExpanded ? 90 : 0 }}
-          transition={{ duration: 0.2 }}
-        >
+        <motion.span animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.2 }}>
           <ChevronRight className="h-4 w-4 flex-shrink-0" />
         </motion.span>
       </button>
@@ -68,12 +65,12 @@ export function ThinkingIndicator({ thinking }: ThinkingIndicatorProps) {
         {isExpanded && thinking.content && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
+            animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
             className="overflow-hidden"
           >
-            <div className="mt-1 px-3 py-2 text-xs text-muted-foreground bg-muted/50 rounded-lg border border-border/50 max-h-[200px] overflow-y-auto whitespace-pre-wrap">
+            <div className="mt-1 max-h-[200px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/50 bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
               {thinking.content}
             </div>
           </motion.div>

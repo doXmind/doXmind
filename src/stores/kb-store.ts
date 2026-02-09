@@ -55,18 +55,16 @@ export const useKBStore = create<KBState>()(
       try {
         const data = await api.listKBAttachments(conversationId);
 
-        const attachments = data.attachments.map(
-          (att) => ({
-            id: att.id,
-            originalFilename: att.original_filename,
-            fileType: att.file_type as "pdf" | "docx" | "pptx",
-            fileSize: att.file_size,
-            status: att.status as KBAttachment["status"],
-            chunkCount: att.chunk_count,
-            errorMessage: att.error_message,
-            createdAt: att.created_at,
-          })
-        );
+        const attachments = data.attachments.map((att) => ({
+          id: att.id,
+          originalFilename: att.original_filename,
+          fileType: att.file_type as "pdf" | "docx" | "pptx",
+          fileSize: att.file_size,
+          status: att.status as KBAttachment["status"],
+          chunkCount: att.chunk_count,
+          errorMessage: att.error_message,
+          createdAt: att.created_at,
+        }));
 
         set((state) => {
           state.attachmentsByConversation[conversationId] = attachments;
@@ -260,7 +258,9 @@ export const useKBStore = create<KBState>()(
           }
         });
 
-        log.info(`Batch upload completed: ${response.successful} successful, ${response.failed} failed`);
+        log.info(
+          `Batch upload completed: ${response.successful} successful, ${response.failed} failed`
+        );
 
         // Refresh from server to ensure consistency (handles race condition with concurrent loadAttachments)
         await get().loadAttachments(conversationId);
@@ -348,18 +348,16 @@ export const useKBStore = create<KBState>()(
         try {
           const data = await api.listKBAttachments(conversationId);
 
-          const attachments = data.attachments.map(
-            (att) => ({
-              id: att.id,
-              originalFilename: att.original_filename,
-              fileType: att.file_type as "pdf" | "docx" | "pptx",
-              fileSize: att.file_size,
-              status: att.status as KBAttachment["status"],
-              chunkCount: att.chunk_count,
-              errorMessage: att.error_message,
-              createdAt: att.created_at,
-            })
-          );
+          const attachments = data.attachments.map((att) => ({
+            id: att.id,
+            originalFilename: att.original_filename,
+            fileType: att.file_type as "pdf" | "docx" | "pptx",
+            fileSize: att.file_size,
+            status: att.status as KBAttachment["status"],
+            chunkCount: att.chunk_count,
+            errorMessage: att.error_message,
+            createdAt: att.created_at,
+          }));
 
           set((state) => {
             state.attachmentsByConversation[conversationId] = attachments;
@@ -370,7 +368,9 @@ export const useKBStore = create<KBState>()(
             (att) => att.status === "processing" || att.status === "uploading"
           );
           if (!hasProcessing) {
-            log.info(`All attachments processed for conversation ${conversationId}, stopping polling`);
+            log.info(
+              `All attachments processed for conversation ${conversationId}, stopping polling`
+            );
             get().stopPolling(conversationId);
           }
         } catch (error) {

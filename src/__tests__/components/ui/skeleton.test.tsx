@@ -199,7 +199,12 @@ describe("Skeleton", () => {
   describe("Accessibility", () => {
     it("can be wrapped with accessible container for screen readers", () => {
       render(
-        <div role="progressbar" aria-label="Loading content" aria-busy="true" data-testid="loading-container">
+        <div
+          role="progressbar"
+          aria-label="Loading content"
+          aria-busy="true"
+          data-testid="loading-container"
+        >
           <Skeleton className="h-4 w-full" />
         </div>
       );

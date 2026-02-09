@@ -2,19 +2,9 @@
 
 import { useCallback, useRef } from "react";
 import { Editor } from "@tiptap/react";
-import {
-  extractTextWithPositions,
-  mapOffsetToPosition,
-} from "@/extensions/spellcheck-extension";
-import type {
-  ReviewSuggestion,
-  ReviewCategory,
-} from "@/extensions/text-review-extension";
-import {
-  processSSEStream,
-  isAbortError,
-  createStreamController,
-} from "@/lib/streaming";
+import { extractTextWithPositions, mapOffsetToPosition } from "@/extensions/spellcheck-extension";
+import type { ReviewSuggestion, ReviewCategory } from "@/extensions/text-review-extension";
+import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { API_BASE_URL, MIN_REVIEW_DOCUMENT_LENGTH } from "@/lib/constants";
 import { api } from "@/lib/api";
 
@@ -112,7 +102,9 @@ export function useTextReview({
         const docSize = editor.state.doc.content.size;
 
         // Convert API suggestions to ReviewSuggestions with mapped positions
-        const suggestions: ReviewSuggestion[] = (result as { suggestions: APISuggestion[]; summary: string }).suggestions
+        const suggestions: ReviewSuggestion[] = (
+          result as { suggestions: APISuggestion[]; summary: string }
+        ).suggestions
           .map((s: APISuggestion, index: number): ReviewSuggestion | null => {
             // Map text offsets to ProseMirror positions
             const from = mapOffsetToPosition(posMap, s.start_offset);
@@ -146,19 +138,23 @@ export function useTextReview({
               status: "pending",
             };
           })
-          .filter(
-            (s: ReviewSuggestion | null): s is ReviewSuggestion => s !== null
-          );
+          .filter((s: ReviewSuggestion | null): s is ReviewSuggestion => s !== null);
 
         // Set suggestions in editor
-        editor.commands.setReviewSuggestions(suggestions, (result as { suggestions: APISuggestion[]; summary: string }).summary);
+        editor.commands.setReviewSuggestions(
+          suggestions,
+          (result as { suggestions: APISuggestion[]; summary: string }).summary
+        );
 
         const reviewResult: ReviewResult = {
           suggestions,
           summary: (result as { suggestions: APISuggestion[]; summary: string }).summary,
         };
 
-        onReviewComplete?.(suggestions.length, (result as { suggestions: APISuggestion[]; summary: string }).summary);
+        onReviewComplete?.(
+          suggestions.length,
+          (result as { suggestions: APISuggestion[]; summary: string }).summary
+        );
 
         isReviewingRef.current = false;
         return reviewResult;

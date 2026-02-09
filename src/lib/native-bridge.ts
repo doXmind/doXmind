@@ -131,13 +131,10 @@ export const nativeBridge = {
 /**
  * Listen for messages from React Native
  */
-export function onNativeMessage(
-  handler: (type: string, payload: unknown) => void
-): () => void {
+export function onNativeMessage(handler: (type: string, payload: unknown) => void): () => void {
   const listener = (event: MessageEvent) => {
     try {
-      const data =
-        typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
       if (data.type) {
         handler(data.type, data.payload || {});
       }
@@ -184,6 +181,6 @@ export function requestFromNative<T>(
       reject(new Error(`Native request timeout: ${type}`));
     }, timeout);
 
-    postToNative(type, { ...payload as object, requestId });
+    postToNative(type, { ...(payload as object), requestId });
   });
 }

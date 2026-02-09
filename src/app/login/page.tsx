@@ -34,9 +34,9 @@ function LoginContent() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-2">
+        <div className="space-y-2 text-center">
           <Link href="/" className="inline-block">
             <Logo size="lg" />
           </Link>
@@ -47,21 +47,19 @@ function LoginContent() {
         </div>
 
         {sessionMessage && (
-          <div className="p-3 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-800">
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-600 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
             {sessionMessage}
           </div>
         )}
 
         {error && (
-          <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-            {error}
-          </div>
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
         )}
 
         <Button
           type="button"
           variant="outline"
-          className="w-full h-12 text-base"
+          className="h-12 w-full text-base"
           onClick={handleGoogleLogin}
           disabled={isLoading}
         >
@@ -103,7 +101,13 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          Loading...
+        </div>
+      }
+    >
       <LoginContent />
     </Suspense>
   );

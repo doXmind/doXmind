@@ -104,14 +104,9 @@ export function PopoverContent({
   // Handle click outside
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        contentRef.current &&
-        !contentRef.current.contains(event.target as Node)
-      ) {
+      if (contentRef.current && !contentRef.current.contains(event.target as Node)) {
         // Check if the click is on the trigger element
-        const triggerClicked = (event.target as HTMLElement).closest(
-          "[aria-haspopup]"
-        );
+        const triggerClicked = (event.target as HTMLElement).closest("[aria-haspopup]");
         if (!triggerClicked) {
           setOpen(false);
         }
@@ -155,9 +150,10 @@ export function PopoverContent({
   if (!open) return null;
 
   // For side="top", we need to position above the trigger
-  const positionStyles: React.CSSProperties = side === "top"
-    ? { bottom: "100%", marginBottom: sideOffset }
-    : { top: "100%", marginTop: sideOffset };
+  const positionStyles: React.CSSProperties =
+    side === "top"
+      ? { bottom: "100%", marginBottom: sideOffset }
+      : { top: "100%", marginTop: sideOffset };
 
   return (
     <div

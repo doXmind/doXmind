@@ -13,7 +13,7 @@ export function SuggestionButton({ children, onClick }: SuggestionButtonProps) {
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left px-4 md:px-3 py-3 md:py-2 text-base md:text-sm rounded-lg md:rounded-md border border-border hover:bg-accent active:scale-[0.98] transition-all"
+      className="w-full rounded-lg border border-border px-4 py-3 text-left text-base transition-all hover:bg-accent active:scale-[0.98] md:rounded-md md:px-3 md:py-2 md:text-sm"
     >
       {children}
     </button>

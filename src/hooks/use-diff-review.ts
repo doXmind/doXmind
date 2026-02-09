@@ -16,7 +16,15 @@ interface UseDiffReviewOptions {
  * Syncs diff session to the editor and handles accept/reject operations.
  */
 export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
-  const { diffSession, isReviewMode, endDiffReview, acceptHunk, rejectHunk, acceptAllHunks, rejectAllHunks } = useDiffReviewStore();
+  const {
+    diffSession,
+    isReviewMode,
+    endDiffReview,
+    acceptHunk,
+    rejectHunk,
+    acceptAllHunks,
+    rejectAllHunks,
+  } = useDiffReviewStore();
 
   // Sync diffSession to DiffReviewExtension
   useEffect(() => {
@@ -40,9 +48,7 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
       editor?.commands.acceptDiffHunk(hunkId);
       acceptHunk(hunkId);
 
-      const remaining = diffSession?.hunks.filter(
-        (h) => h.status === "pending" && h.id !== hunkId
-      );
+      const remaining = diffSession?.hunks.filter((h) => h.status === "pending" && h.id !== hunkId);
       if (remaining?.length === 0) {
         endDiffReview();
       }
@@ -55,9 +61,7 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
       editor?.commands.rejectDiffHunk(hunkId);
       rejectHunk(hunkId);
 
-      const remaining = diffSession?.hunks.filter(
-        (h) => h.status === "pending" && h.id !== hunkId
-      );
+      const remaining = diffSession?.hunks.filter((h) => h.status === "pending" && h.id !== hunkId);
       if (remaining?.length === 0) {
         endDiffReview();
       }

@@ -13,12 +13,7 @@ interface ShareDialogProps {
   fileName: string;
 }
 
-export function ShareDialog({
-  open,
-  onClose,
-  fileId,
-  fileName,
-}: ShareDialogProps) {
+export function ShareDialog({ open, onClose, fileId, fileName }: ShareDialogProps) {
   const [shares, setShares] = useState<Share[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -113,13 +108,12 @@ export function ShareDialog({
     <Modal open={open} onClose={onClose} className="max-w-2xl">
       <ModalHeader onClose={onClose}>Share &quot;{fileName}&quot;</ModalHeader>
 
-      <p className="text-sm text-muted-foreground mb-6">
-        Create a read-only link to share this document. Anyone with the link can
-        view it.
+      <p className="mb-6 text-sm text-muted-foreground">
+        Create a read-only link to share this document. Anyone with the link can view it.
       </p>
 
       {error && (
-        <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-lg">
+        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -127,14 +121,12 @@ export function ShareDialog({
       <div className="space-y-6">
         {/* Create New Share */}
         <div className="space-y-3 border-b border-border pb-6">
-          <label className="text-sm font-medium text-foreground">
-            Create new share link
-          </label>
+          <label className="text-sm font-medium text-foreground">Create new share link</label>
           <div className="flex gap-2">
             <select
               value={expiresIn}
               onChange={(e) => setExpiresIn(e.target.value)}
-              className="flex-1 h-10 px-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="h-10 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               disabled={creating}
             >
               <option value="never">Never expires</option>
@@ -144,7 +136,7 @@ export function ShareDialog({
               <option value="90">90 days</option>
             </select>
             <Button onClick={createShare} disabled={creating || loading}>
-              <Link className="w-4 h-4 mr-2" />
+              <Link className="mr-2 h-4 w-4" />
               {creating ? "Creating..." : "Create Link"}
             </Button>
           </div>
@@ -157,9 +149,7 @@ export function ShareDialog({
           </label>
 
           {loading ? (
-            <div className="py-8 text-center text-muted-foreground">
-              Loading shares...
-            </div>
+            <div className="py-8 text-center text-muted-foreground">Loading shares...</div>
           ) : shares.length === 0 ? (
             <div className="py-8 text-center">
               <p className="text-sm text-muted-foreground">
@@ -167,17 +157,17 @@ export function ShareDialog({
               </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            <div className="max-h-[400px] space-y-2 overflow-y-auto">
               {shares.map((share) => (
                 <div
                   key={share.id}
-                  className="flex items-center gap-2 p-3 border border-border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 transition-colors hover:bg-muted/50"
                 >
                   {/* Share URL */}
                   <input
                     value={share.share_url}
                     readOnly
-                    className="flex-1 px-3 py-2 text-xs font-mono bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary cursor-text"
+                    className="flex-1 cursor-text rounded border border-border bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                     onClick={(e) => e.currentTarget.select()}
                   />
 
@@ -190,9 +180,9 @@ export function ShareDialog({
                     title="Copy link"
                   >
                     {copiedId === share.id ? (
-                      <Check className="w-4 h-4 text-green-500" />
+                      <Check className="h-4 w-4 text-green-500" />
                     ) : (
-                      <Copy className="w-4 h-4" />
+                      <Copy className="h-4 w-4" />
                     )}
                   </Button>
 
@@ -201,21 +191,21 @@ export function ShareDialog({
                     variant="ghost"
                     size="icon"
                     onClick={() => revokeShare(share.id)}
-                    className="h-10 w-10 flex-shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="h-10 w-10 flex-shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     title="Revoke link"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" />
                   </Button>
 
                   {/* Stats */}
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground ml-2 flex-shrink-0">
+                  <div className="ml-2 flex flex-shrink-0 items-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1" title="View count">
-                      <Eye className="w-3 h-3" />
+                      <Eye className="h-3 w-3" />
                       {share.view_count}
                     </span>
                     {share.expires_at && (
                       <span className="flex items-center gap-1" title="Expires">
-                        <Clock className="w-3 h-3" />
+                        <Clock className="h-3 w-3" />
                         {formatDate(share.expires_at)}
                       </span>
                     )}

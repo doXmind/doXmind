@@ -24,13 +24,7 @@ export const metadata: Metadata = {
   },
   description:
     "A minimalist AI-powered writing tool for markdown editing. Chat with AI, get suggestions, and write better content.",
-  keywords: [
-    "AI writing",
-    "markdown editor",
-    "writing assistant",
-    "Claude AI",
-    "content creation",
-  ],
+  keywords: ["AI writing", "markdown editor", "writing assistant", "Claude AI", "content creation"],
   authors: [{ name: "doXmind Team" }],
   creator: "doXmind",
   metadataBase: new URL("https://beta.doxmind.com"),
@@ -101,10 +95,7 @@ export default function RootLayout({
         />
         <Providers>
           {/* Skip to Content - Accessibility feature for keyboard users */}
-          <a
-            href="#main-content"
-            className="skip-to-content"
-          >
+          <a href="#main-content" className="skip-to-content">
             Skip to content
           </a>
           {children}

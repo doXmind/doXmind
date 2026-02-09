@@ -93,9 +93,10 @@ class Logger {
 
   error(message: string, error?: unknown, context?: LogContext): void {
     if (this.shouldLog("error")) {
-      const errorContext = error instanceof Error
-        ? { ...context, errorName: error.name, errorMessage: error.message }
-        : { ...context, error };
+      const errorContext =
+        error instanceof Error
+          ? { ...context, errorName: error.name, errorMessage: error.message }
+          : { ...context, error };
 
       console.error(this.formatMessage("error", message, errorContext));
 

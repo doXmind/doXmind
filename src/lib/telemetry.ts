@@ -13,6 +13,8 @@
 
 import { api } from "./api";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 // Event types for different telemetry categories
 export type TelemetryEventType =
   // Diff review events (highest value for RLHF)
@@ -28,6 +30,8 @@ export type TelemetryEventType =
   // Chat feedback events
   | "chat_feedback"
   | "chat_regenerate"
+  // KB feedback events
+  | "kb_feedback"
   // Edit tracking events
   | "edit_applied"
   | "post_ai_edit"
@@ -100,7 +104,7 @@ export interface AutocompleteEvent extends BaseTelemetryEvent {
 
 // Chat feedback event
 export interface ChatFeedbackEvent extends BaseTelemetryEvent {
-  event_type: "chat_feedback" | "chat_regenerate";
+  event_type: "chat_feedback" | "chat_regenerate" | "kb_feedback";
   message_id: string;
   conversation_id: string;
   // RLHF training data
@@ -133,9 +137,10 @@ export interface UndoAfterAIEvent extends BaseTelemetryEvent {
 // Feature usage event
 export interface FeatureUsedEvent extends BaseTelemetryEvent {
   event_type: "feature_used";
-  feature: "chat" | "quick_edit" | "autocomplete" | "kb_search" | "export";
+  feature: "chat" | "quick_edit" | "autocomplete" | "kb_search" | "file_search" | "export";
   outcome: "completed" | "abandoned" | "error";
   duration_ms?: number;
+  metadata?: Record<string, unknown>;
 }
 
 // Session summary event (aggregate stats)
@@ -305,6 +310,7 @@ class TelemetryService {
 
       case "chat_feedback":
       case "chat_regenerate":
+      case "kb_feedback":
         return this.settings.collectChatFeedback;
 
       case "autocomplete_shown":
@@ -325,9 +331,7 @@ class TelemetryService {
   /**
    * Track a telemetry event
    */
-  track<T extends TelemetryEvent>(
-    event: Omit<T, "timestamp" | "session_id">
-  ): void {
+  track<T extends TelemetryEvent>(event: Omit<T, "timestamp" | "session_id">): void {
     if (!this.isEnabled(event.event_type)) {
       return;
     }
@@ -382,6 +386,11 @@ class TelemetryService {
     if ("edit_delta" in event) {
       event.edit_delta = "[redacted]";
     }
+    if ("metadata" in event && event.metadata) {
+      const m = event.metadata as Record<string, unknown>;
+      if ("file_id" in m) m.file_id = "[redacted]";
+      if ("file_name" in m) m.file_name = "[redacted]";
+    }
   }
 
   /**
@@ -420,10 +429,10 @@ class TelemetryService {
         const blob = new Blob([JSON.stringify({ events })], {
           type: "application/json",
         });
-        navigator.sendBeacon("/api/telemetry/events", blob);
+        navigator.sendBeacon(`${API_BASE}/api/telemetry/events`, blob);
       } else {
         // Use fetch for async flush
-        const response = await fetch("/api/telemetry/events", {
+        const response = await fetch(`${API_BASE}/api/telemetry/events`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -439,10 +448,7 @@ class TelemetryService {
       }
     } catch (error) {
       // Re-queue events on failure (up to max size)
-      const requeue = [...events, ...this.eventQueue].slice(
-        0,
-        CONFIG.MAX_QUEUE_SIZE
-      );
+      const requeue = [...events, ...this.eventQueue].slice(0, CONFIG.MAX_QUEUE_SIZE);
       this.eventQueue = requeue;
       console.warn("[Telemetry] Failed to flush events:", error);
     }
@@ -482,10 +488,7 @@ class TelemetryService {
    * Track chat feedback
    */
   trackChatFeedback(
-    data: Omit<
-      ChatFeedbackEvent,
-      "event_type" | "timestamp" | "session_id"
-    > & {
+    data: Omit<ChatFeedbackEvent, "event_type" | "timestamp" | "session_id"> & {
       event_type: ChatFeedbackEvent["event_type"];
     }
   ): void {
@@ -498,13 +501,15 @@ class TelemetryService {
   trackFeature(
     feature: FeatureUsedEvent["feature"],
     outcome: FeatureUsedEvent["outcome"],
-    duration_ms?: number
+    duration_ms?: number,
+    metadata?: Record<string, unknown>
   ): void {
     this.track<FeatureUsedEvent>({
       event_type: "feature_used",
       feature,
       outcome,
       duration_ms,
+      metadata,
     });
   }
 }

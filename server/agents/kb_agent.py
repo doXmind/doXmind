@@ -219,9 +219,7 @@ class KBAgent:
                             full_response_content.append(tool_use)
                             current_tool = None
                         elif current_text:
-                            full_response_content.append(
-                                {"type": "text", "text": current_text}
-                            )
+                            full_response_content.append({"type": "text", "text": current_text})
                             current_text = ""
 
             # If no tool uses, we're done

@@ -12,9 +12,7 @@ export interface DiffReviewPluginState {
 }
 
 // Plugin key for accessing state
-export const DiffReviewPluginKey = new PluginKey<DiffReviewPluginState>(
-  "diffReview"
-);
+export const DiffReviewPluginKey = new PluginKey<DiffReviewPluginState>("diffReview");
 
 // Position mapping result
 export interface TextPosition {

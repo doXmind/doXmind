@@ -306,7 +306,10 @@ describe("useFileStore", () => {
 
       await useFileStore.getState().updateFile("file-1", { name: "New", content: "Updated" });
 
-      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", { name: "New", content: "Updated" });
+      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", {
+        name: "New",
+        content: "Updated",
+      });
     });
 
     it("reverts on API error", async () => {

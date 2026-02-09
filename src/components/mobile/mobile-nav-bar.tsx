@@ -20,14 +20,12 @@ function NavButton({ icon, label, isActive, onClick }: NavButtonProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-col items-center justify-center gap-1 min-w-[64px] py-2 px-3 rounded-lg transition-colors",
+        "flex min-w-[64px] flex-col items-center justify-center gap-1 rounded-lg px-3 py-2 transition-colors",
         "active:scale-95 active:bg-accent/50",
-        isActive
-          ? "text-primary"
-          : "text-muted-foreground hover:text-foreground"
+        isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
       )}
     >
-      <div className="h-6 w-6 flex items-center justify-center">{icon}</div>
+      <div className="flex h-6 w-6 items-center justify-center">{icon}</div>
       <span className="text-[10px] font-medium">{label}</span>
     </button>
   );
@@ -65,19 +63,15 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
 
       {/* Menu */}
       <div
-        className="fixed bottom-16 right-4 bg-card border border-border rounded-xl shadow-lg overflow-hidden min-w-[180px]"
+        className="fixed bottom-16 right-4 min-w-[180px] overflow-hidden rounded-xl border border-border bg-card shadow-lg"
         style={{ zIndex: Z_INDEX.MOBILE_PANEL }}
       >
         <button
           type="button"
           onClick={handleThemeToggle}
-          className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-accent transition-colors"
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
         >
-          {theme === "dark" ? (
-            <Sun className="h-5 w-5" />
-          ) : (
-            <Moon className="h-5 w-5" />
-          )}
+          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           <span className="text-sm font-medium">
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </span>
@@ -88,7 +82,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
         <button
           type="button"
           onClick={handleOutlineToggle}
-          className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-accent transition-colors"
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
         >
           <ListTree className="h-5 w-5" />
           <span className="text-sm font-medium">Document Outline</span>
@@ -99,12 +93,8 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
 }
 
 export function MobileNavBar() {
-  const {
-    isMobileSidebarOpen,
-    isMobileChatOpen,
-    setMobileSidebarOpen,
-    setMobileChatOpen
-  } = useLayoutStore();
+  const { isMobileSidebarOpen, isMobileChatOpen, setMobileSidebarOpen, setMobileChatOpen } =
+    useLayoutStore();
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   const handleFilesClick = () => {
@@ -138,15 +128,12 @@ export function MobileNavBar() {
   return (
     <>
       {/* More Menu */}
-      <MoreMenu
-        isOpen={isMoreMenuOpen}
-        onClose={() => setIsMoreMenuOpen(false)}
-      />
+      <MoreMenu isOpen={isMoreMenuOpen} onClose={() => setIsMoreMenuOpen(false)} />
 
       {/* Bottom Navigation Bar */}
       <nav
         className={cn(
-          "fixed bottom-0 left-0 right-0 bg-card border-t border-border",
+          "fixed bottom-0 left-0 right-0 border-t border-border bg-card",
           "flex items-center justify-around px-2",
           "pb-[env(safe-area-inset-bottom)]",
           "md:hidden" // Hide on desktop

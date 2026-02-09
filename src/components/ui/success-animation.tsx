@@ -80,9 +80,9 @@ export function SuccessAnimation({
             exit={{ opacity: 0, y: 20, scale: 0.9 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
             className={cn(
-              "fixed bottom-6 left-1/2 -translate-x-1/2 z-50",
+              "fixed bottom-6 left-1/2 z-50 -translate-x-1/2",
               "flex items-center gap-3 px-4 py-3",
-              "bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800",
+              "border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950",
               "rounded-lg shadow-lg",
               className
             )}
@@ -110,11 +110,7 @@ export function SuccessAnimation({
           className={cn("inline-flex items-center gap-2", className)}
         >
           <SuccessCircle size="sm" />
-          {message && (
-            <span className="text-sm text-green-600 dark:text-green-400">
-              {message}
-            </span>
-          )}
+          {message && <span className="text-sm text-green-600 dark:text-green-400">{message}</span>}
         </motion.div>
       )}
     </AnimatePresence>
@@ -149,7 +145,7 @@ function SuccessCircle({ size = "md" }: SuccessCircleProps) {
         delay: 0.1,
       }}
       className={cn(
-        "rounded-full bg-green-500 flex items-center justify-center",
+        "flex items-center justify-center rounded-full bg-green-500",
         sizeClasses[size]
       )}
     >

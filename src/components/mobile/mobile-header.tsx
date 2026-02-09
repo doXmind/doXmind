@@ -8,6 +8,7 @@
  */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   FolderOpen,
   MoreHorizontal,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/ui/logo";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { haptics } from "@/lib/haptics";
@@ -118,6 +120,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
 }
 
 export function MobileHeader() {
+  const router = useRouter();
   const { setMobileSidebarOpen } = useLayoutStore();
   const { currentFileId } = useFileStore();
   const { getFile } = useFileStore();
@@ -126,6 +129,12 @@ export function MobileHeader() {
   // Get current file name
   const currentFile = currentFileId ? getFile(currentFileId) : null;
   const fileName = currentFile?.name || "Untitled";
+
+  const handleBackClick = () => {
+    haptics.light();
+    setIsMoreMenuOpen(false);
+    router.push("/");
+  };
 
   const handleFilesClick = () => {
     haptics.light();
@@ -146,32 +155,46 @@ export function MobileHeader() {
       {/* Header Bar */}
       <header className={cn("w-full md:hidden", "border-b border-border bg-background", "px-2")}>
         <div className="flex h-12 items-center justify-between">
-          {/* Files button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleFilesClick}
-            className="h-10 w-10 rounded-full"
-            aria-label="Open files"
-          >
-            <FolderOpen className="h-5 w-5" />
-          </Button>
+          {/* Left: Home logo + divider + Files */}
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={handleBackClick}
+              className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-accent active:scale-95"
+              aria-label="Back to home"
+            >
+              <Logo variant="icon" size="sm" animated={false} />
+            </button>
+            <div className="mx-0.5 h-5 w-px bg-border" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleFilesClick}
+              className="h-10 w-10 rounded-full"
+              aria-label="Open files"
+            >
+              <FolderOpen className="h-5 w-5" />
+            </Button>
+          </div>
 
           {/* Document title */}
           <div className="flex-1 px-2 text-center">
             <h1 className="truncate text-sm font-semibold">{fileName}</h1>
           </div>
 
-          {/* More menu button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleMoreClick}
-            className={cn("h-10 w-10 rounded-full", isMoreMenuOpen && "bg-accent")}
-            aria-label="More options"
-          >
-            <MoreHorizontal className="h-5 w-5" />
-          </Button>
+          {/* Right: More menu (with spacer to balance left side) */}
+          <div className="flex items-center">
+            <div className="w-10" /> {/* Spacer to balance the two left buttons */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleMoreClick}
+              className={cn("h-10 w-10 rounded-full", isMoreMenuOpen && "bg-accent")}
+              aria-label="More options"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </header>
     </>

@@ -79,16 +79,13 @@ function normalizeForMatch(text: string): string {
  * Find approximate match in document text using normalized comparison.
  * Finds ALL text nodes containing matching words and returns a range covering them.
  */
-function findFuzzyMatch(
-  doc: PMNode,
-  searchText: string
-): TextPosition | null {
+function findFuzzyMatch(doc: PMNode, searchText: string): TextPosition | null {
   const normalizedSearch = normalizeForMatch(searchText);
 
   if (normalizedSearch.length < 10) return null;
 
   // Extract significant words (longer than 3 chars)
-  const searchWords = normalizedSearch.split(" ").filter(w => w.length > 3);
+  const searchWords = normalizedSearch.split(" ").filter((w) => w.length > 3);
 
   if (searchWords.length < 2) return null;
 
@@ -126,7 +123,7 @@ function findFuzzyMatch(
   });
 
   // Find all segments that have ANY matching words
-  const matchingSegments = textSegments.filter(s => s.matchedWords.size > 0);
+  const matchingSegments = textSegments.filter((s) => s.matchedWords.size > 0);
 
   if (matchingSegments.length === 0) return null;
 
@@ -197,17 +194,14 @@ function findFuzzyMatch(
  * Find semantic match positions in document.
  * Uses exact match first, falls back to fuzzy matching for better recall.
  */
-export function findSemanticRanges(
-  doc: PMNode,
-  chunks: SemanticChunk[]
-): SemanticRange[] {
+export function findSemanticRanges(doc: PMNode, chunks: SemanticChunk[]): SemanticRange[] {
   const results: SemanticRange[] = [];
 
   for (const chunk of chunks) {
     // Clean the chunk content - remove HTML and markdown syntax
     let cleanChunk = chunk.content
       .replace(/<[^>]+>/g, "") // Remove HTML tags
-      .replace(/&lt;/g, "<")   // Decode HTML entities
+      .replace(/&lt;/g, "<") // Decode HTML entities
       .replace(/&gt;/g, ">")
       .replace(/&amp;/g, "&")
       .trim();
@@ -250,9 +244,7 @@ export function dedupeRanges(ranges: SemanticRange[]): SemanticRange[] {
 
   for (const range of sorted) {
     // Check if this range overlaps with any existing range
-    const overlaps = result.some(
-      (r) => !(range.to <= r.from || range.from >= r.to)
-    );
+    const overlaps = result.some((r) => !(range.to <= r.from || range.from >= r.to));
     if (!overlaps) {
       result.push(range);
     }

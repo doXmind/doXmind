@@ -63,10 +63,7 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
 
           <div className="space-y-2">
             <label htmlFor="image-alt" className="text-sm font-medium">
-              Alt Text{" "}
-              <span className="text-muted-foreground font-normal">
-                (optional)
-              </span>
+              Alt Text <span className="font-normal text-muted-foreground">(optional)</span>
             </label>
             <Input
               id="image-alt"

@@ -36,7 +36,9 @@ interface StreamingState {
 
   // Actions
   setStreaming: (isStreaming: boolean) => void;
-  setCurrentTool: (tool: ToolStatus | null | ((prev: ToolStatus | null) => ToolStatus | null)) => void;
+  setCurrentTool: (
+    tool: ToolStatus | null | ((prev: ToolStatus | null) => ToolStatus | null)
+  ) => void;
   setToolHistory: (history: ToolStatus[] | ((prev: ToolStatus[]) => ToolStatus[])) => void;
   addToToolHistory: (tool: ToolStatus) => void;
   updateToolInHistory: (toolId: string, updates: Partial<ToolStatus>) => void;
@@ -74,14 +76,11 @@ export const useStreamingStore = create<StreamingState>()((set) => ({
     }
   },
 
-  addToToolHistory: (tool) =>
-    set((state) => ({ toolHistory: [...state.toolHistory, tool] })),
+  addToToolHistory: (tool) => set((state) => ({ toolHistory: [...state.toolHistory, tool] })),
 
   updateToolInHistory: (toolId, updates) =>
     set((state) => ({
-      toolHistory: state.toolHistory.map((t) =>
-        t.toolId === toolId ? { ...t, ...updates } : t
-      ),
+      toolHistory: state.toolHistory.map((t) => (t.toolId === toolId ? { ...t, ...updates } : t)),
     })),
 
   setThinking: (thinkingOrUpdater) => {

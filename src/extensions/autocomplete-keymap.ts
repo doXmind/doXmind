@@ -39,15 +39,19 @@ export const AutocompleteKeymap = Extension.create({
             const pluginState = AutocompletePluginKey.getState(view.state);
 
             // Tab: Accept the full suggestion
-            if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            if (
+              event.key === "Tab" &&
+              !event.shiftKey &&
+              !event.ctrlKey &&
+              !event.altKey &&
+              !event.metaKey
+            ) {
               if (pluginState?.suggestion) {
                 event.preventDefault();
                 event.stopPropagation();
 
                 // Track acceptance for telemetry (RLHF training data)
-                const latency = pluginState.shownAt
-                  ? Date.now() - pluginState.shownAt
-                  : undefined;
+                const latency = pluginState.shownAt ? Date.now() - pluginState.shownAt : undefined;
 
                 telemetry.trackAutocomplete({
                   event_type: "autocomplete_accepted",

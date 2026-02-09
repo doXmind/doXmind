@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Search, X, Loader2, Sparkles, Send } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { telemetry } from "@/lib/telemetry";
 
 type SearchMode = "search" | "ask";
 
@@ -29,6 +30,7 @@ export function HomeSearch({
   const [isFocused, setIsFocused] = useState(false);
   const [mode, setMode] = useState<SearchMode>("ask");
   const inputRef = useRef<HTMLInputElement>(null);
+  const querySubmittedRef = useRef(false);
 
   const isAskMode = mode === "ask";
 
@@ -46,17 +48,38 @@ export function HomeSearch({
 
   const handleSubmit = () => {
     if (isAskMode && query.trim() && onAskAgent) {
+      querySubmittedRef.current = true;
+      telemetry.trackFeature("kb_search", "completed", undefined, {
+        event: "query_submitted",
+        query_length: query.trim().length,
+        mode: "ask",
+      });
       onAskAgent(query.trim());
     }
   };
 
   const handleClear = () => {
+    if (query.trim() && !querySubmittedRef.current) {
+      const feature = isAskMode ? "kb_search" : "file_search";
+      telemetry.trackFeature(feature, "abandoned", undefined, {
+        event: "query_abandoned",
+        query_length: query.length,
+        mode,
+      });
+    }
+    querySubmittedRef.current = false;
     onQueryChange("");
     inputRef.current?.focus();
   };
 
   const toggleMode = () => {
     const next = mode === "search" ? "ask" : "search";
+    telemetry.trackFeature("kb_search", "completed", undefined, {
+      event: "mode_switch",
+      from_mode: mode,
+      to_mode: next,
+      had_query: !!query.trim(),
+    });
     setMode(next);
     onModeChange?.(next);
     inputRef.current?.focus();
@@ -76,9 +99,7 @@ export function HomeSearch({
           isFocused && "opacity-100"
         )}
         style={{
-          background: isAskMode
-            ? "linear-gradient(135deg, #8b5cf620, #6366f120, #8b5cf620)"
-            : "linear-gradient(135deg, #00f2ea20, #ff005020, #00f2ea20)",
+          background: "linear-gradient(135deg, #00f2ea20, #ff005020, #00f2ea20)",
         }}
       />
 
@@ -96,9 +117,7 @@ export function HomeSearch({
           onClick={toggleMode}
           className={cn(
             "flex h-7 flex-shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-all duration-200",
-            isAskMode
-              ? "bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 dark:text-violet-400"
-              : "bg-accent/50 text-muted-foreground hover:bg-accent"
+            "bg-accent/50 text-muted-foreground hover:bg-accent"
           )}
           aria-label={`Switch to ${isAskMode ? "search" : "ask AI"} mode`}
         >
@@ -120,7 +139,10 @@ export function HomeSearch({
           type="text"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          onFocus={() => setIsFocused(true)}
+          onFocus={() => {
+            setIsFocused(true);
+            querySubmittedRef.current = false;
+          }}
           onBlur={() => setIsFocused(false)}
           onKeyDown={handleKeyDown}
           placeholder={
@@ -139,7 +161,7 @@ export function HomeSearch({
             {isAskMode && onAskAgent && (
               <button
                 onClick={handleSubmit}
-                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 transition-colors hover:bg-violet-500/20 dark:text-violet-400"
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-accent/50 text-muted-foreground transition-colors hover:bg-accent"
                 aria-label="Ask AI"
               >
                 <Send className="h-3.5 w-3.5" />

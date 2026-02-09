@@ -28,10 +28,7 @@ function containsMathDelimiters(text: string): boolean {
 /**
  * Process text to extract math expressions and create appropriate nodes
  */
-function processTextWithMath(
-  text: string,
-  schema: Schema
-): PMNode[] {
+function processTextWithMath(text: string, schema: Schema): PMNode[] {
   const nodes: PMNode[] = [];
   let lastIndex = 0;
 
@@ -161,12 +158,12 @@ export function createMathMigrationPlugin() {
         return (
           tr.docChanged &&
           (tr.getMeta("addToHistory") === false ||
-            tr.steps.length > 0 &&
-            tr.steps.some((step) => {
-              const stepJson = step.toJSON();
-              // Check if it's replacing a large portion
-              return stepJson.from === 0 || stepJson.stepType === "replaceAround";
-            }))
+            (tr.steps.length > 0 &&
+              tr.steps.some((step) => {
+                const stepJson = step.toJSON();
+                // Check if it's replacing a large portion
+                return stepJson.from === 0 || stepJson.stepType === "replaceAround";
+              })))
         );
       });
 

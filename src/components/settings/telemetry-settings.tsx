@@ -38,11 +38,7 @@ function SettingRow({
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
       </div>
-      <Switch
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        disabled={disabled}
-      />
+      <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
     </div>
   );
 }
@@ -90,9 +86,7 @@ export function TelemetrySettings() {
 
         {/* Sub-toggles (only visible when master is on) */}
         <div
-          className={
-            productImprovementEnabled ? "opacity-100" : "pointer-events-none opacity-50"
-          }
+          className={productImprovementEnabled ? "opacity-100" : "pointer-events-none opacity-50"}
         >
           <SettingRow
             icon={<Sparkles className="h-5 w-5" />}
@@ -124,8 +118,8 @@ export function TelemetrySettings() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Even when disabled, we may collect anonymous aggregate statistics (like
-        total word count) to improve our service. Learn more in our{" "}
+        Even when disabled, we may collect anonymous aggregate statistics (like total word count) to
+        improve our service. Learn more in our{" "}
         <a href="/privacy" className="text-primary hover:underline">
           Privacy Policy
         </a>

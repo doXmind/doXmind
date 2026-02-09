@@ -52,7 +52,7 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
         />
       </div>
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="mx-1 h-5 w-px bg-border" />
 
       {/* Column Operations */}
       <div className="flex items-center gap-0.5">
@@ -73,7 +73,7 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
         />
       </div>
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="mx-1 h-5 w-px bg-border" />
 
       {/* Cell Operations */}
       <div className="flex items-center gap-0.5">
@@ -91,7 +91,7 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
         />
       </div>
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="mx-1 h-5 w-px bg-border" />
 
       {/* Header & Delete */}
       <div className="flex items-center gap-0.5">
@@ -119,13 +119,7 @@ interface TableButtonProps {
   className?: string;
 }
 
-function TableButton({
-  icon,
-  onClick,
-  tooltip,
-  disabled,
-  className,
-}: TableButtonProps) {
+function TableButton({ icon, onClick, tooltip, disabled, className }: TableButtonProps) {
   return (
     <Button
       variant="ghost"
@@ -133,11 +127,7 @@ function TableButton({
       onClick={onClick}
       disabled={disabled}
       title={tooltip}
-      className={cn(
-        "h-7 w-7",
-        disabled && "opacity-50 cursor-not-allowed",
-        className
-      )}
+      className={cn("h-7 w-7", disabled && "cursor-not-allowed opacity-50", className)}
     >
       {icon}
     </Button>

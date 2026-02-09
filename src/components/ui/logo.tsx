@@ -26,13 +26,7 @@ const iconPaths = [
 
 function StaticLogoIcon({ size = 40, className }: { size?: number; className?: string }) {
   return (
-    <svg
-      viewBox="0 0 80 80"
-      width={size}
-      height={size}
-      className={className}
-      aria-hidden="true"
-    >
+    <svg viewBox="0 0 80 80" width={size} height={size} className={className} aria-hidden="true">
       {iconPaths.map((d, i) => (
         <path key={i} d={d} fill="currentColor" />
       ))}
@@ -49,26 +43,25 @@ function AnimatedLogoIcon({ size = 40 }: { size?: number }) {
       onHoverEnd={() => setIsHovered(false)}
       className="relative cursor-pointer"
     >
-      <svg
-        viewBox="0 0 80 80"
-        width={size}
-        height={size}
-        aria-hidden="true"
-      >
+      <svg viewBox="0 0 80 80" width={size} height={size} aria-hidden="true">
         {iconPaths.map((d, i) => (
           <motion.path
             key={i}
             d={d}
             fill="currentColor"
-            animate={isHovered ? {
-              scale: [1, 0.6, 1],
-              rotate: [0, -90, 0],
-              opacity: [1, 0.7, 1],
-            } : {
-              scale: 1,
-              rotate: 0,
-              opacity: 1,
-            }}
+            animate={
+              isHovered
+                ? {
+                    scale: [1, 0.6, 1],
+                    rotate: [0, -90, 0],
+                    opacity: [1, 0.7, 1],
+                  }
+                : {
+                    scale: 1,
+                    rotate: 0,
+                    opacity: 1,
+                  }
+            }
             transition={{
               duration: 0.5,
               delay: i * 0.05,
@@ -97,7 +90,12 @@ function LogoText({ size = 24, className }: { size?: number; className?: string 
   );
 }
 
-export function Logo({ variant = "horizontal", size = "md", className, animated = true }: LogoProps) {
+export function Logo({
+  variant = "horizontal",
+  size = "md",
+  className,
+  animated = true,
+}: LogoProps) {
   const config = sizeConfig[size];
   const IconComponent = animated ? AnimatedLogoIcon : StaticLogoIcon;
 

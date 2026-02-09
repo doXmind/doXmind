@@ -56,7 +56,9 @@ describe("Tooltip", () => {
     it("renders link trigger correctly", () => {
       render(
         <Tooltip content="Link info">
-          <a href="#" data-testid="link">Link</a>
+          <a href="#" data-testid="link">
+            Link
+          </a>
         </Tooltip>
       );
 
@@ -68,7 +70,9 @@ describe("Tooltip", () => {
     it("renders icon trigger correctly", () => {
       render(
         <Tooltip content="Icon info">
-          <span data-testid="icon" role="img" aria-label="info">ℹ️</span>
+          <span data-testid="icon" role="img" aria-label="info">
+            ℹ️
+          </span>
         </Tooltip>
       );
 
@@ -174,7 +178,13 @@ describe("Tooltip", () => {
 
     it("accepts JSX content", () => {
       render(
-        <Tooltip content={<div><strong>Bold</strong> text</div>}>
+        <Tooltip
+          content={
+            <div>
+              <strong>Bold</strong> text
+            </div>
+          }
+        >
           <button>Hover</button>
         </Tooltip>
       );
@@ -184,7 +194,13 @@ describe("Tooltip", () => {
 
     it("accepts content with keyboard shortcut", () => {
       render(
-        <Tooltip content={<span>Save <kbd>Ctrl+S</kbd></span>}>
+        <Tooltip
+          content={
+            <span>
+              Save <kbd>Ctrl+S</kbd>
+            </span>
+          }
+        >
           <button>Save button</button>
         </Tooltip>
       );
@@ -343,7 +359,7 @@ describe("Tooltip", () => {
     it("works with custom styled trigger", () => {
       render(
         <Tooltip content="Styled button info">
-          <button className="bg-blue-500 text-white px-4 py-2" data-testid="styled-btn">
+          <button className="bg-blue-500 px-4 py-2 text-white" data-testid="styled-btn">
             Styled Button
           </button>
         </Tooltip>

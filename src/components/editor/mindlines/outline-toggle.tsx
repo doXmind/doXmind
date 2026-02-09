@@ -42,7 +42,7 @@ export function OutlineToggle({ headingsCount = 0 }: OutlineToggleProps) {
               }
         }
         className={cn(
-          "shrink-0 flex flex-col items-center py-2 px-1.5",
+          "flex shrink-0 flex-col items-center px-1.5 py-2",
           "border-r border-border/40",
           "bg-gradient-to-b from-muted/30 to-muted/10",
           "backdrop-blur-sm"
@@ -65,7 +65,7 @@ export function OutlineToggle({ headingsCount = 0 }: OutlineToggleProps) {
               size="icon"
               onClick={() => setMindlinesOpen(true)}
               aria-label={`Open document outline${headingsCount > 0 ? `. ${headingsCount} headings.` : ""}`}
-              className="h-9 w-9 relative text-muted-foreground hover:text-foreground"
+              className="relative h-9 w-9 text-muted-foreground hover:text-foreground"
             >
               {/* Icon with subtle breathing animation */}
               <motion.div
@@ -93,7 +93,7 @@ export function OutlineToggle({ headingsCount = 0 }: OutlineToggleProps) {
                   animate={{ scale: 1 }}
                   transition={{ type: "spring", stiffness: 400, damping: 15 }}
                   className={cn(
-                    "absolute -top-0.5 -right-0.5",
+                    "absolute -right-0.5 -top-0.5",
                     "h-4 min-w-[16px] px-1",
                     "flex items-center justify-center",
                     "text-[10px] font-semibold",

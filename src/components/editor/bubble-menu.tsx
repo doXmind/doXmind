@@ -56,73 +56,73 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
         onClose={() => setLinkModalOpen(false)}
         onConfirm={handleLinkConfirm}
       />
-    <BubbleMenu
-      editor={editor}
-      tippyOptions={{
-        duration: 0, // Disable tippy animation, let framer-motion handle it
-        animation: false,
-      }}
-      shouldShow={shouldShow}
-      className="bubble-menu rounded-lg border border-border bg-popover p-1 shadow-lg"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 8, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{
-          type: 'spring',
-          stiffness: 500,
-          damping: 30,
-          mass: 0.8
+      <BubbleMenu
+        editor={editor}
+        tippyOptions={{
+          duration: 0, // Disable tippy animation, let framer-motion handle it
+          animation: false,
         }}
-        className="flex items-center gap-0.5"
+        shouldShow={shouldShow}
+        className="bubble-menu rounded-lg border border-border bg-popover p-1 shadow-lg"
       >
-        <BubbleButton
-          icon={<Bold className="h-4 w-4" />}
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          isActive={editor.isActive("bold")}
-          tooltip="Bold (Ctrl+B)"
-        />
-        <BubbleButton
-          icon={<Italic className="h-4 w-4" />}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          isActive={editor.isActive("italic")}
-          tooltip="Italic (Ctrl+I)"
-        />
-        <BubbleButton
-          icon={<Strikethrough className="h-4 w-4" />}
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-          isActive={editor.isActive("strike")}
-          tooltip="Strikethrough"
-        />
-        <BubbleButton
-          icon={<Code className="h-4 w-4" />}
-          onClick={() => editor.chain().focus().toggleCode().run()}
-          isActive={editor.isActive("code")}
-          tooltip="Inline Code (Ctrl+E)"
-        />
-        <BubbleButton
-          icon={<Highlighter className="h-4 w-4" />}
-          onClick={() => editor.chain().focus().toggleHighlight().run()}
-          isActive={editor.isActive("highlight")}
-          tooltip="Highlight"
-        />
-        <BubbleButton
-          icon={<LinkIcon className="h-4 w-4" />}
-          onClick={() => setLinkModalOpen(true)}
-          isActive={editor.isActive("link")}
-          tooltip="Add Link (Ctrl+K)"
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{
+            type: "spring",
+            stiffness: 500,
+            damping: 30,
+            mass: 0.8,
+          }}
+          className="flex items-center gap-0.5"
+        >
+          <BubbleButton
+            icon={<Bold className="h-4 w-4" />}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            isActive={editor.isActive("bold")}
+            tooltip="Bold (Ctrl+B)"
+          />
+          <BubbleButton
+            icon={<Italic className="h-4 w-4" />}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            isActive={editor.isActive("italic")}
+            tooltip="Italic (Ctrl+I)"
+          />
+          <BubbleButton
+            icon={<Strikethrough className="h-4 w-4" />}
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+            isActive={editor.isActive("strike")}
+            tooltip="Strikethrough"
+          />
+          <BubbleButton
+            icon={<Code className="h-4 w-4" />}
+            onClick={() => editor.chain().focus().toggleCode().run()}
+            isActive={editor.isActive("code")}
+            tooltip="Inline Code (Ctrl+E)"
+          />
+          <BubbleButton
+            icon={<Highlighter className="h-4 w-4" />}
+            onClick={() => editor.chain().focus().toggleHighlight().run()}
+            isActive={editor.isActive("highlight")}
+            tooltip="Highlight"
+          />
+          <BubbleButton
+            icon={<LinkIcon className="h-4 w-4" />}
+            onClick={() => setLinkModalOpen(true)}
+            isActive={editor.isActive("link")}
+            tooltip="Add Link (Ctrl+K)"
+          />
 
-        <div className="w-px h-5 bg-border mx-1" />
+          <div className="mx-1 h-5 w-px bg-border" />
 
-        <BubbleButton
-          icon={<Sparkles className="h-4 w-4" />}
-          onClick={handleAIEdit}
-          className="text-primary"
-          tooltip="AI Edit"
-        />
-      </motion.div>
-    </BubbleMenu>
+          <BubbleButton
+            icon={<Sparkles className="h-4 w-4" />}
+            onClick={handleAIEdit}
+            className="text-primary"
+            tooltip="AI Edit"
+          />
+        </motion.div>
+      </BubbleMenu>
     </>
   );
 }
@@ -135,20 +135,14 @@ interface BubbleButtonProps {
   tooltip?: string;
 }
 
-function BubbleButton({
-  icon,
-  onClick,
-  isActive,
-  className,
-  tooltip,
-}: BubbleButtonProps) {
+function BubbleButton({ icon, onClick, isActive, className, tooltip }: BubbleButtonProps) {
   const button = (
     <motion.button
       type="button"
       onClick={onClick}
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.95 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
       className={cn(
         // Mobile: larger touch targets (44px), Desktop: compact (32px)
         "h-11 w-11 md:h-8 md:w-8",
@@ -159,14 +153,16 @@ function BubbleButton({
       )}
     >
       {/* Mobile: larger icons, Desktop: smaller */}
-      <span className="[&>svg]:h-5 [&>svg]:w-5 md:[&>svg]:h-4 md:[&>svg]:w-4">
-        {icon}
-      </span>
+      <span className="[&>svg]:h-5 [&>svg]:w-5 md:[&>svg]:h-4 md:[&>svg]:w-4">{icon}</span>
     </motion.button>
   );
 
   if (tooltip) {
-    return <Tooltip content={tooltip} side="top">{button}</Tooltip>;
+    return (
+      <Tooltip content={tooltip} side="top">
+        {button}
+      </Tooltip>
+    );
   }
 
   return button;

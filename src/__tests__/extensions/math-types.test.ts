@@ -2,11 +2,7 @@
  * Tests for Math Extension Types and Symbol Definitions
  */
 import { describe, it, expect } from "vitest";
-import {
-  MATH_SYMBOLS,
-  SYMBOL_CATEGORIES,
-  type MathSymbol,
-} from "@/extensions/math/math-types";
+import { MATH_SYMBOLS, SYMBOL_CATEGORIES, type MathSymbol } from "@/extensions/math/math-types";
 
 describe("Math Types", () => {
   describe("MATH_SYMBOLS", () => {

@@ -14,10 +14,7 @@ import type { TextPosition } from "./diff-types";
  * Returns array of { from, to, blockStart } positions.
  * blockStart is the position of the containing block node (paragraph, etc.)
  */
-export function findAllTextInDocument(
-  doc: PMNode,
-  searchText: string
-): TextPosition[] {
+export function findAllTextInDocument(doc: PMNode, searchText: string): TextPosition[] {
   const results: TextPosition[] = [];
 
   // Walk through all text nodes and build a mapping

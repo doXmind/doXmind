@@ -9,10 +9,7 @@ import { Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 
-export function CodeBlockNodeView({
-  node,
-  updateAttributes,
-}: NodeViewProps) {
+export function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
   const { language } = node.attrs;
   const [copied, setCopied] = useState(false);
   const [lineCount, setLineCount] = useState(1);
@@ -43,9 +40,9 @@ export function CodeBlockNodeView({
   return (
     <NodeViewWrapper className="code-block-wrapper group relative my-4">
       {/* Code Block Container - Notion Style */}
-      <div className="code-block-container relative overflow-hidden rounded-lg border border-border/60 bg-muted/30 hover:border-border transition-colors">
+      <div className="code-block-container relative overflow-hidden rounded-lg border border-border/60 bg-muted/30 transition-colors hover:border-border">
         {/* Header with Language Selector and Copy Button */}
-        <div className="code-block-header flex items-center justify-between px-2 py-1.5 border-b border-border/40 bg-muted/40">
+        <div className="code-block-header flex items-center justify-between border-b border-border/40 bg-muted/40 px-2 py-1.5">
           {/* Language Selector */}
           <LanguageSelector value={language} onChange={handleLanguageChange} />
 
@@ -58,9 +55,9 @@ export function CodeBlockNodeView({
               className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
             >
               {copied ? (
-                <Check className="h-3.5 w-3.5 mr-1 text-green-500" />
+                <Check className="mr-1 h-3.5 w-3.5 text-green-500" />
               ) : (
-                <Copy className="h-3.5 w-3.5 mr-1" />
+                <Copy className="mr-1 h-3.5 w-3.5" />
               )}
               {copied ? "Copied" : "Copy"}
             </Button>
@@ -73,7 +70,7 @@ export function CodeBlockNodeView({
           <LineNumbers count={lineCount} />
 
           {/* Code Content */}
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <NodeViewContent
               as="pre"
               className={cn(

@@ -35,7 +35,8 @@ function MessageContextItemDisplay({
     if (isImage) {
       return `${prefix}: Image${context.alt ? ` (${context.alt})` : ""}`;
     }
-    return `${prefix} (${context.text?.length || 0} chars)`;
+    const preview = context.text?.slice(0, 40)?.replace(/\n/g, " ") || "";
+    return `${prefix}: "${preview}${(context.text?.length || 0) > 40 ? "..." : ""}"`;
   })();
 
   return (
@@ -43,7 +44,11 @@ function MessageContextItemDisplay({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center gap-1.5 text-left text-xs opacity-80 transition-opacity hover:opacity-100"
+        className={cn(
+          "flex w-full items-center gap-1.5 text-left text-xs transition-opacity",
+          "rounded-full px-2 py-1 md:rounded-none md:px-0 md:py-0",
+          isExpanded ? "bg-black/10 opacity-100" : "opacity-80 hover:opacity-100"
+        )}
       >
         <Icon className="h-3 w-3 flex-shrink-0" />
         <span className="flex-1 truncate">{label}</span>
@@ -54,7 +59,7 @@ function MessageContextItemDisplay({
         )}
       </button>
       {isExpanded && (
-        <div className="mt-1.5 max-h-[100px] overflow-y-auto rounded bg-black/10 px-2 py-1.5 text-xs opacity-70">
+        <div className="mt-1.5 max-h-[200px] overflow-y-auto rounded bg-black/10 px-2 py-1.5 text-xs opacity-70 md:max-h-[100px]">
           {isImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
@@ -126,23 +131,28 @@ export function ChatMessage({ message, conversationId, userPrompt }: ChatMessage
   }, [message.content, isUser]);
 
   return (
-    <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
+    <div className={cn("flex gap-2 md:gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
       {/* Avatar */}
       <div
         className={cn(
-          "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
+          "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full md:h-8 md:w-8",
           isUser ? "bg-primary text-primary-foreground" : "bg-muted"
         )}
       >
-        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+        {isUser ? (
+          <User className="h-3 w-3 md:h-4 md:w-4" />
+        ) : (
+          <Bot className="h-3 w-3 md:h-4 md:w-4" />
+        )}
       </div>
 
       {/* Content */}
-      <div className={cn("max-w-[85%] flex-1", isUser ? "text-right" : "text-left")}>
+      <div className={cn("max-w-[92%] flex-1 md:max-w-[85%]", isUser ? "text-right" : "text-left")}>
         <div
           className={cn(
             "inline-block rounded-lg px-3 py-2 text-sm",
-            isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+            isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+            !isUser && message.isStreaming && "border-l-2 border-primary/60 md:border-l-0"
           )}
         >
           {isUser ? (
@@ -166,9 +176,9 @@ export function ChatMessage({ message, conversationId, userPrompt }: ChatMessage
 
           {/* Streaming indicator */}
           {message.isStreaming && message.content && (
-            <div className="mt-2 flex items-center gap-1 text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span className="text-xs">Writing...</span>
+            <div className="mt-2 flex items-center gap-1.5 text-muted-foreground md:gap-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary/70 md:h-3 md:w-3" />
+              <span className="text-xs font-medium md:font-normal">Writing...</span>
             </div>
           )}
         </div>

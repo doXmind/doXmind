@@ -63,8 +63,8 @@ export type MessageContextItem =
       type: "image";
       src: string;
       alt?: string;
-      base64?: string;      // Base64 encoded image data (without data:... prefix)
-      mediaType?: string;   // MIME type (image/jpeg, image/png, etc.)
+      base64?: string; // Base64 encoded image data (without data:... prefix)
+      mediaType?: string; // MIME type (image/jpeg, image/png, etc.)
     };
 
 export interface ChatMessage {
@@ -163,8 +163,8 @@ export interface SearchResult {
   metadata: {
     file_id: string;
     chunk_index: number;
-    start?: number;  // Position in original document (for highlighting)
-    end?: number;    // Position in original document (for highlighting)
+    start?: number; // Position in original document (for highlighting)
+    end?: number; // Position in original document (for highlighting)
     [key: string]: unknown;
   };
   distance?: number;

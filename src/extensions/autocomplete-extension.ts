@@ -21,8 +21,8 @@ export interface AutocompletePluginState {
   suggestion: string | null;
   position: number | null;
   suggestionId?: string; // For telemetry tracking
-  textBefore?: string;   // Context for RLHF training
-  shownAt?: number;      // Timestamp when shown (for latency)
+  textBefore?: string; // Context for RLHF training
+  shownAt?: number; // Timestamp when shown (for latency)
   triggerMode?: "auto" | "manual";
 }
 
@@ -43,7 +43,10 @@ declare module "@tiptap/core" {
       /**
        * Set the autocomplete suggestion
        */
-      setSuggestion: (suggestion: string | null, options?: Omit<SetSuggestionOptions, 'suggestion'>) => ReturnType;
+      setSuggestion: (
+        suggestion: string | null,
+        options?: Omit<SetSuggestionOptions, "suggestion">
+      ) => ReturnType;
       /**
        * Accept the full suggestion
        */
@@ -195,7 +198,7 @@ export const AutocompleteExtension = Extension.create({
   addCommands() {
     return {
       setSuggestion:
-        (suggestion: string | null, options?: Omit<SetSuggestionOptions, 'suggestion'>) =>
+        (suggestion: string | null, options?: Omit<SetSuggestionOptions, "suggestion">) =>
         ({ tr, dispatch }) => {
           if (dispatch) {
             const pos = tr.selection.from;
@@ -236,9 +239,7 @@ export const AutocompleteExtension = Extension.create({
           }
 
           // Track full acceptance for RLHF
-          const latency = pluginState.shownAt
-            ? Date.now() - pluginState.shownAt
-            : undefined;
+          const latency = pluginState.shownAt ? Date.now() - pluginState.shownAt : undefined;
 
           telemetry.trackAutocomplete({
             event_type: "autocomplete_accepted",
@@ -294,9 +295,7 @@ export const AutocompleteExtension = Extension.create({
           const remaining = pluginState.suggestion.slice(word.length);
 
           // Track partial acceptance
-          const latency = pluginState.shownAt
-            ? Date.now() - pluginState.shownAt
-            : undefined;
+          const latency = pluginState.shownAt ? Date.now() - pluginState.shownAt : undefined;
 
           telemetry.trackAutocomplete({
             event_type: "autocomplete_partial",

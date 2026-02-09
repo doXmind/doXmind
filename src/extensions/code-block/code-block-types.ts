@@ -54,8 +54,7 @@ export const POPULAR_LANGUAGE_IDS = [
 
 export function findLanguageById(id: string): Language | undefined {
   return SUPPORTED_LANGUAGES.find(
-    (lang) =>
-      lang.id === id || lang.aliases?.includes(id.toLowerCase())
+    (lang) => lang.id === id || lang.aliases?.includes(id.toLowerCase())
   );
 }
 
@@ -66,15 +65,11 @@ export function getLanguageDisplayName(id: string | null | undefined): string {
 }
 
 export function getPopularLanguages(): Language[] {
-  return SUPPORTED_LANGUAGES.filter((lang) =>
-    POPULAR_LANGUAGE_IDS.includes(lang.id)
-  );
+  return SUPPORTED_LANGUAGES.filter((lang) => POPULAR_LANGUAGE_IDS.includes(lang.id));
 }
 
 export function getOtherLanguages(): Language[] {
-  return SUPPORTED_LANGUAGES.filter(
-    (lang) => !POPULAR_LANGUAGE_IDS.includes(lang.id)
-  );
+  return SUPPORTED_LANGUAGES.filter((lang) => !POPULAR_LANGUAGE_IDS.includes(lang.id));
 }
 
 export function searchLanguages(query: string): Language[] {

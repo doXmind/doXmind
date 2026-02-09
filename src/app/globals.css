@@ -1297,6 +1297,63 @@ html {
   animation: text-wave 6s ease-in-out infinite;
 }
 
+/* TikTok/Douyin-style RGB glitch flash */
+@keyframes text-glitch {
+  0%,
+  100% {
+    text-shadow: none;
+    opacity: 1;
+  }
+  5% {
+    text-shadow:
+      -2px 0 hsl(var(--primary)),
+      2px 0 hsl(var(--primary) / 0.6);
+    opacity: 1;
+  }
+  6% {
+    text-shadow:
+      2px 0 hsl(var(--primary) / 0.8),
+      -1px 0 hsl(var(--primary) / 0.4);
+  }
+  7% {
+    text-shadow: none;
+  }
+  30% {
+    text-shadow: none;
+    opacity: 1;
+  }
+  31% {
+    text-shadow:
+      -1px 1px hsl(var(--primary)),
+      1px -1px hsl(var(--primary) / 0.5);
+    opacity: 0.9;
+  }
+  32% {
+    text-shadow:
+      1px 0 hsl(var(--primary) / 0.7),
+      -2px 0 hsl(var(--primary) / 0.3);
+  }
+  33% {
+    text-shadow: none;
+    opacity: 1;
+  }
+  60% {
+    text-shadow: none;
+  }
+  61% {
+    text-shadow:
+      -1px 0 hsl(var(--primary) / 0.9),
+      2px 0 hsl(var(--primary) / 0.4);
+  }
+  62% {
+    text-shadow: none;
+  }
+}
+
+.animate-text-glitch {
+  animation: text-glitch 4s ease-in-out infinite;
+}
+
 /* Hide scrollbar for horizontal scroll containers */
 .hide-scrollbar {
   -ms-overflow-style: none;

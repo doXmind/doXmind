@@ -1,6 +1,14 @@
 "use client";
 
-import { Trash2, Loader2, CheckCircle2, AlertCircle, FileText, FileSpreadsheet, File } from "lucide-react";
+import {
+  Trash2,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  FileText,
+  FileSpreadsheet,
+  File,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { KBAttachment } from "@/stores/kb-store";
@@ -54,25 +62,23 @@ export function KBAttachmentItem({ attachment, onDelete, isDeleting }: KBAttachm
   return (
     <div
       className={cn(
-        "group flex items-start gap-3 p-3 rounded-lg border transition-colors",
+        "group flex items-start gap-3 rounded-lg border p-3 transition-colors",
         attachment.status === "error"
           ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20"
           : "border-border hover:bg-muted/50"
       )}
     >
       {/* File icon */}
-      <div className="flex-shrink-0 mt-0.5">
-        {getFileIcon(attachment.fileType)}
-      </div>
+      <div className="mt-0.5 flex-shrink-0">{getFileIcon(attachment.fileType)}</div>
 
       {/* File info */}
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate" title={attachment.originalFilename}>
+          <span className="truncate text-sm font-medium" title={attachment.originalFilename}>
             {attachment.originalFilename}
           </span>
         </div>
-        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
           <span>{formatFileSize(attachment.fileSize)}</span>
           <span>·</span>
           <span className="flex items-center gap-1">
@@ -83,7 +89,7 @@ export function KBAttachmentItem({ attachment, onDelete, isDeleting }: KBAttachm
 
         {/* Progress bar for uploading */}
         {attachment.status === "uploading" && attachment.uploadProgress !== undefined && (
-          <div className="mt-2 h-1 w-full bg-muted rounded-full overflow-hidden">
+          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full bg-blue-500 transition-all duration-300"
               style={{ width: `${attachment.uploadProgress}%` }}
@@ -96,7 +102,7 @@ export function KBAttachmentItem({ attachment, onDelete, isDeleting }: KBAttachm
       <Button
         variant="ghost"
         size="icon"
-        className="flex-shrink-0 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="h-7 w-7 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
         onClick={() => onDelete(attachment.id)}
         disabled={isDeleting}
       >

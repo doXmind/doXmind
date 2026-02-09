@@ -92,10 +92,7 @@ export function MobileBottomBar({ onViewChat }: MobileBottomBarProps) {
   );
 
   return (
-    <div
-      data-action-bar
-      className="w-full md:hidden"
-    >
+    <div data-action-bar className="w-full md:hidden">
       <div className="mx-auto max-w-xl">
         <div
           className={cn(

@@ -13,12 +13,7 @@ interface LinkModalProps {
   initialUrl?: string;
 }
 
-export function LinkModal({
-  open,
-  onClose,
-  onConfirm,
-  initialUrl = "",
-}: LinkModalProps) {
+export function LinkModal({ open, onClose, onConfirm, initialUrl = "" }: LinkModalProps) {
   const [url, setUrl] = React.useState(initialUrl);
   const inputRef = React.useRef<HTMLInputElement>(null);
 

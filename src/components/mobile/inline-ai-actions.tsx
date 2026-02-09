@@ -66,12 +66,7 @@ interface InlineAIActionsProps {
   onAction?: (action: string, result: string) => void;
 }
 
-export function InlineAIActions({
-  editor,
-  position,
-  visible,
-  onAction,
-}: InlineAIActionsProps) {
+export function InlineAIActions({ editor, position, visible, onAction }: InlineAIActionsProps) {
   const { selection } = useEditorStore();
   const { edit, cancel, isEditing } = useQuickEdit();
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
@@ -127,7 +122,7 @@ export function InlineAIActions({
       <motion.div
         className={cn(
           "fixed flex items-center gap-1 px-2 py-1.5",
-          "bg-background/95 backdrop-blur-xl border border-border/50",
+          "border border-border/50 bg-background/95 backdrop-blur-xl",
           "rounded-full shadow-lg shadow-black/10 dark:shadow-black/30",
           "md:hidden"
         )}
@@ -148,12 +143,12 @@ export function InlineAIActions({
             onClick={() => handleAction(action)}
             disabled={isEditing}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-full",
+              "flex items-center gap-1.5 rounded-full px-3 py-2",
               "text-sm font-medium transition-colors",
               "active:scale-95",
               isEditing && activeActionId === action.id
                 ? "bg-primary text-primary-foreground"
-                : "hover:bg-accent text-foreground"
+                : "text-foreground hover:bg-accent"
             )}
             whileTap={{ scale: 0.95 }}
           >

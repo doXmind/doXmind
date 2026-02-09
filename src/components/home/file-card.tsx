@@ -23,6 +23,7 @@ interface FileCardProps {
   file: FileItem;
   index: number;
   searchMatch?: { snippet: string; score: number; query: string };
+  onResultClick?: (fileId: string, position: number, score: number) => void;
 }
 
 // SVG fractal noise for paper grain texture
@@ -92,7 +93,7 @@ function highlightQuery(text: string, query: string) {
   );
 }
 
-export function FileCard({ file, index, searchMatch }: FileCardProps) {
+export function FileCard({ file, index, searchMatch, onResultClick }: FileCardProps) {
   const router = useRouter();
   const { setCurrentFile, deleteFile, renameFile } = useFileStore();
   const scatter = SCATTER[index % SCATTER.length];
@@ -107,6 +108,9 @@ export function FileCard({ file, index, searchMatch }: FileCardProps) {
   const wordCount = getWordCount(file.content);
 
   const handleOpen = () => {
+    if (searchMatch && onResultClick) {
+      onResultClick(file.id, index, searchMatch.score);
+    }
     setCurrentFile(file.id);
     router.push("/editor");
   };
