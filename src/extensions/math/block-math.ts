@@ -27,18 +27,26 @@ declare module "@tiptap/core" {
 /**
  * Input rule to convert $$...$$ to block math
  * Triggers when user types $$ followed by content and closing $$
- * Note: Removed ^ anchor to allow block math mid-paragraph
+ * Improved to trigger on space or at end of input
  */
 const blockMathInputRule = (type: NodeType) => {
   return new InputRule({
-    find: /\$\$([^$]*)\$\$$/,
+    // Match $$...$$ followed by space or at end of line
+    find: /\$\$([\s\S]*?)\$\$(\s)?$/,
     handler: ({ state, range, match }) => {
       const latex = match[1] || "";
+      const trailingSpace = match[2];
       const { tr } = state;
       const start = range.from;
       const end = range.to;
 
-      tr.replaceWith(start, end, type.create({ latex }));
+      // Replace $$...$$ with block math node
+      tr.replaceWith(start, end - (trailingSpace ? 1 : 0), type.create({ latex: latex.trim() }));
+
+      // If there was a trailing space, keep it as text
+      if (trailingSpace) {
+        tr.insertText(trailingSpace, end - 1);
+      }
     },
   });
 };

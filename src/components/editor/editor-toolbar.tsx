@@ -229,11 +229,38 @@ export function EditorToolbar({
           onClick={addTable}
           tooltip="Insert Table"
         />
-        <ToolbarButton
-          icon={<Sigma className="h-4 w-4" />}
-          onClick={() => editor.chain().focus().insertBlockMath().run()}
-          tooltip="Math Equation (Ctrl+Shift+E)"
-        />
+        <DropdownMenu>
+          <Tooltip content="Math Equations" side="bottom">
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                aria-label="Insert math equation"
+              >
+                <Sigma className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+          </Tooltip>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem
+              onClick={() => editor.chain().focus().insertInlineMath().run()}
+              className="cursor-pointer"
+            >
+              <span className="mr-2 font-serif">x²</span>
+              Inline Math
+              <span className="ml-auto text-xs text-muted-foreground">Ctrl+Shift+M</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => editor.chain().focus().insertBlockMath().run()}
+              className="cursor-pointer"
+            >
+              <Sigma className="mr-2 h-4 w-4" />
+              Block Math
+              <span className="ml-auto text-xs text-muted-foreground">Ctrl+Shift+E</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </ToolbarGroup>
 
       {/* Modals */}

@@ -28,19 +28,29 @@ declare module "@tiptap/core" {
 /**
  * Input rule to convert $...$ to inline math
  * Matches text between single $ delimiters (not $$)
+ * Triggers when user types a space or other character after closing $
  */
 const inlineMathInputRule = (type: NodeType) => {
   return new InputRule({
-    find: /(?<![\\$])\$([^$]+)\$$/,
+    // Match $...$ followed by space or at end of line
+    // This triggers when user types space after closing $
+    find: /(?<![\\$])\$([^$\n]+)\$(\s)?$/,
     handler: ({ state, range, match }) => {
       const latex = match[1];
-      if (!latex) return null;
+      const trailingSpace = match[2];
+      if (!latex?.trim()) return null;
 
       const { tr } = state;
       const start = range.from;
       const end = range.to;
 
-      tr.replaceWith(start, end, type.create({ latex }));
+      // Replace $...$ with inline math node
+      tr.replaceWith(start, end - (trailingSpace ? 1 : 0), type.create({ latex: latex.trim() }));
+
+      // If there was a trailing space, keep it as text
+      if (trailingSpace) {
+        tr.insertText(trailingSpace, end - 1);
+      }
     },
   });
 };
