@@ -16,9 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useChatContextStore } from "@/stores/chat-context-store";
+import { isDiffReviewActive } from "@/extensions/diff-review";
 
 interface ImageBubbleMenuProps {
   editor: Editor;
+  disabled?: boolean;
 }
 
 type EditMode = "none" | "url" | "alt";
@@ -99,6 +101,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
 
   // Only show when an image is selected
   const shouldShow = useCallback(() => {
+    if (isDiffReviewActive(editor)) return false;
     return editor.isActive("image");
   }, [editor]);
 

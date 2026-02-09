@@ -5,9 +5,11 @@ import { BubbleMenu, Editor } from "@tiptap/react";
 import { ExternalLink, Pencil, Trash2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { isDiffReviewActive } from "@/extensions/diff-review";
 
 interface LinkBubbleMenuProps {
   editor: Editor;
+  disabled?: boolean;
 }
 
 export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
@@ -70,6 +72,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
 
   // Only show when cursor is on a link
   const shouldShow = useCallback(() => {
+    if (isDiffReviewActive(editor)) return false;
     return editor.isActive("link");
   }, [editor]);
 

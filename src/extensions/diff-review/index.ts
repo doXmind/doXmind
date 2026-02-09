@@ -47,6 +47,7 @@ export const DiffReviewExtension = Extension.create({
           init: () => ({
             hunks: [],
             isActive: false,
+            focusedHunkId: null,
           }),
 
           apply(tr, value) {
@@ -180,19 +181,29 @@ export const DiffReviewExtension = Extension.create({
                 buttonPos = from;
               }
 
+              const isFocused = pluginState.focusedHunkId === hunk.id;
+
               // Add action buttons at the start of the block (before any text)
               decorations.push(
-                Decoration.widget(buttonPos, () => createActionWidget(hunk), {
-                  side: -1, // Place before any content at this position
-                  key: `actions-${hunk.id}`,
-                })
+                Decoration.widget(
+                  buttonPos,
+                  () => {
+                    const widget = createActionWidget(hunk);
+                    if (isFocused) widget.classList.add("diff-hunk-focused");
+                    return widget;
+                  },
+                  {
+                    side: -1, // Place before any content at this position
+                    key: `actions-${hunk.id}`,
+                  }
+                )
               );
 
               // Mark old content with strikethrough (when there's old content to show)
               if (hunk.oldContent && from < to) {
                 decorations.push(
                   Decoration.inline(from, to, {
-                    class: "diff-deleted",
+                    class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
                     "data-hunk-id": hunk.id,
                   })
                 );
@@ -202,10 +213,18 @@ export const DiffReviewExtension = Extension.create({
               if (hunk.newContent) {
                 const insertPos = hunk.oldContent === "" ? from : to;
                 decorations.push(
-                  Decoration.widget(insertPos, () => createInsertWidget(hunk), {
-                    side: 1,
-                    key: `insert-${hunk.id}`,
-                  })
+                  Decoration.widget(
+                    insertPos,
+                    () => {
+                      const widget = createInsertWidget(hunk);
+                      if (isFocused) widget.classList.add("diff-hunk-focused");
+                      return widget;
+                    },
+                    {
+                      side: 1,
+                      key: `insert-${hunk.id}`,
+                    }
+                  )
                 );
               }
             }
@@ -402,6 +421,22 @@ export const DiffReviewExtension = Extension.create({
           });
 
           dispatch(tr);
+          return true;
+        },
+
+      setFocusedHunk:
+        (hunkId: string | null) =>
+        ({ tr, state, dispatch }) => {
+          if (dispatch) {
+            const pluginState = DiffReviewPluginKey.getState(state);
+            if (pluginState) {
+              tr.setMeta(DiffReviewPluginKey, {
+                ...pluginState,
+                focusedHunkId: hunkId,
+              });
+              dispatch(tr);
+            }
+          }
           return true;
         },
     };

@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Editor } from "@tiptap/react";
-import { Eye, Check, X } from "lucide-react";
+import { Check, X, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-device-type";
 
@@ -10,16 +10,22 @@ interface DiffReviewToolbarProps {
   editor: Editor | null;
   isActive: boolean;
   pendingCount: number;
+  currentPendingPosition: number;
   onAcceptAll: () => void;
   onRejectAll: () => void;
+  onNextHunk: () => void;
+  onPreviousHunk: () => void;
 }
 
 export function DiffReviewToolbar({
   editor,
   isActive,
   pendingCount,
+  currentPendingPosition,
   onAcceptAll,
   onRejectAll,
+  onNextHunk,
+  onPreviousHunk,
 }: DiffReviewToolbarProps) {
   const isMobile = useIsMobile();
 
@@ -27,51 +33,73 @@ export function DiffReviewToolbar({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -10 }}
+      initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
       className={cn(
-        "flex items-center border-b border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30",
-        // Desktop: normal padding
+        "flex items-center border-b",
+        "bg-[var(--diff-toolbar-bg)] backdrop-blur-xl",
+        "border-[var(--diff-toolbar-border)]",
+        "shadow-[var(--diff-toolbar-shadow)]",
         "gap-3 px-4 py-2",
-        // Mobile: compact styling (not fixed - stays in document flow)
         isMobile && "gap-2 px-3 py-1.5"
       )}
     >
-      {/* Status indicator with pulse */}
+      {/* Review indicator */}
       <div className={cn("flex items-center gap-2", isMobile ? "text-xs" : "text-sm")}>
-        <div className="relative">
-          <Eye
-            className={cn(
-              "text-amber-600 dark:text-amber-400",
-              isMobile ? "h-3.5 w-3.5" : "h-4 w-4"
-            )}
-          />
-          <motion.span
-            className={cn(
-              "absolute rounded-full bg-amber-500",
-              isMobile ? "-right-0.5 -top-0.5 h-1.5 w-1.5" : "-right-0.5 -top-0.5 h-2 w-2"
-            )}
-            animate={{
-              scale: [1, 1.2, 1],
-              opacity: [1, 0.7, 1],
-            }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-          />
+        <div className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
         </div>
-        <span className="font-medium text-amber-800 dark:text-amber-200">
-          {isMobile ? "Review" : "Review Mode"}
+        <span className="font-medium text-foreground/80">
+          {isMobile ? "Review" : "Reviewing Changes"}
         </span>
-        <motion.span
-          key={pendingCount}
-          initial={{ scale: 1.2 }}
-          animate={{ scale: 1 }}
-          className="text-amber-600 dark:text-amber-400"
+      </div>
+
+      {/* Separator */}
+      <div className="h-4 w-px bg-border/50" />
+
+      {/* Navigation cluster */}
+      <div className="flex items-center gap-0.5">
+        <motion.button
+          type="button"
+          onClick={onPreviousHunk}
+          disabled={pendingCount === 0}
+          whileTap={{ scale: 0.9 }}
+          className={cn(
+            "rounded-md p-1 transition-colors",
+            "hover:bg-accent disabled:opacity-40",
+            isMobile && "p-0.5"
+          )}
+          aria-label="Previous change"
         >
-          {pendingCount} {isMobile ? "" : "change"}
-          {isMobile ? "" : pendingCount !== 1 ? "s" : ""} pending
-        </motion.span>
+          <ChevronUp className={cn(isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
+        </motion.button>
+
+        <span
+          className={cn(
+            "min-w-[64px] text-center font-medium tabular-nums text-muted-foreground",
+            isMobile ? "text-[10px]" : "text-xs"
+          )}
+        >
+          {pendingCount > 0 ? `${currentPendingPosition} of ${pendingCount}` : "No changes"}
+        </span>
+
+        <motion.button
+          type="button"
+          onClick={onNextHunk}
+          disabled={pendingCount === 0}
+          whileTap={{ scale: 0.9 }}
+          className={cn(
+            "rounded-md p-1 transition-colors",
+            "hover:bg-accent disabled:opacity-40",
+            isMobile && "p-0.5"
+          )}
+          aria-label="Next change"
+        >
+          <ChevronDown className={cn(isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
+        </motion.button>
       </div>
 
       {/* Spacer */}
@@ -81,37 +109,34 @@ export function DiffReviewToolbar({
       <motion.button
         type="button"
         onClick={onRejectAll}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.97 }}
         transition={{ type: "spring", stiffness: 400, damping: 20 }}
         className={cn(
-          "inline-flex items-center rounded-md font-medium",
-          "text-red-600 dark:text-red-400",
-          "hover:text-red-700 dark:hover:text-red-300",
-          "hover:bg-red-100 dark:hover:bg-red-900/30",
-          "transition-colors",
+          "inline-flex items-center rounded-lg font-medium transition-colors",
+          "bg-[var(--diff-btn-reject-bg)] text-[var(--diff-btn-reject-fg)]",
+          "hover:bg-[var(--diff-btn-reject-hover)]",
           isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
         )}
       >
-        <X className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-4 w-4")} />
+        <X className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
         {!isMobile && "Reject All"}
       </motion.button>
 
       <motion.button
         type="button"
         onClick={onAcceptAll}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.97 }}
         transition={{ type: "spring", stiffness: 400, damping: 20 }}
         className={cn(
-          "inline-flex items-center rounded-md font-medium text-white",
-          "bg-green-600 hover:bg-green-700",
-          "dark:bg-green-700 dark:hover:bg-green-600",
-          "transition-colors",
+          "inline-flex items-center rounded-lg font-medium transition-colors",
+          "bg-[var(--diff-btn-accept-bg)] text-[var(--diff-btn-accept-fg)]",
+          "hover:bg-[var(--diff-btn-accept-hover)]",
           isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
         )}
       >
-        <Check className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-4 w-4")} />
+        <Check className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
         {!isMobile && "Accept All"}
       </motion.button>
     </motion.div>

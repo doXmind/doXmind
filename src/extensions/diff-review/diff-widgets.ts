@@ -78,7 +78,8 @@ export function createActionWidget(hunk: DiffHunk): HTMLElement {
 
   const acceptBtn = document.createElement("button");
   acceptBtn.className = "diff-action-btn diff-accept";
-  acceptBtn.innerHTML = "&#10003;"; // checkmark
+  acceptBtn.innerHTML =
+    '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5L5 9L9.5 3.5"/></svg>';
   acceptBtn.title = "Accept change (apply)";
   acceptBtn.type = "button";
   acceptBtn.onclick = (e) => {
@@ -89,7 +90,8 @@ export function createActionWidget(hunk: DiffHunk): HTMLElement {
 
   const rejectBtn = document.createElement("button");
   rejectBtn.className = "diff-action-btn diff-reject";
-  rejectBtn.innerHTML = "&#10005;"; // X mark
+  rejectBtn.innerHTML =
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2L8 8M8 2L2 8"/></svg>';
   rejectBtn.title = "Reject change (discard)";
   rejectBtn.type = "button";
   rejectBtn.onclick = (e) => {

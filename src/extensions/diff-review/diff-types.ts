@@ -9,6 +9,7 @@ import type { DiffHunk } from "@/types/diff";
 export interface DiffReviewPluginState {
   hunks: DiffHunk[];
   isActive: boolean;
+  focusedHunkId: string | null;
 }
 
 // Plugin key for accessing state
@@ -42,6 +43,10 @@ declare module "@tiptap/core" {
        * Reject a specific diff hunk (removes the decoration)
        */
       rejectDiffHunk: (hunkId: string) => ReturnType;
+      /**
+       * Set the currently focused hunk for navigation highlight
+       */
+      setFocusedHunk: (hunkId: string | null) => ReturnType;
     };
   }
 }

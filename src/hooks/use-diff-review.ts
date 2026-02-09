@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import type { Editor } from "@tiptap/react";
+import type { DiffHunk } from "@/types/diff";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 
 interface UseDiffReviewOptions {
@@ -9,6 +10,18 @@ interface UseDiffReviewOptions {
   editor: Editor | null;
   /** Current file ID */
   fileId: string;
+}
+
+/** Scroll the editor to bring a hunk into view via DOM (avoids creating a text selection) */
+function scrollToHunk(_editor: Editor, hunk: DiffHunk) {
+  // Find the hunk's DOM element by data attribute (action widget or insert widget)
+  const el =
+    document.querySelector(`[data-hunk-id="${hunk.id}"].diff-actions-row`) ||
+    document.querySelector(`[data-hunk-id="${hunk.id}"]`);
+
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 }
 
 /**
@@ -24,7 +37,13 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
     rejectHunk,
     acceptAllHunks,
     rejectAllHunks,
+    currentHunkIndex,
+    goToNextHunk,
+    goToPreviousHunk,
   } = useDiffReviewStore();
+
+  // Track previous review mode to detect transitions
+  const prevReviewMode = useRef(false);
 
   // Sync diffSession to DiffReviewExtension
   useEffect(() => {
@@ -38,6 +57,46 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
       editor.commands.setDiffHunks(pendingHunks);
     }
   }, [editor, diffSession, fileId]);
+
+  // Auto-scroll to first change when review mode starts
+  useEffect(() => {
+    if (!editor || !diffSession) return;
+
+    const justEntered = isReviewMode && !prevReviewMode.current;
+    prevReviewMode.current = isReviewMode;
+
+    if (!justEntered) return;
+
+    // Wait for decorations to render before scrolling
+    const timer = setTimeout(() => {
+      const pendingHunks = diffSession.hunks.filter((h) => h.status === "pending");
+      if (pendingHunks.length > 0) {
+        scrollToHunk(editor, pendingHunks[0]);
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [editor, diffSession, isReviewMode]);
+
+  // Scroll + focus when currentHunkIndex changes (navigation)
+  useEffect(() => {
+    if (!editor || !diffSession || currentHunkIndex < 0) return;
+
+    const hunk = diffSession.hunks[currentHunkIndex];
+    if (!hunk || hunk.status !== "pending") return;
+
+    // Set focus highlight in ProseMirror
+    editor.commands.setFocusedHunk(hunk.id);
+    // Scroll into view
+    scrollToHunk(editor, hunk);
+  }, [editor, diffSession, currentHunkIndex]);
+
+  // Clear focus when review ends
+  useEffect(() => {
+    if (!isReviewMode && editor) {
+      editor.commands.setFocusedHunk(null);
+    }
+  }, [isReviewMode, editor]);
 
   // Handle diff accept/reject events from custom events
   useEffect(() => {
@@ -103,10 +162,24 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
   // Get pending count
   const pendingCount = diffSession?.hunks.filter((h) => h.status === "pending").length || 0;
 
+  // Compute 1-based position of current hunk among pending hunks
+  const currentPendingPosition = (() => {
+    if (!diffSession || currentHunkIndex < 0) return 0;
+    const pendingIndices = diffSession.hunks
+      .map((h, i) => ({ status: h.status, index: i }))
+      .filter(({ status }) => status === "pending")
+      .map(({ index }) => index);
+    const pos = pendingIndices.indexOf(currentHunkIndex);
+    return pos >= 0 ? pos + 1 : 0;
+  })();
+
   return {
     isReviewMode,
     pendingCount,
+    currentPendingPosition,
     handleAcceptAll,
     handleRejectAll,
+    handleNextHunk: goToNextHunk,
+    handlePreviousHunk: goToPreviousHunk,
   };
 }

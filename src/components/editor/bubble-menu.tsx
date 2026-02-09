@@ -15,10 +15,12 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
+import { isDiffReviewActive } from "@/extensions/diff-review";
 import { LinkModal } from "./link-modal";
 
 interface BubbleMenuComponentProps {
   editor: Editor;
+  disabled?: boolean;
 }
 
 export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
@@ -40,6 +42,7 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
   // Only show when text is selected (not just cursor on a link)
   // Don't show when in table, image, or math nodes - they have their own handling
   const shouldShow = useCallback(() => {
+    if (isDiffReviewActive(editor)) return false;
     const { from, to } = editor.state.selection;
     const hasSelection = to - from > 0;
     const isInTable = editor.isActive("table");

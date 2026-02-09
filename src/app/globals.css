@@ -49,6 +49,27 @@
     --status-thinking-border: rgba(168, 85, 247, 0.3);
     --status-warning-bg: rgba(251, 191, 36, 0.1);
     --status-warning-border: rgba(251, 191, 36, 0.3);
+
+    /* Diff Review — Apple HIG-inspired palette (light) */
+    --diff-deleted-bg: rgba(255, 59, 48, 0.08);
+    --diff-deleted-bg-hover: rgba(255, 59, 48, 0.12);
+    --diff-deleted-border: rgba(255, 59, 48, 0.2);
+    --diff-deleted-text: rgba(255, 59, 48, 0.7);
+    --diff-inserted-bg: rgba(52, 199, 89, 0.07);
+    --diff-inserted-bg-hover: rgba(52, 199, 89, 0.11);
+    --diff-inserted-border: rgba(52, 199, 89, 0.18);
+    --diff-inserted-accent: rgba(52, 199, 89, 0.5);
+    --diff-focus-ring: rgba(0, 122, 255, 0.25);
+    --diff-focus-border: rgba(0, 122, 255, 0.3);
+    --diff-toolbar-bg: rgba(255, 255, 255, 0.72);
+    --diff-toolbar-border: rgba(0, 0, 0, 0.06);
+    --diff-toolbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+    --diff-btn-accept-bg: rgba(52, 199, 89, 0.12);
+    --diff-btn-accept-fg: rgb(36, 138, 61);
+    --diff-btn-accept-hover: rgba(52, 199, 89, 0.2);
+    --diff-btn-reject-bg: rgba(255, 59, 48, 0.1);
+    --diff-btn-reject-fg: rgb(196, 43, 28);
+    --diff-btn-reject-hover: rgba(255, 59, 48, 0.18);
   }
 
   .dark {
@@ -71,6 +92,27 @@
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     --ring: 240 4.9% 83.9%;
+
+    /* Diff Review — Apple HIG-inspired palette (dark) */
+    --diff-deleted-bg: rgba(255, 69, 58, 0.1);
+    --diff-deleted-bg-hover: rgba(255, 69, 58, 0.16);
+    --diff-deleted-border: rgba(255, 69, 58, 0.22);
+    --diff-deleted-text: rgba(255, 69, 58, 0.65);
+    --diff-inserted-bg: rgba(48, 209, 88, 0.08);
+    --diff-inserted-bg-hover: rgba(48, 209, 88, 0.14);
+    --diff-inserted-border: rgba(48, 209, 88, 0.2);
+    --diff-inserted-accent: rgba(48, 209, 88, 0.45);
+    --diff-focus-ring: rgba(10, 132, 255, 0.3);
+    --diff-focus-border: rgba(10, 132, 255, 0.35);
+    --diff-toolbar-bg: rgba(28, 28, 30, 0.78);
+    --diff-toolbar-border: rgba(255, 255, 255, 0.08);
+    --diff-toolbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
+    --diff-btn-accept-bg: rgba(48, 209, 88, 0.15);
+    --diff-btn-accept-fg: rgb(48, 209, 88);
+    --diff-btn-accept-hover: rgba(48, 209, 88, 0.25);
+    --diff-btn-reject-bg: rgba(255, 69, 58, 0.12);
+    --diff-btn-reject-fg: rgb(255, 69, 58);
+    --diff-btn-reject-hover: rgba(255, 69, 58, 0.2);
   }
 
   /* High Contrast Mode - Light */
@@ -538,48 +580,51 @@ html {
 }
 
 /* ====================================
-   Diff Review Styles
-   Cursor-style inline diff with accept/reject
+   Diff Review Styles — Apple-inspired
+   Clean inline diff with frosted glass controls
    ==================================== */
 
-/* Diff hunk container - wraps the whole change */
-.ProseMirror .diff-hunk-wrapper {
-  position: relative;
-  display: block;
-  margin: 8px 0;
-  padding-left: 60px;
-}
-
-/* Deleted content - Red strikethrough */
+/* Deleted content — soft red strikethrough */
 .ProseMirror .diff-deleted {
-  background-color: rgba(239, 68, 68, 0.15);
+  background-color: var(--diff-deleted-bg);
   text-decoration: line-through;
-  text-decoration-color: rgba(239, 68, 68, 0.7);
+  text-decoration-color: var(--diff-deleted-text);
+  text-decoration-thickness: 1.5px;
   color: hsl(var(--muted-foreground));
-  border-radius: 2px;
-  padding: 2px 4px;
+  border-radius: 3px;
+  padding: 1px 3px;
   display: inline;
+  transition: background-color 0.2s ease;
 }
 
-.dark .ProseMirror .diff-deleted {
-  background-color: rgba(239, 68, 68, 0.2);
-  text-decoration-color: rgba(248, 113, 113, 0.8);
+.ProseMirror .diff-deleted:hover {
+  background-color: var(--diff-deleted-bg-hover);
 }
 
-/* Inserted content wrapper */
+/* Inserted content wrapper — left accent border (Apple Pages style) */
 .ProseMirror .diff-inserted-wrapper {
   display: block;
-  margin-top: 4px;
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 6px;
+  margin-top: 6px;
+  margin-bottom: 2px;
+  border: 1px solid var(--diff-inserted-border);
+  border-left: 3px solid var(--diff-inserted-accent);
+  border-radius: 8px;
+  overflow: hidden;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
-/* Inserted content - Green ghost text */
+.ProseMirror .diff-inserted-wrapper:hover {
+  border-color: var(--diff-inserted-accent);
+}
+
+/* Inserted content — subtle green ghost text */
 .ProseMirror .diff-inserted {
-  background-color: rgba(34, 197, 94, 0.15);
+  background-color: var(--diff-inserted-bg);
   color: hsl(var(--foreground));
-  border-radius: 4px;
-  padding: 8px 12px;
+  border-radius: 0;
+  padding: 10px 14px;
   display: block;
   font-size: 1rem;
   font-style: normal;
@@ -587,10 +632,11 @@ html {
   white-space: pre-wrap;
   word-wrap: break-word;
   line-height: 1.6;
+  transition: background-color 0.2s ease;
 }
 
-.dark .ProseMirror .diff-inserted {
-  background-color: rgba(34, 197, 94, 0.2);
+.ProseMirror .diff-inserted:hover {
+  background-color: var(--diff-inserted-bg-hover);
 }
 
 /* Markdown content styling inside diff blocks */
@@ -636,27 +682,27 @@ html {
 }
 
 .ProseMirror .diff-markdown-content code {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: rgba(0, 0, 0, 0.06);
   padding: 0.15em 0.3em;
-  border-radius: 3px;
+  border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.9em;
 }
 
 .dark .ProseMirror .diff-markdown-content code {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 .ProseMirror .diff-markdown-content pre {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: rgba(0, 0, 0, 0.05);
   padding: 0.75em 1em;
-  border-radius: 6px;
+  border-radius: 8px;
   margin: 0.5em 0;
   overflow-x: auto;
 }
 
 .dark .ProseMirror .diff-markdown-content pre {
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: rgba(0, 0, 0, 0.25);
 }
 
 .ProseMirror .diff-markdown-content pre code {
@@ -677,7 +723,7 @@ html {
 }
 
 .ProseMirror .diff-markdown-content blockquote {
-  border-left: 3px solid rgba(34, 197, 94, 0.5);
+  border-left: 3px solid var(--diff-inserted-accent);
   margin: 0.5em 0;
   padding-left: 1em;
   color: hsl(var(--muted-foreground));
@@ -685,7 +731,7 @@ html {
 
 .ProseMirror .diff-markdown-content hr {
   border: none;
-  border-top: 1px solid rgba(34, 197, 94, 0.3);
+  border-top: 1px solid var(--diff-inserted-border);
   margin: 0.75em 0;
 }
 
@@ -694,106 +740,125 @@ html {
   text-decoration: underline;
 }
 
-/* Action buttons row - positioned relative to diff content */
+/* Action buttons row */
 .ProseMirror .diff-actions-row {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-right: 8px;
+  margin-right: 10px;
   vertical-align: middle;
   user-select: none;
 }
 
-/* Action buttons container */
+/* Action buttons container — frosted glass pill */
 .ProseMirror .diff-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background-color: hsl(var(--background));
-  padding: 4px 6px;
-  border-radius: 6px;
-  border: 1px solid hsl(var(--border));
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  gap: 2px;
+  background-color: var(--diff-toolbar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 3px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--diff-toolbar-border);
+  box-shadow: var(--diff-toolbar-shadow);
 }
 
 /* Diff type label */
 .ProseMirror .diff-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--muted-foreground) / 0.6);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.05em;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
 }
 
-/* Action button base style */
+/* Action button base style — larger touch targets */
 .ProseMirror .diff-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   border: none;
   cursor: pointer;
-  font-size: 11px;
-  font-weight: bold;
-  transition: all 0.15s ease;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   line-height: 1;
   padding: 0;
 }
 
-/* Accept button - Green */
+/* Accept button — tinted green */
 .ProseMirror .diff-accept {
-  background-color: rgba(34, 197, 94, 0.8);
-  color: white;
+  background-color: var(--diff-btn-accept-bg);
+  color: var(--diff-btn-accept-fg);
 }
 
 .ProseMirror .diff-accept:hover {
-  background-color: rgba(34, 197, 94, 1);
-  transform: scale(1.1);
+  background-color: var(--diff-btn-accept-hover);
+  transform: scale(1.05);
 }
 
 .ProseMirror .diff-accept:active {
   transform: scale(0.95);
 }
 
-/* Reject button - Red */
+/* Reject button — tinted red */
 .ProseMirror .diff-reject {
-  background-color: rgba(239, 68, 68, 0.8);
-  color: white;
+  background-color: var(--diff-btn-reject-bg);
+  color: var(--diff-btn-reject-fg);
 }
 
 .ProseMirror .diff-reject:hover {
-  background-color: rgba(239, 68, 68, 1);
-  transform: scale(1.1);
+  background-color: var(--diff-btn-reject-hover);
+  transform: scale(1.05);
 }
 
 .ProseMirror .diff-reject:active {
   transform: scale(0.95);
 }
 
-/* Hover effect on diff blocks */
-.ProseMirror .diff-deleted:hover,
-.ProseMirror .diff-inserted:hover {
-  outline: 2px solid hsl(var(--primary) / 0.3);
+/* Focused hunk highlight — blue ring for current navigation target */
+.ProseMirror .diff-deleted.diff-hunk-focused {
+  outline: 2px solid var(--diff-focus-border);
   outline-offset: 1px;
 }
 
+.ProseMirror .diff-inserted-wrapper.diff-hunk-focused {
+  border-color: var(--diff-focus-border);
+  box-shadow: 0 0 0 3px var(--diff-focus-ring);
+}
+
+.ProseMirror .diff-actions-row.diff-hunk-focused .diff-actions {
+  border-color: var(--diff-focus-border);
+  box-shadow:
+    0 0 0 3px var(--diff-focus-ring),
+    var(--diff-toolbar-shadow);
+}
+
 /* Animation for new diff hunks */
-@keyframes diffFadeIn {
+@keyframes diffSlideIn {
   from {
     opacity: 0;
-    background-color: rgba(255, 235, 59, 0.3);
+    transform: translateY(2px);
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
 .ProseMirror .diff-deleted,
-.ProseMirror .diff-inserted {
-  animation: diffFadeIn 0.3s ease-out;
+.ProseMirror .diff-inserted-wrapper {
+  animation: diffSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Focus ring for accessibility */

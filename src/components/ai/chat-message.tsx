@@ -150,7 +150,7 @@ export function ChatMessage({ message, conversationId, userPrompt }: ChatMessage
       <div className={cn("max-w-[92%] flex-1 md:max-w-[85%]", isUser ? "text-right" : "text-left")}>
         <div
           className={cn(
-            "inline-block rounded-lg px-3 py-2 text-sm",
+            "inline-block max-w-full rounded-lg px-3 py-2 text-sm",
             isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
             !isUser && message.isStreaming && "border-l-2 border-primary/60 md:border-l-0"
           )}

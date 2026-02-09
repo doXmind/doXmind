@@ -14,9 +14,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isDiffReviewActive } from "@/extensions/diff-review";
 
 interface TableBubbleMenuProps {
   editor: Editor;
+  disabled?: boolean;
 }
 
 export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
@@ -29,6 +31,7 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
         offset: [0, 10],
       }}
       shouldShow={({ editor }) => {
+        if (isDiffReviewActive(editor)) return false;
         return editor.isActive("table");
       }}
       className="table-bubble-menu flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-lg"

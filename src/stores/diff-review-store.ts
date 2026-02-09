@@ -19,6 +19,7 @@ interface DiffReviewState {
   diffSession: DiffSession | null;
   isReviewMode: boolean;
   pendingFeedback: EditFeedbackItem[];
+  currentHunkIndex: number;
 
   // Actions
   startDiffReview: (fileId: string, hunks: DiffHunk[], originalContent: string) => void;
@@ -29,6 +30,9 @@ interface DiffReviewState {
   rejectAllHunks: () => void;
   addHunksToDiffSession: (hunks: DiffHunk[]) => void;
   consumePendingFeedback: () => EditFeedbackItem[];
+  goToNextHunk: () => void;
+  goToPreviousHunk: () => void;
+  setCurrentHunkIndex: (index: number) => void;
 }
 
 /** Build feedback item from a hunk and decision */
@@ -41,10 +45,32 @@ function buildFeedback(hunk: DiffHunk, decision: "accepted" | "rejected"): EditF
   };
 }
 
+/** Find the next pending hunk index after the given index (wraps around) */
+function findNextPendingIndex(hunks: DiffHunk[], afterIndex: number): number {
+  const pendingIndices = hunks
+    .map((h, i) => ({ status: h.status, index: i }))
+    .filter(({ status }) => status === "pending")
+    .map(({ index }) => index);
+  if (pendingIndices.length === 0) return -1;
+  return pendingIndices.find((i) => i > afterIndex) ?? pendingIndices[0];
+}
+
+/** Find the previous pending hunk index before the given index (wraps around) */
+function findPrevPendingIndex(hunks: DiffHunk[], beforeIndex: number): number {
+  const pendingIndices = hunks
+    .map((h, i) => ({ status: h.status, index: i }))
+    .filter(({ status }) => status === "pending")
+    .map(({ index }) => index);
+  if (pendingIndices.length === 0) return -1;
+  const reversed = [...pendingIndices].reverse();
+  return reversed.find((i) => i < beforeIndex) ?? reversed[0];
+}
+
 export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
   diffSession: null,
   isReviewMode: false,
   pendingFeedback: [],
+  currentHunkIndex: -1,
 
   startDiffReview: (fileId, hunks, originalContent) => {
     const now = Date.now();
@@ -59,6 +85,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
         startedAt: now,
       },
       isReviewMode: true,
+      currentHunkIndex: 0,
     });
   },
 
@@ -66,6 +93,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
     set({
       diffSession: null,
       isReviewMode: false,
+      currentHunkIndex: -1,
     }),
 
   acceptHunk: (hunkId) =>
@@ -97,16 +125,19 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
         });
       }
 
+      const updatedHunks = state.diffSession.hunks.map((h) =>
+        h.id === hunkId ? { ...h, status: "accepted" as const } : h
+      );
+
       return {
         pendingFeedback: hunk
           ? [...state.pendingFeedback, buildFeedback(hunk, "accepted")]
           : state.pendingFeedback,
         diffSession: {
           ...state.diffSession,
-          hunks: state.diffSession.hunks.map((h) =>
-            h.id === hunkId ? { ...h, status: "accepted" as const } : h
-          ),
+          hunks: updatedHunks,
         },
+        currentHunkIndex: findNextPendingIndex(updatedHunks, state.currentHunkIndex),
       };
     }),
 
@@ -132,16 +163,19 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
         });
       }
 
+      const updatedHunks = state.diffSession.hunks.map((h) =>
+        h.id === hunkId ? { ...h, status: "rejected" as const } : h
+      );
+
       return {
         pendingFeedback: hunk
           ? [...state.pendingFeedback, buildFeedback(hunk, "rejected")]
           : state.pendingFeedback,
         diffSession: {
           ...state.diffSession,
-          hunks: state.diffSession.hunks.map((h) =>
-            h.id === hunkId ? { ...h, status: "rejected" as const } : h
-          ),
+          hunks: updatedHunks,
         },
+        currentHunkIndex: findNextPendingIndex(updatedHunks, state.currentHunkIndex),
       };
     }),
 
@@ -225,6 +259,22 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
         },
       };
     }),
+
+  goToNextHunk: () =>
+    set((state) => {
+      if (!state.diffSession) return state;
+      const nextIndex = findNextPendingIndex(state.diffSession.hunks, state.currentHunkIndex);
+      return { currentHunkIndex: nextIndex };
+    }),
+
+  goToPreviousHunk: () =>
+    set((state) => {
+      if (!state.diffSession) return state;
+      const prevIndex = findPrevPendingIndex(state.diffSession.hunks, state.currentHunkIndex);
+      return { currentHunkIndex: prevIndex };
+    }),
+
+  setCurrentHunkIndex: (index: number) => set({ currentHunkIndex: index }),
 
   consumePendingFeedback: () => {
     const feedback = get().pendingFeedback;

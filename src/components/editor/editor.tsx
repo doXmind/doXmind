@@ -202,7 +202,15 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   const isReviewActive = reviewState?.isActive ?? false;
 
   // Use diff review hook
-  const { isReviewMode, pendingCount, handleAcceptAll, handleRejectAll } = useDiffReview({
+  const {
+    isReviewMode,
+    pendingCount,
+    currentPendingPosition,
+    handleAcceptAll,
+    handleRejectAll,
+    handleNextHunk,
+    handlePreviousHunk,
+  } = useDiffReview({
     editor,
     fileId: file.id,
   });
@@ -326,8 +334,11 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         editor={editor}
         isActive={isReviewMode}
         pendingCount={pendingCount}
+        currentPendingPosition={currentPendingPosition}
         onAcceptAll={handleAcceptAll}
         onRejectAll={handleRejectAll}
+        onNextHunk={handleNextHunk}
+        onPreviousHunk={handlePreviousHunk}
       />
 
       <div className={cn("flex min-w-0 overflow-x-hidden", !isMobile && "min-h-0 flex-1")}>
@@ -389,7 +400,9 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
           <ImageBubbleMenu editor={editor} />
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />
-          <QuickEditMenu onApply={handleQuickEditApply} isDemoMode={isDemoMode} />
+          {!isReviewMode && (
+            <QuickEditMenu onApply={handleQuickEditApply} isDemoMode={isDemoMode} />
+          )}
         </>
       )}
 
