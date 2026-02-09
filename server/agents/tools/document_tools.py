@@ -1,9 +1,10 @@
 """Document editing tool executors.
 
 This module contains the execution logic for document editing tools:
+- get_document_outline
+- read_section
 - view_document
-- str_replace_editor
-- insert_text
+- str_replace_editor (exact match replace)
 - replace_document
 - search_in_document
 """
@@ -11,7 +12,7 @@ This module contains the execution logic for document editing tools:
 from dataclasses import dataclass
 from typing import Any
 
-from lib.markdown_utils import markdown_to_plain_text
+from services.document_sections import find_sections, generate_outline, parse_sections
 
 
 @dataclass
@@ -49,6 +50,63 @@ def find_target_file(
     return files[0] if files else None
 
 
+def execute_get_document_outline(
+    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
+) -> dict[str, Any]:
+    """Execute get_document_outline tool.
+
+    Returns the heading structure with section IDs and line ranges.
+    """
+    target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
+
+    if not target_file:
+        return {"result": "No document is currently open."}
+
+    content = target_file.get("content", "")
+    lines = content.split("\n")
+    sections = parse_sections(content)
+    outline = generate_outline(sections, len(lines))
+
+    return {"result": f"Document: {target_file['name']}\n{'=' * 50}\n{outline}"}
+
+
+def execute_read_section(
+    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
+) -> dict[str, Any]:
+    """Execute read_section tool.
+
+    Returns content of requested sections with line numbers.
+    Reading a parent section includes all its children.
+    """
+    target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
+
+    if not target_file:
+        return {"result": "No document is currently open."}
+
+    content = target_file.get("content", "")
+    sections = parse_sections(content)
+    requested_ids = tool_input.get("section_ids", [])
+
+    if not requested_ids:
+        return {"error": "section_ids is required."}
+
+    matched = find_sections(sections, requested_ids)
+
+    if not matched:
+        available = [s.section_id for s in sections]
+        return {"error": f"No sections found for IDs: {requested_ids}. Available: {available}"}
+
+    all_lines = content.split("\n")
+    result_parts = []
+    for sec in matched:
+        sec_lines = all_lines[sec.start_line - 1 : sec.end_line]
+        numbered = [f"{sec.start_line + i:4d} | {line}" for i, line in enumerate(sec_lines)]
+        header = f"--- {sec.section_id}: {sec.heading_text} [L{sec.start_line}-L{sec.end_line}] ---"
+        result_parts.append(header + "\n" + "\n".join(numbered))
+
+    return {"result": "\n\n".join(result_parts)}
+
+
 def execute_view_document(
     tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
@@ -68,13 +126,48 @@ def execute_view_document(
     return {"result": f"Document: {target_file['name']}\n{'=' * 50}\n" + "\n".join(numbered_lines)}
 
 
+# ---------------------------------------------------------------------------
+# Exact match helper (Claude Code-style: exact match or fail)
+# ---------------------------------------------------------------------------
+
+
+def _find_exact_match(content: str, target: str, label: str = "old_str") -> str | None:
+    """Find target in content using exact matching only.
+
+    Returns None on success (unique match found), or an error message string.
+    Like Claude Code: exact match or fail with a clear error for the AI to retry.
+    """
+    if not target:
+        return f"{label} is required."
+
+    count = content.count(target)
+    if count == 1:
+        return None  # Exact unique match — success
+
+    if count > 1:
+        return f"{label} found {count} times. Include more surrounding context to make it unique."
+
+    # Not found — give the AI actionable guidance
+    lines = content.split("\n")
+    return (
+        f"No exact match for {label} in document ({len(lines)} lines). "
+        f"The text must match exactly (including whitespace and line breaks). "
+        f"Use view_document or read_section to copy the exact text."
+    )
+
+
+# ---------------------------------------------------------------------------
+# str_replace_editor executor (replace mode + insert-after mode)
+# ---------------------------------------------------------------------------
+
+
 def execute_str_replace(
     tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
     """Execute str_replace_editor tool.
 
-    Replaces a specific string in the document.
-    Returns an edit operation dict on success.
+    Exact match replacement: old_str + new_str → replace old_str with new_str.
+    old_str must match exactly once in the document.
     """
     target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
 
@@ -85,57 +178,18 @@ def execute_str_replace(
     new_str = tool_input.get("new_str", "")
     content = target_file.get("content", "")
 
-    count = content.count(old_str)
-    if count == 0:
-        return {
-            "error": "String not found in document. Make sure it matches exactly including whitespace."
-        }
-    if count > 1:
-        return {
-            "error": f"String found {count} times. Please provide a more unique string to replace."
-        }
+    if not old_str:
+        return {"error": "old_str is required."}
 
-    # Generate search_text for frontend diff view matching
-    # This ensures the frontend uses the same text transformation as backend validation
-    search_text = markdown_to_plain_text(old_str)
+    error = _find_exact_match(content, old_str)
+    if error:
+        return {"error": error}
 
     return {
         "type": "str_replace",
         "file_id": target_file["id"],
         "file_name": target_file["name"],
         "old_str": old_str,
-        "new_str": new_str,
-        "search_text": search_text,
-        "success": True,
-    }
-
-
-def execute_insert_text(
-    tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
-) -> dict[str, Any]:
-    """Execute insert_text tool.
-
-    Inserts text after a specific line number.
-    Returns an edit operation dict on success.
-    """
-    target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
-
-    if not target_file:
-        return {"error": "No document is currently open."}
-
-    insert_line = tool_input.get("insert_line", 0)
-    new_str = tool_input.get("new_str", "")
-    content = target_file.get("content", "")
-    lines = content.split("\n")
-
-    if insert_line < 0 or insert_line > len(lines):
-        return {"error": f"Line number {insert_line} is out of range (0-{len(lines)})"}
-
-    return {
-        "type": "insert",
-        "file_id": target_file["id"],
-        "file_name": target_file["name"],
-        "insert_line": insert_line,
         "new_str": new_str,
         "success": True,
     }
@@ -200,9 +254,10 @@ def execute_search_in_document(
 
 # Tool executor registry
 _TOOL_EXECUTORS = {
+    "get_document_outline": execute_get_document_outline,
+    "read_section": execute_read_section,
     "view_document": execute_view_document,
     "str_replace_editor": execute_str_replace,
-    "insert_text": execute_insert_text,
     "replace_document": execute_replace_document,
     "search_in_document": execute_search_in_document,
 }

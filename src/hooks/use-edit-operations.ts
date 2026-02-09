@@ -58,7 +58,6 @@ export function useEditOperations() {
             success: edit.success,
             old_str: edit.old_str,
             new_str: edit.new_str,
-            insert_line: edit.insert_line,
             new_content: edit.new_content,
           };
 

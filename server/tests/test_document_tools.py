@@ -2,15 +2,15 @@
 
 Tests the document editing tool executors:
 - view_document
-- str_replace_editor
-- insert_text
+- str_replace_editor (exact match replace)
 - replace_document
 - search_in_document
+- get_document_outline
+- read_section
 """
 
 from agents.tools.document_tools import (
     execute_document_tool,
-    execute_insert_text,
     execute_replace_document,
     execute_search_in_document,
     execute_str_replace,
@@ -153,26 +153,6 @@ class TestStrReplace:
         assert result["file_id"] == "file-1"
         assert result["old_str"] == "Line 2"
         assert result["new_str"] == "Modified Line 2"
-        # search_text should be generated for frontend diff view matching
-        assert "search_text" in result
-        assert result["search_text"] == "Line 2"
-
-    def test_str_replace_generates_search_text_from_markdown(self):
-        """Should generate search_text by converting markdown to plain text."""
-        files = [
-            {
-                "id": "file-1",
-                "name": "doc.md",
-                "content": "This is **bold** text here.",
-                "is_current": True,
-            }
-        ]
-
-        result = execute_str_replace({"old_str": "**bold**", "new_str": "plain"}, files, "file-1")
-
-        assert result.get("success") is True
-        # search_text should be the plain text version for matching in doc.textContent
-        assert result["search_text"] == "bold"
 
     def test_str_replace_string_not_found(self):
         """Should return error when string not found."""
@@ -183,7 +163,7 @@ class TestStrReplace:
         )
 
         assert "error" in result
-        assert "not found" in result["error"].lower()
+        assert "no exact match" in result["error"].lower()
 
     def test_str_replace_multiple_matches(self):
         """Should return error when string found multiple times."""
@@ -219,73 +199,52 @@ class TestStrReplace:
         assert result.get("success") is True
         assert result["file_id"] == "file-2"
 
-
-# ============================================================================
-# execute_insert_text Tests
-# ============================================================================
-
-
-class TestInsertText:
-    """Tests for insert_text tool."""
-
-    def test_insert_text_success(self):
-        """Should return edit operation on success."""
+    def test_str_replace_empty_old_str(self):
+        """Should return error when old_str is empty."""
         files = create_sample_files()
 
-        result = execute_insert_text(
-            {"insert_line": 2, "new_str": "New inserted line"}, files, "file-1"
+        result = execute_str_replace({"old_str": "", "new_str": "Some text"}, files, "file-1")
+
+        assert "error" in result
+        assert "required" in result["error"].lower()
+
+    def test_str_replace_missing_old_str(self):
+        """Should return error when old_str is not provided."""
+        files = create_sample_files()
+
+        result = execute_str_replace({"new_str": "Some text"}, files, "file-1")
+
+        assert "error" in result
+        assert "required" in result["error"].lower()
+
+    def test_str_replace_no_fuzzy_matching(self):
+        """Should NOT match with different whitespace (exact match only)."""
+        files = [
+            {
+                "id": "file-1",
+                "name": "doc.md",
+                "content": "Hello   world\nNew line",
+                "is_current": True,
+            }
+        ]
+
+        result = execute_str_replace(
+            {"old_str": "Hello world", "new_str": "Hi world"}, files, "file-1"
         )
 
-        assert result.get("success") is True
-        assert result["type"] == "insert"
-        assert result["insert_line"] == 2
-        assert result["new_str"] == "New inserted line"
+        # Should fail because "Hello world" (single space) != "Hello   world" (three spaces)
+        assert "error" in result
 
-    def test_insert_text_at_beginning(self):
-        """Should allow insert at line 0 (beginning)."""
+    def test_str_replace_error_message_is_actionable(self):
+        """Should return actionable error message when not found."""
         files = create_sample_files()
 
-        result = execute_insert_text({"insert_line": 0, "new_str": "First line"}, files, "file-1")
-
-        assert result.get("success") is True
-        assert result["insert_line"] == 0
-
-    def test_insert_text_at_end(self):
-        """Should allow insert at end of document."""
-        files = create_sample_files()
-
-        result = execute_insert_text(
-            {"insert_line": 5, "new_str": "Last line"},  # 5 lines in doc
-            files,
-            "file-1",
+        result = execute_str_replace(
+            {"old_str": "nonexistent text", "new_str": "new"}, files, "file-1"
         )
 
-        assert result.get("success") is True
-        assert result["insert_line"] == 5
-
-    def test_insert_text_out_of_range_negative(self):
-        """Should return error for negative line number."""
-        files = create_sample_files()
-
-        result = execute_insert_text({"insert_line": -1, "new_str": "Text"}, files, "file-1")
-
         assert "error" in result
-        assert "out of range" in result["error"].lower()
-
-    def test_insert_text_out_of_range_too_large(self):
-        """Should return error for line number beyond document."""
-        files = create_sample_files()
-
-        result = execute_insert_text({"insert_line": 100, "new_str": "Text"}, files, "file-1")
-
-        assert "error" in result
-        assert "out of range" in result["error"].lower()
-
-    def test_insert_text_no_file_open(self):
-        """Should return error when no file is open."""
-        result = execute_insert_text({"insert_line": 0, "new_str": "Text"}, [], None)
-
-        assert "error" in result
+        assert "exact" in result["error"].lower() or "view_document" in result["error"]
 
 
 # ============================================================================
@@ -432,16 +391,6 @@ class TestExecuteDocumentTool:
 
         assert result.get("success") is True
 
-    def test_execute_insert_text(self):
-        """Should execute insert_text tool."""
-        files = create_sample_files()
-
-        result = execute_document_tool(
-            "insert_text", {"insert_line": 1, "new_str": "Inserted"}, files, "file-1"
-        )
-
-        assert result.get("success") is True
-
     def test_execute_replace_document(self):
         """Should execute replace_document tool."""
         files = create_sample_files()
@@ -481,9 +430,10 @@ class TestIsDocumentTool:
     def test_returns_true_for_document_tools(self):
         """Should return True for all document tools."""
         document_tools = [
+            "get_document_outline",
+            "read_section",
             "view_document",
             "str_replace_editor",
-            "insert_text",
             "replace_document",
             "search_in_document",
         ]

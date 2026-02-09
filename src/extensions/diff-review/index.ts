@@ -8,23 +8,32 @@
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
+import { DOMParser as ProseMirrorDOMParser, Slice } from "@tiptap/pm/model";
 import type { DiffHunk } from "@/types/diff";
 import { markdownToHtml, isHtml } from "@/lib/markdown";
 
 import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
 import { findTextInDocument } from "./position-mapping";
 import { createInsertWidget, createActionWidget } from "./diff-widgets";
-import {
-  calculateReplacementRange,
-  normalizeTableHtml,
-  handleTableReplacement,
-} from "./replacement-utils";
+import { normalizeTableHtml } from "./replacement-utils";
 
 // Re-export types for external use
 export * from "./diff-types";
 export { findTextInDocument, findAllTextInDocument } from "./position-mapping";
 export { createInsertWidget, createActionWidget } from "./diff-widgets";
+
+/**
+ * Cache for ProseMirror-parsed textContent and block type.
+ * Key = markdown oldContent, Value = { textContent, blockType } from ProseMirror parser.
+ * Using the SAME parser/schema as the document guarantees textContent matches doc.textContent.
+ * blockType is the first text-containing block's type name (e.g., "heading", "paragraph"),
+ * used to disambiguate when the same text appears in multiple locations (e.g., TOC vs heading).
+ */
+interface ParsedContentCache {
+  textContent: string;
+  blockType: string | null;
+}
+const pmTextCache = new Map<string, ParsedContentCache>();
 
 export const DiffReviewExtension = Extension.create({
   name: "diffReview",
@@ -107,13 +116,40 @@ export const DiffReviewExtension = Extension.create({
                 buttonPos = 1; // Place button at start of document
                 hunk.resolvedFrom = from;
                 hunk.resolvedTo = to;
-              } else if (hunk.type === "replace" || hunk.type === "delete") {
-                // Use searchText (plain text) for finding position in doc.textContent
-                // Fall back to oldContent for backward compatibility
-                const searchText = hunk.searchText || hunk.oldContent;
+              } else if (hunk.oldContent) {
+                // Convert oldContent to plain text using ProseMirror's own parser
+                // This guarantees textContent matches doc.textContent (same parser, same schema)
+                let cached = pmTextCache.get(hunk.oldContent);
+                if (!cached) {
+                  const html = isHtml(hunk.oldContent)
+                    ? hunk.oldContent
+                    : markdownToHtml(hunk.oldContent);
+                  const el = document.createElement("div");
+                  el.innerHTML = html;
+                  normalizeTableHtml(el);
+                  const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
 
-                // Pass usedPositions to exclude already-claimed positions
-                const found = findTextInDocument(state.doc, searchText, usedPositions);
+                  // Extract expected block type for disambiguation (e.g., "heading" vs "listItem")
+                  let blockType: string | null = null;
+                  for (let i = 0; i < parsed.content.childCount; i++) {
+                    const child = parsed.content.child(i);
+                    if (child.isBlock && child.textContent.trim()) {
+                      blockType = child.type.name;
+                      break;
+                    }
+                  }
+
+                  cached = { textContent: parsed.textContent, blockType };
+                  pmTextCache.set(hunk.oldContent, cached);
+                }
+
+                // Use block type hint to disambiguate when same text appears in TOC and heading
+                const found = findTextInDocument(
+                  state.doc,
+                  cached.textContent,
+                  usedPositions,
+                  cached.blockType
+                );
 
                 if (found) {
                   from = found.from;
@@ -124,7 +160,6 @@ export const DiffReviewExtension = Extension.create({
                   // Mark this position as used
                   usedPositions.add(from);
                   // Store resolved position directly on the hunk for use by accept command
-                  // This ensures accept uses the exact same position that decorations display
                   hunk.resolvedFrom = from;
                   hunk.resolvedTo = to;
                 } else {
@@ -133,9 +168,12 @@ export const DiffReviewExtension = Extension.create({
                   from = Math.max(0, Math.min(hunk.from, docSize));
                   to = Math.max(from, Math.min(hunk.to, docSize));
                   buttonPos = from;
+                  console.warn(`[DiffReview] Position resolution failed for hunk ${hunk.id}`, {
+                    searchText: cached.textContent?.slice(0, 80),
+                  });
                 }
               } else {
-                // For insert type, use stored position
+                // Insert mode (oldContent is empty): use stored position
                 const docSize = state.doc.content.size;
                 from = Math.max(0, Math.min(hunk.from, docSize));
                 to = from;
@@ -150,8 +188,8 @@ export const DiffReviewExtension = Extension.create({
                 })
               );
 
-              // For replace and delete types: mark the old content with strikethrough
-              if ((hunk.type === "replace" || hunk.type === "delete") && from < to) {
+              // Mark old content with strikethrough (when there's old content to show)
+              if (hunk.oldContent && from < to) {
                 decorations.push(
                   Decoration.inline(from, to, {
                     class: "diff-deleted",
@@ -160,9 +198,9 @@ export const DiffReviewExtension = Extension.create({
                 );
               }
 
-              // For replace and insert types: show the new content as ghost text
-              if (hunk.type === "replace" || hunk.type === "insert") {
-                const insertPos = hunk.type === "insert" ? from : to;
+              // Show new content as ghost text (when there's new content to add)
+              if (hunk.newContent) {
+                const insertPos = hunk.oldContent === "" ? from : to;
                 decorations.push(
                   Decoration.widget(insertPos, () => createInsertWidget(hunk), {
                     side: 1,
@@ -232,15 +270,41 @@ export const DiffReviewExtension = Extension.create({
             // Full document replacement: replace entire document content
             from = 0;
             to = state.doc.content.size;
-          } else if (hunk.type === "replace" || hunk.type === "delete") {
-            // Use resolved positions from decoration computation
+          } else if (hunk.oldContent) {
+            // Has old content: use resolved positions from decoration computation
             if (hunk.resolvedFrom !== undefined && hunk.resolvedTo !== undefined) {
               from = hunk.resolvedFrom;
               to = hunk.resolvedTo;
             } else {
-              // Fallback: re-search (should rarely happen)
-              const searchText = hunk.searchText || hunk.oldContent;
-              const found = findTextInDocument(state.doc, searchText);
+              // Fallback: re-search via ProseMirror parser (should rarely happen)
+              let cached = pmTextCache.get(hunk.oldContent);
+              if (!cached) {
+                const html = isHtml(hunk.oldContent)
+                  ? hunk.oldContent
+                  : markdownToHtml(hunk.oldContent);
+                const el = document.createElement("div");
+                el.innerHTML = html;
+                normalizeTableHtml(el);
+                const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
+
+                let blockType: string | null = null;
+                for (let i = 0; i < parsed.content.childCount; i++) {
+                  const child = parsed.content.child(i);
+                  if (child.isBlock && child.textContent.trim()) {
+                    blockType = child.type.name;
+                    break;
+                  }
+                }
+
+                cached = { textContent: parsed.textContent, blockType };
+                pmTextCache.set(hunk.oldContent, cached);
+              }
+              const found = findTextInDocument(
+                state.doc,
+                cached.textContent,
+                undefined,
+                cached.blockType
+              );
               if (found) {
                 from = found.from;
                 to = found.to;
@@ -251,252 +315,54 @@ export const DiffReviewExtension = Extension.create({
               }
             }
           } else {
+            // Insert mode (oldContent is empty): use stored position
             const docSize = state.doc.content.size;
             from = Math.max(0, Math.min(hunk.from, docSize));
             to = from;
           }
 
-          // Apply the change based on hunk type
-          if (hunk.type === "replace" || hunk.type === "insert") {
-            // Trim trailing newlines to avoid extra empty lines
-            const newContent = (hunk.newContent || "").replace(/\n+$/, "");
+          // Apply the change
+          const newContent = (hunk.newContent || "").replace(/\n+$/, "");
 
-            if (hunk.type === "replace") {
-              if (newContent) {
-                // Special handling for full document replacement
-                if (hunk.isFullDocumentReplace) {
-                  // For full document replacement, replace the entire document content
-                  const contentIsHtml = isHtml(newContent);
-                  const html = contentIsHtml ? newContent : markdownToHtml(newContent);
-                  const element = document.createElement("div");
-                  element.innerHTML = html;
-
-                  normalizeTableHtml(element);
-
-                  const parser = ProseMirrorDOMParser.fromSchema(state.schema);
-                  const parsedDoc = parser.parse(element);
-
-                  if (parsedDoc.content.size > 0) {
-                    // Replace entire document content (from position 0 to end)
-                    tr.replaceWith(0, state.doc.content.size, parsedDoc.content);
-                  }
-                }
-                // Regular replace (not full document)
-                else {
-                  const $from = state.doc.resolve(from);
-                  const $to = state.doc.resolve(to);
-                  const isInCodeBlock = $from.parent.type.name === "codeBlock";
-
-                  if (isInCodeBlock) {
-                    // For code blocks, just replace with plain text
-                    // Don't parse as markdown - keep the raw text
-                    // Strip markdown code fences if present (``` at start/end)
-                    let codeContent = newContent;
-                    // Remove opening fence: ```language or just ```
-                    codeContent = codeContent.replace(/^```[^\n]*\n?/, "");
-                    // Remove closing fence
-                    codeContent = codeContent.replace(/\n?```\s*$/, "");
-
-                    const textNode = state.schema.text(codeContent);
-                    tr.replaceWith(from, to, textNode);
-                  } else {
-                    // ============================================
-                    // UNIFIED CROSS-BLOCK REPLACEMENT LOGIC
-                    // ============================================
-                    // Key insight: when old_str spans multiple blocks (e.g., heading + list),
-                    // we must replace from the START of the first block to the END of the last block.
-                    // This ensures all old content is deleted before inserting new content.
-
-                    // Step 1: Calculate the actual replacement range
-                    // This expands from/to to block boundaries when content spans multiple blocks
-                    const replacementRange = calculateReplacementRange(
-                      state.doc,
-                      from,
-                      to,
-                      $from,
-                      $to
-                    );
-
-                    // Step 2: Parse the new content
-                    const parentType = $from.parent.type.name;
-
-                    // Check if we're inside a list item or table (at any depth)
-                    let isInListItem = false;
-                    let isInTable = false;
-                    let tableDepth = -1;
-                    for (let d = $from.depth; d >= 0; d--) {
-                      const node = $from.node(d);
-                      if (node.type.name === "listItem") {
-                        isInListItem = true;
-                      }
-                      if (node.type.name === "table") {
-                        isInTable = true;
-                        tableDepth = d;
-                      }
-                    }
-
-                    const isInParagraph = parentType === "paragraph";
-                    const isInHeading = parentType === "heading";
-
-                    // Strip list markers from newContent if we're inside a list item
-                    let contentToRender = newContent;
-                    if (isInListItem && !isHtml(newContent)) {
-                      contentToRender = newContent.replace(/^[-*+]\s+|\d+\.\s+/gm, "");
-                    }
-
-                    // Check if content is already HTML
-                    const contentIsHtml = isHtml(contentToRender);
-                    const html = contentIsHtml ? contentToRender : markdownToHtml(contentToRender);
-                    const element = document.createElement("div");
-                    element.innerHTML = html;
-
-                    // Normalize table HTML for TipTap compatibility
-                    normalizeTableHtml(element);
-
-                    const parser = ProseMirrorDOMParser.fromSchema(state.schema);
-                    const parsedDoc = parser.parse(element);
-
-                    if (parsedDoc.content.size > 0) {
-                      const firstChild = parsedDoc.content.firstChild;
-                      const childCount = parsedDoc.content.childCount;
-                      const hasMultipleBlocks = childCount > 1;
-
-                      // Step 3: Determine replacement strategy based on content analysis
-                      // Priority order (from most specific to most general):
-
-                      // 3a. Cross-block replacement: when from/to span different blocks
-                      // BUT NOT if we're replacing a table with a table (let 3a2 handle that)
-                      if (
-                        replacementRange.isCrossBlock &&
-                        !(isInTable && firstChild?.type.name === "table")
-                      ) {
-                        tr.replaceWith(
-                          replacementRange.actualStart,
-                          replacementRange.actualEnd,
-                          parsedDoc.content
-                        );
-                      }
-                      // 3a2. Table-to-table replacement: when we're inside a table and new content is a table
-                      // This MUST be before paragraph checks because table cells contain paragraphs
-                      else if (isInTable && firstChild?.type.name === "table" && tableDepth > 0) {
-                        // Replace the entire containing table with the new table
-                        const tableStart = $from.before(tableDepth);
-                        const tableEnd = $from.after(tableDepth);
-                        tr.replaceWith(tableStart, tableEnd, parsedDoc.content);
-                      }
-                      // 3b. List item inline replacement
-                      else if (
-                        isInListItem &&
-                        firstChild?.type.name === "bulletList" &&
-                        !hasMultipleBlocks
-                      ) {
-                        const listItem = firstChild.content.firstChild;
-                        if (listItem) {
-                          const paragraph = listItem.content.firstChild;
-                          if (paragraph && paragraph.content.size > 0) {
-                            tr.replaceWith(from, to, paragraph.content);
-                          }
-                        }
-                      }
-                      // 3c. Single paragraph inline replacement
-                      else if (
-                        isInParagraph &&
-                        firstChild?.type.name === "paragraph" &&
-                        !hasMultipleBlocks &&
-                        !replacementRange.shouldExpandToBlock
-                      ) {
-                        if (firstChild.content.size > 0) {
-                          tr.replaceWith(from, to, firstChild.content);
-                        }
-                      }
-                      // 3d. Multiple blocks replacing a paragraph
-                      else if (isInParagraph && hasMultipleBlocks) {
-                        const paragraphStart = $from.start($from.depth);
-                        // Use Math.max to ensure we delete all content up to 'to'
-                        const paragraphEnd = Math.max($from.end($from.depth), to);
-                        tr.replaceWith(paragraphStart, paragraphEnd, parsedDoc.content);
-                      }
-                      // 3e. Table replacement
-                      else if (firstChild?.type.name === "table") {
-                        handleTableReplacement(
-                          tr,
-                          state,
-                          from,
-                          to,
-                          $from,
-                          $to,
-                          firstChild,
-                          parsedDoc
-                        );
-                      }
-                      // 3f. Block-level content replacing paragraph
-                      else if (
-                        isInParagraph &&
-                        firstChild &&
-                        ["codeBlock", "blockquote", "bulletList", "orderedList"].includes(
-                          firstChild.type.name
-                        )
-                      ) {
-                        let blockStart = from;
-                        let blockEnd = to;
-
-                        for (let d = $from.depth; d > 0; d--) {
-                          const node = $from.node(d);
-                          if (
-                            node.type.name === "paragraph" ||
-                            node.type.name === "tableCell" ||
-                            node.type.name === "tableHeader"
-                          ) {
-                            blockStart = $from.start(d);
-                            // Use Math.max to ensure we delete all old content
-                            blockEnd = Math.max($from.end(d), to);
-                            break;
-                          }
-                        }
-
-                        tr.replaceWith(blockStart, blockEnd, parsedDoc.content);
-                      }
-                      // 3g. Heading replacement (uses actualEnd which includes content beyond heading)
-                      else if (isInHeading) {
-                        const headingStart = $from.before($from.depth);
-                        const headingEnd = $from.after($from.depth);
-                        // Use Math.max to ensure we delete all content up to 'to'
-                        // This handles cases where old_str spans heading + subsequent content
-                        const actualEnd = Math.max(headingEnd, to);
-                        tr.replaceWith(headingStart, actualEnd, parsedDoc.content);
-                      }
-                      // 3h. Default: use from/to directly
-                      else {
-                        tr.replaceWith(from, to, parsedDoc.content);
-                      }
-                    }
-                  }
-                }
-              } else {
-                // Empty new content = delete
-                tr.delete(from, to);
+          if (newContent) {
+            if (hunk.isFullDocumentReplace) {
+              // Full document replacement
+              const html = isHtml(newContent) ? newContent : markdownToHtml(newContent);
+              const el = document.createElement("div");
+              el.innerHTML = html;
+              normalizeTableHtml(el);
+              const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
+              if (parsed.content.size > 0) {
+                tr.replaceWith(0, state.doc.content.size, parsed.content);
               }
             } else {
-              // Insert type - parse markdown/HTML and insert
-              if (newContent) {
-                const contentIsHtml = isHtml(newContent);
-                const html = contentIsHtml ? newContent : markdownToHtml(newContent);
-                const element = document.createElement("div");
-                element.innerHTML = html;
+              const $from = state.doc.resolve(from);
+              const isInCodeBlock = $from.parent.type.name === "codeBlock";
 
-                normalizeTableHtml(element);
+              if (isInCodeBlock) {
+                // Code block: plain text replacement (strip markdown fences)
+                const code = newContent.replace(/^```[^\n]*\n?/, "").replace(/\n?```\s*$/, "");
+                tr.replaceWith(from, to, state.schema.text(code));
+              } else {
+                // Parse new content as HTML
+                const html = isHtml(newContent) ? newContent : markdownToHtml(newContent);
+                const el = document.createElement("div");
+                el.innerHTML = html;
+                normalizeTableHtml(el);
+                const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
 
-                const parser = ProseMirrorDOMParser.fromSchema(state.schema);
-                const parsedDoc = parser.parse(element);
-
-                if (parsedDoc.content.size > 0) {
-                  tr.insert(from, parsedDoc.content);
+                if (parsed.content.size > 0) {
+                  // Use replaceRange — ProseMirror's built-in smart replacement
+                  // Automatically handles cross-block boundaries, tables, lists, etc.
+                  tr.replaceRange(from, to, new Slice(parsed.content, 0, 0));
                 }
               }
             }
-          } else if (hunk.type === "delete") {
-            // Just delete old content
-            tr.delete(from, to);
+          } else {
+            // Delete (empty new content or no new content)
+            if (from < to) {
+              tr.delete(from, to);
+            }
           }
 
           // Update hunk status

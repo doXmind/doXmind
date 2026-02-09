@@ -11,8 +11,41 @@ and knowledge base operations.
 
 DOCUMENT_TOOLS = [
     {
+        "name": "get_document_outline",
+        "description": "Get the document's heading structure with section IDs, line ranges, and estimated token counts. Lightweight (~200 tokens). Use this first to understand document structure before reading or editing long documents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "The ID of the file (optional, uses current file if not provided)",
+                }
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "read_section",
+        "description": "Read specific sections of the document by section ID (from get_document_outline or the outline in context). Returns content with line numbers for editing. Reading a parent section includes all its children.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "section_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Section IDs to read (e.g., ['s1', 's2.1'])",
+                },
+                "file_id": {
+                    "type": "string",
+                    "description": "The ID of the file (optional)",
+                },
+            },
+            "required": ["section_ids"],
+        },
+    },
+    {
         "name": "view_document",
-        "description": "View the current document content with line numbers. Use this to see what's in the document before making edits.",
+        "description": "View the ENTIRE document content with line numbers. For long documents (80+ lines), prefer get_document_outline + read_section to reduce token usage.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -26,17 +59,21 @@ DOCUMENT_TOOLS = [
     },
     {
         "name": "str_replace_editor",
-        "description": "Replace a specific string in the document with new content. The old_str must match EXACTLY including whitespace. This is the primary editing tool for making precise changes.",
+        "description": (
+            "Edit the document by replacing text. Provide old_str (exact text to find) "
+            "and new_str (replacement text). old_str must match exactly once in the document. "
+            "Include enough surrounding context to ensure uniqueness."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "old_str": {
                     "type": "string",
-                    "description": "The exact string to find and replace (must be unique in document)",
+                    "description": "Exact text to find and replace (must match uniquely in document)",
                 },
                 "new_str": {
                     "type": "string",
-                    "description": "The new string to replace it with (use Markdown format)",
+                    "description": "Replacement text (use Markdown format)",
                 },
                 "file_id": {
                     "type": "string",
@@ -44,28 +81,6 @@ DOCUMENT_TOOLS = [
                 },
             },
             "required": ["old_str", "new_str"],
-        },
-    },
-    {
-        "name": "insert_text",
-        "description": "Insert new text after a specific line number in the document.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "insert_line": {
-                    "type": "integer",
-                    "description": "The line number after which to insert (0 = beginning of file)",
-                },
-                "new_str": {
-                    "type": "string",
-                    "description": "The text to insert (use Markdown format)",
-                },
-                "file_id": {
-                    "type": "string",
-                    "description": "The ID of the file to edit (optional)",
-                },
-            },
-            "required": ["insert_line", "new_str"],
         },
     },
     {
@@ -109,8 +124,9 @@ DOCUMENT_TOOLS = [
 # Backward compatibility alias
 TOOLS = DOCUMENT_TOOLS
 
-# Read-only tools for analyze mode (view_document and search_in_document)
-READONLY_TOOLS = [DOCUMENT_TOOLS[0], DOCUMENT_TOOLS[4]]
+# Read-only tools for analyze mode
+# get_document_outline, read_section, view_document, search_in_document
+READONLY_TOOLS = [DOCUMENT_TOOLS[i] for i in (0, 1, 2, 5)]
 
 
 # ============================================================================

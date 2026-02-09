@@ -581,7 +581,9 @@ html {
   border-radius: 4px;
   padding: 8px 12px;
   display: block;
+  font-size: 1rem;
   font-style: normal;
+  font-weight: normal;
   white-space: pre-wrap;
   word-wrap: break-word;
   line-height: 1.6;

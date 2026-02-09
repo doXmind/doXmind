@@ -7,7 +7,7 @@
  */
 
 export type DiffHunkStatus = "pending" | "accepted" | "rejected";
-export type DiffChangeType = "replace" | "insert" | "delete";
+export type DiffChangeType = "replace" | "delete";
 
 /**
  * A single diff hunk representing a change in the document.
@@ -17,16 +17,16 @@ export interface DiffHunk {
   /** Unique identifier for this hunk */
   id: string;
 
-  /** Type of change: replace existing content, insert new, or delete existing */
+  /** Type of change: replace existing content or delete existing (insert = replace with empty oldContent) */
   type: DiffChangeType;
 
   /** ProseMirror document position where the change starts */
   from: number;
 
-  /** ProseMirror document position where the change ends (for insert, from === to) */
+  /** ProseMirror document position where the change ends */
   to: number;
 
-  /** Original content that will be removed (empty for insert type) - in markdown format for display */
+  /** Original content that will be removed (empty for insert-style replace) - in markdown format for display */
   oldContent: string;
 
   /** Plain text version of oldContent for searching in doc.textContent */
@@ -82,6 +82,17 @@ export interface DiffSession {
 
   /** Timestamp when review session started (for session duration tracking) */
   startedAt?: number;
+}
+
+/**
+ * Feedback item for communicating accept/reject decisions back to the AI agent.
+ * Accumulated during diff review and consumed when the next message is sent.
+ */
+export interface EditFeedbackItem {
+  editType: string; // "str_replace" | "replace_all"
+  oldContent: string; // Truncated old content for identification
+  newContent: string; // Truncated new content
+  decision: "accepted" | "rejected";
 }
 
 // Re-export EditOperation from centralized types for backward compatibility

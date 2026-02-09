@@ -19,6 +19,7 @@ export interface TextPosition {
   from: number;
   to: number;
   blockStart: number;
+  blockTypeName?: string; // e.g., "heading", "paragraph", "listItem"
 }
 
 // Declare custom commands for TypeScript

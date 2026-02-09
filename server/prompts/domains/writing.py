@@ -7,6 +7,8 @@ directly editing documents using tools rather than just suggesting changes.
 from datetime import datetime
 from typing import Any
 
+from services.document_sections import generate_outline, parse_sections
+
 # Main Writing Agent template with XML tags
 WRITING_AGENT_TEMPLATE = """You are doXmind Writing Assistant, an AI agent specialized in direct document editing.
 
@@ -24,12 +26,13 @@ WRITING_AGENT_TEMPLATE = """You are doXmind Writing Assistant, an AI agent speci
 </core_principle>
 
 <available_tools>
-1. view_document: See current content with line numbers
-2. str_replace_editor: Replace specific text (PRIMARY editing tool)
-3. insert_text: Insert new text after a specific line
-4. replace_document: Replace entire document (for major rewrites)
-5. search_in_document: Find text in document
-6. TodoWrite: Track task progress (for multi-step tasks)
+1. get_document_outline: See heading structure with section IDs and line ranges (use FIRST for long documents)
+2. read_section: Read specific sections by ID (from outline)
+3. view_document: See entire document with line numbers (prefer outline + read_section for long docs)
+4. str_replace_editor: Edit the document (PRIMARY tool) — exact text replacement
+5. replace_document: Replace entire document (for major rewrites or new content)
+6. search_in_document: Find text in document
+7. TodoWrite: Track task progress (for multi-step tasks)
 </available_tools>
 
 <task_tracking>
@@ -48,16 +51,16 @@ RULES:
 
 <tool_usage>
 For modifications:
-- Use str_replace_editor with EXACT text match
-- old_str MUST match exactly including whitespace
-- Include enough context for unique matching
+- str_replace_editor with old_str + new_str
+- old_str must match EXACTLY once — copy the exact text from the document
+- Include enough surrounding lines to make old_str unique
 
-For additions:
-- Use insert_text with specific line number
-- Line 0 = beginning of file
+For additions (inserting new content after existing text):
+- Use str_replace_editor: set old_str to the anchor paragraph
+- Set new_str to: the anchor paragraph + new content appended after it
 
 For new documents or major rewrites:
-- Use replace_document
+- replace_document with complete new content
 </tool_usage>
 
 <content_format>
@@ -72,7 +75,10 @@ All content uses Markdown:
 <workflow>
 1. Check if skills are available (list_skills) for the task type
 2. If a matching skill exists: read_skill_instructions FIRST
-3. view_document to understand current content
+3. Understand the document:
+   - Short documents (content already visible above): ready to edit
+   - Long documents (outline shown above): use read_section to read relevant parts
+   - Need to find something? use search_in_document
 4. Plan edits based on user request + skill guidance
 5. Execute edits using appropriate tools
 6. Confirm changes in a brief message
@@ -96,13 +102,13 @@ CREATE new content (empty document or "write/create/draft"):
 → Check skills (list_skills) → Load guidance if available → replace_document
 
 MODIFY existing content ("improve/change/rewrite/make it..."):
-→ view_document → Identify target text → str_replace_editor
+→ read_section (target area from outline) → Identify target text → str_replace_editor
 
 ADD to document ("add/insert/append/include"):
-→ view_document → Find insertion point → insert_text
+→ read_section (area around insertion point) → str_replace_editor with insert_after
 
 RESTRUCTURE ("reorganize/reorder/restructure"):
-→ view_document → Plan new structure → replace_document (if major) or multiple str_replace_editor
+→ get_document_outline → Plan new structure → replace_document (if major) or multiple str_replace_editor
 
 Always: Keep chat responses brief, let the document changes speak for themselves.
 </action_patterns>
@@ -171,8 +177,15 @@ ANALYZE MODE - Read-only
     return prompt
 
 
+_OUTLINE_THRESHOLD = 80  # Lines. Below this, embed full content; above, show outline.
+
+
 def _build_document_context(files: list[dict[str, Any]]) -> str:
     """Build document context section.
+
+    For short documents (<=80 lines), embeds the full content with line numbers.
+    For longer documents, embeds a structural outline with section IDs so the
+    agent can use ``read_section`` to load specific parts on demand.
 
     Args:
         files: List of file dicts with id, name, content
@@ -190,14 +203,28 @@ def _build_document_context(files: list[dict[str, Any]]) -> str:
 
     if content:
         lines = content.split("\n")
-        numbered = "\n".join(f"{i + 1:3d} | {line}" for i, line in enumerate(lines[:50]))
-        if len(lines) > 50:
-            numbered += f"\n... ({len(lines) - 50} more lines)"
 
-        context = f"""<current_document>
+        if len(lines) <= _OUTLINE_THRESHOLD:
+            # Short document: embed full content (current behaviour).
+            numbered = "\n".join(f"{i + 1:3d} | {line}" for i, line in enumerate(lines))
+            context = f"""<current_document>
 File: {file_name} (ID: {file_id})
 
 {numbered}
+</current_document>"""
+        else:
+            # Long document: embed outline, let agent read sections on demand.
+            sections = parse_sections(content)
+            outline = generate_outline(sections, len(lines))
+            context = f"""<current_document>
+File: {file_name} (ID: {file_id})
+
+<document_outline>
+{outline}
+</document_outline>
+
+Use read_section with section IDs above to read specific parts before editing.
+Use search_in_document to find specific content by keyword.
 </current_document>"""
     else:
         context = f"""<current_document>

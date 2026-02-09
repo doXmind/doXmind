@@ -102,7 +102,7 @@ export function createActionWidget(hunk: DiffHunk): HTMLElement {
   const label = document.createElement("span");
   label.className = "diff-label";
   label.textContent =
-    hunk.type === "delete" ? "Delete" : hunk.type === "insert" ? "Insert" : "Replace";
+    hunk.type === "delete" ? "Delete" : hunk.oldContent === "" ? "Insert" : "Replace";
 
   buttonsContainer.appendChild(acceptBtn);
   buttonsContainer.appendChild(rejectBtn);

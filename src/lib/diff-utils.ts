@@ -2,28 +2,11 @@
  * Diff Utilities
  *
  * Main entry point for computing diff hunks from AI edit operations.
- * Re-exports utilities from position-mapper and diff-algorithms.
  */
 
 import type { DiffHunk, DiffChangeType, EditOperation } from "@/types/diff";
 import { htmlToMarkdown, isHtml, markdownToPlainText } from "./markdown";
-import { findLinePosition, type DocWithContent } from "./position-mapper";
-// Note: diffByParagraphs is exported for external use but no longer used internally
-// replace_all now creates a single hunk instead of paragraph-level diffs
 import { generateId } from "./utils";
-
-// Re-export utilities for external use
-export { findTextInDoc, findLinePosition, mapHunkPositions, fuzzyIndexOf } from "./position-mapper";
-export type { DocWithContent } from "./position-mapper";
-export {
-  calculateSimilarity,
-  diffParagraphArrays,
-  splitIntoParagraphs,
-  normalizeForMatch,
-  SIMILARITY_THRESHOLD,
-  FUZZY_MATCH_TOLERANCE,
-} from "./diff-algorithms";
-export type { ParagraphDiff } from "./diff-algorithms";
 
 /**
  * Compute diff hunks from an edit operation.
@@ -31,14 +14,9 @@ export type { ParagraphDiff } from "./diff-algorithms";
  *
  * @param originalContent - Current content (HTML from editor)
  * @param edit - Edit operation from AI
- * @param doc - Optional ProseMirror document for accurate positioning
  * @returns Array of DiffHunk objects
  */
-export function computeDiffHunks(
-  originalContent: string,
-  edit: EditOperation,
-  doc?: DocWithContent
-): DiffHunk[] {
+export function computeDiffHunks(originalContent: string, edit: EditOperation): DiffHunk[] {
   const hunks: DiffHunk[] = [];
 
   // Convert HTML to markdown for text matching (AI uses markdown)
@@ -56,14 +34,12 @@ export function computeDiffHunks(
       // The old_str and new_str define exactly what to replace
       // Position finding will be handled by the diff-review-extension using findTextInDocument
 
-      const hunkType: DiffChangeType =
-        edit.new_str === "" ? "delete" : edit.old_str === "" ? "insert" : "replace";
+      const hunkType: DiffChangeType = edit.new_str === "" ? "delete" : "replace";
 
       // Use a placeholder position - the actual position will be found
       // by findTextInDocument in diff-review-extension.ts when rendering
-      // Prefer backend-generated search_text for 100% consistency with backend validation
-      // Fall back to frontend conversion for backward compatibility
-      const searchText = edit.search_text || markdownToPlainText(edit.old_str);
+      // Convert markdown to plain text to match ProseMirror's doc.textContent
+      const searchText = markdownToPlainText(edit.old_str);
 
       const hunk: DiffHunk = {
         id: generateId(),
@@ -78,40 +54,6 @@ export function computeDiffHunks(
         editId: edit.file_id,
       };
       hunks.push(hunk);
-      break;
-    }
-
-    case "insert": {
-      if (edit.insert_line === undefined || edit.new_str === undefined) {
-        return [];
-      }
-
-      let insertPos: number;
-
-      if (doc) {
-        insertPos = findLinePosition(doc, edit.insert_line);
-      } else {
-        // Fallback: calculate from markdown
-        const lines = originalMarkdown.split("\n");
-        let pos = 1;
-        for (let i = 0; i < Math.min(edit.insert_line, lines.length); i++) {
-          pos += lines[i].length + 1;
-        }
-        insertPos = pos;
-      }
-
-      hunks.push({
-        id: generateId(),
-        type: "insert",
-        from: insertPos,
-        to: insertPos, // For insert, from === to
-        oldContent: "",
-        searchText: "", // Empty for insert type
-        newContent: edit.new_str,
-        status: "pending",
-        createdAt: new Date().toISOString(),
-        editId: edit.file_id,
-      });
       break;
     }
 

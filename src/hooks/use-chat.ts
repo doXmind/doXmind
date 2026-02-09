@@ -14,6 +14,7 @@ import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { api } from "@/lib/api";
 import type { ChatStreamEvent } from "@/types/stream-events";
 
@@ -73,6 +74,26 @@ export function useChat() {
           })
           .join("\n\n");
         messageForAI = `${message}\n\n[Selected content for reference:]\n${contextTexts}`;
+      }
+
+      // Inject edit feedback from previous diff review session
+      const editFeedback = useDiffReviewStore.getState().consumePendingFeedback();
+      if (editFeedback.length > 0) {
+        const feedbackLines = editFeedback
+          .map((f, i) => {
+            const oldSnippet = f.oldContent ? `"${f.oldContent}"` : "(empty)";
+            const newSnippet = f.newContent ? `"${f.newContent}"` : "(delete)";
+            const status = f.decision === "accepted" ? "ACCEPTED" : "REJECTED";
+            return `${i + 1}. ${f.editType} ${oldSnippet} → ${newSnippet}: ${status}`;
+          })
+          .join("\n");
+
+        const feedbackContext =
+          "[Edit review results from your previous response:]\n" +
+          feedbackLines +
+          "\n\nNote: Rejected changes were NOT applied. The document still contains the original text.\n\n";
+
+        messageForAI = feedbackContext + messageForAI;
       }
 
       // Extract image contexts with base64 data for multimodal API

@@ -2,16 +2,8 @@
  * Tests for diff utilities
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  computeDiffHunks,
-  areAllHunksProcessed,
-  getPendingHunkCount,
-  findTextInDoc,
-  findLinePosition,
-  mapHunkPositions,
-  fuzzyIndexOf,
-  type DocWithContent,
-} from "@/lib/diff-utils";
+import { computeDiffHunks, areAllHunksProcessed, getPendingHunkCount } from "@/lib/diff-utils";
+import { findTextInDoc } from "@/lib/position-mapper";
 import type { DiffHunk, EditOperation } from "@/types/diff";
 
 // Mock generateId to return predictable IDs for testing
@@ -23,14 +15,6 @@ vi.mock("@/lib/utils", async (importOriginal) => {
     generateId: vi.fn(() => `test-id-${++idCounter}`),
   };
 });
-
-// Helper to create a mock ProseMirror document
-function createMockDoc(content: string): DocWithContent {
-  return {
-    textContent: content,
-    nodeSize: content.length + 2, // +2 for doc node boundaries
-  };
-}
 
 // Helper to create a hunk for testing
 function createTestHunk(overrides: Partial<DiffHunk> = {}): DiffHunk {
@@ -97,9 +81,7 @@ describe("diff-utils", () => {
         expect(hunks[0].newContent).toBe("");
       });
 
-      it("returns empty when old_str is empty (use insert operation instead)", () => {
-        // str_replace with empty old_str returns empty array
-        // The insert operation type should be used for insertions
+      it("returns empty when old_str is empty", () => {
         const edit: EditOperation = {
           type: "str_replace",
           old_str: "",
@@ -111,8 +93,6 @@ describe("diff-utils", () => {
 
         const hunks = computeDiffHunks("Some content", edit);
 
-        // Empty old_str is treated as invalid for str_replace
-        // The code checks !edit.old_str which is falsy for empty string
         expect(hunks).toHaveLength(0);
       });
 
@@ -210,88 +190,6 @@ describe("diff-utils", () => {
 
         expect(hunks[0].createdAt >= before).toBe(true);
         expect(hunks[0].createdAt <= after).toBe(true);
-      });
-    });
-
-    describe("insert operation", () => {
-      it("creates insert hunk at specified line with doc", () => {
-        const doc = createMockDoc("Line 1\nLine 2\nLine 3");
-        const edit: EditOperation = {
-          type: "insert",
-          insert_line: 1,
-          new_str: "Inserted Line",
-          file_id: "file-1",
-          file_name: "test.md",
-          success: true,
-        };
-
-        const hunks = computeDiffHunks("Line 1\nLine 2\nLine 3", edit, doc);
-
-        expect(hunks).toHaveLength(1);
-        expect(hunks[0].type).toBe("insert");
-        expect(hunks[0].oldContent).toBe("");
-        expect(hunks[0].newContent).toBe("Inserted Line");
-        expect(hunks[0].from).toBe(hunks[0].to); // Insert: from === to
-      });
-
-      it("creates insert hunk without doc (fallback calculation)", () => {
-        const edit: EditOperation = {
-          type: "insert",
-          insert_line: 1,
-          new_str: "Inserted Line",
-          file_id: "file-1",
-          file_name: "test.md",
-          success: true,
-        };
-
-        const hunks = computeDiffHunks("Line 1\nLine 2\nLine 3", edit);
-
-        expect(hunks).toHaveLength(1);
-        expect(hunks[0].type).toBe("insert");
-        expect(hunks[0].newContent).toBe("Inserted Line");
-      });
-
-      it("returns empty array when insert_line is undefined", () => {
-        const edit: EditOperation = {
-          type: "insert",
-          new_str: "Inserted Line",
-          file_id: "file-1",
-          file_name: "test.md",
-          success: true,
-        } as EditOperation;
-
-        const hunks = computeDiffHunks("Some content", edit);
-
-        expect(hunks).toHaveLength(0);
-      });
-
-      it("returns empty array when new_str is undefined", () => {
-        const edit: EditOperation = {
-          type: "insert",
-          insert_line: 1,
-          file_id: "file-1",
-          file_name: "test.md",
-          success: true,
-        } as EditOperation;
-
-        const hunks = computeDiffHunks("Some content", edit);
-
-        expect(hunks).toHaveLength(0);
-      });
-
-      it("has empty searchText for insert type", () => {
-        const edit: EditOperation = {
-          type: "insert",
-          insert_line: 0,
-          new_str: "New content",
-          file_id: "file-1",
-          file_name: "test.md",
-          success: true,
-        };
-
-        const hunks = computeDiffHunks("Original", edit);
-
-        expect(hunks[0].searchText).toBe("");
       });
     });
 
@@ -468,11 +366,11 @@ describe("diff-utils", () => {
   });
 
   // ============================================================================
-  // findTextInDoc tests
+  // findTextInDoc tests (exact match only)
   // ============================================================================
   describe("findTextInDoc", () => {
     it("finds exact text match", () => {
-      const doc = createMockDoc("Hello World");
+      const doc = { textContent: "Hello World", nodeSize: 13 };
       const result = findTextInDoc(doc, "World");
 
       expect(result).not.toBeNull();
@@ -481,7 +379,7 @@ describe("diff-utils", () => {
     });
 
     it("finds text at start of document", () => {
-      const doc = createMockDoc("Hello World");
+      const doc = { textContent: "Hello World", nodeSize: 13 };
       const result = findTextInDoc(doc, "Hello");
 
       expect(result).not.toBeNull();
@@ -490,199 +388,26 @@ describe("diff-utils", () => {
     });
 
     it("returns null when text not found", () => {
-      const doc = createMockDoc("Hello World");
+      const doc = { textContent: "Hello World", nodeSize: 13 };
       const result = findTextInDoc(doc, "Universe");
 
       expect(result).toBeNull();
     });
 
-    it("finds text with normalized whitespace", () => {
-      const doc = createMockDoc("Hello    World"); // Multiple spaces
+    it("returns null for whitespace-different text (no fuzzy matching)", () => {
+      const doc = { textContent: "Hello    World", nodeSize: 16 };
       const result = findTextInDoc(doc, "Hello World"); // Single space
 
-      expect(result).not.toBeNull();
+      // Exact match only — should NOT match
+      expect(result).toBeNull();
     });
 
     it("handles empty search text", () => {
-      const doc = createMockDoc("Hello World");
+      const doc = { textContent: "Hello World", nodeSize: 13 };
       const result = findTextInDoc(doc, "");
 
       expect(result).not.toBeNull();
       expect(result!.from).toBe(1);
-    });
-  });
-
-  // ============================================================================
-  // findLinePosition tests
-  // ============================================================================
-  describe("findLinePosition", () => {
-    it("returns position at start of document for line 0", () => {
-      const doc = createMockDoc("Line 1\nLine 2\nLine 3");
-      const pos = findLinePosition(doc, 0);
-
-      expect(pos).toBe(1);
-    });
-
-    it("returns position at start of line 1", () => {
-      const doc = createMockDoc("Line 1\nLine 2\nLine 3");
-      const pos = findLinePosition(doc, 1);
-
-      // "Line 1\n" = 7 chars, so line 2 starts at position 8
-      expect(pos).toBe(8);
-    });
-
-    it("returns position at start of line 2", () => {
-      const doc = createMockDoc("Line 1\nLine 2\nLine 3");
-      const pos = findLinePosition(doc, 2);
-
-      // "Line 1\nLine 2\n" = 14 chars, so line 3 starts at position 15
-      expect(pos).toBe(15);
-    });
-
-    it("returns end of document for line beyond document", () => {
-      const doc = createMockDoc("Line 1\nLine 2");
-      const pos = findLinePosition(doc, 10);
-
-      expect(pos).toBe(doc.nodeSize - 2);
-    });
-
-    it("returns start for negative line number", () => {
-      const doc = createMockDoc("Line 1\nLine 2");
-      const pos = findLinePosition(doc, -1);
-
-      expect(pos).toBe(1);
-    });
-  });
-
-  // ============================================================================
-  // mapHunkPositions tests
-  // ============================================================================
-  describe("mapHunkPositions", () => {
-    it("does not adjust hunks before the change", () => {
-      const hunks: DiffHunk[] = [createTestHunk({ from: 0, to: 5 })];
-      const result = mapHunkPositions(hunks, 10, 5, 10);
-
-      expect(result[0].from).toBe(0);
-      expect(result[0].to).toBe(5);
-    });
-
-    it("shifts hunks after the change", () => {
-      const hunks: DiffHunk[] = [createTestHunk({ from: 20, to: 30 })];
-      // Change at position 10, removed 5 chars, added 10 chars = +5 offset
-      const result = mapHunkPositions(hunks, 10, 5, 10);
-
-      expect(result[0].from).toBe(25);
-      expect(result[0].to).toBe(35);
-    });
-
-    it("handles negative offset (content removed)", () => {
-      const hunks: DiffHunk[] = [createTestHunk({ from: 20, to: 30 })];
-      // Removed 10 chars, added 5 = -5 offset
-      const result = mapHunkPositions(hunks, 10, 10, 5);
-
-      expect(result[0].from).toBe(15);
-      expect(result[0].to).toBe(25);
-    });
-
-    it("marks overlapping hunks as rejected", () => {
-      const hunks: DiffHunk[] = [createTestHunk({ from: 10, to: 20, status: "pending" })];
-      // Change overlaps with hunk (change at 15, within 10-20)
-      const result = mapHunkPositions(hunks, 15, 5, 10);
-
-      expect(result[0].status).toBe("rejected");
-    });
-
-    it("handles multiple hunks correctly", () => {
-      const hunks: DiffHunk[] = [
-        createTestHunk({ id: "1", from: 0, to: 5 }),
-        createTestHunk({ id: "2", from: 30, to: 40 }),
-        createTestHunk({ id: "3", from: 50, to: 60 }),
-      ];
-      // Change at position 20, removed 5, added 15 = +10 offset
-      const result = mapHunkPositions(hunks, 20, 5, 15);
-
-      expect(result[0].from).toBe(0); // Before change, unchanged
-      expect(result[0].to).toBe(5);
-
-      expect(result[1].from).toBe(40); // After change, shifted +10
-      expect(result[1].to).toBe(50);
-
-      expect(result[2].from).toBe(60); // After change, shifted +10
-      expect(result[2].to).toBe(70);
-    });
-
-    it("handles empty hunks array", () => {
-      const result = mapHunkPositions([], 10, 5, 10);
-      expect(result).toEqual([]);
-    });
-
-    it("preserves other hunk properties", () => {
-      const hunks: DiffHunk[] = [
-        createTestHunk({
-          from: 30,
-          to: 40,
-          type: "insert",
-          oldContent: "old",
-          newContent: "new",
-          status: "pending",
-        }),
-      ];
-      const result = mapHunkPositions(hunks, 10, 5, 10);
-
-      expect(result[0].type).toBe("insert");
-      expect(result[0].oldContent).toBe("old");
-      expect(result[0].newContent).toBe("new");
-      expect(result[0].status).toBe("pending");
-    });
-  });
-
-  // ============================================================================
-  // fuzzyIndexOf tests
-  // ============================================================================
-  describe("fuzzyIndexOf", () => {
-    it("finds exact match", () => {
-      const index = fuzzyIndexOf("Hello World", "World");
-      expect(index).toBe(6);
-    });
-
-    it("finds match with normalized whitespace in haystack", () => {
-      const index = fuzzyIndexOf("Hello    World", "Hello World");
-      expect(index).toBeGreaterThanOrEqual(0);
-    });
-
-    it("finds match with normalized whitespace in needle", () => {
-      const index = fuzzyIndexOf("Hello World", "Hello    World");
-      expect(index).toBeGreaterThanOrEqual(0);
-    });
-
-    it("returns -1 when not found", () => {
-      const index = fuzzyIndexOf("Hello World", "Universe");
-      expect(index).toBe(-1);
-    });
-
-    it("handles empty needle", () => {
-      const index = fuzzyIndexOf("Hello World", "");
-      expect(index).toBe(0);
-    });
-
-    it("handles empty haystack", () => {
-      const index = fuzzyIndexOf("", "Hello");
-      expect(index).toBe(-1);
-    });
-
-    it("handles newlines and tabs", () => {
-      const index = fuzzyIndexOf("Hello\nWorld", "Hello World");
-      expect(index).toBeGreaterThanOrEqual(0);
-    });
-
-    it("finds text at start", () => {
-      const index = fuzzyIndexOf("Hello World", "Hello");
-      expect(index).toBe(0);
-    });
-
-    it("finds text at end", () => {
-      const index = fuzzyIndexOf("Hello World", "World");
-      expect(index).toBe(6);
     });
   });
 });

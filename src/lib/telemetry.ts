@@ -158,7 +158,7 @@ export interface SessionSummaryEvent extends BaseTelemetryEvent {
 export interface EditAppliedEvent extends BaseTelemetryEvent {
   event_type: "edit_applied";
   file_id: string;
-  edit_type: "str_replace" | "insert" | "replace_all";
+  edit_type: "str_replace" | "replace_all";
   success: boolean;
 }
 

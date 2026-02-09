@@ -36,29 +36,7 @@ export function applyPendingEdit(
         if (currentMarkdown.includes(edit.oldStr)) {
           newMarkdown = currentMarkdown.replace(edit.oldStr, edit.newStr);
           success = true;
-        } else {
-          // Try fuzzy match with normalized whitespace
-          const normalizedContent = currentMarkdown.replace(/\s+/g, " ");
-          const normalizedOld = edit.oldStr.replace(/\s+/g, " ");
-          if (normalizedContent.includes(normalizedOld)) {
-            const regex = new RegExp(
-              edit.oldStr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"),
-              "g"
-            );
-            newMarkdown = currentMarkdown.replace(regex, edit.newStr);
-            success = true;
-          }
         }
-      }
-      break;
-
-    case "insert":
-      if (edit.insertLine !== undefined && edit.newStr !== undefined) {
-        const lines = currentMarkdown.split("\n");
-        const insertIndex = Math.min(Math.max(0, edit.insertLine), lines.length);
-        lines.splice(insertIndex, 0, edit.newStr);
-        newMarkdown = lines.join("\n");
-        success = true;
       }
       break;
 

@@ -10,7 +10,7 @@
  */
 
 import { create } from "zustand";
-import type { DiffHunk, DiffSession } from "@/types/diff";
+import type { DiffHunk, DiffSession, EditFeedbackItem } from "@/types/diff";
 import { telemetry } from "@/lib/telemetry";
 import { useEditorStore } from "./editor-store";
 
@@ -18,6 +18,7 @@ interface DiffReviewState {
   // State
   diffSession: DiffSession | null;
   isReviewMode: boolean;
+  pendingFeedback: EditFeedbackItem[];
 
   // Actions
   startDiffReview: (fileId: string, hunks: DiffHunk[], originalContent: string) => void;
@@ -27,11 +28,23 @@ interface DiffReviewState {
   acceptAllHunks: () => void;
   rejectAllHunks: () => void;
   addHunksToDiffSession: (hunks: DiffHunk[]) => void;
+  consumePendingFeedback: () => EditFeedbackItem[];
 }
 
-export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
+/** Build feedback item from a hunk and decision */
+function buildFeedback(hunk: DiffHunk, decision: "accepted" | "rejected"): EditFeedbackItem {
+  return {
+    editType: hunk.isFullDocumentReplace ? "replace_all" : "str_replace",
+    oldContent: (hunk.oldContent || "").slice(0, 80),
+    newContent: (hunk.newContent || "").slice(0, 80),
+    decision,
+  };
+}
+
+export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
   diffSession: null,
   isReviewMode: false,
+  pendingFeedback: [],
 
   startDiffReview: (fileId, hunks, originalContent) => {
     const now = Date.now();
@@ -85,6 +98,9 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       }
 
       return {
+        pendingFeedback: hunk
+          ? [...state.pendingFeedback, buildFeedback(hunk, "accepted")]
+          : state.pendingFeedback,
         diffSession: {
           ...state.diffSession,
           hunks: state.diffSession.hunks.map((h) =>
@@ -117,6 +133,9 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       }
 
       return {
+        pendingFeedback: hunk
+          ? [...state.pendingFeedback, buildFeedback(hunk, "rejected")]
+          : state.pendingFeedback,
         diffSession: {
           ...state.diffSession,
           hunks: state.diffSession.hunks.map((h) =>
@@ -147,6 +166,10 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       }
 
       return {
+        pendingFeedback: [
+          ...state.pendingFeedback,
+          ...pendingHunks.map((h) => buildFeedback(h, "accepted")),
+        ],
         diffSession: {
           ...state.diffSession,
           hunks: state.diffSession.hunks.map((h) => ({
@@ -178,6 +201,10 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
       }
 
       return {
+        pendingFeedback: [
+          ...state.pendingFeedback,
+          ...pendingHunks.map((h) => buildFeedback(h, "rejected")),
+        ],
         diffSession: {
           ...state.diffSession,
           hunks: state.diffSession.hunks.map((h) => ({
@@ -198,4 +225,12 @@ export const useDiffReviewStore = create<DiffReviewState>()((set) => ({
         },
       };
     }),
+
+  consumePendingFeedback: () => {
+    const feedback = get().pendingFeedback;
+    if (feedback.length > 0) {
+      set({ pendingFeedback: [] });
+    }
+    return feedback;
+  },
 }));

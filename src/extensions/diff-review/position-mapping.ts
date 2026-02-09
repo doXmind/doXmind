@@ -1,127 +1,156 @@
 /**
  * Diff Review Extension - Position Mapping Utilities
  *
- * Functions for finding text positions in ProseMirror documents,
- * accounting for node boundaries.
+ * Functions for finding text positions in ProseMirror documents.
+ * Uses exact match only (Claude Code-style).
  */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { TextPosition } from "./diff-types";
 
 /**
- * Find ALL occurrences of a text string in the document.
- * Unlike simple textContent.indexOf(), this correctly accounts for node boundaries.
- * Returns array of { from, to, blockStart } positions.
- * blockStart is the position of the containing block node (paragraph, etc.)
+ * Internal: mapping from textContent offset to ProseMirror position.
  */
-export function findAllTextInDocument(doc: PMNode, searchText: string): TextPosition[] {
-  const results: TextPosition[] = [];
+interface TextPosEntry {
+  start: number; // textContent offset (inclusive)
+  end: number; // textContent offset (exclusive)
+  pos: number; // ProseMirror position of the text node
+  blockPos: number; // ProseMirror position of containing block node
+}
 
-  // Walk through all text nodes and build a mapping
+/**
+ * Build mapping from doc.textContent character offsets to ProseMirror positions.
+ */
+function buildTextPositionMap(doc: PMNode): TextPosEntry[] {
   let textOffset = 0;
-  const textPositions: Array<{
-    start: number;
-    end: number;
-    pos: number;
-    blockPos: number;
-  }> = [];
+  const entries: TextPosEntry[] = [];
 
   doc.descendants((node, pos) => {
     if (node.isText && node.text) {
-      // Find the containing block node position
-      // Walk up to find the block-level parent
+      const $pos = doc.resolve(pos);
       let blockPos = pos;
-      doc.nodesBetween(0, pos + 1, (n, p) => {
-        if (n.isBlock && p <= pos && p + n.nodeSize > pos) {
-          blockPos = p;
+      for (let d = $pos.depth; d > 0; d--) {
+        if ($pos.node(d).isBlock) {
+          blockPos = $pos.before(d);
+          break;
         }
-      });
+      }
 
-      textPositions.push({
+      entries.push({
         start: textOffset,
         end: textOffset + node.text.length,
-        pos: pos,
-        blockPos: blockPos,
+        pos,
+        blockPos,
       });
       textOffset += node.text.length;
     }
     return true;
   });
 
-  // Now find ALL occurrences of searchText in the concatenated text
+  return entries;
+}
+
+/**
+ * Map a textContent offset range [startOff, endOff) to ProseMirror TextPosition.
+ */
+function mapOffsetsToPosition(
+  startOff: number,
+  endOff: number,
+  entries: TextPosEntry[]
+): TextPosition | null {
+  let from: number | null = null;
+  let to: number | null = null;
+  let blockStart: number | null = null;
+
+  for (const tp of entries) {
+    if (from === null && startOff >= tp.start && startOff < tp.end) {
+      from = tp.pos + (startOff - tp.start);
+      blockStart = tp.blockPos;
+    }
+    if (to === null && endOff > tp.start && endOff <= tp.end) {
+      to = tp.pos + (endOff - tp.start);
+    }
+    if (from !== null && to !== null) break;
+  }
+
+  if (from !== null && to !== null && blockStart !== null) {
+    return { from, to, blockStart };
+  }
+  return null;
+}
+
+/**
+ * Find ALL occurrences of a text string in the document (exact match only).
+ * Maps results to ProseMirror positions with blockStart and blockTypeName info.
+ */
+export function findAllTextInDocument(doc: PMNode, searchText: string): TextPosition[] {
+  if (!searchText) return [];
+
+  const entries = buildTextPositionMap(doc);
   const fullText = doc.textContent;
+  const results: TextPosition[] = [];
   let searchStart = 0;
 
   while (searchStart < fullText.length) {
-    const textIndex = fullText.indexOf(searchText, searchStart);
-    if (textIndex === -1) break;
+    const idx = fullText.indexOf(searchText, searchStart);
+    if (idx === -1) break;
 
-    const textEndIndex = textIndex + searchText.length;
-
-    // Find the starting position
-    let fromPos: number | null = null;
-    let toPos: number | null = null;
-    let blockStart: number | null = null;
-
-    for (const tp of textPositions) {
-      // Check if search start falls within this text node
-      if (fromPos === null && textIndex >= tp.start && textIndex < tp.end) {
-        const offsetInNode = textIndex - tp.start;
-        fromPos = tp.pos + offsetInNode;
-        blockStart = tp.blockPos;
+    const pos = mapOffsetsToPosition(idx, idx + searchText.length, entries);
+    if (pos) {
+      // Resolve the block type name for disambiguation when multiple matches exist
+      try {
+        const $pos = doc.resolve(pos.from);
+        for (let d = $pos.depth; d > 0; d--) {
+          if ($pos.node(d).isBlock) {
+            pos.blockTypeName = $pos.node(d).type.name;
+            break;
+          }
+        }
+      } catch {
+        // Ignore resolution errors
       }
-
-      // Check if search end falls within this text node
-      if (toPos === null && textEndIndex > tp.start && textEndIndex <= tp.end) {
-        const offsetInNode = textEndIndex - tp.start;
-        toPos = tp.pos + offsetInNode;
-      }
-
-      if (fromPos !== null && toPos !== null) break;
+      results.push(pos);
     }
 
-    if (fromPos !== null && toPos !== null && blockStart !== null) {
-      results.push({ from: fromPos, to: toPos, blockStart });
-    }
-
-    // Move past this occurrence
-    searchStart = textIndex + 1;
+    searchStart = idx + 1;
   }
 
   return results;
 }
 
 /**
- * Find the ProseMirror position of a text string in the document.
- * Unlike simple textContent.indexOf(), this correctly accounts for node boundaries.
+ * Find the ProseMirror position of a text string in the document (exact match).
  * Returns { from, to, blockStart } or null if not found.
- * blockStart is the position of the containing block node (paragraph, etc.)
+ *
+ * When multiple matches exist and preferredBlockType is provided, prefers the
+ * occurrence inside a block of that type (e.g., "heading" over "listItem").
+ * This prevents matching TOC entries instead of actual headings.
  *
  * @param doc - The ProseMirror document node
  * @param searchText - The text to search for
  * @param excludePositions - Set of 'from' positions to exclude (already used by other hunks)
+ * @param preferredBlockType - Preferred block node type name for disambiguation
  */
 export function findTextInDocument(
   doc: PMNode,
   searchText: string,
-  excludePositions?: Set<number>
+  excludePositions?: Set<number>,
+  preferredBlockType?: string | null
 ): TextPosition | null {
   const allOccurrences = findAllTextInDocument(doc, searchText);
 
   if (allOccurrences.length === 0) return null;
 
-  // If no exclusions, return the first occurrence
-  if (!excludePositions || excludePositions.size === 0) {
-    return allOccurrences[0];
-  }
+  // Filter out excluded positions
+  const candidates =
+    excludePositions && excludePositions.size > 0
+      ? allOccurrences.filter((occ) => !excludePositions.has(occ.from))
+      : allOccurrences;
 
-  // Find the first occurrence that's not excluded
-  for (const occurrence of allOccurrences) {
-    if (!excludePositions.has(occurrence.from)) {
-      return occurrence;
-    }
-  }
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1 || !preferredBlockType) return candidates[0];
 
-  // All occurrences are excluded, return null
-  return null;
+  // Multiple candidates: prefer the one in the matching block type
+  const preferred = candidates.find((c) => c.blockTypeName === preferredBlockType);
+  return preferred || candidates[0];
 }

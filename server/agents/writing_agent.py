@@ -943,7 +943,7 @@ class WritingAgent:
         # Handle result
         # Check if this is an actual edit operation (must have 'type' field with valid edit type)
         # TodoWrite returns {"success": True} but is NOT an edit operation
-        if result.get("success") and result.get("type") in ("str_replace", "insert", "replace_all"):
+        if result.get("success") and result.get("type") in ("str_replace", "replace_all"):
             # This is an edit operation
             collected_edits.append(result)
             yield {"type": "edit", "edit": result}
@@ -1078,6 +1078,13 @@ class WritingAgent:
             return f"Fetched {domain}"
 
         # Document tools
+        if tool_name == "get_document_outline":
+            return "Read document outline"
+
+        if tool_name == "read_section":
+            section_ids = tool_input.get("section_ids", [])
+            return f"Read section{'s' if len(section_ids) != 1 else ''}: {', '.join(section_ids)}"
+
         if tool_name == "view_document":
             return "Read document content"
 
@@ -1159,9 +1166,11 @@ class WritingAgent:
             return result_content
 
         # Different reminders based on tool type
-        if tool_name in ("view_document", "search_in_document"):
-            reminder = "\n\n<reminder>Now use editing tools (str_replace_editor, insert_text) to make changes. Keep chat responses brief.</reminder>"
-        elif tool_name in ("str_replace_editor", "insert_text", "replace_document"):
+        if tool_name == "get_document_outline":
+            reminder = "\n\n<reminder>Use read_section(section_ids) to read specific sections before editing, or search_in_document to find content by keyword.</reminder>"
+        elif tool_name in ("read_section", "view_document", "search_in_document"):
+            reminder = "\n\n<reminder>Now use editing tools (str_replace_editor) to make changes. Keep chat responses brief.</reminder>"
+        elif tool_name in ("str_replace_editor", "replace_document"):
             # Key insight from Claude Code: remind to update todos after each edit
             reminder = "\n\n<reminder>Edit complete. If you have a todo list, call TodoWrite NOW to mark this task completed and the next task in_progress. Then continue with the next edit.</reminder>"
         elif tool_name in ("search_knowledge_base", "read_kb_document", "list_kb_documents"):

@@ -9,13 +9,11 @@ interface Selection {
 // Pending edit operation that should be applied through the editor (for undo support)
 export interface PendingEdit {
   id: string;
-  type: "str_replace" | "insert" | "replace_all";
+  type: "str_replace" | "replace_all";
   fileId: string;
   // For str_replace
   oldStr?: string;
   newStr?: string;
-  // For insert
-  insertLine?: number;
   // For replace_all
   newContent?: string;
 }
