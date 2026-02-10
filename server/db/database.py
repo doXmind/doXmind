@@ -101,7 +101,7 @@ class PasswordReset(Base):
 
 
 class File(Base):
-    """File model with user ownership."""
+    """File model with user ownership and folder support."""
 
     __tablename__ = "files"
 
@@ -114,12 +114,27 @@ class File(Base):
     content_hash = Column(String(64), nullable=True)  # SHA-256 hash for change detection
     summary = Column(Text, nullable=True)  # AI-generated document summary
     is_favorite = Column(Boolean, default=False)  # Pinned/favorite status
+
+    # Folder hierarchy support (single-level only)
+    is_folder = Column(Boolean, default=False, nullable=False, index=True)
+    parent_id = Column(
+        String(36), ForeignKey("files.id", ondelete="CASCADE"), nullable=True, index=True
+    )  # NULL = root level; folders must have parent_id=NULL (single-level constraint)
+    position = Column(Integer, default=0)  # For custom ordering within folders
+
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     owner = relationship("User", back_populates="files")
     versions = relationship("FileVersion", back_populates="file", cascade="all, delete-orphan")
+    parent = relationship("File", remote_side=[id], backref="children")
+
+    # Composite indexes for efficient folder queries
+    __table_args__ = (
+        Index("idx_files_user_parent", "user_id", "parent_id"),
+        Index("idx_files_parent_position", "parent_id", "position"),
+    )
 
 
 class FileVersion(Base):

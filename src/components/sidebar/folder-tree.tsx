@@ -1,0 +1,589 @@
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  Check,
+  X,
+  Trash2,
+  Pencil,
+  MoreHorizontal,
+  Loader2,
+  FileText,
+} from "lucide-react";
+import { createPortal } from "react-dom";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
+import { Tooltip } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { FileItem } from "./file-item";
+import { useFileStore } from "@/stores/file-store";
+import type { FileItem as FileItemType } from "@/types";
+import { toast } from "sonner";
+import { getErrorMessage, cn, formatDate } from "@/lib/utils";
+import { storeLogger } from "@/lib/logger";
+
+const log = storeLogger.child("FolderTree");
+
+export function FolderTree() {
+  const {
+    files,
+    currentFolderId,
+    getFolders,
+    getFilesInFolder,
+    getFile,
+    setCurrentFolder,
+    moveFileToFolder,
+    renameFile,
+    deleteFile,
+    importFile,
+    justCreatedFileId,
+    clearJustCreatedFileId,
+  } = useFileStore();
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [isDraggingOverEmptyFolder, setIsDraggingOverEmptyFolder] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renamingFolderName, setRenamingFolderName] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folderId: string } | null>(
+    null
+  );
+  const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
+  const [contextMenuReady, setContextMenuReady] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<FileItemType | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  const folders = getFolders();
+  const rootFiles = getFilesInFolder(null);
+  const currentFolder = currentFolderId ? files.find((f) => f.id === currentFolderId) : null;
+
+  // Drag and drop handlers for folders
+  const handleDragOver = (e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverFolderId(folderId);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolderId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, folderId: string | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolderId(null);
+    setIsDraggingOverEmptyFolder(false);
+
+    // Check if dropping external files (from computer)
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      // Import external files
+      const fileCount = droppedFiles.length;
+
+      setIsImporting(true);
+      setImportProgress({ current: 0, total: fileCount });
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < fileCount; i++) {
+        const file = droppedFiles[i];
+        setImportProgress({ current: i + 1, total: fileCount });
+
+        try {
+          await importFile(file, folderId);
+          successCount++;
+        } catch (error) {
+          failCount++;
+          log.error("Failed to import file", error);
+        }
+      }
+
+      setIsImporting(false);
+      setImportProgress({ current: 0, total: 0 });
+
+      // Only show toast for errors
+      if (failCount > 0) {
+        toast.error(`Failed to import ${failCount} file(s)`);
+      }
+
+      return;
+    }
+
+    // Otherwise, handle internal file move
+    const draggedFileId = e.dataTransfer.getData("text/plain");
+    if (draggedFileId && draggedFileId !== folderId) {
+      try {
+        await moveFileToFolder(draggedFileId, folderId);
+        toast.success(folderId ? "File moved to folder" : "File moved to root");
+      } catch (error) {
+        log.error("Failed to move file", error);
+        toast.error("Failed to move file");
+      }
+    }
+  };
+
+  // Folder rename handlers
+  const handleFolderRename = async () => {
+    if (!renamingFolderId || !renamingFolderName.trim()) {
+      setRenamingFolderId(null);
+      setRenamingFolderName("");
+      return;
+    }
+
+    try {
+      await renameFile(renamingFolderId, renamingFolderName.trim());
+      toast.success("Folder renamed");
+    } catch (error) {
+      log.error("Failed to rename folder", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+
+    setRenamingFolderId(null);
+    setRenamingFolderName("");
+  };
+
+  const cancelFolderRename = () => {
+    setRenamingFolderId(null);
+    setRenamingFolderName("");
+  };
+
+  // Auto-enter rename mode for newly created folders
+  useEffect(() => {
+    const folder = folders.find((f) => f.id === justCreatedFileId);
+    if (folder) {
+      setRenamingFolderId(folder.id);
+      setRenamingFolderName(folder.name);
+      clearJustCreatedFileId();
+    }
+  }, [folders, justCreatedFileId, clearJustCreatedFileId]);
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Calculate position with viewport boundary check
+    const menuWidth = 180;
+    const menuHeight = 120;
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth - 10) {
+      x = window.innerWidth - menuWidth - 10;
+    }
+    if (y + menuHeight > window.innerHeight - 10) {
+      y = window.innerHeight - menuHeight - 10;
+    }
+
+    setContextMenu({ x, y, folderId });
+    setContextMenuFocusIndex(-1);
+    setContextMenuReady(false);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setContextMenuReady(true);
+      });
+    });
+  }, []);
+
+  const handleContextMenuRename = () => {
+    if (!contextMenu) return;
+    const folder = folders.find((f) => f.id === contextMenu.folderId);
+    if (folder) {
+      setRenamingFolderId(folder.id);
+      setRenamingFolderName(folder.name);
+    }
+    setContextMenu(null);
+  };
+
+  const handleContextMenuDelete = () => {
+    if (!contextMenu) return;
+    const folder = folders.find((f) => f.id === contextMenu.folderId);
+    if (folder) {
+      setFolderToDelete(folder);
+      setShowDeleteModal(true);
+    }
+    setContextMenu(null);
+  };
+
+  const handleDeleteFolder = async () => {
+    if (!folderToDelete) return;
+
+    try {
+      await deleteFile(folderToDelete.id);
+      toast.success("Folder deleted");
+    } catch (error) {
+      log.error("Failed to delete folder", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    } finally {
+      setShowDeleteModal(false);
+      setFolderToDelete(null);
+    }
+  };
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+        setContextMenuFocusIndex(-1);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case "Escape":
+          e.preventDefault();
+          setContextMenu(null);
+          setContextMenuFocusIndex(-1);
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          setContextMenuFocusIndex((prev) => (prev + 1) % 2);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setContextMenuFocusIndex((prev) => (prev - 1 + 2) % 2);
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (contextMenuFocusIndex === 0) {
+            handleContextMenuRename();
+          } else if (contextMenuFocusIndex === 1) {
+            handleContextMenuDelete();
+          }
+          break;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu, contextMenuFocusIndex]);
+
+  // When inside a folder, show only files in that folder
+  const currentFolderFiles = currentFolderId ? getFilesInFolder(currentFolderId) : [];
+
+  return (
+    <div className="space-y-2">
+      {/* Breadcrumb - Current Location (hide on mobile to avoid redundancy with header back button) */}
+      {currentFolderId && currentFolder && (
+        <div className="mb-2 hidden items-center gap-2 border-b border-border px-3 py-2 md:flex">
+          <button
+            onClick={() => setCurrentFolder(null)}
+            className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronRight className="h-3 w-3 rotate-180" />
+            All Files
+          </button>
+          <span className="text-xs text-muted-foreground">/</span>
+          <span className="text-xs font-medium text-foreground">{currentFolder.name}</span>
+        </div>
+      )}
+
+      {/* Show folder view when at root */}
+      {!currentFolderId &&
+        folders.map((folder) => {
+          const folderFiles = getFilesInFolder(folder.id);
+
+          return (
+            <div key={folder.id}>
+              {/* Folder Item */}
+              <div
+                onDragOver={(e) => handleDragOver(e, folder.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, folder.id)}
+                className={`group rounded-md transition-colors ${
+                  dragOverFolderId === folder.id
+                    ? "bg-accent ring-2 ring-primary"
+                    : "hover:bg-accent/50"
+                }`}
+              >
+                {renamingFolderId === folder.id ? (
+                  <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2 md:py-1.5">
+                    <Folder className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
+                    <Input
+                      value={renamingFolderName}
+                      onChange={(e) => setRenamingFolderName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleFolderRename();
+                        if (e.key === "Escape") cancelFolderRename();
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-7 flex-1 text-sm"
+                      autoFocus
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleFolderRename();
+                      }}
+                      className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+                      aria-label="Confirm rename"
+                    >
+                      <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cancelFolderRename();
+                      }}
+                      className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+                      aria-label="Cancel rename"
+                    >
+                      <X className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => setCurrentFolder(folder.id)}
+                    onContextMenu={(e) => handleContextMenu(e, folder.id)}
+                    className="flex w-full cursor-pointer select-none items-center gap-3 px-3 py-3 text-sm transition-transform active:scale-[0.98] md:gap-2 md:px-2 md:py-1.5 md:active:scale-100"
+                  >
+                    {/* Folder icon with count badge */}
+                    <div className="relative shrink-0">
+                      <Folder className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+                      {folderFiles.length > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-600 text-[10px] font-semibold text-white dark:bg-amber-500">
+                          {folderFiles.length}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Folder name and metadata */}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-base transition-colors hover:text-primary md:text-sm">
+                        {folder.name}
+                      </p>
+                      <p className="truncate text-sm text-muted-foreground md:text-xs">
+                        {formatDate(folder.updatedAt)}
+                      </p>
+                    </div>
+
+                    {/* Three-dot menu */}
+                    <div
+                      className="flex items-center transition-opacity md:opacity-0 md:group-hover:opacity-100"
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <DropdownMenu>
+                        <Tooltip content="Folder options" side="right">
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-10 w-10 md:h-8 md:w-8"
+                              aria-label="Folder options"
+                            >
+                              <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                        </Tooltip>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenamingFolderId(folder.id);
+                              setRenamingFolderName(folder.name);
+                            }}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFolderToDelete(folder);
+                              setShowDeleteModal(true);
+                            }}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+      {/* Root-level files - only show at root */}
+      {!currentFolderId && rootFiles.map((file) => <FileItem key={file.id} file={file} />)}
+
+      {/* Files in current folder - only show when inside a folder */}
+      {currentFolderId && (
+        <div
+          className="space-y-1"
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setIsDraggingOverEmptyFolder(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setIsDraggingOverEmptyFolder(false);
+          }}
+          onDrop={(e) => {
+            handleDrop(e, currentFolderId);
+            setIsDraggingOverEmptyFolder(false);
+          }}
+        >
+          {isImporting ? (
+            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-primary bg-accent/30 py-12 text-center">
+              <div className="relative">
+                <FolderOpen className="h-12 w-12 text-primary" />
+                <Loader2 className="absolute -bottom-1 -right-1 h-5 w-5 animate-spin text-primary" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Importing files...</p>
+                <p className="text-xs text-muted-foreground">
+                  {importProgress.current} of {importProgress.total} completed
+                </p>
+              </div>
+            </div>
+          ) : currentFolderFiles.length === 0 ? (
+            <div
+              className={cn(
+                "flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed py-12 text-center transition-colors",
+                isDraggingOverEmptyFolder ? "border-primary bg-accent/50" : "border-transparent"
+              )}
+            >
+              <FolderOpen
+                className={cn(
+                  "h-12 w-12 transition-colors",
+                  isDraggingOverEmptyFolder ? "text-primary" : "text-muted-foreground/30"
+                )}
+              />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Empty folder</p>
+                <p className="text-xs text-muted-foreground/70">
+                  Drag files here or create new one
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {currentFolderFiles.map((file) => (
+                <FileItem key={file.id} file={file} />
+              ))}
+              {isImporting && (
+                <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-accent/50 px-3 py-2.5 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <span className="text-foreground/80">
+                    Importing files... ({importProgress.current}/{importProgress.total})
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {files.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+          <FileText className="h-12 w-12 text-muted-foreground/30" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-muted-foreground">No files yet</p>
+            <p className="text-xs text-muted-foreground/70">
+              Create your first file or import existing documents
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu &&
+        createPortal(
+          <div
+            ref={contextMenuRef}
+            className="fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+            }}
+          >
+            {/* Rename */}
+            <button
+              role="menuitem"
+              onClick={handleContextMenuRename}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(0)}
+              className={cn(
+                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
+                contextMenuFocusIndex === 0 && "bg-accent text-accent-foreground"
+              )}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Rename
+            </button>
+
+            <div className="my-1 h-px bg-border" />
+
+            {/* Delete */}
+            <button
+              role="menuitem"
+              onClick={handleContextMenuDelete}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
+              className={cn(
+                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm text-destructive outline-none",
+                contextMenuReady && "hover:bg-destructive/10",
+                contextMenuFocusIndex === 1 && "bg-destructive/10"
+              )}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </button>
+          </div>,
+          document.body
+        )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
+        <ModalHeader>Delete Folder</ModalHeader>
+        <p className="text-sm text-muted-foreground">
+          Are you sure you want to delete &quot;{folderToDelete?.name}&quot;? This will also delete
+          all files inside. This action cannot be undone.
+        </p>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleDeleteFolder}>
+            Delete
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </div>
+  );
+}

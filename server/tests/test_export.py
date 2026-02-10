@@ -727,20 +727,22 @@ class TestExportService:
     def test_export_markdown(self):
         """Should export as UTF-8 encoded markdown."""
         service = ExportService()
-        content = "# Hello\n\nWorld"
+        content = "<h1>Hello</h1><p>World</p>"
 
         result = service.export_markdown(content, "test")
 
-        assert result == content.encode("utf-8")
+        assert b"# Hello" in result
+        assert b"World" in result
 
     def test_export_markdown_unicode(self):
         """Should handle unicode in markdown export."""
         service = ExportService()
-        content = "# 你好世界\n\nテスト"
+        content = "<h1>你好世界</h1><p>テスト</p>"
 
         result = service.export_markdown(content, "test")
 
-        assert result == content.encode("utf-8")
+        assert "你好世界".encode() in result
+        assert "テスト".encode() in result
 
     def test_export_pdf(self):
         """Should export as PDF."""
@@ -1047,7 +1049,7 @@ This is a paragraph with **bold** and *italic* text.
 
     def test_unicode_content_export(self):
         """Should handle unicode content in all formats."""
-        content = "# 中文标题\n\n日本語テキスト\n\n한국어 텍스트"
+        content = "<h1>中文标题</h1><p>日本語テキスト</p><p>한국어 텍스트</p>"
 
         # PDF export may fail on CI environments without Unicode fonts
         # In that case, we accept the failure gracefully
@@ -1064,4 +1066,6 @@ This is a paragraph with **bold** and *italic* text.
         md_result = export_service.export_markdown(content, "unicode")
 
         assert isinstance(docx_result, bytes)
-        assert md_result == content.encode("utf-8")
+        assert "中文标题".encode() in md_result
+        assert "日本語テキスト".encode() in md_result
+        assert "한국어 텍스트".encode() in md_result

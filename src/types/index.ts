@@ -6,6 +6,9 @@ export interface FileItem {
   id: string;
   name: string;
   content: string;
+  isFolder: boolean;
+  parentId: string | null;
+  position: number;
   createdAt: string;
   updatedAt: string;
 }

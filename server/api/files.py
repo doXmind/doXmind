@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,7 @@ class FileCreate(BaseModel):
 
     name: str
     content: str = ""
+    parent_id: str | None = None  # Optional parent folder
 
 
 class FileUpdate(BaseModel):
@@ -52,12 +53,27 @@ class FileUpdate(BaseModel):
     is_favorite: bool | None = None
 
 
+class FolderCreate(BaseModel):
+    """Folder creation model."""
+
+    name: str
+
+
+class MoveRequest(BaseModel):
+    """File move request model."""
+
+    target_folder_id: str | None = None  # None means root level
+
+
 class FileResponse(BaseModel):
     """File response model."""
 
     id: str
     name: str
     content: str
+    is_folder: bool = False
+    parent_id: str | None = None
+    position: int = 0
     summary: str | None = None
     is_favorite: bool = False
     created_at: str
@@ -68,14 +84,33 @@ class FileResponse(BaseModel):
 
 
 @router.get("/", response_model=list[FileResponse])
-async def list_files(db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)):
-    """List files for the current user."""
+async def list_files(
+    parent_id: str | None = Query(None),
+    filter_by_parent: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """List files for the current user, optionally filtered by parent folder.
+
+    Args:
+        parent_id: If provided with filter_by_parent=True, only return files/folders within this folder.
+        filter_by_parent: If True, filter by parent_id. If False (default), return all files.
+    """
     user_id = get_user_id(token)
 
-    query = select(File).order_by(File.updated_at.desc())
+    # Build query with folder-aware ordering: folders first, then by position, then by date
+    query = select(File).order_by(
+        File.is_folder.desc(),  # Folders first
+        File.position.asc(),  # Then by position
+        File.updated_at.desc(),  # Then by recency
+    )
 
     # Filter by user (None means shared/dev mode, for dev/anonymous users only show files with no user_id)
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    # Filter by parent folder only if explicitly requested
+    if filter_by_parent:
+        query = query.where(File.parent_id == parent_id)
 
     result = await db.execute(query)
     files = result.scalars().all()
@@ -84,6 +119,9 @@ async def list_files(db: AsyncSession = Depends(get_db), token: TokenData = Depe
             id=f.id,
             name=f.name,
             content=f.content,
+            is_folder=f.is_folder,
+            parent_id=f.parent_id,
+            position=f.position,
             summary=f.summary,
             is_favorite=f.is_favorite or False,
             created_at=f.created_at.isoformat(),
@@ -101,13 +139,43 @@ async def create_file(
     user_id = get_user_id(token)
     content_hash = compute_content_hash(file.content) if file.content else None
 
+    # Validate parent_id if provided
+    if file.parent_id is not None:
+        parent_query = select(File).where(File.id == file.parent_id)
+        parent_query = (
+            parent_query.where(File.user_id == user_id)
+            if user_id
+            else parent_query.where(File.user_id.is_(None))
+        )
+
+        parent_result = await db.execute(parent_query)
+        parent = parent_result.scalar_one_or_none()
+
+        if not parent:
+            raise HTTPException(status_code=404, detail="Parent folder not found")
+
+        if not parent.is_folder:
+            raise HTTPException(status_code=400, detail="Parent must be a folder")
+
     try:
         result = await db.execute(
             insert(File)
             .values(
-                name=file.name, content=file.content, content_hash=content_hash, user_id=user_id
+                name=file.name,
+                content=file.content,
+                content_hash=content_hash,
+                user_id=user_id,
+                parent_id=file.parent_id,  # Use the validated parent_id
             )
-            .returning(File.id, File.name, File.content, File.created_at, File.updated_at)
+            .returning(
+                File.id,
+                File.name,
+                File.content,
+                File.parent_id,
+                File.position,
+                File.created_at,
+                File.updated_at,
+            )
         )
         await db.commit()
         created_row = result.mappings().first()
@@ -140,6 +208,9 @@ async def create_file(
             id=file_id,
             name=cast(str, created["name"]),
             content=cast(str, created["content"]),
+            is_folder=False,
+            parent_id=cast(str | None, created["parent_id"]),
+            position=cast(int, created["position"]),
             summary=None,
             is_favorite=False,
             created_at=cast(datetime, created["created_at"]).isoformat(),
@@ -178,6 +249,9 @@ async def get_file(
         id=file.id,
         name=file.name,
         content=file.content,
+        is_folder=file.is_folder,
+        parent_id=file.parent_id,
+        position=file.position,
         summary=file.summary,
         is_favorite=file.is_favorite or False,
         created_at=file.created_at.isoformat(),
@@ -254,10 +328,18 @@ async def update_file(
         except Exception as e:
             logger.warning(f"Failed to re-index file: {e}")
 
+    # Extract folder-related fields
+    file_is_folder = file.is_folder
+    file_parent_id = file.parent_id
+    file_position = file.position
+
     return FileResponse(
         id=file_id,
         name=file_name,
         content=file_content,
+        is_folder=file_is_folder,
+        parent_id=file_parent_id,
+        position=file_position,
         summary=file_summary,
         is_favorite=file_is_favorite,
         created_at=file_created_at,
@@ -292,6 +374,155 @@ async def delete_file(
     await db.commit()
 
     return {"status": "deleted"}
+
+
+@router.post("/folders", response_model=FileResponse)
+async def create_folder(
+    folder: FolderCreate,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Create a new folder at root level (single-level folder structure).
+
+    Folders:
+    - Always have parent_id=NULL (root level only)
+    - Cannot be nested (single-level constraint)
+    - Have empty content
+    - Are not indexed in vector store
+    """
+    user_id = get_user_id(token)
+
+    # Validate: Check for duplicate folder name at root level
+    query = select(File).where(
+        File.name == folder.name, File.is_folder.is_(True), File.parent_id.is_(None)
+    )
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    result = await db.execute(query)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=400, detail=f"A folder named '{folder.name}' already exists at root level"
+        )
+
+    try:
+        result = await db.execute(
+            insert(File)
+            .values(
+                name=folder.name,
+                content="",  # Folders have no content
+                is_folder=True,
+                parent_id=None,  # Always root level (single-level constraint)
+                user_id=user_id,
+            )
+            .returning(
+                File.id,
+                File.name,
+                File.content,
+                File.is_folder,
+                File.parent_id,
+                File.position,
+                File.created_at,
+                File.updated_at,
+            )
+        )
+        await db.commit()
+        created_row = result.mappings().first()
+        if not created_row:
+            raise RuntimeError("Failed to create folder")
+        created = cast(dict[str, Any], created_row)
+
+        return FileResponse(
+            id=cast(str, created["id"]),
+            name=cast(str, created["name"]),
+            content=cast(str, created["content"]),
+            is_folder=cast(bool, created["is_folder"]),
+            parent_id=cast(str | None, created["parent_id"]),
+            position=cast(int, created["position"]),
+            summary=None,
+            is_favorite=False,
+            created_at=cast(datetime, created["created_at"]).isoformat(),
+            updated_at=cast(datetime, created["updated_at"]).isoformat(),
+        )
+    except Exception as e:
+        await db.rollback()
+        error_str = str(e)
+        logger.error(f"Failed to create folder: {e}")
+        if "ForeignKeyViolationError" in error_str and "user_id" in error_str:
+            raise HTTPException(
+                status_code=401, detail="User session invalid. Please log in again."
+            )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{file_id}/move")
+async def move_file(
+    file_id: str,
+    move_request: MoveRequest,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Move a file to a different folder (or root).
+
+    Rules:
+    - Only files can be moved (not folders)
+    - Target must be a folder or None (root)
+    - User must own both file and target folder
+    """
+    user_id = get_user_id(token)
+
+    # Get the file to move
+    query = select(File).where(File.id == file_id)
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    result = await db.execute(query)
+    file = result.scalar_one_or_none()
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Validate: Folders cannot be moved (they're always at root)
+    if file.is_folder:
+        raise HTTPException(
+            status_code=400, detail="Folders cannot be moved (always at root level)"
+        )
+
+    # Validate: If target is provided, verify it's a folder and user owns it
+    if move_request.target_folder_id is not None:
+        target_query = select(File).where(File.id == move_request.target_folder_id)
+        target_query = (
+            target_query.where(File.user_id == user_id)
+            if user_id
+            else target_query.where(File.user_id.is_(None))
+        )
+
+        target_result = await db.execute(target_query)
+        target = target_result.scalar_one_or_none()
+
+        if not target:
+            raise HTTPException(status_code=404, detail="Target folder not found")
+
+        if not target.is_folder:
+            raise HTTPException(status_code=400, detail="Target must be a folder")
+
+    # Move the file
+    file.parent_id = move_request.target_folder_id
+    await db.commit()
+    await db.refresh(file)
+
+    return FileResponse(
+        id=file.id,
+        name=file.name,
+        content=file.content,
+        is_folder=file.is_folder,
+        parent_id=file.parent_id,
+        position=file.position,
+        summary=file.summary,
+        is_favorite=file.is_favorite or False,
+        created_at=file.created_at.isoformat(),
+        updated_at=file.updated_at.isoformat(),
+    )
 
 
 class SearchRequest(BaseModel):

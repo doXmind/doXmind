@@ -169,6 +169,18 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Global text selection - Black & White style */
+  ::selection {
+    background-color: hsl(var(--foreground) / 0.15);
+    color: hsl(var(--foreground));
+  }
+
+  /* Firefox compatibility */
+  ::-moz-selection {
+    background-color: hsl(var(--foreground) / 0.15);
+    color: hsl(var(--foreground));
+  }
 }
 
 /* Skip to Content - Accessibility Link */
@@ -417,9 +429,10 @@
     zoomIn 0.2s ease-out;
 }
 
-/* Selection */
+/* Selection - Black & White style */
 .ProseMirror ::selection {
-  @apply bg-primary/20;
+  background-color: hsl(var(--foreground) / 0.15);
+  color: hsl(var(--foreground));
 }
 
 /* Bubble Menu Animation */
@@ -1138,9 +1151,10 @@ html {
   @apply text-orange-300;
 }
 
-/* Selection within code block */
+/* Selection within code block - Black & White style */
 .ProseMirror .code-block-content ::selection {
-  @apply bg-primary/30;
+  background-color: hsl(var(--foreground) / 0.2);
+  color: hsl(var(--foreground));
 }
 
 /* Line height for code lines - must match line-numbers */

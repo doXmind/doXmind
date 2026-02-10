@@ -1,8 +1,21 @@
 "use client";
 
-import { FileText, Trash2, MoreHorizontal, FileDown, Pencil, Share2, Check, X } from "lucide-react";
+import {
+  FileText,
+  Trash2,
+  MoreHorizontal,
+  FileDown,
+  Pencil,
+  Share2,
+  Check,
+  X,
+  Home,
+  CheckSquare,
+  Square,
+} from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { cn, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,10 +38,26 @@ const log = storeLogger.child("FileItem");
 
 interface FileItemProps {
   file: FileItemType;
+  indent?: boolean;
 }
 
-export function FileItem({ file }: FileItemProps) {
-  const { currentFileId, setCurrentFile, deleteFile, renameFile } = useFileStore();
+// Store last clicked file ID for range selection (outside component to persist across renders)
+let lastClickedFileId: string | null = null;
+
+export function FileItem({ file, indent = false }: FileItemProps) {
+  const {
+    currentFileId,
+    setCurrentFile,
+    deleteFile,
+    renameFile,
+    moveFileToFolder,
+    justCreatedFileId,
+    clearJustCreatedFileId,
+    selectedFileIds,
+    toggleFileSelection,
+    selectFileRange,
+    clearSelection,
+  } = useFileStore();
   const [isRenaming, setIsRenaming] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -41,6 +70,8 @@ export function FileItem({ file }: FileItemProps) {
   const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
 
   const isActive = currentFileId === file.id;
+  const isSelected = selectedFileIds.has(file.id);
+  const isSelectionMode = selectedFileIds.size > 0;
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -54,7 +85,8 @@ export function FileItem({ file }: FileItemProps) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const itemCount = 6; // rename, share, 3 exports, delete
+      const itemCount = file.parentId ? 7 : 6; // rename, share, [move to root], 3 exports, delete
+      const exportOffset = file.parentId ? 1 : 0; // Shift export items if "Move to Root" is present
       switch (e.key) {
         case "Escape":
           e.preventDefault();
@@ -82,19 +114,31 @@ export function FileItem({ file }: FileItemProps) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             setShowShareDialog(true);
-          } else if (contextMenuFocusIndex === 2) {
+          } else if (contextMenuFocusIndex === 2 && file.parentId) {
+            // Move to Root (only when file is in a folder)
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            moveFileToFolder(file.id, null)
+              .then(() => {
+                toast.success("File moved to root");
+              })
+              .catch((error) => {
+                log.error("Failed to move file to root", error);
+                toast.error("Failed to move file");
+              });
+          } else if (contextMenuFocusIndex === 2 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleExport("markdown");
-          } else if (contextMenuFocusIndex === 3) {
+          } else if (contextMenuFocusIndex === 3 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleExport("pdf");
-          } else if (contextMenuFocusIndex === 4) {
+          } else if (contextMenuFocusIndex === 4 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleExport("docx");
-          } else if (contextMenuFocusIndex === 5) {
+          } else if (contextMenuFocusIndex === 5 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             setShowDeleteModal(true);
@@ -149,10 +193,44 @@ export function FileItem({ file }: FileItemProps) {
     });
   }, []);
 
-  const handleClick = () => {
-    if (!isRenaming) {
+  const handleClick = (e?: React.MouseEvent) => {
+    if (isRenaming) return;
+
+    // Multi-select: Ctrl+click toggles selection, Shift+click selects range
+    if (e?.ctrlKey || e?.metaKey) {
+      toggleFileSelection(file.id);
+      lastClickedFileId = file.id;
+    } else if (e?.shiftKey && lastClickedFileId) {
+      selectFileRange(lastClickedFileId, file.id);
+    } else {
+      // Normal click: clear selection if any, then set as current file
+      if (selectedFileIds.size > 0) {
+        clearSelection();
+      }
       setCurrentFile(file.id);
+      lastClickedFileId = file.id;
     }
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNewName(getNameWithoutExtension(file.name));
+    setIsRenaming(true);
+  };
+
+  // Auto-enter rename mode for newly created files
+  useEffect(() => {
+    if (file.id === justCreatedFileId) {
+      setNewName(getNameWithoutExtension(file.name));
+      setIsRenaming(true);
+      clearJustCreatedFileId();
+    }
+  }, [file.id, justCreatedFileId, file.name, clearJustCreatedFileId]);
+
+  // Drag handler for moving files to folders
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", file.id);
   };
 
   const handleRename = async () => {
@@ -240,15 +318,40 @@ export function FileItem({ file }: FileItemProps) {
 
   return (
     <div
+      draggable={!isRenaming && !isSelectionMode}
+      onDragStart={handleDragStart}
       onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       className={cn(
         "group flex cursor-pointer items-center gap-3 rounded-md px-3 py-3 transition-colors md:gap-2 md:px-2 md:py-1.5",
-        "active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile
-        isActive ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/50"
+        "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
+        isSelected
+          ? "bg-primary/10 ring-2 ring-primary/30 dark:bg-primary/20"
+          : isActive
+            ? "bg-accent text-accent-foreground"
+            : "text-foreground hover:bg-accent/50"
       )}
     >
-      <FileText className="h-5 w-5 flex-shrink-0 text-muted-foreground md:h-4 md:w-4" />
+      {/* Checkbox for multi-select */}
+      {(isSelectionMode || isSelected) && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFileSelection(file.id);
+          }}
+          className="flex-shrink-0"
+          aria-label={isSelected ? "Deselect file" : "Select file"}
+        >
+          {isSelected ? (
+            <CheckSquare className="h-5 w-5 text-primary md:h-4 md:w-4" />
+          ) : (
+            <Square className="h-5 w-5 text-muted-foreground md:h-4 md:w-4" />
+          )}
+        </button>
+      )}
+
+      <FileText className="h-5 w-5 flex-shrink-0 text-muted-foreground/70 md:h-4 md:w-4" />
 
       <div className="min-w-0 flex-1">
         {isRenaming ? (
@@ -295,7 +398,12 @@ export function FileItem({ file }: FileItemProps) {
       </div>
 
       {/* Actions - Always visible on mobile via menu button */}
-      <div className="flex items-center transition-opacity md:opacity-0 md:group-hover:opacity-100">
+      <div
+        className="flex items-center transition-opacity md:opacity-0 md:group-hover:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <DropdownMenu>
           <Tooltip content="File options" side="right">
             <DropdownMenuTrigger asChild>
@@ -303,7 +411,6 @@ export function FileItem({ file }: FileItemProps) {
                 variant="ghost"
                 size="icon"
                 className="h-10 w-10 md:h-8 md:w-8"
-                onClick={(e) => e.stopPropagation()}
                 aria-label="File options"
               >
                 <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
@@ -330,6 +437,26 @@ export function FileItem({ file }: FileItemProps) {
               <Share2 className="mr-2 h-4 w-4" />
               Share
             </DropdownMenuItem>
+            {file.parentId && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await moveFileToFolder(file.id, null);
+                      toast.success("File moved to root");
+                    } catch (error) {
+                      log.error("Failed to move file to root", error);
+                      toast.error("Failed to move file");
+                    }
+                  }}
+                >
+                  <Home className="mr-2 h-4 w-4" />
+                  Move to Root
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground">
               Export as
@@ -431,6 +558,36 @@ export function FileItem({ file }: FileItemProps) {
               Share
             </button>
 
+            {file.parentId && (
+              <>
+                <div className="my-1 h-px bg-border" />
+
+                {/* Move to Root */}
+                <button
+                  role="menuitem"
+                  onClick={async () => {
+                    setContextMenu(null);
+                    try {
+                      await moveFileToFolder(file.id, null);
+                      toast.success("File moved to root");
+                    } catch (error) {
+                      log.error("Failed to move file to root", error);
+                      toast.error("Failed to move file");
+                    }
+                  }}
+                  onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(2)}
+                  className={cn(
+                    "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+                    contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
+                    contextMenuFocusIndex === 2 && "bg-accent text-accent-foreground"
+                  )}
+                >
+                  <Home className="mr-2 h-4 w-4" />
+                  Move to Root
+                </button>
+              </>
+            )}
+
             <div className="my-1 h-px bg-border" />
 
             {/* Export submenu label */}
@@ -440,11 +597,14 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={() => handleContextMenuExport("markdown")}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(2)}
+              onMouseEnter={() =>
+                contextMenuReady && setContextMenuFocusIndex(2 + (file.parentId ? 1 : 0))
+              }
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
                 contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 2 && "bg-accent text-accent-foreground"
+                contextMenuFocusIndex === 2 + (file.parentId ? 1 : 0) &&
+                  "bg-accent text-accent-foreground"
               )}
             >
               <FileDown className="mr-2 h-4 w-4" />
@@ -455,11 +615,14 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={() => handleContextMenuExport("pdf")}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(3)}
+              onMouseEnter={() =>
+                contextMenuReady && setContextMenuFocusIndex(3 + (file.parentId ? 1 : 0))
+              }
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
                 contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 3 && "bg-accent text-accent-foreground"
+                contextMenuFocusIndex === 3 + (file.parentId ? 1 : 0) &&
+                  "bg-accent text-accent-foreground"
               )}
             >
               <FileDown className="mr-2 h-4 w-4" />
@@ -470,11 +633,14 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={() => handleContextMenuExport("docx")}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(4)}
+              onMouseEnter={() =>
+                contextMenuReady && setContextMenuFocusIndex(4 + (file.parentId ? 1 : 0))
+              }
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
                 contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 4 && "bg-accent text-accent-foreground"
+                contextMenuFocusIndex === 4 + (file.parentId ? 1 : 0) &&
+                  "bg-accent text-accent-foreground"
               )}
             >
               <FileDown className="mr-2 h-4 w-4" />
@@ -487,11 +653,13 @@ export function FileItem({ file }: FileItemProps) {
             <button
               role="menuitem"
               onClick={handleContextMenuDelete}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(5)}
+              onMouseEnter={() =>
+                contextMenuReady && setContextMenuFocusIndex(5 + (file.parentId ? 1 : 0))
+              }
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm text-destructive outline-none",
                 contextMenuReady && "hover:bg-destructive/10",
-                contextMenuFocusIndex === 5 && "bg-destructive/10"
+                contextMenuFocusIndex === 5 + (file.parentId ? 1 : 0) && "bg-destructive/10"
               )}
             >
               <Trash2 className="mr-2 h-4 w-4" />

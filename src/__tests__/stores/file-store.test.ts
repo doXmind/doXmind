@@ -138,7 +138,7 @@ describe("useFileStore", () => {
 
       const fileId = await useFileStore.getState().createFile("New Document");
 
-      expect(mockApi.createFile).toHaveBeenCalledWith("New Document", "");
+      expect(mockApi.createFile).toHaveBeenCalledWith("New Document", "", null);
       expect(fileId).toBe("new-file-123");
 
       const state = useFileStore.getState();
@@ -158,15 +158,33 @@ describe("useFileStore", () => {
 
       await useFileStore.getState().createFile("New Document", "Initial content");
 
-      expect(mockApi.createFile).toHaveBeenCalledWith("New Document", "Initial content");
+      expect(mockApi.createFile).toHaveBeenCalledWith("New Document", "Initial content", null);
     });
 
     it("adds new file to the beginning of the list", async () => {
       // Setup existing files
       useFileStore.setState({
         files: [
-          { id: "old-1", name: "Old 1", content: "", createdAt: "", updatedAt: "" },
-          { id: "old-2", name: "Old 2", content: "", createdAt: "", updatedAt: "" },
+          {
+            id: "old-1",
+            name: "Old 1",
+            content: "",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
+          {
+            id: "old-2",
+            name: "Old 2",
+            content: "",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
         ],
       });
 
@@ -223,7 +241,7 @@ describe("useFileStore", () => {
 
       const fileId = await useFileStore.getState().importFile(mockFile);
 
-      expect(mockApi.importFile).toHaveBeenCalledWith(mockFile);
+      expect(mockApi.importFile).toHaveBeenCalledWith(mockFile, undefined);
       expect(fileId).toBe("imported-123");
     });
 
@@ -264,6 +282,9 @@ describe("useFileStore", () => {
             id: "file-1",
             name: "Original Name",
             content: "Original content",
+            isFolder: false,
+            parentId: null,
+            position: 0,
             createdAt: "2024-01-01T00:00:00Z",
             updatedAt: "2024-01-01T00:00:00Z",
           },
@@ -333,8 +354,26 @@ describe("useFileStore", () => {
     it("does not change other files", async () => {
       useFileStore.setState({
         files: [
-          { id: "file-1", name: "File 1", content: "Content 1", createdAt: "", updatedAt: "" },
-          { id: "file-2", name: "File 2", content: "Content 2", createdAt: "", updatedAt: "" },
+          {
+            id: "file-1",
+            name: "File 1",
+            content: "Content 1",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
+          {
+            id: "file-2",
+            name: "File 2",
+            content: "Content 2",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
         ],
       });
       mockApi.updateFile.mockResolvedValueOnce({});
@@ -353,8 +392,26 @@ describe("useFileStore", () => {
     beforeEach(() => {
       useFileStore.setState({
         files: [
-          { id: "file-1", name: "File 1", content: "", createdAt: "", updatedAt: "" },
-          { id: "file-2", name: "File 2", content: "", createdAt: "", updatedAt: "" },
+          {
+            id: "file-1",
+            name: "File 1",
+            content: "",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
+          {
+            id: "file-2",
+            name: "File 2",
+            content: "",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
         ],
         currentFileId: "file-1",
       });
@@ -396,7 +453,18 @@ describe("useFileStore", () => {
 
     it("sets currentFileId to null when deleting last file", async () => {
       useFileStore.setState({
-        files: [{ id: "file-1", name: "File 1", content: "", createdAt: "", updatedAt: "" }],
+        files: [
+          {
+            id: "file-1",
+            name: "File 1",
+            content: "",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
+        ],
         currentFileId: "file-1",
       });
       mockApi.deleteFile.mockResolvedValueOnce({});
@@ -455,7 +523,16 @@ describe("useFileStore", () => {
     beforeEach(() => {
       useFileStore.setState({
         files: [
-          { id: "file-1", name: "Original", content: "Content", createdAt: "", updatedAt: "" },
+          {
+            id: "file-1",
+            name: "Original",
+            content: "Content",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
         ],
       });
     });
@@ -485,8 +562,26 @@ describe("useFileStore", () => {
     beforeEach(() => {
       useFileStore.setState({
         files: [
-          { id: "file-1", name: "File 1", content: "Content 1", createdAt: "", updatedAt: "" },
-          { id: "file-2", name: "File 2", content: "Content 2", createdAt: "", updatedAt: "" },
+          {
+            id: "file-1",
+            name: "File 1",
+            content: "Content 1",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
+          {
+            id: "file-2",
+            name: "File 2",
+            content: "Content 2",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            createdAt: "",
+            updatedAt: "",
+          },
         ],
       });
     });

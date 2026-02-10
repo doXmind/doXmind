@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from fpdf import FPDF
+from markdownify import markdownify as md
 
 # ============================================================================
 # Document Node Model (Intermediate Representation)
@@ -590,7 +591,19 @@ class ExportService:
 
     def export_markdown(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as Markdown."""
-        return content.encode("utf-8")
+        markdown_content = md(
+            content, heading_style="ATX", code_language_callback=self._get_code_language
+        )
+        return markdown_content.encode("utf-8")
+
+    @staticmethod
+    def _get_code_language(el):
+        """Extract language from code block class attribute (e.g. 'language-python')."""
+        classes = el.get("class") or []
+        for cls in classes:
+            if cls.startswith("language-"):
+                return cls[len("language-") :]
+        return None
 
     def export_pdf(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as PDF."""

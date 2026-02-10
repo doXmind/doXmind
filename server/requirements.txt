@@ -38,6 +38,7 @@ authlib==1.6.5
 
 # Export
 markdown==3.7
+markdownify==1.2.0
 fpdf2==2.8.5
 python-docx==1.1.2
 beautifulsoup4==4.12.3

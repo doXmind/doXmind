@@ -463,7 +463,7 @@ describe("ApiClient", () => {
         "http://test-api.com/api/files/",
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify({ name: "New File", content: "Initial content" }),
+          body: JSON.stringify({ name: "New File", content: "Initial content", parent_id: null }),
         })
       );
     });
@@ -480,7 +480,7 @@ describe("ApiClient", () => {
       expect(global.fetch).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
-          body: JSON.stringify({ name: "File", content: "" }),
+          body: JSON.stringify({ name: "File", content: "", parent_id: null }),
         })
       );
     });

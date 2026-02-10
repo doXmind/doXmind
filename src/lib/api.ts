@@ -392,6 +392,9 @@ export class ApiClient {
         id: string;
         name: string;
         content: string;
+        is_folder: boolean;
+        parent_id: string | null;
+        position: number;
         created_at: string;
         updated_at: string;
       }>
@@ -403,21 +406,27 @@ export class ApiClient {
       id: string;
       name: string;
       content: string;
+      is_folder: boolean;
+      parent_id: string | null;
+      position: number;
       created_at: string;
       updated_at: string;
     }>(`/api/files/${id}`);
   }
 
-  async createFile(name: string, content: string = "") {
+  async createFile(name: string, content: string = "", parentId: string | null = null) {
     return this.request<{
       id: string;
       name: string;
       content: string;
+      is_folder: boolean;
+      parent_id: string | null;
+      position: number;
       created_at: string;
       updated_at: string;
     }>("/api/files/", {
       method: "POST",
-      body: JSON.stringify({ name, content }),
+      body: JSON.stringify({ name, content, parent_id: parentId }),
     });
   }
 
@@ -426,11 +435,46 @@ export class ApiClient {
       id: string;
       name: string;
       content: string;
+      is_folder: boolean;
+      parent_id: string | null;
+      position: number;
       created_at: string;
       updated_at: string;
     }>(`/api/files/${id}`, {
       method: "PUT",
       body: JSON.stringify(updates),
+    });
+  }
+
+  async createFolder(name: string) {
+    return this.request<{
+      id: string;
+      name: string;
+      content: string;
+      is_folder: boolean;
+      parent_id: string | null;
+      position: number;
+      created_at: string;
+      updated_at: string;
+    }>("/api/files/folders", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async moveFile(fileId: string, targetFolderId: string | null) {
+    return this.request<{
+      id: string;
+      name: string;
+      content: string;
+      is_folder: boolean;
+      parent_id: string | null;
+      position: number;
+      created_at: string;
+      updated_at: string;
+    }>(`/api/files/${fileId}/move`, {
+      method: "POST",
+      body: JSON.stringify({ target_folder_id: targetFolderId }),
     });
   }
 
@@ -554,11 +598,15 @@ export class ApiClient {
   /**
    * Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
    * @param file - The file to import
+   * @param parentId - Optional folder ID to import into
    * @returns The created file object
    */
-  async importFile(file: File) {
+  async importFile(file: File, parentId?: string | null) {
     const formData = new FormData();
     formData.append("file", file);
+    if (parentId) {
+      formData.append("parent_id", parentId);
+    }
 
     const url = `${this.baseUrl}/api/import/`;
     const response = await fetch(url, {
@@ -576,6 +624,9 @@ export class ApiClient {
       id: string;
       name: string;
       content: string;
+      is_folder: boolean;
+      parent_id: string | null;
+      position: number;
       created_at: string;
       updated_at: string;
     }>;

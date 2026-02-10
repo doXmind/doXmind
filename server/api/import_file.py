@@ -4,7 +4,8 @@ import logging
 import os
 
 import markdown
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.files import get_user_id
@@ -41,6 +42,7 @@ def markdown_to_html(md_content: str) -> str:
 @router.post("/")
 async def import_file(
     file: UploadFile = File(...),
+    parent_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
@@ -49,9 +51,30 @@ async def import_file(
 
     - Accepts: PDF, DOCX, MD, MARKDOWN files
     - Max size: 10MB
+    - parent_id: Optional folder ID to import into
     - Returns: Created file object
     """
     user_id = get_user_id(token)
+
+    # Validate parent folder if provided
+    if parent_id:
+        result = await db.execute(
+            select(FileModel).where(
+                FileModel.id == parent_id,
+                FileModel.user_id == user_id,
+                FileModel.is_folder.is_(True),
+            )
+        )
+        parent_folder = result.scalar_one_or_none()
+        if not parent_folder:
+            raise HTTPException(status_code=404, detail="Parent folder not found")
+
+        # Check that parent folder is at root (single-level hierarchy)
+        if parent_folder.parent_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot import into nested folders. Only single-level folders are supported.",
+            )
     # Validate file extension
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:
@@ -97,7 +120,12 @@ async def import_file(
 
     # Create new file in database
     try:
-        new_file = FileModel(name=new_name, content=html_content, user_id=user_id)
+        new_file = FileModel(
+            name=new_name,
+            content=html_content,
+            user_id=user_id,
+            parent_id=parent_id,
+        )
         db.add(new_file)
         await db.commit()
         await db.refresh(new_file)
@@ -122,6 +150,9 @@ async def import_file(
             "id": new_file.id,
             "name": new_file.name,
             "content": new_file.content,
+            "parent_id": new_file.parent_id,
+            "is_folder": new_file.is_folder,
+            "position": new_file.position,
             "created_at": new_file.created_at.isoformat(),
             "updated_at": new_file.updated_at.isoformat(),
         }

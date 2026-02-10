@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { X } from "lucide-react";
+import { X, ChevronLeft } from "lucide-react";
 import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useFileStore } from "@/stores/file-store";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { Z_INDEX } from "@/lib/constants";
 
@@ -13,8 +14,11 @@ const DRAG_CLOSE_THRESHOLD = 100; // Pixels dragged to trigger close
 
 export function MobileSidebar() {
   const { isMobileSidebarOpen, setMobileSidebarOpen } = useLayoutStore();
+  const { currentFolderId, getFile, setCurrentFolder } = useFileStore();
   const dragControls = useDragControls();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const currentFolder = currentFolderId ? getFile(currentFolderId) : null;
 
   const handleClose = () => {
     setMobileSidebarOpen(false);
@@ -83,12 +87,27 @@ export function MobileSidebar() {
           >
             {/* Header */}
             <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3">
-              <h3 className="text-base font-semibold">Files</h3>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                {currentFolder && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setCurrentFolder(null)}
+                    className="h-8 w-8 flex-shrink-0"
+                    aria-label="Back to all files"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                )}
+                <h3 className="truncate text-base font-semibold">
+                  {currentFolder ? currentFolder.name : "Files"}
+                </h3>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleClose}
-                className="h-10 w-10"
+                className="h-10 w-10 flex-shrink-0"
                 aria-label="Close sidebar"
               >
                 <X className="h-5 w-5" />

@@ -10,6 +10,11 @@ import {
   Upload,
   Loader2,
   SearchX,
+  Home,
+  FolderOpen,
+  FolderPlus,
+  FileText,
+  FilePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
@@ -90,15 +95,29 @@ export function FileGrid({
   maxColumns,
   onResultClick,
 }: FileGridProps) {
-  const { createFile, importFile } = useFileStore();
+  const {
+    createFile,
+    createFolder,
+    importFile,
+    currentFolderId,
+    setCurrentFolder,
+    getFile,
+    getFilesInFolder,
+    getFolders,
+    moveFileToFolder,
+  } = useFileStore();
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
   const [page, setPage] = useState(0);
+  const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isSearchActive = searchQuery.trim().length > 0;
   const isGrid = homeViewMode === "grid" || isSearchActive;
   const pageSize = usePageSize(isGrid);
+
+  // Get current folder info for breadcrumb
+  const currentFolder = currentFolderId ? getFile(currentFolderId) : null;
 
   // Build search match lookup: file_id → { snippet, score }
   const searchMatchMap = useMemo(() => {
@@ -119,21 +138,36 @@ export function FileGrid({
 
   // Determine which files to show
   const displayFiles = useMemo(() => {
-    const sorted = [...files].sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
+    // When searching, show all matching files regardless of folder
+    if (isSearchActive) {
+      const sorted = [...files].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+      return sorted
+        .filter((f) => searchMatchMap.has(f.id))
+        .sort((a, b) => {
+          const scoreA = searchMatchMap.get(a.id)?.score ?? 0;
+          const scoreB = searchMatchMap.get(b.id)?.score ?? 0;
+          return scoreB - scoreA;
+        });
+    }
 
-    if (!isSearchActive) return sorted;
+    // When not searching, filter by current folder
+    const inCurrentFolder = files.filter((f) => {
+      // If in root, show root files and folders
+      if (currentFolderId === null) {
+        return f.parentId === null;
+      }
+      // If in a folder, show files in that folder (folders are always at root)
+      return !f.isFolder && f.parentId === currentFolderId;
+    });
 
-    // Filter to matched files, sorted by relevance (highest score first)
-    return sorted
-      .filter((f) => searchMatchMap.has(f.id))
-      .sort((a, b) => {
-        const scoreA = searchMatchMap.get(a.id)?.score ?? 0;
-        const scoreB = searchMatchMap.get(b.id)?.score ?? 0;
-        return scoreB - scoreA;
-      });
-  }, [files, isSearchActive, searchMatchMap]);
+    // Sort: folders first (when at root), then by date
+    return [...inCurrentFolder].sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }, [files, isSearchActive, searchMatchMap, currentFolderId]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(displayFiles.length / pageSize));
@@ -154,9 +188,20 @@ export function FileGrid({
 
   const handleCreate = async () => {
     try {
-      await createFile(`Untitled-${files.length + 1}.md`);
+      await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
     } catch {
       // handled by store
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    const folders = getFolders();
+    const name = `New Folder ${folders.length + 1}`;
+    try {
+      await createFolder(name);
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
     }
   };
 
@@ -178,6 +223,32 @@ export function FileGrid({
       toast.error(title, { description });
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  // Drag and drop handlers for moving files to root
+  const handleRootDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setIsDraggingOverRoot(true);
+  };
+
+  const handleRootDragLeave = () => {
+    setIsDraggingOverRoot(false);
+  };
+
+  const handleRootDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOverRoot(false);
+
+    const draggedFileId = e.dataTransfer.getData("text/plain");
+    if (draggedFileId) {
+      try {
+        await moveFileToFolder(draggedFileId, null);
+        toast.success("File moved to root");
+      } catch (error) {
+        toast.error("Failed to move file");
+      }
     }
   };
 
@@ -218,15 +289,49 @@ export function FileGrid({
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5, delay: 0.4 }}
     >
+      {/* Breadcrumb navigation - only show when in a folder or searching */}
+      {(currentFolderId || isSearchActive) && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <button
+            onClick={() => setCurrentFolder(null)}
+            onDragOver={handleRootDragOver}
+            onDragLeave={handleRootDragLeave}
+            onDrop={handleRootDrop}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2 py-1 transition-all",
+              isDraggingOverRoot
+                ? "scale-105 bg-blue-100 text-blue-700 ring-2 ring-blue-400/50 dark:bg-blue-900/30 dark:text-blue-300"
+                : "hover:bg-accent hover:text-foreground"
+            )}
+          >
+            <Home className="h-4 w-4" />
+            <span>All Files</span>
+          </button>
+          {currentFolder && !isSearchActive && (
+            <>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
+              <div className="flex items-center gap-1.5 rounded-md bg-accent/50 px-2 py-1">
+                <FolderOpen className="h-4 w-4 text-amber-500" />
+                <span className="font-medium text-foreground">{currentFolder.name}</span>
+              </div>
+            </>
+          )}
+          {isSearchActive && (
+            <>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
+              <span className="text-muted-foreground/60">Search Results</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Section header */}
       <div className="mb-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-medium uppercase tracking-widest text-muted-foreground/60">
-            {isSearchActive ? "Results" : "Documents"}
+            {isSearchActive ? "Results" : currentFolder ? currentFolder.name : "Documents"}
           </h2>
-          <span className="text-xs text-muted-foreground/30">
-            {isSearchActive ? displayFiles.length : files.length}
-          </span>
+          <span className="text-xs text-muted-foreground/30">{displayFiles.length}</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -271,13 +376,29 @@ export function FileGrid({
           {/* Actions */}
           {!hideActions && (
             <>
+              {/* New Folder button - disabled when inside folder (single-level hierarchy) */}
+              <Tooltip
+                content={currentFolderId ? "Only one folder level allowed" : "Create New Folder"}
+                side="bottom"
+              >
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 text-xs font-medium"
+                  onClick={handleCreateFolder}
+                  disabled={!!currentFolderId}
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                  Folder
+                </Button>
+              </Tooltip>
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-8 gap-1.5 text-xs font-medium"
                 onClick={handleCreate}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <FilePlus className="h-3.5 w-3.5" />
                 New
               </Button>
               <Button

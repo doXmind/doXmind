@@ -2,12 +2,13 @@
 
 import { useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Upload } from "lucide-react";
+import { ArrowRight, Upload, Loader2 } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
 import { Button } from "@/components/ui/button";
 import { AnimatedLogo } from "@/components/ui/animated-logo";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
+import { toast } from "sonner";
 
 const log = storeLogger.child("Welcome");
 
@@ -36,14 +37,15 @@ const itemVariants = {
 };
 
 export function WelcomeScreen() {
-  const { createFile, importFile } = useFileStore();
+  const { createFile, importFile, currentFolderId } = useFileStore();
   const [isDragging, setIsDragging] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const handleCreateFile = async () => {
     setIsCreating(true);
     try {
-      await createFile("Untitled.md");
+      await createFile("Untitled.md", "", currentFolderId);
     } catch (error) {
       log.error("Failed to create file", error);
     } finally {
@@ -68,14 +70,20 @@ export function WelcomeScreen() {
 
       const file = e.dataTransfer.files?.[0];
       if (file) {
+        setIsImporting(true);
         try {
-          await importFile(file);
+          await importFile(file, currentFolderId); // Import to current folder (root or folder)
+          // File will be automatically opened by the store
         } catch (error) {
           log.error("Failed to import file", error);
+          const { title, description } = getErrorMessage(error);
+          toast.error(title, { description });
+        } finally {
+          setIsImporting(false);
         }
       }
     },
-    [importFile]
+    [importFile, currentFolderId]
   );
 
   return (
@@ -114,7 +122,7 @@ export function WelcomeScreen() {
             <Button
               size="lg"
               onClick={handleCreateFile}
-              disabled={isCreating}
+              disabled={isCreating || isImporting}
               className={cn(
                 "h-14 gap-2 px-8 text-base font-medium",
                 "shadow-lg shadow-primary/20 dark:shadow-primary/10",
@@ -133,17 +141,27 @@ export function WelcomeScreen() {
           </motion.div>
         </motion.div>
 
-        {/* Drop hint */}
+        {/* Drop hint or importing status */}
         <motion.div
           variants={itemVariants}
           className={cn(
             "flex items-center justify-center gap-2 text-sm text-muted-foreground",
             "transition-colors duration-200",
-            isDragging && "font-medium text-primary"
+            isDragging && "font-medium text-primary",
+            isImporting && "font-medium text-primary"
           )}
         >
-          <Upload className="h-4 w-4" />
-          <span>{isDragging ? "Drop to import" : "or drop a file here"}</span>
+          {isImporting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Importing file...</span>
+            </>
+          ) : (
+            <>
+              <Upload className="h-4 w-4" />
+              <span>{isDragging ? "Drop to import" : "or drop a file here"}</span>
+            </>
+          )}
         </motion.div>
       </motion.div>
 
