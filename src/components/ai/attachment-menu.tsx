@@ -256,13 +256,13 @@ export function AttachmentMenu({
             variant="ghost"
             className={cn(
               "relative flex-shrink-0 text-muted-foreground hover:text-foreground",
-              "h-10 w-10 rounded-full",
+              "h-8 w-8 rounded-full",
               className
             )}
             disabled={disabled}
             aria-label="Add attachment"
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="h-4 w-4" />
             {totalIndicator > 0 && (
               <Badge
                 variant="secondary"

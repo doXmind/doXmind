@@ -16,9 +16,7 @@ import { Send, Square, X, Sparkles, Mic, Check, Loader2, Trash2 } from "lucide-r
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChatMessage } from "@/components/ai/chat-message";
-import { ThinkingIndicator } from "@/components/ai/thinking-indicator";
-import { ToolIndicator } from "@/components/ai/tool-indicator";
+import { ChatMessage, ChatThinking, ChatToolSteps, ChatFeedbackToolbar } from "@/components/chat";
 import { ContextPill } from "@/components/ai/context-pill";
 import { AttachmentMenu } from "@/components/ai/attachment-menu";
 import { ChatSettings } from "@/components/ai/chat-settings";
@@ -415,7 +413,6 @@ export function VoiceEditPreview({
                 ) : (
                   <>
                     {conversation.messages.map((message, index) => {
-                      // Find the user prompt that triggered this AI response
                       const userPrompt =
                         message.role === "assistant"
                           ? conversation.messages
@@ -427,10 +424,28 @@ export function VoiceEditPreview({
                       return (
                         <ChatMessage
                           key={message.id}
-                          message={message}
-                          conversationId={conversation.id}
-                          userPrompt={userPrompt}
-                        />
+                          role={message.role as "user" | "assistant"}
+                          content={message.content}
+                          isStreaming={message.isStreaming}
+                          contexts={message.contexts ?? undefined}
+                        >
+                          {message.role === "assistant" &&
+                            !message.isStreaming &&
+                            message.content &&
+                            conversation.id && (
+                              <ChatFeedbackToolbar
+                                messageId={message.id}
+                                conversationId={conversation.id || ""}
+                                content={message.content}
+                                userPrompt={userPrompt}
+                                aiResponse={message.content}
+                                fileId={message.fileIds?.[0]}
+                                model={message.model ?? undefined}
+                                hadToolCalls={!!(message.toolCalls && message.toolCalls.length > 0)}
+                                alwaysVisible
+                              />
+                            )}
+                        </ChatMessage>
                       );
                     })}
                   </>
@@ -438,15 +453,15 @@ export function VoiceEditPreview({
 
                 {/* Thinking indicator */}
                 {isStreaming && (thinking.isThinking || thinking.content) && (
-                  <ThinkingIndicator thinking={thinking} />
+                  <div className="pl-7">
+                    <ChatThinking thinking={thinking} />
+                  </div>
                 )}
 
-                {/* Tool indicators */}
+                {/* Tool steps */}
                 {isStreaming && toolHistory.length > 0 && (
-                  <div className="ml-11 space-y-1">
-                    {toolHistory.map((tool, index) => (
-                      <ToolIndicator key={`${tool.name}-${index}`} tool={tool} />
-                    ))}
+                  <div className="pl-7">
+                    <ChatToolSteps tools={toolHistory} collapseThreshold={1} />
                   </div>
                 )}
 

@@ -50,6 +50,9 @@
     --status-warning-bg: rgba(251, 191, 36, 0.1);
     --status-warning-border: rgba(251, 191, 36, 0.3);
 
+    /* Chat UI tokens */
+    --chat-cursor-color: 240 10% 3.9%;
+
     /* Diff Review — Apple HIG-inspired palette (light) */
     --diff-deleted-bg: rgba(255, 59, 48, 0.08);
     --diff-deleted-bg-hover: rgba(255, 59, 48, 0.12);
@@ -92,6 +95,9 @@
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     --ring: 240 4.9% 83.9%;
+
+    /* Chat UI tokens */
+    --chat-cursor-color: 0 0% 98%;
 
     /* Diff Review — Apple HIG-inspired palette (dark) */
     --diff-deleted-bg: rgba(255, 69, 58, 0.1);
@@ -615,6 +621,30 @@
     zoomIn 0.15s ease-out;
 }
 
+/* ====================================
+   Chat Streaming Cursor
+   Blinking cursor for AI response streaming
+   ==================================== */
+@keyframes chatCursorBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.chat-streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: hsl(var(--chat-cursor-color) / 0.6);
+  animation: chatCursorBlink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+}
+
 /* Smooth Scroll */
 html {
   scroll-behavior: smooth;
@@ -1032,8 +1062,13 @@ html {
   .review-panel-enter,
   .autocomplete-ghost-text,
   .ProseMirror .diff-deleted,
-  .ProseMirror .diff-inserted {
+  .ProseMirror .diff-inserted,
+  .chat-streaming-cursor {
     animation: none !important;
+  }
+
+  .chat-streaming-cursor {
+    opacity: 0.6;
   }
 }
 

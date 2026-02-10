@@ -16,8 +16,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ThinkingIndicator } from "@/components/ai/thinking-indicator";
-import { ToolHistoryList } from "@/components/ai/tool-history-list";
+import { ChatThinking, ChatToolSteps } from "@/components/chat";
 import { useMockChat, type MockMessage } from "@/hooks/use-mock-chat";
 import { useDemoStore } from "@/stores/demo-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
@@ -178,11 +177,11 @@ export function MobileDemoChatPanel() {
                   ))}
 
                   {isStreaming && (thinking.isThinking || thinking.content) && (
-                    <ThinkingIndicator thinking={thinking} />
+                    <ChatThinking thinking={thinking} />
                   )}
 
                   {isStreaming && toolHistory.length > 0 && (
-                    <ToolHistoryList tools={toolHistory} collapseThreshold={2} />
+                    <ChatToolSteps tools={toolHistory} collapseThreshold={2} />
                   )}
 
                   <div ref={messagesEndRef} />

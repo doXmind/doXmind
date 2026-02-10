@@ -2,21 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Bot,
-  Search,
-  BookOpen,
-  X,
-  Square,
-  FileText,
-  Send,
-  ThumbsUp,
-  ThumbsDown,
-} from "lucide-react";
-import { marked } from "marked";
+import { Bot, Search, BookOpen, X, Square, Send, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { telemetry } from "@/lib/telemetry";
+import { ChatMessage, ChatFeedbackToolbar, ChatSources } from "@/components/chat";
 import type { KBSource, KBTurn } from "@/hooks/use-kb-agent";
 
 interface KBAnswerCardProps {
@@ -62,7 +52,6 @@ export function KBAnswerCard({
   // Auto-select latest turn when a new one appears
   useEffect(() => {
     setActiveTurnIndex(totalTurns - 1);
-    // Auto-scroll tab bar to end
     if (tabsRef.current) {
       tabsRef.current.scrollLeft = tabsRef.current.scrollWidth;
     }
@@ -73,7 +62,6 @@ export function KBAnswerCard({
     const el = contentRef.current;
     if (!el) return;
     const top = el.getBoundingClientRect().top;
-    // Reserve space below: feedback + sources + follow-up input + page bottom padding
     const reserve = 200;
     el.style.maxHeight = `${Math.max(120, window.innerHeight - top - reserve)}px`;
   }, []);
@@ -96,11 +84,6 @@ export function KBAnswerCard({
   const displayedAnswer = isViewingCurrent ? answer : history[activeTurnIndex]?.answer || "";
   const displayedSources = isViewingCurrent ? sources : history[activeTurnIndex]?.sources || [];
 
-  const htmlContent = useMemo(() => {
-    if (!displayedAnswer) return "";
-    return marked.parse(displayedAnswer, { async: false }) as string;
-  }, [displayedAnswer]);
-
   const toolLabel = useMemo(() => {
     if (!activeTool) return null;
     if (activeTool === "search_files") return "Searching documents...";
@@ -108,11 +91,9 @@ export function KBAnswerCard({
     return "Working...";
   }, [activeTool]);
 
-  // Feedback state per turn
-  const [feedbackMap, setFeedbackMap] = useState<Record<number, "positive" | "negative">>({});
   const displayedTurnIndex = isViewingCurrent ? totalTurns - 1 : activeTurnIndex;
 
-  // Track when answer streaming completes for read-time measurement
+  // Track when answer streaming completes
   useEffect(() => {
     if (!isAnswering && displayedAnswer && isViewingCurrent) {
       answerCompleteTimeRef.current = Date.now();
@@ -130,37 +111,8 @@ export function KBAnswerCard({
       answerCompleteTimeRef.current = null;
     }
   };
-  const currentFeedback = feedbackMap[displayedTurnIndex] ?? null;
+
   const showFeedback = displayedAnswer && !(isViewingCurrent && isAnswering);
-
-  const handleFeedback = async (rating: "positive" | "negative") => {
-    if (currentFeedback === rating) return;
-    setFeedbackMap((prev) => ({ ...prev, [displayedTurnIndex]: rating }));
-
-    const feedbackLatencyMs = answerCompleteTimeRef.current
-      ? Date.now() - answerCompleteTimeRef.current
-      : undefined;
-
-    telemetry.trackChatFeedback({
-      event_type: "kb_feedback",
-      message_id: `${conversationId || "unknown"}_turn_${displayedTurnIndex}`,
-      conversation_id: conversationId || "",
-      user_prompt: displayedQuestion,
-      ai_response: displayedAnswer,
-      rating,
-    });
-
-    if (feedbackLatencyMs !== undefined) {
-      telemetry.trackFeature("kb_search", "completed", undefined, {
-        event: "feedback_timing",
-        feedback_latency_ms: feedbackLatencyMs,
-        rating,
-        turn_index: displayedTurnIndex,
-      });
-    }
-
-    await telemetry.flush();
-  };
 
   const handleSourceClick = (fileId: string, index: number) => {
     emitReadTime();
@@ -173,7 +125,7 @@ export function KBAnswerCard({
       total_sources: displayedSources.length,
       turn_index: displayedTurnIndex,
     });
-    router.push(`/editor/${fileId}`);
+    router.push(`/editor?id=${fileId}`);
   };
 
   const handleSubmit = () => {
@@ -222,7 +174,7 @@ export function KBAnswerCard({
         <div className="flex items-center justify-between border-b border-border/40 px-4 py-2.5">
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">KB Assistant</span>
+            <span className="text-xs font-semibold text-foreground">KB Assistant</span>
           </div>
           <div className="flex items-center gap-1">
             {isAnswering && (
@@ -244,7 +196,7 @@ export function KBAnswerCard({
           </div>
         </div>
 
-        {/* Turn tabs - only show when there's history */}
+        {/* Turn tabs */}
         {history.length > 0 && (
           <div
             ref={tabsRef}
@@ -266,7 +218,6 @@ export function KBAnswerCard({
                 </span>
               </button>
             ))}
-            {/* Current turn tab */}
             <button
               onClick={() => handleTabSwitch(totalTurns - 1)}
               className={cn(
@@ -286,16 +237,16 @@ export function KBAnswerCard({
           </div>
         )}
 
-        {/* Question */}
-        <div className="border-b border-border/30 bg-accent/20 px-4 py-2">
-          <p className="text-sm text-muted-foreground">{displayedQuestion}</p>
+        {/* Question — shared ChatMessage */}
+        <div className="border-b border-border/30 px-2 py-1">
+          <ChatMessage role="user" content={displayedQuestion} className="py-2" />
         </div>
 
-        {/* Tool activity indicator - only for current turn */}
+        {/* Tool activity indicator */}
         <AnimatePresence>
           {isViewingCurrent && toolLabel && (
             <motion.div
-              className="flex items-center gap-2 border-b border-border/30 bg-accent/30 px-4 py-1.5"
+              className="flex items-center gap-2 border-b border-border/30 px-4 py-1.5"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
@@ -310,101 +261,53 @@ export function KBAnswerCard({
           )}
         </AnimatePresence>
 
-        {/* Answer content */}
-        <div ref={contentRef} className="overflow-y-auto px-4 py-3">
+        {/* Answer — shared ChatMessage */}
+        <div ref={contentRef} className="overflow-y-auto px-2 py-1">
           {isViewingCurrent && error ? (
-            <p className="text-sm text-destructive">{error}</p>
+            <div className="px-4 py-3">
+              <p className="text-sm text-destructive">{error}</p>
+            </div>
           ) : displayedAnswer ? (
-            <div
-              className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-              dangerouslySetInnerHTML={{ __html: htmlContent }}
-            />
+            <ChatMessage
+              role="assistant"
+              content={displayedAnswer}
+              isStreaming={isViewingCurrent && isAnswering}
+              className="py-2"
+            >
+              {showFeedback && (
+                <ChatFeedbackToolbar
+                  messageId={`${conversationId || "unknown"}_turn_${displayedTurnIndex}`}
+                  conversationId={conversationId || ""}
+                  content={displayedAnswer}
+                  userPrompt={displayedQuestion}
+                  aiResponse={displayedAnswer}
+                  eventType="kb_feedback"
+                  turnIndex={displayedTurnIndex}
+                  alwaysVisible
+                />
+              )}
+            </ChatMessage>
           ) : isViewingCurrent && isAnswering ? (
-            <div className="flex items-center gap-2 py-1">
-              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40" />
-              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40 [animation-delay:150ms]" />
-              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40 [animation-delay:300ms]" />
+            <div className="flex items-center gap-2 px-4 py-3">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Thinking...</span>
             </div>
           ) : null}
-
-          {/* Streaming cursor - only for current turn */}
-          {isViewingCurrent && isAnswering && displayedAnswer && (
-            <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground/60" />
-          )}
         </div>
 
-        {/* Feedback */}
-        {showFeedback && (
-          <div className="flex items-center justify-end gap-1 border-t border-border/30 px-4 py-1">
-            <button
-              type="button"
-              onClick={() => handleFeedback("positive")}
-              className={cn(
-                "rounded p-1 transition-colors",
-                "hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary/20",
-                currentFeedback === "positive"
-                  ? "text-green-500 dark:text-green-400"
-                  : "text-muted-foreground/40 hover:text-foreground"
-              )}
-              title="Good response"
-              aria-label="Good response"
-            >
-              <ThumbsUp
-                className={cn("h-3 w-3", currentFeedback === "positive" && "fill-current")}
-              />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFeedback("negative")}
-              className={cn(
-                "rounded p-1 transition-colors",
-                "hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary/20",
-                currentFeedback === "negative"
-                  ? "text-red-500 dark:text-red-400"
-                  : "text-muted-foreground/40 hover:text-foreground"
-              )}
-              title="Poor response"
-              aria-label="Poor response"
-            >
-              <ThumbsDown
-                className={cn("h-3 w-3", currentFeedback === "negative" && "fill-current")}
-              />
-            </button>
-          </div>
-        )}
-
-        {/* Sources */}
+        {/* Sources — shared ChatSources */}
         {displayedSources.length > 0 && (
           <div className="border-t border-border/40 px-4 py-2.5">
-            <div className="flex flex-wrap gap-1.5">
-              {displayedSources.map((source, i) => (
-                <button
-                  key={source.file_id}
-                  onClick={() => handleSourceClick(source.file_id, i)}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors hover:bg-accent",
-                    source.score >= 0.7
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400"
-                      : source.score >= 0.4
-                        ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400"
-                        : "border-border bg-accent/50 text-muted-foreground"
-                  )}
-                >
-                  <FileText className="h-3 w-3" />
-                  <span className="max-w-[120px] truncate">{source.file_name}</span>
-                  <span className="text-[10px] opacity-60">{Math.round(source.score * 100)}%</span>
-                </button>
-              ))}
-            </div>
+            <ChatSources sources={displayedSources} onSourceClick={handleSourceClick} />
           </div>
         )}
       </div>
 
-      {/* Follow-up input — separate so glow isn't clipped */}
+      {/* Follow-up input */}
       <div className="relative mt-3">
         <div
           className={cn(
-            "absolute -inset-0.5 rounded-xl opacity-0 blur-md transition-opacity duration-500",
+            "absolute -inset-0.5 rounded-2xl opacity-0 blur-md transition-opacity duration-500",
             followUpFocused && "opacity-100"
           )}
           style={{
@@ -413,7 +316,7 @@ export function KBAnswerCard({
         />
         <div
           className={cn(
-            "relative flex items-center gap-2 rounded-xl border px-3 py-2 transition-all duration-300",
+            "relative flex items-center gap-2 rounded-2xl border px-3 py-2 transition-all duration-300",
             followUpFocused
               ? "border-foreground/15 bg-card shadow-lg"
               : "border-border/60 bg-card/80 shadow-sm"
@@ -434,7 +337,12 @@ export function KBAnswerCard({
           <button
             onClick={handleSubmit}
             disabled={!followUp.trim() || isAnswering}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+            className={cn(
+              "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors",
+              followUp.trim()
+                ? "bg-foreground text-background hover:bg-foreground/90"
+                : "text-muted-foreground/60"
+            )}
             aria-label="Send follow-up"
           >
             <Send className="h-3.5 w-3.5" />

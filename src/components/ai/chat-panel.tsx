@@ -1,18 +1,21 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Send, Square, Trash2, Sparkles, Loader2, Mic, Upload } from "lucide-react";
+import { Trash2, Loader2, Mic } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
-import { ChatMessage } from "./chat-message";
-import { ThinkingIndicator } from "./thinking-indicator";
-import { ToolHistoryList } from "./tool-history-list";
+import {
+  ChatMessage,
+  ChatMessageList,
+  ChatFeedbackToolbar,
+  ChatToolSteps,
+  ChatThinking,
+  ChatComposer,
+  ChatEmptyState,
+} from "@/components/chat";
 import { TodoProgress } from "./todo-progress";
 import { ContextPill } from "./context-pill";
-import { SuggestionButton } from "./suggestion-button";
 import { AttachmentMenu } from "./attachment-menu";
 import { ChatSettings } from "./chat-settings";
 import { useChatStore } from "@/stores/chat-store";
@@ -31,13 +34,18 @@ interface ChatPanelProps {
   isDemoMode?: boolean;
 }
 
+const SUGGESTIONS = [
+  { label: "Write a report", prompt: "Help me write a report" },
+  { label: "Improve writing style", prompt: "Help me improve the writing style" },
+  { label: "Summarize document", prompt: "Summarize this document" },
+  { label: "Brainstorm ideas", prompt: "Help me brainstorm ideas" },
+];
+
 export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounterRef = useRef(0);
 
@@ -94,7 +102,6 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const { uploadAttachments: uploadKBFiles } = useKBStore();
 
   // Get conversation key without triggering store updates during render
-  // In demo mode, use a fixed "demo-file" key
   const effectiveFileId = isDemoMode ? "demo-file" : currentFileId;
   const conversationKey = effectiveFileId || "global";
   const conversation = useMemo(() => {
@@ -112,46 +119,23 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     useChat();
 
   // Load conversation history from backend when file changes
-  // Skip in demo mode to avoid unnecessary API calls
   useEffect(() => {
     if (currentFileId && !isDemoMode) {
       loadConversation(currentFileId);
     }
   }, [currentFileId, isDemoMode, loadConversation]);
 
-  // Focus textarea when chat context is added (from Quick Edit "Ask in Chat")
-  // Only on desktop to avoid keyboard popup on mobile
+  // Focus textarea when chat context is added
   useEffect(() => {
     if (chatContexts.length > 0 && textareaRef.current && window.innerWidth >= 768) {
       textareaRef.current.focus();
     }
   }, [chatContexts.length]);
 
-  const scrollToBottom = () => {
-    // Use scrollTop for more reliable scrolling on mobile
-    if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current;
-      scrollContainer.scrollTo({
-        top: scrollContainer.scrollHeight,
-        behavior: "smooth",
-      });
-    } else {
-      // Fallback to scrollIntoView
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [conversation.messages, currentTool, toolHistory, thinking, todos]);
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
+  const handleSubmit = async () => {
     if (!input.trim() || isStreaming) return;
 
     const message = input.trim();
-    // Pass contexts as a separate parameter (for display), not concatenated to message
-    // Include base64 and mediaType for image contexts to enable multimodal API
     const contextsToSend =
       chatContexts.length > 0
         ? chatContexts.map((c) => {
@@ -168,7 +152,6 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
           })
         : null;
 
-    // Get all data file IDs for this conversation
     const dataFilesForConversation =
       conversation.isLoaded && conversation.id ? getDataFiles(conversation.id) : [];
     const dataFileIdsToSend = dataFilesForConversation
@@ -176,12 +159,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
       .map((f) => f.id);
 
     setInput("");
-    clearAllChatContexts(); // Clear all contexts after sending
-
-    // Auto-resize textarea back
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
+    clearAllChatContexts();
 
     await sendMessage(
       message,
@@ -191,24 +169,8 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     );
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
-
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    // Auto-resize
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
-  };
-
   const handleClear = () => {
     if (conversation.messages.length > 0) {
-      // Use conversationKey (fileId or "global") instead of conversation.id (backend UUID)
-      // because the local state uses conversationKey as the key
       clearConversation(conversationKey);
     }
   };
@@ -235,44 +197,27 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     cancelRecording();
   }, [cancelRecording]);
 
-  // Format recording duration
-  const formatDuration = (ms: number) => {
-    const seconds = Math.floor(ms / 1000);
-    return `${seconds}s`;
-  };
+  const formatDuration = (ms: number) => `${Math.floor(ms / 1000)}s`;
 
   const currentImageCount = chatContexts.filter((c) => c.type === "image").length;
 
   // Process image file and add to context
   const processImageFile = useCallback(
     (file: File) => {
-      // Only accept image files
       if (!file.type.startsWith("image/")) return;
-
-      // Check image count limit
       const imageCount = chatContexts.filter((c) => c.type === "image").length;
-      if (imageCount >= CHAT_MAX_IMAGES) {
-        return;
-      }
+      if (imageCount >= CHAT_MAX_IMAGES) return;
+      if (file.size > CHAT_MAX_IMAGE_SIZE) return;
 
-      // Check file size (5MB limit for Anthropic API)
-      if (file.size > CHAT_MAX_IMAGE_SIZE) {
-        return;
-      }
-
-      // Convert to base64
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result as string;
-        const base64 = dataUrl.split(",")[1];
-        const mediaType = file.type;
-
         addChatContext({
           type: "image",
-          src: dataUrl, // Data URL for preview display
+          src: dataUrl,
           alt: file.name || "Pasted image",
-          base64,
-          mediaType,
+          base64: dataUrl.split(",")[1],
+          mediaType: file.type,
         });
       };
       reader.readAsDataURL(file);
@@ -280,46 +225,37 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     [chatContexts, addChatContext]
   );
 
-  // Handle image files from AttachmentMenu
   const handleImageFilesFromMenu = (files: FileList) => {
     for (const file of Array.from(files)) {
       processImageFile(file);
     }
   };
 
-  // Handle paste event for images
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
-
     for (const item of Array.from(items)) {
       if (item.type.startsWith("image/")) {
         e.preventDefault();
         const file = item.getAsFile();
-        if (file) {
-          processImageFile(file);
-        }
+        if (file) processImageFile(file);
       }
     }
   };
 
-  // Handle drag-and-drop for files with automatic classification
+  // Drag-and-drop handlers
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current++;
-    if (e.dataTransfer.types.includes("Files")) {
-      setIsDragging(true);
-    }
+    if (e.dataTransfer.types.includes("Files")) setIsDragging(true);
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     dragCounterRef.current--;
-    if (dragCounterRef.current === 0) {
-      setIsDragging(false);
-    }
+    if (dragCounterRef.current === 0) setIsDragging(false);
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -334,13 +270,11 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
       dragCounterRef.current = 0;
       setIsDragging(false);
 
-      // Only allow drops when conversation is properly loaded with a real backend ID
       if (!conversation.isLoaded || !conversation.id) return;
 
       const files = Array.from(e.dataTransfer.files);
       if (files.length === 0) return;
 
-      // Classify files
       const kbFiles: File[] = [];
       const dataFilesToUpload: File[] = [];
       const imageFiles: File[] = [];
@@ -348,99 +282,64 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
       for (const file of files) {
         const filename = file.name.toLowerCase();
         if (isKBFile(filename)) {
-          // PDF, DOCX, PPTX -> KB system
           kbFiles.push(file);
         } else if (isDataFile(filename)) {
-          // CSV, XLSX, JSON, TXT, images -> Data files for code execution
           if (file.type.startsWith("image/")) {
-            // Images can go to chat context OR data files
-            // For now, small images go to context, others to data files
-            if (file.size <= CHAT_MAX_IMAGE_SIZE) {
-              imageFiles.push(file);
-            } else {
-              dataFilesToUpload.push(file);
-            }
+            if (file.size <= CHAT_MAX_IMAGE_SIZE) imageFiles.push(file);
+            else dataFilesToUpload.push(file);
           } else {
             dataFilesToUpload.push(file);
           }
         }
       }
 
-      // Upload KB files
-      if (kbFiles.length > 0) {
-        await uploadKBFiles(conversation.id, kbFiles);
-      }
-
-      // Upload data files (they'll be automatically included when sending messages)
-      for (const file of dataFilesToUpload) {
-        await uploadDataFile(conversation.id, file);
-      }
-
-      // Process image files for chat context
-      for (const file of imageFiles) {
-        processImageFile(file);
-      }
+      if (kbFiles.length > 0) await uploadKBFiles(conversation.id, kbFiles);
+      for (const file of dataFilesToUpload) await uploadDataFile(conversation.id, file);
+      for (const file of imageFiles) processImageFile(file);
     },
     [conversation.isLoaded, conversation.id, uploadKBFiles, uploadDataFile, processImageFile]
   );
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header - Hidden on mobile (title shown in mobile header) */}
-      <div className="chat-header-desktop hidden items-center justify-between border-b border-border p-3 md:flex">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <h2 className="text-sm font-semibold">AI Assistant</h2>
-        </div>
-        <div className="flex items-center gap-1">
-          {/* Clear conversation button */}
-          {conversation.messages.length > 0 && (
-            <Tooltip content="Clear conversation" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleClear}
-                aria-label="Clear conversation"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </Tooltip>
-          )}
-        </div>
+      {/* Header */}
+      <div className="chat-header-desktop hidden items-center justify-between border-b border-border/60 px-4 py-2.5 md:flex">
+        <span className="text-xs font-semibold text-foreground">AI Assistant</span>
+        {conversation.messages.length > 0 && (
+          <Tooltip content="Clear conversation" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClear}
+              className="h-7 w-7 text-muted-foreground"
+              aria-label="Clear conversation"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+        )}
       </div>
 
-      {/* Mobile Header Actions - removed, now in input bar */}
-
       {/* Messages */}
-      <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 p-2.5 md:p-4">
+      <ChatMessageList
+        className="p-3 md:p-4"
+        scrollDeps={[conversation.messages, currentTool, toolHistory, thinking, todos]}
+      >
         {isLoadingHistory ? (
           <div className="flex h-full flex-col items-center justify-center py-8 text-center">
             <Loader2 className="mb-4 h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">Loading conversation history...</p>
           </div>
         ) : conversation.messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center py-8 text-center">
-            <Sparkles className="mb-4 h-8 w-8 text-muted-foreground" />
-            <h3 className="mb-2 font-medium">Start a conversation</h3>
-            <p className="max-w-[250px] text-sm text-muted-foreground">
-              Ask me to help you write, edit, or improve your document.
-            </p>
-            <div className="mt-4 w-full space-y-2">
-              <SuggestionButton onClick={() => setInput("Help me write a report")}>
-                Write a report
-              </SuggestionButton>
-              <SuggestionButton onClick={() => setInput("Help me improve the writing style")}>
-                Improve writing style
-              </SuggestionButton>
-              <SuggestionButton onClick={() => setInput("Summarize this document")}>
-                Summarize document
-              </SuggestionButton>
-            </div>
-          </div>
+          <ChatEmptyState
+            greeting="How can I help?"
+            subtitle="Ask me to write, edit, or improve your document."
+            suggestions={SUGGESTIONS}
+            onSelectSuggestion={setInput}
+          />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-1">
             {conversation.messages.map((message, index) => {
-              // Find the user prompt that triggered this AI response (for feedback tracking)
               const userPrompt =
                 message.role === "assistant"
                   ? conversation.messages
@@ -452,72 +351,60 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
               return (
                 <ChatMessage
                   key={message.id}
-                  message={message}
-                  conversationId={conversation.id}
-                  userPrompt={userPrompt}
-                />
+                  role={message.role as "user" | "assistant"}
+                  content={message.content}
+                  isStreaming={message.isStreaming}
+                  contexts={message.contexts ?? undefined}
+                >
+                  {/* Feedback toolbar for completed AI messages */}
+                  {message.role === "assistant" &&
+                    !message.isStreaming &&
+                    message.content &&
+                    conversation.id && (
+                      <ChatFeedbackToolbar
+                        messageId={message.id}
+                        conversationId={conversation.id || ""}
+                        content={message.content}
+                        userPrompt={userPrompt}
+                        aiResponse={message.content}
+                        fileId={message.fileIds?.[0]}
+                        model={message.model ?? undefined}
+                        hadToolCalls={!!(message.toolCalls && message.toolCalls.length > 0)}
+                      />
+                    )}
+                </ChatMessage>
               );
             })}
 
-            {/* Thinking indicator - shown during streaming */}
+            {/* Thinking indicator */}
             {isStreaming && (thinking.isThinking || thinking.content) && (
-              <ThinkingIndicator thinking={thinking} />
-            )}
-
-            {/* Tool indicators - shown during streaming */}
-            {isStreaming && toolHistory.length > 0 && (
-              <div className="ml-2 md:ml-11">
-                <ToolHistoryList tools={toolHistory} collapseThreshold={isMobile ? 1 : 2} />
+              <div className="pl-7">
+                <ChatThinking thinking={thinking} />
               </div>
             )}
 
-            {/* TODO progress - shown when agent is tracking tasks */}
+            {/* Tool steps */}
+            {isStreaming && toolHistory.length > 0 && (
+              <div className="pl-7">
+                <ChatToolSteps tools={toolHistory} collapseThreshold={isMobile ? 1 : 2} />
+              </div>
+            )}
+
+            {/* TODO progress */}
             {todos.length > 0 && (
-              <div className="ml-2 md:ml-11">
+              <div className="pl-7">
                 <TodoProgress todos={todos} />
               </div>
             )}
-
-            <div ref={messagesEndRef} />
           </div>
         )}
-      </ScrollArea>
+      </ChatMessageList>
 
-      {/* Input - with safe area padding on mobile */}
-      <form
-        onSubmit={handleSubmit}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-        className={cn(
-          "relative border-t border-border p-3 transition-colors md:p-3",
-          isDragging && "border-primary bg-primary/5"
-        )}
-        style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
-      >
-        {/* Drag overlay */}
-        {isDragging && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-            <div className="flex items-center gap-2 text-primary">
-              <Upload className="h-5 w-5" />
-              <span className="text-sm font-medium">Drop files here</span>
-            </div>
-          </div>
-        )}
-        {/* Context Pills - shows attached images and selected text */}
-        {chatContexts.length > 0 && (
-          <div className="mb-2 space-y-1">
-            {chatContexts.map((ctx) => (
-              <ContextPill key={ctx.id} context={ctx} onRemove={() => removeChatContext(ctx.id)} />
-            ))}
-          </div>
-        )}
-
-        {/* Voice recording mode - WeChat style */}
+      {/* Input area */}
+      <div className="p-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+        {/* Voice recording mode */}
         {isVoiceMode ? (
           <div className="flex flex-col items-center gap-3 py-2">
-            {/* Recording status */}
             <div className="flex items-center gap-2 text-sm">
               {isRecording && (
                 <>
@@ -534,7 +421,6 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
               {recordingError && <span className="text-xs text-destructive">{recordingError}</span>}
             </div>
 
-            {/* Press-and-hold button */}
             {!isTranscribing && (
               <motion.button
                 type="button"
@@ -571,7 +457,6 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
               </motion.button>
             )}
 
-            {/* Cancel button */}
             <button
               type="button"
               onClick={handleVoiceCancel}
@@ -581,92 +466,73 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
             </button>
           </div>
         ) : (
-          <div className="relative flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1.5">
-            {/* Unified attachment menu */}
-            <AttachmentMenu
-              conversationId={conversation.isLoaded ? conversation.id : null}
-              onImageSelect={handleImageFilesFromMenu}
-              imageCount={currentImageCount}
-              maxImages={CHAT_MAX_IMAGES}
-              disabled={isStreaming}
-            />
-
-            {/* Web tools settings */}
-            <ChatSettings />
-
-            {/* Mobile-only: Clear conversation button in input bar */}
-            {conversation.messages.length > 0 && (
+          <ChatComposer
+            value={input}
+            onChange={setInput}
+            onSubmit={handleSubmit}
+            onStop={stopStreaming}
+            isStreaming={isStreaming}
+            placeholder="Ask AI anything..."
+            showHint
+            onPaste={handlePaste}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            isDragging={isDragging}
+            contextSlot={
+              chatContexts.length > 0 ? (
+                <div className="mb-2 space-y-1">
+                  {chatContexts.map((ctx) => (
+                    <ContextPill
+                      key={ctx.id}
+                      context={ctx}
+                      onRemove={() => removeChatContext(ctx.id)}
+                    />
+                  ))}
+                </div>
+              ) : undefined
+            }
+            leftActions={
+              <>
+                <AttachmentMenu
+                  conversationId={conversation.isLoaded ? conversation.id : null}
+                  onImageSelect={handleImageFilesFromMenu}
+                  imageCount={currentImageCount}
+                  maxImages={CHAT_MAX_IMAGES}
+                  disabled={isStreaming}
+                />
+                <ChatSettings />
+                {/* Mobile-only: Clear conversation */}
+                {conversation.messages.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleClear}
+                    className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
+                    aria-label="Clear conversation"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </>
+            }
+            extraActions={
               <Button
-                variant="ghost"
+                type="button"
                 size="icon"
-                onClick={handleClear}
+                variant="ghost"
+                onClick={() => setIsVoiceMode(true)}
+                disabled={isStreaming}
                 className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
-                aria-label="Clear conversation"
+                aria-label="Voice input"
               >
-                <Trash2 className="h-4 w-4" />
+                <Mic className="h-4 w-4" />
               </Button>
-            )}
-
-            <Textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              placeholder="Ask AI anything..."
-              className="max-h-[200px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
-              disabled={isStreaming}
-              rows={1}
-            />
-
-            {/* Mobile-only: Microphone button */}
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              onClick={() => setIsVoiceMode(true)}
-              disabled={isStreaming}
-              className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
-              aria-label="Voice input"
-            >
-              <Mic className="h-4 w-4" />
-            </Button>
-
-            {/* Send/Stop button */}
-            {isStreaming ? (
-              <Tooltip content="Stop generating" side="top">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={stopStreaming}
-                  className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
-                  aria-label="Stop generating"
-                >
-                  <Square className="h-4 w-4" />
-                </Button>
-              </Tooltip>
-            ) : (
-              <Tooltip content="Send message" side="top">
-                <Button
-                  type="submit"
-                  size="icon"
-                  variant="default"
-                  disabled={!input.trim() && chatContexts.length === 0}
-                  className="h-7 w-7 flex-shrink-0"
-                  aria-label="Send message"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                </Button>
-              </Tooltip>
-            )}
-          </div>
+            }
+          />
         )}
-
-        <p className="mt-2 hidden text-center text-xs text-muted-foreground md:block">
-          Press Enter to send, Shift+Enter for new line
-        </p>
-      </form>
+      </div>
     </div>
   );
 }

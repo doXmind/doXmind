@@ -40,14 +40,14 @@ export function ContextPill({
   const shouldShowActions = showActions && isSelection;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
-      <div className="flex items-center gap-2 px-3 py-2 text-sm">
+    <div className="overflow-hidden rounded-md border border-border/60 bg-muted/20">
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-primary"
         >
-          <Icon className="h-4 w-4 flex-shrink-0 text-primary" />
+          <Icon className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
           <span className="truncate text-muted-foreground">{label}</span>
           {isExpanded ? (
             <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
@@ -98,7 +98,7 @@ export function ContextPill({
         </button>
       </div>
       {isExpanded && (
-        <div className="max-h-[150px] overflow-y-auto border-t border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+        <div className="max-h-[120px] overflow-y-auto border-t border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
           {isImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
