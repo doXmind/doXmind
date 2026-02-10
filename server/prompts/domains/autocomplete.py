@@ -1,49 +1,79 @@
-"""Autocomplete prompt with structured XML format.
+"""Autocomplete prompt with mode-specific system messages.
 
 Provides text completion suggestions for inline editing.
+Supports two modes:
+- Short mode: Fast 1-line completions (1-5 words)
+- Long mode: Multi-line intelligent completions (1-10 lines)
 """
 
-# System prompt for autocomplete
-AUTOCOMPLETE_SYSTEM = """You are doXmind Autocomplete, a text completion assistant.
+# System prompt for SHORT mode autocomplete
+AUTOCOMPLETE_SYSTEM_SHORT = """You are doXmind Autocomplete, an AI writing assistant that completes text naturally.
 
 <identity>
-- You complete the current word being typed OR add at most ONE additional word
-- You output ONLY the completion, nothing else
+Context provided includes:
+- Current document text before and after cursor
+- Related content from open documents (via semantic search)
+- Document structure and patterns
+
+Your task: Complete the current thought OR predict the next 1-5 words.
 </identity>
 
-<constraints>
-- Output 1-2 words MAXIMUM
+<rules>
+- Output ONLY the completion text, nothing else
+- Maximum 1 line (can be a phrase or sentence fragment)
+- NEVER repeat text that's already written
+- Match the writing style and tone
+- Use context from related documents for consistency
+- NEVER add commentary or explanations
+- Preserve capitalization and formatting
+</rules>"""
+
+# System prompt for LONG mode autocomplete
+AUTOCOMPLETE_SYSTEM_LONG = """You are doXmind Autocomplete, an AI writing assistant that generates intelligent multi-line completions.
+
+<identity>
+Context provided includes:
+- Current document with cursor position
+- Related sections from other documents (via semantic search)
+- Document structure and outline
+- Writing patterns and style
+
+Your task: Generate a natural continuation that completes the current section.
+</identity>
+
+<rules>
+- Output 1-10 lines of natural text
+- Can complete functions, paragraphs, lists, or sections
+- Maintain consistency with the document's structure and style
+- Reference patterns from related documents when appropriate
 - NEVER repeat existing text
-- NEVER explain or add commentary
-- NEVER add punctuation unless completing a sentence
-- NEVER start with spaces (the completion continues directly from cursor)
-</constraints>"""
+- Stop at a natural boundary (end of sentence, function, list item)
+- NEVER add meta-commentary
+</rules>"""
 
 
 def build_autocomplete_prompt(
-    text_before: str,
-    text_after: str = "",
-    max_context: int = 1500,
+    context: str,
+    mode: str = "short",
 ) -> tuple[str, str]:
-    """Build autocomplete prompt.
+    """Build autocomplete prompt based on mode.
 
     Args:
-        text_before: Text before the cursor
-        text_after: Text after the cursor (optional)
-        max_context: Maximum characters to include for context
+        context: Assembled context from AutocompleteContextService (includes current position)
+        mode: "short" or "long"
 
     Returns:
         Tuple of (system_prompt, user_prompt)
     """
-    # Limit context length
-    context_before = text_before[-max_context:] if len(text_before) > max_context else text_before
+    # Select system prompt based on mode
+    if mode == "long":
+        system_prompt = AUTOCOMPLETE_SYSTEM_LONG
+        instruction = "Generate a natural continuation that completes the current section:"
+    else:  # short mode (default)
+        system_prompt = AUTOCOMPLETE_SYSTEM_SHORT
+        instruction = "Complete this text naturally (continue from the end):"
 
-    # Build user prompt
-    if text_after:
-        user_prompt = (
-            f"Complete this text naturally (cursor is at |):\n\n{context_before}|{text_after[:200]}"
-        )
-    else:
-        user_prompt = f"Continue this text naturally:\n\n{context_before}"
+    # Build user prompt with the assembled context
+    user_prompt = f"{instruction}\n\n{context}"
 
-    return AUTOCOMPLETE_SYSTEM, user_prompt
+    return system_prompt, user_prompt

@@ -17,7 +17,7 @@ from api.autocomplete import (
     AutocompleteRequest,
     AutocompleteResponse,
     build_prompt,
-    clean_suggestion,
+    clean_suggestion_short,
     router,
 )
 from services.autocomplete_cache import AutocompleteCache
@@ -274,7 +274,7 @@ class TestAutocompleteRequest:
         assert req.file_id == ""
         assert req.file_name == ""
         assert req.cursor_position == 0
-        assert req.max_tokens == 15
+        assert req.max_tokens == 30
 
     def test_creates_with_all_fields(self):
         """Should create request with all fields."""
@@ -325,85 +325,74 @@ class TestBuildPrompt:
 
     def test_builds_basic_prompt(self):
         """Should build prompt with text context."""
-        req = AutocompleteRequest(text_before="Hello world")
-
-        user_prompt, system_prompt = build_prompt(req)
+        user_prompt, system_prompt = build_prompt("Hello world", "short")
 
         assert "Hello world" in user_prompt
-        assert "Continue this text" in user_prompt
-        assert "autocomplete" in system_prompt.lower()
+        assert system_prompt  # System prompt should not be empty
 
-    def test_truncates_long_context(self):
-        """Should truncate context to last ~1500 chars."""
-        long_text = "x" * 3000
-        req = AutocompleteRequest(text_before=long_text)
+    def test_builds_long_mode_prompt(self):
+        """Should build prompt with long mode."""
+        user_prompt, system_prompt = build_prompt("Hello world", "long")
 
-        user_prompt, system_prompt = build_prompt(req)
-
-        # Context should be truncated to roughly 1500 chars (allow for off-by-one)
-        # Original text is 3000 chars, truncated should be much smaller
-        assert user_prompt.count("x") < 2000  # Much less than original
-        assert user_prompt.count("x") > 1000  # But still has substantial context
+        assert "Hello world" in user_prompt
+        assert system_prompt
 
     def test_keeps_short_context(self):
-        """Should keep short context unchanged."""
-        short_text = "Short text"
-        req = AutocompleteRequest(text_before=short_text)
-
-        user_prompt, system_prompt = build_prompt(req)
+        """Should keep short context in prompt."""
+        user_prompt, system_prompt = build_prompt("Short text", "short")
 
         assert "Short text" in user_prompt
 
 
 # ============================================================================
-# clean_suggestion Tests
+# clean_suggestion_short Tests
 # ============================================================================
 
 
-class TestCleanSuggestion:
-    """Tests for clean_suggestion function."""
+class TestCleanSuggestionShort:
+    """Tests for clean_suggestion_short function."""
 
     def test_returns_empty_for_none(self):
         """Should return empty for None input."""
-        result = clean_suggestion(None, "text")
+        result = clean_suggestion_short(None, "text")
         assert result == ""
 
     def test_returns_empty_for_empty_string(self):
         """Should return empty for empty string."""
-        result = clean_suggestion("", "text")
+        result = clean_suggestion_short("", "text")
         assert result == ""
 
     def test_strips_whitespace(self):
         """Should strip leading/trailing whitespace."""
-        result = clean_suggestion("  hello  ", "text")
+        result = clean_suggestion_short("  hello  ", "text")
         assert result == "hello"
 
     def test_removes_leading_space_when_text_ends_with_space(self):
         """Should remove leading space if text_before ends with space."""
-        result = clean_suggestion(" world", "Hello ")
+        result = clean_suggestion_short(" world", "Hello ")
         assert result == "world"
 
     def test_keeps_leading_space_when_text_doesnt_end_with_space(self):
         """Should keep leading space if text_before doesn't end with space."""
-        result = clean_suggestion(" world", "Hello")
+        result = clean_suggestion_short(" world", "Hello")
         # After strip, leading space is already removed
         assert result == "world"
 
-    def test_limits_to_two_words(self):
-        """Should limit to at most 2 words."""
-        result = clean_suggestion("one two three four five", "text")
-        words = result.split()
-        assert len(words) <= 2
+    def test_limits_to_first_line(self):
+        """Should limit to first line only."""
+        result = clean_suggestion_short("first line\nsecond line\nthird line", "text")
+        assert "\n" not in result
+        assert result == "first line"
 
-    def test_limits_to_50_chars(self):
-        """Should limit to 50 characters."""
-        long_text = "a" * 100
-        result = clean_suggestion(long_text, "text")
-        assert len(result) <= 50
+    def test_limits_to_100_chars(self):
+        """Should limit to 100 characters."""
+        long_text = "a" * 200
+        result = clean_suggestion_short(long_text, "text")
+        assert len(result) <= 100
 
     def test_handles_whitespace_only(self):
         """Should return empty for whitespace only."""
-        result = clean_suggestion("   \t\n   ", "text")
+        result = clean_suggestion_short("   \t\n   ", "text")
         assert result == ""
 
 

@@ -156,7 +156,7 @@ export const AutocompleteExtension = Extension.create({
               const ghostWidget = Decoration.widget(
                 pluginState.position,
                 () => {
-                  // Create container for ghost text and Tab hint
+                  // Create container for ghost text and keyboard hints
                   const container = document.createElement("span");
                   container.className = "autocomplete-suggestion";
                   container.setAttribute("contenteditable", "false");
@@ -166,13 +166,31 @@ export const AutocompleteExtension = Extension.create({
                   textSpan.className = "autocomplete-ghost-text";
                   textSpan.textContent = pluginState.suggestion;
 
-                  // Tab hint
+                  // Keyboard hints container
+                  const hintsContainer = document.createElement("span");
+                  hintsContainer.className = "autocomplete-hints";
+
+                  // Tab hint (accept)
                   const tabHint = document.createElement("kbd");
                   tabHint.className = "autocomplete-tab-hint";
                   tabHint.textContent = "Tab";
 
+                  // Separator
+                  const separator = document.createElement("span");
+                  separator.className = "autocomplete-hint-separator";
+                  separator.textContent = "/";
+
+                  // Esc hint (dismiss)
+                  const escHint = document.createElement("kbd");
+                  escHint.className = "autocomplete-esc-hint";
+                  escHint.textContent = "Esc";
+
+                  hintsContainer.appendChild(tabHint);
+                  hintsContainer.appendChild(separator);
+                  hintsContainer.appendChild(escHint);
+
                   container.appendChild(textSpan);
-                  container.appendChild(tabHint);
+                  container.appendChild(hintsContainer);
 
                   return container;
                 },
@@ -234,7 +252,7 @@ export const AutocompleteExtension = Extension.create({
         ({ tr, state, dispatch }) => {
           const pluginState = AutocompletePluginKey.getState(state);
 
-          if (!pluginState?.suggestion || !dispatch) {
+          if (!pluginState?.suggestion || pluginState.position === null || !dispatch) {
             return false;
           }
 
@@ -259,8 +277,9 @@ export const AutocompleteExtension = Extension.create({
             content: pluginState.suggestion,
           });
 
-          // Insert the suggestion text at cursor position
-          tr.insertText(pluginState.suggestion, tr.selection.from);
+          // Insert the suggestion text at the SAVED position (where it was displayed)
+          // NOT at current cursor position, to avoid position mismatch
+          tr.insertText(pluginState.suggestion, pluginState.position);
 
           // Clear the suggestion
           tr.setMeta(AutocompletePluginKey, {
@@ -281,7 +300,7 @@ export const AutocompleteExtension = Extension.create({
         ({ tr, state, dispatch }) => {
           const pluginState = AutocompletePluginKey.getState(state);
 
-          if (!pluginState?.suggestion || !dispatch) {
+          if (!pluginState?.suggestion || pluginState.position === null || !dispatch) {
             return false;
           }
 
@@ -308,8 +327,8 @@ export const AutocompleteExtension = Extension.create({
             trigger_mode: pluginState.triggerMode || "auto",
           });
 
-          // Insert the word
-          const insertPos = tr.selection.from;
+          // Insert the word at the SAVED position (where suggestion was displayed)
+          const insertPos = pluginState.position;
           tr.insertText(word, insertPos);
 
           // Update suggestion with remaining text (keeping same ID for tracking)

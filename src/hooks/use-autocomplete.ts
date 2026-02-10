@@ -11,23 +11,29 @@
  * - Request cancellation via AbortController
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Editor } from "@tiptap/react";
 import { useEditorStore } from "@/stores/editor-store";
+import { useFileStore } from "@/stores/file-store";
 import { AutocompletePluginKey } from "@/extensions/autocomplete-extension";
-import { AUTOCOMPLETE_TRIGGER_EVENT } from "@/extensions/autocomplete-keymap";
+import {
+  AUTOCOMPLETE_TRIGGER_EVENT,
+  AUTOCOMPLETE_TRIGGER_LONG_EVENT,
+} from "@/extensions/autocomplete-keymap";
 import { api } from "@/lib/api";
 import { editorLogger } from "@/lib/logger";
+import type { AutocompleteMode } from "@/types";
 
 const log = editorLogger.child("Autocomplete");
 
 // Configuration
 const CONFIG = {
-  DEBOUNCE_DELAY: 300, // ms - longer debounce since we trigger on every keystroke
+  DEBOUNCE_DELAY: 750, // ms - industry best practice (GitHub Copilot uses 500-1000ms)
   MIN_TEXT_LENGTH: 2, // Minimum text length before triggering
   MIN_WORD_LENGTH: 2, // Minimum current word length to trigger completion
   MAX_CONTEXT_BEFORE: 4000, // Max chars before cursor
   MAX_CONTEXT_AFTER: 1000, // Max chars after cursor
+  MIN_IDLE_TIME: 500, // ms - minimum idle time before triggering (prevents rapid triggers)
 };
 
 interface UseAutocompleteOptions {
@@ -40,7 +46,7 @@ interface UseAutocompleteOptions {
 
 /**
  * Check if autocomplete should be triggered based on editor state.
- * Now triggers while typing to complete current word.
+ * Triggers while typing to complete current word, or after punctuation/space.
  */
 function shouldTrigger(editor: Editor): boolean {
   const { state } = editor;
@@ -74,11 +80,24 @@ function shouldTrigger(editor: Editor): boolean {
     return true;
   }
 
-  // Also trigger after space/newline (for next word prediction)
+  // Get character before cursor
   const charBefore =
     selection.from > 0 ? state.doc.textBetween(selection.from - 1, selection.from) : "";
 
-  return charBefore === " " || charBefore === "\n" || selection.from === 1;
+  // Trigger after space, newline, or at document start
+  if (charBefore === " " || charBefore === "\n" || selection.from === 1) {
+    return true;
+  }
+
+  // Trigger after Chinese/English punctuation (for next sentence prediction)
+  // Chinese: 。！？，；：、
+  // English: . ! ? , ; :
+  const punctuationPattern = /[。！？，；：、.!?,;:]/;
+  if (punctuationPattern.test(charBefore)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -103,6 +122,49 @@ function getContext(editor: Editor): { textBefore: string; textAfter: string } {
   return { textBefore, textAfter };
 }
 
+/**
+ * Detect if long mode should be used based on context (for adaptive mode)
+ */
+function shouldUseLongMode(editor: Editor, mode: AutocompleteMode): boolean {
+  // If mode is explicitly set, use it
+  if (mode === "short") return false;
+  if (mode === "long") return true;
+
+  // Adaptive mode: detect strategic points
+  const { state } = editor;
+  const pos = state.selection.from;
+
+  // Get text before cursor (last 200 chars for pattern matching)
+  const textBefore = state.doc.textBetween(Math.max(0, pos - 200), pos, "\n");
+  const lines = textBefore.split("\n");
+  const lastLine = lines[lines.length - 1] || "";
+  const secondLastLine = lines.length > 1 ? lines[lines.length - 2] : "";
+
+  // Trigger long mode at strategic points:
+  // 1. After new heading (markdown)
+  if (lastLine.match(/^#{1,6}\s+.*$/)) {
+    return true;
+  }
+
+  // 2. After colon (likely starting a list or explanation)
+  if (lastLine.trim().endsWith(":")) {
+    return true;
+  }
+
+  // 3. Empty line after paragraph end (starting new section)
+  if (lastLine === "" && secondLastLine.trim().endsWith(".")) {
+    return true;
+  }
+
+  // 4. After list item marker (completing list)
+  if (lastLine.match(/^[\s]*[-*+]\s+$/)) {
+    return true;
+  }
+
+  // Default to short mode for normal typing
+  return false;
+}
+
 export function useAutocomplete({
   editor,
   fileId,
@@ -110,11 +172,17 @@ export function useAutocomplete({
   enabled = true,
 }: UseAutocompleteOptions) {
   const [isLoading, setIsLoading] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastPositionRef = useRef<number | null>(null);
+  const cursorMoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchSuggestionRef = useRef<((forceMode?: "short" | "long") => Promise<void>) | null>(null);
 
-  const { autocompleteEnabled, autocompleteTriggerMode } = useEditorStore();
+  const { autocompleteEnabled, autocompleteTriggerMode, autocompleteMode } = useEditorStore();
+
+  // Get files from file store (stable selector)
+  const files = useFileStore((state) => state.files);
+
+  // Memoize open file IDs to prevent infinite loops
+  const openFileIds = useMemo(() => files.filter((f) => !f.isFolder).map((f) => f.id), [files]);
 
   // Combine store setting with prop (both must be true)
   const isEnabled = enabled && autocompleteEnabled;
@@ -127,173 +195,221 @@ export function useAutocomplete({
       editor.commands.clearSuggestion();
     }
 
-    // Cancel pending request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    // Clear debounce timer
+    // Clear all timers
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
+    if (cursorMoveTimerRef.current) {
+      clearTimeout(cursorMoveTimerRef.current);
+      cursorMoveTimerRef.current = null;
+    }
   }, [editor]);
 
   /**
-   * Fetch suggestion from the API
+   * Fetch suggestion from the API - SIMPLIFIED VERSION
+   * @param forceMode Optional mode to force (overrides setting and detection)
    */
-  const fetchSuggestion = useCallback(async () => {
-    if (!editor || !isEnabled) {
-      return;
-    }
-
-    // Check trigger conditions
-    if (!shouldTrigger(editor)) {
-      clearSuggestion();
-      return;
-    }
-
-    const { state } = editor;
-    const pos = state.selection.from;
-
-    // Get context
-    const { textBefore, textAfter } = getContext(editor);
-
-    // Check minimum text length
-    if (textBefore.trim().length < CONFIG.MIN_TEXT_LENGTH) {
-      clearSuggestion();
-      return;
-    }
-
-    // Store current position for validation
-    lastPositionRef.current = pos;
-
-    // Cancel previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-
-    setIsLoading(true);
-
-    try {
-      const response = await fetch("/api/autocomplete/suggest", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...api.getAuthorizationHeaders(),
-        },
-        body: JSON.stringify({
-          text_before: textBefore,
-          text_after: textAfter,
-          file_id: fileId,
-          file_name: fileName,
-          cursor_position: pos,
-        }),
-        signal: abortControllerRef.current.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+  const fetchSuggestion = useCallback(
+    async (forceMode?: "short" | "long") => {
+      if (!editor || !isEnabled) {
+        return;
       }
 
-      const data = await response.json();
+      // Check trigger conditions
+      if (!shouldTrigger(editor)) {
+        return;
+      }
 
-      // Validate that cursor position hasn't changed
-      if (editor && data.suggestion) {
-        const currentPos = editor.state.selection.from;
-        if (currentPos === pos) {
-          // Pass context for telemetry tracking
+      const { state } = editor;
+      const pos = state.selection.from;
+      const { textBefore, textAfter } = getContext(editor);
+
+      // Check minimum text length
+      if (textBefore.trim().length < CONFIG.MIN_TEXT_LENGTH) {
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const mode = forceMode || (shouldUseLongMode(editor, autocompleteMode) ? "long" : "short");
+
+        log.debug(`Making autocomplete request (${mode} mode)`);
+
+        const response = await fetch("/api/autocomplete/suggest", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...api.getAuthorizationHeaders(),
+          },
+          body: JSON.stringify({
+            text_before: textBefore,
+            text_after: textAfter,
+            file_id: fileId,
+            file_name: fileName,
+            cursor_position: pos,
+            mode,
+            open_file_ids: openFileIds,
+            include_rag: true,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Show suggestion if we got one
+        if (editor && data.suggestion) {
+          log.debug(`Showing suggestion: "${data.suggestion.substring(0, 50)}..."`);
           editor.commands.setSuggestion(data.suggestion, {
             textBefore,
             triggerMode: autocompleteTriggerMode,
           });
         }
-      }
-    } catch (error) {
-      // Ignore abort errors
-      if ((error as Error).name !== "AbortError") {
+      } catch (error) {
         log.error("Autocomplete request failed", error);
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [editor, isEnabled, fileId, fileName, clearSuggestion, autocompleteTriggerMode]);
+    },
+    [editor, isEnabled, fileId, fileName, autocompleteTriggerMode, autocompleteMode, openFileIds]
+  );
 
   /**
    * Trigger autocomplete with debouncing (for auto mode)
    */
   const triggerAutocomplete = useCallback(() => {
-    // Clear existing timer
+    // Clear existing timer and start new one
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
-    // Set new debounced timer
     debounceTimerRef.current = setTimeout(() => {
       fetchSuggestion();
     }, CONFIG.DEBOUNCE_DELAY);
   }, [fetchSuggestion]);
 
   /**
-   * Manual trigger (for manual mode, called by keyboard shortcut)
-   * No debouncing - triggers immediately
+   * Manual trigger (Alt+/ shortcut) - triggers immediately without debounce
    */
   const manualTrigger = useCallback(() => {
-    if (!editor || !isEnabled) {
-      return;
+    if (!editor || !isEnabled) return;
+
+    // Clear all timers and trigger immediately
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
     }
-    // Immediately fetch suggestion without debouncing
+    if (cursorMoveTimerRef.current) {
+      clearTimeout(cursorMoveTimerRef.current);
+      cursorMoveTimerRef.current = null;
+    }
+
     fetchSuggestion();
   }, [editor, isEnabled, fetchSuggestion]);
 
   /**
-   * Handle editor updates
+   * Manual long mode trigger (Cmd+Shift+Space) - forces long mode
+   */
+  const manualTriggerLong = useCallback(() => {
+    if (!editor || !isEnabled) return;
+
+    // Clear all timers and trigger immediately with long mode
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (cursorMoveTimerRef.current) {
+      clearTimeout(cursorMoveTimerRef.current);
+      cursorMoveTimerRef.current = null;
+    }
+
+    fetchSuggestion("long");
+  }, [editor, isEnabled, fetchSuggestion]);
+
+  /**
+   * Keep fetchSuggestionRef up to date without triggering effect re-runs
    */
   useEffect(() => {
-    if (!editor || !isEnabled) {
+    fetchSuggestionRef.current = fetchSuggestion;
+  }, [fetchSuggestion]);
+
+  /**
+   * Handle editor updates - SIMPLIFIED VERSION
+   * Uses ref pattern to avoid re-registering listener when fetchSuggestion changes
+   */
+  useEffect(() => {
+    if (!editor || !isEnabled || autocompleteTriggerMode !== "auto") {
       return;
     }
 
-    const handleUpdate = () => {
-      // Clear existing suggestion when user types
-      const pluginState = AutocompletePluginKey.getState(editor.state);
-      if (pluginState?.suggestion) {
-        // Suggestion was already cleared by the plugin on docChanged
-        // Just cancel pending requests
-        if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-          abortControllerRef.current = null;
-        }
+    // Handler for typing (document changes)
+    const handleTransaction = ({ transaction }: any) => {
+      // Clear cursor move timer when user types
+      if (cursorMoveTimerRef.current) {
+        clearTimeout(cursorMoveTimerRef.current);
+        cursorMoveTimerRef.current = null;
       }
 
-      // Only auto-trigger in auto mode
-      if (autocompleteTriggerMode === "auto") {
-        triggerAutocomplete();
+      if (transaction.docChanged) {
+        // User is typing - clear existing debounce timer
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+
+        // Start new debounce timer - call via ref to always use latest version
+        debounceTimerRef.current = setTimeout(() => {
+          fetchSuggestionRef.current?.();
+        }, CONFIG.DEBOUNCE_DELAY);
+      } else if (transaction.selectionSet) {
+        // User moved cursor without typing (click or arrow keys)
+        // Only trigger if cursor is at a "meaningful" position (end of line, after punctuation)
+        // to avoid being too aggressive
+
+        // Get the editor's current state (after transaction is applied)
+        if (!editor) return;
+        const { state } = editor;
+        const pos = state.selection.from;
+
+        // Check if cursor is at a meaningful position
+        const textBefore = state.doc.textBetween(Math.max(0, pos - 20), pos, "");
+        const isEndOfLine = textBefore.endsWith("\n") || pos === state.doc.content.size;
+        const isAfterSentence = /[.!?。！？]\s*$/.test(textBefore);
+        const isAfterColon = /[:：]\s*$/.test(textBefore);
+
+        // Only trigger at strategic points to avoid annoyance
+        if (isEndOfLine || isAfterSentence || isAfterColon) {
+          if (cursorMoveTimerRef.current) {
+            clearTimeout(cursorMoveTimerRef.current);
+          }
+
+          cursorMoveTimerRef.current = setTimeout(() => {
+            fetchSuggestionRef.current?.();
+          }, CONFIG.DEBOUNCE_DELAY + 250); // Slightly longer delay for cursor moves (1000ms)
+        }
       }
     };
 
-    const handleSelectionUpdate = () => {
-      // Clear suggestion if selection changes significantly
-      const pluginState = AutocompletePluginKey.getState(editor.state);
-      if (pluginState?.suggestion && pluginState.position !== null) {
-        const currentPos = editor.state.selection.from;
-        if (currentPos !== pluginState.position) {
-          clearSuggestion();
-        }
-      }
-    };
-
-    editor.on("update", handleUpdate);
-    editor.on("selectionUpdate", handleSelectionUpdate);
+    editor.on("transaction", handleTransaction);
 
     return () => {
-      editor.off("update", handleUpdate);
-      editor.off("selectionUpdate", handleSelectionUpdate);
-      clearSuggestion();
+      editor.off("transaction", handleTransaction);
+
+      // Cleanup timers on unmount
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      if (cursorMoveTimerRef.current) {
+        clearTimeout(cursorMoveTimerRef.current);
+        cursorMoveTimerRef.current = null;
+      }
     };
-  }, [editor, isEnabled, autocompleteTriggerMode, triggerAutocomplete, clearSuggestion]);
+  }, [editor, isEnabled, autocompleteTriggerMode]);
 
   /**
    * Listen for manual trigger events from keyboard shortcuts
@@ -307,26 +423,18 @@ export function useAutocomplete({
       manualTrigger();
     };
 
+    const handleManualTriggerLong = () => {
+      manualTriggerLong();
+    };
+
     window.addEventListener(AUTOCOMPLETE_TRIGGER_EVENT, handleManualTrigger);
+    window.addEventListener(AUTOCOMPLETE_TRIGGER_LONG_EVENT, handleManualTriggerLong);
 
     return () => {
       window.removeEventListener(AUTOCOMPLETE_TRIGGER_EVENT, handleManualTrigger);
+      window.removeEventListener(AUTOCOMPLETE_TRIGGER_LONG_EVENT, handleManualTriggerLong);
     };
-  }, [editor, isEnabled, manualTrigger]);
-
-  /**
-   * Cleanup on unmount
-   */
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
+  }, [editor, isEnabled, manualTrigger, manualTriggerLong]);
 
   return {
     isLoading,

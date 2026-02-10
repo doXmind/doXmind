@@ -29,6 +29,9 @@ import {
   Loader2,
   Sigma,
   SpellCheck,
+  Zap,
+  FileText,
+  Target,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -66,8 +69,9 @@ export function EditorToolbar({
   const {
     autocompleteEnabled,
     setAutocompleteEnabled,
-    autocompleteTriggerMode,
     setAutocompleteTriggerMode,
+    autocompleteMode,
+    setAutocompleteMode,
     spellcheckEnabled,
     setSpellcheckEnabled,
   } = useEditorStore();
@@ -315,14 +319,20 @@ export function EditorToolbar({
 
       <ToolbarDivider />
 
-      {/* AI Autocomplete Toggle */}
+      {/* AI Autocomplete Mode */}
       <ToolbarGroup>
         <DropdownMenu>
           <Tooltip
             content={
-              autocompleteEnabled
-                ? `AI Autocomplete: ${autocompleteTriggerMode === "auto" ? "Auto" : "Manual (Alt+/)"}`
-                : "AI Autocomplete: Off"
+              !autocompleteEnabled
+                ? "AI Autocomplete: Off"
+                : `AI Autocomplete: ${
+                    autocompleteMode === "short"
+                      ? "Short (1 line)"
+                      : autocompleteMode === "long"
+                        ? "Long (Multi-line)"
+                        : "Adaptive (Auto-switch)"
+                  }`
             }
             side="bottom"
           >
@@ -334,11 +344,13 @@ export function EditorToolbar({
               >
                 <Sparkles className="h-4 w-4" />
                 <span className="hidden text-xs sm:inline">
-                  {autocompleteEnabled
-                    ? autocompleteTriggerMode === "auto"
-                      ? "Auto"
-                      : "Manual"
-                    : "Off"}
+                  {!autocompleteEnabled
+                    ? "Off"
+                    : autocompleteMode === "short"
+                      ? "Short"
+                      : autocompleteMode === "long"
+                        ? "Long"
+                        : "Adaptive"}
                 </span>
                 <ChevronDown className="h-3 w-3" />
               </Button>
@@ -349,27 +361,37 @@ export function EditorToolbar({
               onClick={() => {
                 setAutocompleteEnabled(true);
                 setAutocompleteTriggerMode("auto");
+                setAutocompleteMode("short");
               }}
-              className={cn(
-                autocompleteEnabled && autocompleteTriggerMode === "auto" && "bg-accent"
-              )}
+              className={cn(autocompleteEnabled && autocompleteMode === "short" && "bg-accent")}
             >
-              <Sparkles className="mr-2 h-4 w-4" />
-              Auto
-              <span className="ml-auto text-xs text-muted-foreground">Auto-trigger</span>
+              <Zap className="mr-2 h-4 w-4" />
+              Short
+              <span className="ml-auto text-xs text-muted-foreground">1 line, fast</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 setAutocompleteEnabled(true);
-                setAutocompleteTriggerMode("manual");
+                setAutocompleteTriggerMode("auto");
+                setAutocompleteMode("long");
               }}
-              className={cn(
-                autocompleteEnabled && autocompleteTriggerMode === "manual" && "bg-accent"
-              )}
+              className={cn(autocompleteEnabled && autocompleteMode === "long" && "bg-accent")}
             >
-              <Sparkles className="mr-2 h-4 w-4" />
-              Manual
-              <span className="ml-auto text-xs text-muted-foreground">Alt+/</span>
+              <FileText className="mr-2 h-4 w-4" />
+              Long
+              <span className="ml-auto text-xs text-muted-foreground">Multi-line</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                setAutocompleteEnabled(true);
+                setAutocompleteTriggerMode("auto");
+                setAutocompleteMode("adaptive");
+              }}
+              className={cn(autocompleteEnabled && autocompleteMode === "adaptive" && "bg-accent")}
+            >
+              <Target className="mr-2 h-4 w-4" />
+              Adaptive
+              <span className="ml-auto text-xs text-muted-foreground">Auto-switch</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setAutocompleteEnabled(false)}
@@ -377,6 +399,7 @@ export function EditorToolbar({
             >
               <Sparkles className="mr-2 h-4 w-4 opacity-50" />
               Off
+              <span className="ml-auto text-xs text-muted-foreground">Disabled</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

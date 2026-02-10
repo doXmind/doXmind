@@ -17,8 +17,9 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { AutocompletePluginKey } from "./autocomplete-extension";
 import { telemetry } from "@/lib/telemetry";
 
-// Custom event name for manual autocomplete trigger
+// Custom event names for manual autocomplete trigger
 export const AUTOCOMPLETE_TRIGGER_EVENT = "autocomplete:manual-trigger";
+export const AUTOCOMPLETE_TRIGGER_LONG_EVENT = "autocomplete:manual-trigger-long";
 
 // Plugin key for the keymap
 const AutocompleteKeymapPluginKey = new PluginKey("autocompleteKeymap");
@@ -125,6 +126,13 @@ export const AutocompleteKeymap = Extension.create({
       // This doesn't conflict with Windows IME
       "Alt-/": () => {
         window.dispatchEvent(new CustomEvent(AUTOCOMPLETE_TRIGGER_EVENT));
+        return true;
+      },
+
+      // Mod+Shift+Space: Force long mode autocomplete
+      // Temporarily override mode setting to get multi-line completion
+      "Mod-Shift-Space": () => {
+        window.dispatchEvent(new CustomEvent(AUTOCOMPLETE_TRIGGER_LONG_EVENT));
         return true;
       },
     };

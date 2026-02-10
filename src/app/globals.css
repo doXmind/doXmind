@@ -467,9 +467,7 @@
 
 /* Autocomplete suggestion container */
 .autocomplete-suggestion {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.375rem;
+  display: inline; /* Changed from inline-flex to allow natural text wrapping */
   pointer-events: none;
   user-select: none;
 }
@@ -478,15 +476,25 @@
 .autocomplete-ghost-text {
   @apply text-muted-foreground/60;
   font-style: normal;
-  display: inline;
-  white-space: pre-wrap;
+  display: inline; /* Inline to allow natural text wrapping */
+  white-space: pre-wrap; /* Allow wrapping while preserving spaces */
+  word-break: break-word; /* Break long words if needed */
   /* Prevent layout shift */
   position: relative;
   /* Subtle animation on appearance */
   animation: ghostFadeIn 0.15s ease-out;
 }
 
-/* Tab hint styling - lightweight style matching ghost text */
+/* Keyboard hints container */
+.autocomplete-hints {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.375rem; /* Spacing from ghost text */
+  animation: ghostFadeIn 0.15s ease-out;
+}
+
+/* Tab hint styling - accept suggestion */
 .autocomplete-tab-hint {
   display: inline-flex;
   align-items: center;
@@ -498,7 +506,27 @@
   color: hsl(var(--muted-foreground) / 0.5);
   background-color: hsl(var(--muted) / 0.5);
   border-radius: 0.125rem;
-  animation: ghostFadeIn 0.15s ease-out;
+}
+
+/* Separator between hints */
+.autocomplete-hint-separator {
+  font-size: 0.625rem;
+  color: hsl(var(--muted-foreground) / 0.3);
+  margin: 0 0.125rem;
+}
+
+/* Esc hint styling - dismiss suggestion */
+.autocomplete-esc-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.25rem;
+  font-size: 0.625rem;
+  font-family: inherit;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground) / 0.4);
+  background-color: hsl(var(--muted) / 0.3);
+  border-radius: 0.125rem;
 }
 
 @keyframes ghostFadeIn {

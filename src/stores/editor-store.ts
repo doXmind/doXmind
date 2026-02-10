@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { AutocompleteMode } from "@/types";
 
 interface Selection {
   from: number;
@@ -43,6 +44,7 @@ interface EditorState {
   autocompleteEnabled: boolean;
   autocompleteSuggestion: string | null;
   autocompleteTriggerMode: "auto" | "manual";
+  autocompleteMode: AutocompleteMode;
 
   // Spellcheck State
   spellcheckEnabled: boolean;
@@ -74,6 +76,7 @@ interface EditorState {
   setAutocompleteEnabled: (enabled: boolean) => void;
   setAutocompleteSuggestion: (suggestion: string | null) => void;
   setAutocompleteTriggerMode: (mode: "auto" | "manual") => void;
+  setAutocompleteMode: (mode: AutocompleteMode) => void;
 
   // Spellcheck Actions
   setSpellcheckEnabled: (enabled: boolean) => void;
@@ -106,6 +109,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   autocompleteEnabled: true,
   autocompleteSuggestion: null,
   autocompleteTriggerMode: "auto",
+  autocompleteMode: "adaptive",
   spellcheckEnabled: true,
   pendingEdits: [],
   imageModalOpen: false,
@@ -127,6 +131,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setAutocompleteEnabled: (enabled) => set({ autocompleteEnabled: enabled }),
   setAutocompleteSuggestion: (suggestion) => set({ autocompleteSuggestion: suggestion }),
   setAutocompleteTriggerMode: (mode) => set({ autocompleteTriggerMode: mode }),
+  setAutocompleteMode: (mode) => set({ autocompleteMode: mode }),
 
   // Spellcheck Actions
   setSpellcheckEnabled: (enabled) => set({ spellcheckEnabled: enabled }),

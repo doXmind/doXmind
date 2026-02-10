@@ -124,7 +124,7 @@ class AutocompleteCache:
             }
 
     @staticmethod
-    def create_cache_key(text_before: str, file_name: str = "") -> str:
+    def create_cache_key(text_before: str, file_name: str = "", extra: str = "") -> str:
         """
         Create a cache key from the context.
 
@@ -134,11 +134,12 @@ class AutocompleteCache:
         Args:
             text_before: Text before cursor
             file_name: Optional file name for context
+            extra: Optional extra data (e.g., mode, open files) for cache key
 
         Returns:
             MD5 hash of the context
         """
         # Use last 500 chars as they're most relevant for completion
         context = text_before[-500:] if len(text_before) > 500 else text_before
-        key_string = f"{context}|{file_name}"
+        key_string = f"{context}|{file_name}|{extra}"
         return hashlib.md5(key_string.encode()).hexdigest()

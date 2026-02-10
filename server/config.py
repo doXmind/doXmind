@@ -117,7 +117,10 @@ class Settings(BaseSettings):
     # AI Models
     # =========================================================================
     default_model: str = "claude-haiku-4-5-20251001"
-    fast_model: str = "claude-haiku-4-5-20251001"
+    fast_model: str = (
+        "claude-haiku-4-5-20251001"  # For quick operations (autocomplete, quick edits)
+    )
+    smart_model: str = "claude-sonnet-4-5-20250929"  # For complex operations (chat, analysis)
 
     # =========================================================================
     # User API Key Settings

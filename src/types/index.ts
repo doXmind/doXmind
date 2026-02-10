@@ -14,6 +14,18 @@ export interface FileItem {
 }
 
 // =============================================================================
+// Autocomplete Types
+// =============================================================================
+
+/**
+ * Autocomplete mode selection
+ * - short: Fast 1-line completions (1-5 words)
+ * - long: Multi-line intelligent completions (manual trigger)
+ * - adaptive: Auto-switches based on context
+ */
+export type AutocompleteMode = "short" | "long" | "adaptive";
+
+// =============================================================================
 // Edit Operation Types (unified from multiple sources)
 // =============================================================================
 
