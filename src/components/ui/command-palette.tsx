@@ -20,6 +20,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -69,6 +70,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [searchError, setSearchError] = React.useState<string | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
+  const router = useRouter();
   const { files, createFile, setCurrentFile, currentFileId } = useFileStore();
   const {
     toggleSidebar,
@@ -142,8 +144,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <FilePlus className="h-4 w-4" />,
         shortcut: ["Ctrl", "N"],
         category: "file",
-        action: () => {
-          createFile("Untitled");
+        action: async () => {
+          const newId = await createFile("Untitled");
+          router.push(`/editor/${newId}`);
           onClose();
         },
         keywords: ["create", "new", "document", "file"],
@@ -229,6 +232,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       category: "navigation" as const,
       action: () => {
         setCurrentFile(file.id);
+        router.push(`/editor/${file.id}`);
         onClose();
       },
       keywords: ["open", "go to", file.name.toLowerCase()],
@@ -239,6 +243,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     files,
     createFile,
     setCurrentFile,
+    router,
     toggleSidebar,
     toggleChat,
     setKeyboardShortcutsOpen,
@@ -276,6 +281,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
         // Open the file first
         setCurrentFile(fileId);
+        router.push(`/editor/${fileId}`);
 
         // If we have position info, navigate to it after file loads
         if (start !== undefined && editor) {
@@ -298,7 +304,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       preview: result.content.slice(0, 100),
       score: result.distance !== undefined ? Math.round((1 - result.distance) * 100) : undefined,
     }));
-  }, [fileSearchResults, setCurrentFile, onClose, editor]);
+  }, [fileSearchResults, setCurrentFile, router, onClose, editor]);
 
   const searchDocCommands = React.useMemo<CommandItem[]>(() => {
     return docSearchResults.map((result, index) => ({

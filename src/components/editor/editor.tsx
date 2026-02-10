@@ -148,9 +148,17 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   // Reset when file changes
   useEffect(() => {
     if (editor) {
-      lastContentRef.current = file.content;
+      // Cancel any pending debounced save from the previous file to prevent
+      // stale saves that would unnecessarily update the old file's updatedAt
+      debouncedSave.cancel();
       queueMicrotask(() => {
         editor.commands.setContent(file.content, false);
+        // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
+        // to prevent false-positive change detection in debouncedSave.
+        // TipTap may normalize HTML during parse/serialize (attribute order,
+        // whitespace, etc.), so raw stored HTML can differ from getHTML() output
+        // even when content is semantically identical.
+        lastContentRef.current = editor.getHTML();
         editor.emit("update", { editor, transaction: editor.state.tr });
       });
     }

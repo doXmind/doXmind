@@ -28,15 +28,23 @@ export function truncate(str: string, length: number): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic function type requires any for proper inference
+export interface DebouncedFunction<T extends (...args: any[]) => unknown> {
+  (...args: Parameters<T>): void;
+  cancel: () => void;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic function type requires any for proper inference
 export function debounce<T extends (...args: any[]) => unknown>(
   fn: T,
   delay: number
-): (...args: Parameters<T>) => void {
+): DebouncedFunction<T> {
   let timeoutId: NodeJS.Timeout;
-  return (...args: Parameters<T>) => {
+  const debounced = (...args: Parameters<T>) => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => fn(...args), delay);
   };
+  debounced.cancel = () => clearTimeout(timeoutId);
+  return debounced;
 }
 
 export function generateId(): string {

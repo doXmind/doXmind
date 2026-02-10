@@ -2,29 +2,43 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUpDown,
+  Check,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
   List,
-  Plus,
   Upload,
   Loader2,
   SearchX,
   Home,
   FolderOpen,
   FolderPlus,
-  FileText,
   FilePlus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useFileStore, type FileItem } from "@/stores/file-store";
+import {
+  useFileStore,
+  sortFilesByOption,
+  type FileItem,
+  type SortOption,
+} from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { type SearchResultItem } from "@/lib/api";
+import { useDragPageTransition } from "@/hooks/use-drag-page-transition";
 import { FileCard } from "./file-card";
 import { FileRow } from "./file-row";
 import { EmptyState } from "./empty-state";
@@ -102,10 +116,12 @@ export function FileGrid({
     currentFolderId,
     setCurrentFolder,
     getFile,
-    getFilesInFolder,
     getFolders,
     moveFileToFolder,
+    sortBy,
+    setSortBy,
   } = useFileStore();
+  const router = useRouter();
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
   const [page, setPage] = useState(0);
@@ -115,6 +131,9 @@ export function FileGrid({
   const isSearchActive = searchQuery.trim().length > 0;
   const isGrid = homeViewMode === "grid" || isSearchActive;
   const pageSize = usePageSize(isGrid);
+
+  // Pagination — declared early so the drag hook can reference it
+  // (totalPages is computed further down after displayFiles)
 
   // Get current folder info for breadcrumb
   const currentFolder = currentFolderId ? getFile(currentFolderId) : null;
@@ -162,12 +181,11 @@ export function FileGrid({
       return !f.isFolder && f.parentId === currentFolderId;
     });
 
-    // Sort: folders first (when at root), then by date
-    return [...inCurrentFolder].sort((a, b) => {
-      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-  }, [files, isSearchActive, searchMatchMap, currentFolderId]);
+    // Sort: folders first (when at root), then by selected sort option
+    const folders = inCurrentFolder.filter((f) => f.isFolder);
+    const nonFolders = inCurrentFolder.filter((f) => !f.isFolder);
+    return [...sortFilesByOption(folders, sortBy), ...sortFilesByOption(nonFolders, sortBy)];
+  }, [files, isSearchActive, searchMatchMap, currentFolderId, sortBy]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(displayFiles.length / pageSize));
@@ -175,6 +193,31 @@ export function FileGrid({
     () => displayFiles.slice(page * pageSize, (page + 1) * pageSize),
     [displayFiles, page, pageSize]
   );
+
+  // Cross-page drag-and-drop (iOS-style edge navigation)
+  const {
+    isDragActive,
+    activeEdge,
+    dwellProgress,
+    dragHoveredPage,
+    gridRef,
+    onDragOver: handleGridDragOver,
+    onDragLeave: handleGridDragLeave,
+    onDrop: handleGridDrop,
+    getPageButtonDragProps,
+  } = useDragPageTransition({
+    page,
+    totalPages,
+    setPage,
+    enabled: totalPages > 1,
+  });
+
+  // Frozen key: keep the same key during drag so React doesn't unmount the grid
+  // (unmounting kills the HTML5 drag operation). When not dragging, use page-based
+  // key for smooth page-flip animations.
+  const gridKeyBase = isSearchActive ? "search-grid" : "grid";
+  const gridKey = isDragActive ? `${gridKeyBase}-drag` : `${gridKeyBase}-${page}`;
+  const listKey = isDragActive ? "list-drag" : `list-${page}`;
 
   // Reset page when search query, view mode, or file count changes
   useEffect(() => {
@@ -188,7 +231,8 @@ export function FileGrid({
 
   const handleCreate = async () => {
     try {
-      await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
+      const newId = await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
+      router.push(`/editor/${newId}`);
     } catch {
       // handled by store
     }
@@ -216,7 +260,8 @@ export function FileGrid({
 
     setIsImporting(true);
     try {
-      await importFile(file);
+      const newId = await importFile(file);
+      router.push(`/editor/${newId}`);
       toast.success(`Imported "${file.name}" successfully`);
     } catch (error) {
       const { title, description } = getErrorMessage(error);
@@ -246,7 +291,7 @@ export function FileGrid({
       try {
         await moveFileToFolder(draggedFileId, null);
         toast.success("File moved to root");
-      } catch (error) {
+      } catch {
         toast.error("Failed to move file");
       }
     }
@@ -369,6 +414,9 @@ export function FileGrid({
                 </Tooltip>
               </div>
 
+              {/* Sort dropdown */}
+              <HomeSortDropdown sortBy={sortBy} setSortBy={setSortBy} />
+
               <div className="hidden h-4 w-px bg-border/50 md:block" />
             </>
           )}
@@ -392,29 +440,33 @@ export function FileGrid({
                   Folder
                 </Button>
               </Tooltip>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1.5 text-xs font-medium"
-                onClick={handleCreate}
-              >
-                <FilePlus className="h-3.5 w-3.5" />
-                New
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1.5 text-xs font-medium text-muted-foreground"
-                onClick={handleImportClick}
-                disabled={isImporting}
-              >
-                {isImporting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Upload className="h-3.5 w-3.5" />
-                )}
-                Import
-              </Button>
+              <Tooltip content="Create New Document" side="bottom">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 text-xs font-medium"
+                  onClick={handleCreate}
+                >
+                  <FilePlus className="h-3.5 w-3.5" />
+                  New
+                </Button>
+              </Tooltip>
+              <Tooltip content="Import File" side="bottom">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 text-xs font-medium"
+                  onClick={handleImportClick}
+                  disabled={isImporting}
+                >
+                  {isImporting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Import
+                </Button>
+              </Tooltip>
             </>
           )}
         </div>
@@ -449,50 +501,72 @@ export function FileGrid({
         <>
           {isGrid ? (
             <>
-              {/* Desktop: paginated grid */}
-              <motion.div
-                className={cn(
-                  "hidden gap-8 py-2 sm:grid sm:grid-cols-2",
-                  maxColumns !== 2 && "lg:grid-cols-3"
-                )}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                key={`${isSearchActive ? "search-grid" : "grid"}-${page}`}
+              {/* Desktop: paginated grid with cross-page drag zones */}
+              <div
+                ref={gridRef}
+                className="relative hidden sm:block"
+                onDragOver={handleGridDragOver}
+                onDragLeave={handleGridDragLeave}
+                onDrop={handleGridDrop}
               >
-                <AnimatePresence mode="popLayout">
-                  {pagedFiles.map((file, i) => (
-                    <motion.div
-                      key={file.id}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{
-                        opacity: 1,
-                        y: 0,
-                        transition: {
-                          duration: 0.4,
-                          delay: i * 0.06,
-                          ease: [0.16, 1, 0.3, 1] as const,
-                        },
-                      }}
-                      layout
-                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                    >
-                      <FileCard
-                        file={file}
-                        index={i}
-                        searchMatch={
-                          isSearchActive
-                            ? {
-                                ...searchMatchMap.get(file.id)!,
-                                query: searchQuery,
-                              }
-                            : undefined
+                {/* Left edge indicator */}
+                {activeEdge === "left" && page > 0 && (
+                  <DragEdgeIndicator side="left" progress={dwellProgress} />
+                )}
+
+                <motion.div
+                  className={cn(
+                    "grid gap-8 py-2 sm:grid-cols-2",
+                    maxColumns !== 2 && "lg:grid-cols-3"
+                  )}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  key={gridKey}
+                >
+                  <AnimatePresence mode="popLayout">
+                    {pagedFiles.map((file, i) => (
+                      <motion.div
+                        key={file.id}
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                          transition: {
+                            duration: isDragActive ? 0.15 : 0.4,
+                            delay: isDragActive ? 0 : i * 0.06,
+                            ease: [0.16, 1, 0.3, 1] as const,
+                          },
+                        }}
+                        layout
+                        exit={
+                          isDragActive
+                            ? { opacity: 0, transition: { duration: 0.1 } }
+                            : { opacity: 0, scale: 0.95, transition: { duration: 0.2 } }
                         }
-                        onResultClick={onResultClick}
-                      />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </motion.div>
+                      >
+                        <FileCard
+                          file={file}
+                          index={i}
+                          searchMatch={
+                            isSearchActive
+                              ? {
+                                  ...searchMatchMap.get(file.id)!,
+                                  query: searchQuery,
+                                }
+                              : undefined
+                          }
+                          onResultClick={onResultClick}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </motion.div>
+
+                {/* Right edge indicator */}
+                {activeEdge === "right" && page < totalPages - 1 && (
+                  <DragEdgeIndicator side="right" progress={dwellProgress} />
+                )}
+              </div>
 
               {/* Mobile: horizontal scroll carousel */}
               <MobileCarousel
@@ -504,36 +578,56 @@ export function FileGrid({
               />
             </>
           ) : (
-            <motion.div
-              className={cn(
-                "rounded-[3px]",
-                "border border-stone-200/40 dark:border-neutral-700/25",
-                "bg-[#fdfcfa]/40 dark:bg-[#1e1e20]/30"
-              )}
-              style={{ boxShadow: LIST_SHADOW }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              key={`list-${page}`}
+            <div
+              ref={gridRef}
+              className="relative"
+              onDragOver={handleGridDragOver}
+              onDragLeave={handleGridDragLeave}
+              onDrop={handleGridDrop}
             >
-              {pagedFiles.map((file, i) => (
-                <motion.div
-                  key={file.id}
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                    transition: {
-                      duration: 0.4,
-                      delay: i * 0.06,
-                      ease: [0.16, 1, 0.3, 1] as const,
-                    },
-                  }}
-                  className={cn(i > 0 && "border-t border-stone-200/25 dark:border-neutral-700/15")}
-                >
-                  <FileRow file={file} index={i} />
-                </motion.div>
-              ))}
-            </motion.div>
+              {/* Left edge indicator */}
+              {activeEdge === "left" && page > 0 && (
+                <DragEdgeIndicator side="left" progress={dwellProgress} />
+              )}
+
+              <motion.div
+                className={cn(
+                  "rounded-[3px]",
+                  "border border-stone-200/40 dark:border-neutral-700/25",
+                  "bg-[#fdfcfa]/40 dark:bg-[#1e1e20]/30"
+                )}
+                style={{ boxShadow: LIST_SHADOW }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                key={listKey}
+              >
+                {pagedFiles.map((file, i) => (
+                  <motion.div
+                    key={file.id}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      transition: {
+                        duration: isDragActive ? 0.15 : 0.4,
+                        delay: isDragActive ? 0 : i * 0.06,
+                        ease: [0.16, 1, 0.3, 1] as const,
+                      },
+                    }}
+                    className={cn(
+                      i > 0 && "border-t border-stone-200/25 dark:border-neutral-700/15"
+                    )}
+                  >
+                    <FileRow file={file} index={i} />
+                  </motion.div>
+                ))}
+              </motion.div>
+
+              {/* Right edge indicator */}
+              {activeEdge === "right" && page < totalPages - 1 && (
+                <DragEdgeIndicator side="right" progress={dwellProgress} />
+              )}
+            </div>
           )}
 
           {/* Pagination */}
@@ -548,20 +642,26 @@ export function FileGrid({
                 <ChevronLeft className="h-4 w-4" />
               </button>
 
-              {Array.from({ length: totalPages }).map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setPage(i)}
-                  className={cn(
-                    "h-7 min-w-[28px] rounded-md px-1.5 text-xs transition-colors",
-                    i === page
-                      ? "bg-foreground/[0.07] font-medium text-foreground"
-                      : "text-muted-foreground/40 hover:text-foreground"
-                  )}
-                >
-                  {i + 1}
-                </button>
-              ))}
+              {Array.from({ length: totalPages }).map((_, i) => {
+                const pageDragProps = getPageButtonDragProps(i);
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setPage(i)}
+                    {...pageDragProps}
+                    className={cn(
+                      "h-7 min-w-[28px] rounded-md px-1.5 text-xs transition-all",
+                      i === page
+                        ? "bg-foreground/[0.07] font-medium text-foreground"
+                        : "text-muted-foreground/40 hover:text-foreground",
+                      dragHoveredPage === i &&
+                        "scale-110 bg-foreground/[0.07] ring-2 ring-foreground/20"
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
 
               <button
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
@@ -576,6 +676,130 @@ export function FileGrid({
         </>
       )}
     </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sort dropdown for the home page (mirrors sidebar sort-dropdown design)
+// ---------------------------------------------------------------------------
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "name-asc", label: "Name (A-Z)" },
+  { value: "name-desc", label: "Name (Z-A)" },
+  { value: "modified-newest", label: "Modified (Newest)" },
+  { value: "modified-oldest", label: "Modified (Oldest)" },
+  { value: "created-newest", label: "Created (Newest)" },
+  { value: "created-oldest", label: "Created (Oldest)" },
+];
+
+function HomeSortDropdown({
+  sortBy,
+  setSortBy,
+}: {
+  sortBy: SortOption;
+  setSortBy: (v: SortOption) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <Tooltip content="Sort files" side="bottom">
+        <DropdownMenuTrigger asChild>
+          <button
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Sort files"
+          >
+            <ArrowUpDown className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-48">
+        {SORT_OPTIONS.slice(0, 2).map((opt) => (
+          <DropdownMenuItem
+            key={opt.value}
+            onClick={() => setSortBy(opt.value)}
+            className="flex items-center justify-between"
+          >
+            <span>{opt.label}</span>
+            {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        {SORT_OPTIONS.slice(2, 4).map((opt) => (
+          <DropdownMenuItem
+            key={opt.value}
+            onClick={() => setSortBy(opt.value)}
+            className="flex items-center justify-between"
+          >
+            <span>{opt.label}</span>
+            {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        {SORT_OPTIONS.slice(4).map((opt) => (
+          <DropdownMenuItem
+            key={opt.value}
+            onClick={() => setSortBy(opt.value)}
+            className="flex items-center justify-between"
+          >
+            <span>{opt.label}</span>
+            {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Edge indicator shown during cross-page drag (iOS-style page transition hint)
+// ---------------------------------------------------------------------------
+
+function DragEdgeIndicator({ side, progress }: { side: "left" | "right"; progress: number }) {
+  const circumference = 2 * Math.PI * 14; // r=14
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute bottom-0 top-0 z-10 flex items-center",
+        side === "left" ? "-left-8" : "-right-8"
+      )}
+    >
+      <motion.div
+        className="flex h-12 w-12 items-center justify-center"
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.8 }}
+        transition={{ duration: 0.15 }}
+      >
+        {/* Progress ring */}
+        <svg className="absolute h-10 w-10 -rotate-90" viewBox="0 0 36 36">
+          <circle
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="text-foreground/5"
+          />
+          <circle
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="text-foreground/30"
+            strokeDasharray={`${progress * circumference} ${circumference}`}
+            strokeLinecap="round"
+          />
+        </svg>
+        {/* Arrow */}
+        {side === "left" ? (
+          <ChevronLeft className="h-5 w-5 text-foreground/40" />
+        ) : (
+          <ChevronRight className="h-5 w-5 text-foreground/40" />
+        )}
+      </motion.div>
+    </div>
   );
 }
 

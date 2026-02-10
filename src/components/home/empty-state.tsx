@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Upload, Loader2, PenLine } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -9,13 +10,15 @@ import { useFileStore } from "@/stores/file-store";
 import { getErrorMessage } from "@/lib/utils";
 
 export function EmptyState() {
+  const router = useRouter();
   const { files, createFile, importFile } = useFileStore();
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreate = async () => {
     try {
-      await createFile(`Untitled-${files.length + 1}.md`);
+      const newId = await createFile(`Untitled-${files.length + 1}.md`);
+      router.push(`/editor/${newId}`);
     } catch {
       // handled by store
     }
@@ -32,7 +35,8 @@ export function EmptyState() {
 
     setIsImporting(true);
     try {
-      await importFile(file);
+      const newId = await importFile(file);
+      router.push(`/editor/${newId}`);
       toast.success(`Imported "${file.name}" successfully`);
     } catch (error) {
       const { title, description } = getErrorMessage(error);

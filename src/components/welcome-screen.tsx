@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Upload, Loader2 } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
@@ -37,6 +38,7 @@ const itemVariants = {
 };
 
 export function WelcomeScreen() {
+  const router = useRouter();
   const { createFile, importFile, currentFolderId } = useFileStore();
   const [isDragging, setIsDragging] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -45,7 +47,8 @@ export function WelcomeScreen() {
   const handleCreateFile = async () => {
     setIsCreating(true);
     try {
-      await createFile("Untitled.md", "", currentFolderId);
+      const newId = await createFile("Untitled.md", "", currentFolderId);
+      router.push(`/editor/${newId}`);
     } catch (error) {
       log.error("Failed to create file", error);
     } finally {
@@ -72,8 +75,8 @@ export function WelcomeScreen() {
       if (file) {
         setIsImporting(true);
         try {
-          await importFile(file, currentFolderId); // Import to current folder (root or folder)
-          // File will be automatically opened by the store
+          const newId = await importFile(file, currentFolderId);
+          router.push(`/editor/${newId}`);
         } catch (error) {
           log.error("Failed to import file", error);
           const { title, description } = getErrorMessage(error);
@@ -83,7 +86,7 @@ export function WelcomeScreen() {
         }
       }
     },
-    [importFile, currentFolderId]
+    [importFile, currentFolderId, router]
   );
 
   return (

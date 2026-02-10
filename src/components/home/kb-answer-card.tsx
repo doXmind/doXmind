@@ -173,7 +173,7 @@ export function KBAnswerCard({
       total_sources: displayedSources.length,
       turn_index: displayedTurnIndex,
     });
-    router.push(`/editor?id=${fileId}`);
+    router.push(`/editor/${fileId}`);
   };
 
   const handleSubmit = () => {

@@ -14,6 +14,7 @@ import {
   Square,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { cn, formatDate } from "@/lib/utils";
@@ -44,7 +45,8 @@ interface FileItemProps {
 // Store last clicked file ID for range selection (outside component to persist across renders)
 let lastClickedFileId: string | null = null;
 
-export function FileItem({ file, indent = false }: FileItemProps) {
+export function FileItem({ file, indent: _indent = false }: FileItemProps) {
+  const router = useRouter();
   const {
     currentFileId,
     setCurrentFile,
@@ -208,6 +210,7 @@ export function FileItem({ file, indent = false }: FileItemProps) {
         clearSelection();
       }
       setCurrentFile(file.id);
+      router.push(`/editor/${file.id}`);
       lastClickedFileId = file.id;
     }
   };

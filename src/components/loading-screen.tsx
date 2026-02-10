@@ -18,9 +18,14 @@ interface LoadingScreenProps {
 
 type LoadingPhase = "logo" | "skeleton" | "content";
 
+// Module-level flag: survives component remounts (e.g. route param changes
+// causing Next.js to remount the page). Once the editor has loaded once per
+// session, subsequent mounts skip the loading animation entirely.
+let hasEverInitialized = false;
+
 export function LoadingScreen({ isLoading, children, isMobile = false }: LoadingScreenProps) {
-  const [phase, setPhase] = useState<LoadingPhase>("logo");
-  const [hasInitialized, setHasInitialized] = useState(false);
+  const [phase, setPhase] = useState<LoadingPhase>(hasEverInitialized ? "content" : "logo");
+  const [hasInitialized, setHasInitialized] = useState(hasEverInitialized);
   const { isChatOpen, isSidebarOpen } = useLayoutStore();
 
   useEffect(() => {
@@ -41,6 +46,7 @@ export function LoadingScreen({ isLoading, children, isMobile = false }: Loading
       const contentTimer = setTimeout(() => {
         setPhase("content");
         setHasInitialized(true);
+        hasEverInitialized = true;
       }, 300); // Small delay for smooth transition
 
       return () => clearTimeout(contentTimer);

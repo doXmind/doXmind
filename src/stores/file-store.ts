@@ -18,7 +18,7 @@ export type SortOption =
   | "created-oldest";
 
 // Helper function to sort files based on sort option
-function sortFilesByOption(files: FileItem[], sortBy: SortOption): FileItem[] {
+export function sortFilesByOption(files: FileItem[], sortBy: SortOption): FileItem[] {
   const sorted = [...files];
 
   switch (sortBy) {
@@ -462,6 +462,7 @@ export const useFileStore = create<FileState>()(
         sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Zustand persist merge receives raw deserialized state
       merge: (persistedState: any, currentState: FileState) => ({
         ...currentState,
         ...persistedState,

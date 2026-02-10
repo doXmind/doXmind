@@ -3,6 +3,7 @@
 import { FilePlus, Loader2, Upload, Search, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -17,13 +18,12 @@ import { storeLogger } from "@/lib/logger";
 const log = storeLogger.child("Sidebar");
 
 export function Sidebar() {
-  const { files, createFile, createFolder, importFile, currentFolderId, getFile, getFolders } =
+  const router = useRouter();
+  const { files, createFile, createFolder, importFile, currentFolderId, getFolders } =
     useFileStore();
   const { openCommandPalette } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const currentFolder = currentFolderId ? getFile(currentFolderId) : null;
 
   const handleCreateFile = async () => {
     // Get files in current location (folder or root)
@@ -41,7 +41,8 @@ export function Sidebar() {
 
     const name = `Untitled-${maxNum + 1}.md`;
     try {
-      await createFile(name, "", currentFolderId);
+      const newId = await createFile(name, "", currentFolderId);
+      router.push(`/editor/${newId}`);
     } catch (error) {
       log.error("Failed to create file", error);
     }
@@ -72,7 +73,8 @@ export function Sidebar() {
 
     setIsImporting(true);
     try {
-      await importFile(file, currentFolderId);
+      const newId = await importFile(file, currentFolderId);
+      router.push(`/editor/${newId}`);
       toast.success(`Imported "${file.name}" successfully`);
     } catch (error) {
       log.error("Failed to import file", error);

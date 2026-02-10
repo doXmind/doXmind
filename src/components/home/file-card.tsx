@@ -129,7 +129,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
       onResultClick(file.id, index, searchMatch.score);
     }
     setCurrentFile(file.id);
-    router.push("/editor");
+    router.push(`/editor/${file.id}`);
   };
 
   const handleRenameOpen = () => {
@@ -205,7 +205,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
       try {
         await moveFileToFolder(draggedFileId, file.id);
         toast.success("File moved to folder");
-      } catch (error) {
+      } catch {
         toast.error("Failed to move file");
       }
     }
@@ -236,7 +236,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
           <div
             className={cn(
               "absolute inset-x-[2.5px] bottom-[2px] top-[4px] rounded-[2px]",
-              "dark:bg-neutral-700/12 bg-stone-100/50",
+              "bg-stone-100/50 dark:bg-[#1e1e20]",
               "border border-stone-200/20 dark:border-neutral-700/10"
             )}
           />
@@ -254,17 +254,6 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             )}
             style={{ boxShadow: PAPER_SHADOW }}
           >
-            {/* Folder tab - primary distinguishing feature */}
-            <div
-              className={cn(
-                "absolute left-[20px] top-0 h-[6px] w-[80px] rounded-t-[2px]",
-                "bg-gradient-to-r from-amber-100/60 via-amber-50/40 to-transparent",
-                "dark:from-amber-900/30 dark:via-amber-950/20 dark:to-transparent",
-                "border-l border-r border-t border-stone-200/40 dark:border-neutral-700/25",
-                "shadow-[0_-1px_3px_rgba(0,0,0,0.03)]"
-              )}
-            />
-
             {/* Paper grain texture */}
             <div
               className="pointer-events-none absolute inset-0 opacity-[0.035] dark:opacity-[0.06]"
@@ -276,15 +265,38 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
               }}
             />
 
-            {/* Faint ruled lines */}
+            {/* Menu - top right */}
             <div
-              className="pointer-events-none absolute inset-0 opacity-[0.025] dark:opacity-[0.035]"
-              style={{
-                backgroundImage: "linear-gradient(to bottom, transparent 95%, currentColor 95%)",
-                backgroundSize: "100% 26px",
-                backgroundPosition: "0 14px",
-              }}
-            />
+              className="absolute right-2 top-2 z-[2] flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-md"
+                    aria-label="Folder options"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleRenameOpen}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setShowDeleteModal(true)}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
 
             {/* Folder icon - large and centered */}
             <div className="flex flex-1 items-center justify-center pb-4 pt-10">
@@ -303,44 +315,10 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
 
             {/* Content area */}
             <div className="relative z-[1] flex flex-col p-5 pt-0">
-              {/* Title + menu */}
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="line-clamp-2 font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground/85">
-                  {displayName}
-                </h3>
-
-                <div
-                  className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 rounded-md"
-                        aria-label="Folder options"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={handleRenameOpen}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => setShowDeleteModal(true)}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
+              {/* Title */}
+              <h3 className="line-clamp-2 font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground/85">
+                {displayName}
+              </h3>
 
               {/* Footer: file count + date */}
               <div className="mt-auto flex items-center justify-between pt-4">

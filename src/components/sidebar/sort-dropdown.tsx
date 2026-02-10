@@ -24,8 +24,6 @@ const sortOptions: { value: SortOption; label: string }[] = [
 export function SortDropdown() {
   const { sortBy, setSortBy } = useFileStore();
 
-  const currentSort = sortOptions.find((opt) => opt.value === sortBy);
-
   return (
     <DropdownMenu>
       <Tooltip content="Sort files" side="bottom">

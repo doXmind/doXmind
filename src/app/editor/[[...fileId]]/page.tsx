@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback } from "react";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { Editor } from "@/components/editor/editor";
@@ -24,11 +25,32 @@ import { useAuthGuard } from "@/hooks/use-auth-guard";
 import { useBlockSelection } from "@/hooks/use-block-selection";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
+import { useFileUrlSync } from "@/hooks/use-file-url-sync";
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 
 export default function EditorPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // [[...fileId]] gives params.fileId as string[] | undefined
+  // /editor -> undefined, /editor/abc123 -> ["abc123"]
+  const fileIdFromUrl = (params.fileId as string[] | undefined)?.[0] ?? null;
+
+  // Legacy URL format: /editor?id=xxx -> /editor/xxx
+  const legacyId = searchParams.get("id");
+  useEffect(() => {
+    if (legacyId) {
+      router.replace(`/editor/${legacyId}`);
+    }
+  }, [legacyId, router]);
+
   const { currentFileId, files, loadFiles, isLoading } = useFileStore();
+
+  // Sync URL <-> Zustand store
+  useFileUrlSync(fileIdFromUrl);
+
   const {
     isChatOpen,
     isSidebarOpen,

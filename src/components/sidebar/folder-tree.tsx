@@ -40,7 +40,6 @@ export function FolderTree() {
     currentFolderId,
     getFolders,
     getFilesInFolder,
-    getFile,
     setCurrentFolder,
     moveFileToFolder,
     renameFile,
@@ -97,7 +96,6 @@ export function FolderTree() {
       setIsImporting(true);
       setImportProgress({ current: 0, total: fileCount });
 
-      let successCount = 0;
       let failCount = 0;
 
       for (let i = 0; i < fileCount; i++) {
@@ -106,7 +104,6 @@ export function FolderTree() {
 
         try {
           await importFile(file, folderId);
-          successCount++;
         } catch (error) {
           failCount++;
           log.error("Failed to import file", error);
@@ -281,6 +278,7 @@ export function FolderTree() {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers read contextMenu which is already a dep
   }, [contextMenu, contextMenuFocusIndex]);
 
   // When inside a folder, show only files in that folder

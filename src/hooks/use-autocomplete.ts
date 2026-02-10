@@ -15,7 +15,6 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Editor } from "@tiptap/react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileStore } from "@/stores/file-store";
-import { AutocompletePluginKey } from "@/extensions/autocomplete-extension";
 import {
   AUTOCOMPLETE_TRIGGER_EVENT,
   AUTOCOMPLETE_TRIGGER_LONG_EVENT,
@@ -347,7 +346,11 @@ export function useAutocomplete({
     }
 
     // Handler for typing (document changes)
-    const handleTransaction = ({ transaction }: any) => {
+    const handleTransaction = ({
+      transaction,
+    }: {
+      transaction: { docChanged: boolean; selectionSet: boolean };
+    }) => {
       // Clear cursor move timer when user types
       if (cursorMoveTimerRef.current) {
         clearTimeout(cursorMoveTimerRef.current);
