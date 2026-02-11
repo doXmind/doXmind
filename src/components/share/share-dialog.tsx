@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Copy, Check, Link, Trash2, Clock, Eye } from "lucide-react";
+import { toast } from "sonner";
 import { Modal, ModalHeader } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { api, type Share, type ShareListResponse } from "@/lib/api";
@@ -29,7 +30,9 @@ export function ShareDialog({ open, onClose, fileId, fileName }: ShareDialogProp
         const response: ShareListResponse = await api.listFileShares(fileId);
         setShares(response.shares);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load shares");
+        const message = err instanceof Error ? err.message : "Failed to load shares";
+        setError(message);
+        toast.error(message);
       } finally {
         setLoading(false);
       }
@@ -54,10 +57,11 @@ export function ShareDialog({ open, onClose, fileId, fileName }: ShareDialogProp
 
       setShares([share, ...shares]);
 
-      // Show toast notification (simplified)
-      showToast("Share link created successfully");
+      toast.success("Share link created");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create share");
+      const message = err instanceof Error ? err.message : "Failed to create share";
+      setError(message);
+      toast.error(message);
     } finally {
       setCreating(false);
     }
@@ -69,9 +73,11 @@ export function ShareDialog({ open, onClose, fileId, fileName }: ShareDialogProp
       await api.revokeShare(shareId);
       setShares(shares.filter((s) => s.id !== shareId));
 
-      showToast("Share link revoked successfully");
+      toast.success("Share link revoked");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to revoke share");
+      const message = err instanceof Error ? err.message : "Failed to revoke share";
+      setError(message);
+      toast.error(message);
     }
   }
 
@@ -80,20 +86,7 @@ export function ShareDialog({ open, onClose, fileId, fileName }: ShareDialogProp
     setCopiedId(shareId);
     setTimeout(() => setCopiedId(null), 2000);
 
-    showToast("Link copied to clipboard");
-  }
-
-  function showToast(message: string) {
-    // Simple toast implementation - could be replaced with a proper toast library
-    const toast = document.createElement("div");
-    toast.className =
-      "fixed bottom-4 right-4 bg-card border border-border text-foreground px-4 py-2 rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-bottom-5";
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => {
-      toast.classList.add("animate-out", "fade-out", "slide-out-to-bottom-5");
-      setTimeout(() => document.body.removeChild(toast), 300);
-    }, 3000);
+    toast.success("Link copied to clipboard");
   }
 
   function formatDate(dateString: string): string {

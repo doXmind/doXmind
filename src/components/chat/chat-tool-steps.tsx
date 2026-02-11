@@ -21,18 +21,17 @@ interface ChatToolStepsProps {
 export function ChatToolSteps({ tools, collapseThreshold = 2, className }: ChatToolStepsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const { runningTools, completedTools, errorTools } = useMemo(() => {
+  const { runningTools, completedTools } = useMemo(() => {
     const running: ToolStatus[] = [];
     const completed: ToolStatus[] = [];
-    const errors: ToolStatus[] = [];
 
     for (const tool of tools) {
       if (tool.status === "running") running.push(tool);
-      else if (tool.status === "error") errors.push(tool);
+      // Fold error tools into completed (hidden by collapse) to avoid cluttering the UI
       else completed.push(tool);
     }
 
-    return { runningTools: running, completedTools: completed, errorTools: errors };
+    return { runningTools: running, completedTools: completed };
   }, [tools]);
 
   const shouldCollapse = completedTools.length > collapseThreshold && !isExpanded;
@@ -82,14 +81,9 @@ export function ChatToolSteps({ tools, collapseThreshold = 2, className }: ChatT
         )}
       </AnimatePresence>
 
-      {/* Recent completed */}
+      {/* Recent completed (includes error tools folded in) */}
       {visibleCompleted.map((tool, index) => (
         <ChatToolStep key={`${tool.name}-visible-${index}`} tool={tool} />
-      ))}
-
-      {/* Errors */}
-      {errorTools.map((tool, index) => (
-        <ChatToolStep key={`${tool.name}-error-${index}`} tool={tool} />
       ))}
 
       {/* Running */}

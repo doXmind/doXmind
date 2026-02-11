@@ -18,16 +18,18 @@ import { useFileStore } from "@/stores/file-store";
  */
 export function useFileUrlSync(fileIdFromUrl: string | null) {
   const router = useRouter();
-  const { currentFileId, setCurrentFile, files, isLoading } = useFileStore();
+  const { currentFileId, setCurrentFile, files, isLoading, isSynced } = useFileStore();
 
   const hasInitialized = useRef(false);
   // Tracks the last fileId we synced to, preventing duplicate navigations
   const lastSyncedId = useRef<string | null>(fileIdFromUrl);
 
   // === ONE-TIME INIT: sync on first load after files are ready ===
+  // Wait for isSynced (server data loaded) to avoid acting on stale/empty
+  // localStorage state before Zustand persist hydration + loadFiles() complete.
   useEffect(() => {
     if (hasInitialized.current) return;
-    if (isLoading) return;
+    if (isLoading || !isSynced) return;
 
     hasInitialized.current = true;
 
@@ -37,12 +39,17 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
       if (exists) {
         if (currentFileId !== fileIdFromUrl) {
           setCurrentFile(fileIdFromUrl);
+          // Keep lastSyncedId matching this render's currentFileId so the
+          // Store→URL effect (which runs later in this same commit) won't
+          // see a stale mismatch and redirect before setCurrentFile takes effect.
+          lastSyncedId.current = currentFileId;
+        } else {
+          lastSyncedId.current = fileIdFromUrl;
         }
-        lastSyncedId.current = fileIdFromUrl;
       } else if (files.length > 0) {
         // File doesn't exist — show welcome
         setCurrentFile(null);
-        lastSyncedId.current = null;
+        lastSyncedId.current = currentFileId;
         router.replace("/editor");
       }
     } else if (currentFileId) {
@@ -53,11 +60,11 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
         router.replace(`/editor/${currentFileId}`);
       } else {
         setCurrentFile(null);
-        lastSyncedId.current = null;
+        lastSyncedId.current = currentFileId;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time init on load complete
-  }, [isLoading]);
+  }, [isLoading, isSynced]);
 
   // === URL → Store: browser back/forward ===
   useEffect(() => {
@@ -93,4 +100,23 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     router.replace(newPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to store changes
   }, [currentFileId]);
+
+  // === Guard: redirect when URL points to a deleted/non-existent file ===
+  // This handles cases where the Store→URL effect doesn't fire (e.g., component
+  // unmount race conditions, lastSyncedId ref getting out of sync).
+  useEffect(() => {
+    if (!hasInitialized.current) return;
+    if (!fileIdFromUrl) return;
+    if (isLoading) return;
+
+    const exists = files.some((f) => f.id === fileIdFromUrl);
+    if (!exists) {
+      const nextFile = files.find((f) => !f.isFolder);
+      const nextId = nextFile?.id ?? null;
+      setCurrentFile(nextId);
+      lastSyncedId.current = nextId;
+      router.replace(nextId ? `/editor/${nextId}` : "/editor");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- guard against stale URL after file list changes
+  }, [files, fileIdFromUrl]);
 }

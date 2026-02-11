@@ -102,6 +102,14 @@ class Settings(BaseSettings):
         return url
 
     # =========================================================================
+    # AWS S3 (Image Storage)
+    # =========================================================================
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_s3_bucket: str = "doxmind"
+    aws_s3_region: str = "us-east-1"
+
+    # =========================================================================
     # Vector Store (pgvector)
     # =========================================================================
     pgvector_enabled: bool = True  # Enable/disable vector search features

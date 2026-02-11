@@ -23,6 +23,8 @@ export const useDemoStore = create<DemoState>((set) => ({
         isFolder: false,
         parentId: null,
         position: 0,
+        isFavorite: false,
+        icon: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },

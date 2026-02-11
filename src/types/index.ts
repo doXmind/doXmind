@@ -9,6 +9,8 @@ export interface FileItem {
   isFolder: boolean;
   parentId: string | null;
   position: number;
+  isFavorite: boolean;
+  icon: string | null;
   createdAt: string;
   updatedAt: string;
 }

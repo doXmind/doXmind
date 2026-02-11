@@ -67,8 +67,10 @@ async def list_versions(file_id: str, limit: int = 50, db: AsyncSession = Depend
 @router.post("/", response_model=VersionResponse)
 async def create_version(request: CreateVersionRequest, db: AsyncSession = Depends(get_db)):
     """Create a new version checkpoint."""
-    # Get file
-    result = await db.execute(select(File).where(File.id == request.file_id))
+    # Get file (must not be in trash)
+    result = await db.execute(
+        select(File).where(File.id == request.file_id, File.deleted_at.is_(None))
+    )
     file = result.scalar_one_or_none()
 
     if not file:
@@ -160,8 +162,10 @@ async def restore_version(file_id: str, version_id: str, db: AsyncSession = Depe
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
 
-    # Get file
-    file_result = await db.execute(select(File).where(File.id == file_id))
+    # Get file (must not be in trash)
+    file_result = await db.execute(
+        select(File).where(File.id == file_id, File.deleted_at.is_(None))
+    )
     file = file_result.scalar_one_or_none()
 
     if not file:

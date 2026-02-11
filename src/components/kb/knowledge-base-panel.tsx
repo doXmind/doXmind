@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "sonner";
 import { useKBStore, formatFileSize } from "@/stores/kb-store";
 import { KBAttachmentItem } from "./kb-attachment-item";
 import { KBUploadZone } from "./kb-upload-zone";
@@ -35,7 +36,11 @@ export function KnowledgeBasePanel({ conversationId }: KnowledgeBasePanelProps) 
   const handleUpload = useCallback(
     async (files: File[]) => {
       if (!conversationId || files.length === 0) return;
-      await uploadAttachments(conversationId, files);
+      try {
+        await uploadAttachments(conversationId, files);
+      } catch {
+        toast.error("Failed to upload files");
+      }
     },
     [conversationId, uploadAttachments]
   );
@@ -46,6 +51,8 @@ export function KnowledgeBasePanel({ conversationId }: KnowledgeBasePanelProps) 
       setDeletingId(attachmentId);
       try {
         await deleteAttachment(conversationId, attachmentId);
+      } catch {
+        toast.error("Failed to delete attachment");
       } finally {
         setDeletingId(null);
       }

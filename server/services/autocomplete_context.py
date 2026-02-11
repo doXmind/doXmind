@@ -114,8 +114,8 @@ class AutocompleteContextService:
             return ""
 
         try:
-            # Fetch file metadata and content
-            query = select(File).where(File.id.in_(file_ids))
+            # Fetch file metadata and content (exclude trash)
+            query = select(File).where(File.id.in_(file_ids), File.deleted_at.is_(None))
 
             if user_id:
                 query = query.where(File.user_id == user_id)
@@ -177,9 +177,11 @@ class AutocompleteContextService:
             Formatted outline of file structure
         """
         try:
-            # Get content if not provided
+            # Get content if not provided (exclude trash)
             if not content:
-                result = await self.db.execute(select(File).where(File.id == file_id))
+                result = await self.db.execute(
+                    select(File).where(File.id == file_id, File.deleted_at.is_(None))
+                )
                 file = result.scalar_one_or_none()
                 if not file or not file.content:
                     return ""

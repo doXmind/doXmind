@@ -100,7 +100,7 @@ class TestFilesAPI:
         response = await client.delete(f"/api/files/{file_id}")
 
         assert response.status_code == 200
-        assert response.json()["status"] == "deleted"
+        assert response.json()["status"] == "trashed"
 
         # Verify it's deleted
         get_response = await client.get(f"/api/files/{file_id}")

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Trash2, Loader2, Mic } from "lucide-react";
+import { Trash2, Loader2, Mic, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   ChatMessage,
@@ -46,6 +47,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounterRef = useRef(0);
 
@@ -171,8 +173,13 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
 
   const handleClear = () => {
     if (conversation.messages.length > 0) {
-      clearConversation(conversationKey);
+      setShowClearModal(true);
     }
+  };
+
+  const handleClearConfirm = () => {
+    clearConversation(conversationKey);
+    setShowClearModal(false);
   };
 
   // Voice recording handlers
@@ -533,6 +540,28 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
           />
         )}
       </div>
+
+      {/* Clear Conversation Confirmation Modal */}
+      <Modal open={showClearModal} onClose={() => setShowClearModal(false)}>
+        <ModalHeader onClose={() => setShowClearModal(false)}>
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Clear conversation?
+          </span>
+        </ModalHeader>
+        <p className="text-sm text-muted-foreground">
+          All messages in this conversation will be permanently deleted. This action cannot be
+          undone.
+        </p>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setShowClearModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleClearConfirm}>
+            Clear
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }

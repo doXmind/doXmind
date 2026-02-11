@@ -19,10 +19,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-# Get database URL from environment or use default for local development
+# Get database URL from environment or use a SEPARATE test database
+# IMPORTANT: Uses 'doxmind_test' database to avoid wiping dev data during test cleanup
 # Local Docker uses port 5433, CI uses port 5432
 TEST_DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
+    "TEST_DATABASE_URL",
+    os.environ.get(
+        "DATABASE_URL", "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind_test"
+    ),
 )
 
 # Set test environment variables before importing app modules
@@ -37,6 +41,53 @@ from db.database import Base, get_db
 from dependencies import get_db as deps_get_db
 from main import app
 from services.auth_service import create_access_token
+
+
+def _ensure_test_database():
+    """Create doxmind_test database if it doesn't exist.
+
+    Uses synchronous psycopg2 to create the database before async engine is used.
+    Only needed when TEST_DATABASE_URL points to a separate test database.
+    """
+    import re
+
+    match = re.match(
+        r"postgresql\+asyncpg://([^:]+):([^@]+)@([^:/]+):?(\d+)?/(.+)", TEST_DATABASE_URL
+    )
+    if not match:
+        return
+
+    user, password, host, port, dbname = match.groups()
+    port = port or "5432"
+
+    # Only auto-create if using a separate test database
+    if dbname == "doxmind":
+        return
+
+    try:
+        import asyncpg
+
+        async def _create():
+            conn = await asyncpg.connect(
+                user=user, password=password, host=host, port=int(port), database="doxmind"
+            )
+            try:
+                exists = await conn.fetchval(
+                    "SELECT 1 FROM pg_database WHERE datname = $1", dbname
+                )
+                if not exists:
+                    await conn.execute(f'CREATE DATABASE "{dbname}" OWNER "{user}"')
+            finally:
+                await conn.close()
+
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(_create())
+    except Exception as e:
+        import warnings
+
+        warnings.warn(f"Could not auto-create test database '{dbname}': {e}", stacklevel=2)
+
+
+_ensure_test_database()
 
 # Create test database engine with NullPool to avoid connection issues in tests
 test_engine = create_async_engine(

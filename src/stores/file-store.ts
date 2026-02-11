@@ -68,12 +68,18 @@ interface FileState {
   renameFile: (id: string, name: string) => Promise<void>;
   getFile: (id: string) => FileItem | undefined;
 
+  // Favorites & Icons
+  toggleFavorite: (fileId: string) => Promise<void>;
+  setFileIcon: (fileId: string, icon: string | null) => Promise<void>;
+  getFavorites: () => FileItem[];
+
   // Folder actions
-  createFolder: (name: string) => Promise<string>;
+  createFolder: (name: string, parentId?: string | null) => Promise<string>;
   moveFileToFolder: (fileId: string, folderId: string | null) => Promise<void>;
   setCurrentFolder: (folderId: string | null) => void;
   getFilesInFolder: (folderId: string | null) => FileItem[];
-  getFolders: () => FileItem[];
+  getFolders: (parentId?: string | null) => FileItem[];
+  getFolderAncestors: (folderId: string) => FileItem[];
 
   // Sorting
   setSortBy: (sortBy: SortOption) => void;
@@ -92,6 +98,22 @@ interface FileState {
   selectAll: () => void;
   bulkMoveFiles: (fileIds: string[], folderId: string | null) => Promise<void>;
   bulkDeleteFiles: (fileIds: string[]) => Promise<void>;
+
+  // Trash
+  trashFiles: Array<{
+    id: string;
+    name: string;
+    isFolder: boolean;
+    parentId: string | null;
+    deletedAt: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  isTrashLoading: boolean;
+  loadTrash: () => Promise<void>;
+  restoreFile: (id: string) => Promise<void>;
+  permanentDeleteFile: (id: string) => Promise<void>;
+  emptyTrash: () => Promise<void>;
 }
 
 export const useFileStore = create<FileState>()(
@@ -105,6 +127,8 @@ export const useFileStore = create<FileState>()(
       sortBy: "modified-newest" as SortOption,
       justCreatedFileId: null,
       expandedFolderIds: new Set<string>(),
+      trashFiles: [],
+      isTrashLoading: false,
       selectedFileIds: new Set<string>(),
 
       loadFiles: async () => {
@@ -118,6 +142,8 @@ export const useFileStore = create<FileState>()(
             isFolder: f.is_folder || false,
             parentId: f.parent_id || null,
             position: f.position || 0,
+            isFavorite: f.is_favorite || false,
+            icon: f.icon || null,
             createdAt: f.created_at,
             updatedAt: f.updated_at,
           }));
@@ -158,6 +184,8 @@ export const useFileStore = create<FileState>()(
             isFolder: serverFile.is_folder || false,
             parentId: serverFile.parent_id || null,
             position: serverFile.position || 0,
+            isFavorite: serverFile.is_favorite || false,
+            icon: serverFile.icon || null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
           };
@@ -186,6 +214,8 @@ export const useFileStore = create<FileState>()(
             isFolder: serverFile.is_folder || false,
             parentId: serverFile.parent_id || null,
             position: serverFile.position || 0,
+            isFavorite: serverFile.is_favorite || false,
+            icon: serverFile.icon || null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
           };
@@ -233,10 +263,9 @@ export const useFileStore = create<FileState>()(
 
         // Filter out all files to delete
         const newFiles = state.files.filter((f) => !filesToDelete.includes(f.id));
+        const nextFile = newFiles.find((f) => !f.isFolder);
         const newCurrentId = filesToDelete.includes(state.currentFileId || "")
-          ? newFiles.length > 0
-            ? newFiles[0].id
-            : null
+          ? (nextFile?.id ?? null)
           : state.currentFileId;
 
         // Optimistic update
@@ -273,11 +302,61 @@ export const useFileStore = create<FileState>()(
         return get().files.find((f) => f.id === id);
       },
 
-      // Folder operations
-      createFolder: async (name: string) => {
+      // Favorites
+      toggleFavorite: async (fileId: string) => {
+        const file = get().files.find((f) => f.id === fileId);
+        if (!file) return;
+
+        const newFavorite = !file.isFavorite;
+
+        // Optimistic update
+        set((state) => ({
+          files: state.files.map((f) => (f.id === fileId ? { ...f, isFavorite: newFavorite } : f)),
+        }));
+
         try {
-          // Create folder on server (always at root level)
-          const serverFolder = await api.createFolder(name);
+          await api.updateFile(fileId, { is_favorite: newFavorite });
+        } catch (error) {
+          log.error("Failed to toggle favorite", error);
+          // Revert on error
+          set((state) => ({
+            files: state.files.map((f) =>
+              f.id === fileId ? { ...f, isFavorite: !newFavorite } : f
+            ),
+          }));
+        }
+      },
+
+      setFileIcon: async (fileId: string, icon: string | null) => {
+        const file = get().files.find((f) => f.id === fileId);
+        if (!file) return;
+
+        // Optimistic update
+        set((state) => ({
+          files: state.files.map((f) => (f.id === fileId ? { ...f, icon } : f)),
+        }));
+
+        try {
+          await api.updateFile(fileId, { icon: icon ?? "" });
+        } catch (error) {
+          log.error("Failed to set file icon", error);
+          // Revert on error
+          set((state) => ({
+            files: state.files.map((f) => (f.id === fileId ? { ...f, icon: file.icon } : f)),
+          }));
+        }
+      },
+
+      getFavorites: () => {
+        const { files, sortBy } = get();
+        const favorites = files.filter((f) => f.isFavorite && !f.isFolder);
+        return sortFilesByOption(favorites, sortBy);
+      },
+
+      // Folder operations
+      createFolder: async (name: string, parentId?: string | null) => {
+        try {
+          const serverFolder = await api.createFolder(name, parentId);
           const newFolder: FileItem = {
             id: serverFolder.id,
             name: serverFolder.name,
@@ -285,6 +364,8 @@ export const useFileStore = create<FileState>()(
             isFolder: serverFolder.is_folder || true,
             parentId: serverFolder.parent_id || null,
             position: serverFolder.position || 0,
+            isFavorite: serverFolder.is_favorite || false,
+            icon: serverFolder.icon || null,
             createdAt: serverFolder.created_at,
             updatedAt: serverFolder.updated_at,
           };
@@ -330,10 +411,29 @@ export const useFileStore = create<FileState>()(
         return sortFilesByOption(filtered, sortBy);
       },
 
-      getFolders: () => {
+      getFolders: (parentId?: string | null) => {
         const { files, sortBy } = get();
-        const filtered = files.filter((f) => f.isFolder);
+        const targetParentId = parentId === undefined ? null : parentId;
+        const filtered = files.filter((f) => f.isFolder && f.parentId === targetParentId);
         return sortFilesByOption(filtered, sortBy);
+      },
+
+      getFolderAncestors: (folderId: string) => {
+        const { files } = get();
+        const ancestors: FileItem[] = [];
+        let currentId: string | null = folderId;
+        const visited = new Set<string>();
+
+        while (currentId) {
+          if (visited.has(currentId)) break;
+          visited.add(currentId);
+          const folder = files.find((f) => f.id === currentId);
+          if (!folder) break;
+          ancestors.unshift(folder);
+          currentId = folder.parentId;
+        }
+
+        return ancestors;
       },
 
       setSortBy: (sortBy) => set({ sortBy }),
@@ -425,10 +525,9 @@ export const useFileStore = create<FileState>()(
       bulkDeleteFiles: async (fileIds) => {
         const state = get();
         const newFiles = state.files.filter((f) => !fileIds.includes(f.id));
+        const nextFile = newFiles.find((f) => !f.isFolder);
         const newCurrentId = fileIds.includes(state.currentFileId || "")
-          ? newFiles.length > 0
-            ? newFiles[0].id
-            : null
+          ? (nextFile?.id ?? null)
           : state.currentFileId;
 
         // Optimistic update
@@ -449,6 +548,66 @@ export const useFileStore = create<FileState>()(
           log.error("Failed to bulk delete files", error);
           // Revert on error
           get().loadFiles();
+          throw error;
+        }
+      },
+
+      // Trash operations
+      loadTrash: async () => {
+        set({ isTrashLoading: true });
+        try {
+          const trashItems = await api.listTrash();
+          set({
+            trashFiles: trashItems.map((f) => ({
+              id: f.id,
+              name: f.name,
+              isFolder: f.is_folder,
+              parentId: f.parent_id,
+              deletedAt: f.deleted_at,
+              createdAt: f.created_at,
+              updatedAt: f.updated_at,
+            })),
+            isTrashLoading: false,
+          });
+        } catch (error) {
+          log.error("Failed to load trash", error);
+          set({ isTrashLoading: false });
+        }
+      },
+
+      restoreFile: async (id: string) => {
+        try {
+          await api.restoreFile(id);
+          // Remove from trash list
+          set((state) => ({
+            trashFiles: state.trashFiles.filter((f) => f.id !== id),
+          }));
+          // Reload files to get the restored file
+          get().loadFiles();
+        } catch (error) {
+          log.error("Failed to restore file", error);
+          throw error;
+        }
+      },
+
+      permanentDeleteFile: async (id: string) => {
+        try {
+          await api.permanentDeleteFile(id);
+          set((state) => ({
+            trashFiles: state.trashFiles.filter((f) => f.id !== id),
+          }));
+        } catch (error) {
+          log.error("Failed to permanently delete file", error);
+          throw error;
+        }
+      },
+
+      emptyTrash: async () => {
+        try {
+          await api.emptyTrash();
+          set({ trashFiles: [] });
+        } catch (error) {
+          log.error("Failed to empty trash", error);
           throw error;
         }
       },

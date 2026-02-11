@@ -608,7 +608,7 @@ class TestAPIResponseFormat:
 
         assert response.status_code == 200
         data = response.json()
-        assert data.get("status") == "deleted"
+        assert data.get("status") == "trashed"
 
     @pytest.mark.asyncio
     async def test_search_returns_results_array(self, client: AsyncClient):

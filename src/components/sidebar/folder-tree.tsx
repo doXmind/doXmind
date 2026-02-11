@@ -5,6 +5,7 @@ import {
   Folder,
   FolderOpen,
   ChevronRight,
+  ChevronDown,
   Check,
   X,
   Trash2,
@@ -12,6 +13,7 @@ import {
   MoreHorizontal,
   Loader2,
   FileText,
+  Star,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -40,6 +42,8 @@ export function FolderTree() {
     currentFolderId,
     getFolders,
     getFilesInFolder,
+    getFavorites,
+    getFolderAncestors,
     setCurrentFolder,
     moveFileToFolder,
     renameFile,
@@ -48,6 +52,7 @@ export function FolderTree() {
     justCreatedFileId,
     clearJustCreatedFileId,
   } = useFileStore();
+  const [favoritesExpanded, setFavoritesExpanded] = useState(true);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [isDraggingOverEmptyFolder, setIsDraggingOverEmptyFolder] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -63,9 +68,13 @@ export function FolderTree() {
   const [folderToDelete, setFolderToDelete] = useState<FileItemType | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  const folders = getFolders();
+  // Get folders for the current view (root or inside a folder)
+  const viewFolders = currentFolderId ? getFolders(currentFolderId) : getFolders(null);
   const rootFiles = getFilesInFolder(null);
   const currentFolder = currentFolderId ? files.find((f) => f.id === currentFolderId) : null;
+  const breadcrumbAncestors = currentFolderId ? getFolderAncestors(currentFolderId) : [];
+  // All folders (for context menu lookups)
+  const allFolders = files.filter((f) => f.isFolder);
 
   // Drag and drop handlers for folders
   const handleDragOver = (e: React.DragEvent, folderId: string) => {
@@ -162,13 +171,13 @@ export function FolderTree() {
 
   // Auto-enter rename mode for newly created folders
   useEffect(() => {
-    const folder = folders.find((f) => f.id === justCreatedFileId);
+    const folder = allFolders.find((f) => f.id === justCreatedFileId);
     if (folder) {
       setRenamingFolderId(folder.id);
       setRenamingFolderName(folder.name);
       clearJustCreatedFileId();
     }
-  }, [folders, justCreatedFileId, clearJustCreatedFileId]);
+  }, [allFolders, justCreatedFileId, clearJustCreatedFileId]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, folderId: string) => {
@@ -201,7 +210,7 @@ export function FolderTree() {
 
   const handleContextMenuRename = () => {
     if (!contextMenu) return;
-    const folder = folders.find((f) => f.id === contextMenu.folderId);
+    const folder = allFolders.find((f) => f.id === contextMenu.folderId);
     if (folder) {
       setRenamingFolderId(folder.id);
       setRenamingFolderName(folder.name);
@@ -211,7 +220,7 @@ export function FolderTree() {
 
   const handleContextMenuDelete = () => {
     if (!contextMenu) return;
-    const folder = folders.find((f) => f.id === contextMenu.folderId);
+    const folder = allFolders.find((f) => f.id === contextMenu.folderId);
     if (folder) {
       setFolderToDelete(folder);
       setShowDeleteModal(true);
@@ -286,154 +295,198 @@ export function FolderTree() {
 
   return (
     <div className="space-y-2">
-      {/* Breadcrumb - Current Location (hide on mobile to avoid redundancy with header back button) */}
+      {/* Breadcrumb - Multi-level navigation (hide on mobile to avoid redundancy with header back button) */}
       {currentFolderId && currentFolder && (
-        <div className="mb-2 hidden items-center gap-2 border-b border-border px-3 py-2 md:flex">
+        <div className="mb-2 hidden items-center gap-1 border-b border-border px-3 py-2 md:flex">
           <button
             onClick={() => setCurrentFolder(null)}
-            className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />
             All Files
           </button>
-          <span className="text-xs text-muted-foreground">/</span>
-          <span className="text-xs font-medium text-foreground">{currentFolder.name}</span>
+          {breadcrumbAncestors.map((ancestor, index) => (
+            <span key={ancestor.id} className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground">/</span>
+              {index === breadcrumbAncestors.length - 1 ? (
+                <span className="truncate text-xs font-medium text-foreground">
+                  {ancestor.name}
+                </span>
+              ) : (
+                <button
+                  onClick={() => setCurrentFolder(ancestor.id)}
+                  className="truncate text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {ancestor.name}
+                </button>
+              )}
+            </span>
+          ))}
         </div>
       )}
 
-      {/* Show folder view when at root */}
-      {!currentFolderId &&
-        folders.map((folder) => {
-          const folderFiles = getFilesInFolder(folder.id);
-
-          return (
-            <div key={folder.id}>
-              {/* Folder Item */}
-              <div
-                onDragOver={(e) => handleDragOver(e, folder.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, folder.id)}
-                className={`group rounded-md transition-colors ${
-                  dragOverFolderId === folder.id
-                    ? "bg-accent ring-2 ring-primary"
-                    : "hover:bg-accent/50"
-                }`}
-              >
-                {renamingFolderId === folder.id ? (
-                  <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2 md:py-1.5">
-                    <Folder className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
-                    <Input
-                      value={renamingFolderName}
-                      onChange={(e) => setRenamingFolderName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleFolderRename();
-                        if (e.key === "Escape") cancelFolderRename();
-                        e.stopPropagation();
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="h-7 flex-1 text-sm"
-                      autoFocus
-                      onFocus={(e) => e.target.select()}
-                    />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleFolderRename();
-                      }}
-                      className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-                      aria-label="Confirm rename"
-                    >
-                      <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        cancelFolderRename();
-                      }}
-                      className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-                      aria-label="Cancel rename"
-                    >
-                      <X className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => setCurrentFolder(folder.id)}
-                    onContextMenu={(e) => handleContextMenu(e, folder.id)}
-                    className="flex w-full cursor-pointer select-none items-center gap-3 px-3 py-3 text-sm transition-transform active:scale-[0.98] md:gap-2 md:px-2 md:py-1.5 md:active:scale-100"
-                  >
-                    {/* Folder icon with count badge */}
-                    <div className="relative shrink-0">
-                      <Folder className="h-5 w-5 text-amber-600 dark:text-amber-500" />
-                      {folderFiles.length > 0 && (
-                        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-600 text-[10px] font-semibold text-white dark:bg-amber-500">
-                          {folderFiles.length}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Folder name and metadata */}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-base transition-colors hover:text-primary md:text-sm">
-                        {folder.name}
-                      </p>
-                      <p className="truncate text-sm text-muted-foreground md:text-xs">
-                        {formatDate(folder.updatedAt)}
-                      </p>
-                    </div>
-
-                    {/* Three-dot menu */}
-                    <div
-                      className="flex items-center transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                      onClick={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <DropdownMenu>
-                        <Tooltip content="Folder options" side="right">
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10 md:h-8 md:w-8"
-                              aria-label="Folder options"
-                            >
-                              <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                        </Tooltip>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRenamingFolderId(folder.id);
-                              setRenamingFolderName(folder.name);
-                            }}
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFolderToDelete(folder);
-                              setShowDeleteModal(true);
-                            }}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                )}
-              </div>
+      {/* Favorites Section - only show at root when there are favorites */}
+      {!currentFolderId && getFavorites().length > 0 && (
+        <div className="mb-1">
+          <button
+            onClick={() => setFavoritesExpanded(!favoritesExpanded)}
+            className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground md:px-2"
+          >
+            {favoritesExpanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+            Favorites
+            <span className="ml-auto text-[10px] font-normal text-muted-foreground/60">
+              {getFavorites().length}
+            </span>
+          </button>
+          {favoritesExpanded && (
+            <div className="space-y-0.5">
+              {getFavorites().map((file) => (
+                <FileItem key={`fav-${file.id}`} file={file} />
+              ))}
             </div>
-          );
-        })}
+          )}
+        </div>
+      )}
+
+      {/* Folders at current level (root or inside a folder) */}
+      {viewFolders.map((folder) => {
+        const folderFiles = getFilesInFolder(folder.id);
+        const subFolders = getFolders(folder.id);
+        const itemCount = folderFiles.length + subFolders.length;
+
+        return (
+          <div key={folder.id}>
+            {/* Folder Item */}
+            <div
+              onDragOver={(e) => handleDragOver(e, folder.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, folder.id)}
+              className={`group rounded-md transition-colors ${
+                dragOverFolderId === folder.id
+                  ? "bg-accent ring-2 ring-primary"
+                  : "hover:bg-accent/50"
+              }`}
+            >
+              {renamingFolderId === folder.id ? (
+                <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2 md:py-1.5">
+                  <Folder className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
+                  <Input
+                    value={renamingFolderName}
+                    onChange={(e) => setRenamingFolderName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleFolderRename();
+                      if (e.key === "Escape") cancelFolderRename();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-7 flex-1 text-sm"
+                    autoFocus
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFolderRename();
+                    }}
+                    className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+                    aria-label="Confirm rename"
+                  >
+                    <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cancelFolderRename();
+                    }}
+                    className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+                    aria-label="Cancel rename"
+                  >
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => setCurrentFolder(folder.id)}
+                  onContextMenu={(e) => handleContextMenu(e, folder.id)}
+                  className="flex w-full cursor-pointer select-none items-center gap-3 px-3 py-3 text-sm transition-transform active:scale-[0.98] md:gap-2 md:px-2 md:py-1.5 md:active:scale-100"
+                >
+                  {/* Folder icon with count badge */}
+                  <div className="relative shrink-0">
+                    <Folder className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+                    {itemCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-600 text-[10px] font-semibold text-white dark:bg-amber-500">
+                        {itemCount}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Folder name and metadata */}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base transition-colors hover:text-primary md:text-sm">
+                      {folder.name}
+                    </p>
+                    <p className="truncate text-sm text-muted-foreground md:text-xs">
+                      {formatDate(folder.updatedAt)}
+                    </p>
+                  </div>
+
+                  {/* Three-dot menu */}
+                  <div
+                    className="flex items-center transition-opacity md:opacity-0 md:group-hover:opacity-100"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <DropdownMenu>
+                      <Tooltip content="Folder options" side="right">
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 md:h-8 md:w-8"
+                            aria-label="Folder options"
+                          >
+                            <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </Tooltip>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingFolderId(folder.id);
+                            setRenamingFolderName(folder.name);
+                          }}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFolderToDelete(folder);
+                            setShowDeleteModal(true);
+                          }}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Move to Trash
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Root-level files - only show at root */}
       {!currentFolderId && rootFiles.map((file) => <FileItem key={file.id} file={file} />)}
@@ -469,7 +522,7 @@ export function FolderTree() {
                 </p>
               </div>
             </div>
-          ) : currentFolderFiles.length === 0 ? (
+          ) : currentFolderFiles.length === 0 && viewFolders.length === 0 ? (
             <div
               className={cn(
                 "flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed py-12 text-center transition-colors",
@@ -560,7 +613,7 @@ export function FolderTree() {
               )}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              Move to Trash
             </button>
           </div>,
           document.body
@@ -568,17 +621,17 @@ export function FolderTree() {
 
       {/* Delete Confirmation Modal */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Delete Folder</ModalHeader>
+        <ModalHeader>Move to Trash</ModalHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{folderToDelete?.name}&quot;? This will also delete
-          all files inside. This action cannot be undone.
+          Are you sure you want to move &quot;{folderToDelete?.name}&quot; to trash? This will also
+          move all files and subfolders inside. You can restore them later from the trash.
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleDeleteFolder}>
-            Delete
+            Move to Trash
           </Button>
         </ModalFooter>
       </Modal>

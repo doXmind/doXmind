@@ -96,6 +96,8 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
       replaceTerm: "",
       currentIndex: 0,
       caseSensitive: false,
+      wholeWord: false,
+      useRegex: false,
       resultsCount: 0,
       semanticResultsCount: 0,
       currentSemanticIndex: 0,
@@ -118,6 +120,8 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
             currentIndex: 0,
             currentSemanticIndex: 0,
             caseSensitive: false,
+            wholeWord: false,
+            useRegex: false,
           }),
 
           apply(tr, value, _oldState, editorState) {
@@ -128,6 +132,9 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
                 meta.searchTerm !== undefined ? meta.searchTerm : value.searchTerm;
               const updatedCaseSensitive =
                 meta.caseSensitive !== undefined ? meta.caseSensitive : value.caseSensitive;
+              const updatedWholeWord =
+                meta.wholeWord !== undefined ? meta.wholeWord : value.wholeWord;
+              const updatedUseRegex = meta.useRegex !== undefined ? meta.useRegex : value.useRegex;
 
               let updatedResults = value.results;
               let updatedIndex = value.currentIndex;
@@ -138,12 +145,16 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
               if (
                 meta.searchTerm !== undefined ||
                 meta.caseSensitive !== undefined ||
+                meta.wholeWord !== undefined ||
+                meta.useRegex !== undefined ||
                 tr.docChanged
               ) {
                 updatedResults = processSearches(
                   editorState.doc,
                   updatedSearchTerm,
-                  updatedCaseSensitive
+                  updatedCaseSensitive,
+                  updatedWholeWord,
+                  updatedUseRegex
                 );
                 if (meta.searchTerm !== undefined) {
                   updatedIndex = 0;
@@ -182,6 +193,8 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
                 currentIndex: updatedIndex,
                 currentSemanticIndex: updatedSemanticIndex,
                 caseSensitive: updatedCaseSensitive,
+                wholeWord: updatedWholeWord,
+                useRegex: updatedUseRegex,
               };
 
               // Update storage
@@ -189,6 +202,8 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
               storage.replaceTerm = pluginState.replaceTerm;
               storage.currentIndex = pluginState.currentIndex;
               storage.caseSensitive = pluginState.caseSensitive;
+              storage.wholeWord = pluginState.wholeWord;
+              storage.useRegex = pluginState.useRegex;
               storage.resultsCount = pluginState.results.length;
               storage.semanticResultsCount = pluginState.semanticResults.length;
               storage.currentSemanticIndex = pluginState.currentSemanticIndex;
@@ -201,7 +216,9 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
               const updatedResults = processSearches(
                 editorState.doc,
                 value.searchTerm,
-                value.caseSensitive
+                value.caseSensitive,
+                value.wholeWord,
+                value.useRegex
               );
               const updatedIndex =
                 value.currentIndex >= updatedResults.length
@@ -288,6 +305,26 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
         ({ tr, dispatch }) => {
           if (dispatch) {
             tr.setMeta(SearchPluginKey, { caseSensitive: value });
+            dispatch(tr);
+          }
+          return true;
+        },
+
+      setWholeWord:
+        (value: boolean) =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.setMeta(SearchPluginKey, { wholeWord: value });
+            dispatch(tr);
+          }
+          return true;
+        },
+
+      setUseRegex:
+        (value: boolean) =>
+        ({ tr, dispatch }) => {
+          if (dispatch) {
+            tr.setMeta(SearchPluginKey, { useRegex: value });
             dispatch(tr);
           }
           return true;

@@ -21,6 +21,7 @@ from api import (
     edit,
     export,
     files,
+    images,
     import_file,
     kb_agent,
     knowledge_base,
@@ -273,6 +274,7 @@ app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])
 app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
+app.include_router(images.router, prefix="/api/images", tags=["images"])
 
 
 # ============================================================================

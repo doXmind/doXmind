@@ -27,15 +27,15 @@ doXmind Mini 是一款 AI 驱动的 Markdown 写作助手，将 TipTap 富文本
 
 ### 核心特性
 
-| 特性 | 描述 |
-|------|------|
-| **智能对话** | 基于 Claude 的实时流式对话，支持扩展思考 |
-| **快速编辑** | 选中文本一键润色、翻译、扩写、缩写 |
-| **自动补全** | 输入时 AI 预测下文，Tab 键接受 |
-| **知识库 RAG** | 上传文档作为对话上下文，向量检索 |
-| **版本历史** | AI 编辑自动保存版本，支持回滚 |
-| **多格式导出** | 支持 PDF、DOCX、Markdown 导出 |
-| **移动端适配** | 响应式设计，手势操作，语音输入 |
+| 特性           | 描述                                     |
+| -------------- | ---------------------------------------- |
+| **智能对话**   | 基于 Claude 的实时流式对话，支持扩展思考 |
+| **快速编辑**   | 选中文本一键润色、翻译、扩写、缩写       |
+| **自动补全**   | 输入时 AI 预测下文，Tab 键接受           |
+| **知识库 RAG** | 上传文档作为对话上下文，向量检索         |
+| **版本历史**   | AI 编辑自动保存版本，支持回滚            |
+| **多格式导出** | 支持 PDF、DOCX、Markdown 导出            |
+| **移动端适配** | 响应式设计，手势操作，语音输入           |
 
 ---
 
@@ -177,38 +177,38 @@ doXmind Mini 是一款 AI 驱动的 Markdown 写作助手，将 TipTap 富文本
 
 ### 3.1 前端技术栈
 
-| 类别 | 技术 | 版本 | 用途 |
-|------|------|------|------|
-| **框架** | Next.js | 15 | App Router, RSC |
-| **UI 库** | React | 19 | 组件化开发 |
-| **编辑器** | TipTap | 2.x | WYSIWYG 富文本编辑 |
-| **状态管理** | Zustand | 5.x | 轻量级状态管理 |
-| **样式** | Tailwind CSS | 3.x | 原子化 CSS |
-| **动画** | Framer Motion | 11.x | 声明式动画 |
-| **类型** | TypeScript | 5.x | 类型安全 |
-| **测试** | Vitest + RTL | - | 单元/组件测试 |
+| 类别         | 技术          | 版本 | 用途               |
+| ------------ | ------------- | ---- | ------------------ |
+| **框架**     | Next.js       | 15   | App Router, RSC    |
+| **UI 库**    | React         | 19   | 组件化开发         |
+| **编辑器**   | TipTap        | 2.x  | WYSIWYG 富文本编辑 |
+| **状态管理** | Zustand       | 5.x  | 轻量级状态管理     |
+| **样式**     | Tailwind CSS  | 3.x  | 原子化 CSS         |
+| **动画**     | Framer Motion | 11.x | 声明式动画         |
+| **类型**     | TypeScript    | 5.x  | 类型安全           |
+| **测试**     | Vitest + RTL  | -    | 单元/组件测试      |
 
 ### 3.2 后端技术栈
 
-| 类别 | 技术 | 版本 | 用途 |
-|------|------|------|------|
-| **框架** | FastAPI | 0.115+ | 异步 REST API |
-| **运行时** | Python | 3.12 | 后端语言 |
-| **ORM** | SQLAlchemy | 2.0 | 异步数据库操作 |
-| **数据库** | PostgreSQL | 16 | 主数据库 |
-| **向量存储** | pgvector | - | 向量检索 |
-| **AI 框架** | Anthropic SDK | - | Claude API 调用 |
-| **Agent** | LangGraph | - | AI 工作流编排 |
-| **测试** | pytest | - | 后端测试 |
+| 类别         | 技术          | 版本   | 用途            |
+| ------------ | ------------- | ------ | --------------- |
+| **框架**     | FastAPI       | 0.115+ | 异步 REST API   |
+| **运行时**   | Python        | 3.12   | 后端语言        |
+| **ORM**      | SQLAlchemy    | 2.0    | 异步数据库操作  |
+| **数据库**   | PostgreSQL    | 16     | 主数据库        |
+| **向量存储** | pgvector      | -      | 向量检索        |
+| **AI 框架**  | Anthropic SDK | -      | Claude API 调用 |
+| **Agent**    | LangGraph     | -      | AI 工作流编排   |
+| **测试**     | pytest        | -      | 后端测试        |
 
 ### 3.3 基础设施
 
-| 类别 | 技术 | 用途 |
-|------|------|------|
-| **容器化** | Docker Compose | 本地开发环境 |
-| **部署** | Heroku | 生产环境 |
-| **CI/CD** | GitHub Actions | 自动化测试部署 |
-| **监控** | 自定义 Logger | 结构化日志 |
+| 类别       | 技术           | 用途           |
+| ---------- | -------------- | -------------- |
+| **容器化** | Docker Compose | 本地开发环境   |
+| **部署**   | Heroku         | 生产环境       |
+| **CI/CD**  | GitHub Actions | 自动化测试部署 |
+| **监控**   | 自定义 Logger  | 结构化日志     |
 
 ---
 
@@ -541,29 +541,29 @@ server/
 
 ### 5.3 API 端点总览
 
-| 模块 | 端点 | 方法 | 描述 |
-|------|------|------|------|
-| **Auth** | `/api/auth/login` | POST | 用户登录 |
-| | `/api/auth/register` | POST | 用户注册 |
-| | `/api/auth/oauth/{provider}` | GET | OAuth 发起 |
-| | `/api/auth/oauth/{provider}/callback` | GET | OAuth 回调 |
-| **Files** | `/api/files` | GET | 获取文件列表 |
-| | `/api/files` | POST | 创建文件 |
-| | `/api/files/{id}` | PUT | 更新文件 |
-| | `/api/files/{id}` | DELETE | 删除文件 |
-| **Chat** | `/api/chat/stream` | POST | 流式对话 (SSE) |
-| | `/api/chat/conversations/{fileId}` | GET | 获取对话历史 |
-| | `/api/chat/messages` | POST | 保存消息 |
-| **Edit** | `/api/edit/quick` | POST | 快速编辑 (SSE) |
-| **Autocomplete** | `/api/autocomplete/` | POST | 自动补全 (SSE) |
-| **KB** | `/api/kb/{convId}/attachments` | POST | 上传附件 |
-| | `/api/kb/{convId}/attachments` | GET | 获取附件列表 |
-| | `/api/kb/search` | POST | 搜索知识库 |
-| **Export** | `/api/export/` | POST | 导出文件 |
-| **Versions** | `/api/versions/{fileId}` | GET | 获取版本历史 |
-| | `/api/versions/{versionId}/revert` | POST | 回滚版本 |
-| **Shares** | `/api/shares` | POST | 创建分享 |
-| | `/api/shares/{token}` | GET | 获取分享内容 |
+| 模块             | 端点                                  | 方法   | 描述           |
+| ---------------- | ------------------------------------- | ------ | -------------- |
+| **Auth**         | `/api/auth/login`                     | POST   | 用户登录       |
+|                  | `/api/auth/register`                  | POST   | 用户注册       |
+|                  | `/api/auth/oauth/{provider}`          | GET    | OAuth 发起     |
+|                  | `/api/auth/oauth/{provider}/callback` | GET    | OAuth 回调     |
+| **Files**        | `/api/files`                          | GET    | 获取文件列表   |
+|                  | `/api/files`                          | POST   | 创建文件       |
+|                  | `/api/files/{id}`                     | PUT    | 更新文件       |
+|                  | `/api/files/{id}`                     | DELETE | 删除文件       |
+| **Chat**         | `/api/chat/stream`                    | POST   | 流式对话 (SSE) |
+|                  | `/api/chat/conversations/{fileId}`    | GET    | 获取对话历史   |
+|                  | `/api/chat/messages`                  | POST   | 保存消息       |
+| **Edit**         | `/api/edit/quick`                     | POST   | 快速编辑 (SSE) |
+| **Autocomplete** | `/api/autocomplete/`                  | POST   | 自动补全 (SSE) |
+| **KB**           | `/api/kb/{convId}/attachments`        | POST   | 上传附件       |
+|                  | `/api/kb/{convId}/attachments`        | GET    | 获取附件列表   |
+|                  | `/api/kb/search`                      | POST   | 搜索知识库     |
+| **Export**       | `/api/export/`                        | POST   | 导出文件       |
+| **Versions**     | `/api/versions/{fileId}`              | GET    | 获取版本历史   |
+|                  | `/api/versions/{versionId}/revert`    | POST   | 回滚版本       |
+| **Shares**       | `/api/shares`                         | POST   | 创建分享       |
+|                  | `/api/shares/{token}`                 | GET    | 获取分享内容   |
 
 ---
 
@@ -634,16 +634,16 @@ server/
 
 **SSE 事件类型:**
 
-| 事件类型 | 数据结构 | 描述 |
-|----------|----------|------|
-| `text_chunk` | `{ content: string }` | 流式文本片段 |
-| `tool_call` | `{ name: string, input: object }` | 工具调用开始 |
-| `tool_result` | `{ name: string, output: object }` | 工具执行结果 |
-| `thinking` | `{ content: string }` | 扩展思考内容 |
-| `todo_item` | `{ content: string, status: string }` | 任务项解析 |
-| `edit` | `{ type: string, old_str: string, new_str: string }` | 编辑操作 |
-| `done` | `{}` | 响应完成 |
-| `error` | `{ message: string }` | 错误信息 |
+| 事件类型      | 数据结构                                             | 描述         |
+| ------------- | ---------------------------------------------------- | ------------ |
+| `text_chunk`  | `{ content: string }`                                | 流式文本片段 |
+| `tool_call`   | `{ name: string, input: object }`                    | 工具调用开始 |
+| `tool_result` | `{ name: string, output: object }`                   | 工具执行结果 |
+| `thinking`    | `{ content: string }`                                | 扩展思考内容 |
+| `todo_item`   | `{ content: string, status: string }`                | 任务项解析   |
+| `edit`        | `{ type: string, old_str: string, new_str: string }` | 编辑操作     |
+| `done`        | `{}`                                                 | 响应完成     |
+| `error`       | `{ message: string }`                                | 错误信息     |
 
 ### 6.2 快速编辑 (Quick Edit)
 
@@ -690,17 +690,17 @@ server/
 
 **快速编辑操作类型:**
 
-| 操作 | Action ID | 描述 |
-|------|-----------|------|
-| 修正语法 | `fix-grammar` | 修复语法和拼写错误 |
-| 润色 | `improve` | 提升文字质量 |
-| 简化 | `simplify` | 简化表达 |
-| 扩写 | `expand` | 展开详细描述 |
-| 缩写 | `shorten` | 精简内容 |
-| 专业化 | `professional` | 转为正式语气 |
-| 口语化 | `casual` | 转为轻松语气 |
-| 翻译英文 | `translate-en` | 翻译为英文 |
-| 翻译中文 | `translate-zh` | 翻译为中文 |
+| 操作     | Action ID      | 描述               |
+| -------- | -------------- | ------------------ |
+| 修正语法 | `fix-grammar`  | 修复语法和拼写错误 |
+| 润色     | `improve`      | 提升文字质量       |
+| 简化     | `simplify`     | 简化表达           |
+| 扩写     | `expand`       | 展开详细描述       |
+| 缩写     | `shorten`      | 精简内容           |
+| 专业化   | `professional` | 转为正式语气       |
+| 口语化   | `casual`       | 转为轻松语气       |
+| 翻译英文 | `translate-en` | 翻译为英文         |
+| 翻译中文 | `translate-zh` | 翻译为中文         |
 
 ### 6.3 自动补全 (Autocomplete)
 
@@ -1199,11 +1199,11 @@ interface Conversation {
 // 消息
 interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
-  thinking?: string;          // 扩展思考内容
-  toolCalls?: ToolCall[];     // 工具调用记录
-  edits?: EditOperation[];    // 编辑操作
+  thinking?: string; // 扩展思考内容
+  toolCalls?: ToolCall[]; // 工具调用记录
+  edits?: EditOperation[]; // 编辑操作
   contexts?: MessageContext[]; // 上下文附件
   createdAt: string;
 }
@@ -1218,7 +1218,7 @@ interface ToolCall {
 
 // 编辑操作
 interface EditOperation {
-  type: 'str_replace' | 'insert' | 'replace_all';
+  type: "str_replace" | "insert" | "replace_all";
   file_id: string;
   file_name: string;
   old_str?: string;
@@ -1229,8 +1229,8 @@ interface EditOperation {
 
 // 消息上下文
 type MessageContext =
-  | { type: 'selection'; text: string }
-  | { type: 'image'; src: string; base64: string; mediaType: string };
+  | { type: "selection"; text: string }
+  | { type: "image"; src: string; base64: string; mediaType: string };
 
 // 知识库附件
 interface KBAttachment {
@@ -1238,7 +1238,7 @@ interface KBAttachment {
   conversationId: string;
   filename: string;
   fileType: string;
-  status: 'processing' | 'ready' | 'error';
+  status: "processing" | "ready" | "error";
   errorMessage?: string;
   createdAt: string;
 }
@@ -1249,7 +1249,7 @@ interface FileVersion {
   fileId: string;
   content: string;
   diff: DiffChange[];
-  editType: 'ai_edit' | 'manual' | 'revert';
+  editType: "ai_edit" | "manual" | "revert";
   summary: string;
   createdAt: string;
 }
@@ -1326,17 +1326,18 @@ class MessageResponse(BaseModel):
    │ - 工具调用    │    │   (1536维)   │    │ - PDF→MD    │
    │ - 流式响应    │    │ - Whisper    │    │ - DOCX→MD   │
    │ - 扩展思考    │    │   (语音转写) │    │              │
+   │ - Files API  │    │              │    │              │
    └──────────────┘    └──────────────┘    └──────────────┘
            │                   │
            │                   │
            │                   ▼
-           │           ┌──────────────┐
-           │           │ LanguageTool │
-           │           ├──────────────┤
-           │           │ - 拼写检查    │
-           │           │ - 语法检查    │
-           │           │ - 多语言支持  │
-           │           └──────────────┘
+           │           ┌──────────────┐    ┌──────────────┐
+           │           │ LanguageTool │    │CourtListener │
+           │           ├──────────────┤    ├──────────────┤
+           │           │ - 拼写检查    │    │ - 案例法律   │
+           │           │ - 语法检查    │    │ - 法律文档   │
+           │           │ - 多语言支持  │    │ - 法院数据   │
+           │           └──────────────┘    └──────────────┘
            │
            ▼
    ┌──────────────────────────────────────┐
@@ -1455,18 +1456,18 @@ EMBEDDING_MODEL=text-embedding-3-small
 
 ### 9.2 安全措施清单
 
-| 层面 | 措施 | 实现 |
-|------|------|------|
-| **认证** | JWT Token | HS256 签名，7天过期 |
-| **密码** | bcrypt 哈希 | 12 轮加盐哈希 |
-| **传输** | HTTPS Only | 强制 HTTPS |
-| **CORS** | Origin 白名单 | 配置允许域名列表 |
-| **CSP** | 内容安全策略 | 防止 XSS 攻击 |
-| **速率限制** | SlowAPI | 每分钟请求限制 |
-| **数据隔离** | user_id 过滤 | 查询强制用户过滤 |
-| **输入验证** | Pydantic | 请求体自动验证 |
-| **SQL 注入** | SQLAlchemy ORM | 参数化查询 |
-| **敏感信息** | 环境变量 | 不硬编码密钥 |
+| 层面         | 措施           | 实现                |
+| ------------ | -------------- | ------------------- |
+| **认证**     | JWT Token      | HS256 签名，7天过期 |
+| **密码**     | bcrypt 哈希    | 12 轮加盐哈希       |
+| **传输**     | HTTPS Only     | 强制 HTTPS          |
+| **CORS**     | Origin 白名单  | 配置允许域名列表    |
+| **CSP**      | 内容安全策略   | 防止 XSS 攻击       |
+| **速率限制** | SlowAPI        | 每分钟请求限制      |
+| **数据隔离** | user_id 过滤   | 查询强制用户过滤    |
+| **输入验证** | Pydantic       | 请求体自动验证      |
+| **SQL 注入** | SQLAlchemy ORM | 参数化查询          |
+| **敏感信息** | 环境变量       | 不硬编码密钥        |
 
 ### 9.3 中间件配置
 
@@ -1503,26 +1504,26 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 ### 10.1 前端优化
 
-| 策略 | 实现 | 效果 |
-|------|------|------|
-| **防抖保存** | 500ms debounce | 减少 API 调用 |
-| **流式渲染** | SSE 实时显示 | 降低感知延迟 |
-| **代码分割** | Next.js 动态导入 | 减少首屏加载 |
-| **图片优化** | Next/Image | 自动压缩和 lazy load |
-| **状态持久化** | Zustand persist | 减少重复请求 |
-| **乐观更新** | 本地先更新 | 即时 UI 反馈 |
-| **虚拟滚动** | 未实现 (TODO) | 长列表性能 |
+| 策略           | 实现             | 效果                 |
+| -------------- | ---------------- | -------------------- |
+| **防抖保存**   | 500ms debounce   | 减少 API 调用        |
+| **流式渲染**   | SSE 实时显示     | 降低感知延迟         |
+| **代码分割**   | Next.js 动态导入 | 减少首屏加载         |
+| **图片优化**   | Next/Image       | 自动压缩和 lazy load |
+| **状态持久化** | Zustand persist  | 减少重复请求         |
+| **乐观更新**   | 本地先更新       | 即时 UI 反馈         |
+| **虚拟滚动**   | 未实现 (TODO)    | 长列表性能           |
 
 ### 10.2 后端优化
 
-| 策略 | 实现 | 效果 |
-|------|------|------|
-| **异步 I/O** | asyncio + aiohttp | 高并发处理 |
-| **连接池** | SQLAlchemy pool | 数据库连接复用 |
-| **流式响应** | SSE Generator | 内存友好 |
-| **向量索引** | pgvector HNSW | 快速相似度检索 |
-| **补全缓存** | LRU Cache | 减少 LLM 调用 |
-| **批量嵌入** | OpenAI batch | 减少 API 往返 |
+| 策略         | 实现              | 效果           |
+| ------------ | ----------------- | -------------- |
+| **异步 I/O** | asyncio + aiohttp | 高并发处理     |
+| **连接池**   | SQLAlchemy pool   | 数据库连接复用 |
+| **流式响应** | SSE Generator     | 内存友好       |
+| **向量索引** | pgvector HNSW     | 快速相似度检索 |
+| **补全缓存** | LRU Cache         | 减少 LLM 调用  |
+| **批量嵌入** | OpenAI batch      | 减少 API 往返  |
 
 ### 10.3 数据库优化
 
@@ -1583,23 +1584,23 @@ WITH (m = 16, ef_construction = 64);
 
 ### 11.2 遥测事件类型
 
-| 事件类型 | 分类 | 采集数据 | 用途 |
-|----------|------|----------|------|
-| `diff_hunk_accepted` | Diff 审查 | 原始内容、AI建议、决策时间 | RLHF 正向信号 |
-| `diff_hunk_rejected` | Diff 审查 | 原始内容、AI建议、决策时间 | RLHF 负向信号 |
-| `diff_all_accepted` | Diff 审查 | 批量接受数量 | 使用模式 |
-| `diff_all_rejected` | Diff 审查 | 批量拒绝数量 | 使用模式 |
-| `autocomplete_shown` | 自动补全 | 建议ID、触发模式、延迟 | 显示追踪 |
-| `autocomplete_accepted` | 自动补全 | 光标前文本、建议内容、决策速度 | RLHF 正向信号 |
-| `autocomplete_dismissed` | 自动补全 | 光标前文本、建议内容、取消原因 | RLHF 负向信号 |
-| `autocomplete_partial` | 自动补全 | 部分接受信息 | 用户偏好 |
-| `chat_feedback` | 对话 | 用户提示、AI回复、评分(+1/-1) | RLHF 训练 |
-| `chat_regenerate` | 对话 | 重新生成请求 | 负向信号 |
-| `edit_applied` | 编辑操作 | 编辑类型、成功状态 | 功能使用 |
-| `post_ai_edit` | 编辑操作 | AI原始输出、用户最终内容 | 偏好学习 |
-| `undo_after_ai` | 编辑操作 | AI操作类型、撤销时间 | 负向信号 |
-| `feature_used` | 使用统计 | 功能名称、结果、耗时 | 分析 |
-| `session_summary` | 使用统计 | 会话时长、消息数量 | 聚合统计 |
+| 事件类型                 | 分类      | 采集数据                       | 用途          |
+| ------------------------ | --------- | ------------------------------ | ------------- |
+| `diff_hunk_accepted`     | Diff 审查 | 原始内容、AI建议、决策时间     | RLHF 正向信号 |
+| `diff_hunk_rejected`     | Diff 审查 | 原始内容、AI建议、决策时间     | RLHF 负向信号 |
+| `diff_all_accepted`      | Diff 审查 | 批量接受数量                   | 使用模式      |
+| `diff_all_rejected`      | Diff 审查 | 批量拒绝数量                   | 使用模式      |
+| `autocomplete_shown`     | 自动补全  | 建议ID、触发模式、延迟         | 显示追踪      |
+| `autocomplete_accepted`  | 自动补全  | 光标前文本、建议内容、决策速度 | RLHF 正向信号 |
+| `autocomplete_dismissed` | 自动补全  | 光标前文本、建议内容、取消原因 | RLHF 负向信号 |
+| `autocomplete_partial`   | 自动补全  | 部分接受信息                   | 用户偏好      |
+| `chat_feedback`          | 对话      | 用户提示、AI回复、评分(+1/-1)  | RLHF 训练     |
+| `chat_regenerate`        | 对话      | 重新生成请求                   | 负向信号      |
+| `edit_applied`           | 编辑操作  | 编辑类型、成功状态             | 功能使用      |
+| `post_ai_edit`           | 编辑操作  | AI原始输出、用户最终内容       | 偏好学习      |
+| `undo_after_ai`          | 编辑操作  | AI操作类型、撤销时间           | 负向信号      |
+| `feature_used`           | 使用统计  | 功能名称、结果、耗时           | 分析          |
+| `session_summary`        | 使用统计  | 会话时长、消息数量             | 聚合统计      |
 
 ### 11.3 RLHF 数据提取
 
@@ -1644,13 +1645,13 @@ post_ai_edit            → chosen=用户最终内容, rejected=ai原始输出
 
 **设置表:**
 
-| 设置项 | 默认值 | 描述 |
-|--------|--------|------|
-| `productImprovementEnabled` | true | 详细采集的主开关 |
-| `collectEditFeedback` | true | Diff 审查和编辑操作 |
-| `collectChatFeedback` | true | 对话反馈信号 |
-| `collectAutocompleteStats` | true | 自动补全交互 |
-| `collectUsageStats` | true | 功能使用和会话摘要 |
+| 设置项                      | 默认值 | 描述                |
+| --------------------------- | ------ | ------------------- |
+| `productImprovementEnabled` | true   | 详细采集的主开关    |
+| `collectEditFeedback`       | true   | Diff 审查和编辑操作 |
+| `collectChatFeedback`       | true   | 对话反馈信号        |
+| `collectAutocompleteStats`  | true   | 自动补全交互        |
+| `collectUsageStats`         | true   | 功能使用和会话摘要  |
 
 ### 11.5 前端组件
 
@@ -1686,11 +1687,11 @@ TelemetryService (src/lib/telemetry.ts)
 
 ### 11.6 后端 API
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/telemetry/events` | POST | 批量提交事件 (最多100个) |
-| `/api/telemetry/settings` | GET | 获取用户遥测设置 |
-| `/api/telemetry/settings` | PUT | 更新用户遥测设置 |
+| 端点                      | 方法 | 描述                     |
+| ------------------------- | ---- | ------------------------ |
+| `/api/telemetry/events`   | POST | 批量提交事件 (最多100个) |
+| `/api/telemetry/settings` | GET  | 获取用户遥测设置         |
+| `/api/telemetry/settings` | PUT  | 更新用户遥测设置         |
 
 **事件存储模型:**
 
@@ -1728,7 +1729,7 @@ CREATE INDEX idx_telemetry_created ON telemetry_events(created_at);
 ### 12.1 Docker Compose 开发环境
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -1829,15 +1830,15 @@ logger.error("llm_error", error=str(e), model=model)
 
 ### 13.2 关键指标
 
-| 指标 | 类型 | 描述 |
-|------|------|------|
-| `chat_latency_ms` | Histogram | 对话响应延迟 |
-| `llm_tokens_used` | Counter | LLM Token 使用量 |
-| `api_requests_total` | Counter | API 请求总数 |
-| `api_errors_total` | Counter | API 错误数 |
-| `db_query_duration_ms` | Histogram | 数据库查询耗时 |
-| `rag_search_latency_ms` | Histogram | RAG 检索延迟 |
-| `active_users` | Gauge | 当前活跃用户数 |
+| 指标                    | 类型      | 描述             |
+| ----------------------- | --------- | ---------------- |
+| `chat_latency_ms`       | Histogram | 对话响应延迟     |
+| `llm_tokens_used`       | Counter   | LLM Token 使用量 |
+| `api_requests_total`    | Counter   | API 请求总数     |
+| `api_errors_total`      | Counter   | API 错误数       |
+| `db_query_duration_ms`  | Histogram | 数据库查询耗时   |
+| `rag_search_latency_ms` | Histogram | RAG 检索延迟     |
+| `active_users`          | Gauge     | 当前活跃用户数   |
 
 ---
 
@@ -1845,14 +1846,14 @@ logger.error("llm_error", error=str(e), model=model)
 
 ### 14.1 技术演进
 
-| 特性 | 优先级 | 描述 |
-|------|--------|------|
-| **实时协作** | P1 | WebSocket 多人实时编辑 |
-| **混合搜索** | P1 | BM25 + 语义搜索结合 |
-| **记忆系统** | P2 | 用户偏好和写作风格学习 |
-| **离线模式** | P2 | Service Worker + IndexedDB |
-| **原生应用** | P3 | React Native 移动端 |
-| **插件系统** | P3 | 可扩展编辑器功能 |
+| 特性         | 优先级 | 描述                       |
+| ------------ | ------ | -------------------------- |
+| **实时协作** | P1     | WebSocket 多人实时编辑     |
+| **混合搜索** | P1     | BM25 + 语义搜索结合        |
+| **记忆系统** | P2     | 用户偏好和写作风格学习     |
+| **离线模式** | P2     | Service Worker + IndexedDB |
+| **原生应用** | P3     | React Native 移动端        |
+| **插件系统** | P3     | 可扩展编辑器功能           |
 
 ### 14.2 架构改进
 
@@ -1908,6 +1909,7 @@ docker-compose logs -f # 查看日志
 ### B. API 文档
 
 开发模式下可访问:
+
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
@@ -1921,5 +1923,5 @@ docker-compose logs -f # 查看日志
 
 ---
 
-*文档版本: 1.0.0*
-*最后更新: 2026-01-28*
+_文档版本: 1.1.0_
+_最后更新: 2026-02-10_

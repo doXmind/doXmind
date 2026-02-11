@@ -51,6 +51,8 @@ export function WelcomeScreen() {
       router.push(`/editor/${newId}`);
     } catch (error) {
       log.error("Failed to create file", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
     } finally {
       setIsCreating(false);
     }

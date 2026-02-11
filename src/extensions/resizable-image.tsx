@@ -1,10 +1,44 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ImageNodeView } from "@/components/editor/image-node-view";
+import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
   allowBase64: boolean;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function uploadAndInsertImage(file: File, view: any, pos?: number) {
+  if (!file.type.startsWith("image/")) return false;
+
+  const altText = file.name.replace(/\.[^.]+$/, "");
+
+  const insertImageNode = (src: string) => {
+    const node = view.state.schema.nodes.image.create({ src, alt: altText });
+    const tr = view.state.tr;
+    if (pos !== undefined) {
+      tr.insert(pos, node);
+    } else {
+      tr.replaceSelectionWith(node);
+    }
+    view.dispatch(tr);
+  };
+
+  try {
+    const result = await api.uploadImage(file);
+    insertImageNode(result.url);
+    return true;
+  } catch {
+    // Fallback to data URL if upload fails
+    toast.error("Server upload failed, using embedded image instead");
+    const reader = new FileReader();
+    reader.onload = () => insertImageNode(reader.result as string);
+    reader.readAsDataURL(file);
+    return true;
+  }
 }
 
 declare module "@tiptap/core" {
@@ -149,6 +183,49 @@ export const ResizableImage = Node.create<ResizableImageOptions>({
           }
         },
       },
+    ];
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("imageUpload"),
+        props: {
+          handlePaste: (_view, event) => {
+            const items = event.clipboardData?.items;
+            if (!items) return false;
+
+            for (const item of Array.from(items)) {
+              if (item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file) {
+                  event.preventDefault();
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  uploadAndInsertImage(file, _view as any);
+                  return true;
+                }
+              }
+            }
+            return false;
+          },
+          handleDrop: (_view, event) => {
+            const files = event.dataTransfer?.files;
+            if (!files || files.length === 0) return false;
+
+            const imageFile = Array.from(files).find((f) => f.type.startsWith("image/"));
+            if (!imageFile) return false;
+
+            event.preventDefault();
+            const coordinates = _view.posAtCoords({
+              left: event.clientX,
+              top: event.clientY,
+            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            uploadAndInsertImage(imageFile, _view as any, coordinates?.pos);
+            return true;
+          },
+        },
+      }),
     ];
   },
 });

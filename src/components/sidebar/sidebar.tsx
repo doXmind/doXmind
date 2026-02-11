@@ -1,6 +1,14 @@
 "use client";
 
-import { FilePlus, Loader2, Upload, Search, FolderPlus } from "lucide-react";
+import {
+  FilePlus,
+  Loader2,
+  Upload,
+  Search,
+  FolderPlus,
+  Trash2,
+  LayoutTemplate,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -10,9 +18,12 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { FolderTree } from "./folder-tree";
 import { SortDropdown } from "./sort-dropdown";
 import { BulkActionBar } from "./bulk-action-bar";
+import { TrashPanel } from "./trash-panel";
+import { TemplatePicker, type FileTemplate } from "./template-picker";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, formatShortcut } from "@/lib/utils";
+import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 
 const log = storeLogger.child("Sidebar");
@@ -23,6 +34,8 @@ export function Sidebar() {
     useFileStore();
   const { openCommandPalette } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreateFile = async () => {
@@ -45,14 +58,43 @@ export function Sidebar() {
       router.push(`/editor/${newId}`);
     } catch (error) {
       log.error("Failed to create file", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const handleTemplateSelect = async (template: FileTemplate) => {
+    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+
+    // Generate unique filename based on template name
+    let counter = 0;
+    let name: string;
+    do {
+      counter++;
+      name =
+        counter === 1
+          ? `${template.defaultFileName}.md`
+          : `${template.defaultFileName} ${counter}.md`;
+    } while (currentFiles.some((f) => f.name === name));
+
+    try {
+      const markdown = template.getContent();
+      const htmlContent = markdown ? markdownToHtml(markdown) : "";
+      const newId = await createFile(name, htmlContent, currentFolderId);
+      router.push(`/editor/${newId}`);
+    } catch (error) {
+      log.error("Failed to create file from template", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+      throw error;
     }
   };
 
   const handleCreateFolder = async () => {
-    const folders = getFolders();
+    const folders = getFolders(currentFolderId);
     const name = `New Folder ${folders.length + 1}`;
     try {
-      await createFolder(name);
+      await createFolder(name, currentFolderId);
     } catch (error) {
       log.error("Failed to create folder", error);
       const { title, description } = getErrorMessage(error);
@@ -98,7 +140,7 @@ export function Sidebar() {
             <h2 className="text-sm font-semibold">Files</h2>
           </div>
           <div className="flex w-full items-center justify-end gap-1 md:w-auto">
-            <Tooltip content="Search (⌘K)" side="bottom">
+            <Tooltip content={`Search (${formatShortcut("Ctrl+K")})`} side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
@@ -126,16 +168,11 @@ export function Sidebar() {
                 )}
               </Button>
             </Tooltip>
-            {/* New Folder button - disabled when inside folder (single-level hierarchy) */}
-            <Tooltip
-              content={currentFolderId ? "Only one folder level allowed" : "Create New Folder"}
-              side="bottom"
-            >
+            <Tooltip content="Create New Folder" side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleCreateFolder}
-                disabled={!!currentFolderId}
                 aria-label="Create New Folder"
                 className="h-10 w-10 md:h-9 md:w-9"
               >
@@ -174,6 +211,38 @@ export function Sidebar() {
 
       {/* Bulk Action Bar */}
       <BulkActionBar />
+
+      {/* Bottom actions */}
+      <div className="flex gap-1 border-t border-border p-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="flex-1 justify-start gap-2 text-muted-foreground hover:text-foreground"
+          onClick={() => setIsTemplatePickerOpen(true)}
+        >
+          <LayoutTemplate className="h-4 w-4" />
+          Templates
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="flex-1 justify-start gap-2 text-muted-foreground hover:text-foreground"
+          onClick={() => setIsTrashOpen(true)}
+        >
+          <Trash2 className="h-4 w-4" />
+          Trash
+        </Button>
+      </div>
+
+      {/* Trash panel modal */}
+      <TrashPanel open={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
+
+      {/* Template picker modal */}
+      <TemplatePicker
+        open={isTemplatePickerOpen}
+        onClose={() => setIsTemplatePickerOpen(false)}
+        onSelect={handleTemplateSelect}
+      />
     </div>
   );
 }

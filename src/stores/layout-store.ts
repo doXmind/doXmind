@@ -35,9 +35,25 @@ interface LayoutState {
   // Home page
   homeViewMode: "grid" | "list";
 
+  // Version history panel
+  isVersionHistoryOpen: boolean;
+
+  // Focus mode
+  isFocusMode: boolean;
+
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
   shouldOpenSearchWithAI: boolean; // Flag to open search in AI mode
+
+  // Quick file switcher
+  isQuickSwitcherOpen: boolean;
+
+  // Editor content width preference
+  editorWidth: "narrow" | "normal" | "wide" | "full";
+
+  // Resizable panel widths (pixels)
+  sidebarWidth: number;
+  chatPanelWidth: number;
 
   // Actions
   toggleSidebar: () => void;
@@ -72,10 +88,31 @@ interface LayoutState {
   // Home page actions
   setHomeViewMode: (mode: "grid" | "list") => void;
 
+  // Focus mode actions
+  setFocusMode: (enabled: boolean) => void;
+  toggleFocusMode: () => void;
+
+  // Version history actions
+  setVersionHistoryOpen: (open: boolean) => void;
+  toggleVersionHistory: () => void;
+
   // Search bar actions
   setSearchBarOpen: (open: boolean) => void;
   toggleSearchBar: () => void;
   openSearchBarWithAI: () => void; // Opens search bar in AI mode
+
+  // Quick switcher actions
+  setQuickSwitcherOpen: (open: boolean) => void;
+  toggleQuickSwitcher: () => void;
+
+  // Editor width actions
+  setEditorWidth: (width: "narrow" | "normal" | "wide" | "full") => void;
+  cycleEditorWidth: () => void;
+
+  // Resizable panel actions
+  setSidebarWidth: (width: number) => void;
+  setChatPanelWidth: (width: number) => void;
+  resetPanelWidths: () => void;
 
   // Mobile selection actions
   clearPendingSelectionForAI: () => void;
@@ -126,9 +163,25 @@ export const useLayoutStore = create<LayoutState>()(
       // Home page
       homeViewMode: "grid" as const,
 
+      // Focus mode
+      isFocusMode: false,
+
+      // Version history panel
+      isVersionHistoryOpen: false,
+
       // Search bar
       isSearchBarOpen: false,
       shouldOpenSearchWithAI: false,
+
+      // Quick file switcher
+      isQuickSwitcherOpen: false,
+
+      // Editor content width
+      editorWidth: "normal" as const,
+
+      // Resizable panel widths
+      sidebarWidth: 256,
+      chatPanelWidth: 384,
 
       // Desktop actions
       toggleSidebar: () => {
@@ -245,6 +298,24 @@ export const useLayoutStore = create<LayoutState>()(
         set({ homeViewMode: mode });
       },
 
+      // Focus mode actions
+      setFocusMode: (enabled: boolean) => {
+        set({ isFocusMode: enabled });
+      },
+
+      toggleFocusMode: () => {
+        set((state) => ({ isFocusMode: !state.isFocusMode }));
+      },
+
+      // Version history actions
+      setVersionHistoryOpen: (open: boolean) => {
+        set({ isVersionHistoryOpen: open });
+      },
+
+      toggleVersionHistory: () => {
+        set((state) => ({ isVersionHistoryOpen: !state.isVersionHistoryOpen }));
+      },
+
       // Search bar actions
       setSearchBarOpen: (open: boolean) => {
         set({ isSearchBarOpen: open, shouldOpenSearchWithAI: false });
@@ -259,6 +330,47 @@ export const useLayoutStore = create<LayoutState>()(
 
       openSearchBarWithAI: () => {
         set({ isSearchBarOpen: true, shouldOpenSearchWithAI: true });
+      },
+
+      // Quick switcher actions
+      setQuickSwitcherOpen: (open: boolean) => {
+        set({ isQuickSwitcherOpen: open });
+      },
+
+      toggleQuickSwitcher: () => {
+        set((state) => ({ isQuickSwitcherOpen: !state.isQuickSwitcherOpen }));
+      },
+
+      // Editor width actions
+      setEditorWidth: (width: "narrow" | "normal" | "wide" | "full") => {
+        set({ editorWidth: width });
+      },
+
+      cycleEditorWidth: () => {
+        set((state) => {
+          const widths: Array<"narrow" | "normal" | "wide" | "full"> = [
+            "narrow",
+            "normal",
+            "wide",
+            "full",
+          ];
+          const currentIndex = widths.indexOf(state.editorWidth);
+          const nextIndex = (currentIndex + 1) % widths.length;
+          return { editorWidth: widths[nextIndex] };
+        });
+      },
+
+      // Resizable panel actions
+      setSidebarWidth: (width: number) => {
+        set({ sidebarWidth: Math.max(200, Math.min(400, width)) });
+      },
+
+      setChatPanelWidth: (width: number) => {
+        set({ chatPanelWidth: Math.max(300, Math.min(600, width)) });
+      },
+
+      resetPanelWidths: () => {
+        set({ sidebarWidth: 256, chatPanelWidth: 384 });
       },
 
       // Mobile selection actions
@@ -318,6 +430,9 @@ export const useLayoutStore = create<LayoutState>()(
         theme: state.theme,
         isHighContrast: state.isHighContrast,
         homeViewMode: state.homeViewMode,
+        editorWidth: state.editorWidth,
+        sidebarWidth: state.sidebarWidth,
+        chatPanelWidth: state.chatPanelWidth,
       }),
     }
   )

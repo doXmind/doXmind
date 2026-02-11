@@ -215,6 +215,7 @@ async def chat_stream(
     collected_thinking = []
     collected_tool_calls = []
     collected_edits = []
+    collected_todos = []  # Latest todo state from TodoWrite
     collected_usage = {"input_tokens": 0, "output_tokens": 0}
 
     async def generate():
@@ -223,6 +224,7 @@ async def chat_stream(
             collected_thinking, \
             collected_tool_calls, \
             collected_edits, \
+            collected_todos, \
             collected_usage
 
         current_tool = None
@@ -362,6 +364,8 @@ async def chat_stream(
                         current_tool["success"] = event.get("success", True)
                         collected_tool_calls.append(current_tool)
                         current_tool = None
+                elif event_type == "todo_update":
+                    collected_todos = event.get("todos", [])
                 elif event_type == "edit":
                     collected_edits.append(event.get("edit"))
                 elif event_type == "usage":
@@ -404,6 +408,7 @@ async def chat_stream(
                 "thinking": "".join(collected_thinking) if collected_thinking else None,
                 "toolCalls": collected_tool_calls if collected_tool_calls else None,
                 "edits": collected_edits if collected_edits else None,
+                "todos": collected_todos if collected_todos else None,
                 "model": settings.default_model,
             }
             yield f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode()

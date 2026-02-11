@@ -13,6 +13,9 @@ import {
   BookOpen,
   Search,
   Keyboard,
+  Sparkles,
+  Wand2,
+  Slash,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -57,6 +60,36 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     icon: <MessageSquare className="h-5 w-5" />,
     targetSelector: '[aria-label="Show AI Chat"], [aria-label="Hide AI Chat"]',
     position: "left",
+    spotlight: true,
+  },
+  {
+    id: "autocomplete",
+    title: "AI Autocomplete",
+    description:
+      "As you type, AI suggests completions as ghost text. Press Tab to accept, Escape to dismiss. Pause briefly after writing to trigger suggestions.",
+    icon: <Sparkles className="h-5 w-5" />,
+    targetSelector: ".ProseMirror",
+    position: "top",
+    spotlight: true,
+  },
+  {
+    id: "quick-edit",
+    title: "Quick Edit with AI",
+    description:
+      "Select any text to see the Quick Edit menu. Use it to fix grammar, improve writing, simplify, expand, or translate your text instantly.",
+    icon: <Wand2 className="h-5 w-5" />,
+    targetSelector: ".ProseMirror",
+    position: "top",
+    spotlight: true,
+  },
+  {
+    id: "slash-commands",
+    title: "Slash Commands",
+    description:
+      "Type '/' anywhere in the editor to open the block menu. Insert headings, lists, code blocks, tables, callouts, toggles, and more.",
+    icon: <Slash className="h-5 w-5" />,
+    targetSelector: ".ProseMirror",
+    position: "top",
     spotlight: true,
   },
   {

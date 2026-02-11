@@ -113,11 +113,12 @@ export const AutocompleteExtension = Extension.create({
               };
             }
 
-            // Clear suggestion if selection changed significantly
+            // Clear suggestion if selection changed (cursor moved or text selected)
             if (tr.selectionSet && value.position !== null) {
               const newPos = tr.selection.from;
-              // If cursor moved away from suggestion position, clear it
-              if (newPos !== value.position) {
+              const hasSelection = tr.selection.from !== tr.selection.to;
+              // Clear if cursor moved away from suggestion position OR text is selected
+              if (newPos !== value.position || hasSelection) {
                 if (value.suggestion) {
                   // Track dismissal (cursor moved away)
                   const latency = value.shownAt ? Date.now() - value.shownAt : undefined;

@@ -217,6 +217,33 @@
   content: none;
 }
 
+/* GapCursor - visible cursor indicator between block nodes */
+.ProseMirror .ProseMirror-gapcursor {
+  display: none;
+  pointer-events: none;
+  position: relative;
+}
+
+.ProseMirror .ProseMirror-gapcursor::after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: -2px;
+  width: 20px;
+  border-top: 1px solid hsl(var(--foreground));
+  animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
+}
+
+@keyframes ProseMirror-cursor-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+
 .ProseMirror ul,
 .ProseMirror ol {
   @apply pl-6;
@@ -809,6 +836,16 @@ html {
 .ProseMirror .diff-markdown-content a {
   color: hsl(var(--primary));
   text-decoration: underline;
+}
+
+/* KaTeX math in diff blocks */
+.ProseMirror .diff-markdown-content .katex {
+  font-size: 1.1em;
+}
+
+.ProseMirror .diff-markdown-content .katex-display {
+  margin: 0.5em 0;
+  text-align: center;
 }
 
 /* Action buttons row */
@@ -1901,5 +1938,121 @@ html {
   .action-bar-enter,
   .preview-enter {
     animation: none !important;
+  }
+}
+
+/* ====================================
+   Print Styles
+   ==================================== */
+@media print {
+  /* Hide all chrome - sidebar, chat, toolbar, header, status bar */
+  header,
+  aside,
+  nav,
+  .bubble-menu,
+  .spellcheck-popup,
+  [role="toolbar"],
+  [data-resize-handle],
+  .status-bar,
+  button[aria-label="Close"],
+  .fixed {
+    display: none !important;
+  }
+
+  /* Make editor content fill the page */
+  body {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  main {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Editor content optimization */
+  .ProseMirror {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    font-size: 12pt !important;
+    line-height: 1.6 !important;
+    color: black !important;
+  }
+
+  /* Headings */
+  .ProseMirror h1 {
+    font-size: 22pt !important;
+    margin-top: 20pt !important;
+    page-break-after: avoid;
+  }
+
+  .ProseMirror h2 {
+    font-size: 18pt !important;
+    margin-top: 16pt !important;
+    page-break-after: avoid;
+  }
+
+  .ProseMirror h3 {
+    font-size: 14pt !important;
+    margin-top: 12pt !important;
+    page-break-after: avoid;
+  }
+
+  /* Prevent orphans and widows */
+  .ProseMirror p {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Code blocks */
+  .ProseMirror pre {
+    border: 1px solid #ddd !important;
+    background: #f5f5f5 !important;
+    page-break-inside: avoid;
+    font-size: 10pt !important;
+  }
+
+  /* Tables */
+  .ProseMirror table {
+    page-break-inside: avoid;
+  }
+
+  /* Images */
+  .ProseMirror img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+
+  /* Links - show URL */
+  .ProseMirror a[href]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #666;
+  }
+
+  /* Blockquotes */
+  .ProseMirror blockquote {
+    border-left: 3px solid #999 !important;
+    color: #333 !important;
+    page-break-inside: avoid;
+  }
+
+  /* Callouts */
+  .ProseMirror [data-callout-type] {
+    border: 1px solid #ccc !important;
+    background: #f9f9f9 !important;
+    page-break-inside: avoid;
+  }
+
+  /* Toggle blocks - always expand for print */
+  .ProseMirror [data-toggle-open="false"] > div:last-child {
+    max-height: none !important;
+    opacity: 1 !important;
+    overflow: visible !important;
   }
 }

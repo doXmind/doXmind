@@ -193,8 +193,15 @@ async def verify_email(
     if not success or not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
-    # Generate token
-    access_token = create_access_token(subject=user.id)
+    # Generate token with user info for auto-recreation
+    access_token = create_access_token(
+        subject=user.id,
+        email=user.email,
+        username=user.username,
+        avatar_url=user.avatar_url,
+        oauth_provider=user.oauth_provider,
+        oauth_id=user.oauth_id,
+    )
 
     return TokenResponse(
         access_token=access_token,
@@ -409,8 +416,15 @@ async def google_callback(
             avatar_url=google_user.get("picture"),
         )
 
-        # Generate token
-        access_token = create_access_token(subject=user.id)
+        # Generate token with user info for auto-recreation
+        access_token = create_access_token(
+            subject=user.id,
+            email=user.email,
+            username=user.username,
+            avatar_url=user.avatar_url,
+            oauth_provider=user.oauth_provider,
+            oauth_id=user.oauth_id,
+        )
 
         # Redirect to frontend with token
         redirect_uri = state_payload.get("redirect_uri") if state_payload else None
@@ -442,7 +456,15 @@ async def refresh_token(
     user_service = UserService(db)
     user = await user_service.get_user_by_id(token_data.sub)
 
-    access_token = create_access_token(subject=token_data.sub)
+    # Refresh token with user info for auto-recreation
+    access_token = create_access_token(
+        subject=token_data.sub,
+        email=user.email if user else token_data.email,
+        username=user.username if user else token_data.username,
+        avatar_url=user.avatar_url if user else token_data.avatar_url,
+        oauth_provider=user.oauth_provider if user else token_data.oauth_provider,
+        oauth_id=user.oauth_id if user else token_data.oauth_id,
+    )
 
     return TokenResponse(
         access_token=access_token,

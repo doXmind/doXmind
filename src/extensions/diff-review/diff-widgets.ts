@@ -5,28 +5,116 @@
  */
 
 import { marked } from "marked";
+import katex from "katex";
 import type { DiffHunk } from "@/types/diff";
 import { isHtml } from "@/lib/markdown";
 
 /**
+ * Render LaTeX math expressions within text using KaTeX.
+ * Extracts $$...$$ (block) and $...$ (inline), replaces with placeholders,
+ * then restores with KaTeX-rendered HTML after markdown processing.
+ */
+function renderMathInText(html: string): string {
+  const placeholders: { key: string; rendered: string }[] = [];
+  let idx = 0;
+
+  // Replace block math $$...$$ first (greedy within single match, non-greedy across)
+  let result = html.replace(/\$\$([\s\S]*?)\$\$/g, (_, latex) => {
+    try {
+      const rendered = katex.renderToString(latex.trim(), {
+        displayMode: true,
+        throwOnError: false,
+      });
+      const key = `__MATH_BLOCK_${idx++}__`;
+      placeholders.push({ key, rendered });
+      return key;
+    } catch {
+      return `$$${latex}$$`;
+    }
+  });
+
+  // Replace inline math $...$ (not preceded/followed by $, not spanning newlines)
+  result = result.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, latex) => {
+    try {
+      const rendered = katex.renderToString(latex.trim(), {
+        displayMode: false,
+        throwOnError: false,
+      });
+      const key = `__MATH_INLINE_${idx++}__`;
+      placeholders.push({ key, rendered });
+      return key;
+    } catch {
+      return `$${latex}$`;
+    }
+  });
+
+  // Restore placeholders with rendered KaTeX HTML
+  for (const { key, rendered } of placeholders) {
+    result = result.replace(key, rendered);
+  }
+
+  return result;
+}
+
+/**
  * Convert markdown to HTML for diff display
  * If content is already HTML, return it as-is
+ * Supports LaTeX math rendering via KaTeX
  */
 function renderMarkdownToHtml(markdown: string): string {
   if (!markdown || markdown.trim() === "") return "";
 
   // If content is already HTML (e.g., tables from TipTap), return as-is
   if (isHtml(markdown)) {
-    return markdown;
+    return renderMathInText(markdown);
   }
 
   try {
-    // Configure marked for inline rendering when content is simple
-    const html = marked.parse(markdown, {
+    // Extract math expressions before marked processing to protect them
+    const mathPlaceholders: { key: string; original: string }[] = [];
+    let mathIdx = 0;
+    let processed = markdown;
+
+    // Protect block math $$...$$
+    processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match) => {
+      const key = `MATHPLACEHOLDER${mathIdx++}ENDMATH`;
+      mathPlaceholders.push({ key, original: match });
+      return key;
+    });
+
+    // Protect inline math $...$
+    processed = processed.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (match) => {
+      const key = `MATHPLACEHOLDER${mathIdx++}ENDMATH`;
+      mathPlaceholders.push({ key, original: match });
+      return key;
+    });
+
+    // Run marked on the protected text
+    let html = marked.parse(processed, {
       async: false,
       gfm: true,
-      breaks: true, // Convert \n to <br>
+      breaks: true,
     }) as string;
+
+    // Restore math expressions and render with KaTeX
+    for (const { key, original } of mathPlaceholders) {
+      // Extract latex from delimiters
+      const blockMatch = original.match(/^\$\$([\s\S]*?)\$\$$/);
+      const inlineMatch = original.match(/^\$([^$\n]+?)\$$/);
+      const latex = blockMatch ? blockMatch[1] : inlineMatch ? inlineMatch[1] : original;
+      const isBlock = !!blockMatch;
+
+      try {
+        const rendered = katex.renderToString(latex.trim(), {
+          displayMode: isBlock,
+          throwOnError: false,
+        });
+        html = html.replace(key, rendered);
+      } catch {
+        html = html.replace(key, original);
+      }
+    }
+
     return html;
   } catch (e) {
     console.error("Diff markdown rendering error:", e);

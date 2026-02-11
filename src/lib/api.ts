@@ -395,6 +395,8 @@ export class ApiClient {
         is_folder: boolean;
         parent_id: string | null;
         position: number;
+        is_favorite: boolean;
+        icon: string | null;
         created_at: string;
         updated_at: string;
       }>
@@ -409,6 +411,8 @@ export class ApiClient {
       is_folder: boolean;
       parent_id: string | null;
       position: number;
+      is_favorite: boolean;
+      icon: string | null;
       created_at: string;
       updated_at: string;
     }>(`/api/files/${id}`);
@@ -422,6 +426,8 @@ export class ApiClient {
       is_folder: boolean;
       parent_id: string | null;
       position: number;
+      is_favorite: boolean;
+      icon: string | null;
       created_at: string;
       updated_at: string;
     }>("/api/files/", {
@@ -430,7 +436,10 @@ export class ApiClient {
     });
   }
 
-  async updateFile(id: string, updates: { name?: string; content?: string }) {
+  async updateFile(
+    id: string,
+    updates: { name?: string; content?: string; is_favorite?: boolean; icon?: string }
+  ) {
     return this.request<{
       id: string;
       name: string;
@@ -438,6 +447,8 @@ export class ApiClient {
       is_folder: boolean;
       parent_id: string | null;
       position: number;
+      is_favorite: boolean;
+      icon: string | null;
       created_at: string;
       updated_at: string;
     }>(`/api/files/${id}`, {
@@ -446,7 +457,7 @@ export class ApiClient {
     });
   }
 
-  async createFolder(name: string) {
+  async createFolder(name: string, parentId?: string | null) {
     return this.request<{
       id: string;
       name: string;
@@ -454,11 +465,13 @@ export class ApiClient {
       is_folder: boolean;
       parent_id: string | null;
       position: number;
+      is_favorite: boolean;
+      icon: string | null;
       created_at: string;
       updated_at: string;
     }>("/api/files/folders", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, parent_id: parentId ?? null }),
     });
   }
 
@@ -470,6 +483,8 @@ export class ApiClient {
       is_folder: boolean;
       parent_id: string | null;
       position: number;
+      is_favorite: boolean;
+      icon: string | null;
       created_at: string;
       updated_at: string;
     }>(`/api/files/${fileId}/move`, {
@@ -482,6 +497,78 @@ export class ApiClient {
     return this.request<{ status: string }>(`/api/files/${id}`, {
       method: "DELETE",
     });
+  }
+
+  // Trash API
+  async listTrash() {
+    return this.request<
+      Array<{
+        id: string;
+        name: string;
+        is_folder: boolean;
+        parent_id: string | null;
+        deleted_at: string;
+        created_at: string;
+        updated_at: string;
+      }>
+    >("/api/files/trash/list");
+  }
+
+  async restoreFile(id: string) {
+    return this.request<{ status: string }>(`/api/files/${id}/restore`, {
+      method: "POST",
+    });
+  }
+
+  async permanentDeleteFile(id: string) {
+    return this.request<{ status: string }>(`/api/files/${id}/permanent`, {
+      method: "DELETE",
+    });
+  }
+
+  async emptyTrash() {
+    return this.request<{ status: string; count: number }>("/api/files/trash/empty", {
+      method: "DELETE",
+    });
+  }
+
+  // Image upload API
+  async uploadImage(file: File): Promise<{ url: string; filename: string; size: number }> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const authHeaders = this.getAuthHeaders();
+
+    const response = await fetch(`${this.baseUrl}/api/images/upload`, {
+      method: "POST",
+      headers: authHeaders,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(error.detail || "Failed to upload image");
+    }
+
+    return response.json();
+  }
+
+  async deleteImage(imageUrl: string): Promise<void> {
+    // Extract user_id/filename from URL like "/api/images/{user_id}/{filename}"
+    const match = imageUrl.match(/\/api\/images\/([^/]+)\/([^/]+)$/);
+    if (!match) return;
+
+    const [, userId, filename] = match;
+
+    const response = await fetch(`${this.baseUrl}/api/images/${userId}/${filename}`, {
+      method: "DELETE",
+      headers: this.getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Delete failed" }));
+      throw new Error(error.detail || "Failed to delete image");
+    }
   }
 
   async searchFiles(query: string, fileIds?: string[], topK: number = 5, signal?: AbortSignal) {
@@ -627,6 +714,8 @@ export class ApiClient {
       is_folder: boolean;
       parent_id: string | null;
       position: number;
+      is_favorite: boolean;
+      icon: string | null;
       created_at: string;
       updated_at: string;
     }>;

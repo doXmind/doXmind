@@ -192,6 +192,44 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
     setShowAbove(false);
   }, []);
 
+  // Keyboard navigation state
+  const [focusIndex, setFocusIndex] = useState(-1); // -1 = no focus, 0..N-1 = suggestions, N = "Add to dictionary"
+  const totalItems = (activeMatch?.replacements.length ?? 0) + 1; // suggestions + add to dictionary
+
+  // Reset focus when match changes
+  useEffect(() => {
+    setFocusIndex(activeMatch?.replacements.length ? 0 : -1);
+  }, [activeMatch]);
+
+  // Keyboard navigation for suggestions
+  useEffect(() => {
+    if (!activeMatch || !position) return;
+
+    const handleNav = (e: KeyboardEvent) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusIndex((prev) => (prev < totalItems - 1 ? prev + 1 : 0));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusIndex((prev) => (prev > 0 ? prev - 1 : totalItems - 1));
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        setFocusIndex((prev) => (prev < totalItems - 1 ? prev + 1 : 0));
+      } else if (e.key === "Enter" && focusIndex >= 0) {
+        e.preventDefault();
+        const suggestionsCount = activeMatch.replacements.length;
+        if (focusIndex < suggestionsCount) {
+          handleApplyCorrection(activeMatch.replacements[focusIndex]);
+        } else {
+          handleIgnore();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleNav);
+    return () => window.removeEventListener("keydown", handleNav);
+  }, [activeMatch, position, focusIndex, totalItems, handleApplyCorrection, handleIgnore]);
+
   if (!activeMatch || !position) return null;
 
   // Validate positions are within document bounds
@@ -238,8 +276,9 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
           {activeMatch.replacements.map((replacement, i) => (
             <button
               key={i}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent ${focusIndex === i ? "bg-accent" : ""}`}
               onClick={() => handleApplyCorrection(replacement)}
+              onMouseEnter={() => setFocusIndex(i)}
             >
               <span className="font-medium text-primary">{replacement}</span>
             </button>
@@ -250,8 +289,9 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       {/* Actions */}
       <div className="border-t border-border py-1">
         <button
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${focusIndex === activeMatch.replacements.length ? "bg-accent text-foreground" : ""}`}
           onClick={handleIgnore}
+          onMouseEnter={() => setFocusIndex(activeMatch.replacements.length)}
         >
           <BookOpen className="h-3.5 w-3.5" />
           Add to dictionary

@@ -138,10 +138,10 @@ export const BlockMath = Node.create<BlockMathOptions>({
       insertBlockMath:
         (latex = "") =>
         ({ commands }) => {
-          return commands.insertContent({
-            type: this.name,
-            attrs: { latex },
-          });
+          return commands.insertContent([
+            { type: this.name, attrs: { latex } },
+            { type: "paragraph" },
+          ]);
         },
     };
   },

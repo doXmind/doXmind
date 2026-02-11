@@ -7,6 +7,7 @@ Compresses conversation history while preserving:
 - Last 6 messages (recent context)
 """
 
+import json
 import re
 from typing import TYPE_CHECKING
 
@@ -33,7 +34,9 @@ class HistoryCompressor:
         """
         if len(messages) <= self.COMPRESSION_THRESHOLD:
             # No compression needed
-            return self._to_history_format(messages)
+            history = self._to_history_format(messages)
+            self._inject_todo_context(history, messages)
+            return history
 
         first_messages = messages[: self.FIRST_MESSAGES_COUNT]
         last_messages = messages[-self.LAST_MESSAGES_COUNT :]
@@ -60,6 +63,7 @@ class HistoryCompressor:
             )
 
         history.extend(self._to_history_format(last_messages))
+        self._inject_todo_context(history, messages)
         return history
 
     def _extract_key_notes(self, messages: list["Message"]) -> str:
@@ -132,3 +136,56 @@ class HistoryCompressor:
     def _to_history_format(self, messages: list["Message"]) -> list[dict[str, str]]:
         """Convert Message objects to API format."""
         return [{"role": msg.role, "content": msg.content or ""} for msg in messages]
+
+    def _extract_last_todo_state(self, messages: list["Message"]) -> list[dict] | None:
+        """Extract the most recent TodoWrite state from tool_calls in history."""
+        for msg in reversed(messages):
+            if msg.role == "assistant" and msg.tool_calls:
+                for tool_call in reversed(msg.tool_calls):
+                    if tool_call.get("name") == "TodoWrite":
+                        input_str = tool_call.get("input", "")
+                        if isinstance(input_str, str):
+                            try:
+                                parsed = json.loads(input_str)
+                                return parsed.get("todos", [])
+                            except (json.JSONDecodeError, ValueError):
+                                pass
+                        elif isinstance(input_str, dict):
+                            return input_str.get("todos", [])
+        return None
+
+    def _inject_todo_context(
+        self, history: list[dict[str, str]], messages: list["Message"]
+    ) -> None:
+        """Inject incomplete todo context into history so the agent can resume tasks."""
+        last_todos = self._extract_last_todo_state(messages)
+        if not last_todos:
+            return
+
+        incomplete = [t for t in last_todos if t.get("status") in ("pending", "in_progress")]
+        if not incomplete:
+            return
+
+        todo_lines = "\n".join(f"- [{t['status']}] {t['content']}" for t in last_todos)
+
+        # Ensure alternating role pattern (last must be assistant before injecting user)
+        if history and history[-1]["role"] == "user":
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": "Understood, let me continue.",
+                }
+            )
+
+        history.append(
+            {
+                "role": "user",
+                "content": f"[Previous task list:]\n{todo_lines}\n\nPlease continue the incomplete tasks.",
+            }
+        )
+        history.append(
+            {
+                "role": "assistant",
+                "content": "I see the pending tasks. Let me continue working on them.",
+            }
+        )

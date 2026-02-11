@@ -5,6 +5,7 @@ import { Editor } from "@tiptap/react";
 import {
   Bold,
   Italic,
+  Underline,
   Strikethrough,
   Code,
   Code2,
@@ -45,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { LinkModal } from "./link-modal";
 import { ImageModal } from "./image-modal";
+import { TableSizePicker } from "./table-size-picker";
 
 interface EditorToolbarProps {
   editor: Editor;
@@ -81,11 +83,30 @@ export function EditorToolbar({
   };
 
   const handleImageConfirm = (url: string, alt?: string) => {
-    editor.chain().focus().setImage({ src: url, alt }).run();
+    const { $from } = editor.state.selection;
+    const isEmptyParagraph =
+      $from.parent.type.name === "paragraph" && $from.parent.content.size === 0;
+
+    if (isEmptyParagraph) {
+      editor
+        .chain()
+        .focus()
+        .insertContentAt({ from: $from.before($from.depth), to: $from.after($from.depth) }, [
+          { type: "image", attrs: { src: url, alt } },
+          { type: "paragraph" },
+        ])
+        .run();
+    } else {
+      editor
+        .chain()
+        .focus()
+        .insertContent([{ type: "image", attrs: { src: url, alt } }, { type: "paragraph" }])
+        .run();
+    }
   };
 
-  const addTable = () => {
-    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  const addTable = (rows: number, cols: number) => {
+    editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
   };
 
   return (
@@ -121,6 +142,12 @@ export function EditorToolbar({
           onClick={() => editor.chain().focus().toggleItalic().run()}
           isActive={editor.isActive("italic")}
           tooltip="Italic (Ctrl+I)"
+        />
+        <ToolbarButton
+          icon={<Underline className="h-4 w-4" />}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          isActive={editor.isActive("underline")}
+          tooltip="Underline (Ctrl+U)"
         />
         <ToolbarButton
           icon={<Strikethrough className="h-4 w-4" />}
@@ -228,11 +255,18 @@ export function EditorToolbar({
           onClick={() => setImageModalOpen(true)}
           tooltip="Add Image"
         />
-        <ToolbarButton
-          icon={<TableIcon className="h-4 w-4" />}
-          onClick={addTable}
-          tooltip="Insert Table"
-        />
+        <DropdownMenu>
+          <Tooltip content="Insert Table" side="bottom">
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Insert Table">
+                <TableIcon className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+          </Tooltip>
+          <DropdownMenuContent align="start" className="p-0">
+            <TableSizePicker onSelect={addTable} />
+          </DropdownMenuContent>
+        </DropdownMenu>
         <DropdownMenu>
           <Tooltip content="Math Equations" side="bottom">
             <DropdownMenuTrigger asChild>

@@ -44,7 +44,7 @@ export function middleware(request: NextRequest) {
 
   // If authenticated user tries to access auth routes, redirect to editor
   if (isAuthRoute && isAuthenticated) {
-    return NextResponse.redirect(new URL("/editor", request.url));
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();

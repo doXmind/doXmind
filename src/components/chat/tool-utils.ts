@@ -12,6 +12,7 @@ import {
   FileText,
   Scale,
   Terminal,
+  ListTodo,
 } from "lucide-react";
 
 /**
@@ -59,6 +60,9 @@ export function getToolIcon(toolName: string) {
     case "Code Execution":
     case "bash_code_execution":
       return Terminal;
+    // Todo tool
+    case "TodoWrite":
+      return ListTodo;
     default:
       return Sparkles;
   }
@@ -115,6 +119,9 @@ export function getToolDisplayName(toolName: string) {
     case "Code Execution":
     case "bash_code_execution":
       return "Running code";
+    // Todo tool
+    case "TodoWrite":
+      return "Updating tasks";
     default:
       // Format unknown tools: snake_case -> Title Case
       return toolName

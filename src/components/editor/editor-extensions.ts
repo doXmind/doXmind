@@ -7,6 +7,7 @@
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
+import Underline from "@tiptap/extension-underline";
 import Typography from "@tiptap/extension-typography";
 import Link from "@tiptap/extension-link";
 import { ResizableImage } from "@/extensions/resizable-image";
@@ -18,6 +19,11 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import { CustomCodeBlock } from "@/extensions/code-block";
 import { InlineMath, BlockMath } from "@/extensions/math";
+import { Callout } from "@/extensions/callout";
+import { Toggle } from "@/extensions/toggle";
+import { TableOfContents } from "@/extensions/toc";
+import { LinkPaste } from "@/extensions/link-paste";
+import { TrailingNode } from "@/extensions/trailing-node";
 import { SlashCommands } from "./slash-commands";
 import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
 import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
@@ -51,6 +57,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     }),
 
     // Text enhancements
+    Underline,
     Highlight.configure({
       multicolor: true,
     }),
@@ -69,6 +76,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
       HTMLAttributes: {
         class: "rounded-lg max-w-full",
       },
+      allowBase64: true,
     }),
 
     // Task lists
@@ -91,6 +99,21 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Math support (LaTeX/KaTeX)
     InlineMath,
     BlockMath,
+
+    // Callout blocks (info, warning, error, tip)
+    Callout,
+
+    // Toggle/collapsible blocks
+    Toggle,
+
+    // Table of Contents (auto-generated from headings)
+    TableOfContents,
+
+    // Link paste auto-conversion
+    LinkPaste,
+
+    // Ensure document always ends with an editable paragraph
+    TrailingNode,
 
     // Custom extensions
     SlashCommands,

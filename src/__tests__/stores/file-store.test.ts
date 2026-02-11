@@ -172,6 +172,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -182,6 +184,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -285,6 +289,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "2024-01-01T00:00:00Z",
             updatedAt: "2024-01-01T00:00:00Z",
           },
@@ -361,6 +367,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -371,6 +379,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -399,6 +409,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -409,6 +421,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -461,6 +475,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -530,6 +546,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -569,6 +587,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -579,6 +599,8 @@ describe("useFileStore", () => {
             isFolder: false,
             parentId: null,
             position: 0,
+            isFavorite: false,
+            icon: null,
             createdAt: "",
             updatedAt: "",
           },
@@ -597,6 +619,124 @@ describe("useFileStore", () => {
       const file = useFileStore.getState().getFile("non-existent");
 
       expect(file).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // setFileIcon
+  // ==========================================================================
+  describe("setFileIcon", () => {
+    beforeEach(() => {
+      useFileStore.setState({
+        files: [
+          {
+            id: "file-1",
+            name: "File 1",
+            content: "Content 1",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            isFavorite: false,
+            icon: null,
+            createdAt: "",
+            updatedAt: "",
+          },
+        ],
+      });
+    });
+
+    it("sets an emoji icon on a file", async () => {
+      mockApi.updateFile.mockResolvedValue({});
+
+      await useFileStore.getState().setFileIcon("file-1", "📝");
+
+      const file = useFileStore.getState().getFile("file-1");
+      expect(file?.icon).toBe("📝");
+    });
+
+    it("removes icon when set to null", async () => {
+      // Start with an icon
+      useFileStore.setState({
+        files: [
+          {
+            id: "file-1",
+            name: "File 1",
+            content: "Content 1",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            isFavorite: false,
+            icon: "📝",
+            createdAt: "",
+            updatedAt: "",
+          },
+        ],
+      });
+      mockApi.updateFile.mockResolvedValue({});
+
+      await useFileStore.getState().setFileIcon("file-1", null);
+
+      const file = useFileStore.getState().getFile("file-1");
+      expect(file?.icon).toBeNull();
+    });
+
+    it("calls API with empty string to clear icon", async () => {
+      mockApi.updateFile.mockResolvedValue({});
+
+      await useFileStore.getState().setFileIcon("file-1", null);
+
+      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", { icon: "" });
+    });
+
+    it("calls API with emoji string to set icon", async () => {
+      mockApi.updateFile.mockResolvedValue({});
+
+      await useFileStore.getState().setFileIcon("file-1", "🚀");
+
+      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", { icon: "🚀" });
+    });
+
+    it("does nothing for non-existent file", async () => {
+      await useFileStore.getState().setFileIcon("non-existent", "📝");
+
+      expect(mockApi.updateFile).not.toHaveBeenCalled();
+    });
+
+    it("reverts icon on API error", async () => {
+      mockApi.updateFile.mockRejectedValue(new Error("Server error"));
+
+      await useFileStore.getState().setFileIcon("file-1", "📝");
+
+      // Should revert to original null icon
+      const file = useFileStore.getState().getFile("file-1");
+      expect(file?.icon).toBeNull();
+    });
+
+    it("reverts to previous icon on API error", async () => {
+      // Start with an existing icon
+      useFileStore.setState({
+        files: [
+          {
+            id: "file-1",
+            name: "File 1",
+            content: "",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            isFavorite: false,
+            icon: "⭐",
+            createdAt: "",
+            updatedAt: "",
+          },
+        ],
+      });
+      mockApi.updateFile.mockRejectedValue(new Error("Server error"));
+
+      await useFileStore.getState().setFileIcon("file-1", "🔥");
+
+      // Should revert to the previous icon
+      const file = useFileStore.getState().getFile("file-1");
+      expect(file?.icon).toBe("⭐");
     });
   });
 });

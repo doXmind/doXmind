@@ -114,6 +114,7 @@ class File(Base):
     content_hash = Column(String(64), nullable=True)  # SHA-256 hash for change detection
     summary = Column(Text, nullable=True)  # AI-generated document summary
     is_favorite = Column(Boolean, default=False)  # Pinned/favorite status
+    icon = Column(String(10), nullable=True)  # Document emoji icon
 
     # Folder hierarchy support (single-level only)
     is_folder = Column(Boolean, default=False, nullable=False, index=True)
@@ -124,6 +125,7 @@ class File(Base):
 
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete for trash
 
     # Relationships
     owner = relationship("User", back_populates="files")
@@ -134,6 +136,7 @@ class File(Base):
     __table_args__ = (
         Index("idx_files_user_parent", "user_id", "parent_id"),
         Index("idx_files_parent_position", "parent_id", "position"),
+        Index("idx_files_deleted_at", "deleted_at"),
     )
 
 

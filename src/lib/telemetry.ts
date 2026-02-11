@@ -116,6 +116,7 @@ export interface ChatFeedbackEvent extends BaseTelemetryEvent {
   file_id?: string;
   model?: string;
   had_tool_calls?: boolean;
+  turn_index?: number;
 }
 
 // Post-AI edit event (for DPO training)

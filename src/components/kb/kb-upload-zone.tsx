@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { Upload, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +65,9 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
       try {
         await onUpload(validFiles);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Upload failed");
+        const message = err instanceof Error ? err.message : "Upload failed";
+        setError(message);
+        toast.error(message);
       }
     },
     [onUpload, validateFile]

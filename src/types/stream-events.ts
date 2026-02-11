@@ -85,6 +85,7 @@ export interface SummaryEvent {
   thinking?: string | null;
   toolCalls?: ToolCall[] | null;
   edits?: EditOperation[] | null;
+  todos?: TodoItem[] | null;
   model: string;
 }
 

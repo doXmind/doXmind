@@ -22,6 +22,9 @@ export function useEditorKeyboardShortcuts() {
     isSearchBarOpen,
     setSearchBarOpen,
     openSearchBarWithAI,
+    isFocusMode,
+    toggleFocusMode,
+    setQuickSwitcherOpen,
   } = useLayoutStore();
 
   const handleKeyDown = useCallback(
@@ -63,6 +66,27 @@ export function useEditorKeyboardShortcuts() {
         setSearchBarOpen(!isSearchBarOpen);
         return;
       }
+
+      // F11 - Toggle focus mode
+      if (e.key === "F11") {
+        e.preventDefault();
+        toggleFocusMode();
+        return;
+      }
+
+      // Escape - Exit focus mode
+      if (e.key === "Escape" && isFocusMode) {
+        e.preventDefault();
+        toggleFocusMode();
+        return;
+      }
+
+      // Ctrl+Tab - Quick file switcher
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
+        e.preventDefault();
+        setQuickSwitcherOpen(true);
+        return;
+      }
     },
     [
       isKeyboardShortcutsOpen,
@@ -73,6 +97,9 @@ export function useEditorKeyboardShortcuts() {
       isSearchBarOpen,
       setSearchBarOpen,
       openSearchBarWithAI,
+      isFocusMode,
+      toggleFocusMode,
+      setQuickSwitcherOpen,
     ]
   );
 

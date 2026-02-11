@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
+  LayoutTemplate,
   List,
   Upload,
   Loader2,
@@ -38,7 +39,9 @@ import {
 } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { type SearchResultItem } from "@/lib/api";
+import { markdownToHtml } from "@/lib/markdown";
 import { useDragPageTransition } from "@/hooks/use-drag-page-transition";
+import { TemplatePicker, type FileTemplate } from "@/components/sidebar/template-picker";
 import { FileCard } from "./file-card";
 import { FileRow } from "./file-row";
 import { EmptyState } from "./empty-state";
@@ -124,6 +127,7 @@ export function FileGrid({
   const router = useRouter();
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -233,8 +237,33 @@ export function FileGrid({
     try {
       const newId = await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
       router.push(`/editor/${newId}`);
-    } catch {
-      // handled by store
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const handleTemplateSelect = async (template: FileTemplate) => {
+    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+    let counter = 0;
+    let name: string;
+    do {
+      counter++;
+      name =
+        counter === 1
+          ? `${template.defaultFileName}.md`
+          : `${template.defaultFileName} ${counter}.md`;
+    } while (currentFiles.some((f) => f.name === name));
+
+    try {
+      const markdown = template.getContent();
+      const htmlContent = markdown ? markdownToHtml(markdown) : "";
+      const newId = await createFile(name, htmlContent, currentFolderId);
+      router.push(`/editor/${newId}`);
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+      throw error;
     }
   };
 
@@ -449,6 +478,17 @@ export function FileGrid({
                 >
                   <FilePlus className="h-3.5 w-3.5" />
                   New
+                </Button>
+              </Tooltip>
+              <Tooltip content="New from Template" side="bottom">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 text-xs font-medium"
+                  onClick={() => setIsTemplatePickerOpen(true)}
+                >
+                  <LayoutTemplate className="h-3.5 w-3.5" />
+                  Template
                 </Button>
               </Tooltip>
               <Tooltip content="Import File" side="bottom">
@@ -675,6 +715,13 @@ export function FileGrid({
           )}
         </>
       )}
+
+      {/* Template Picker Modal */}
+      <TemplatePicker
+        open={isTemplatePickerOpen}
+        onClose={() => setIsTemplatePickerOpen(false)}
+        onSelect={handleTemplateSelect}
+      />
     </motion.div>
   );
 }

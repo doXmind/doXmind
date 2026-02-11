@@ -24,6 +24,8 @@ export interface SearchPluginState {
   currentIndex: number;
   currentSemanticIndex: number;
   caseSensitive: boolean;
+  wholeWord: boolean;
+  useRegex: boolean;
 }
 
 // Plugin key for accessing state
@@ -53,6 +55,8 @@ declare module "@tiptap/core" {
       setSearchTerm: (term: string) => ReturnType;
       setReplaceTerm: (term: string) => ReturnType;
       setCaseSensitive: (value: boolean) => ReturnType;
+      setWholeWord: (value: boolean) => ReturnType;
+      setUseRegex: (value: boolean) => ReturnType;
       setSemanticResults: (chunks: SemanticChunk[]) => ReturnType;
       clearSemanticResults: () => ReturnType;
       nextSearchResult: () => ReturnType;

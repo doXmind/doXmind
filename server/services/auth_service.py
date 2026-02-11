@@ -36,10 +36,26 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 class TokenData:
     """Data extracted from JWT token."""
 
-    def __init__(self, sub: str, exp: datetime, token_type: str = "access"):
+    def __init__(
+        self,
+        sub: str,
+        exp: datetime,
+        token_type: str = "access",
+        email: str | None = None,
+        username: str | None = None,
+        avatar_url: str | None = None,
+        oauth_provider: str | None = None,
+        oauth_id: str | None = None,
+    ):
         self.sub = sub  # Subject (user identifier or "anonymous")
         self.exp = exp  # Expiration time
         self.token_type = token_type
+        # OAuth user info for auto-recreation if user record is lost
+        self.email = email
+        self.username = username
+        self.avatar_url = avatar_url
+        self.oauth_provider = oauth_provider
+        self.oauth_id = oauth_id
 
 
 # =============================================================================
@@ -47,12 +63,25 @@ class TokenData:
 # =============================================================================
 
 
-def create_access_token(subject: str = "anonymous", expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: str = "anonymous",
+    expires_delta: timedelta | None = None,
+    email: str | None = None,
+    username: str | None = None,
+    avatar_url: str | None = None,
+    oauth_provider: str | None = None,
+    oauth_id: str | None = None,
+) -> str:
     """Create a new JWT access token.
 
     Args:
         subject: The subject of the token (user ID or identifier)
         expires_delta: Custom expiration time, or use default from settings
+        email: User email (stored in JWT for auto-recreation if DB record lost)
+        username: User display name
+        avatar_url: User avatar URL
+        oauth_provider: OAuth provider name (e.g., 'google')
+        oauth_id: User ID from OAuth provider
 
     Returns:
         Encoded JWT token string
@@ -64,7 +93,19 @@ def create_access_token(subject: str = "anonymous", expires_delta: timedelta | N
     else:
         expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
 
-    to_encode = {"sub": subject, "exp": expire, "type": "access", "iat": datetime.now(UTC)}
+    to_encode: dict = {"sub": subject, "exp": expire, "type": "access", "iat": datetime.now(UTC)}
+
+    # Include OAuth user info for auto-recreation
+    if email:
+        to_encode["email"] = email
+    if username:
+        to_encode["username"] = username
+    if avatar_url:
+        to_encode["avatar_url"] = avatar_url
+    if oauth_provider:
+        to_encode["oauth_provider"] = oauth_provider
+    if oauth_id:
+        to_encode["oauth_id"] = oauth_id
 
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
@@ -92,7 +133,16 @@ def verify_token(token: str) -> TokenData | None:
         if sub is None or exp is None:
             return None
 
-        return TokenData(sub=sub, exp=datetime.fromtimestamp(exp, tz=UTC), token_type=token_type)
+        return TokenData(
+            sub=sub,
+            exp=datetime.fromtimestamp(exp, tz=UTC),
+            token_type=token_type,
+            email=payload.get("email"),
+            username=payload.get("username"),
+            avatar_url=payload.get("avatar_url"),
+            oauth_provider=payload.get("oauth_provider"),
+            oauth_id=payload.get("oauth_id"),
+        )
 
     except JWTError:
         return None
@@ -162,6 +212,7 @@ async def require_auth(
     """Require authentication via JWT token OR API key.
 
     Use this dependency on protected endpoints.
+    Auto-creates user record if JWT is valid but user doesn't exist in DB.
 
     Raises:
         HTTPException: 401 if no valid authentication provided
@@ -170,16 +221,33 @@ async def require_auth(
 
     # Check JWT token first
     if token is not None:
-        # For real user tokens, verify the user still exists in DB
+        # For real user tokens, ensure the user exists in DB
         if token.sub not in ("dev-user", "api-key-user", "anonymous"):
             result = await db.execute(select(User.id).where(User.id == token.sub))
             if result.scalar_one_or_none() is None:
-                logger.warning("JWT token references non-existent user: %s", token.sub)
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User no longer exists. Please log in again.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+                # Auto-create user from JWT claims if we have enough info
+                if token.email:
+                    logger.info("Auto-creating user %s (%s) from JWT claims", token.sub, token.email)
+                    user = User(
+                        id=token.sub,
+                        email=token.email,
+                        username=token.username,
+                        avatar_url=token.avatar_url,
+                        oauth_provider=token.oauth_provider,
+                        oauth_id=token.oauth_id,
+                        is_verified=True,
+                        is_active=True,
+                    )
+                    db.add(user)
+                    await db.commit()
+                else:
+                    # No email in JWT (old token format) — force re-login
+                    logger.warning("JWT for user %s has no email claim, cannot auto-create", token.sub)
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Session expired. Please log in again.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
         return token
 
     # Check API key

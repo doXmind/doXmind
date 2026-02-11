@@ -59,7 +59,8 @@ class WritingAgent:
     """Writing agent using Claude API directly for real-time streaming."""
 
     # Maximum tool use iterations to prevent infinite loops
-    MAX_ITERATIONS = 20
+    # Industry comparison: Claude Code = unlimited, Cursor MAX = 200, Cursor standard = 25
+    MAX_ITERATIONS = 50
 
     def __init__(
         self,
@@ -390,6 +391,11 @@ class WritingAgent:
         total_input_tokens = 0
         total_output_tokens = 0
 
+        # Track todo state for completion guard
+        current_todos: list[dict] = []
+        continuation_attempts = 0
+        MAX_CONTINUATION_ATTEMPTS = 2
+
         while iteration < self.MAX_ITERATIONS:
             iteration += 1
 
@@ -448,8 +454,37 @@ class WritingAgent:
                         }
                 tool_uses = valid_tool_uses
 
-            # If no tool uses, we're done
+            # If no tool uses, check for incomplete todos before exiting
             if not tool_uses:
+                incomplete = [
+                    t for t in current_todos if t.get("status") in ("pending", "in_progress")
+                ]
+                if (
+                    incomplete
+                    and iteration < self.MAX_ITERATIONS
+                    and continuation_attempts < MAX_CONTINUATION_ATTEMPTS
+                ):
+                    continuation_attempts += 1
+                    incomplete_names = ", ".join(
+                        t.get("content", "unnamed") for t in incomplete[:5]
+                    )
+                    logger.info(
+                        f"Completion guard: {len(incomplete)} incomplete todo(s), "
+                        f"attempt {continuation_attempts}/{MAX_CONTINUATION_ATTEMPTS}"
+                    )
+                    messages.append(full_response)
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"[System: You have {len(incomplete)} incomplete todo(s): "
+                                f"{incomplete_names}. "
+                                f"Continue working on them. Call TodoWrite to update status, "
+                                f"then use tools to complete each task.]"
+                            ),
+                        }
+                    )
+                    continue  # Re-enter the loop
                 break
 
             # Add assistant message to history
@@ -465,6 +500,7 @@ class WritingAgent:
                     kb_context,
                     data_files_context,
                     collected_edits,
+                    current_todos,
                 ):
                     if event.get("type") == "tool_result":
                         tool_results.append(event["result"])
@@ -910,6 +946,7 @@ class WritingAgent:
         kb_context: dict[str, Any] | None,
         data_files_context: dict[str, Any] | None,
         collected_edits: list[dict[str, Any]],
+        current_todos: list[dict] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Execute a single tool and yield events."""
         tool_name = tool_use["name"]
@@ -923,6 +960,16 @@ class WritingAgent:
                 # Emit todo update event for frontend
                 if "todos" in result:
                     yield {"type": "todo_update", "todos": result["todos"]}
+                    # Track latest todo state for completion guard
+                    if current_todos is not None:
+                        current_todos.clear()
+                        current_todos.extend(result["todos"])
+                # Set friendly result for tool_end display (avoids raw dict string)
+                count = result.get("count", 0)
+                completed = sum(
+                    1 for t in result.get("todos", []) if t.get("status") == "completed"
+                )
+                result["result"] = f"Tracking {count} task(s), {completed} completed"
             elif is_kb_tool(tool_name):
                 result = await execute_kb_tool(tool_name, tool_input, kb_context)
             elif is_data_files_tool(tool_name):
@@ -1107,6 +1154,12 @@ class WritingAgent:
 
         if tool_name == "get_court_opinion":
             return "Retrieved court opinion"
+
+        # Todo tools
+        if tool_name == "TodoWrite":
+            if isinstance(result_content, str):
+                return result_content
+            return "Updated task list"
 
         # Default: truncate if too long
         if isinstance(result_content, str):

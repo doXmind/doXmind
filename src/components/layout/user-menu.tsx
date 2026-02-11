@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
+import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import { APISettings } from "@/components/settings/api-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
@@ -36,6 +37,7 @@ export function UserMenu() {
       router.push("/login");
     } catch (error) {
       console.error("Failed to delete account:", error);
+      toast.error("Failed to delete account");
       setIsDeleting(false);
     }
   };

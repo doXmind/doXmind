@@ -150,6 +150,11 @@ const nextConfig: NextConfig = {
         source: "/api/user-settings/:path*",
         destination: `${backendUrl}/api/user-settings/:path*`,
       },
+      // Image upload and serving
+      {
+        source: "/api/images/:path*",
+        destination: `${backendUrl}/api/images/:path*`,
+      },
       // Health check
       {
         source: "/health",

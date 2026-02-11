@@ -92,8 +92,8 @@ async def create_share(
     """Create a shareable link for a document (owner only)."""
     user_id = get_user_id(token)
 
-    # Verify file exists and belongs to user
-    query = select(File).where(File.id == share_request.file_id)
+    # Verify file exists, belongs to user, and is not in trash
+    query = select(File).where(File.id == share_request.file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
@@ -152,8 +152,8 @@ async def list_file_shares(
     """List all shares for a specific file (owner only)."""
     user_id = get_user_id(token)
 
-    # Verify ownership
-    query = select(File).where(File.id == file_id)
+    # Verify ownership (exclude trash)
+    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)

@@ -186,6 +186,11 @@ export function useAutocomplete({
   // Combine store setting with prop (both must be true)
   const isEnabled = enabled && autocompleteEnabled;
 
+  // Track file switches to prevent autocomplete from triggering on file open.
+  // setContent() dispatches a docChanged transaction which would otherwise
+  // start the autocomplete debounce timer.
+  const fileJustSwitchedRef = useRef(false);
+
   /**
    * Clear the current suggestion
    */
@@ -204,6 +209,29 @@ export function useAutocomplete({
       cursorMoveTimerRef.current = null;
     }
   }, [editor]);
+
+  // When the file changes, suppress autocomplete triggers briefly.
+  // setContent() runs inside queueMicrotask so the transaction fires AFTER
+  // this effect. The 150ms window covers the microtask + any cascading events.
+  useEffect(() => {
+    fileJustSwitchedRef.current = true;
+
+    // Clear any pending timers from the previous file
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (cursorMoveTimerRef.current) {
+      clearTimeout(cursorMoveTimerRef.current);
+      cursorMoveTimerRef.current = null;
+    }
+
+    const timer = setTimeout(() => {
+      fileJustSwitchedRef.current = false;
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [fileId]);
 
   /**
    * Fetch suggestion from the API - SIMPLIFIED VERSION
@@ -351,6 +379,10 @@ export function useAutocomplete({
     }: {
       transaction: { docChanged: boolean; selectionSet: boolean };
     }) => {
+      // Skip during file switch — setContent() dispatches docChanged + selectionSet
+      // transactions that would falsely trigger autocomplete
+      if (fileJustSwitchedRef.current) return;
+
       // Clear cursor move timer when user types
       if (cursorMoveTimerRef.current) {
         clearTimeout(cursorMoveTimerRef.current);
@@ -370,12 +402,19 @@ export function useAutocomplete({
         }, CONFIG.DEBOUNCE_DELAY);
       } else if (transaction.selectionSet) {
         // User moved cursor without typing (click or arrow keys)
-        // Only trigger if cursor is at a "meaningful" position (end of line, after punctuation)
-        // to avoid being too aggressive
-
-        // Get the editor's current state (after transaction is applied)
         if (!editor) return;
         const { state } = editor;
+
+        // Never trigger autocomplete when text is selected — also clear any pending timer
+        if (!state.selection.empty) {
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+          }
+          return;
+        }
+
+        // Only trigger if cursor is at a "meaningful" position (end of line, after punctuation)
         const pos = state.selection.from;
 
         // Check if cursor is at a meaningful position

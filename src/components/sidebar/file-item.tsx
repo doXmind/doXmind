@@ -12,6 +12,7 @@ import {
   Home,
   CheckSquare,
   Square,
+  Star,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -53,6 +54,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     deleteFile,
     renameFile,
     moveFileToFolder,
+    toggleFavorite,
     justCreatedFileId,
     clearJustCreatedFileId,
     selectedFileIds,
@@ -244,6 +246,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         await renameFile(file.id, fullName);
       } catch (error) {
         log.error("Failed to rename file", error);
+        toast.error("Failed to rename file");
       }
     }
     setIsRenaming(false);
@@ -270,8 +273,12 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const handleDeleteConfirm = async () => {
     try {
       await deleteFile(file.id);
+      // Navigate to the next file or welcome screen after deletion
+      const nextId = useFileStore.getState().currentFileId;
+      router.push(nextId ? `/editor/${nextId}` : "/editor");
     } catch (error) {
       log.error("Failed to delete file", error);
+      toast.error("Failed to delete file");
     }
     setShowDeleteModal(false);
   };
@@ -294,6 +301,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       URL.revokeObjectURL(url);
     } catch (error) {
       log.error(`Failed to export as ${format}`, error);
+      toast.error(`Failed to export as ${format.toUpperCase()}`);
     }
   };
 
@@ -354,7 +362,18 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         </button>
       )}
 
-      <FileText className="h-5 w-5 flex-shrink-0 text-muted-foreground/70 md:h-4 md:w-4" />
+      <div className="relative flex-shrink-0">
+        {file.icon ? (
+          <span className="flex h-5 w-5 items-center justify-center text-sm md:h-4 md:w-4 md:text-xs">
+            {file.icon}
+          </span>
+        ) : (
+          <FileText className="h-5 w-5 text-muted-foreground/70 md:h-4 md:w-4" />
+        )}
+        {file.isFavorite && (
+          <Star className="absolute -right-1 -top-1 h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+        )}
+      </div>
 
       <div className="min-w-0 flex-1">
         {isRenaming ? (
@@ -440,6 +459,17 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
               <Share2 className="mr-2 h-4 w-4" />
               Share
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFavorite(file.id);
+              }}
+            >
+              <Star
+                className={cn("mr-2 h-4 w-4", file.isFavorite && "fill-amber-500 text-amber-500")}
+              />
+              {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+            </DropdownMenuItem>
             {file.parentId && (
               <>
                 <DropdownMenuSeparator />
@@ -494,7 +524,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleDeleteClick} className="text-destructive">
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              Move to Trash
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -502,17 +532,17 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
 
       {/* Delete Confirmation Modal */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Delete File</ModalHeader>
+        <ModalHeader>Move to Trash</ModalHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{getNameWithoutExtension(file.name)}&quot;? This
-          action cannot be undone.
+          Move &quot;{getNameWithoutExtension(file.name)}&quot; to trash? You can restore it later
+          from the trash.
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleDeleteConfirm}>
-            Delete
+            Move to Trash
           </Button>
         </ModalFooter>
       </Modal>
@@ -652,7 +682,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
 
             <div className="my-1 h-px bg-border" />
 
-            {/* Delete */}
+            {/* Move to Trash */}
             <button
               role="menuitem"
               onClick={handleContextMenuDelete}
@@ -666,7 +696,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
               )}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              Move to Trash
             </button>
           </div>,
           document.body

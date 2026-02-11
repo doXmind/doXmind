@@ -43,8 +43,8 @@ async def export_file(
     """
     user_id = get_user_id(token)
 
-    # Get the file from database (with user isolation)
-    query = select(File).where(File.id == file_id)
+    # Get the file from database (with user isolation, exclude trash)
+    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
     result = await db.execute(query)
     file = result.scalar_one_or_none()

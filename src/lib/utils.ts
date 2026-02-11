@@ -31,6 +31,7 @@ export function truncate(str: string, length: number): string {
 export interface DebouncedFunction<T extends (...args: any[]) => unknown> {
   (...args: Parameters<T>): void;
   cancel: () => void;
+  flush: () => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic function type requires any for proper inference
@@ -39,11 +40,27 @@ export function debounce<T extends (...args: any[]) => unknown>(
   delay: number
 ): DebouncedFunction<T> {
   let timeoutId: NodeJS.Timeout;
+  let lastArgs: Parameters<T> | null = null;
   const debounced = (...args: Parameters<T>) => {
+    lastArgs = args;
     clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
+    timeoutId = setTimeout(() => {
+      lastArgs = null;
+      fn(...args);
+    }, delay);
   };
-  debounced.cancel = () => clearTimeout(timeoutId);
+  debounced.cancel = () => {
+    clearTimeout(timeoutId);
+    lastArgs = null;
+  };
+  debounced.flush = () => {
+    if (lastArgs !== null) {
+      clearTimeout(timeoutId);
+      const args = lastArgs;
+      lastArgs = null;
+      fn(...args);
+    }
+  };
   return debounced;
 }
 
@@ -145,4 +162,27 @@ export function getErrorMessage(error: unknown): { title: string; description: s
 export function formatErrorForToast(error: unknown): string {
   const { title, description } = getErrorMessage(error);
   return `${title}: ${description}`;
+}
+
+/**
+ * Detect if the current platform is macOS.
+ * Safe to call on server (returns false).
+ */
+export function isMacPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+}
+
+/**
+ * Format a keyboard shortcut for the current platform.
+ * Converts "Ctrl" to "⌘" on macOS, "Alt" to "⌥", "Shift" to "⇧".
+ * Example: formatShortcut("Ctrl+K") → "⌘K" on Mac, "Ctrl+K" on Windows
+ */
+export function formatShortcut(shortcut: string): string {
+  const mac = isMacPlatform();
+  if (!mac) return shortcut;
+  return shortcut
+    .replace(/Ctrl\+/g, "⌘")
+    .replace(/Alt\+/g, "⌥")
+    .replace(/Shift\+/g, "⇧");
 }

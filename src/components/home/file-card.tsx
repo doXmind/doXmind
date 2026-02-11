@@ -151,7 +151,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     try {
       await deleteFile(file.id);
     } catch {
-      // handled by store
+      toast.error("Failed to delete file");
     }
     setShowDeleteModal(false);
   };
@@ -170,7 +170,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // handled silently
+      toast.error(`Failed to export as ${format.toUpperCase()}`);
     }
   };
 

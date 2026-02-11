@@ -19,8 +19,9 @@ export function EmptyState() {
     try {
       const newId = await createFile(`Untitled-${files.length + 1}.md`);
       router.push(`/editor/${newId}`);
-    } catch {
-      // handled by store
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
     }
   };
 

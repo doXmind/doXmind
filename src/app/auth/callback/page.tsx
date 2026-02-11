@@ -23,7 +23,7 @@ function AuthCallbackContent() {
     handleOAuthCallback(token)
       .then(() => {
         toast.success("Login successful!");
-        router.push("/editor");
+        router.push("/");
       })
       .catch((err) => {
         console.error("OAuth callback error:", err);

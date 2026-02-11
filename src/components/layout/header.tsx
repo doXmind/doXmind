@@ -13,21 +13,40 @@ import {
   Check,
   X,
   FileText,
+  Download,
+  Loader2,
+  Clock,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { UserMenu } from "./user-menu";
+import { formatShortcut } from "@/lib/utils";
+import { api } from "@/lib/api";
 
 export function Header() {
-  const { isSidebarOpen, isChatOpen, toggleSidebar, toggleChat, setKeyboardShortcutsOpen } =
-    useLayoutStore();
+  const {
+    isSidebarOpen,
+    isChatOpen,
+    isVersionHistoryOpen,
+    toggleSidebar,
+    toggleChat,
+    toggleVersionHistory,
+    setKeyboardShortcutsOpen,
+  } = useLayoutStore();
   const { currentFileId, files, renameFile } = useFileStore();
-  const { isDirty, isSaving } = useEditorStore();
+  const { isDirty, isSaving, lastSavedAt } = useEditorStore();
   const { theme, setTheme } = useTheme();
 
   const currentFile = files.find((f) => f.id === currentFileId);
@@ -36,6 +55,19 @@ export function Header() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingName, setEditingName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Show "Saved" briefly after saving
+  const [showSaved, setShowSaved] = useState(false);
+  const prevSavingRef = useRef(false);
+  useEffect(() => {
+    // When isSaving transitions from true to false, show "Saved" temporarily
+    if (prevSavingRef.current && !isSaving && lastSavedAt) {
+      setShowSaved(true);
+      const timer = setTimeout(() => setShowSaved(false), 2000);
+      return () => clearTimeout(timer);
+    }
+    prevSavingRef.current = isSaving;
+  }, [isSaving, lastSavedAt]);
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
@@ -65,8 +97,8 @@ export function Header() {
     if (newName !== currentFile.name) {
       try {
         await renameFile(currentFile.id, newName);
-      } catch (error) {
-        console.error("Failed to rename file:", error);
+      } catch {
+        toast.error("Failed to rename file");
       }
     }
 
@@ -82,6 +114,26 @@ export function Header() {
     }
   };
 
+  const handleExport = async (format: "markdown" | "pdf" | "docx") => {
+    if (!currentFile) return;
+    try {
+      const blob = await api.exportFile(currentFile.id, format);
+      const baseName = currentFile.name.replace(/\.md$/, "");
+      const extension = format === "markdown" ? "md" : format;
+      const filename = `${baseName}.${extension}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(`Failed to export as ${format.toUpperCase()}`);
+    }
+  };
+
   // Focus input when entering edit mode
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -89,6 +141,35 @@ export function Header() {
       inputRef.current.select();
     }
   }, [isEditing]);
+
+  // Save status indicator
+  const renderSaveStatus = () => {
+    if (isSaving) {
+      return (
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Saving...
+        </span>
+      );
+    }
+    if (showSaved) {
+      return (
+        <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-500">
+          <Check className="h-3 w-3" />
+          Saved
+        </span>
+      );
+    }
+    if (isDirty) {
+      return (
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          Unsaved
+        </span>
+      );
+    }
+    return null;
+  };
 
   return (
     <header className="flex h-12 items-center justify-between border-b border-border bg-card px-3 md:px-4">
@@ -167,8 +248,7 @@ export function Header() {
               >
                 {currentFile?.name.replace(/\.md$/, "") || "Untitled"}
               </button>
-              {isDirty && <span className="text-xs text-muted-foreground">(unsaved)</span>}
-              {isSaving && <span className="text-xs text-muted-foreground">Saving...</span>}
+              {renderSaveStatus()}
             </>
           )}
         </div>
@@ -227,7 +307,44 @@ export function Header() {
 
       {/* Desktop Header - Right Section */}
       <div className="hidden items-center gap-2 md:flex">
-        <Tooltip content="Keyboard Shortcuts (Ctrl+?)" side="bottom">
+        {/* Version History */}
+        {currentFile && (
+          <Tooltip content="Version History" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleVersionHistory}
+              aria-label="Version History"
+              className={isVersionHistoryOpen ? "bg-accent text-accent-foreground" : ""}
+            >
+              <Clock className="h-4 w-4" />
+            </Button>
+          </Tooltip>
+        )}
+
+        {/* Export Dropdown */}
+        {currentFile && (
+          <DropdownMenu>
+            <Tooltip content="Export" side="bottom">
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Export document">
+                  <Download className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+            </Tooltip>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                Export as Markdown
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>Export as PDF</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("docx")}>
+                Export as Word
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        <Tooltip content={`Keyboard Shortcuts (${formatShortcut("Ctrl+?")})`} side="bottom">
           <Button
             variant="ghost"
             size="icon"

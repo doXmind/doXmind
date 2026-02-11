@@ -19,6 +19,7 @@ import {
   Quote,
   RefreshCw,
   X,
+  Columns,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -80,6 +81,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     isChatOpen,
     isHighContrast,
     toggleHighContrast,
+    editorWidth,
+    cycleEditorWidth,
   } = useLayoutStore();
   const { theme, setTheme } = useTheme();
   const { editor } = useEditorRefStore();
@@ -196,6 +199,17 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         },
         keywords: ["contrast", "accessibility", "a11y", "vision"],
       },
+      {
+        id: "editor-width",
+        label: `Editor Width: ${editorWidth.charAt(0).toUpperCase() + editorWidth.slice(1)}`,
+        icon: <Columns className="h-4 w-4" />,
+        category: "view",
+        action: () => {
+          cycleEditorWidth();
+          onClose();
+        },
+        keywords: ["width", "narrow", "wide", "full", "page", "editor", "layout"],
+      },
       // Action commands
       {
         id: "keyboard-shortcuts",
@@ -251,6 +265,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     isChatOpen,
     isHighContrast,
     toggleHighContrast,
+    editorWidth,
+    cycleEditorWidth,
     theme,
     setTheme,
     onClose,

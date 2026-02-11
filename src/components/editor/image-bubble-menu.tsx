@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useChatContextStore } from "@/stores/chat-context-store";
 import { isDiffReviewActive } from "@/extensions/diff-review";
@@ -72,8 +73,19 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
   }, [editor, editMode, inputValue]);
 
   const handleDelete = useCallback(() => {
+    // Capture src before deletion removes the node
+    const imgSrc = src;
+
+    // Delete from editor first (immediate UI feedback)
     editor.chain().focus().deleteSelection().run();
-  }, [editor]);
+
+    // Then delete from S3 (fire-and-forget, best effort)
+    if (imgSrc && imgSrc.startsWith("/api/images/")) {
+      api.deleteImage(imgSrc).catch((error) => {
+        console.warn("Failed to delete image from server:", error);
+      });
+    }
+  }, [editor, src]);
 
   const handleAskInChat = useCallback(() => {
     if (src) {

@@ -2,8 +2,9 @@
 
 import { useEffect, useCallback, useRef } from "react";
 import type { Editor } from "@tiptap/react";
-import type { DiffHunk } from "@/types/diff";
+import type { DiffHunk, DiffSession } from "@/types/diff";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { api } from "@/lib/api";
 
 interface UseDiffReviewOptions {
   /** TipTap editor instance */
@@ -22,6 +23,21 @@ function scrollToHunk(_editor: Editor, hunk: DiffHunk) {
   if (el) {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+}
+
+/** Create a version snapshot after diff review ends (fire-and-forget) */
+function createVersionSnapshot(editor: Editor, session: DiffSession) {
+  const accepted = session.hunks.filter((h) => h.status === "accepted");
+  if (accepted.length === 0) return;
+
+  const total = session.hunks.length;
+  const summary =
+    accepted.length === 1
+      ? "AI edit: accepted 1 change"
+      : `AI edit: accepted ${accepted.length} of ${total} changes`;
+
+  const content = editor.getHTML();
+  api.createVersion(session.fileId, content, "ai_edit", summary).catch(() => {});
 }
 
 /**
@@ -109,6 +125,10 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
 
       const remaining = diffSession?.hunks.filter((h) => h.status === "pending" && h.id !== hunkId);
       if (remaining?.length === 0) {
+        if (editor && diffSession) {
+          const finalSession = useDiffReviewStore.getState().diffSession;
+          if (finalSession) createVersionSnapshot(editor, finalSession);
+        }
         endDiffReview();
       }
     };
@@ -122,6 +142,10 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
 
       const remaining = diffSession?.hunks.filter((h) => h.status === "pending" && h.id !== hunkId);
       if (remaining?.length === 0) {
+        if (editor && diffSession) {
+          const finalSession = useDiffReviewStore.getState().diffSession;
+          if (finalSession) createVersionSnapshot(editor, finalSession);
+        }
         endDiffReview();
       }
     };
@@ -146,6 +170,13 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
 
     // Track telemetry for bulk accept
     acceptAllHunks();
+
+    // Create version snapshot before ending review
+    if (editor) {
+      const finalSession = useDiffReviewStore.getState().diffSession;
+      if (finalSession) createVersionSnapshot(editor, finalSession);
+    }
+
     endDiffReview();
   }, [editor, diffSession, acceptAllHunks, endDiffReview]);
 

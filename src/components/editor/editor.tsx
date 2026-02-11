@@ -10,10 +10,13 @@ import { ImageBubbleMenu } from "./image-bubble-menu";
 import { ImageModal } from "./image-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
+import { EditorContextMenu } from "./editor-context-menu";
 import { DiffReviewToolbar } from "./diff-review-toolbar";
 import { ReviewPopup } from "./review-popup";
 import { ReviewPanel } from "./review-panel";
 import { SearchBar } from "./search-bar";
+import { StatusBar } from "./status-bar";
+import { DocumentTitle } from "./document-title";
 import { Mindlines, OutlineToggle, useHeadings } from "./mindlines";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { getReviewState } from "@/extensions/text-review-extension";
@@ -34,6 +37,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
 import { applyPendingEdit } from "./editor-edit-operations";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
+import { useFeatureHints } from "@/components/onboarding/feature-hints";
+import { api } from "@/lib/api";
 
 interface EditorProps {
   file: FileItem;
@@ -65,11 +70,12 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     spellcheckEnabled,
   } = useEditorStore();
 
-  // Search bar state
-  const { isSearchBarOpen, toggleSearchBar } = useLayoutStore();
+  // Layout state
+  const { isSearchBarOpen, toggleSearchBar, isFocusMode, editorWidth } = useLayoutStore();
 
   const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
+  const isFileSwitchingRef = useRef(false);
 
   // Debounced save function
   // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce returns a new function, deps are intentionally limited
@@ -106,6 +112,9 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     editable: !isDemoMode, // Demo mode: read-only to ensure mock scenarios work
     immediatelyRender: false, // Prevent SSR hydration mismatch
     onUpdate: ({ editor }) => {
+      // Skip save during file switching — the emit("update") is only to
+      // notify other components (mindlines, word count, etc.)
+      if (isFileSwitchingRef.current) return;
       const html = editor.getHTML();
       setDirty(true);
       debouncedSave(html);
@@ -127,6 +136,16 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     setEditor(editor);
     return () => setEditor(null);
   }, [editor, setEditor]);
+
+  // Flush pending save on page unload to prevent false "unsaved changes" warnings
+  // and ensure content is persisted before the page closes
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      debouncedSave.flush();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [debouncedSave]);
 
   // Sync block selection enabled state with isMobile and edit mode
   // Block selection is active on mobile UNLESS edit mode is toggled on
@@ -151,8 +170,14 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       // Cancel any pending debounced save from the previous file to prevent
       // stale saves that would unnecessarily update the old file's updatedAt
       debouncedSave.cancel();
+      // Reset dirty state — the new file's content is already saved on the server
+      setDirty(false);
       queueMicrotask(() => {
+        isFileSwitchingRef.current = true;
         editor.commands.setContent(file.content, false);
+        // Move cursor to start of document to prevent autocomplete triggering
+        // at the end of the document content
+        editor.commands.setTextSelection(0);
         // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
         // to prevent false-positive change detection in debouncedSave.
         // TipTap may normalize HTML during parse/serialize (attribute order,
@@ -160,6 +185,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         // even when content is semantically identical.
         lastContentRef.current = editor.getHTML();
         editor.emit("update", { editor, transaction: editor.state.tr });
+        isFileSwitchingRef.current = false;
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on file.id change, not content
@@ -225,6 +251,16 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
 
   // Use keyboard shortcuts hook (Ctrl+Shift+O for outline)
   useEditorShortcuts();
+
+  // Feature hints for first-time feature encounters
+  const { showHint, HintPortal } = useFeatureHints();
+
+  // Show hint when search bar opens for the first time
+  useEffect(() => {
+    if (isSearchBarOpen && editor) {
+      showHint("search-opened", editor.view.dom.parentElement);
+    }
+  }, [isSearchBarOpen, editor, showHint]);
 
   // Track undo after AI operations
   // We use a ref to store the last AI operation to avoid stale closure issues
@@ -300,8 +336,13 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         .setTextSelection({ from: savedSelection.from, to: savedSelection.to })
         .insertContent(newText)
         .run();
+
+      // Create version snapshot for quick edit
+      if (!isDemoMode) {
+        api.createVersion(file.id, editor.getHTML(), "ai_quick_edit", "Quick edit").catch(() => {});
+      }
     },
-    [editor]
+    [editor, file.id, isDemoMode]
   );
 
   // Handle Image Modal confirm
@@ -325,8 +366,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
 
   return (
     <div className={cn("flex flex-col", !isMobile && "h-full")}>
-      {/* Desktop Toolbar - hidden on mobile (mobile uses block-based voice interactions) */}
-      {!isMobile && (
+      {/* Desktop Toolbar - hidden on mobile and in focus mode */}
+      {!isMobile && !isFocusMode && (
         <EditorToolbar
           editor={editor}
           onSearchClick={toggleSearchBar}
@@ -350,10 +391,10 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       />
 
       <div className={cn("flex min-w-0 overflow-x-hidden", !isMobile && "min-h-0 flex-1")}>
-        {/* Outline toggle button - shows when outline is closed */}
-        {!isMobile && <OutlineToggle headingsCount={headings.length} />}
-        {/* Mindlines outline - hidden on mobile */}
-        {!isMobile && <Mindlines editor={editor} />}
+        {/* Outline toggle button - shows when outline is closed, hidden in focus mode */}
+        {!isMobile && !isFocusMode && <OutlineToggle headingsCount={headings.length} />}
+        {/* Mindlines outline - hidden on mobile and in focus mode */}
+        {!isMobile && !isFocusMode && <Mindlines editor={editor} />}
         {/* Main editor content area */}
         <div
           className={cn(
@@ -380,13 +421,28 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
             </div>
           ) : (
             <ScrollArea className="min-h-0 flex-1">
-              <div className="mx-auto max-w-4xl px-4 pb-2 pt-0 md:px-8 md:py-6">
+              <div
+                className={cn(
+                  "relative mx-auto px-4 pb-2 pt-0 md:px-8 md:py-6",
+                  editorWidth === "narrow" && "max-w-2xl",
+                  editorWidth === "normal" && "max-w-4xl",
+                  editorWidth === "wide" && "max-w-6xl",
+                  editorWidth === "full" && "max-w-none"
+                )}
+              >
+                <DocumentTitle
+                  fileId={file.id}
+                  fileName={file.name}
+                  onEnterEditor={() => editor.commands.focus("start")}
+                />
                 <EditorContent editor={editor} />
               </div>
             </ScrollArea>
           )}
           {/* Search Bar - positioned top right within editor area */}
           <SearchBar />
+          {/* Status Bar - desktop only */}
+          {!isMobile && <StatusBar editor={editor} />}
         </div>
         {/* Review Panel Sidebar - hidden on mobile */}
         {!isMobile && isReviewPanelOpen && (
@@ -408,6 +464,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
           <ImageBubbleMenu editor={editor} />
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />
+          <EditorContextMenu editor={editor} />
           {!isReviewMode && (
             <QuickEditMenu onApply={handleQuickEditApply} isDemoMode={isDemoMode} />
           )}
@@ -420,6 +477,9 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         onClose={closeImageModal}
         onConfirm={handleImageModalConfirm}
       />
+
+      {/* Feature hints (contextual first-use tooltips) */}
+      {HintPortal}
     </div>
   );
 }

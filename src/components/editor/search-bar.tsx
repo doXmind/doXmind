@@ -8,9 +8,11 @@ import {
   ChevronDown,
   X,
   CaseSensitive,
+  WholeWord,
   Replace,
   Sparkles,
   Loader2,
+  Regex,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -25,6 +27,8 @@ export function SearchBar() {
   const [replaceTerm, setReplaceTerm] = useState("");
   const [showReplace, setShowReplace] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // AI Search state
@@ -133,6 +137,22 @@ export function SearchBar() {
     });
   }, [editor, caseSensitive]);
 
+  // Sync whole word with editor
+  useEffect(() => {
+    if (!editor) return;
+    queueMicrotask(() => {
+      editor.commands.setWholeWord(wholeWord);
+    });
+  }, [editor, wholeWord]);
+
+  // Sync regex mode with editor
+  useEffect(() => {
+    if (!editor) return;
+    queueMicrotask(() => {
+      editor.commands.setUseRegex(useRegex);
+    });
+  }, [editor, useRegex]);
+
   // Clear search when closed
   useEffect(() => {
     if (!isSearchBarOpen && editor) {
@@ -142,6 +162,9 @@ export function SearchBar() {
       setSearchTerm("");
       setReplaceTerm("");
       setShowReplace(false);
+      setCaseSensitive(false);
+      setWholeWord(false);
+      setUseRegex(false);
       setIsAIMode(false);
       setAIResults([]);
       setShowAIResults(false);
@@ -320,20 +343,46 @@ export function SearchBar() {
               <Sparkles className="h-4 w-4" />
             </button>
 
-            {/* Case sensitivity toggle - only show in keyword mode */}
+            {/* Search option toggles - only show in keyword mode */}
             {!isAIMode && (
-              <button
-                onClick={() => setCaseSensitive(!caseSensitive)}
-                className={cn(
-                  "rounded-md p-1.5 transition-colors hover:bg-accent",
-                  caseSensitive && "bg-accent text-accent-foreground"
-                )}
-                aria-label="Toggle case sensitivity"
-                aria-pressed={caseSensitive}
-                title="Match case"
-              >
-                <CaseSensitive className="h-4 w-4" />
-              </button>
+              <>
+                <button
+                  onClick={() => setCaseSensitive(!caseSensitive)}
+                  className={cn(
+                    "rounded-md p-1.5 transition-colors hover:bg-accent",
+                    caseSensitive && "bg-accent text-accent-foreground"
+                  )}
+                  aria-label="Toggle case sensitivity"
+                  aria-pressed={caseSensitive}
+                  title="Match case"
+                >
+                  <CaseSensitive className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setWholeWord(!wholeWord)}
+                  className={cn(
+                    "rounded-md p-1.5 transition-colors hover:bg-accent",
+                    wholeWord && "bg-accent text-accent-foreground"
+                  )}
+                  aria-label="Toggle whole word matching"
+                  aria-pressed={wholeWord}
+                  title="Match whole word"
+                >
+                  <WholeWord className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setUseRegex(!useRegex)}
+                  className={cn(
+                    "rounded-md p-1.5 transition-colors hover:bg-accent",
+                    useRegex && "bg-accent text-accent-foreground"
+                  )}
+                  aria-label="Toggle regex mode"
+                  aria-pressed={useRegex}
+                  title="Use regular expression"
+                >
+                  <Regex className="h-4 w-4" />
+                </button>
+              </>
             )}
 
             {/* Navigation */}

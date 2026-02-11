@@ -1,5 +1,6 @@
 """File management API endpoints with user data isolation."""
 
+import contextlib
 import hashlib
 import logging
 from datetime import datetime
@@ -7,10 +8,10 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import File, get_db
+from db.database import File, get_db, utcnow
 from services.auth_service import TokenData, require_auth
 from services.llm_service import LLMService
 from services.rag_service import DEFAULT_STRATEGY_FACTORY, RAGService
@@ -37,6 +38,69 @@ def compute_content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+MAX_FOLDER_DEPTH = 3  # Maximum nesting depth (root=1, sub=2, sub-sub=3)
+
+
+async def get_folder_depth(db: AsyncSession, folder_id: str | None) -> int:
+    """Get the depth of a folder (root level = 0, first subfolder = 1, etc.)."""
+    depth = 0
+    current_id = folder_id
+    visited = set()
+
+    while current_id is not None:
+        if current_id in visited:
+            raise HTTPException(status_code=400, detail="Circular folder reference detected")
+        visited.add(current_id)
+        result = await db.execute(select(File.parent_id).where(File.id == current_id))
+        row = result.scalar_one_or_none()
+        if row is None:
+            # parent_id is None means root level
+            break
+        current_id = row
+        depth += 1
+
+    return depth
+
+
+async def get_max_subtree_depth(db: AsyncSession, folder_id: str) -> int:
+    """Get the maximum depth of a folder's subtree (the folder itself = 0)."""
+    max_depth = 0
+
+    # Find direct children that are folders
+    result = await db.execute(
+        select(File.id).where(
+            File.parent_id == folder_id,
+            File.is_folder.is_(True),
+            File.deleted_at.is_(None),
+        )
+    )
+    child_folder_ids = result.scalars().all()
+
+    for child_id in child_folder_ids:
+        child_depth = await get_max_subtree_depth(db, child_id)
+        max_depth = max(max_depth, 1 + child_depth)
+
+    return max_depth
+
+
+async def would_create_cycle(db: AsyncSession, folder_id: str, target_parent_id: str) -> bool:
+    """Check if moving folder_id under target_parent_id would create a cycle."""
+    current_id: str | None = target_parent_id
+    visited = set()
+
+    while current_id is not None:
+        if current_id == folder_id:
+            return True
+        if current_id in visited:
+            return True
+        visited.add(current_id)
+        result = await db.execute(select(File.parent_id).where(File.id == current_id))
+        parent = result.scalar_one_or_none()
+        current_id = parent
+
+    return False
+
+
 class FileCreate(BaseModel):
     """File creation model."""
 
@@ -51,12 +115,14 @@ class FileUpdate(BaseModel):
     name: str | None = None
     content: str | None = None
     is_favorite: bool | None = None
+    icon: str | None = None
 
 
 class FolderCreate(BaseModel):
     """Folder creation model."""
 
     name: str
+    parent_id: str | None = None  # Optional parent folder (for nested folders)
 
 
 class MoveRequest(BaseModel):
@@ -76,6 +142,7 @@ class FileResponse(BaseModel):
     position: int = 0
     summary: str | None = None
     is_favorite: bool = False
+    icon: str | None = None
     created_at: str
     updated_at: str
 
@@ -99,10 +166,14 @@ async def list_files(
     user_id = get_user_id(token)
 
     # Build query with folder-aware ordering: folders first, then by position, then by date
-    query = select(File).order_by(
-        File.is_folder.desc(),  # Folders first
-        File.position.asc(),  # Then by position
-        File.updated_at.desc(),  # Then by recency
+    query = (
+        select(File)
+        .where(File.deleted_at.is_(None))
+        .order_by(
+            File.is_folder.desc(),  # Folders first
+            File.position.asc(),  # Then by position
+            File.updated_at.desc(),  # Then by recency
+        )
     )
 
     # Filter by user (None means shared/dev mode, for dev/anonymous users only show files with no user_id)
@@ -124,6 +195,7 @@ async def list_files(
             position=f.position,
             summary=f.summary,
             is_favorite=f.is_favorite or False,
+            icon=f.icon,
             created_at=f.created_at.isoformat(),
             updated_at=f.updated_at.isoformat(),
         )
@@ -139,9 +211,9 @@ async def create_file(
     user_id = get_user_id(token)
     content_hash = compute_content_hash(file.content) if file.content else None
 
-    # Validate parent_id if provided
+    # Validate parent_id if provided (must not be in trash)
     if file.parent_id is not None:
-        parent_query = select(File).where(File.id == file.parent_id)
+        parent_query = select(File).where(File.id == file.parent_id, File.deleted_at.is_(None))
         parent_query = (
             parent_query.where(File.user_id == user_id)
             if user_id
@@ -213,6 +285,7 @@ async def create_file(
             position=cast(int, created["position"]),
             summary=None,
             is_favorite=False,
+            icon=None,
             created_at=cast(datetime, created["created_at"]).isoformat(),
             updated_at=cast(datetime, created["updated_at"]).isoformat(),
         )
@@ -233,10 +306,10 @@ async def create_file(
 async def get_file(
     file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
-    """Get a file by ID (must belong to current user)."""
+    """Get a file by ID (must belong to current user, not in trash)."""
     user_id = get_user_id(token)
 
-    query = select(File).where(File.id == file_id)
+    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
@@ -254,6 +327,7 @@ async def get_file(
         position=file.position,
         summary=file.summary,
         is_favorite=file.is_favorite or False,
+        icon=file.icon,
         created_at=file.created_at.isoformat(),
         updated_at=file.updated_at.isoformat(),
     )
@@ -266,10 +340,10 @@ async def update_file(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
-    """Update a file (must belong to current user)."""
+    """Update a file (must belong to current user, not in trash)."""
     user_id = get_user_id(token)
 
-    query = select(File).where(File.id == file_id)
+    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
@@ -295,6 +369,9 @@ async def update_file(
     if update.is_favorite is not None:
         file.is_favorite = update.is_favorite
 
+    if update.icon is not None:
+        file.icon = update.icon if update.icon != "" else None
+
     await db.commit()
     await db.refresh(file)
 
@@ -304,6 +381,7 @@ async def update_file(
     file_content = file.content
     file_summary = file.summary
     file_is_favorite = file.is_favorite or False
+    file_icon = file.icon
     file_created_at = file.created_at.isoformat()
     file_updated_at = file.updated_at.isoformat()
 
@@ -342,6 +420,7 @@ async def update_file(
         position=file_position,
         summary=file_summary,
         is_favorite=file_is_favorite,
+        icon=file_icon,
         created_at=file_created_at,
         updated_at=file_updated_at,
     )
@@ -351,10 +430,10 @@ async def update_file(
 async def delete_file(
     file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
 ):
-    """Delete a file (must belong to current user)."""
+    """Soft-delete a file (move to trash). Must belong to current user."""
     user_id = get_user_id(token)
 
-    query = select(File).where(File.id == file_id)
+    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
@@ -363,17 +442,44 @@ async def delete_file(
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Remove from vector store
+    now = utcnow()
+
+    # Collect all descendant IDs for recursive soft-delete (for folders)
+    descendant_ids: list[str] = []
+    if file.is_folder:
+        # Recursively find all descendants
+        async def collect_descendants(parent_id: str) -> None:
+            result = await db.execute(
+                select(File.id, File.is_folder).where(
+                    File.parent_id == parent_id, File.deleted_at.is_(None)
+                )
+            )
+            for row in result.all():
+                descendant_ids.append(row[0])
+                if row[1]:  # is_folder
+                    await collect_descendants(row[0])
+
+        await collect_descendants(file_id)
+
+        # Soft-delete all descendants
+        if descendant_ids:
+            await db.execute(update(File).where(File.id.in_(descendant_ids)).values(deleted_at=now))
+
+    # Soft delete the file/folder
+    file.deleted_at = now
+    await db.commit()
+
+    # Remove from vector store (trashed files shouldn't appear in search)
     try:
         rag = RAGService(db)
         await rag.delete_file(file_id)
+        for desc_id in descendant_ids:
+            with contextlib.suppress(Exception):
+                await rag.delete_file(desc_id)
     except Exception as e:
         logger.warning(f"Failed to delete file from vector store: {e}")
 
-    await db.delete(file)
-    await db.commit()
-
-    return {"status": "deleted"}
+    return {"status": "trashed"}
 
 
 @router.post("/folders", response_model=FileResponse)
@@ -382,28 +488,60 @@ async def create_folder(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
-    """Create a new folder at root level (single-level folder structure).
+    """Create a new folder, optionally nested inside another folder.
 
     Folders:
-    - Always have parent_id=NULL (root level only)
-    - Cannot be nested (single-level constraint)
+    - Can be nested up to 3 levels deep
     - Have empty content
     - Are not indexed in vector store
     """
     user_id = get_user_id(token)
 
-    # Validate: Check for duplicate folder name at root level
-    query = select(File).where(
-        File.name == folder.name, File.is_folder.is_(True), File.parent_id.is_(None)
-    )
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+    # Validate parent folder if provided
+    if folder.parent_id is not None:
+        parent_query = select(File).where(
+            File.id == folder.parent_id,
+            File.is_folder.is_(True),
+            File.deleted_at.is_(None),
+        )
+        parent_query = (
+            parent_query.where(File.user_id == user_id)
+            if user_id
+            else parent_query.where(File.user_id.is_(None))
+        )
+        parent_result = await db.execute(parent_query)
+        parent = parent_result.scalar_one_or_none()
 
-    result = await db.execute(query)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Parent folder not found")
+
+        # Check depth limit: parent depth + 1 (for the new folder) must be < MAX_FOLDER_DEPTH
+        parent_depth = await get_folder_depth(db, folder.parent_id)
+        if parent_depth + 1 >= MAX_FOLDER_DEPTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum folder nesting depth is {MAX_FOLDER_DEPTH} levels",
+            )
+
+    # Validate: Check for duplicate folder name at the same level (excluding trash)
+    dup_query = select(File).where(
+        File.name == folder.name,
+        File.is_folder.is_(True),
+        File.parent_id == folder.parent_id,
+        File.deleted_at.is_(None),
+    )
+    dup_query = (
+        dup_query.where(File.user_id == user_id)
+        if user_id
+        else dup_query.where(File.user_id.is_(None))
+    )
+
+    result = await db.execute(dup_query)
     existing = result.scalar_one_or_none()
 
     if existing:
         raise HTTPException(
-            status_code=400, detail=f"A folder named '{folder.name}' already exists at root level"
+            status_code=400, detail=f"A folder named '{folder.name}' already exists here"
         )
 
     try:
@@ -413,7 +551,7 @@ async def create_folder(
                 name=folder.name,
                 content="",  # Folders have no content
                 is_folder=True,
-                parent_id=None,  # Always root level (single-level constraint)
+                parent_id=folder.parent_id,
                 user_id=user_id,
             )
             .returning(
@@ -442,9 +580,12 @@ async def create_folder(
             position=cast(int, created["position"]),
             summary=None,
             is_favorite=False,
+            icon=None,
             created_at=cast(datetime, created["created_at"]).isoformat(),
             updated_at=cast(datetime, created["updated_at"]).isoformat(),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         await db.rollback()
         error_str = str(e)
@@ -463,17 +604,18 @@ async def move_file(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
-    """Move a file to a different folder (or root).
+    """Move a file or folder to a different folder (or root).
 
     Rules:
-    - Only files can be moved (not folders)
+    - Files and folders can be moved
     - Target must be a folder or None (root)
+    - Moving a folder checks for circular references and depth limits
     - User must own both file and target folder
     """
     user_id = get_user_id(token)
 
-    # Get the file to move
-    query = select(File).where(File.id == file_id)
+    # Get the file to move (must not be in trash)
+    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
@@ -482,15 +624,12 @@ async def move_file(
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Validate: Folders cannot be moved (they're always at root)
-    if file.is_folder:
-        raise HTTPException(
-            status_code=400, detail="Folders cannot be moved (always at root level)"
-        )
-
     # Validate: If target is provided, verify it's a folder and user owns it
     if move_request.target_folder_id is not None:
-        target_query = select(File).where(File.id == move_request.target_folder_id)
+        target_query = select(File).where(
+            File.id == move_request.target_folder_id,
+            File.deleted_at.is_(None),
+        )
         target_query = (
             target_query.where(File.user_id == user_id)
             if user_id
@@ -506,7 +645,29 @@ async def move_file(
         if not target.is_folder:
             raise HTTPException(status_code=400, detail="Target must be a folder")
 
-    # Move the file
+    # Additional checks for moving folders
+    if file.is_folder:
+        # Cannot move a folder into itself
+        if move_request.target_folder_id == file_id:
+            raise HTTPException(status_code=400, detail="Cannot move a folder into itself")
+
+        # Check for circular reference
+        if move_request.target_folder_id is not None:
+            if await would_create_cycle(db, file_id, move_request.target_folder_id):
+                raise HTTPException(
+                    status_code=400, detail="Cannot move folder: would create circular reference"
+                )
+
+            # Check depth limit: target depth + subtree depth of moved folder + 1
+            target_depth = await get_folder_depth(db, move_request.target_folder_id)
+            subtree_depth = await get_max_subtree_depth(db, file_id)
+            if target_depth + 1 + subtree_depth >= MAX_FOLDER_DEPTH:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot move folder: would exceed maximum depth of {MAX_FOLDER_DEPTH} levels",
+                )
+
+    # Move the file/folder
     file.parent_id = move_request.target_folder_id
     await db.commit()
     await db.refresh(file)
@@ -520,6 +681,7 @@ async def move_file(
         position=file.position,
         summary=file.summary,
         is_favorite=file.is_favorite or False,
+        icon=file.icon,
         created_at=file.created_at.isoformat(),
         updated_at=file.updated_at.isoformat(),
     )
@@ -602,8 +764,8 @@ async def search_in_document(
     user_id = get_user_id(token)
 
     try:
-        # Verify file exists and belongs to user
-        query = select(File).where(File.id == request.file_id)
+        # Verify file exists, belongs to user, and is not in trash
+        query = select(File).where(File.id == request.file_id, File.deleted_at.is_(None))
         if user_id:
             query = query.where(File.user_id == user_id)
         else:
@@ -654,10 +816,10 @@ async def generate_summary(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
-    """Generate an AI summary for a file."""
+    """Generate an AI summary for a file (not in trash)."""
     user_id = get_user_id(token)
 
-    query = select(File).where(File.id == file_id)
+    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
     query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
@@ -698,3 +860,209 @@ Document:
     except Exception as e:
         logger.error(f"Summary generation error: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate summary")
+
+
+# =============================================================================
+# Trash / Soft-Delete Endpoints
+# =============================================================================
+
+
+class TrashFileResponse(BaseModel):
+    """Trash file response model (includes deleted_at)."""
+
+    id: str
+    name: str
+    is_folder: bool = False
+    parent_id: str | None = None
+    deleted_at: str
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/trash/list", response_model=list[TrashFileResponse])
+async def list_trash(
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """List all soft-deleted files in the trash."""
+    user_id = get_user_id(token)
+
+    query = select(File).where(File.deleted_at.is_not(None)).order_by(File.deleted_at.desc())
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    result = await db.execute(query)
+    files = result.scalars().all()
+
+    return [
+        TrashFileResponse(
+            id=f.id,
+            name=f.name,
+            is_folder=f.is_folder,
+            parent_id=f.parent_id,
+            deleted_at=f.deleted_at.isoformat(),
+            created_at=f.created_at.isoformat(),
+            updated_at=f.updated_at.isoformat(),
+        )
+        for f in files
+    ]
+
+
+@router.post("/{file_id}/restore")
+async def restore_file(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Restore a soft-deleted file from the trash."""
+    user_id = get_user_id(token)
+
+    query = select(File).where(File.id == file_id, File.deleted_at.is_not(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    result = await db.execute(query)
+    file = result.scalar_one_or_none()
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found in trash")
+
+    # If it's a folder, recursively restore all descendants
+    if file.is_folder:
+
+        async def restore_descendants(parent_id: str) -> None:
+            result = await db.execute(
+                select(File.id, File.is_folder).where(
+                    File.parent_id == parent_id, File.deleted_at.is_not(None)
+                )
+            )
+            children = result.all()
+            child_ids = [row[0] for row in children]
+            if child_ids:
+                await db.execute(update(File).where(File.id.in_(child_ids)).values(deleted_at=None))
+            for row in children:
+                if row[1]:  # is_folder
+                    await restore_descendants(row[0])
+
+        await restore_descendants(file_id)
+
+    # Restore the file/folder
+    file.deleted_at = None
+    await db.commit()
+
+    # Re-index in vector store
+    try:
+        rag = RAGService(db)
+        if not file.is_folder:
+            strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file.content, file.name)
+            await rag.index_file(
+                file_id=file.id,
+                content=file.content,
+                metadata={"name": file.name, "user_id": user_id},
+                strategy=strategy,
+            )
+            await rag.index_file_sentences(
+                file_id=file.id,
+                content=file.content,
+                metadata={"name": file.name, "user_id": user_id},
+            )
+    except Exception as e:
+        logger.warning(f"Failed to re-index restored file: {e}")
+
+    return {"status": "restored"}
+
+
+@router.delete("/{file_id}/permanent")
+async def permanent_delete_file(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Permanently delete a file that is already in the trash."""
+    user_id = get_user_id(token)
+
+    query = select(File).where(File.id == file_id, File.deleted_at.is_not(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    result = await db.execute(query)
+    file = result.scalar_one_or_none()
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found in trash")
+
+    # Extract image keys from content before deletion
+    from api.images import delete_orphaned_images, extract_image_keys_from_content
+
+    image_keys = extract_image_keys_from_content(file.content) if file.content else []
+
+    # Remove from vector store (may already be removed)
+    try:
+        rag = RAGService(db)
+        await rag.delete_file(file_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete file from vector store: {e}")
+
+    await db.delete(file)
+    await db.commit()
+
+    # Clean up orphaned images from S3
+    if image_keys:
+        try:
+            await delete_orphaned_images(db, image_keys, exclude_file_ids=[file_id])
+        except Exception as e:
+            logger.warning(f"Failed to clean up images for file {file_id}: {e}")
+
+    return {"status": "permanently_deleted"}
+
+
+@router.delete("/trash/empty")
+async def empty_trash(
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Permanently delete all files in the trash."""
+    user_id = get_user_id(token)
+
+    query = select(File).where(File.deleted_at.is_not(None))
+    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
+
+    result = await db.execute(query)
+    trash_files = result.scalars().all()
+
+    if not trash_files:
+        return {"status": "empty", "count": 0}
+
+    # Collect image keys from all trash files before deletion
+    from api.images import delete_orphaned_images, extract_image_keys_from_content
+
+    all_image_keys: list[str] = []
+    trash_file_ids: list[str] = []
+    for f in trash_files:
+        trash_file_ids.append(f.id)
+        if f.content:
+            all_image_keys.extend(extract_image_keys_from_content(f.content))
+
+    # Remove all from vector store
+    rag = RAGService(db)
+    for f in trash_files:
+        try:
+            await rag.delete_file(f.id)
+        except Exception as e:
+            logger.warning(f"Failed to delete file {f.id} from vector store: {e}")
+
+    # Permanently delete all
+    for f in trash_files:
+        await db.delete(f)
+
+    await db.commit()
+
+    # Clean up orphaned images from S3
+    if all_image_keys:
+        try:
+            unique_keys = list(set(all_image_keys))
+            await delete_orphaned_images(db, unique_keys, exclude_file_ids=trash_file_ids)
+        except Exception as e:
+            logger.warning(f"Failed to clean up images during trash empty: {e}")
+
+    return {"status": "emptied", "count": len(trash_files)}

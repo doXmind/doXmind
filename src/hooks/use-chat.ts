@@ -153,7 +153,14 @@ export function useChat() {
       setCurrentTool(null);
       setToolHistory([]);
       setThinking({ isThinking: false, content: "" });
-      setTodos([]);
+      // Preserve incomplete todos across messages (clear only if all completed)
+      const existingTodos = useStreamingStore.getState().todos;
+      const hasIncompleteTodos = existingTodos.some(
+        (t) => t.status === "pending" || t.status === "in_progress"
+      );
+      if (!hasIncompleteTodos) {
+        setTodos([]);
+      }
       toolInputRef.current = "";
 
       const signal = streamControllerRef.current.start();
@@ -331,6 +338,10 @@ export function useChat() {
                 edits: parsed.edits || null,
                 model: parsed.model || "",
               };
+              // Sync final todo state from summary
+              if (parsed.todos) {
+                setTodos(parsed.todos);
+              }
               break;
 
             case "error": {
@@ -506,6 +517,18 @@ export function useChat() {
         setCurrentTool(null);
         setThinking({ isThinking: false, content: "" });
         // Don't clear todos - keep them visible after streaming ends
+        // Auto-clear fully-completed todos after a delay (visual feedback)
+        const finalTodos = useStreamingStore.getState().todos;
+        const allCompleted =
+          finalTodos.length > 0 && finalTodos.every((t) => t.status === "completed");
+        if (allCompleted) {
+          setTimeout(() => {
+            const current = useStreamingStore.getState().todos;
+            if (current.length > 0 && current.every((t) => t.status === "completed")) {
+              clearTodos();
+            }
+          }, 3000);
+        }
         toolInputRef.current = "";
       }
     },

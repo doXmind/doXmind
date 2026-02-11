@@ -4,6 +4,57 @@ import { useState, useMemo } from "react";
 import { User, Bot, ChevronDown, ChevronRight, ImageIcon, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { marked } from "marked";
+import katex from "katex";
+
+/**
+ * Render LaTeX math in markdown text.
+ * Extracts math before marked.parse() to prevent _ in LaTeX being treated as emphasis,
+ * then restores with KaTeX-rendered HTML after markdown processing.
+ */
+function parseMarkdownWithMath(text: string): string {
+  const placeholders: { key: string; rendered: string }[] = [];
+  let idx = 0;
+
+  // Extract block math $$...$$ first
+  let processed = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, latex) => {
+    try {
+      const rendered = katex.renderToString(latex.trim(), {
+        displayMode: true,
+        throwOnError: false,
+      });
+      const key = `__MATH_BLOCK_${idx++}__`;
+      placeholders.push({ key, rendered });
+      return key;
+    } catch {
+      return `$$${latex}$$`;
+    }
+  });
+
+  // Extract inline math $...$
+  processed = processed.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, latex) => {
+    try {
+      const rendered = katex.renderToString(latex.trim(), {
+        displayMode: false,
+        throwOnError: false,
+      });
+      const key = `__MATH_INLINE_${idx++}__`;
+      placeholders.push({ key, rendered });
+      return key;
+    } catch {
+      return `$${latex}$`;
+    }
+  });
+
+  // Run markdown parser on text with placeholders (safe from _ interference)
+  let html = marked.parse(processed, { async: false }) as string;
+
+  // Restore placeholders with KaTeX HTML
+  for (const { key, rendered } of placeholders) {
+    html = html.replace(key, rendered);
+  }
+
+  return html;
+}
 
 interface MessageContextItem {
   type: string;
@@ -111,7 +162,7 @@ export function ChatMessage({
       '<div class="flex items-center gap-2 text-red-600 dark:text-red-400 py-1"><span class="text-xs">Error: $1</span></div>'
     );
 
-    return marked.parse(text, { async: false }) as string;
+    return parseMarkdownWithMath(text);
   }, [content, isUser]);
 
   return (

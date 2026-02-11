@@ -27,15 +27,15 @@ doXmind Mini is an AI-powered Markdown writing assistant that deeply integrates 
 
 ### Core Features
 
-| Feature | Description |
-|---------|-------------|
-| **Intelligent Chat** | Real-time streaming conversations with Claude, supporting extended thinking |
-| **Quick Edit** | One-click text polishing, translation, expansion, and condensation |
-| **Autocomplete** | AI-powered next-word prediction while typing, accept with Tab |
-| **Knowledge Base RAG** | Upload documents as conversation context with vector retrieval |
-| **Version History** | AI edits automatically saved as versions with rollback support |
-| **Multi-format Export** | Support for PDF, DOCX, and Markdown export |
-| **Mobile Adaptation** | Responsive design, gesture controls, and voice input |
+| Feature                 | Description                                                                 |
+| ----------------------- | --------------------------------------------------------------------------- |
+| **Intelligent Chat**    | Real-time streaming conversations with Claude, supporting extended thinking |
+| **Quick Edit**          | One-click text polishing, translation, expansion, and condensation          |
+| **Autocomplete**        | AI-powered next-word prediction while typing, accept with Tab               |
+| **Knowledge Base RAG**  | Upload documents as conversation context with vector retrieval              |
+| **Version History**     | AI edits automatically saved as versions with rollback support              |
+| **Multi-format Export** | Support for PDF, DOCX, and Markdown export                                  |
+| **Mobile Adaptation**   | Responsive design, gesture controls, and voice input                        |
 
 ---
 
@@ -178,38 +178,38 @@ User Input           Processing Layer          Storage Layer      External Servi
 
 ### 3.1 Frontend Technology Stack
 
-| Category | Technology | Version | Purpose |
-|----------|------------|---------|---------|
-| **Framework** | Next.js | 15 | App Router, RSC |
-| **UI Library** | React | 19 | Component-based development |
-| **Editor** | TipTap | 2.x | WYSIWYG rich text editing |
-| **State Management** | Zustand | 5.x | Lightweight state management |
-| **Styling** | Tailwind CSS | 3.x | Utility-first CSS |
-| **Animation** | Framer Motion | 11.x | Declarative animations |
-| **Types** | TypeScript | 5.x | Type safety |
-| **Testing** | Vitest + RTL | - | Unit/component testing |
+| Category             | Technology    | Version | Purpose                      |
+| -------------------- | ------------- | ------- | ---------------------------- |
+| **Framework**        | Next.js       | 15      | App Router, RSC              |
+| **UI Library**       | React         | 19      | Component-based development  |
+| **Editor**           | TipTap        | 2.x     | WYSIWYG rich text editing    |
+| **State Management** | Zustand       | 5.x     | Lightweight state management |
+| **Styling**          | Tailwind CSS  | 3.x     | Utility-first CSS            |
+| **Animation**        | Framer Motion | 11.x    | Declarative animations       |
+| **Types**            | TypeScript    | 5.x     | Type safety                  |
+| **Testing**          | Vitest + RTL  | -       | Unit/component testing       |
 
 ### 3.2 Backend Technology Stack
 
-| Category | Technology | Version | Purpose |
-|----------|------------|---------|---------|
-| **Framework** | FastAPI | 0.115+ | Async REST API |
-| **Runtime** | Python | 3.12 | Backend language |
-| **ORM** | SQLAlchemy | 2.0 | Async database operations |
-| **Database** | PostgreSQL | 16 | Primary database |
-| **Vector Store** | pgvector | - | Vector retrieval |
-| **AI Framework** | Anthropic SDK | - | Claude API integration |
-| **Agent** | LangGraph | - | AI workflow orchestration |
-| **Testing** | pytest | - | Backend testing |
+| Category         | Technology    | Version | Purpose                   |
+| ---------------- | ------------- | ------- | ------------------------- |
+| **Framework**    | FastAPI       | 0.115+  | Async REST API            |
+| **Runtime**      | Python        | 3.12    | Backend language          |
+| **ORM**          | SQLAlchemy    | 2.0     | Async database operations |
+| **Database**     | PostgreSQL    | 16      | Primary database          |
+| **Vector Store** | pgvector      | -       | Vector retrieval          |
+| **AI Framework** | Anthropic SDK | -       | Claude API integration    |
+| **Agent**        | LangGraph     | -       | AI workflow orchestration |
+| **Testing**      | pytest        | -       | Backend testing           |
 
 ### 3.3 Infrastructure
 
-| Category | Technology | Purpose |
-|----------|------------|---------|
-| **Containerization** | Docker Compose | Local development environment |
-| **Deployment** | Heroku | Production environment |
-| **CI/CD** | GitHub Actions | Automated testing and deployment |
-| **Monitoring** | Custom Logger | Structured logging |
+| Category             | Technology     | Purpose                          |
+| -------------------- | -------------- | -------------------------------- |
+| **Containerization** | Docker Compose | Local development environment    |
+| **Deployment**       | Heroku         | Production environment           |
+| **CI/CD**            | GitHub Actions | Automated testing and deployment |
+| **Monitoring**       | Custom Logger  | Structured logging               |
 
 ---
 
@@ -542,29 +542,29 @@ server/
 
 ### 5.3 API Endpoint Overview
 
-| Module | Endpoint | Method | Description |
-|--------|----------|--------|-------------|
-| **Auth** | `/api/auth/login` | POST | User login |
-| | `/api/auth/register` | POST | User registration |
-| | `/api/auth/oauth/{provider}` | GET | OAuth initiation |
-| | `/api/auth/oauth/{provider}/callback` | GET | OAuth callback |
-| **Files** | `/api/files` | GET | Get file list |
-| | `/api/files` | POST | Create file |
-| | `/api/files/{id}` | PUT | Update file |
-| | `/api/files/{id}` | DELETE | Delete file |
-| **Chat** | `/api/chat/stream` | POST | Streaming chat (SSE) |
-| | `/api/chat/conversations/{fileId}` | GET | Get conversation history |
-| | `/api/chat/messages` | POST | Save message |
-| **Edit** | `/api/edit/quick` | POST | Quick edit (SSE) |
-| **Autocomplete** | `/api/autocomplete/` | POST | Autocomplete (SSE) |
-| **KB** | `/api/kb/{convId}/attachments` | POST | Upload attachment |
-| | `/api/kb/{convId}/attachments` | GET | Get attachment list |
-| | `/api/kb/search` | POST | Search knowledge base |
-| **Export** | `/api/export/` | POST | Export file |
-| **Versions** | `/api/versions/{fileId}` | GET | Get version history |
-| | `/api/versions/{versionId}/revert` | POST | Revert to version |
-| **Shares** | `/api/shares` | POST | Create share |
-| | `/api/shares/{token}` | GET | Get shared content |
+| Module           | Endpoint                              | Method | Description              |
+| ---------------- | ------------------------------------- | ------ | ------------------------ |
+| **Auth**         | `/api/auth/login`                     | POST   | User login               |
+|                  | `/api/auth/register`                  | POST   | User registration        |
+|                  | `/api/auth/oauth/{provider}`          | GET    | OAuth initiation         |
+|                  | `/api/auth/oauth/{provider}/callback` | GET    | OAuth callback           |
+| **Files**        | `/api/files`                          | GET    | Get file list            |
+|                  | `/api/files`                          | POST   | Create file              |
+|                  | `/api/files/{id}`                     | PUT    | Update file              |
+|                  | `/api/files/{id}`                     | DELETE | Delete file              |
+| **Chat**         | `/api/chat/stream`                    | POST   | Streaming chat (SSE)     |
+|                  | `/api/chat/conversations/{fileId}`    | GET    | Get conversation history |
+|                  | `/api/chat/messages`                  | POST   | Save message             |
+| **Edit**         | `/api/edit/quick`                     | POST   | Quick edit (SSE)         |
+| **Autocomplete** | `/api/autocomplete/`                  | POST   | Autocomplete (SSE)       |
+| **KB**           | `/api/kb/{convId}/attachments`        | POST   | Upload attachment        |
+|                  | `/api/kb/{convId}/attachments`        | GET    | Get attachment list      |
+|                  | `/api/kb/search`                      | POST   | Search knowledge base    |
+| **Export**       | `/api/export/`                        | POST   | Export file              |
+| **Versions**     | `/api/versions/{fileId}`              | GET    | Get version history      |
+|                  | `/api/versions/{versionId}/revert`    | POST   | Revert to version        |
+| **Shares**       | `/api/shares`                         | POST   | Create share             |
+|                  | `/api/shares/{token}`                 | GET    | Get shared content       |
 
 ---
 
@@ -640,16 +640,16 @@ User                    Frontend                 Backend               Claude
 
 **SSE Event Types:**
 
-| Event Type | Data Structure | Description |
-|------------|----------------|-------------|
-| `text_chunk` | `{ content: string }` | Streaming text fragment |
-| `tool_call` | `{ name: string, input: object }` | Tool call start |
-| `tool_result` | `{ name: string, output: object }` | Tool execution result |
-| `thinking` | `{ content: string }` | Extended thinking content |
-| `todo_item` | `{ content: string, status: string }` | Task item parsed |
-| `edit` | `{ type: string, old_str: string, new_str: string }` | Edit operation |
-| `done` | `{}` | Response complete |
-| `error` | `{ message: string }` | Error message |
+| Event Type    | Data Structure                                       | Description               |
+| ------------- | ---------------------------------------------------- | ------------------------- |
+| `text_chunk`  | `{ content: string }`                                | Streaming text fragment   |
+| `tool_call`   | `{ name: string, input: object }`                    | Tool call start           |
+| `tool_result` | `{ name: string, output: object }`                   | Tool execution result     |
+| `thinking`    | `{ content: string }`                                | Extended thinking content |
+| `todo_item`   | `{ content: string, status: string }`                | Task item parsed          |
+| `edit`        | `{ type: string, old_str: string, new_str: string }` | Edit operation            |
+| `done`        | `{}`                                                 | Response complete         |
+| `error`       | `{ message: string }`                                | Error message             |
 
 ### 6.2 Quick Edit
 
@@ -699,17 +699,17 @@ User                    Editor                   Backend               Claude
 
 **Quick Edit Action Types:**
 
-| Action | Action ID | Description |
-|--------|-----------|-------------|
-| Fix Grammar | `fix-grammar` | Fix grammar and spelling errors |
-| Improve | `improve` | Enhance text quality |
-| Simplify | `simplify` | Simplify expression |
-| Expand | `expand` | Expand with details |
-| Shorten | `shorten` | Condense content |
-| Professional | `professional` | Convert to formal tone |
-| Casual | `casual` | Convert to relaxed tone |
-| Translate EN | `translate-en` | Translate to English |
-| Translate ZH | `translate-zh` | Translate to Chinese |
+| Action       | Action ID      | Description                     |
+| ------------ | -------------- | ------------------------------- |
+| Fix Grammar  | `fix-grammar`  | Fix grammar and spelling errors |
+| Improve      | `improve`      | Enhance text quality            |
+| Simplify     | `simplify`     | Simplify expression             |
+| Expand       | `expand`       | Expand with details             |
+| Shorten      | `shorten`      | Condense content                |
+| Professional | `professional` | Convert to formal tone          |
+| Casual       | `casual`       | Convert to relaxed tone         |
+| Translate EN | `translate-en` | Translate to English            |
+| Translate ZH | `translate-zh` | Translate to Chinese            |
 
 ### 6.3 Autocomplete
 
@@ -1232,11 +1232,11 @@ interface Conversation {
 // Message
 interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
-  thinking?: string;          // Extended thinking content
-  toolCalls?: ToolCall[];     // Tool call records
-  edits?: EditOperation[];    // Edit operations
+  thinking?: string; // Extended thinking content
+  toolCalls?: ToolCall[]; // Tool call records
+  edits?: EditOperation[]; // Edit operations
   contexts?: MessageContext[]; // Context attachments
   createdAt: string;
 }
@@ -1251,7 +1251,7 @@ interface ToolCall {
 
 // Edit Operation
 interface EditOperation {
-  type: 'str_replace' | 'insert' | 'replace_all';
+  type: "str_replace" | "insert" | "replace_all";
   file_id: string;
   file_name: string;
   old_str?: string;
@@ -1262,8 +1262,8 @@ interface EditOperation {
 
 // Message Context
 type MessageContext =
-  | { type: 'selection'; text: string }
-  | { type: 'image'; src: string; base64: string; mediaType: string };
+  | { type: "selection"; text: string }
+  | { type: "image"; src: string; base64: string; mediaType: string };
 
 // Knowledge Base Attachment
 interface KBAttachment {
@@ -1271,7 +1271,7 @@ interface KBAttachment {
   conversationId: string;
   filename: string;
   fileType: string;
-  status: 'processing' | 'ready' | 'error';
+  status: "processing" | "ready" | "error";
   errorMessage?: string;
   createdAt: string;
 }
@@ -1282,7 +1282,7 @@ interface FileVersion {
   fileId: string;
   content: string;
   diff: DiffChange[];
-  editType: 'ai_edit' | 'manual' | 'revert';
+  editType: "ai_edit" | "manual" | "revert";
   summary: string;
   createdAt: string;
 }
@@ -1359,17 +1359,18 @@ class MessageResponse(BaseModel):
    │ - Tool calls │    │   (1536-dim) │    │ - PDF→MD     │
    │ - Streaming  │    │ - Whisper    │    │ - DOCX→MD    │
    │ - Thinking   │    │   (Speech)   │    │              │
+   │ - Files API  │    │              │    │              │
    └──────────────┘    └──────────────┘    └──────────────┘
            │                   │
            │                   │
            │                   ▼
-           │           ┌──────────────┐
-           │           │ LanguageTool │
-           │           ├──────────────┤
-           │           │ - Spelling   │
-           │           │ - Grammar    │
-           │           │ - Multi-lang │
-           │           └──────────────┘
+           │           ┌──────────────┐    ┌──────────────┐
+           │           │ LanguageTool │    │CourtListener │
+           │           ├──────────────┤    ├──────────────┤
+           │           │ - Spelling   │    │ - Case law   │
+           │           │ - Grammar    │    │ - Legal docs │
+           │           │ - Multi-lang │    │ - Court data │
+           │           └──────────────┘    └──────────────┘
            │
            ▼
    ┌──────────────────────────────────────┐
@@ -1489,18 +1490,18 @@ EMBEDDING_MODEL=text-embedding-3-small
 
 ### 9.2 Security Measures Checklist
 
-| Layer | Measure | Implementation |
-|-------|---------|----------------|
-| **Authentication** | JWT Token | HS256 signature, 7-day expiry |
-| **Password** | bcrypt hash | 12-round salted hash |
-| **Transport** | HTTPS Only | Force HTTPS |
-| **CORS** | Origin whitelist | Configured allowed domains |
-| **CSP** | Content Security Policy | Prevent XSS attacks |
-| **Rate Limiting** | SlowAPI | Per-minute request limits |
-| **Data Isolation** | user_id filter | Forced user filtering in queries |
-| **Input Validation** | Pydantic | Auto request body validation |
-| **SQL Injection** | SQLAlchemy ORM | Parameterized queries |
-| **Sensitive Info** | Env variables | No hardcoded secrets |
+| Layer                | Measure                 | Implementation                   |
+| -------------------- | ----------------------- | -------------------------------- |
+| **Authentication**   | JWT Token               | HS256 signature, 7-day expiry    |
+| **Password**         | bcrypt hash             | 12-round salted hash             |
+| **Transport**        | HTTPS Only              | Force HTTPS                      |
+| **CORS**             | Origin whitelist        | Configured allowed domains       |
+| **CSP**              | Content Security Policy | Prevent XSS attacks              |
+| **Rate Limiting**    | SlowAPI                 | Per-minute request limits        |
+| **Data Isolation**   | user_id filter          | Forced user filtering in queries |
+| **Input Validation** | Pydantic                | Auto request body validation     |
+| **SQL Injection**    | SQLAlchemy ORM          | Parameterized queries            |
+| **Sensitive Info**   | Env variables           | No hardcoded secrets             |
 
 ### 9.3 Middleware Configuration
 
@@ -1537,26 +1538,26 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 ### 10.1 Frontend Optimization
 
-| Strategy | Implementation | Effect |
-|----------|----------------|--------|
-| **Debounced Saves** | 500ms debounce | Reduce API calls |
-| **Stream Rendering** | SSE real-time display | Lower perceived latency |
-| **Code Splitting** | Next.js dynamic imports | Reduce initial load |
-| **Image Optimization** | Next/Image | Auto compression and lazy load |
-| **State Persistence** | Zustand persist | Reduce repeat requests |
-| **Optimistic Updates** | Local update first | Instant UI feedback |
-| **Virtual Scrolling** | Not implemented (TODO) | Long list performance |
+| Strategy               | Implementation          | Effect                         |
+| ---------------------- | ----------------------- | ------------------------------ |
+| **Debounced Saves**    | 500ms debounce          | Reduce API calls               |
+| **Stream Rendering**   | SSE real-time display   | Lower perceived latency        |
+| **Code Splitting**     | Next.js dynamic imports | Reduce initial load            |
+| **Image Optimization** | Next/Image              | Auto compression and lazy load |
+| **State Persistence**  | Zustand persist         | Reduce repeat requests         |
+| **Optimistic Updates** | Local update first      | Instant UI feedback            |
+| **Virtual Scrolling**  | Not implemented (TODO)  | Long list performance          |
 
 ### 10.2 Backend Optimization
 
-| Strategy | Implementation | Effect |
-|----------|----------------|--------|
-| **Async I/O** | asyncio + aiohttp | High concurrency handling |
-| **Connection Pool** | SQLAlchemy pool | Database connection reuse |
-| **Streaming Response** | SSE Generator | Memory efficient |
-| **Vector Index** | pgvector HNSW | Fast similarity retrieval |
-| **Completion Cache** | LRU Cache | Reduce LLM calls |
-| **Batch Embedding** | OpenAI batch | Reduce API round trips |
+| Strategy               | Implementation    | Effect                    |
+| ---------------------- | ----------------- | ------------------------- |
+| **Async I/O**          | asyncio + aiohttp | High concurrency handling |
+| **Connection Pool**    | SQLAlchemy pool   | Database connection reuse |
+| **Streaming Response** | SSE Generator     | Memory efficient          |
+| **Vector Index**       | pgvector HNSW     | Fast similarity retrieval |
+| **Completion Cache**   | LRU Cache         | Reduce LLM calls          |
+| **Batch Embedding**    | OpenAI batch      | Reduce API round trips    |
 
 ### 10.3 Database Optimization
 
@@ -1619,23 +1620,23 @@ User Interaction          Frontend                    Backend                Sto
 
 ### 11.2 Telemetry Event Types
 
-| Event Type | Category | Data Collected | Purpose |
-|------------|----------|----------------|---------|
-| `diff_hunk_accepted` | Diff Review | Original content, AI suggestion, decision time | RLHF positive signal |
-| `diff_hunk_rejected` | Diff Review | Original content, AI suggestion, decision time | RLHF negative signal |
-| `diff_all_accepted` | Diff Review | Bulk accept count | Usage pattern |
-| `diff_all_rejected` | Diff Review | Bulk reject count | Usage pattern |
-| `autocomplete_shown` | Autocomplete | Suggestion ID, trigger mode, latency | Display tracking |
-| `autocomplete_accepted` | Autocomplete | Text before, suggestion, decision speed | RLHF positive signal |
-| `autocomplete_dismissed` | Autocomplete | Text before, suggestion, dismiss reason | RLHF negative signal |
-| `autocomplete_partial` | Autocomplete | Partial acceptance info | User preference |
-| `chat_feedback` | Chat | User prompt, AI response, rating (+1/-1) | RLHF training |
-| `chat_regenerate` | Chat | Regeneration request | Negative signal |
-| `edit_applied` | Edit Ops | Edit type, success status | Feature usage |
-| `post_ai_edit` | Edit Ops | Original AI output, final user content | Preference learning |
-| `undo_after_ai` | Edit Ops | AI operation type, time to undo | Negative signal |
-| `feature_used` | Usage Stats | Feature name, outcome, duration | Analytics |
-| `session_summary` | Usage Stats | Session duration, message count | Aggregate stats |
+| Event Type               | Category     | Data Collected                                 | Purpose              |
+| ------------------------ | ------------ | ---------------------------------------------- | -------------------- |
+| `diff_hunk_accepted`     | Diff Review  | Original content, AI suggestion, decision time | RLHF positive signal |
+| `diff_hunk_rejected`     | Diff Review  | Original content, AI suggestion, decision time | RLHF negative signal |
+| `diff_all_accepted`      | Diff Review  | Bulk accept count                              | Usage pattern        |
+| `diff_all_rejected`      | Diff Review  | Bulk reject count                              | Usage pattern        |
+| `autocomplete_shown`     | Autocomplete | Suggestion ID, trigger mode, latency           | Display tracking     |
+| `autocomplete_accepted`  | Autocomplete | Text before, suggestion, decision speed        | RLHF positive signal |
+| `autocomplete_dismissed` | Autocomplete | Text before, suggestion, dismiss reason        | RLHF negative signal |
+| `autocomplete_partial`   | Autocomplete | Partial acceptance info                        | User preference      |
+| `chat_feedback`          | Chat         | User prompt, AI response, rating (+1/-1)       | RLHF training        |
+| `chat_regenerate`        | Chat         | Regeneration request                           | Negative signal      |
+| `edit_applied`           | Edit Ops     | Edit type, success status                      | Feature usage        |
+| `post_ai_edit`           | Edit Ops     | Original AI output, final user content         | Preference learning  |
+| `undo_after_ai`          | Edit Ops     | AI operation type, time to undo                | Negative signal      |
+| `feature_used`           | Usage Stats  | Feature name, outcome, duration                | Analytics            |
+| `session_summary`        | Usage Stats  | Session duration, message count                | Aggregate stats      |
 
 ### 11.3 RLHF Data Extraction
 
@@ -1680,13 +1681,13 @@ post_ai_edit            → chosen=final_user_content, rejected=original_ai_outp
 
 **Settings Table:**
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `productImprovementEnabled` | true | Master toggle for detailed collection |
-| `collectEditFeedback` | true | Diff review and edit operations |
-| `collectChatFeedback` | true | Chat feedback signals |
-| `collectAutocompleteStats` | true | Autocomplete interactions |
-| `collectUsageStats` | true | Feature usage and session summaries |
+| Setting                     | Default | Description                           |
+| --------------------------- | ------- | ------------------------------------- |
+| `productImprovementEnabled` | true    | Master toggle for detailed collection |
+| `collectEditFeedback`       | true    | Diff review and edit operations       |
+| `collectChatFeedback`       | true    | Chat feedback signals                 |
+| `collectAutocompleteStats`  | true    | Autocomplete interactions             |
+| `collectUsageStats`         | true    | Feature usage and session summaries   |
 
 ### 11.5 Frontend Components
 
@@ -1722,11 +1723,11 @@ Integration Points:
 
 ### 11.6 Backend API
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/telemetry/events` | POST | Submit batch of events (max 100) |
-| `/api/telemetry/settings` | GET | Retrieve user telemetry settings |
-| `/api/telemetry/settings` | PUT | Update user telemetry settings |
+| Endpoint                  | Method | Description                      |
+| ------------------------- | ------ | -------------------------------- |
+| `/api/telemetry/events`   | POST   | Submit batch of events (max 100) |
+| `/api/telemetry/settings` | GET    | Retrieve user telemetry settings |
+| `/api/telemetry/settings` | PUT    | Update user telemetry settings   |
 
 **Event Storage Model:**
 
@@ -1764,7 +1765,7 @@ Time to Decision        Classification      Interpretation
 ### 12.1 Docker Compose Development Environment
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -1865,15 +1866,15 @@ logger.error("llm_error", error=str(e), model=model)
 
 ### 13.2 Key Metrics
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `chat_latency_ms` | Histogram | Chat response latency |
-| `llm_tokens_used` | Counter | LLM token usage |
-| `api_requests_total` | Counter | Total API requests |
-| `api_errors_total` | Counter | API error count |
-| `db_query_duration_ms` | Histogram | Database query duration |
-| `rag_search_latency_ms` | Histogram | RAG retrieval latency |
-| `active_users` | Gauge | Current active users |
+| Metric                  | Type      | Description             |
+| ----------------------- | --------- | ----------------------- |
+| `chat_latency_ms`       | Histogram | Chat response latency   |
+| `llm_tokens_used`       | Counter   | LLM token usage         |
+| `api_requests_total`    | Counter   | Total API requests      |
+| `api_errors_total`      | Counter   | API error count         |
+| `db_query_duration_ms`  | Histogram | Database query duration |
+| `rag_search_latency_ms` | Histogram | RAG retrieval latency   |
+| `active_users`          | Gauge     | Current active users    |
 
 ---
 
@@ -1881,14 +1882,14 @@ logger.error("llm_error", error=str(e), model=model)
 
 ### 14.1 Technical Evolution
 
-| Feature | Priority | Description |
-|---------|----------|-------------|
-| **Real-time Collaboration** | P1 | WebSocket multi-user real-time editing |
-| **Hybrid Search** | P1 | BM25 + semantic search combination |
-| **Memory System** | P2 | User preferences and writing style learning |
-| **Offline Mode** | P2 | Service Worker + IndexedDB |
-| **Native App** | P3 | React Native mobile app |
-| **Plugin System** | P3 | Extensible editor functionality |
+| Feature                     | Priority | Description                                 |
+| --------------------------- | -------- | ------------------------------------------- |
+| **Real-time Collaboration** | P1       | WebSocket multi-user real-time editing      |
+| **Hybrid Search**           | P1       | BM25 + semantic search combination          |
+| **Memory System**           | P2       | User preferences and writing style learning |
+| **Offline Mode**            | P2       | Service Worker + IndexedDB                  |
+| **Native App**              | P3       | React Native mobile app                     |
+| **Plugin System**           | P3       | Extensible editor functionality             |
 
 ### 14.2 Architecture Improvements
 
@@ -1944,6 +1945,7 @@ docker-compose logs -f # View logs
 ### B. API Documentation
 
 Available in development mode:
+
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
@@ -1957,5 +1959,5 @@ Available in development mode:
 
 ---
 
-*Document Version: 1.0.0*
-*Last Updated: 2026-01-28*
+_Document Version: 1.1.0_
+_Last Updated: 2026-02-10_

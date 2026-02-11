@@ -223,8 +223,15 @@ class UserService:
         user.last_login_at = datetime.now(UTC)
         await self.db.commit()
 
-        # Generate token
-        token = create_access_token(subject=user.id)
+        # Generate token with user info
+        token = create_access_token(
+            subject=user.id,
+            email=user.email,
+            username=user.username,
+            avatar_url=user.avatar_url,
+            oauth_provider=user.oauth_provider,
+            oauth_id=user.oauth_id,
+        )
 
         return True, "Login successful", token
 
