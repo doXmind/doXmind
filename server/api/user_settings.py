@@ -6,12 +6,13 @@ Allows users to use their own Anthropic API key for custom model selection.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import get_db
+from exceptions import BadRequestError, InternalError
 from middleware.rate_limit import limiter
 from services.api_key_service import APIKeyService
 from services.auth_service import TokenData, require_auth
@@ -100,17 +101,14 @@ async def save_api_key(
     # Validate the API key first
     is_valid, error_msg = await service.validate_api_key(body.api_key)
     if not is_valid:
-        raise HTTPException(status_code=400, detail=error_msg or "Invalid API key")
+        raise BadRequestError(message=error_msg or "Invalid API key")
 
     try:
         await service.save_api_key(auth.sub, body.api_key)
         return {"status": "ok", "message": "API key saved successfully"}
     except ValueError as e:
         logger.error(f"Failed to save API key: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to save API key. Encryption may not be configured.",
-        )
+        raise InternalError(message="Failed to save API key. Encryption may not be configured.")
 
 
 @router.delete("/api-key")
@@ -138,9 +136,8 @@ async def update_model_preference(
 
     # Validate model is in allowed list
     if request.model not in settings.available_models:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid model. Available models: {', '.join(settings.available_models)}",
+        raise BadRequestError(
+            message=f"Invalid model. Available models: {', '.join(settings.available_models)}"
         )
 
     service = APIKeyService(db)
@@ -148,10 +145,7 @@ async def update_model_preference(
     # Only allow model selection if user has their own API key
     user_settings = await service.get_user_settings(auth.sub)
     if not service.has_api_key(user_settings):
-        raise HTTPException(
-            status_code=400,
-            detail="Model selection requires your own API key",
-        )
+        raise BadRequestError(message="Model selection requires your own API key")
 
     await service.update_preferred_model(auth.sub, request.model)
     return {"status": "ok", "preferred_model": request.model}

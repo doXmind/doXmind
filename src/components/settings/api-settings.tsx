@@ -72,13 +72,10 @@ export function APISettings() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-medium">API Settings</h3>
-        <p className="text-sm text-muted-foreground">
-          Use your own Anthropic API key to unlock model selection.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Use your own Anthropic API key to unlock model selection.
+      </p>
 
       <div className="space-y-4 rounded-lg border p-4">
         {/* API Key Section */}

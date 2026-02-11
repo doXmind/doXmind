@@ -2,15 +2,24 @@
 
 Implements request rate limiting to prevent API abuse.
 Uses slowapi for efficient in-memory rate limiting with Redis support.
+Supports per-user rate limiting via JWT tokens with IP fallback.
 """
+
+import logging
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from jose import jwt
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# User IDs that should fall back to IP-based rate limiting
+_SKIP_USER_IDS = {"dev-user", "api-key-user", "anonymous"}
 
 
 def get_client_ip(request: Request) -> str:
@@ -33,10 +42,39 @@ def get_client_ip(request: Request) -> str:
     return get_remote_address(request)
 
 
+def get_rate_limit_key(request: Request) -> str:
+    """Get rate limiting key from request.
+
+    Tries to extract user_id from a JWT token in the Authorization header
+    for per-user rate limiting. Falls back to client IP address if:
+    - No Authorization header is present
+    - The token is invalid or expired
+    - The user is a special user (dev-user, api-key-user, anonymous)
+    """
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]  # Strip "Bearer " prefix
+        try:
+            settings = get_settings()
+            payload = jwt.decode(
+                token,
+                settings.jwt_secret_key,
+                algorithms=[settings.jwt_algorithm],
+            )
+            user_id = payload.get("sub")
+            if user_id and user_id not in _SKIP_USER_IDS:
+                return f"user:{user_id}"
+        except Exception:
+            # Any JWT error (expired, invalid, malformed) — fall back to IP
+            pass
+
+    return get_client_ip(request)
+
+
 # Create limiter instance
 settings = get_settings()
 limiter = Limiter(
-    key_func=get_client_ip,
+    key_func=get_rate_limit_key,
     default_limits=[f"{settings.rate_limit_per_minute}/minute"],
     storage_uri=settings.rate_limit_storage_uri,
     strategy="fixed-window",

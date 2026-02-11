@@ -51,6 +51,11 @@ interface LayoutState {
   // Editor content width preference
   editorWidth: "narrow" | "normal" | "wide" | "full";
 
+  // Typography preferences
+  fontFamily: "sans" | "serif" | "mono";
+  fontSize: "small" | "normal" | "large";
+  lineHeight: "compact" | "normal" | "relaxed";
+
   // Resizable panel widths (pixels)
   sidebarWidth: number;
   chatPanelWidth: number;
@@ -108,6 +113,11 @@ interface LayoutState {
   // Editor width actions
   setEditorWidth: (width: "narrow" | "normal" | "wide" | "full") => void;
   cycleEditorWidth: () => void;
+
+  // Typography actions
+  setFontFamily: (font: "sans" | "serif" | "mono") => void;
+  setFontSize: (size: "small" | "normal" | "large") => void;
+  setLineHeight: (height: "compact" | "normal" | "relaxed") => void;
 
   // Resizable panel actions
   setSidebarWidth: (width: number) => void;
@@ -178,6 +188,11 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Editor content width
       editorWidth: "normal" as const,
+
+      // Typography preferences
+      fontFamily: "sans" as const,
+      fontSize: "normal" as const,
+      lineHeight: "normal" as const,
 
       // Resizable panel widths
       sidebarWidth: 256,
@@ -360,6 +375,19 @@ export const useLayoutStore = create<LayoutState>()(
         });
       },
 
+      // Typography actions
+      setFontFamily: (font: "sans" | "serif" | "mono") => {
+        set({ fontFamily: font });
+      },
+
+      setFontSize: (size: "small" | "normal" | "large") => {
+        set({ fontSize: size });
+      },
+
+      setLineHeight: (height: "compact" | "normal" | "relaxed") => {
+        set({ lineHeight: height });
+      },
+
       // Resizable panel actions
       setSidebarWidth: (width: number) => {
         set({ sidebarWidth: Math.max(200, Math.min(400, width)) });
@@ -431,6 +459,9 @@ export const useLayoutStore = create<LayoutState>()(
         isHighContrast: state.isHighContrast,
         homeViewMode: state.homeViewMode,
         editorWidth: state.editorWidth,
+        fontFamily: state.fontFamily,
+        fontSize: state.fontSize,
+        lineHeight: state.lineHeight,
         sidebarWidth: state.sidebarWidth,
         chatPanelWidth: state.chatPanelWidth,
       }),

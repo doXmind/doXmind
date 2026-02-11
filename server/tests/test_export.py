@@ -12,9 +12,9 @@ Tests cover:
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from exceptions import AppException
 from services.export_service import (
     DocumentNode,
     DOCXRenderer,
@@ -907,7 +907,7 @@ class TestExportAPIEndpoints:
 
         from api.export import export_file
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await export_file("nonexistent", "markdown", mock_request, mock_db, mock_token)
 
         assert exc_info.value.status_code == 404
@@ -938,7 +938,7 @@ class TestExportAPIEndpoints:
         from api.export import export_file
 
         with patch.object(export_service, "export_pdf", side_effect=Exception("Export failed")):
-            with pytest.raises(HTTPException) as exc_info:
+            with pytest.raises(AppException) as exc_info:
                 await export_file("file-123", "pdf", mock_request, mock_db, mock_token)
 
             assert exc_info.value.status_code == 500

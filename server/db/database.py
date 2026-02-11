@@ -436,10 +436,10 @@ settings = get_settings()
 engine = create_async_engine(
     settings.async_database_url,
     echo=False,  # Set to True only for SQL debugging
-    pool_size=5,
-    max_overflow=10,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
     pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=300,  # Recycle connections after 5 minutes
+    pool_recycle=settings.db_pool_recycle,
 )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

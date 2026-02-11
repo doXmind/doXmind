@@ -196,6 +196,14 @@ export const useFileStore = create<FileState>()(
             justCreatedFileId: newFile.id,
           }));
 
+          // Track onboarding checklist
+          try {
+            const { useOnboardingStore } = await import("@/stores/onboarding-store");
+            useOnboardingStore.getState().completeChecklistItem("createdDocument");
+          } catch {
+            // Onboarding store may not be available
+          }
+
           return newFile.id;
         } catch (error) {
           log.error("Failed to create file on server", error);

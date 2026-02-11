@@ -4,13 +4,21 @@ import logging
 import os
 
 import markdown
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.files import get_user_id
 from db.database import File as FileModel
 from db.database import get_db
+from exceptions import (
+    AppException,
+    BadRequestError,
+    FileTooLargeError,
+    InternalError,
+    NotFoundError,
+    UnsupportedFileTypeError,
+)
 from services.auth_service import TokenData, require_auth
 from services.gemini_converter import convert_file_to_markdown, is_gemini_configured
 from services.rag_service import RAGService
@@ -67,31 +75,24 @@ async def import_file(
         )
         parent_folder = result.scalar_one_or_none()
         if not parent_folder:
-            raise HTTPException(status_code=404, detail="Parent folder not found")
+            raise NotFoundError(resource="Parent folder", resource_id=parent_id)
 
         # Check that parent folder is at root (single-level hierarchy)
         if parent_folder.parent_id is not None:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot import into nested folders. Only single-level folders are supported.",
+            raise BadRequestError(
+                message="Cannot import into nested folders. Only single-level folders are supported."
             )
     # Validate file extension
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
+        raise UnsupportedFileTypeError(file_type=ext, allowed_types=list(ALLOWED_EXTENSIONS))
 
     # Read file content
     content = await file.read()
 
     # Validate file size
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
-        )
+        raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
 
     # Convert to markdown
     try:
@@ -101,15 +102,16 @@ async def import_file(
         else:
             # Check if Gemini is configured
             if not is_gemini_configured():
-                raise HTTPException(
-                    status_code=500,
-                    detail="File conversion requires GEMINI_API_KEY to be configured",
+                raise InternalError(
+                    message="File conversion requires GEMINI_API_KEY to be configured"
                 )
             # Use Gemini API for PDF and DOCX conversion
             md_content = await convert_file_to_markdown(content, file.filename, ext)
+    except AppException:
+        raise
     except Exception as e:
         logger.error(f"Conversion failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to convert file: {str(e)}")
+        raise InternalError(message=f"Failed to convert file: {str(e)}")
 
     # Convert markdown to HTML for TipTap editor
     html_content = markdown_to_html(md_content)
@@ -156,6 +158,8 @@ async def import_file(
             "created_at": new_file.created_at.isoformat(),
             "updated_at": new_file.updated_at.isoformat(),
         }
+    except AppException:
+        raise
     except Exception as e:
         logger.error(f"Failed to create file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise InternalError(message=str(e))

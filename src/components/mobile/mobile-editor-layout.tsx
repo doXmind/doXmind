@@ -20,6 +20,7 @@ import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { MobileGestureHints } from "@/components/onboarding/mobile-gesture-hints";
 
 interface MobileEditorLayoutProps {
   children: React.ReactNode;
@@ -228,6 +229,9 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
 
       {/* Outline Sheet */}
       {isMobileOutlineOpen && <MobileOutlineSheet />}
+
+      {/* Mobile Gesture Hints (first visit) */}
+      <MobileGestureHints />
     </div>
   );
 }

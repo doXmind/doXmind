@@ -12,7 +12,11 @@ export type FeatureHintId =
   | "autocomplete-shown"
   | "slash-command-used"
   | "search-opened"
-  | "quick-edit-shown";
+  | "quick-edit-shown"
+  | "diff-review-shown"
+  | "text-review-shown"
+  | "knowledge-base-used"
+  | "focus-mode-entered";
 
 interface FeatureHint {
   id: FeatureHintId;
@@ -25,26 +29,58 @@ const FEATURE_HINTS: Record<FeatureHintId, FeatureHint> = {
   "autocomplete-shown": {
     id: "autocomplete-shown",
     title: "AI Autocomplete",
-    description: "Press Tab to accept the suggestion, or Escape to dismiss it.",
+    description:
+      "Press Tab to accept the full suggestion, Ctrl+Space for word-by-word, or Escape to dismiss.",
     position: "top",
   },
   "slash-command-used": {
     id: "slash-command-used",
     title: "Slash Commands",
-    description: "Type / to see all available blocks: headings, lists, code, tables, and more.",
+    description:
+      "Browse all blocks — headings, tables, code, math, callouts, and more. Type / anywhere to open.",
     position: "bottom",
   },
   "search-opened": {
     id: "search-opened",
     title: "Smart Search",
-    description: "Use the AI tab for semantic search that understands meaning, not just keywords.",
+    description:
+      "Switch to the AI tab for semantic search that understands meaning, not just keywords.",
     position: "bottom",
   },
   "quick-edit-shown": {
     id: "quick-edit-shown",
     title: "Quick Edit",
-    description: "Select text and use the AI actions to improve, simplify, expand, or translate.",
+    description:
+      "Choose an action to apply instantly, or click Ask in Chat for custom instructions.",
     position: "top",
+  },
+  "diff-review-shown": {
+    id: "diff-review-shown",
+    title: "Review Changes",
+    description:
+      "Accept or reject each AI edit individually, or use Accept All / Reject All for the entire batch.",
+    position: "top",
+  },
+  "text-review-shown": {
+    id: "text-review-shown",
+    title: "Writing Review",
+    description:
+      "Color-coded suggestions appear as underlines. Click any underlined text to see details and apply fixes.",
+    position: "top",
+  },
+  "knowledge-base-used": {
+    id: "knowledge-base-used",
+    title: "Knowledge Base",
+    description:
+      "Upload PDFs and documents as references — AI will search and cite them when answering your questions.",
+    position: "bottom",
+  },
+  "focus-mode-entered": {
+    id: "focus-mode-entered",
+    title: "Focus Mode",
+    description:
+      "Distraction-free writing. Press F11 again or hover the top of the screen to exit.",
+    position: "bottom",
   },
 };
 
@@ -130,8 +166,19 @@ export function useFeatureHints() {
     if (getSeenHints().has(id)) return;
 
     // Skip if onboarding hasn't been completed (don't overlap with tour)
+    // Check both old key and new store
     const onboardingDone = localStorage.getItem("doxmind-onboarding-completed");
-    if (!onboardingDone) return;
+    let newStoreDone = false;
+    try {
+      const storeData = localStorage.getItem("doxmind-onboarding");
+      if (storeData) {
+        const parsed = JSON.parse(storeData);
+        newStoreDone = parsed?.state?.tourCompleted === true;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    if (!onboardingDone && !newStoreDone) return;
 
     const hint = FEATURE_HINTS[id];
     if (!hint) return;

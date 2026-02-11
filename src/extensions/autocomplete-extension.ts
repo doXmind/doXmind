@@ -278,6 +278,13 @@ export const AutocompleteExtension = Extension.create({
             content: pluginState.suggestion,
           });
 
+          // Track onboarding checklist
+          import("@/stores/onboarding-store")
+            .then(({ useOnboardingStore }) => {
+              useOnboardingStore.getState().completeChecklistItem("triedAutocomplete");
+            })
+            .catch(() => {});
+
           // Insert the suggestion text at the SAVED position (where it was displayed)
           // NOT at current cursor position, to avoid position mismatch
           tr.insertText(pluginState.suggestion, pluginState.position);

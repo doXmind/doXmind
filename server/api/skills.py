@@ -5,9 +5,10 @@ Provides REST API for listing and accessing skills.
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
+from exceptions import NotFoundError
 from services.skills_service import get_skills_service
 
 logger = logging.getLogger(__name__)
@@ -90,13 +91,13 @@ async def get_skill(skill_name: str):
         Full skill details with instructions
 
     Raises:
-        HTTPException: 404 if skill not found
+        NotFoundError: 404 if skill not found
     """
     service = get_skills_service()
     skill = service.get_skill(skill_name)
 
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill not found: {skill_name}")
+        raise NotFoundError(message=f"Skill not found: {skill_name}")
 
     return SkillDetailResponse(
         name=skill.metadata.name,
@@ -127,19 +128,19 @@ async def get_skill_resource(skill_name: str, resource_name: str):
         Resource content with metadata
 
     Raises:
-        HTTPException: 404 if skill or resource not found
+        NotFoundError: 404 if skill or resource not found
     """
     service = get_skills_service()
 
     # Check skill exists
     skill = service.get_skill(skill_name)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill not found: {skill_name}")
+        raise NotFoundError(message=f"Skill not found: {skill_name}")
 
     # Load resource content
     content = service.load_skill_resource(skill_name, resource_name)
     if content is None:
-        raise HTTPException(status_code=404, detail=f"Resource not found: {resource_name}")
+        raise NotFoundError(message=f"Resource not found: {resource_name}")
 
     # Determine resource type
     resource_type = "unknown"

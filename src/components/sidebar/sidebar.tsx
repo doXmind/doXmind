@@ -20,6 +20,7 @@ import { SortDropdown } from "./sort-dropdown";
 import { BulkActionBar } from "./bulk-action-bar";
 import { TrashPanel } from "./trash-panel";
 import { TemplatePicker, type FileTemplate } from "./template-picker";
+import { GettingStartedChecklist } from "@/components/onboarding/getting-started-checklist";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage, formatShortcut } from "@/lib/utils";
@@ -211,6 +212,9 @@ export function Sidebar() {
 
       {/* Bulk Action Bar */}
       <BulkActionBar />
+
+      {/* Getting Started Checklist */}
+      <GettingStartedChecklist />
 
       {/* Bottom actions */}
       <div className="flex gap-1 border-t border-border p-2">

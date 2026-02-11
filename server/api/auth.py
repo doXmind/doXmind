@@ -9,13 +9,14 @@ import hmac
 import json
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import User, get_db
+from exceptions import BadRequestError, NotFoundError, UnauthorizedError
 from middleware.rate_limit import limiter
 from services.auth_service import TokenData, create_access_token, optional_auth, require_auth
 from services.oauth_service import get_google_oauth_service
@@ -171,7 +172,7 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
     )
 
     if not success:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        raise BadRequestError(message=message)
 
     return MessageResponse(success=True, message=message)
 
@@ -191,7 +192,7 @@ async def verify_email(
     success, message, user = await user_service.verify_email_code(email=body.email, code=body.code)
 
     if not success or not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        raise BadRequestError(message=message)
 
     # Generate token with user info for auto-recreation
     access_token = create_access_token(
@@ -222,7 +223,7 @@ async def resend_code(
     success, message = await user_service.resend_verification_code(body.email)
 
     if not success:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        raise BadRequestError(message=message)
 
     return MessageResponse(success=True, message=message)
 
@@ -244,11 +245,7 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
     )
 
     if not success or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=message,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise UnauthorizedError(message=message)
 
     # Get user info for response
     user = await user_service.get_user_by_email(body.email)
@@ -293,7 +290,7 @@ async def reset_password(
     )
 
     if not success:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        raise BadRequestError(message=message)
 
     return MessageResponse(success=True, message=message)
 
@@ -366,9 +363,7 @@ async def google_auth(request: Request, redirect_uri: str | None = None):
     oauth_service = get_google_oauth_service()
 
     if not oauth_service.is_configured():
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Google OAuth is not configured"
-        )
+        raise BadRequestError(message="Google OAuth is not configured")
 
     # Generate signed state for CSRF protection (stateless approach)
     state = _create_oauth_state(redirect_uri=redirect_uri)
@@ -391,9 +386,7 @@ async def google_callback(
     # Verify signed state token
     state_payload = _verify_oauth_state(state)
     if not state_payload:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state parameter"
-        )
+        raise BadRequestError(message="Invalid or expired state parameter")
 
     oauth_service = get_google_oauth_service()
 
@@ -402,9 +395,7 @@ async def google_callback(
         google_user = await oauth_service.authenticate(code)
 
         if not google_user.get("email"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get email from Google"
-            )
+            raise BadRequestError(message="Failed to get email from Google")
 
         # Create or update user
         user_service = UserService(db)
@@ -434,7 +425,7 @@ async def google_callback(
         return RedirectResponse(url=redirect_url)
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise BadRequestError(message=str(e))
 
 
 # =============================================================================
@@ -515,7 +506,7 @@ async def get_current_user(
     user = await user_service.get_user_by_id(token_data.sub)
 
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise NotFoundError(resource="User", resource_id=token_data.sub)
 
     return user_to_response(user)
 
@@ -534,7 +525,7 @@ async def update_profile(
     )
 
     if not success or not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        raise BadRequestError(message=message)
 
     return user_to_response(user)
 
@@ -557,7 +548,7 @@ async def change_password(
     )
 
     if not success:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        raise BadRequestError(message=message)
 
     return MessageResponse(success=True, message=message)
 
@@ -576,6 +567,6 @@ async def delete_account(
     success, message = await user_service.delete_user(token_data.sub)
 
     if not success:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        raise BadRequestError(message=message)
 
     return MessageResponse(success=True, message=message)

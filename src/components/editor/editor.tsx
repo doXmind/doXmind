@@ -71,7 +71,15 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   } = useEditorStore();
 
   // Layout state
-  const { isSearchBarOpen, toggleSearchBar, isFocusMode, editorWidth } = useLayoutStore();
+  const {
+    isSearchBarOpen,
+    toggleSearchBar,
+    isFocusMode,
+    editorWidth,
+    fontFamily,
+    fontSize,
+    lineHeight,
+  } = useLayoutStore();
 
   const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
@@ -262,6 +270,13 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     }
   }, [isSearchBarOpen, editor, showHint]);
 
+  // Show hint when focus mode is entered for the first time
+  useEffect(() => {
+    if (isFocusMode && editor) {
+      showHint("focus-mode-entered", editor.view.dom.parentElement);
+    }
+  }, [isFocusMode, editor, showHint]);
+
   // Track undo after AI operations
   // We use a ref to store the last AI operation to avoid stale closure issues
   const lastAIOperationRef = useRef<LastAIOperation | null>(null);
@@ -427,7 +442,14 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
                   editorWidth === "narrow" && "max-w-2xl",
                   editorWidth === "normal" && "max-w-4xl",
                   editorWidth === "wide" && "max-w-6xl",
-                  editorWidth === "full" && "max-w-none"
+                  editorWidth === "full" && "max-w-none",
+                  // Typography settings
+                  fontFamily === "serif" && "editor-font-serif",
+                  fontFamily === "mono" && "editor-font-mono",
+                  fontSize === "small" && "editor-font-small",
+                  fontSize === "large" && "editor-font-large",
+                  lineHeight === "compact" && "editor-leading-compact",
+                  lineHeight === "relaxed" && "editor-leading-relaxed"
                 )}
               >
                 <DocumentTitle

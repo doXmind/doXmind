@@ -8,7 +8,7 @@ import hmac
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import User, get_db
+from exceptions import UnauthorizedError
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ async def require_auth(
     Auto-creates user record if JWT is valid but user doesn't exist in DB.
 
     Raises:
-        HTTPException: 401 if no valid authentication provided
+        UnauthorizedError: 401 if no valid authentication provided
     """
     settings = get_settings()
 
@@ -227,7 +228,9 @@ async def require_auth(
             if result.scalar_one_or_none() is None:
                 # Auto-create user from JWT claims if we have enough info
                 if token.email:
-                    logger.info("Auto-creating user %s (%s) from JWT claims", token.sub, token.email)
+                    logger.info(
+                        "Auto-creating user %s (%s) from JWT claims", token.sub, token.email
+                    )
                     user = User(
                         id=token.sub,
                         email=token.email,
@@ -242,12 +245,10 @@ async def require_auth(
                     await db.commit()
                 else:
                     # No email in JWT (old token format) — force re-login
-                    logger.warning("JWT for user %s has no email claim, cannot auto-create", token.sub)
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Session expired. Please log in again.",
-                        headers={"WWW-Authenticate": "Bearer"},
+                    logger.warning(
+                        "JWT for user %s has no email claim, cannot auto-create", token.sub
                     )
+                    raise UnauthorizedError(message="Session expired. Please log in again.")
         return token
 
     # Check API key
@@ -264,10 +265,8 @@ async def require_auth(
         )
 
     # No valid authentication
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required. Provide a valid JWT token or API key.",
-        headers={"WWW-Authenticate": "Bearer"},
+    raise UnauthorizedError(
+        message="Authentication required. Provide a valid JWT token or API key."
     )
 
 

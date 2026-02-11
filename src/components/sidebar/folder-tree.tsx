@@ -18,7 +18,6 @@ import {
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -48,6 +47,7 @@ export function FolderTree() {
     moveFileToFolder,
     renameFile,
     deleteFile,
+    restoreFile,
     importFile,
     justCreatedFileId,
     clearJustCreatedFileId,
@@ -64,8 +64,6 @@ export function FolderTree() {
   );
   const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
   const [contextMenuReady, setContextMenuReady] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [folderToDelete, setFolderToDelete] = useState<FileItemType | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Get folders for the current view (root or inside a folder)
@@ -222,25 +220,34 @@ export function FolderTree() {
     if (!contextMenu) return;
     const folder = allFolders.find((f) => f.id === contextMenu.folderId);
     if (folder) {
-      setFolderToDelete(folder);
-      setShowDeleteModal(true);
+      handleDeleteFolderDirect(folder);
     }
     setContextMenu(null);
   };
 
-  const handleDeleteFolder = async () => {
-    if (!folderToDelete) return;
-
+  const handleDeleteFolderDirect = async (folder: FileItemType) => {
+    const folderName = folder.name;
+    const folderId = folder.id;
     try {
-      await deleteFile(folderToDelete.id);
-      toast.success("Folder deleted");
+      await deleteFile(folderId);
+      toast(`"${folderName}" moved to trash`, {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              await restoreFile(folderId);
+              toast.success(`"${folderName}" restored`);
+            } catch {
+              toast.error("Failed to restore folder");
+            }
+          },
+        },
+        duration: 6000,
+      });
     } catch (error) {
       log.error("Failed to delete folder", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
-    } finally {
-      setShowDeleteModal(false);
-      setFolderToDelete(null);
     }
   };
 
@@ -470,8 +477,7 @@ export function FolderTree() {
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
-                            setFolderToDelete(folder);
-                            setShowDeleteModal(true);
+                            handleDeleteFolderDirect(folder);
                           }}
                           className="text-destructive focus:text-destructive"
                         >
@@ -618,23 +624,6 @@ export function FolderTree() {
           </div>,
           document.body
         )}
-
-      {/* Delete Confirmation Modal */}
-      <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Move to Trash</ModalHeader>
-        <p className="text-sm text-muted-foreground">
-          Are you sure you want to move &quot;{folderToDelete?.name}&quot; to trash? This will also
-          move all files and subfolders inside. You can restore them later from the trash.
-        </p>
-        <ModalFooter>
-          <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={handleDeleteFolder}>
-            Move to Trash
-          </Button>
-        </ModalFooter>
-      </Modal>
     </div>
   );
 }

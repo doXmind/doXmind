@@ -5,7 +5,7 @@ import logging
 import urllib.parse
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.files import get_user_id
 from config import get_cors_headers
 from db.database import File, get_db
+from exceptions import AppException, BadRequestError, DocumentNotFoundError, InternalError
 from services.auth_service import TokenData, require_auth
 from services.export_service import export_service
 
@@ -50,7 +51,7 @@ async def export_file(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     # Get filename without extension
     base_filename = file.name
@@ -71,7 +72,7 @@ async def export_file(
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             extension = "docx"
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+            raise BadRequestError(message=f"Unsupported format: {format}")
 
         # Create filename for download
         download_filename = f"{base_filename}.{extension}"
@@ -87,6 +88,8 @@ async def export_file(
             },
         )
 
+    except AppException:
+        raise
     except Exception as e:
         logger.error(f"Export error: {e}")
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise InternalError(message=f"Export failed: {str(e)}")

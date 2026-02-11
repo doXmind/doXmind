@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Smile } from "lucide-react";
+import { Smile, Share2 } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
+import { Tooltip } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { ShareDialog } from "@/components/share/share-dialog";
 
 interface DocumentTitleProps {
   fileId: string;
@@ -18,6 +21,7 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
   const displayName = fileName.replace(/\.md$/, "");
   const [value, setValue] = useState(displayName);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const iconButtonRef = useRef<HTMLButtonElement>(null);
   const isComposingRef = useRef(false);
@@ -106,6 +110,19 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
           className="w-full resize-none overflow-hidden border-none bg-transparent text-3xl font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground/40 focus:ring-0"
           spellCheck={false}
         />
+
+        {/* Share button */}
+        <Tooltip content="Share document" side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowShareDialog(true)}
+            className="mt-1 h-9 w-9 flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground"
+            aria-label="Share document"
+          >
+            <Share2 className="h-4 w-4" />
+          </Button>
+        </Tooltip>
       </div>
 
       {/* Emoji picker */}
@@ -116,6 +133,14 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
           anchorRect={iconButtonRef.current.getBoundingClientRect()}
         />
       )}
+
+      {/* Share dialog */}
+      <ShareDialog
+        open={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+        fileId={fileId}
+        fileName={fileName}
+      />
     </div>
   );
 }

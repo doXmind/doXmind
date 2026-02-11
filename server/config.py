@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     # Heroku provides postgres://, which is auto-converted
     database_url: str = "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
 
+    # Connection pool tuning (per-worker settings)
+    db_pool_size: int = 10  # Base connections per worker
+    db_max_overflow: int = 20  # Additional temporary connections under load
+    db_pool_recycle: int = 300  # Recycle connections after 5 minutes
+
     @property
     def async_database_url(self) -> str:
         """Get database URL with async driver.
@@ -171,6 +176,7 @@ class Settings(BaseSettings):
     # Agent limits
     max_agent_iterations: int = 10  # Maximum tool use iterations
     streaming_timeout_seconds: int = 300  # 5 minutes max for streaming responses
+    streaming_heartbeat_interval: int = 25  # Seconds between heartbeats (Heroku closes at 55s)
 
     # Content limits
     max_document_context_chars: int = 50000  # Max chars for document context in chat
@@ -196,6 +202,13 @@ class Settings(BaseSettings):
     markdown_max_chunk_size: int = 1500  # Reduced from 2000 for token safety
     preserve_code_blocks: bool = True
     preserve_tables: bool = True
+
+    # Search thresholds
+    search_distance_threshold: float = (
+        0.7  # Max cosine distance for relevant results (lower = stricter)
+    )
+    search_min_content_length: int = 3  # Min chars for valid search result
+    search_expanded_k_multiplier: int = 3  # Candidates = top_k * this for hybrid fusion
 
     # Hybrid search settings (vector + keyword with RRF fusion)
     hybrid_search_enabled: bool = True

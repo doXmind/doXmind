@@ -74,6 +74,12 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
       onApply(result, savedSelectionRef.current);
       closeQuickEdit();
       setActiveSubmenu(null);
+      // Track onboarding checklist
+      import("@/stores/onboarding-store")
+        .then(({ useOnboardingStore }) => {
+          useOnboardingStore.getState().completeChecklistItem("triedQuickEdit");
+        })
+        .catch(() => {});
     }
   }, [result, onApply, closeQuickEdit]);
 

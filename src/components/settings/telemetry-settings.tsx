@@ -63,13 +63,10 @@ export function TelemetrySettings() {
   }, [loadFromBackend]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-medium">Data & Privacy</h3>
-        <p className="text-sm text-muted-foreground">
-          Control how your data is used to improve doXmind.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Control how your data is used to improve doXmind.
+      </p>
 
       <div className="space-y-1 rounded-lg border p-4">
         {/* Master toggle */}

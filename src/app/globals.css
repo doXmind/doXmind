@@ -206,6 +206,32 @@
   margin-top: 0.75em;
 }
 
+/* Typography Settings - Font Family */
+.editor-font-serif .ProseMirror {
+  font-family: Georgia, "Times New Roman", Times, serif;
+}
+.editor-font-mono .ProseMirror {
+  font-family:
+    "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+/* Typography Settings - Font Size */
+.editor-font-small .ProseMirror {
+  font-size: 0.875rem;
+}
+.editor-font-large .ProseMirror {
+  font-size: 1.125rem;
+}
+
+/* Typography Settings - Line Height */
+.editor-leading-compact .ProseMirror {
+  line-height: 1.4;
+}
+.editor-leading-relaxed .ProseMirror {
+  line-height: 1.9;
+}
+
 .ProseMirror p.is-editor-empty:first-child::before {
   @apply pointer-events-none float-left h-0 text-muted-foreground;
   content: attr(data-placeholder);

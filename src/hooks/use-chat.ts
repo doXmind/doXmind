@@ -120,6 +120,13 @@ export function useChat() {
         contexts,
       });
 
+      // Track onboarding checklist
+      import("@/stores/onboarding-store")
+        .then(({ useOnboardingStore }) => {
+          useOnboardingStore.getState().completeChecklistItem("triedAIChat");
+        })
+        .catch(() => {});
+
       // Save user message to backend
       // Strip base64 data from contexts before saving (too large for DB storage)
       // The src URL is preserved so images can still be displayed

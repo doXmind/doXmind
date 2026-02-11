@@ -7,7 +7,6 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.versions import (
@@ -16,6 +15,7 @@ from api.versions import (
     _cleanup_old_versions,
     router,
 )
+from exceptions import AppException
 
 # ============================================================================
 # Model Tests
@@ -171,7 +171,7 @@ class TestCreateVersionEndpoint:
 
         request = CreateVersionRequest(file_id="nonexistent", content="<p>Test</p>")
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await create_version(request, mock_db)
 
         assert exc_info.value.status_code == 404
@@ -293,7 +293,7 @@ class TestGetVersionEndpoint:
 
         from api.versions import get_version
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await get_version("file-123", "ver-456", mock_db)
 
         assert exc_info.value.status_code == 404
@@ -344,11 +344,11 @@ class TestRestoreVersionEndpoint:
 
         from api.versions import restore_version
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await restore_version("file-123", "ver-456", mock_db)
 
         assert exc_info.value.status_code == 404
-        assert "Version not found" in str(exc_info.value.detail)
+        assert "Version" in exc_info.value.message and "not found" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_raises_404_when_file_not_found(self, mock_db):
@@ -372,11 +372,11 @@ class TestRestoreVersionEndpoint:
 
         from api.versions import restore_version
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(AppException) as exc_info:
             await restore_version("file-123", "ver-456", mock_db)
 
         assert exc_info.value.status_code == 404
-        assert "File not found" in str(exc_info.value.detail)
+        assert "File" in exc_info.value.message and "not found" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_restores_version(self, mock_db):

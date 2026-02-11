@@ -30,6 +30,7 @@ import { useIsMobile } from "@/hooks/use-device-type";
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
+import { useOnboardingStore } from "@/stores/onboarding-store";
 
 interface ChatPanelProps {
   isDemoMode?: boolean;
@@ -40,6 +41,13 @@ const SUGGESTIONS = [
   { label: "Improve writing style", prompt: "Help me improve the writing style" },
   { label: "Summarize document", prompt: "Summarize this document" },
   { label: "Brainstorm ideas", prompt: "Help me brainstorm ideas" },
+];
+
+const ONBOARDING_SUGGESTIONS = [
+  { label: "Improve my writing", prompt: "Review and improve the current document" },
+  { label: "Summarize this", prompt: "Summarize the key points of this document" },
+  { label: "Continue writing", prompt: "Continue writing from where I left off" },
+  { label: "What can you do?", prompt: "What are all the things you can help me with?" },
 ];
 
 export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
@@ -54,6 +62,8 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const isMobile = useIsMobile();
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
+  const { checklist } = useOnboardingStore();
+  const chatSuggestions = checklist.triedAIChat ? SUGGESTIONS : ONBOARDING_SUGGESTIONS;
 
   // Speech-to-text hook
   const {
@@ -321,7 +331,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
               className="h-7 w-7 text-muted-foreground"
               aria-label="Clear conversation"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-4 w-4" />
             </Button>
           </Tooltip>
         )}
@@ -341,7 +351,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
           <ChatEmptyState
             greeting="How can I help?"
             subtitle="Ask me to write, edit, or improve your document."
-            suggestions={SUGGESTIONS}
+            suggestions={chatSuggestions}
             onSelectSuggestion={setInput}
           />
         ) : (

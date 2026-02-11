@@ -277,6 +277,12 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
       const item = items[index];
       if (item) {
         command(item);
+        // Track onboarding checklist
+        import("@/stores/onboarding-store")
+          .then(({ useOnboardingStore }) => {
+            useOnboardingStore.getState().completeChecklistItem("triedSlashCommand");
+          })
+          .catch(() => {});
       }
     },
     [items, command]

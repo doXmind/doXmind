@@ -4,13 +4,14 @@ import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import DocumentShare, File, get_db
+from exceptions import DocumentNotFoundError, NotFoundError
 from middleware.rate_limit import limiter
 from services.auth_service import TokenData, require_auth
 
@@ -100,10 +101,7 @@ async def create_share(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found or you don't have permission",
-        )
+        raise DocumentNotFoundError(file_id=share_request.file_id)
 
     # Generate cryptographically secure token
     share_token = secrets.token_urlsafe(32)
@@ -160,7 +158,7 @@ async def list_file_shares(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     # Get shares
     query = select(DocumentShare).where(DocumentShare.file_id == file_id)
@@ -219,7 +217,7 @@ async def revoke_share(
     share = result.scalar_one_or_none()
 
     if not share:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+        raise NotFoundError(resource="Share", resource_id=share_id)
 
     # Deactivate (soft delete)
     share.is_active = False
@@ -258,10 +256,7 @@ async def view_shared_document(
     share = result.scalar_one_or_none()
 
     if not share:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Share not found or expired",
-        )
+        raise NotFoundError(resource="Share", message="Share not found or expired")
 
     # Update view analytics
     share.view_count += 1
@@ -273,10 +268,7 @@ async def view_shared_document(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Original document no longer exists",
-        )
+        raise DocumentNotFoundError(file_id=share.file_id)
 
     return SharedDocumentResponse(
         name=file.name,

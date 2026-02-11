@@ -19,7 +19,7 @@ import os
 import tempfile
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from db.database import ConversationDataFile, async_session, get_db
 from dependencies import get_conversation_by_file_id
+from exceptions import (
+    ConversationNotFoundError,
+    FileTooLargeError,
+    NotFoundError,
+    UnsupportedFileTypeError,
+)
 from services.anthropic_files_service import get_anthropic_files_service
 from services.data_parser_service import get_data_parser_service
 
@@ -167,10 +173,7 @@ async def upload_data_file(
     ext = os.path.splitext(filename)[1].lower()
 
     if ext not in DATA_FILE_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type. Allowed: {', '.join(DATA_FILE_EXTENSIONS)}",
-        )
+        raise UnsupportedFileTypeError(file_type=ext, allowed_types=list(DATA_FILE_EXTENSIONS))
 
     # Read file content
     content = await file.read()
@@ -178,15 +181,12 @@ async def upload_data_file(
 
     # Validate file size
     if file_size > DATA_FILE_MAX_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {DATA_FILE_MAX_SIZE // (1024 * 1024)}MB",
-        )
+        raise FileTooLargeError(max_size=DATA_FILE_MAX_SIZE, actual_size=file_size)
 
     # Verify conversation exists (supports both conversation.id and file_id)
     conversation = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
     if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ConversationNotFoundError(conversation_id=conversation_id)
 
     # Get MIME type
     mime_type = MIME_TYPES.get(ext, file.content_type)
@@ -270,7 +270,7 @@ async def list_data_files(
     # Verify conversation exists (supports both conversation.id and file_id)
     conversation = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
     if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ConversationNotFoundError(conversation_id=conversation_id)
 
     # Get data files
     result = await db.execute(
@@ -310,7 +310,7 @@ async def get_data_file(
     # Resolve conversation (supports both conversation.id and file_id)
     conversation = await get_conversation_by_file_id(conversation_id, db)
     if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ConversationNotFoundError(conversation_id=conversation_id)
 
     result = await db.execute(
         select(ConversationDataFile)
@@ -320,7 +320,7 @@ async def get_data_file(
     data_file = result.scalar_one_or_none()
 
     if not data_file:
-        raise HTTPException(status_code=404, detail="Data file not found")
+        raise NotFoundError(resource="Data file", resource_id=file_id)
 
     return DataFileResponse(
         id=data_file.id,
@@ -347,7 +347,7 @@ async def delete_data_file(
     # Resolve conversation (supports both conversation.id and file_id)
     conversation = await get_conversation_by_file_id(conversation_id, db)
     if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ConversationNotFoundError(conversation_id=conversation_id)
 
     result = await db.execute(
         select(ConversationDataFile)
@@ -357,7 +357,7 @@ async def delete_data_file(
     data_file = result.scalar_one_or_none()
 
     if not data_file:
-        raise HTTPException(status_code=404, detail="Data file not found")
+        raise NotFoundError(resource="Data file", resource_id=file_id)
 
     # Delete the physical file
     if data_file.storage_path and os.path.exists(data_file.storage_path):

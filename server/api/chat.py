@@ -9,7 +9,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, select
@@ -19,6 +19,7 @@ from agents.writing_agent import WritingAgent
 from config import get_cors_headers, get_settings
 from db.database import Conversation, ConversationAttachment, ConversationDataFile, Message, get_db
 from dependencies import normalize_file_id
+from exceptions import InternalError
 from services.api_key_service import APIKeyService
 from services.auth_service import TokenData, optional_auth
 from services.history_compressor import HistoryCompressor
@@ -465,4 +466,4 @@ async def simple_chat(request: SimpleChatRequest):
         return {"response": response}
     except Exception as e:
         logger.error(f"Simple chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise InternalError(message=str(e))

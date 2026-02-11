@@ -3,10 +3,16 @@
 import logging
 from io import BytesIO
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, UploadFile
 from openai import AsyncOpenAI
 
 from config import get_settings
+from exceptions import (
+    BadRequestError,
+    ExternalServiceError,
+    FileTooLargeError,
+    UnsupportedFileTypeError,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -52,10 +58,8 @@ async def transcribe_audio(
     content_type = audio.content_type or "audio/webm"
     base_content_type = content_type.split(";")[0].strip()
     if base_content_type not in SUPPORTED_FORMATS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported audio format: {content_type}. "
-            f"Supported formats: {', '.join(SUPPORTED_FORMATS)}",
+        raise UnsupportedFileTypeError(
+            file_type=base_content_type, allowed_types=list(SUPPORTED_FORMATS)
         )
 
     # Read file content
@@ -63,18 +67,15 @@ async def transcribe_audio(
         content = await audio.read()
     except Exception as e:
         logger.error(f"Failed to read audio file: {e}")
-        raise HTTPException(status_code=400, detail="Failed to read audio file")
+        raise BadRequestError(message="Failed to read audio file")
 
     # Validate file size
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB",
-        )
+        raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
 
     # Validate file is not empty
     if len(content) == 0:
-        raise HTTPException(status_code=400, detail="Audio file is empty")
+        raise BadRequestError(message="Audio file is empty")
 
     try:
         # Initialize OpenAI client
@@ -132,4 +133,4 @@ async def transcribe_audio(
 
     except Exception as e:
         logger.error(f"Whisper API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+        raise ExternalServiceError(service="whisper", message=f"Transcription failed: {str(e)}")

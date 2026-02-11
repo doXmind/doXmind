@@ -4,6 +4,7 @@ FastAPI + LangGraph + Claude API
 """
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -185,6 +186,17 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================================
 
 
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Attach a unique request ID to every request/response for chain tracing."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:8]
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
 
@@ -247,6 +259,9 @@ app.add_middleware(
     # Cache preflight requests for 1 hour
     max_age=3600,
 )
+
+# Add request ID middleware (outermost — first middleware hit on every request)
+app.add_middleware(RequestIDMiddleware)
 
 
 # ============================================================================

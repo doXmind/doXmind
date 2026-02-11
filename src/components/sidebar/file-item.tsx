@@ -30,7 +30,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { api } from "@/lib/api";
@@ -63,7 +62,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     clearSelection,
   } = useFileStore();
   const [isRenaming, setIsRenaming] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
@@ -145,7 +143,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           } else if (contextMenuFocusIndex === 5 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            setShowDeleteModal(true);
+            handleDelete();
           }
           break;
         case "Home":
@@ -265,22 +263,34 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     }
   };
 
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setShowDeleteModal(true);
-  };
+  const { restoreFile } = useFileStore();
 
-  const handleDeleteConfirm = async () => {
+  const handleDelete = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const fileName = getNameWithoutExtension(file.name);
     try {
       await deleteFile(file.id);
       // Navigate to the next file or welcome screen after deletion
       const nextId = useFileStore.getState().currentFileId;
       router.push(nextId ? `/editor/${nextId}` : "/editor");
+      toast(`"${fileName}" moved to trash`, {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              await restoreFile(file.id);
+              toast.success(`"${fileName}" restored`);
+            } catch {
+              toast.error("Failed to restore file");
+            }
+          },
+        },
+        duration: 6000,
+      });
     } catch (error) {
       log.error("Failed to delete file", error);
       toast.error("Failed to delete file");
     }
-    setShowDeleteModal(false);
   };
 
   const handleExport = async (format: "markdown" | "pdf" | "docx") => {
@@ -319,7 +329,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
 
   const handleContextMenuDelete = () => {
     setContextMenu(null);
-    setShowDeleteModal(true);
+    handleDelete();
   };
 
   const handleContextMenuExport = (format: "markdown" | "pdf" | "docx") => {
@@ -522,30 +532,19 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
               Word
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleDeleteClick} className="text-destructive">
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete();
+              }}
+              className="text-destructive"
+            >
               <Trash2 className="mr-2 h-4 w-4" />
               Move to Trash
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-
-      {/* Delete Confirmation Modal */}
-      <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Move to Trash</ModalHeader>
-        <p className="text-sm text-muted-foreground">
-          Move &quot;{getNameWithoutExtension(file.name)}&quot; to trash? You can restore it later
-          from the trash.
-        </p>
-        <ModalFooter>
-          <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={handleDeleteConfirm}>
-            Move to Trash
-          </Button>
-        </ModalFooter>
-      </Modal>
 
       {/* Right-click Context Menu */}
       {contextMenu &&

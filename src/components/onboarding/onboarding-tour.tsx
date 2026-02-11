@@ -3,118 +3,53 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  FileText,
-  MessageSquare,
-  BookOpen,
-  Search,
-  Keyboard,
-  Sparkles,
-  Wand2,
-  Slash,
-} from "lucide-react";
+import { X, ChevronRight, Check, FileText, MessageSquare, PanelLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useOnboardingStore } from "@/stores/onboarding-store";
 
-// Onboarding step configuration
 interface OnboardingStep {
   id: string;
   title: string;
   description: string;
   icon: React.ReactNode;
-  targetSelector: string; // CSS selector for the target element
+  targetSelector: string;
   position: "top" | "bottom" | "left" | "right";
-  spotlight?: boolean; // Whether to spotlight the target element
+  spotlight?: boolean;
 }
 
 const ONBOARDING_STEPS: OnboardingStep[] = [
   {
-    id: "create-file",
-    title: "Create a Document",
+    id: "editor",
+    title: "Your Writing Space",
     description:
-      "Click here to create a new document. You can also import PDF, DOCX, or Markdown files.",
+      "This is where you write. The welcome document has interactive examples — try AI autocomplete, quick edit, and slash commands right inside it.",
     icon: <FileText className="h-5 w-5" />,
-    targetSelector: '[aria-label="Create New File"]',
-    position: "bottom",
-    spotlight: true,
-  },
-  {
-    id: "search",
-    title: "Search Your Files",
-    description:
-      "Use the search bar to find files by name or content. AI semantic search helps find related content.",
-    icon: <Search className="h-5 w-5" />,
-    targetSelector: '[aria-label="Search files"]',
-    position: "bottom",
+    targetSelector: ".ProseMirror",
+    position: "top",
     spotlight: true,
   },
   {
     id: "ai-chat",
-    title: "AI Chat Assistant",
+    title: "AI Assistant",
     description:
-      "Click to open the AI chat panel. Ask questions, get writing suggestions, or let AI help improve your text.",
+      "Your AI writing partner lives here. Ask it to improve your writing, summarize, translate, or brainstorm ideas.",
     icon: <MessageSquare className="h-5 w-5" />,
     targetSelector: '[aria-label="Show AI Chat"], [aria-label="Hide AI Chat"]',
     position: "left",
     spotlight: true,
   },
   {
-    id: "autocomplete",
-    title: "AI Autocomplete",
+    id: "sidebar",
+    title: "Your Documents",
     description:
-      "As you type, AI suggests completions as ghost text. Press Tab to accept, Escape to dismiss. Pause briefly after writing to trigger suggestions.",
-    icon: <Sparkles className="h-5 w-5" />,
-    targetSelector: ".ProseMirror",
-    position: "top",
-    spotlight: true,
-  },
-  {
-    id: "quick-edit",
-    title: "Quick Edit with AI",
-    description:
-      "Select any text to see the Quick Edit menu. Use it to fix grammar, improve writing, simplify, expand, or translate your text instantly.",
-    icon: <Wand2 className="h-5 w-5" />,
-    targetSelector: ".ProseMirror",
-    position: "top",
-    spotlight: true,
-  },
-  {
-    id: "slash-commands",
-    title: "Slash Commands",
-    description:
-      "Type '/' anywhere in the editor to open the block menu. Insert headings, lists, code blocks, tables, callouts, toggles, and more.",
-    icon: <Slash className="h-5 w-5" />,
-    targetSelector: ".ProseMirror",
-    position: "top",
-    spotlight: true,
-  },
-  {
-    id: "knowledge-base",
-    title: "Knowledge Base",
-    description:
-      "Click the + button to upload reference documents (PDF, DOCX, PPTX). AI will search and reference them for more accurate answers.",
-    icon: <BookOpen className="h-5 w-5" />,
-    targetSelector: '[aria-label="Add attachment"]',
-    position: "top",
-    spotlight: true,
-  },
-  {
-    id: "shortcuts",
-    title: "Keyboard Shortcuts",
-    description:
-      "Press Ctrl+K for the command palette, Ctrl+? for all shortcuts. Use Ctrl+B for bold, Ctrl+I for italic.",
-    icon: <Keyboard className="h-5 w-5" />,
-    targetSelector: '[aria-label="Keyboard Shortcuts"]',
+      "All your files are here. Create new documents, organize in folders, search with Ctrl+K, or import existing files.",
+    icon: <PanelLeft className="h-5 w-5" />,
+    targetSelector: '[aria-label="Create New File"]',
     position: "bottom",
     spotlight: true,
   },
 ];
-
-const STORAGE_KEY = "doxmind-onboarding-completed";
 
 interface OnboardingTourProps {
   onComplete?: () => void;
@@ -127,27 +62,25 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
   const [targetRect, setTargetRect] = React.useState<DOMRect | null>(null);
   const [tooltipPosition, setTooltipPosition] = React.useState({ top: 0, left: 0 });
 
+  const { tourCompleted, setTourCompleted } = useOnboardingStore();
+
   const step = ONBOARDING_STEPS[currentStep];
   const isLastStep = currentStep === ONBOARDING_STEPS.length - 1;
-  const isFirstStep = currentStep === 0;
 
   // Check if onboarding was completed
   React.useEffect(() => {
     setMounted(true);
-    const completed = localStorage.getItem(STORAGE_KEY);
-    if (!completed) {
-      // Delay showing onboarding to let the page load
+    if (!tourCompleted) {
       const timer = setTimeout(() => setIsOpen(true), 800);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [tourCompleted]);
 
   // Find and highlight target element
   React.useEffect(() => {
     if (!isOpen || !step) return;
 
     const findTarget = () => {
-      // Handle multiple selectors (comma-separated)
       const selectors = step.targetSelector.split(",").map((s) => s.trim());
       let target: Element | null = null;
 
@@ -160,7 +93,6 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
         const rect = target.getBoundingClientRect();
         setTargetRect(rect);
 
-        // Calculate tooltip position based on step.position
         const padding = 16;
         const tooltipWidth = 320;
         const tooltipHeight = 180;
@@ -186,7 +118,6 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
             break;
         }
 
-        // Keep tooltip in viewport
         const viewportPadding = 16;
         top = Math.max(
           viewportPadding,
@@ -205,7 +136,6 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
 
     findTarget();
 
-    // Re-calculate on resize
     window.addEventListener("resize", findTarget);
     return () => window.removeEventListener("resize", findTarget);
   }, [isOpen, currentStep, step]);
@@ -218,20 +148,14 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
     }
   };
 
-  const handlePrev = () => {
-    if (currentStep > 0) {
-      setCurrentStep((prev) => prev - 1);
-    }
-  };
-
   const handleComplete = () => {
-    localStorage.setItem(STORAGE_KEY, "true");
+    setTourCompleted();
     setIsOpen(false);
     onComplete?.();
   };
 
   const handleSkip = () => {
-    localStorage.setItem(STORAGE_KEY, "true");
+    setTourCompleted();
     setIsOpen(false);
     onComplete?.();
   };
@@ -292,7 +216,6 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
               height: targetRect.height + 16,
             }}
           >
-            {/* Pulsing ring */}
             <div className="absolute inset-0 animate-ping rounded-lg border-2 border-primary opacity-50" />
           </motion.div>
         )}
@@ -357,27 +280,19 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
             <div className="text-xs text-muted-foreground">
               {currentStep + 1} of {ONBOARDING_STEPS.length}
             </div>
-            <div className="flex items-center gap-2">
-              {!isFirstStep && (
-                <Button variant="ghost" size="sm" onClick={handlePrev}>
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Back
-                </Button>
+            <Button size="sm" onClick={handleNext}>
+              {isLastStep ? (
+                <>
+                  Get Started
+                  <Check className="ml-1 h-4 w-4" />
+                </>
+              ) : (
+                <>
+                  Next
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </>
               )}
-              <Button size="sm" onClick={handleNext}>
-                {isLastStep ? (
-                  <>
-                    Done
-                    <Check className="ml-1 h-4 w-4" />
-                  </>
-                ) : (
-                  <>
-                    Next
-                    <ChevronRight className="ml-1 h-4 w-4" />
-                  </>
-                )}
-              </Button>
-            </div>
+            </Button>
           </div>
         </motion.div>
       </div>
@@ -388,15 +303,15 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
 
 // Hook to manually trigger onboarding
 export function useOnboarding() {
+  const { tourCompleted, setTourCompleted } = useOnboardingStore();
+
   const resetOnboarding = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    // Clear the store state
+    useOnboardingStore.setState({ tourCompleted: false });
     window.location.reload();
   };
 
-  const isCompleted = () => {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem(STORAGE_KEY) === "true";
-  };
+  const isCompleted = () => tourCompleted;
 
-  return { resetOnboarding, isCompleted };
+  return { resetOnboarding, isCompleted, setTourCompleted };
 }

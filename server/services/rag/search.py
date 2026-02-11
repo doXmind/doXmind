@@ -47,7 +47,12 @@ class RAGService:
         metadata: dict[str, Any] | None = None,
         strategy: ChunkingStrategy | None = None,
     ):
-        """Index a file's content at chunk level with position tracking."""
+        """Index a file's content at chunk level with position tracking.
+
+        Uses a transactional approach: embeddings are generated before any
+        database changes, then delete + insert happen in a single transaction
+        to prevent data loss if embedding API fails mid-way.
+        """
         try:
             # Skip indexing if content is essentially empty
             plain_content = strip_html_tags(content)
@@ -55,8 +60,6 @@ class RAGService:
                 logger.info(f"Skipping index for file {file_id}: content too short")
                 await self.delete_file(file_id)  # Clean up any existing vectors
                 return
-
-            await self.delete_file(file_id)
 
             strategy = strategy or DEFAULT_CHUNK_STRATEGY
             chunks = strategy.chunk(content)
@@ -67,8 +70,15 @@ class RAGService:
             # Find positions of each chunk in original content for highlighting
             chunk_positions = self._find_chunk_positions(content, chunks)
 
-            # Get embeddings in batch
+            # Get embeddings BEFORE touching the database — if this fails,
+            # existing vectors remain intact
             embeddings = await get_embeddings_batch(chunks)
+
+            # Delete old vectors and insert new ones in a single transaction
+            await self.db.execute(
+                text("DELETE FROM vectors WHERE file_id = :file_id AND chunk_type = 'document'"),
+                {"file_id": file_id},
+            )
 
             # Insert chunks with embeddings and position metadata
             base_metadata = metadata or {}
@@ -204,14 +214,16 @@ class RAGService:
                 # Strip HTML tags for readable content
                 plain_content = strip_html_tags(row.content)
 
+                settings = get_settings()
+
                 # Skip empty content
-                if not plain_content or len(plain_content) < 3:
+                if not plain_content or len(plain_content) < settings.search_min_content_length:
                     continue
 
                 distance = 1 - row.score
 
-                # Filter out low relevance results (distance > 0.7 means < 30% similarity)
-                if distance > 0.7:
+                # Filter out low relevance results
+                if distance > settings.search_distance_threshold:
                     continue
 
                 results.append(
@@ -258,8 +270,8 @@ class RAGService:
             top_k: Maximum number of results to return
         """
         try:
-            params: dict[str, Any] = {"query": query, "limit": top_k}
-            conditions = [f"chunk_type = '{chunk_type}'"]
+            params: dict[str, Any] = {"query": query, "limit": top_k, "chunk_type": chunk_type}
+            conditions = ["chunk_type = :chunk_type"]
 
             if file_ids:
                 conditions.append("file_id = ANY(:file_ids)")
@@ -340,17 +352,27 @@ class RAGService:
         settings = get_settings()
 
         # Check if hybrid search is enabled
-        if not getattr(settings, "hybrid_search_enabled", True):
+        if not settings.hybrid_search_enabled:
             return await self.search(query, file_ids, top_k, user_id)
 
-        # Fetch more candidates for fusion (3x the requested top_k)
-        expanded_k = top_k * 3
+        # Fetch more candidates for fusion
+        expanded_k = top_k * settings.search_expanded_k_multiplier
 
-        # Run semantic and keyword searches in parallel
+        # Run semantic and keyword searches in parallel with graceful degradation
         semantic_task = self.search(query, file_ids, expanded_k, user_id)
         keyword_task = self._keyword_search(query, "document", file_ids, user_id, expanded_k)
 
-        semantic_results, keyword_results = await asyncio.gather(semantic_task, keyword_task)
+        semantic_results, keyword_results = await asyncio.gather(
+            semantic_task, keyword_task, return_exceptions=True
+        )
+
+        # Handle partial failures gracefully
+        if isinstance(semantic_results, Exception):
+            logger.error(f"Semantic search failed in hybrid_search: {semantic_results}")
+            semantic_results = []
+        if isinstance(keyword_results, Exception):
+            logger.error(f"Keyword search failed in hybrid_search: {keyword_results}")
+            keyword_results = []
 
         # If no keyword results, fall back to semantic only
         if not keyword_results:
@@ -360,9 +382,9 @@ class RAGService:
         fused = reciprocal_rank_fusion(
             semantic_results,
             keyword_results,
-            k=getattr(settings, "rrf_k", 60),
-            semantic_weight=getattr(settings, "semantic_weight", 0.7),
-            keyword_weight=getattr(settings, "keyword_weight", 0.3),
+            k=settings.rrf_k,
+            semantic_weight=settings.semantic_weight,
+            keyword_weight=settings.keyword_weight,
         )
 
         logger.info(
@@ -394,13 +416,13 @@ class RAGService:
         settings = get_settings()
 
         # Get more candidates for reranking
-        candidates_k = getattr(settings, "reranking_candidates", 20)
+        candidates_k = settings.reranking_candidates
 
         # Get initial candidates via hybrid search
         candidates = await self.hybrid_search(query, file_ids, candidates_k, user_id)
 
         # Rerank if enabled and we have candidates
-        if getattr(settings, "reranking_enabled", False) and len(candidates) > 1:
+        if settings.reranking_enabled and len(candidates) > 1:
             try:
                 from services.reranker_service import GPTReranker
 
@@ -432,15 +454,24 @@ class RAGService:
     async def index_file_sentences(
         self, file_id: str, content: str, metadata: dict[str, Any] | None = None
     ):
-        """Index a file at sentence level for precise in-document search."""
-        try:
-            await self._delete_sentence_chunks(file_id)
+        """Index a file at sentence level for precise in-document search.
 
+        Uses a transactional approach: embeddings are generated before any
+        database changes to prevent data loss if embedding API fails.
+        """
+        try:
             sentences = SENTENCE_CHUNK_STRATEGY.chunk(content)
             if not sentences:
                 return
 
+            # Get embeddings BEFORE touching the database
             embeddings = await get_embeddings_batch(sentences)
+
+            # Delete old sentence chunks and insert new ones in a single transaction
+            await self.db.execute(
+                text("DELETE FROM vectors WHERE file_id = :file_id AND chunk_type = 'sentence'"),
+                {"file_id": file_id},
+            )
 
             # Serialize metadata to JSON string for asyncpg JSONB support
             metadata_json = json.dumps(metadata or {})
@@ -474,8 +505,6 @@ class RAGService:
                     f"Indexed {len(sentences)} markdown chunks for file {file_id}. "
                     f"Samples: {samples}"
                 )
-            else:
-                logger.info(f"No chunks to index for file {file_id}")
 
         except Exception as e:
             await self.db.rollback()
@@ -606,13 +635,23 @@ class RAGService:
         settings = get_settings()
 
         # Fetch more candidates for fusion
-        expanded_k = top_k * 3
+        expanded_k = top_k * settings.search_expanded_k_multiplier
 
-        # Run semantic and keyword searches in parallel
+        # Run semantic and keyword searches in parallel with graceful degradation
         semantic_task = self._semantic_search_sentences(query, file_id, expanded_k, min_score)
         keyword_task = self._keyword_search_sentences(query, file_id, expanded_k)
 
-        semantic_results, keyword_results = await asyncio.gather(semantic_task, keyword_task)
+        semantic_results, keyword_results = await asyncio.gather(
+            semantic_task, keyword_task, return_exceptions=True
+        )
+
+        # Handle partial failures gracefully
+        if isinstance(semantic_results, Exception):
+            logger.error(f"Semantic search failed in hybrid_search_sentences: {semantic_results}")
+            semantic_results = []
+        if isinstance(keyword_results, Exception):
+            logger.error(f"Keyword search failed in hybrid_search_sentences: {keyword_results}")
+            keyword_results = []
 
         # If no keyword results, fall back to semantic only
         if not keyword_results:
@@ -625,9 +664,9 @@ class RAGService:
         fused = reciprocal_rank_fusion(
             semantic_results,
             keyword_results,
-            k=getattr(settings, "rrf_k", 60),
-            semantic_weight=getattr(settings, "semantic_weight", 0.7),
-            keyword_weight=getattr(settings, "keyword_weight", 0.3),
+            k=settings.rrf_k,
+            semantic_weight=settings.semantic_weight,
+            keyword_weight=settings.keyword_weight,
         )
 
         logger.info(
@@ -665,6 +704,9 @@ class RAGService:
     ) -> int:
         """Index a knowledge base attachment.
 
+        Uses a transactional approach: embeddings are generated before any
+        database changes to prevent data loss if embedding API fails.
+
         Args:
             attachment_id: Unique attachment ID
             conversation_id: Conversation this attachment belongs to
@@ -673,8 +715,6 @@ class RAGService:
             strategy: Optional chunking strategy. If None, auto-detects.
         """
         try:
-            await self.delete_kb_attachment(attachment_id)
-
             # Auto-detect strategy if not provided
             if strategy is None:
                 strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(content, filename)
@@ -683,8 +723,15 @@ class RAGService:
             if not chunks:
                 return 0
 
+            # Get embeddings BEFORE touching the database
             embeddings = await get_embeddings_batch(chunks)
             total_chunks = len(chunks)
+
+            # Delete old KB chunks and insert new ones in a single transaction
+            await self.db.execute(
+                text("DELETE FROM vectors WHERE attachment_id = :attachment_id"),
+                {"attachment_id": attachment_id},
+            )
 
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
                 chunk_id = f"kb_{attachment_id}_{i}"
@@ -740,8 +787,8 @@ class RAGService:
         settings = get_settings()
 
         # Check if hybrid/rerank are enabled in settings
-        hybrid_enabled = use_hybrid and getattr(settings, "hybrid_search_enabled", True)
-        rerank_enabled = use_rerank and getattr(settings, "reranking_enabled", False)
+        hybrid_enabled = use_hybrid and settings.hybrid_search_enabled
+        rerank_enabled = use_rerank and settings.reranking_enabled
 
         if rerank_enabled:
             return await self.hybrid_search_kb_with_rerank(conversation_id, query, top_k)
@@ -857,14 +904,24 @@ class RAGService:
         """
         settings = get_settings()
 
-        # Fetch more candidates for fusion (3x the requested top_k)
-        expanded_k = top_k * 3
+        # Fetch more candidates for fusion
+        expanded_k = top_k * settings.search_expanded_k_multiplier
 
-        # Run semantic and keyword searches in parallel
+        # Run semantic and keyword searches in parallel with graceful degradation
         semantic_task = self._semantic_search_kb(conversation_id, query, expanded_k)
         keyword_task = self._keyword_search_kb(conversation_id, query, expanded_k)
 
-        semantic_results, keyword_results = await asyncio.gather(semantic_task, keyword_task)
+        semantic_results, keyword_results = await asyncio.gather(
+            semantic_task, keyword_task, return_exceptions=True
+        )
+
+        # Handle partial failures gracefully
+        if isinstance(semantic_results, Exception):
+            logger.error(f"Semantic search failed in hybrid_search_kb: {semantic_results}")
+            semantic_results = []
+        if isinstance(keyword_results, Exception):
+            logger.error(f"Keyword search failed in hybrid_search_kb: {keyword_results}")
+            keyword_results = []
 
         # If no keyword results, fall back to semantic only
         if not keyword_results:
@@ -877,9 +934,9 @@ class RAGService:
         fused = reciprocal_rank_fusion(
             semantic_results,
             keyword_results,
-            k=getattr(settings, "rrf_k", 60),
-            semantic_weight=getattr(settings, "semantic_weight", 0.7),
-            keyword_weight=getattr(settings, "keyword_weight", 0.3),
+            k=settings.rrf_k,
+            semantic_weight=settings.semantic_weight,
+            keyword_weight=settings.keyword_weight,
         )
 
         logger.info(
@@ -906,7 +963,7 @@ class RAGService:
         settings = get_settings()
 
         # Get more candidates for reranking
-        candidates_k = getattr(settings, "reranking_candidates", 20)
+        candidates_k = settings.reranking_candidates
 
         # Get initial candidates via hybrid search
         candidates = await self.hybrid_search_kb(conversation_id, query, candidates_k)

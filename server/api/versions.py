@@ -4,12 +4,13 @@ import difflib
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, FileVersion, get_db
+from exceptions import DocumentNotFoundError, NotFoundError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,7 +75,7 @@ async def create_version(request: CreateVersionRequest, db: AsyncSession = Depen
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=request.file_id)
 
     # Get previous version for diff
     prev_result = await db.execute(
@@ -135,7 +136,7 @@ async def get_version(file_id: str, version_id: str, db: AsyncSession = Depends(
     version = result.scalar_one_or_none()
 
     if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise NotFoundError(resource="Version", resource_id=version_id)
 
     return VersionResponse(
         id=version.id,
@@ -160,7 +161,7 @@ async def restore_version(file_id: str, version_id: str, db: AsyncSession = Depe
     version = version_result.scalar_one_or_none()
 
     if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise NotFoundError(resource="Version", resource_id=version_id)
 
     # Get file (must not be in trash)
     file_result = await db.execute(
@@ -169,7 +170,7 @@ async def restore_version(file_id: str, version_id: str, db: AsyncSession = Depe
     file = file_result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     # Update file content
     file.content = version.content

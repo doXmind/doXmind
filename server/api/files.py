@@ -6,12 +6,20 @@ import logging
 from datetime import datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, get_db, utcnow
+from exceptions import (
+    AppException,
+    BadRequestError,
+    DocumentNotFoundError,
+    InternalError,
+    NotFoundError,
+    UnauthorizedError,
+)
 from services.auth_service import TokenData, require_auth
 from services.llm_service import LLMService
 from services.rag_service import DEFAULT_STRATEGY_FACTORY, RAGService
@@ -49,7 +57,7 @@ async def get_folder_depth(db: AsyncSession, folder_id: str | None) -> int:
 
     while current_id is not None:
         if current_id in visited:
-            raise HTTPException(status_code=400, detail="Circular folder reference detected")
+            raise BadRequestError(message="Circular folder reference detected")
         visited.add(current_id)
         result = await db.execute(select(File.parent_id).where(File.id == current_id))
         row = result.scalar_one_or_none()
@@ -224,10 +232,10 @@ async def create_file(
         parent = parent_result.scalar_one_or_none()
 
         if not parent:
-            raise HTTPException(status_code=404, detail="Parent folder not found")
+            raise NotFoundError(resource="Folder", message="Parent folder not found")
 
         if not parent.is_folder:
-            raise HTTPException(status_code=400, detail="Parent must be a folder")
+            raise BadRequestError(message="Parent must be a folder")
 
     try:
         result = await db.execute(
@@ -296,10 +304,8 @@ async def create_file(
         # Foreign key violation on user_id means the user doesn't exist in DB
         # This happens when token is valid but user was deleted or never created
         if "ForeignKeyViolationError" in error_str and "user_id" in error_str:
-            raise HTTPException(
-                status_code=401, detail="User session invalid. Please log in again."
-            )
-        raise HTTPException(status_code=500, detail=str(e))
+            raise UnauthorizedError(message="User session invalid. Please log in again.")
+        raise InternalError(message=str(e))
 
 
 @router.get("/{file_id}", response_model=FileResponse)
@@ -316,7 +322,7 @@ async def get_file(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     return FileResponse(
         id=file.id,
@@ -350,7 +356,7 @@ async def update_file(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     # Determine if re-indexing is needed based on actual content changes
     need_reindex = False
@@ -440,7 +446,7 @@ async def delete_file(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     now = utcnow()
 
@@ -513,14 +519,13 @@ async def create_folder(
         parent = parent_result.scalar_one_or_none()
 
         if not parent:
-            raise HTTPException(status_code=404, detail="Parent folder not found")
+            raise NotFoundError(resource="Folder", message="Parent folder not found")
 
         # Check depth limit: parent depth + 1 (for the new folder) must be < MAX_FOLDER_DEPTH
         parent_depth = await get_folder_depth(db, folder.parent_id)
         if parent_depth + 1 >= MAX_FOLDER_DEPTH:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Maximum folder nesting depth is {MAX_FOLDER_DEPTH} levels",
+            raise BadRequestError(
+                message=f"Maximum folder nesting depth is {MAX_FOLDER_DEPTH} levels"
             )
 
     # Validate: Check for duplicate folder name at the same level (excluding trash)
@@ -540,9 +545,7 @@ async def create_folder(
     existing = result.scalar_one_or_none()
 
     if existing:
-        raise HTTPException(
-            status_code=400, detail=f"A folder named '{folder.name}' already exists here"
-        )
+        raise BadRequestError(message=f"A folder named '{folder.name}' already exists here")
 
     try:
         result = await db.execute(
@@ -584,17 +587,15 @@ async def create_folder(
             created_at=cast(datetime, created["created_at"]).isoformat(),
             updated_at=cast(datetime, created["updated_at"]).isoformat(),
         )
-    except HTTPException:
+    except AppException:
         raise
     except Exception as e:
         await db.rollback()
         error_str = str(e)
         logger.error(f"Failed to create folder: {e}")
         if "ForeignKeyViolationError" in error_str and "user_id" in error_str:
-            raise HTTPException(
-                status_code=401, detail="User session invalid. Please log in again."
-            )
-        raise HTTPException(status_code=500, detail=str(e))
+            raise UnauthorizedError(message="User session invalid. Please log in again.")
+        raise InternalError(message=str(e))
 
 
 @router.post("/{file_id}/move")
@@ -622,7 +623,7 @@ async def move_file(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     # Validate: If target is provided, verify it's a folder and user owns it
     if move_request.target_folder_id is not None:
@@ -640,31 +641,28 @@ async def move_file(
         target = target_result.scalar_one_or_none()
 
         if not target:
-            raise HTTPException(status_code=404, detail="Target folder not found")
+            raise NotFoundError(resource="Folder", message="Target folder not found")
 
         if not target.is_folder:
-            raise HTTPException(status_code=400, detail="Target must be a folder")
+            raise BadRequestError(message="Target must be a folder")
 
     # Additional checks for moving folders
     if file.is_folder:
         # Cannot move a folder into itself
         if move_request.target_folder_id == file_id:
-            raise HTTPException(status_code=400, detail="Cannot move a folder into itself")
+            raise BadRequestError(message="Cannot move a folder into itself")
 
         # Check for circular reference
         if move_request.target_folder_id is not None:
             if await would_create_cycle(db, file_id, move_request.target_folder_id):
-                raise HTTPException(
-                    status_code=400, detail="Cannot move folder: would create circular reference"
-                )
+                raise BadRequestError(message="Cannot move folder: would create circular reference")
 
             # Check depth limit: target depth + subtree depth of moved folder + 1
             target_depth = await get_folder_depth(db, move_request.target_folder_id)
             subtree_depth = await get_max_subtree_depth(db, file_id)
             if target_depth + 1 + subtree_depth >= MAX_FOLDER_DEPTH:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Cannot move folder: would exceed maximum depth of {MAX_FOLDER_DEPTH} levels",
+                raise BadRequestError(
+                    message=f"Cannot move folder: would exceed maximum depth of {MAX_FOLDER_DEPTH} levels",
                 )
 
     # Move the file/folder
@@ -734,7 +732,7 @@ async def search_files(
         return {"results": results}
     except Exception as e:
         logger.error(f"Search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise InternalError(message=str(e))
 
 
 class InDocSearchRequest(BaseModel):
@@ -775,7 +773,7 @@ async def search_in_document(
         file = result.scalar_one_or_none()
 
         if not file:
-            raise HTTPException(status_code=404, detail="File not found")
+            raise DocumentNotFoundError(file_id=request.file_id)
 
         rag = RAGService(db)
 
@@ -797,11 +795,11 @@ async def search_in_document(
         )
 
         return {"results": results}
-    except HTTPException:
+    except AppException:
         raise
     except Exception as e:
         logger.error(f"In-document search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise InternalError(message=str(e))
 
 
 class SummaryResponse(BaseModel):
@@ -826,7 +824,7 @@ async def generate_summary(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise DocumentNotFoundError(file_id=file_id)
 
     # Skip if content is too short
     if not file.content or len(file.content.strip()) < 50:
@@ -859,7 +857,7 @@ Document:
         return SummaryResponse(summary=summary)
     except Exception as e:
         logger.error(f"Summary generation error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate summary")
+        raise InternalError(message="Failed to generate summary")
 
 
 # =============================================================================
@@ -926,7 +924,7 @@ async def restore_file(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found in trash")
+        raise DocumentNotFoundError(message="File not found in trash")
 
     # If it's a folder, recursively restore all descendants
     if file.is_folder:
@@ -989,7 +987,7 @@ async def permanent_delete_file(
     file = result.scalar_one_or_none()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File not found in trash")
+        raise DocumentNotFoundError(message="File not found in trash")
 
     # Extract image keys from content before deletion
     from api.images import delete_orphaned_images, extract_image_keys_from_content

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, User, Settings, Trash2, AlertTriangle } from "lucide-react";
+import { LogOut, User, Settings, Trash2, AlertTriangle, Key, Type, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,13 +16,24 @@ import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import { APISettings } from "@/components/settings/api-settings";
+import { TypographySettings } from "@/components/settings/typography-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
+import { cn } from "@/lib/utils";
+
+type SettingsTab = "api" | "typography" | "privacy";
+
+const SETTINGS_TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
+  { id: "api", label: "API", icon: <Key className="h-4 w-4" /> },
+  { id: "typography", label: "Typography", icon: <Type className="h-4 w-4" /> },
+  { id: "privacy", label: "Privacy", icon: <Shield className="h-4 w-4" /> },
+];
 
 export function UserMenu() {
   const router = useRouter();
   const { user, logout, deleteAccount } = useAuthStore();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("api");
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleLogout = () => {
@@ -144,17 +155,42 @@ export function UserMenu() {
       </Modal>
 
       {/* Settings Modal */}
-      <Modal open={showSettingsModal} onClose={() => setShowSettingsModal(false)}>
+      <Modal
+        open={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        className="max-w-lg"
+      >
         <ModalHeader onClose={() => setShowSettingsModal(false)}>
           <span className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
             Settings
           </span>
         </ModalHeader>
-        <div className="space-y-6">
-          <APISettings />
-          <hr />
-          <TelemetrySettings />
+
+        {/* Tab navigation */}
+        <div className="-mx-6 mb-4 flex border-b border-border px-6">
+          {SETTINGS_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSettingsTab(tab.id)}
+              className={cn(
+                "flex items-center gap-1.5 border-b-2 px-3 pb-2 text-sm transition-colors",
+                settingsTab === tab.id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="min-h-[280px]">
+          {settingsTab === "api" && <APISettings />}
+          {settingsTab === "typography" && <TypographySettings />}
+          {settingsTab === "privacy" && <TelemetrySettings />}
         </div>
       </Modal>
     </DropdownMenu>

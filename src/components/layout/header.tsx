@@ -129,6 +129,13 @@ export function Header() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      // Track onboarding checklist
+      import("@/stores/onboarding-store")
+        .then(({ useOnboardingStore }) => {
+          useOnboardingStore.getState().completeChecklistItem("triedExport");
+        })
+        .catch(() => {});
     } catch {
       toast.error(`Failed to export as ${format.toUpperCase()}`);
     }

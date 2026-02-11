@@ -72,9 +72,7 @@ def _ensure_test_database():
                 user=user, password=password, host=host, port=int(port), database="doxmind"
             )
             try:
-                exists = await conn.fetchval(
-                    "SELECT 1 FROM pg_database WHERE datname = $1", dbname
-                )
+                exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", dbname)
                 if not exists:
                     await conn.execute(f'CREATE DATABASE "{dbname}" OWNER "{user}"')
             finally:

@@ -6,13 +6,14 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.files import get_user_id
 from db.database import File, get_db
+from exceptions import BadRequestError, ForbiddenError, NotFoundError
 from services.auth_service import TokenData, require_auth
 from services.storage_service import get_storage_service
 
@@ -102,18 +103,16 @@ async def upload_image(
 
     # Validate content type
     if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type: {file.content_type}. Allowed: {', '.join(ALLOWED_TYPES)}",
+        raise BadRequestError(
+            message=f"Invalid file type: {file.content_type}. Allowed: {', '.join(ALLOWED_TYPES)}"
         )
 
     # Validate extension
     if file.filename:
         ext = Path(file.filename).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file extension: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
+            raise BadRequestError(
+                message=f"Invalid file extension: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
             )
     else:
         ext_map = {
@@ -130,9 +129,8 @@ async def upload_image(
 
     # Validate file size
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        raise BadRequestError(
+            message=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
         )
 
     # Generate unique filename and S3 key
@@ -157,10 +155,10 @@ async def get_image(user_id: str, filename: str):
     """Serve an uploaded image from S3."""
     # Validate inputs to prevent injection
     if ".." in filename or "/" in filename or "\\" in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise BadRequestError(message="Invalid filename")
 
     if ".." in user_id or "/" in user_id or "\\" in user_id:
-        raise HTTPException(status_code=400, detail="Invalid user ID")
+        raise BadRequestError(message="Invalid user ID")
 
     s3_key = f"images/{user_id}/{filename}"
 
@@ -169,7 +167,7 @@ async def get_image(user_id: str, filename: str):
     try:
         data, content_type = await loop.run_in_executor(None, storage.download, s3_key)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Image not found")
+        raise NotFoundError(message="Image not found")
 
     return Response(
         content=data,
@@ -192,15 +190,15 @@ async def delete_image(
     Only the image owner can delete.
     """
     if ".." in filename or "/" in filename or "\\" in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise BadRequestError(message="Invalid filename")
 
     if ".." in user_id or "/" in user_id or "\\" in user_id:
-        raise HTTPException(status_code=400, detail="Invalid user ID")
+        raise BadRequestError(message="Invalid user ID")
 
     # Authorization: ensure the requesting user matches the image's user_id
     request_user_id = get_user_id(token) or "shared"
     if request_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this image")
+        raise ForbiddenError(message="Not authorized to delete this image")
 
     s3_key = f"images/{user_id}/{filename}"
 
