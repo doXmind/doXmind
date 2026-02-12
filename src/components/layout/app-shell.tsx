@@ -17,7 +17,7 @@ export function AppShell({ children, hideHeader = false }: AppShellProps) {
       }}
     >
       {!hideHeader && <Header />}
-      <div className="relative flex-1 overflow-hidden">{children}</div>
+      <div className="relative flex flex-1 flex-col overflow-hidden">{children}</div>
       <InteractiveTour />
     </div>
   );
