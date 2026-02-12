@@ -105,6 +105,7 @@ export function HomeSearch({
 
       {/* Search input */}
       <div
+        data-onboarding="home-search"
         className={cn(
           "relative flex h-12 items-center gap-3 rounded-2xl border px-4 backdrop-blur-sm transition-all duration-300 md:h-14 md:px-5",
           isFocused
@@ -112,31 +113,49 @@ export function HomeSearch({
             : "border-border/60 bg-card/80 shadow-sm hover:border-foreground/10 hover:bg-card hover:shadow-md"
         )}
       >
-        {/* Mode toggle */}
-        <button
-          onClick={toggleMode}
-          className={cn(
-            "flex h-7 flex-shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-all duration-200",
-            "bg-accent/50 text-muted-foreground hover:bg-accent"
-          )}
-          aria-label={`Switch to ${isAskMode ? "search" : "ask AI"} mode`}
+        {/* Segmented mode control */}
+        <div
+          data-onboarding="search-mode-toggle"
+          className="flex h-7 flex-shrink-0 items-center rounded-lg bg-accent/50 p-0.5"
         >
-          {isAskMode ? (
-            <>
-              <Sparkles className="h-3 w-3" />
-              <span className="hidden sm:inline">Ask AI</span>
-            </>
-          ) : (
-            <>
-              <Search className="h-3 w-3" />
-              <span className="hidden sm:inline">Search</span>
-            </>
-          )}
-        </button>
+          <button
+            onClick={() => {
+              if (!isAskMode) toggleMode();
+            }}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-all duration-200",
+              isAskMode
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            aria-label="Ask AI mode"
+          >
+            <Sparkles className="h-3 w-3" />
+            <span className="hidden sm:inline">Ask AI</span>
+          </button>
+          <button
+            onClick={() => {
+              if (isAskMode) toggleMode();
+            }}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-all duration-200",
+              !isAskMode
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            aria-label="Search mode"
+          >
+            <Search className="h-3 w-3" />
+            <span className="hidden sm:inline">Search</span>
+          </button>
+        </div>
 
         <input
           ref={inputRef}
           type="text"
+          name="home-search"
+          autoComplete="one-time-code"
+          data-form-type="other"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onFocus={() => {
@@ -146,7 +165,7 @@ export function HomeSearch({
           onBlur={() => setIsFocused(false)}
           onKeyDown={handleKeyDown}
           placeholder={
-            isAskMode ? "Ask a question about your documents..." : "Search your documents..."
+            isAskMode ? "Ask anything about your writing..." : "Search by title or content..."
           }
           className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none md:text-base"
           aria-label={isAskMode ? "Ask a question" : "Search documents"}
@@ -175,13 +194,6 @@ export function HomeSearch({
               <X className="h-3.5 w-3.5" />
             </button>
           </>
-        )}
-
-        {!query && !isAskMode && (
-          <div className="hidden items-center gap-1 md:flex">
-            <Sparkles className="h-3 w-3 text-muted-foreground/30" />
-            <span className="text-[11px] text-muted-foreground/30">AI</span>
-          </div>
         )}
       </div>
     </motion.div>

@@ -1,0 +1,189 @@
+"use client";
+
+import { Search, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { FolderTree } from "./folder-tree";
+import { SortDropdown } from "./sort-dropdown";
+import { BulkActionBar } from "./bulk-action-bar";
+import { TrashPanel } from "./trash-panel";
+import { TemplatePicker, type FileTemplate } from "./template-picker";
+import { NewButton } from "@/components/home/new-button";
+import { useFileStore } from "@/stores/file-store";
+import { useLayoutStore } from "@/stores/layout-store";
+import { getErrorMessage, formatShortcut } from "@/lib/utils";
+import { markdownToHtml } from "@/lib/markdown";
+import { storeLogger } from "@/lib/logger";
+
+const log = storeLogger.child("FilesSidebar");
+
+export function FilesSidebar() {
+  const router = useRouter();
+  const { files, createFile, createFolder, importFile, currentFolderId, getFolders } =
+    useFileStore();
+  const { openCommandPalette } = useLayoutStore();
+  const [isImporting, setIsImporting] = useState(false);
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleCreateFile = async () => {
+    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+
+    let maxNum = 0;
+    currentFiles.forEach((file) => {
+      const match = file.name.match(/^Untitled-(\d+)\.md$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+
+    const name = `Untitled-${maxNum + 1}.md`;
+    try {
+      const newId = await createFile(name, "", currentFolderId);
+      router.push(`/editor/${newId}`);
+    } catch (error) {
+      log.error("Failed to create file", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const handleTemplateSelect = async (template: FileTemplate) => {
+    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+
+    let counter = 0;
+    let name: string;
+    do {
+      counter++;
+      name =
+        counter === 1
+          ? `${template.defaultFileName}.md`
+          : `${template.defaultFileName} ${counter}.md`;
+    } while (currentFiles.some((f) => f.name === name));
+
+    try {
+      const markdown = template.getContent();
+      const htmlContent = markdown ? markdownToHtml(markdown) : "";
+      const newId = await createFile(name, htmlContent, currentFolderId);
+      router.push(`/editor/${newId}`);
+    } catch (error) {
+      log.error("Failed to create file from template", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+      throw error;
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    const folders = getFolders(currentFolderId);
+    const name = `New Folder ${folders.length + 1}`;
+    try {
+      await createFolder(name, currentFolderId);
+    } catch (error) {
+      log.error("Failed to create folder", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = "";
+
+    setIsImporting(true);
+    try {
+      const newId = await importFile(file, currentFolderId);
+      router.push(`/editor/${newId}`);
+      toast.success(`Imported "${file.name}" successfully`);
+    } catch (error) {
+      log.error("Failed to import file", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Feishu-style search bar */}
+      <div className="px-3 pb-2 pt-2.5">
+        <button
+          onClick={openCommandPalette}
+          className="flex w-full items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          <span>Search</span>
+          <kbd className="ml-auto hidden text-[10px] font-medium text-muted-foreground/60 md:inline">
+            {formatShortcut("Ctrl+K")}
+          </kbd>
+        </button>
+      </div>
+
+      {/* Hidden file input for import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.docx,.md,.markdown"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
+      {/* Sort + New */}
+      <div className="flex items-center justify-between px-3 py-1">
+        <SortDropdown />
+        <NewButton
+          onCreateFile={handleCreateFile}
+          onCreateFolder={handleCreateFolder}
+          onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
+          onImportFile={handleImportClick}
+          isImporting={isImporting}
+        />
+      </div>
+
+      {/* File List with Folders */}
+      <ScrollArea className="flex-1">
+        <div className="space-y-1 px-2 pb-2">
+          <FolderTree />
+        </div>
+      </ScrollArea>
+
+      {/* Bulk Action Bar */}
+      <BulkActionBar />
+
+      {/* Bottom — Trash only */}
+      <div className="border-t border-border p-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+          onClick={() => setIsTrashOpen(true)}
+        >
+          <Trash2 className="h-4 w-4" />
+          Trash
+        </Button>
+      </div>
+
+      {/* Trash panel modal */}
+      <TrashPanel open={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
+
+      {/* Template picker modal */}
+      <TemplatePicker
+        open={isTemplatePickerOpen}
+        onClose={() => setIsTemplatePickerOpen(false)}
+        onSelect={handleTemplateSelect}
+      />
+    </div>
+  );
+}

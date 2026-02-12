@@ -538,6 +538,7 @@ class TestErrorHandling:
 
             async def mock_stream(*args, **kwargs):
                 raise Exception("Agent crashed")
+                yield  # unreachable; makes this an async generator
 
             mock_agent.stream = mock_stream
             MockAgent.return_value = mock_agent

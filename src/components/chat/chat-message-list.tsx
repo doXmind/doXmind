@@ -37,9 +37,13 @@ export const ChatMessageList = forwardRef<ChatMessageListRef, ChatMessageListPro
     useImperativeHandle(ref, () => ({ scrollToBottom }));
 
     // Auto-scroll when dependencies change
-    useEffect(() => {
-      scrollToBottom();
-    }, scrollDeps);
+    useEffect(
+      () => {
+        scrollToBottom();
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      scrollDeps
+    );
 
     return (
       <ScrollArea ref={scrollAreaRef} className={cn("min-h-0 flex-1", className)}>

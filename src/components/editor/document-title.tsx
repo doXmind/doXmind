@@ -107,7 +107,8 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
           }}
           placeholder="Untitled"
           rows={1}
-          className="w-full resize-none overflow-hidden border-none bg-transparent text-3xl font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground/40 focus:ring-0"
+          className="w-full resize-none overflow-hidden border-none bg-transparent text-3xl font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-muted-foreground/30 focus:ring-0"
+          style={{ letterSpacing: "-0.02em" }}
           spellCheck={false}
         />
 

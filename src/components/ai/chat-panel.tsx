@@ -1,11 +1,27 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Trash2, Loader2, Mic, AlertTriangle } from "lucide-react";
+import {
+  Trash2,
+  Loader2,
+  Mic,
+  AlertTriangle,
+  SquarePen,
+  PanelRight,
+  AppWindow,
+  Minus,
+  Check,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import {
   ChatMessage,
   ChatMessageList,
@@ -19,6 +35,8 @@ import { TodoProgress } from "./todo-progress";
 import { ContextPill } from "./context-pill";
 import { AttachmentMenu } from "./attachment-menu";
 import { ChatSettings } from "./chat-settings";
+import { PanelSubHeader } from "@/components/ui/panel-sub-header";
+import { useLayoutStore } from "@/stores/layout-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useChatContextStore } from "@/stores/chat-context-store";
@@ -56,14 +74,15 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const [isPressing, setIsPressing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounterRef = useRef(0);
 
   const isMobile = useIsMobile();
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
-  const { checklist } = useOnboardingStore();
-  const chatSuggestions = checklist.triedAIChat ? SUGGESTIONS : ONBOARDING_SUGGESTIONS;
+  const onboardingCompleted = useOnboardingStore((s) => s.onboardingCompleted);
+  const chatSuggestions = onboardingCompleted ? SUGGESTIONS : ONBOARDING_SUGGESTIONS;
 
   // Speech-to-text hook
   const {
@@ -318,24 +337,89 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-onboarding="chat-composer">
       {/* Header */}
-      <div className="chat-header-desktop hidden items-center justify-between border-b border-border/60 px-4 py-2.5 md:flex">
-        <span className="text-xs font-semibold text-foreground">AI Assistant</span>
-        {conversation.messages.length > 0 && (
-          <Tooltip content="Clear conversation" side="bottom">
+      <PanelSubHeader className="chat-header-desktop hidden justify-between md:flex">
+        <span className="text-xs font-medium text-muted-foreground">AI Chat</span>
+        <div className="flex items-center gap-0.5">
+          {/* New chat / clear */}
+          <Tooltip content="New chat" side="bottom">
             <Button
               variant="ghost"
               size="icon"
               onClick={handleClear}
-              className="h-7 w-7 text-muted-foreground"
-              aria-label="Clear conversation"
+              disabled={conversation.messages.length === 0}
+              className="h-6 w-6 text-muted-foreground"
+              aria-label="New chat"
             >
-              <Trash2 className="h-4 w-4" />
+              <SquarePen className="h-3.5 w-3.5" />
             </Button>
           </Tooltip>
-        )}
-      </div>
+          {/* Mode toggle: click to switch, right-click for dropdown */}
+          <DropdownMenu open={modeMenuOpen} onOpenChange={setModeMenuOpen}>
+            <Tooltip
+              content={
+                useLayoutStore.getState().chatMode === "sidebar"
+                  ? "Switch to floating"
+                  : "Switch to sidebar"
+              }
+              side="bottom"
+            >
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground"
+                  aria-label="Switch chat mode"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const store = useLayoutStore.getState();
+                    store.setChatMode(store.chatMode === "sidebar" ? "floating" : "sidebar");
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setModeMenuOpen(true);
+                  }}
+                >
+                  {useLayoutStore.getState().chatMode === "sidebar" ? (
+                    <PanelRight className="h-3.5 w-3.5" />
+                  ) : (
+                    <AppWindow className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+            </Tooltip>
+            <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+              <DropdownMenuItem onClick={() => useLayoutStore.getState().setChatMode("sidebar")}>
+                <PanelRight className="mr-2 h-3.5 w-3.5" />
+                Sidebar
+                {useLayoutStore.getState().chatMode === "sidebar" && (
+                  <Check className="ml-auto h-3.5 w-3.5" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => useLayoutStore.getState().setChatMode("floating")}>
+                <AppWindow className="mr-2 h-3.5 w-3.5" />
+                Floating
+                {useLayoutStore.getState().chatMode === "floating" && (
+                  <Check className="ml-auto h-3.5 w-3.5" />
+                )}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Close / minimize */}
+          <Tooltip content="Close" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => useLayoutStore.getState().toggleChat()}
+              className="h-6 w-6 text-muted-foreground"
+              aria-label="Close AI Chat"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+        </div>
+      </PanelSubHeader>
 
       {/* Messages */}
       <ChatMessageList

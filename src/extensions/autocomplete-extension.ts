@@ -15,6 +15,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { telemetry } from "@/lib/telemetry";
 import { useEditorStore } from "@/stores/editor-store";
+import { BlockSelectionPluginKey } from "./block-selection-extension";
 
 // Plugin state interface
 export interface AutocompletePluginState {
@@ -88,6 +89,29 @@ export const AutocompleteExtension = Extension.create({
             const meta = tr.getMeta(AutocompletePluginKey);
             if (meta !== undefined) {
               return meta;
+            }
+
+            // Clear suggestion if block selection is being activated
+            const blockMeta = tr.getMeta(BlockSelectionPluginKey);
+            if (blockMeta?.selectedBlockIds?.size > 0 && value.suggestion) {
+              const latency = value.shownAt ? Date.now() - value.shownAt : undefined;
+              telemetry.trackAutocomplete({
+                event_type: "autocomplete_dismissed",
+                suggestion_id: value.suggestionId || crypto.randomUUID(),
+                text_before: value.textBefore || "",
+                suggestion: value.suggestion,
+                user_action: "dismiss",
+                trigger_mode: value.triggerMode || "auto",
+                latency_ms: latency,
+              });
+              return {
+                suggestion: null,
+                position: null,
+                suggestionId: undefined,
+                textBefore: undefined,
+                shownAt: undefined,
+                triggerMode: undefined,
+              };
             }
 
             // Clear suggestion if document changed (user is typing)
@@ -278,10 +302,10 @@ export const AutocompleteExtension = Extension.create({
             content: pluginState.suggestion,
           });
 
-          // Track onboarding checklist
+          // Track onboarding step
           import("@/stores/onboarding-store")
             .then(({ useOnboardingStore }) => {
-              useOnboardingStore.getState().completeChecklistItem("triedAutocomplete");
+              useOnboardingStore.getState().completeStep("autocomplete");
             })
             .catch(() => {});
 

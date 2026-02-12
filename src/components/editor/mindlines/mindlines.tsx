@@ -78,7 +78,7 @@ export function Mindlines({ editor }: MindlinesProps) {
     }
   }, [isMindlinesCollapsed, toggleMindlinesCollapsed]);
 
-  if (!isMindlinesOpen || !editor) return null;
+  if (!isMindlinesOpen || !editor || headings.length === 0) return null;
 
   const isExpanded = mode === "expanded";
 

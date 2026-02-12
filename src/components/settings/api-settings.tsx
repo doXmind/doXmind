@@ -107,6 +107,8 @@ export function APISettings() {
                     placeholder="sk-ant-..."
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
+                    autoComplete="one-time-code"
+                    data-form-type="other"
                     className="pr-10 font-mono text-sm"
                   />
                   <button

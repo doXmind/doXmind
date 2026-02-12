@@ -72,6 +72,7 @@ interface FileState {
   toggleFavorite: (fileId: string) => Promise<void>;
   setFileIcon: (fileId: string, icon: string | null) => Promise<void>;
   getFavorites: () => FileItem[];
+  getRecentFiles: (limit?: number) => FileItem[];
 
   // Folder actions
   createFolder: (name: string, parentId?: string | null) => Promise<string>;
@@ -175,8 +176,12 @@ export const useFileStore = create<FileState>()(
 
       createFile: async (name: string, content: string = "", parentId: string | null = null) => {
         try {
+          // Validate parentId exists as a folder; fall back to root if stale
+          const validParentId =
+            parentId && get().files.some((f) => f.id === parentId && f.isFolder) ? parentId : null;
+
           // Create on server first
-          const serverFile = await api.createFile(name, content, parentId);
+          const serverFile = await api.createFile(name, content, validParentId);
           const newFile: FileItem = {
             id: serverFile.id,
             name: serverFile.name,
@@ -195,14 +200,6 @@ export const useFileStore = create<FileState>()(
             currentFileId: newFile.id,
             justCreatedFileId: newFile.id,
           }));
-
-          // Track onboarding checklist
-          try {
-            const { useOnboardingStore } = await import("@/stores/onboarding-store");
-            useOnboardingStore.getState().completeChecklistItem("createdDocument");
-          } catch {
-            // Onboarding store may not be available
-          }
 
           return newFile.id;
         } catch (error) {
@@ -359,6 +356,14 @@ export const useFileStore = create<FileState>()(
         const { files, sortBy } = get();
         const favorites = files.filter((f) => f.isFavorite && !f.isFolder);
         return sortFilesByOption(favorites, sortBy);
+      },
+
+      getRecentFiles: (limit = 3) => {
+        const { files } = get();
+        return files
+          .filter((f) => !f.isFolder)
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .slice(0, limit);
       },
 
       // Folder operations

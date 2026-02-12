@@ -1,7 +1,6 @@
 "use client";
 
-import { ArrowUpDown, Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Check, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -9,36 +8,33 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip } from "@/components/ui/tooltip";
 import { useFileStore, type SortOption } from "@/stores/file-store";
 
-const sortOptions: { value: SortOption; label: string }[] = [
-  { value: "name-asc", label: "Name (A-Z)" },
-  { value: "name-desc", label: "Name (Z-A)" },
-  { value: "modified-newest", label: "Modified (Newest)" },
-  { value: "modified-oldest", label: "Modified (Oldest)" },
-  { value: "created-newest", label: "Created (Newest)" },
-  { value: "created-oldest", label: "Created (Oldest)" },
+const sortOptions: { value: SortOption; label: string; shortLabel: string }[] = [
+  { value: "name-asc", label: "Name (A-Z)", shortLabel: "Name" },
+  { value: "name-desc", label: "Name (Z-A)", shortLabel: "Name" },
+  { value: "modified-newest", label: "Modified (Newest)", shortLabel: "Modified" },
+  { value: "modified-oldest", label: "Modified (Oldest)", shortLabel: "Modified" },
+  { value: "created-newest", label: "Created (Newest)", shortLabel: "Created" },
+  { value: "created-oldest", label: "Created (Oldest)", shortLabel: "Created" },
 ];
 
 export function SortDropdown() {
   const { sortBy, setSortBy } = useFileStore();
+  const currentOption = sortOptions.find((o) => o.value === sortBy);
 
   return (
     <DropdownMenu>
-      <Tooltip content="Sort files" side="bottom">
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 md:h-9 md:w-9"
-            aria-label="Sort files"
-          >
-            <ArrowUpDown className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-      </Tooltip>
-      <DropdownMenuContent align="start" className="w-56">
+      <DropdownMenuTrigger asChild>
+        <button
+          className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Sort files"
+        >
+          <span>{currentOption?.shortLabel ?? "Sort"}</span>
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-52">
         {sortOptions.slice(0, 2).map((option) => (
           <DropdownMenuItem
             key={option.value}

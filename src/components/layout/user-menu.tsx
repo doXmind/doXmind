@@ -2,7 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, User, Settings, Trash2, AlertTriangle, Key, Type, Shield } from "lucide-react";
+import {
+  LogOut,
+  User,
+  Settings,
+  Trash2,
+  AlertTriangle,
+  Key,
+  Type,
+  Shield,
+  GraduationCap,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,6 +28,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { APISettings } from "@/components/settings/api-settings";
 import { TypographySettings } from "@/components/settings/typography-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
+import { useOnboardingStore } from "@/stores/onboarding-store";
 import { cn } from "@/lib/utils";
 
 type SettingsTab = "api" | "typography" | "privacy";
@@ -28,9 +39,11 @@ const SETTINGS_TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[]
   { id: "privacy", label: "Privacy", icon: <Shield className="h-4 w-4" /> },
 ];
 
-export function UserMenu() {
+export function UserMenu({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const { user, logout, deleteAccount } = useAuthStore();
+  const { onboardingCompleted, resetOnboarding, startOnboarding, tutorialFileId } =
+    useOnboardingStore();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("api");
@@ -39,6 +52,12 @@ export function UserMenu() {
   const handleLogout = () => {
     logout();
     router.push("/login");
+  };
+
+  const handleRestartTour = () => {
+    resetOnboarding();
+    startOnboarding(tutorialFileId ?? undefined);
+    router.push("/");
   };
 
   const handleDeleteAccount = async () => {
@@ -70,7 +89,7 @@ export function UserMenu() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative h-8 w-8 rounded-full"
+          className={cn("relative rounded-full", compact ? "h-6 w-6" : "h-8 w-8")}
           aria-label="User menu"
         >
           {user?.avatar_url ? (
@@ -78,10 +97,15 @@ export function UserMenu() {
             <img
               src={user.avatar_url}
               alt={user.username || user.email}
-              className="h-8 w-8 rounded-full object-cover"
+              className={cn("rounded-full object-cover", compact ? "h-6 w-6" : "h-8 w-8")}
             />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+            <div
+              className={cn(
+                "flex items-center justify-center rounded-full bg-primary/10 font-medium text-primary",
+                compact ? "h-6 w-6 text-[10px]" : "h-8 w-8 text-xs"
+              )}
+            >
               {getInitials()}
             </div>
           )}
@@ -103,6 +127,12 @@ export function UserMenu() {
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
+        {onboardingCompleted && (
+          <DropdownMenuItem onClick={handleRestartTour}>
+            <GraduationCap className="mr-2 h-4 w-4" />
+            Restart Tour
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
           <LogOut className="mr-2 h-4 w-4" />

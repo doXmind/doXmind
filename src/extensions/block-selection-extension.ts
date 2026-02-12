@@ -138,9 +138,12 @@ export interface BlockSelectionOptions {
    */
   onBlockSelect?: (block: SelectableBlock, event: MouseEvent | TouchEvent) => void;
   /**
-   * Selection mode: 'tap' for single tap (mobile), 'longpress' for long-press
+   * Selection mode:
+   * - 'tap' for single tap (mobile)
+   * - 'longpress' for long-press (mobile)
+   * - 'desktop' for keyboard-driven selection (Esc to select, Shift+Arrow to extend)
    */
-  selectionMode?: "tap" | "longpress";
+  selectionMode?: "tap" | "longpress" | "desktop";
   /**
    * Long-press duration in milliseconds (default: 500, only used in longpress mode)
    */
@@ -164,6 +167,7 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const extension = this;
     const isTapMode = extension.options.selectionMode === "tap";
+    const isDesktopMode = extension.options.selectionMode === "desktop";
 
     // For longpress mode
     let longPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -250,6 +254,161 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
         },
 
         props: {
+          // Desktop mode: handle keyboard events for block selection
+          ...(isDesktopMode
+            ? {
+                handleKeyDown(view, event) {
+                  const pluginState = BlockSelectionPluginKey.getState(view.state);
+                  if (!pluginState?.isEnabled) return false;
+
+                  const hasSelection = pluginState.selectedBlockIds.size > 0;
+
+                  // Escape: Select the current block (enter block selection mode)
+                  if (event.key === "Escape" && !hasSelection) {
+                    const { $from } = view.state.selection;
+                    if ($from.depth >= 1) {
+                      const block = findBlockAtPosition(view.state.doc, $from.pos);
+                      if (block) {
+                        const tr = view.state.tr.setMeta(BlockSelectionPluginKey, {
+                          selectedBlockIds: new Set([block.id]),
+                        });
+                        view.dispatch(tr);
+
+                        // Dispatch custom event for React
+                        const customEvent = new CustomEvent("block-select", {
+                          detail: { block, event },
+                        });
+                        document.dispatchEvent(customEvent);
+
+                        return true;
+                      }
+                    }
+                    return false;
+                  }
+
+                  // Escape with selection: clear block selection
+                  if (event.key === "Escape" && hasSelection) {
+                    const tr = view.state.tr.setMeta(BlockSelectionPluginKey, {
+                      selectedBlockIds: new Set<string>(),
+                    });
+                    view.dispatch(tr);
+
+                    // Dispatch clear event for React
+                    document.dispatchEvent(new CustomEvent("block-selection-clear"));
+                    return true;
+                  }
+
+                  // Enter: Return to text editing in the first selected block
+                  if (event.key === "Enter" && hasSelection) {
+                    const firstId = Array.from(pluginState.selectedBlockIds)[0];
+                    const match = firstId?.match(/^block-(\d+)$/);
+                    if (match) {
+                      const pos = parseInt(match[1], 10);
+                      const tr = view.state.tr.setMeta(BlockSelectionPluginKey, {
+                        selectedBlockIds: new Set<string>(),
+                      });
+                      view.dispatch(tr);
+
+                      // Focus into the block
+                      try {
+                        view.dispatch(
+                          view.state.tr.setSelection(
+                            // @ts-expect-error -- TextSelection is available
+                            view.state.selection.constructor.near(view.state.doc.resolve(pos + 1))
+                          )
+                        );
+                      } catch {
+                        // Position might be invalid
+                      }
+
+                      document.dispatchEvent(new CustomEvent("block-selection-clear"));
+                      return true;
+                    }
+                  }
+
+                  // Shift+ArrowUp/Down: Extend block selection
+                  if (
+                    event.shiftKey &&
+                    (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+                    hasSelection
+                  ) {
+                    event.preventDefault();
+                    const blocks = extractBlocks(view.state.doc);
+                    const selectedIds = pluginState.selectedBlockIds;
+
+                    // Find the range of selected block indices
+                    const selectedIndices = blocks
+                      .map((b, i) => (selectedIds.has(b.id) ? i : -1))
+                      .filter((i) => i >= 0);
+
+                    if (selectedIndices.length === 0) return false;
+
+                    const minIdx = Math.min(...selectedIndices);
+                    const maxIdx = Math.max(...selectedIndices);
+
+                    let newIds: Set<string>;
+                    if (event.key === "ArrowUp" && minIdx > 0) {
+                      // Add the block above
+                      newIds = new Set(selectedIds);
+                      newIds.add(blocks[minIdx - 1].id);
+                    } else if (event.key === "ArrowDown" && maxIdx < blocks.length - 1) {
+                      // Add the block below
+                      newIds = new Set(selectedIds);
+                      newIds.add(blocks[maxIdx + 1].id);
+                    } else {
+                      return false;
+                    }
+
+                    const tr = view.state.tr.setMeta(BlockSelectionPluginKey, {
+                      selectedBlockIds: newIds,
+                    });
+                    view.dispatch(tr);
+                    return true;
+                  }
+
+                  // Backspace/Delete: Delete all selected blocks
+                  if ((event.key === "Backspace" || event.key === "Delete") && hasSelection) {
+                    event.preventDefault();
+                    const blocks = extractBlocks(view.state.doc);
+                    const selectedIds = pluginState.selectedBlockIds;
+
+                    // Get positions of selected blocks in reverse order
+                    const toDelete = blocks
+                      .filter((b) => selectedIds.has(b.id))
+                      .sort((a, b) => b.from - a.from);
+
+                    if (toDelete.length >= view.state.doc.childCount) {
+                      // Don't delete everything, clear content instead
+                      const tr = view.state.tr;
+                      tr.replaceWith(
+                        0,
+                        view.state.doc.content.size,
+                        view.state.schema.nodes.paragraph.create()
+                      );
+                      tr.setMeta(BlockSelectionPluginKey, {
+                        selectedBlockIds: new Set<string>(),
+                      });
+                      view.dispatch(tr);
+                    } else {
+                      const tr = view.state.tr;
+                      for (const block of toDelete) {
+                        tr.delete(tr.mapping.map(block.from), tr.mapping.map(block.to));
+                      }
+                      tr.setMeta(BlockSelectionPluginKey, {
+                        selectedBlockIds: new Set<string>(),
+                      });
+                      view.dispatch(tr);
+                    }
+
+                    document.dispatchEvent(new CustomEvent("block-selection-clear"));
+                    return true;
+                  }
+
+                  return false;
+                },
+              }
+            : {}),
+
           handleDOMEvents: {
             // TAP MODE: Handle click/tap for immediate block selection
             ...(isTapMode

@@ -240,16 +240,16 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
-    // Auto-resize textarea
+    // Auto-resize textarea — use 0px to get true content scrollHeight
     const textarea = e.target;
-    textarea.style.height = "auto";
+    textarea.style.height = "0px";
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px";
   };
 
   // Reset textarea height after submit
   const resetTextareaHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = "24px";
     }
   };
 

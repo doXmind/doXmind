@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { api } from "@/lib/api";
 import { HomeDashboard } from "@/components/home/home-dashboard";
 import { HomeLanding } from "@/components/home/home-landing";
+import { AppShell } from "@/components/layout/app-shell";
 import { AnimatedLogoIcon, GlitchProvider } from "@/components/ui/animated-logo";
 
 export default function HomePage() {
@@ -50,7 +51,13 @@ export default function HomePage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4 }}
         >
-          {isAuthenticated ? <HomeDashboard /> : <HomeLanding />}
+          {isAuthenticated ? (
+            <AppShell>
+              <HomeDashboard />
+            </AppShell>
+          ) : (
+            <HomeLanding />
+          )}
         </motion.div>
       )}
     </AnimatePresence>

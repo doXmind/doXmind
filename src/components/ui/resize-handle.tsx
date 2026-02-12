@@ -6,11 +6,20 @@ import { cn } from "@/lib/utils";
 interface ResizeHandleProps {
   side: "left" | "right";
   onResize: (delta: number) => void;
+  onResizeStart?: () => void;
+  onResizeEnd?: () => void;
   onDoubleClick?: () => void;
   className?: string;
 }
 
-export function ResizeHandle({ side, onResize, onDoubleClick, className }: ResizeHandleProps) {
+export function ResizeHandle({
+  side,
+  onResize,
+  onResizeStart,
+  onResizeEnd,
+  onDoubleClick,
+  className,
+}: ResizeHandleProps) {
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
 
@@ -19,12 +28,12 @@ export function ResizeHandle({ side, onResize, onDoubleClick, className }: Resiz
       e.preventDefault();
       isDraggingRef.current = true;
       startXRef.current = e.clientX;
+      onResizeStart?.();
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!isDraggingRef.current) return;
         const delta = moveEvent.clientX - startXRef.current;
         startXRef.current = moveEvent.clientX;
-        // For right-side handles (like chat panel left edge), dragging left = wider
         const adjustedDelta = side === "right" ? -delta : delta;
         onResize(adjustedDelta);
       };
@@ -35,6 +44,7 @@ export function ResizeHandle({ side, onResize, onDoubleClick, className }: Resiz
         document.removeEventListener("mouseup", handleMouseUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+        onResizeEnd?.();
       };
 
       document.addEventListener("mousemove", handleMouseMove);
@@ -42,21 +52,19 @@ export function ResizeHandle({ side, onResize, onDoubleClick, className }: Resiz
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     },
-    [onResize, side]
+    [onResize, onResizeStart, onResizeEnd, side]
   );
 
   return (
-    <div
-      onMouseDown={handleMouseDown}
-      onDoubleClick={onDoubleClick}
-      className={cn(
-        "group relative z-10 flex w-1 flex-shrink-0 cursor-col-resize items-center justify-center",
-        "hover:bg-primary/20 active:bg-primary/30",
-        "transition-colors duration-150",
-        className
-      )}
-    >
-      <div className="h-8 w-0.5 rounded-full bg-border opacity-0 transition-opacity group-hover:opacity-100" />
+    <div className={cn("relative z-10 w-0 flex-shrink-0", className)}>
+      {/* Invisible wide hit area for easy grabbing */}
+      <div
+        onMouseDown={handleMouseDown}
+        onDoubleClick={onDoubleClick}
+        className="absolute inset-y-0 -left-[4px] -right-[4px] cursor-col-resize"
+      />
+      {/* Visible 1px separator — Notion style */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-border/40" />
     </div>
   );
 }

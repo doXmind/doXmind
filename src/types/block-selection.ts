@@ -1,8 +1,8 @@
 /**
  * Block Selection Types
  *
- * Types for the mobile block-based selection system.
- * Users select blocks by long-press (not traditional text selection).
+ * Types for the block-based selection system.
+ * Mobile: long-press/tap to select. Desktop: Escape/Shift+Arrow keyboard selection.
  */
 
 /**
@@ -37,6 +37,11 @@ export const SELECTABLE_BLOCK_TYPES = [
   "blockquote",
   "codeBlock",
   "horizontalRule",
+  "callout",
+  "toggle",
+  "image",
+  "table",
+  "tableOfContents",
 ] as const;
 
 export type SelectableBlockType = (typeof SELECTABLE_BLOCK_TYPES)[number];

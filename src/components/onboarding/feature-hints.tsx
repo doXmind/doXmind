@@ -130,7 +130,7 @@ function FeatureHintTooltip({ hint, anchorRect, onDismiss }: FeatureHintTooltipP
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: position === "top" ? 8 : -8 }}
         className={cn(
-          "pointer-events-auto fixed z-[55] rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 shadow-lg backdrop-blur-sm"
+          "pointer-events-auto fixed z-[55] rounded-lg border border-border bg-popover px-3 py-2 shadow-md"
         )}
         style={{ top, left, width: tooltipWidth }}
       >
@@ -165,20 +165,22 @@ export function useFeatureHints() {
     // Skip if already seen
     if (getSeenHints().has(id)) return;
 
-    // Skip if onboarding hasn't been completed (don't overlap with tour)
-    // Check both old key and new store
-    const onboardingDone = localStorage.getItem("doxmind-onboarding-completed");
-    let newStoreDone = false;
+    // Skip during active onboarding (don't overlap with tour)
     try {
       const storeData = localStorage.getItem("doxmind-onboarding");
       if (storeData) {
         const parsed = JSON.parse(storeData);
-        newStoreDone = parsed?.state?.tourCompleted === true;
+        const state = parsed?.state;
+        // If onboarding is active, suppress all hints
+        if (state?.currentStepIndex >= 0 && !state?.onboardingCompleted) {
+          return;
+        }
+        // If onboarding hasn't been completed yet, suppress hints too
+        if (!state?.onboardingCompleted) return;
       }
     } catch {
       // Ignore parse errors
     }
-    if (!onboardingDone && !newStoreDone) return;
 
     const hint = FEATURE_HINTS[id];
     if (!hint) return;

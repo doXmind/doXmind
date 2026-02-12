@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,20 @@ from api.import_file import (
     markdown_to_html,
     router,
 )
+from exceptions import AppException
+
+
+def _create_test_app():
+    """Create a FastAPI app with import router and exception handlers."""
+    app = FastAPI()
+    app.include_router(router, prefix="/api/import")
+
+    @app.exception_handler(AppException)
+    async def handle_app_exception(request, exc: AppException):
+        return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
+
+    return app
+
 
 # ============================================================================
 # Helper Function Tests
@@ -126,9 +141,7 @@ class TestImportEndpoint:
     @pytest.fixture
     def app(self):
         """Create FastAPI app with import router."""
-        app = FastAPI()
-        app.include_router(router, prefix="/api/import")
-        return app
+        return _create_test_app()
 
     @pytest.fixture
     def client(self, app):
@@ -143,8 +156,8 @@ class TestImportEndpoint:
             "/api/import/", files={"file": ("test.txt", io.BytesIO(file_content), "text/plain")}
         )
 
-        assert response.status_code == 400
-        assert "Unsupported file type" in response.json()["detail"]
+        assert response.status_code == 415
+        assert response.json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
 
     def test_rejects_too_large_file(self, client):
         """Should reject files exceeding size limit."""
@@ -155,8 +168,8 @@ class TestImportEndpoint:
             "/api/import/", files={"file": ("test.md", io.BytesIO(file_content), "text/markdown")}
         )
 
-        assert response.status_code == 400
-        assert "too large" in response.json()["detail"].lower()
+        assert response.status_code == 413
+        assert response.json()["error"]["code"] == "FILE_TOO_LARGE"
 
     @patch("api.import_file.RAGService")
     @patch("api.import_file.get_db")
@@ -345,9 +358,7 @@ class TestIntegration:
     @pytest.fixture
     def app(self):
         """Create FastAPI app with import router."""
-        app = FastAPI()
-        app.include_router(router, prefix="/api/import")
-        return app
+        return _create_test_app()
 
     @pytest.fixture
     def client(self, app):
@@ -383,9 +394,10 @@ class TestIntegration:
             files={"file": ("test.exe", io.BytesIO(b"content"), "application/octet-stream")},
         )
 
-        error_detail = response.json()["detail"]
+        error_details = response.json()["error"]["details"]
+        allowed_types = error_details["allowed_types"]
         for ext in ALLOWED_EXTENSIONS:
-            assert ext in error_detail
+            assert ext in allowed_types
 
     def test_file_size_limit_message(self, client):
         """Should include size limit in error message."""
@@ -395,8 +407,8 @@ class TestIntegration:
             "/api/import/", files={"file": ("test.md", io.BytesIO(large_content), "text/markdown")}
         )
 
-        error_detail = response.json()["detail"]
-        assert "10" in error_detail  # 10MB limit
+        error_details = response.json()["error"]["details"]
+        assert error_details["max_size_mb"] == 10.0  # 10MB limit
 
 
 # ============================================================================
@@ -404,15 +416,14 @@ class TestIntegration:
 # ============================================================================
 
 
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
 class TestEdgeCases:
     """Tests for edge cases."""
 
     @pytest.fixture
     def app(self):
         """Create FastAPI app with import router."""
-        app = FastAPI()
-        app.include_router(router, prefix="/api/import")
-        return app
+        return _create_test_app()
 
     @pytest.fixture
     def client(self, app):

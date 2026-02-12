@@ -268,7 +268,7 @@ class TestErrorHandling:
 
         assert response.status_code == 404
         data = response.json()
-        assert "not found" in data.get("detail", "").lower()
+        assert "not found" in data.get("error", {}).get("message", "").lower()
 
     @pytest.mark.asyncio
     async def test_update_nonexistent_file(self, client: AsyncClient):

@@ -2,9 +2,18 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Pencil, Share2, FileDown, Trash2, Folder, FolderOpen } from "lucide-react";
+import {
+  MoreHorizontal,
+  Pencil,
+  Share2,
+  FileDown,
+  Trash2,
+  Folder,
+  FolderOpen,
+  Star,
+} from "lucide-react";
 import { motion } from "framer-motion";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatRelativeDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -103,6 +112,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     getFilesInFolder,
     setCurrentFolder,
     moveFileToFolder,
+    toggleFavorite,
   } = useFileStore();
   const scatter = SCATTER[index % SCATTER.length];
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -224,11 +234,11 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           style={{ rotate: scatter.rotate, y: scatter.y }}
+          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
           whileHover={{
             rotate: 0,
             y: -6,
             scale: 1.02,
-            transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
           }}
           whileTap={{ scale: 0.97 }}
         >
@@ -316,7 +326,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             {/* Content area */}
             <div className="relative z-[1] flex flex-col p-5 pt-0">
               {/* Title */}
-              <h3 className="line-clamp-2 font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground/85">
+              <h3 className="line-clamp-2 font-serif text-[15px] font-bold leading-snug tracking-tight text-foreground/85">
                 {displayName}
               </h3>
 
@@ -330,7 +340,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
                       : `${folderFileCount} files`}
                 </span>
                 <span className="text-foreground/18 text-[10.5px]">
-                  {formatDate(file.updatedAt)}
+                  {formatRelativeDate(file.updatedAt)}
                 </span>
               </div>
             </div>
@@ -389,15 +399,16 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     <>
       <motion.div
         className="group relative cursor-pointer pb-1.5"
+        data-onboarding="file-card"
         onClick={handleOpen}
         draggable={true}
         onDragStart={handleDragStart}
         style={{ rotate: scatter.rotate, y: scatter.y }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         whileHover={{
           rotate: 0,
           y: -6,
           scale: 1.02,
-          transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
         }}
         whileTap={{ scale: 0.98 }}
       >
@@ -481,7 +492,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
           <div className="relative z-[1] flex flex-1 flex-col p-5 pl-[68px] pt-4">
             {/* Title + menu */}
             <div className="flex items-start justify-between gap-2">
-              <h3 className="line-clamp-2 font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground/85">
+              <h3 className="line-clamp-2 font-serif text-[15px] font-bold leading-snug tracking-tight text-foreground/85">
                 {displayName}
               </h3>
 
@@ -508,6 +519,20 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
                     <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
                       <Share2 className="mr-2 h-4 w-4" />
                       Share
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(file.id);
+                      }}
+                    >
+                      <Star
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          file.isFavorite && "fill-amber-500 text-amber-500"
+                        )}
+                      />
+                      {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-xs text-muted-foreground">
@@ -554,7 +579,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             {/* Footer: date + word count */}
             <div className="mt-auto flex items-center justify-between pt-3">
               <span className="text-[10.5px] tracking-wide text-foreground/25">
-                {formatDate(file.updatedAt)}
+                {formatRelativeDate(file.updatedAt)}
               </span>
               <span className="text-foreground/18 text-[10.5px]">{formatWordCount(wordCount)}</span>
             </div>

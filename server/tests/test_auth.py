@@ -154,7 +154,7 @@ class TestRegisterEndpoint:
         )
 
         assert response.status_code == 400
-        assert "already registered" in response.json()["detail"]
+        assert "already registered" in response.json()["error"]["message"]
 
     async def test_register_invalid_email(self, client: AsyncClient):
         """Should return error for invalid email format."""
@@ -247,7 +247,7 @@ class TestVerifyEmailEndpoint:
         )
 
         assert response.status_code == 400
-        assert "Invalid code" in response.json()["detail"]
+        assert "Invalid code" in response.json()["error"]["message"]
 
     async def test_verify_email_expired_code(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for expired verification code."""
@@ -267,7 +267,7 @@ class TestVerifyEmailEndpoint:
         )
 
         assert response.status_code == 400
-        assert "expired" in response.json()["detail"].lower()
+        assert "expired" in response.json()["error"]["message"].lower()
 
     async def test_verify_email_no_pending(self, client: AsyncClient):
         """Should return error when no pending verification exists."""
@@ -277,7 +277,7 @@ class TestVerifyEmailEndpoint:
         )
 
         assert response.status_code == 400
-        assert "No pending" in response.json()["detail"]
+        assert "No pending" in response.json()["error"]["message"]
 
 
 # =============================================================================
@@ -326,7 +326,7 @@ class TestResendCodeEndpoint:
         )
 
         assert response.status_code == 400
-        assert "already registered" in response.json()["detail"]
+        assert "already registered" in response.json()["error"]["message"]
 
     async def test_resend_code_no_pending(self, client: AsyncClient):
         """Should return error if no pending registration."""
@@ -335,7 +335,7 @@ class TestResendCodeEndpoint:
         )
 
         assert response.status_code == 400
-        assert "No pending" in response.json()["detail"]
+        assert "No pending" in response.json()["error"]["message"]
 
 
 # =============================================================================
@@ -388,7 +388,7 @@ class TestLoginEndpoint:
         )
 
         assert response.status_code == 401
-        assert "Invalid" in response.json()["detail"]
+        assert "Invalid" in response.json()["error"]["message"]
 
     async def test_login_nonexistent_user(self, client: AsyncClient):
         """Should return error for non-existent user."""
@@ -417,7 +417,7 @@ class TestLoginEndpoint:
         )
 
         assert response.status_code == 401
-        assert "verify" in response.json()["detail"].lower()
+        assert "verify" in response.json()["error"]["message"].lower()
 
     async def test_login_inactive_user(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for inactive/disabled user."""
@@ -437,7 +437,7 @@ class TestLoginEndpoint:
         )
 
         assert response.status_code == 401
-        assert "disabled" in response.json()["detail"].lower()
+        assert "disabled" in response.json()["error"]["message"].lower()
 
     async def test_login_oauth_only_user(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for OAuth-only user trying password login."""
@@ -459,7 +459,7 @@ class TestLoginEndpoint:
         )
 
         assert response.status_code == 401
-        assert "OAuth" in response.json()["detail"]
+        assert "OAuth" in response.json()["error"]["message"]
 
 
 # =============================================================================
@@ -544,7 +544,7 @@ class TestResetPasswordEndpoint:
         )
 
         assert response.status_code == 400
-        assert "Invalid" in response.json()["detail"]
+        assert "Invalid" in response.json()["error"]["message"]
 
     async def test_reset_password_expired_token(
         self, client: AsyncClient, db_session: AsyncSession
@@ -575,7 +575,7 @@ class TestResetPasswordEndpoint:
         )
 
         assert response.status_code == 400
-        assert "expired" in response.json()["detail"].lower()
+        assert "expired" in response.json()["error"]["message"].lower()
 
 
 # =============================================================================
@@ -596,8 +596,8 @@ class TestGoogleOAuthEndpoints:
 
             response = await client.get("/api/auth/google")
 
-            assert response.status_code == 501
-            assert "not configured" in response.json()["detail"]
+            assert response.status_code == 400
+            assert "not configured" in response.json()["error"]["message"]
 
     async def test_google_auth_configured(self, client: AsyncClient):
         """Should return authorization URL when configured."""
@@ -622,7 +622,7 @@ class TestGoogleOAuthEndpoints:
         )
 
         assert response.status_code == 400
-        assert "Invalid" in response.json()["detail"]
+        assert "Invalid" in response.json()["error"]["message"]
 
     async def test_google_callback_success(self, client: AsyncClient, db_session: AsyncSession):
         """Should complete OAuth and redirect with token."""
@@ -675,7 +675,7 @@ class TestGoogleOAuthEndpoints:
             )
 
             assert response.status_code == 400
-            assert "email" in response.json()["detail"].lower()
+            assert "email" in response.json()["error"]["message"].lower()
 
 
 # =============================================================================
@@ -916,7 +916,7 @@ class TestChangePasswordEndpoint:
         )
 
         assert response.status_code == 400
-        assert "incorrect" in response.json()["detail"].lower()
+        assert "incorrect" in response.json()["error"]["message"].lower()
 
     async def test_change_password_oauth_user(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for OAuth-only user."""
@@ -943,7 +943,7 @@ class TestChangePasswordEndpoint:
         )
 
         assert response.status_code == 400
-        assert "OAuth" in response.json()["detail"]
+        assert "OAuth" in response.json()["error"]["message"]
 
 
 # =============================================================================

@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { type Editor } from "@tiptap/react";
 import { Check, Loader2 } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
-import { cn } from "@/lib/utils";
 
 interface StatusBarProps {
   editor: Editor;
@@ -29,6 +28,7 @@ export function StatusBar({ editor }: StatusBarProps) {
     const words = getWordCount(text);
     const characters = text.length;
     return { words, characters };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor.state.doc.content.size]);
 
   const saveStatus = useMemo(() => {
@@ -39,28 +39,17 @@ export function StatusBar({ editor }: StatusBarProps) {
   }, [isSaving, isDirty, lastSavedAt]);
 
   return (
-    <div className="flex items-center justify-between border-t border-border/50 px-4 py-1 text-[11px] text-muted-foreground/70 md:px-8">
-      {/* Left: Word count stats */}
+    <div className="flex items-center px-6 py-1.5 text-[11px] text-muted-foreground/60 md:px-12">
       <div className="flex items-center gap-3">
-        <span>
-          {stats.words.toLocaleString()} {stats.words === 1 ? "word" : "words"}
-        </span>
-        <span className="text-border">·</span>
-        <span>{stats.characters.toLocaleString()} characters</span>
-        <span className="text-border">·</span>
-        <span>{getReadingTime(stats.words)}</span>
-      </div>
-
-      {/* Right: Save status */}
-      <div className="flex items-center gap-1.5">
+        {/* Save status */}
         {saveStatus === "saving" && (
-          <>
+          <span className="flex items-center gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
-            <span>Saving...</span>
-          </>
+            Saving...
+          </span>
         )}
         {saveStatus === "saved" && (
-          <span className={cn("flex items-center gap-1 transition-opacity")}>
+          <span className="flex items-center gap-1 transition-opacity">
             <Check className="h-3 w-3 text-green-600 dark:text-green-500" />
             Saved
           </span>
@@ -71,6 +60,15 @@ export function StatusBar({ editor }: StatusBarProps) {
             Unsaved changes
           </span>
         )}
+
+        <span className="text-border">·</span>
+        <span>
+          {stats.words.toLocaleString()} {stats.words === 1 ? "word" : "words"}
+        </span>
+        <span className="text-border">·</span>
+        <span>{stats.characters.toLocaleString()} characters</span>
+        <span className="text-border">·</span>
+        <span>{getReadingTime(stats.words)}</span>
       </div>
     </div>
   );

@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Pencil, Share2, FileDown, Trash2, Folder } from "lucide-react";
-import { cn, formatDate } from "@/lib/utils";
+import { MoreHorizontal, Pencil, Share2, FileDown, Trash2, Folder, Star } from "lucide-react";
+import { cn, formatRelativeDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -50,6 +50,7 @@ export function FileRow({ file }: FileRowProps) {
     moveFileToFolder,
     setCurrentFolder,
     getFilesInFolder,
+    toggleFavorite,
   } = useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -186,7 +187,12 @@ export function FileRow({ file }: FileRowProps) {
         )}
 
         {/* File name */}
-        <span className="min-w-0 flex-shrink-0 font-serif text-sm font-medium text-foreground/80">
+        {/* Favorite indicator */}
+        {file.isFavorite && !file.isFolder && (
+          <Star className="h-3 w-3 flex-shrink-0 fill-amber-400 text-amber-400" />
+        )}
+
+        <span className="min-w-0 flex-shrink-0 font-serif text-sm font-semibold text-foreground/80">
           {displayName}
         </span>
 
@@ -218,7 +224,7 @@ export function FileRow({ file }: FileRowProps) {
 
         {/* Date */}
         <span className="flex-shrink-0 text-[11px] tracking-wide text-foreground/25">
-          {formatDate(file.updatedAt)}
+          {formatRelativeDate(file.updatedAt)}
         </span>
 
         {/* Actions */}
@@ -246,6 +252,22 @@ export function FileRow({ file }: FileRowProps) {
                 <Share2 className="mr-2 h-4 w-4" />
                 Share
               </DropdownMenuItem>
+              {!file.isFolder && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFavorite(file.id);
+                  }}
+                >
+                  <Star
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      file.isFavorite && "fill-amber-500 text-amber-500"
+                    )}
+                  />
+                  {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs text-muted-foreground">
                 Export as

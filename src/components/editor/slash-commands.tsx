@@ -25,11 +25,13 @@ import {
 import { cn, formatShortcut } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 
+import { Palette } from "lucide-react";
+
 interface CommandItem {
   title: string;
   description: string;
   icon: React.ReactNode;
-  category: "basic" | "lists" | "media" | "advanced";
+  category: "basic" | "lists" | "media" | "advanced" | "turninto" | "color";
   shortcut?: string;
   command: (props: { editor: Editor; range: Range }) => void;
 }
@@ -39,6 +41,8 @@ const categoryLabels: Record<string, string> = {
   lists: "Lists",
   media: "Media",
   advanced: "Advanced",
+  turninto: "Turn Into",
+  color: "Color",
 };
 
 const commands: CommandItem[] = [
@@ -257,6 +261,150 @@ const commands: CommandItem[] = [
         .run();
     },
   },
+
+  // Turn Into (only shown when query matches "turn")
+  {
+    title: "Turn into Text",
+    description: "Convert to plain text",
+    icon: <Type className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setParagraph().run();
+    },
+  },
+  {
+    title: "Turn into Heading 1",
+    description: "Convert to large heading",
+    icon: <Heading1 className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run();
+    },
+  },
+  {
+    title: "Turn into Heading 2",
+    description: "Convert to medium heading",
+    icon: <Heading2 className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run();
+    },
+  },
+  {
+    title: "Turn into Heading 3",
+    description: "Convert to small heading",
+    icon: <Heading3 className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
+    },
+  },
+  {
+    title: "Turn into Quote",
+    description: "Convert to blockquote",
+    icon: <Quote className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleBlockquote().run();
+    },
+  },
+  {
+    title: "Turn into Callout",
+    description: "Convert to callout block",
+    icon: <MessageSquareQuote className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setCallout({ type: "info" }).run();
+    },
+  },
+  {
+    title: "Turn into Toggle",
+    description: "Convert to collapsible toggle",
+    icon: <ChevronRight className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setToggle().run();
+    },
+  },
+
+  // Color (only shown when query matches "color" or specific color names)
+  {
+    title: "Red background",
+    description: "Apply red background to block",
+    icon: <div className="h-4 w-4 rounded-sm border border-red-300 bg-red-200" />,
+    category: "color",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const nodeType = editor.state.selection.$from.parent.type.name;
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#fee2e2" }).run();
+    },
+  },
+  {
+    title: "Blue background",
+    description: "Apply blue background to block",
+    icon: <div className="h-4 w-4 rounded-sm border border-blue-300 bg-blue-200" />,
+    category: "color",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const nodeType = editor.state.selection.$from.parent.type.name;
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#dbeafe" }).run();
+    },
+  },
+  {
+    title: "Green background",
+    description: "Apply green background to block",
+    icon: <div className="h-4 w-4 rounded-sm border border-green-300 bg-green-200" />,
+    category: "color",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const nodeType = editor.state.selection.$from.parent.type.name;
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#dcfce7" }).run();
+    },
+  },
+  {
+    title: "Yellow background",
+    description: "Apply yellow background to block",
+    icon: <div className="h-4 w-4 rounded-sm border border-yellow-300 bg-yellow-200" />,
+    category: "color",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const nodeType = editor.state.selection.$from.parent.type.name;
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#fef3c7" }).run();
+    },
+  },
+  {
+    title: "Purple background",
+    description: "Apply purple background to block",
+    icon: <div className="h-4 w-4 rounded-sm border border-purple-300 bg-purple-200" />,
+    category: "color",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const nodeType = editor.state.selection.$from.parent.type.name;
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#f3e8ff" }).run();
+    },
+  },
+  {
+    title: "Gray background",
+    description: "Apply gray background to block",
+    icon: <div className="h-4 w-4 rounded-sm border border-gray-300 bg-gray-200" />,
+    category: "color",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const nodeType = editor.state.selection.$from.parent.type.name;
+      editor.chain().updateAttributes(nodeType, { backgroundColor: "#f3f4f6" }).run();
+    },
+  },
+  {
+    title: "No background",
+    description: "Remove block background color",
+    icon: <Palette className="h-4 w-4" />,
+    category: "color",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const nodeType = editor.state.selection.$from.parent.type.name;
+      editor.chain().updateAttributes(nodeType, { backgroundColor: null }).run();
+    },
+  },
 ];
 
 interface CommandListProps {
@@ -277,10 +425,10 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
       const item = items[index];
       if (item) {
         command(item);
-        // Track onboarding checklist
+        // Track onboarding step
         import("@/stores/onboarding-store")
           .then(({ useOnboardingStore }) => {
-            useOnboardingStore.getState().completeChecklistItem("triedSlashCommand");
+            useOnboardingStore.getState().completeStep("slash-command");
           })
           .catch(() => {});
       }
@@ -345,7 +493,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
   return (
     <div
       ref={scrollContainerRef}
-      className="max-h-[320px] overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-popover p-1 shadow-lg"
+      className="max-h-[320px] overflow-y-auto overflow-x-hidden rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
     >
       {groupedItems.map((group, groupIndex) => (
         <div key={group.category}>
@@ -370,7 +518,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
                   : "hover:bg-accent/50"
               )}
             >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background">
                 {item.icon}
               </div>
               <div className="min-w-0 flex-1">
@@ -420,11 +568,21 @@ export const SlashCommands = Extension.create({
         editor: this.editor,
         ...this.options.suggestion,
         items: ({ query }: { query: string }) => {
-          return commands.filter(
-            (item) =>
-              item.title.toLowerCase().includes(query.toLowerCase()) ||
-              item.description.toLowerCase().includes(query.toLowerCase())
-          );
+          const q = query.toLowerCase();
+          return commands.filter((item) => {
+            // Hide "Turn Into" and "Color" categories unless query specifically matches
+            if (item.category === "turninto" || item.category === "color") {
+              if (!q) return false; // Don't show by default
+              // Only show when query starts with relevant keywords
+              return (
+                item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
+              );
+            }
+            // Normal filtering for other categories
+            return (
+              item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
+            );
+          });
         },
         render: () => {
           let component: ReactRenderer<CommandListRef> | null = null;

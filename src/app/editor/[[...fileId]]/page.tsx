@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
+import { FilesSidebar } from "@/components/sidebar/files-sidebar";
 import { Editor } from "@/components/editor/editor";
 import { ChatPanel } from "@/components/ai/chat-panel";
 import { VersionHistoryPanel } from "@/components/editor/version-history-panel";
@@ -15,11 +16,12 @@ import { LoadingScreen } from "@/components/loading-screen";
 import { KeyboardShortcutsModal } from "@/components/ui/keyboard-shortcuts-modal";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { QuickSwitcher } from "@/components/ui/quick-switcher";
-import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
+import { ONBOARDING_STEPS } from "@/stores/onboarding-store";
 import { NetworkStatusIndicator } from "@/components/ui/network-status-indicator";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useHighContrast } from "@/hooks/use-high-contrast";
@@ -29,8 +31,14 @@ import { useBlockSelection } from "@/hooks/use-block-selection";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
+import { useOnboardingStepDetector } from "@/hooks/use-onboarding-step-detector";
+import { PanelLeftOpen } from "lucide-react";
+import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
+import { UnifiedHeader } from "@/components/editor/unified-header";
+import { FloatingChatButton } from "@/components/ai/floating-chat-button";
+import { FloatingChatWindow } from "@/components/ai/floating-chat-window";
 
 export default function EditorPage() {
   const params = useParams();
@@ -56,7 +64,10 @@ export default function EditorPage() {
 
   const {
     isChatOpen,
+    chatMode,
     isSidebarOpen,
+    toggleSidebar,
+    isFilesSidebarOpen,
     isFocusMode,
     setFocusMode,
     isVersionHistoryOpen,
@@ -68,15 +79,19 @@ export default function EditorPage() {
     setMobileSidebarOpen,
     setMobileOutlineOpen,
     sidebarWidth,
+    filesSidebarWidth,
     chatPanelWidth,
-    setSidebarWidth,
+    setFilesSidebarWidth,
     setChatPanelWidth,
     resetPanelWidths,
   } = useLayoutStore();
 
   const { editor } = useEditorRefStore();
+  const { headings } = useHeadings(editor);
+  const hasHeadings = headings.length > 0;
   const currentFile = files.find((f) => f.id === currentFileId);
   const isMobile = useIsMobile();
+  const [isResizing, setIsResizing] = useState(false);
 
   // Auth guard - handles 401 responses and redirects to login
   useAuthGuard();
@@ -124,6 +139,25 @@ export default function EditorPage() {
   // Apply high contrast mode from persisted settings
   useHighContrast();
 
+  // Interactive onboarding step detection
+  useOnboardingStepDetector();
+
+  // Bind tutorial file when the tour navigates to an editor step
+  const { onboardingCompleted, currentStepIndex } = useOnboardingStore();
+  useEffect(() => {
+    if (onboardingCompleted || currentStepIndex < 0) return;
+    if (isLoading) return;
+    const step = ONBOARDING_STEPS[currentStepIndex];
+    if (!step || step.page !== "editor") return;
+    if (useOnboardingStore.getState().tutorialFileId) return;
+
+    const existingTutorial = files.find((f) => f.name.startsWith("Getting Started with doXmind"));
+    if (existingTutorial) {
+      useOnboardingStore.getState().setTutorialFileId(existingTutorial.id);
+      router.push(`/editor/${existingTutorial.id}`);
+    }
+  }, [onboardingCompleted, currentStepIndex, isLoading, files, router]);
+
   // Load files from server on mount
   useEffect(() => {
     loadFiles();
@@ -132,7 +166,7 @@ export default function EditorPage() {
   // Update browser tab title based on current file
   useEffect(() => {
     if (currentFile) {
-      document.title = `${currentFile.name} - doXmind`;
+      document.title = currentFile.name.replace(/\.md$/i, "");
     } else {
       document.title = "doXmind - AI Writing Studio";
     }
@@ -165,9 +199,6 @@ export default function EditorPage() {
           {/* Quick File Switcher */}
           <QuickSwitcher />
 
-          {/* Onboarding Tour */}
-          <OnboardingTour />
-
           {/* Network Status */}
           <NetworkStatusIndicator />
         </AppShell>
@@ -178,96 +209,153 @@ export default function EditorPage() {
   // Desktop Layout: Three-panel view
   return (
     <LoadingScreen isLoading={isLoading} isMobile={false}>
-      <AppShell hideHeader={isFocusMode}>
-        <div className="flex h-full">
-          {/* Sidebar - hidden in focus mode */}
-          {!isFocusMode && (
-            <>
-              <aside
-                style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
-                className={cn(
-                  "flex-shrink-0 border-r border-border bg-card transition-[opacity] duration-300",
-                  !isSidebarOpen && "overflow-hidden opacity-0"
+      <AppShell hideHeader>
+        <div className="flex h-full flex-col">
+          {/* Unified Header — spans full width, above all panels */}
+          {!isFocusMode && <UnifiedHeader />}
+
+          <div className="flex min-h-0 flex-1">
+            {/* Files Sidebar - independent, hidden in focus mode */}
+            {!isFocusMode && (
+              <>
+                <aside
+                  style={{ width: isFilesSidebarOpen ? filesSidebarWidth : 0 }}
+                  className={cn(
+                    "bg-sidebar flex-shrink-0 overflow-hidden",
+                    !isResizing &&
+                      "transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+                  )}
+                >
+                  <div style={{ minWidth: filesSidebarWidth }} className="h-full">
+                    <FilesSidebar />
+                  </div>
+                </aside>
+                {isFilesSidebarOpen && (
+                  <ResizeHandle
+                    side="left"
+                    onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
+                    onResizeStart={() => setIsResizing(true)}
+                    onResizeEnd={() => setIsResizing(false)}
+                    onDoubleClick={() => resetPanelWidths()}
+                  />
                 )}
-              >
-                <Sidebar />
-              </aside>
-              {isSidebarOpen && (
-                <ResizeHandle
-                  side="left"
-                  onResize={(delta) => setSidebarWidth(sidebarWidth + delta)}
-                  onDoubleClick={() => resetPanelWidths()}
-                />
-              )}
-            </>
-          )}
+              </>
+            )}
 
-          {/* Main Editor Area */}
-          <main id="main-content" className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
-          </main>
-
-          {/* AI Chat Panel - hidden in focus mode */}
-          {!isFocusMode && currentFile && (
-            <>
-              {isChatOpen && (
-                <ResizeHandle
-                  side="right"
-                  onResize={(delta) => setChatPanelWidth(chatPanelWidth + delta)}
-                  onDoubleClick={() => resetPanelWidths()}
-                />
-              )}
-              <aside
-                style={{ width: isChatOpen ? chatPanelWidth : 0 }}
-                className={cn(
-                  "flex-shrink-0 border-l border-border bg-card transition-[opacity] duration-300",
-                  !isChatOpen && "overflow-hidden opacity-0"
-                )}
-              >
-                <ChatPanel />
-              </aside>
-            </>
-          )}
-
-          {/* Version History Panel - hidden in focus mode */}
-          {!isFocusMode && currentFile && isVersionHistoryOpen && (
-            <VersionHistoryPanel
-              fileId={currentFile.id}
-              isOpen={isVersionHistoryOpen}
-              onClose={() => setVersionHistoryOpen(false)}
-            />
-          )}
-        </div>
-
-        {/* Focus mode: floating exit bar (visible on hover) */}
-        {isFocusMode && (
-          <div className="fixed left-1/2 top-0 z-50 -translate-x-1/2 opacity-0 transition-opacity duration-300 hover:opacity-100">
-            <button
-              onClick={() => setFocusMode(false)}
-              className="mt-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-colors hover:text-foreground"
+            {/* Main Editor Area — Outline is embedded inside, sharing the same background */}
+            <main
+              id="main-content"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
             >
-              Exit Focus Mode (F11)
-            </button>
+              {/* Inline Outline Panel — fused with editor */}
+              {!isFocusMode && hasHeadings && (
+                <div
+                  style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
+                  className={cn(
+                    "flex-shrink-0 overflow-hidden",
+                    !isResizing &&
+                      "transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+                  )}
+                >
+                  <div style={{ minWidth: sidebarWidth }} className="h-full">
+                    <Sidebar />
+                  </div>
+                </div>
+              )}
+
+              {/* Outline border when open */}
+              {!isFocusMode && hasHeadings && isSidebarOpen && (
+                <div className="h-full w-px flex-shrink-0 bg-border/30" />
+              )}
+
+              {/* Editor content */}
+              <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+                {/* Show Outline button when collapsed */}
+                {!isFocusMode && hasHeadings && !isSidebarOpen && (
+                  <button
+                    onClick={toggleSidebar}
+                    className="absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                    aria-label="Show Outline"
+                    title="Show Outline"
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                  </button>
+                )}
+                {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
+                {/* Floating chat window — overlays editor when in floating mode */}
+                {!isFocusMode && currentFile && chatMode === "floating" && <FloatingChatWindow />}
+                {/* Floating AI button — visible when chat is closed */}
+                {!isFocusMode && currentFile && !isChatOpen && <FloatingChatButton />}
+              </div>
+            </main>
+
+            {/* AI Chat Panel (sidebar mode) - hidden in focus mode */}
+            {!isFocusMode && currentFile && chatMode === "sidebar" && (
+              <>
+                {isChatOpen && (
+                  <ResizeHandle
+                    side="right"
+                    onResize={(delta) => setChatPanelWidth(chatPanelWidth + delta)}
+                    onResizeStart={() => setIsResizing(true)}
+                    onResizeEnd={() => setIsResizing(false)}
+                    onDoubleClick={() => resetPanelWidths()}
+                  />
+                )}
+                <aside
+                  style={{ width: isChatOpen ? chatPanelWidth : 0 }}
+                  className={cn(
+                    "bg-sidebar flex-shrink-0 overflow-hidden",
+                    !isResizing &&
+                      "transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+                  )}
+                >
+                  <div style={{ minWidth: chatPanelWidth }} className="h-full">
+                    <ChatPanel />
+                  </div>
+                </aside>
+              </>
+            )}
+
+            {/* Version History Panel - hidden in focus mode */}
+            {!isFocusMode && currentFile && isVersionHistoryOpen && (
+              <VersionHistoryPanel
+                fileId={currentFile.id}
+                isOpen={isVersionHistoryOpen}
+                onClose={() => setVersionHistoryOpen(false)}
+              />
+            )}
           </div>
-        )}
 
-        {/* Keyboard Shortcuts Modal */}
-        <KeyboardShortcutsModal
-          open={isKeyboardShortcutsOpen}
-          onClose={() => setKeyboardShortcutsOpen(false)}
-        />
+          {/* Focus mode: floating exit bar (visible on hover) */}
+          {isFocusMode && (
+            <div className="fixed left-1/2 top-0 z-50 -translate-x-1/2 opacity-0 transition-opacity duration-300 hover:opacity-100">
+              <button
+                onClick={() => setFocusMode(false)}
+                className="mt-2 rounded-full border border-border bg-card/80 px-4 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-colors hover:text-foreground"
+              >
+                Exit Focus Mode (F11)
+              </button>
+            </div>
+          )}
 
-        {/* Command Palette */}
-        <CommandPalette open={isCommandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
+          {/* Keyboard Shortcuts Modal */}
+          <KeyboardShortcutsModal
+            open={isKeyboardShortcutsOpen}
+            onClose={() => setKeyboardShortcutsOpen(false)}
+          />
 
-        {/* Quick File Switcher */}
-        <QuickSwitcher />
+          {/* Command Palette */}
+          <CommandPalette
+            open={isCommandPaletteOpen}
+            onClose={() => setCommandPaletteOpen(false)}
+          />
 
-        {/* Onboarding Tour */}
-        <OnboardingTour />
+          {/* Quick File Switcher */}
+          <QuickSwitcher />
 
-        {/* Network Status */}
-        <NetworkStatusIndicator />
+          {/* Network Status */}
+          <NetworkStatusIndicator />
+        </div>
       </AppShell>
     </LoadingScreen>
   );

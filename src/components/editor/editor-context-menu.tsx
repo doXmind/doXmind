@@ -19,11 +19,14 @@ import {
   Heading3,
   List,
   ListOrdered,
+  ListTodo,
   Quote,
+  MessageSquareQuote,
   ChevronRight,
 } from "lucide-react";
 import { cn, formatShortcut } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
+import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
 
 interface EditorContextMenuProps {
   editor: Editor;
@@ -103,7 +106,12 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       }
     };
 
-    const handleScroll = () => close();
+    const handleScroll = (e: Event) => {
+      // Ignore scroll events from within the context menu itself (e.g.
+      // scrolling through submenu items)
+      if (menuRef.current && menuRef.current.contains(e.target as Node)) return;
+      close();
+    };
 
     document.addEventListener("mousedown", handleClick);
     document.addEventListener("scroll", handleScroll, true);
@@ -212,64 +220,32 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
     {
       label: "Turn Into",
       icon: <Type className="h-3.5 w-3.5" />,
-      items: [
-        {
-          label: "Text",
-          icon: <Type className="h-3.5 w-3.5" />,
-          action: () => {
-            editor.chain().focus().setParagraph().run();
-            close();
-          },
-        },
-        {
-          label: "Heading 1",
-          icon: <Heading1 className="h-3.5 w-3.5" />,
-          action: () => {
-            editor.chain().focus().toggleHeading({ level: 1 }).run();
-            close();
-          },
-        },
-        {
-          label: "Heading 2",
-          icon: <Heading2 className="h-3.5 w-3.5" />,
-          action: () => {
-            editor.chain().focus().toggleHeading({ level: 2 }).run();
-            close();
-          },
-        },
-        {
-          label: "Heading 3",
-          icon: <Heading3 className="h-3.5 w-3.5" />,
-          action: () => {
-            editor.chain().focus().toggleHeading({ level: 3 }).run();
-            close();
-          },
-        },
-        {
-          label: "Bullet List",
-          icon: <List className="h-3.5 w-3.5" />,
-          action: () => {
-            editor.chain().focus().toggleBulletList().run();
-            close();
-          },
-        },
-        {
-          label: "Numbered List",
-          icon: <ListOrdered className="h-3.5 w-3.5" />,
-          action: () => {
-            editor.chain().focus().toggleOrderedList().run();
-            close();
-          },
-        },
-        {
-          label: "Quote",
-          icon: <Quote className="h-3.5 w-3.5" />,
-          action: () => {
-            editor.chain().focus().toggleBlockquote().run();
-            close();
-          },
-        },
-      ],
+      items: turnIntoOptions
+        .filter((o) => !isTurnIntoSeparator(o))
+        .map((option) => {
+          if (isTurnIntoSeparator(option)) return option as unknown as MenuItem;
+          const iconMap: Record<string, React.ReactNode> = {
+            Type: <Type className="h-3.5 w-3.5" />,
+            Heading1: <Heading1 className="h-3.5 w-3.5" />,
+            Heading2: <Heading2 className="h-3.5 w-3.5" />,
+            Heading3: <Heading3 className="h-3.5 w-3.5" />,
+            List: <List className="h-3.5 w-3.5" />,
+            ListOrdered: <ListOrdered className="h-3.5 w-3.5" />,
+            ListTodo: <ListTodo className="h-3.5 w-3.5" />,
+            Quote: <Quote className="h-3.5 w-3.5" />,
+            Code: <Code className="h-3.5 w-3.5" />,
+            MessageSquareQuote: <MessageSquareQuote className="h-3.5 w-3.5" />,
+            ChevronRight: <ChevronRight className="h-3.5 w-3.5" />,
+          };
+          return {
+            label: option.label,
+            icon: iconMap[option.iconName] || <Type className="h-3.5 w-3.5" />,
+            action: () => {
+              option.action(editor);
+              close();
+            },
+          };
+        }),
     },
     { separator: true },
     {
@@ -366,7 +342,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
     <div
       ref={menuRef}
       className={cn(
-        "fixed z-[100] min-w-[200px] rounded-lg border border-border bg-popover py-1.5 shadow-xl",
+        "fixed z-[100] min-w-[200px] rounded-lg border border-border bg-popover p-1.5 shadow-xl",
         "animate-in fade-in-0 zoom-in-95"
       )}
       style={{ left: position.x, top: position.y }}
@@ -396,7 +372,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
             >
               <div
                 className={cn(
-                  "flex cursor-default items-center gap-2 px-3 py-1.5 text-sm",
+                  "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
                   isFocused || isSubmenuActive
                     ? "bg-accent text-accent-foreground"
                     : "text-foreground"
@@ -414,7 +390,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
               {isSubmenuActive && (
                 <div
                   className={cn(
-                    "absolute left-full top-0 z-[101] min-w-[180px] rounded-lg border border-border bg-popover py-1.5 shadow-xl",
+                    "absolute left-full top-0 z-[101] min-w-[180px] rounded-lg border border-border bg-popover p-1.5 shadow-xl",
                     "animate-in fade-in-0 slide-in-from-left-1"
                   )}
                   role="menu"
@@ -424,7 +400,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
                       key={subItem.label}
                       type="button"
                       className={cn(
-                        "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
+                        "flex w-full items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
                         "transition-colors duration-75",
                         subIdx === submenuFocusIndex
                           ? "bg-accent text-accent-foreground"
@@ -454,7 +430,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
             key={item.label}
             type="button"
             className={cn(
-              "flex w-full items-center gap-2 px-3 py-1.5 text-sm",
+              "flex w-full items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
               "transition-colors duration-75",
               item.disabled && "pointer-events-none opacity-40",
               isFocused ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/50"

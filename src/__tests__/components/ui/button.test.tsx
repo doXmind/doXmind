@@ -53,7 +53,7 @@ describe("Button", () => {
     it("renders ghost variant", () => {
       render(<Button variant="ghost">Ghost</Button>);
       const button = screen.getByRole("button");
-      expect(button).toHaveClass("hover:bg-accent");
+      expect(button).toHaveClass("hover:bg-foreground/[0.06]");
     });
 
     it("renders link variant", () => {

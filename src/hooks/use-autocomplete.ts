@@ -19,6 +19,7 @@ import {
   AUTOCOMPLETE_TRIGGER_EVENT,
   AUTOCOMPLETE_TRIGGER_LONG_EVENT,
 } from "@/extensions/autocomplete-keymap";
+import { BlockSelectionPluginKey } from "@/extensions/block-selection-extension";
 import { api } from "@/lib/api";
 import { editorLogger } from "@/lib/logger";
 import type { AutocompleteMode } from "@/types";
@@ -51,8 +52,19 @@ function shouldTrigger(editor: Editor): boolean {
   const { state } = editor;
   const { selection } = state;
 
+  // Don't trigger if editor is not focused (e.g. block action menu open, drag in progress)
+  if (!editor.view.hasFocus()) {
+    return false;
+  }
+
   // Don't trigger if there's a text selection
   if (!selection.empty) {
+    return false;
+  }
+
+  // Don't trigger if block selection is active
+  const blockSelectionState = BlockSelectionPluginKey.getState(state);
+  if (blockSelectionState && blockSelectionState.selectedBlockIds.size > 0) {
     return false;
   }
 
@@ -62,6 +74,29 @@ function shouldTrigger(editor: Editor): boolean {
 
   // Don't trigger in code blocks
   if (node.type.name === "codeBlock") {
+    return false;
+  }
+
+  // Don't trigger inside tables (walk ancestor chain for reliable detection)
+  for (let d = $pos.depth; d >= 0; d--) {
+    const ancestor = $pos.node(d).type.name;
+    if (ancestor === "table" || ancestor === "tableCell" || ancestor === "tableHeader") {
+      return false;
+    }
+  }
+
+  // Don't trigger in headings (short, deliberate, structural content)
+  if (node.type.name === "heading") {
+    return false;
+  }
+
+  // Don't trigger in task items (personal, specific action items)
+  if (node.type.name === "taskItem") {
+    return false;
+  }
+
+  // Don't trigger in math blocks (requires precise notation)
+  if (node.type.name === "blockMath" || node.type.name === "inlineMath") {
     return false;
   }
 
@@ -290,6 +325,10 @@ export function useAutocomplete({
 
         // Show suggestion if we got one
         if (editor && data.suggestion) {
+          // Re-check conditions — block selection may have activated during the API call
+          if (!shouldTrigger(editor)) {
+            return;
+          }
           log.debug(`Showing suggestion: "${data.suggestion.substring(0, 50)}..."`);
           editor.commands.setSuggestion(data.suggestion, {
             textBefore,
@@ -382,6 +421,20 @@ export function useAutocomplete({
       // Skip during file switch — setContent() dispatches docChanged + selectionSet
       // transactions that would falsely trigger autocomplete
       if (fileJustSwitchedRef.current) return;
+
+      // Don't trigger autocomplete when block selection is active — clear pending timers
+      const blockSelState = BlockSelectionPluginKey.getState(editor.state);
+      if (blockSelState && blockSelState.selectedBlockIds.size > 0) {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        if (cursorMoveTimerRef.current) {
+          clearTimeout(cursorMoveTimerRef.current);
+          cursorMoveTimerRef.current = null;
+        }
+        return;
+      }
 
       // Clear cursor move timer when user types
       if (cursorMoveTimerRef.current) {

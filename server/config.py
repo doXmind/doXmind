@@ -210,10 +210,11 @@ class Settings(BaseSettings):
     search_min_content_length: int = 3  # Min chars for valid search result
     search_expanded_k_multiplier: int = 3  # Candidates = top_k * this for hybrid fusion
 
-    # Hybrid search settings (vector + keyword with RRF fusion)
+    # Hybrid search settings (vector + keyword + filename with RRF fusion)
     hybrid_search_enabled: bool = True
     semantic_weight: float = 0.7  # Weight for vector similarity search
     keyword_weight: float = 0.3  # Weight for full-text keyword search
+    filename_weight: float = 0.5  # Weight for filename matching
     rrf_k: int = 60  # RRF constant (standard value)
 
     # Embedding parallel processing settings

@@ -7,25 +7,28 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    /* Notion-exact light mode palette */
+    --background: 0 0% 100%; /* #FFFFFF — editor/content surface */
+    --foreground: 45 8% 20%; /* #37352F — Notion's exact text color */
+    --card: 0 0% 100%; /* #FFFFFF — cards, modals */
+    --card-foreground: 45 8% 20%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    --popover-foreground: 45 8% 20%;
+    --primary: 45 8% 20%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 10% 95%; /* warm hover/muted surface */
+    --secondary-foreground: 45 8% 20%;
+    --muted: 40 10% 95%;
+    --muted-foreground: 40 3% 46%;
+    --accent: 40 10% 95%;
+    --accent-foreground: 45 8% 20%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --border: 60 4% 91%; /* #E9E9E7 — Notion's exact border */
+    --border-subtle: 60 4% 94%;
+    --input: 60 4% 91%;
+    --ring: 45 8% 20%;
+    --sidebar: 0 0% 100%; /* same as --background for unified look */
     --radius: 0.5rem;
 
     /* Animation durations */
@@ -37,6 +40,7 @@
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
     --ease-spring: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-apple: cubic-bezier(0.25, 0.1, 0.25, 1);
 
     /* Semantic status colors with transparency (light mode) */
     --status-success-bg: rgba(34, 197, 94, 0.1);
@@ -51,7 +55,7 @@
     --status-warning-border: rgba(251, 191, 36, 0.3);
 
     /* Chat UI tokens */
-    --chat-cursor-color: 240 10% 3.9%;
+    --chat-cursor-color: 45 8% 20%;
 
     /* Diff Review — Apple HIG-inspired palette (light) */
     --diff-deleted-bg: rgba(255, 59, 48, 0.08);
@@ -76,25 +80,28 @@
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
+    /* Notion-exact dark mode palette */
+    --background: 0 0% 10%; /* #191919 — editor/content surface (deepest) */
+    --foreground: 0 0% 88%; /* #e1e1e1 — Notion's exact text color */
+    --card: 0 0% 13%; /* #212121 — cards, modals */
+    --card-foreground: 0 0% 88%;
+    --popover: 0 0% 15%; /* #262626 — popover elevated */
+    --popover-foreground: 0 0% 88%;
+    --primary: 0 0% 95%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 0 0% 16%;
+    --secondary-foreground: 0 0% 88%;
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 61%; /* #9b9b9b — Notion's exact muted text */
+    --accent: 0 0% 16%;
+    --accent-foreground: 0 0% 88%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --destructive-foreground: 0 0% 90%;
+    --border: 0 0% 18%; /* #2f2f2f — Notion's exact border */
+    --border-subtle: 0 0% 14%;
+    --input: 0 0% 18%;
+    --ring: 0 0% 80%;
+    --sidebar: 0 0% 10%; /* same as --background for unified look */
 
     /* Chat UI tokens */
     --chat-cursor-color: 0 0% 98%;
@@ -110,7 +117,7 @@
     --diff-inserted-accent: rgba(48, 209, 88, 0.45);
     --diff-focus-ring: rgba(10, 132, 255, 0.3);
     --diff-focus-border: rgba(10, 132, 255, 0.35);
-    --diff-toolbar-bg: rgba(28, 28, 30, 0.78);
+    --diff-toolbar-bg: rgba(26, 26, 26, 0.78);
     --diff-toolbar-border: rgba(255, 255, 255, 0.08);
     --diff-toolbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
     --diff-btn-accept-bg: rgba(48, 209, 88, 0.15);
@@ -174,6 +181,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* Global text selection - Black & White style */
@@ -187,6 +196,19 @@
     background-color: hsl(var(--foreground) / 0.15);
     color: hsl(var(--foreground));
   }
+}
+
+/* Sidebar background utility */
+.bg-sidebar {
+  background-color: hsl(var(--sidebar));
+}
+
+/* Panel elevation — minimal Notion-style depth */
+.shadow-panel {
+  box-shadow: 0 1px 2px rgba(55, 53, 47, 0.04);
+}
+.dark .shadow-panel {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* Skip to Content - Accessibility Link */
@@ -288,7 +310,7 @@
 }
 
 .ProseMirror blockquote {
-  @apply border-l-4 border-border pl-4 italic text-muted-foreground;
+  @apply border-l-[3px] border-foreground/15 pl-4 italic text-muted-foreground;
 }
 
 .ProseMirror pre {
@@ -397,19 +419,22 @@
 }
 
 .ProseMirror h1 {
-  @apply mb-4 mt-8 text-3xl font-bold;
+  @apply mb-4 mt-10 text-3xl font-bold tracking-tight;
+  letter-spacing: -0.02em;
 }
 
 .ProseMirror h2 {
-  @apply mb-3 mt-6 text-2xl font-bold;
+  @apply mb-3 mt-8 text-2xl font-bold;
+  letter-spacing: -0.015em;
 }
 
 .ProseMirror h3 {
-  @apply mb-2 mt-4 text-xl font-semibold;
+  @apply mb-2 mt-6 text-xl font-semibold;
+  letter-spacing: -0.01em;
 }
 
 .ProseMirror h4 {
-  @apply mb-2 mt-3 text-lg font-semibold;
+  @apply mb-2 mt-4 text-lg font-semibold;
 }
 
 .ProseMirror a {
@@ -444,34 +469,58 @@
 
 .ProseMirror th,
 .ProseMirror td {
-  @apply border border-border px-3 py-2 text-left;
+  @apply relative text-left text-sm;
+  padding: 4px 8px;
+  border: 1px solid hsl(var(--foreground) / 0.08);
+  line-height: 1.4;
+  vertical-align: top;
+}
+
+/* Remove paragraph/block margins inside table cells for Notion-like compact layout */
+.ProseMirror td > *,
+.ProseMirror th > * {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
 }
 
 .ProseMirror th {
-  @apply bg-muted font-semibold;
+  @apply font-medium text-muted-foreground;
+  background: hsl(var(--foreground) / 0.04);
 }
 
-/* Table selected cell highlight */
+/* Table selected cell highlight (multi-select) */
 .ProseMirror td.selectedCell,
 .ProseMirror th.selectedCell {
-  @apply relative bg-primary/10;
+  background: hsl(210 100% 56% / 0.08);
 }
 
 .ProseMirror .selectedCell::after {
-  @apply pointer-events-none absolute inset-0 border-2 border-primary;
+  @apply pointer-events-none absolute inset-0;
   content: "";
+  border: 1px solid hsl(210 100% 56% / 0.5);
   z-index: 2;
 }
 
-/* Column resize handle */
+/* Column resize handle — invisible by default, blue highlight on hover */
 .ProseMirror .column-resize-handle {
-  @apply absolute right-[-2px] top-0 h-full w-1 bg-primary/50;
+  position: absolute;
+  right: -2px;
+  top: -1px;
+  bottom: -1px;
+  width: 3px;
+  background: transparent;
   cursor: col-resize;
+  z-index: 5;
+}
+.ProseMirror.resize-cursor .column-resize-handle {
+  background-color: hsl(217 91% 60% / 0.7);
 }
 
 /* Table wrapper for overflow handling */
 .ProseMirror .tableWrapper {
-  @apply my-4 overflow-x-auto;
+  @apply overflow-x-auto;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 /* Table wrapper mobile constraint */
@@ -486,6 +535,14 @@
   animation:
     fadeIn 0.2s ease-out,
     zoomIn 0.2s ease-out;
+}
+
+/* Table column/row highlight on handle hover */
+.ProseMirror td.table-col-highlight,
+.ProseMirror th.table-col-highlight,
+.ProseMirror td.table-row-highlight,
+.ProseMirror th.table-row-highlight {
+  background-color: hsl(var(--primary) / 0.06);
 }
 
 /* Selection - Black & White style */
@@ -1968,6 +2025,113 @@ html {
 }
 
 /* ====================================
+   Block Handle & Drag-and-Drop Styles
+   Desktop Notion-style block interactions
+   ==================================== */
+
+/* Notion-style drop indicator — blue line between blocks during drag */
+.ProseMirror .block-drop-before,
+.ProseMirror .block-drop-after {
+  position: relative;
+}
+
+/* Line ABOVE the target block (cursor in top half) */
+.ProseMirror .block-drop-before::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1.5px;
+  height: 3px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Circle on the left end of the "before" line */
+.ProseMirror .block-drop-before::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -4.5px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid hsl(var(--primary));
+  border-radius: 50%;
+  background: hsl(var(--background));
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Line BELOW the target block (cursor in bottom half) */
+.ProseMirror .block-drop-after::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1.5px;
+  height: 3px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Circle on the left end of the "after" line */
+.ProseMirror .block-drop-after::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  bottom: -4.5px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid hsl(var(--primary));
+  border-radius: 50%;
+  background: hsl(var(--background));
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Active block highlight when action menu is open (like Notion's blue selection) */
+.ProseMirror > .block-handle-active,
+.ProseMirror .block-handle-active {
+  position: relative;
+  background-color: rgba(35, 131, 226, 0.08) !important;
+  border-radius: 4px;
+  outline: 2px solid rgba(35, 131, 226, 0.25);
+  outline-offset: -1px;
+  transition:
+    background-color 0.15s ease,
+    outline-color 0.15s ease;
+}
+
+.dark .ProseMirror > .block-handle-active,
+.dark .ProseMirror .block-handle-active {
+  background-color: rgba(35, 131, 226, 0.15) !important;
+  outline-color: rgba(35, 131, 226, 0.35);
+}
+
+/* Dragging state - fade source block */
+.ProseMirror.is-block-dragging {
+  cursor: grabbing;
+}
+
+/* Highlight flash after block is moved */
+@keyframes blockMovedFlash {
+  0% {
+    background-color: hsl(var(--primary) / 0.15);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.ProseMirror .block-just-moved {
+  animation: blockMovedFlash 0.5s ease-out;
+}
+
+/* ====================================
    Print Styles
    ==================================== */
 @media print {
@@ -2081,4 +2245,11 @@ html {
     opacity: 1 !important;
     overflow: visible !important;
   }
+}
+
+/* Onboarding tour: lift dropdowns above the z-60 overlay
+   when the current step allows user interaction */
+html[data-onboarding-interactive] [data-radix-popper-content-wrapper],
+html[data-onboarding-interactive] [data-dropdown-portal] {
+  z-index: 61 !important;
 }

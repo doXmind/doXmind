@@ -103,7 +103,7 @@ Summarize the key insights and end with a call to action or open question.
 export function EmptyState() {
   const router = useRouter();
   const { files, createFile, importFile, currentFolderId } = useFileStore();
-  const { completeChecklistItem } = useOnboardingStore();
+  const { startOnboarding, onboardingCompleted } = useOnboardingStore();
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -111,6 +111,16 @@ export function EmptyState() {
   const handleTemplateCreate = async (template: TemplateCard) => {
     setCreatingId(template.id);
     try {
+      // For the welcome template, reuse existing tutorial document
+      if (template.id === "welcome") {
+        const existing = files.find((f) => f.name.startsWith("Getting Started with doXmind"));
+        if (existing) {
+          if (!onboardingCompleted) startOnboarding(existing.id);
+          router.push(`/editor/${existing.id}`);
+          return;
+        }
+      }
+
       // Generate unique filename
       const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
       let fileName = template.fileName;
@@ -126,7 +136,11 @@ export function EmptyState() {
       const markdown = template.getMarkdown();
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
       const newId = await createFile(fileName, htmlContent, currentFolderId);
-      completeChecklistItem("createdDocument");
+      // Start onboarding when creating the tutorial document
+      if (template.id === "welcome" && !onboardingCompleted) {
+        startOnboarding(newId);
+      }
+
       router.push(`/editor/${newId}`);
     } catch (error) {
       const { title, description } = getErrorMessage(error);

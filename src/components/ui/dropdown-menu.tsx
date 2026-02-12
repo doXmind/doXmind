@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 
 interface DropdownMenuProps {
   children: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface DropdownMenuTriggerProps {
@@ -15,6 +17,7 @@ interface DropdownMenuTriggerProps {
 
 interface DropdownMenuContentProps extends React.HTMLAttributes<HTMLDivElement> {
   align?: "start" | "center" | "end";
+  side?: "bottom" | "top";
   sideOffset?: number;
 }
 
@@ -32,6 +35,8 @@ const DropdownMenuContext = React.createContext<{
   registerItem: (id: string) => void;
   unregisterItem: (id: string) => void;
   hoverReady: boolean;
+  hasOpenSub: boolean;
+  setHasOpenSub: (open: boolean) => void;
 }>({
   open: false,
   setOpen: () => {},
@@ -42,13 +47,25 @@ const DropdownMenuContext = React.createContext<{
   registerItem: () => {},
   unregisterItem: () => {},
   hoverReady: false,
+  hasOpenSub: false,
+  setHasOpenSub: () => {},
 });
 
-export function DropdownMenu({ children }: DropdownMenuProps) {
-  const [open, setOpen] = React.useState(false);
+export function DropdownMenu({ children, open: controlledOpen, onOpenChange }: DropdownMenuProps) {
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = React.useCallback(
+    (value: boolean) => {
+      if (!isControlled) setInternalOpen(value);
+      onOpenChange?.(value);
+    },
+    [isControlled, onOpenChange]
+  );
   const [focusedId, setFocusedId] = React.useState<string | null>(null);
   const [itemIds, setItemIds] = React.useState<string[]>([]);
   const [hoverReady, setHoverReady] = React.useState(false);
+  const [hasOpenSub, setHasOpenSub] = React.useState(false);
   const triggerRef = React.useRef<HTMLElement>(null);
 
   // Reset state when menu closes, enable hover after delay when opens
@@ -57,6 +74,7 @@ export function DropdownMenu({ children }: DropdownMenuProps) {
       setFocusedId(null);
       setItemIds([]);
       setHoverReady(false);
+      setHasOpenSub(false);
     } else {
       // Delay hover effects to prevent accidental highlight on open
       const timer = setTimeout(() => {
@@ -86,6 +104,8 @@ export function DropdownMenu({ children }: DropdownMenuProps) {
         registerItem,
         unregisterItem,
         hoverReady,
+        hasOpenSub,
+        setHasOpenSub,
       }}
     >
       <div className="relative inline-block">{children}</div>
@@ -141,19 +161,23 @@ export function DropdownMenuContent({
   children,
   className,
   align = "center",
+  side = "bottom",
   sideOffset = 4,
   ...props
 }: DropdownMenuContentProps) {
   const { open, setOpen, triggerRef, focusedId, setFocusedId, itemIds } =
     React.useContext(DropdownMenuContext);
   const contentRef = React.useRef<HTMLDivElement>(null);
-  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = React.useState<{
+    top: number | "auto";
+    bottom: number | "auto";
+    left: number;
+  } | null>(null);
 
   // Calculate position from trigger element
   React.useEffect(() => {
     if (!open || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const top = rect.bottom + sideOffset;
     let left: number;
     if (align === "end") {
       left = rect.right;
@@ -162,13 +186,22 @@ export function DropdownMenuContent({
     } else {
       left = rect.left + rect.width / 2;
     }
-    setPos({ top, left });
-  }, [open, triggerRef, align, sideOffset]);
+    if (side === "top") {
+      const bottomFromViewport = window.innerHeight - rect.top + sideOffset;
+      setPos({ top: "auto", bottom: bottomFromViewport, left });
+    } else {
+      setPos({ top: rect.bottom + sideOffset, bottom: "auto", left });
+    }
+  }, [open, triggerRef, align, side, sideOffset]);
 
   // Handle click outside
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (contentRef.current && !contentRef.current.contains(event.target as Node)) {
+        // Don't close if click is inside a portalled sub-menu
+        if ((event.target as Element).closest?.("[data-dropdown-sub-content]")) {
+          return;
+        }
         setOpen(false);
       }
     };
@@ -237,6 +270,8 @@ export function DropdownMenuContent({
       ref={contentRef}
       role="menu"
       aria-orientation="vertical"
+      data-dropdown-portal=""
+      onMouseDown={(e) => e.preventDefault()}
       className={cn(
         "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         "animate-in fade-in-0 zoom-in-95",
@@ -244,7 +279,8 @@ export function DropdownMenuContent({
         className
       )}
       style={{
-        top: pos.top,
+        ...(pos.top !== "auto" ? { top: pos.top } : {}),
+        ...(pos.bottom !== "auto" ? { bottom: pos.bottom } : {}),
         ...(align === "end"
           ? { right: window.innerWidth - pos.left }
           : align === "start"
@@ -267,7 +303,7 @@ export function DropdownMenuItem({
   onClick,
   ...props
 }: DropdownMenuItemProps) {
-  const { setOpen, focusedId, setFocusedId, registerItem, unregisterItem, hoverReady } =
+  const { setOpen, focusedId, setFocusedId, registerItem, unregisterItem, hoverReady, hasOpenSub } =
     React.useContext(DropdownMenuContext);
   const itemId = React.useId();
   const itemRef = React.useRef<HTMLButtonElement>(null);
@@ -303,13 +339,13 @@ export function DropdownMenuItem({
   };
 
   const handleMouseEnter = () => {
-    if (hoverReady) {
+    if (hoverReady && !hasOpenSub) {
       setFocusedId(itemId);
     }
   };
 
   const handleMouseLeave = () => {
-    if (hoverReady) {
+    if (hoverReady && !hasOpenSub) {
       setFocusedId(null);
     }
   };
@@ -358,13 +394,21 @@ export function DropdownMenuLabel({
 const DropdownMenuSubContext = React.createContext<{
   open: boolean;
   setOpen: (open: boolean) => void;
+  triggerRef: React.RefObject<HTMLElement | null>;
+  cancelClose: () => void;
+  startClose: () => void;
 }>({
   open: false,
   setOpen: () => {},
+  triggerRef: { current: null },
+  cancelClose: () => {},
+  startClose: () => {},
 });
 
 export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
+  const { setHasOpenSub, setFocusedId } = React.useContext(DropdownMenuContext);
+  const triggerRef = React.useRef<HTMLElement>(null);
   const openTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const closeTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
@@ -392,6 +436,29 @@ export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
     }, 100);
   };
 
+  // Expose timeout controls for portalled sub-content
+  const cancelClose = React.useCallback(() => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startClose = React.useCallback(() => {
+    closeTimeoutRef.current = setTimeout(() => {
+      setOpen(false);
+    }, 100);
+  }, []);
+
+  // Notify parent context when sub-menu opens/closes
+  React.useEffect(() => {
+    setHasOpenSub(open);
+    if (!open) {
+      // When sub closes, clear any locked focusedId so hover works again
+      setFocusedId(null);
+    }
+  }, [open, setHasOpenSub, setFocusedId]);
+
   // Cleanup timeouts on unmount
   React.useEffect(() => {
     return () => {
@@ -401,7 +468,7 @@ export function DropdownMenuSub({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <DropdownMenuSubContext.Provider value={{ open, setOpen }}>
+    <DropdownMenuSubContext.Provider value={{ open, setOpen, triggerRef, cancelClose, startClose }}>
       <div className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
         {children}
       </div>
@@ -418,7 +485,7 @@ export function DropdownMenuSubTrigger({
   className?: string;
   onClick?: (e: React.MouseEvent) => void;
 }) {
-  const { open, setOpen } = React.useContext(DropdownMenuSubContext);
+  const { open, setOpen, triggerRef } = React.useContext(DropdownMenuSubContext);
   const { hoverReady, focusedId, setFocusedId, registerItem, unregisterItem } =
     React.useContext(DropdownMenuContext);
   const itemId = React.useId();
@@ -429,6 +496,13 @@ export function DropdownMenuSubTrigger({
     registerItem(itemId);
     return () => unregisterItem(itemId);
   }, [itemId, registerItem, unregisterItem]);
+
+  // Lock focus on this trigger when sub-menu opens
+  React.useEffect(() => {
+    if (open) {
+      setFocusedId(itemId);
+    }
+  }, [open, itemId, setFocusedId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowRight" || e.key === "Enter") {
@@ -444,13 +518,14 @@ export function DropdownMenuSubTrigger({
   };
 
   const handleMouseLeave = () => {
-    if (hoverReady) {
+    if (hoverReady && !open) {
       setFocusedId(null);
     }
   };
 
   return (
     <button
+      ref={triggerRef as React.RefObject<HTMLButtonElement>}
       role="menuitem"
       aria-haspopup="menu"
       aria-expanded={open}
@@ -486,7 +561,32 @@ export function DropdownMenuSubContent({
   children: React.ReactNode;
   className?: string;
 }) {
-  const { open, setOpen } = React.useContext(DropdownMenuSubContext);
+  const { open, setOpen, triggerRef, cancelClose, startClose } =
+    React.useContext(DropdownMenuSubContext);
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+
+  // Calculate position from trigger element
+  React.useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const subMenuWidth = 200; // approximate width for viewport check
+
+    let left = rect.right + 4;
+    let top = rect.top;
+
+    // If sub-menu would overflow right edge, show on left side
+    if (left + subMenuWidth > window.innerWidth) {
+      left = rect.left - subMenuWidth - 4;
+    }
+
+    // If sub-menu would overflow bottom edge, shift up
+    const maxHeight = 300;
+    if (top + maxHeight > window.innerHeight) {
+      top = Math.max(8, window.innerHeight - maxHeight - 8);
+    }
+
+    setPos({ top, left });
+  }, [open, triggerRef]);
 
   // Handle Escape key to close submenu
   React.useEffect(() => {
@@ -507,21 +607,27 @@ export function DropdownMenuSubContent({
     };
   }, [open, setOpen]);
 
-  if (!open) return null;
+  if (!open || !pos) return null;
 
-  return (
-    <div className={cn("absolute left-full top-0 z-50 ml-[-4px] pl-[4px]", className)}>
-      <div
-        role="menu"
-        aria-orientation="vertical"
-        className={cn(
-          "min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
-          "animate-in fade-in-0 zoom-in-95",
-          "max-h-[300px] overflow-y-auto"
-        )}
-      >
-        {children}
-      </div>
-    </div>
+  return createPortal(
+    <div
+      data-dropdown-sub-content
+      data-dropdown-portal=""
+      role="menu"
+      aria-orientation="vertical"
+      onMouseDown={(e) => e.preventDefault()}
+      onMouseEnter={cancelClose}
+      onMouseLeave={startClose}
+      className={cn(
+        "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+        "animate-in fade-in-0 zoom-in-95",
+        "max-h-[300px] overflow-y-auto",
+        className
+      )}
+      style={{ top: pos.top, left: pos.left }}
+    >
+      {children}
+    </div>,
+    document.body
   );
 }

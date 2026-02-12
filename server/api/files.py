@@ -390,6 +390,9 @@ async def update_file(
     file_icon = file.icon
     file_created_at = file.created_at.isoformat()
     file_updated_at = file.updated_at.isoformat()
+    file_is_folder = file.is_folder
+    file_parent_id = file.parent_id
+    file_position = file.position
 
     # Re-index in vector store only when content or name actually changed
     if need_reindex:
@@ -411,11 +414,6 @@ async def update_file(
             )
         except Exception as e:
             logger.warning(f"Failed to re-index file: {e}")
-
-    # Extract folder-related fields
-    file_is_folder = file.is_folder
-    file_parent_id = file.parent_id
-    file_position = file.position
 
     return FileResponse(
         id=file_id,

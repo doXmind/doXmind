@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useLayoutEffect } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -59,13 +59,20 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync textarea height when value changes externally (e.g. cleared after submit)
-  useEffect(() => {
+  // Auto-resize textarea to fit content
+  const adjustHeight = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
+    // Reset to 0 so scrollHeight reflects true content height,
+    // not inflated by CSS min-height (base Textarea has min-h-[60px])
+    ta.style.height = "0px";
     ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
-  }, [value]);
+  }, []);
+
+  // Sync height before paint whenever value changes (including external clears)
+  useLayoutEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -82,6 +89,10 @@ export function ChatComposer({
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       onChange(e.target.value);
+      // Resize immediately so height tracks each keystroke without waiting for re-render
+      const ta = e.target;
+      ta.style.height = "0px";
+      ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
     },
     [onChange]
   );
@@ -127,7 +138,7 @@ export function ChatComposer({
             onKeyDown={handleKeyDown}
             onPaste={onPaste}
             placeholder={placeholder}
-            className="max-h-[200px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
+            className="max-h-[200px] min-h-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
             disabled={disabled || isStreaming}
             rows={1}
           />

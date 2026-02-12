@@ -33,13 +33,14 @@ def reciprocal_rank_fusion(
     k: int = 60,
     semantic_weight: float = 0.7,
     keyword_weight: float = 0.3,
+    extra_result_lists: list[tuple[list[dict], float, str]] | None = None,
 ) -> list[dict]:
-    """Combine semantic and keyword search results using Reciprocal Rank Fusion.
+    """Combine search results from multiple retrieval methods using Reciprocal Rank Fusion.
 
     RRF Score = sum(weight / (k + rank))
 
     This algorithm effectively merges results from multiple retrieval methods,
-    giving higher scores to documents that appear in both result sets.
+    giving higher scores to documents that appear in multiple result sets.
 
     Args:
         semantic_results: Results from vector similarity search
@@ -47,6 +48,8 @@ def reciprocal_rank_fusion(
         k: RRF constant (default 60, prevents high-ranked items from dominating)
         semantic_weight: Weight for semantic search results (0-1)
         keyword_weight: Weight for keyword search results (0-1)
+        extra_result_lists: Optional list of (results, weight, label) tuples for
+            additional retrieval signals (e.g., filename matching)
 
     Returns:
         Fused and sorted list of results
@@ -77,6 +80,23 @@ def reciprocal_rank_fusion(
             scores[doc_id]["keyword_rank"] = rank
         scores[doc_id]["score"] += keyword_weight / (k + rank)
 
+    # Score extra result lists (e.g., filename search)
+    extra_labels: list[str] = []
+    if extra_result_lists:
+        for results, weight, label in extra_result_lists:
+            extra_labels.append(label)
+            for rank, result in enumerate(results, 1):
+                doc_id = result["id"]
+                if doc_id not in scores:
+                    scores[doc_id] = {
+                        "doc": result,
+                        "score": 0,
+                        "semantic_rank": None,
+                        "keyword_rank": None,
+                    }
+                scores[doc_id]["score"] += weight / (k + rank)
+                scores[doc_id][f"{label}_rank"] = rank
+
     # Sort by combined score
     sorted_results = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
 
@@ -87,6 +107,7 @@ def reciprocal_rank_fusion(
             "rrf_score": item["score"],
             "semantic_rank": item["semantic_rank"],
             "keyword_rank": item["keyword_rank"],
+            **{f"{label}_rank": item.get(f"{label}_rank") for label in extra_labels},
         }
         for item in sorted_results
     ]

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Wand2, MessageCircle, ChevronRight } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useChatContextStore } from "@/stores/chat-context-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { useQuickEdit } from "@/hooks/use-quick-edit";
 import { useMockQuickEdit } from "@/hooks/use-mock-quick-edit";
 import { useMenuPosition, getSubmenuPosition } from "@/hooks/use-menu-position";
@@ -74,10 +75,10 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
       onApply(result, savedSelectionRef.current);
       closeQuickEdit();
       setActiveSubmenu(null);
-      // Track onboarding checklist
+      // Track onboarding step
       import("@/stores/onboarding-store")
         .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeChecklistItem("triedQuickEdit");
+          useOnboardingStore.getState().completeStep("quick-edit");
         })
         .catch(() => {});
     }
@@ -110,6 +111,7 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
       from: selection.from,
       to: selection.to,
     });
+    useLayoutStore.getState().setChatOpen(true);
     closeQuickEdit();
     setActiveSubmenu(null);
   }, [selection, addChatContext, closeQuickEdit]);

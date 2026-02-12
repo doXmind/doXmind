@@ -62,6 +62,11 @@ interface EditorState {
   // Last AI Operation (for undo tracking)
   lastAIOperation: LastAIOperation | null;
 
+  // Review signaling (header → editor communication)
+  reviewRequested: boolean;
+  isReviewLoading: boolean;
+  isReviewActive: boolean;
+
   // Core editor actions
   setDirty: (dirty: boolean) => void;
   setSelection: (selection: Selection | null) => void;
@@ -96,6 +101,11 @@ interface EditorState {
   // Last AI Operation Actions (for undo tracking)
   setLastAIOperation: (operation: LastAIOperation | null) => void;
   clearLastAIOperation: () => void;
+
+  // Review signaling actions
+  requestReview: () => void;
+  clearReviewRequest: () => void;
+  setReviewState: (loading: boolean, active: boolean) => void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -116,6 +126,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   imageModalCallback: null,
   isReviewPanelOpen: false,
   lastAIOperation: null,
+  reviewRequested: false,
+  isReviewLoading: false,
+  isReviewActive: false,
 
   // Core editor actions
   setDirty: (dirty) => set({ isDirty: dirty }),
@@ -154,4 +167,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // Last AI Operation Actions
   setLastAIOperation: (operation) => set({ lastAIOperation: operation }),
   clearLastAIOperation: () => set({ lastAIOperation: null }),
+
+  // Review signaling actions
+  requestReview: () => set({ reviewRequested: true }),
+  clearReviewRequest: () => set({ reviewRequested: false }),
+  setReviewState: (loading, active) => set({ isReviewLoading: loading, isReviewActive: active }),
 }));

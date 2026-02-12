@@ -8,10 +8,11 @@ import { api, type SearchResultItem } from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useKBAgent } from "@/hooks/use-kb-agent";
 import { telemetry } from "@/lib/telemetry";
-import { HomeHeader } from "./home-header";
 import { HomeSearch, type SearchMode } from "./home-search";
 import { FileGrid } from "./file-grid";
 import { KBAnswerCard } from "./kb-answer-card";
+import { RecentFiles } from "./recent-files";
+import { FavoritesSection } from "./favorites-section";
 
 function getGreeting(): { title: string; subtitle: string } {
   const hour = new Date().getHours();
@@ -96,8 +97,10 @@ function TypewriterText({
 }
 
 export function HomeDashboard() {
-  const { files, loadFiles, isLoading } = useFileStore();
+  const { files, loadFiles, isLoading, getRecentFiles, getFavorites } = useFileStore();
   const { user } = useAuthStore();
+  // Onboarding auto-start disabled while tour is being tuned.
+  // Users can manually start via User Menu → Restart Tour.
 
   // Search state — lifted here so FileGrid can filter
   const [query, setQuery] = useState("");
@@ -267,8 +270,16 @@ export function HomeDashboard() {
   const { title: greeting, subtitle: greetingSubtitle } = getGreeting();
   const firstName = user?.username?.split(" ")[0];
 
+  // Derived data for new sections
+  const recentFiles = getRecentFiles(3);
+  const favorites = getFavorites();
+  const totalDocs = files.filter((f) => !f.isFolder).length;
+  const isSearchActive = query.trim().length > 0;
+  const showRecent = totalDocs >= 4 && !showAnswerCard && !isSearchActive;
+  const showFavorites = favorites.length > 0 && !showAnswerCard && !isSearchActive;
+
   return (
-    <div className="relative flex min-h-screen flex-col bg-background">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
       {/* Subtle dot grid background */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.025] dark:opacity-[0.04]"
@@ -277,8 +288,6 @@ export function HomeDashboard() {
           backgroundSize: "24px 24px",
         }}
       />
-
-      <HomeHeader />
 
       <main className="relative flex-1 px-5 pb-12 md:px-8">
         {/* Hero section */}
@@ -316,6 +325,20 @@ export function HomeDashboard() {
             onModeChange={handleModeChange}
           />
         </div>
+
+        {/* Continue writing — recent files */}
+        {showRecent && (
+          <div className="mx-auto mt-8 max-w-5xl">
+            <RecentFiles files={recentFiles} />
+          </div>
+        )}
+
+        {/* Favorites */}
+        {showFavorites && (
+          <div className="mx-auto mt-6 max-w-5xl">
+            <FavoritesSection favorites={favorites} />
+          </div>
+        )}
 
         {/* Content area */}
         {showAnswerCard ? (

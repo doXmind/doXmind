@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isDiffReviewActive } from "@/extensions/diff-review";
+import { CellSelection } from "@tiptap/pm/tables";
 
 interface TableBubbleMenuProps {
   editor: Editor;
@@ -32,6 +33,8 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
       }}
       shouldShow={({ editor }) => {
         if (isDiffReviewActive(editor)) return false;
+        // Don't show when cells are selected via column/row handles
+        if (editor.state.selection instanceof CellSelection) return false;
         return editor.isActive("table");
       }}
       className="table-bubble-menu flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-lg"

@@ -117,7 +117,7 @@ function DesktopSkeletonLayout({
         {/* Sidebar skeleton */}
         <aside
           className={cn(
-            "w-64 flex-shrink-0 border-r border-border bg-card transition-all duration-300",
+            "bg-sidebar w-64 flex-shrink-0 border-r border-border transition-all duration-300",
             !isSidebarOpen && "w-0 overflow-hidden opacity-0"
           )}
         >
@@ -132,7 +132,7 @@ function DesktopSkeletonLayout({
         {/* Chat Panel skeleton */}
         <aside
           className={cn(
-            "w-96 flex-shrink-0 border-l border-border bg-card transition-all duration-300",
+            "bg-sidebar w-96 flex-shrink-0 border-l border-border transition-all duration-300",
             !isChatOpen && "w-0 overflow-hidden opacity-0"
           )}
         >

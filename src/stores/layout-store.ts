@@ -3,7 +3,8 @@ import { persist } from "zustand/middleware";
 
 interface LayoutState {
   // Desktop panel visibility
-  isSidebarOpen: boolean;
+  isSidebarOpen: boolean; // Outline sidebar
+  isFilesSidebarOpen: boolean; // Files sidebar (independent)
   isChatOpen: boolean;
   isMindlinesOpen: boolean;
   isMindlinesCollapsed: boolean; // Collapsed = minimal line indicators, Expanded = full outline
@@ -56,12 +57,18 @@ interface LayoutState {
   fontSize: "small" | "normal" | "large";
   lineHeight: "compact" | "normal" | "relaxed";
 
+  // Chat display mode
+  chatMode: "sidebar" | "floating";
+
   // Resizable panel widths (pixels)
-  sidebarWidth: number;
+  sidebarWidth: number; // Outline sidebar width
+  filesSidebarWidth: number; // Files sidebar width
   chatPanelWidth: number;
 
   // Actions
   toggleSidebar: () => void;
+  toggleFilesSidebar: () => void;
+  setFilesSidebarOpen: (open: boolean) => void;
   toggleChat: () => void;
   toggleMindlines: () => void;
   toggleMindlinesCollapsed: () => void;
@@ -119,8 +126,12 @@ interface LayoutState {
   setFontSize: (size: "small" | "normal" | "large") => void;
   setLineHeight: (height: "compact" | "normal" | "relaxed") => void;
 
+  // Chat mode actions
+  setChatMode: (mode: "sidebar" | "floating") => void;
+
   // Resizable panel actions
   setSidebarWidth: (width: number) => void;
+  setFilesSidebarWidth: (width: number) => void;
   setChatPanelWidth: (width: number) => void;
   resetPanelWidths: () => void;
 
@@ -142,6 +153,7 @@ export const useLayoutStore = create<LayoutState>()(
     (set) => ({
       // Desktop panel visibility
       isSidebarOpen: true,
+      isFilesSidebarOpen: false,
       isChatOpen: true,
       isMindlinesOpen: true,
       isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
@@ -194,13 +206,25 @@ export const useLayoutStore = create<LayoutState>()(
       fontSize: "normal" as const,
       lineHeight: "normal" as const,
 
+      // Chat display mode
+      chatMode: "sidebar" as const,
+
       // Resizable panel widths
       sidebarWidth: 256,
+      filesSidebarWidth: 256,
       chatPanelWidth: 384,
 
       // Desktop actions
       toggleSidebar: () => {
         set((state) => ({ isSidebarOpen: !state.isSidebarOpen }));
+      },
+
+      toggleFilesSidebar: () => {
+        set((state) => ({ isFilesSidebarOpen: !state.isFilesSidebarOpen }));
+      },
+
+      setFilesSidebarOpen: (open: boolean) => {
+        set({ isFilesSidebarOpen: open });
       },
 
       toggleChat: () => {
@@ -388,9 +412,18 @@ export const useLayoutStore = create<LayoutState>()(
         set({ lineHeight: height });
       },
 
+      // Chat mode actions
+      setChatMode: (mode: "sidebar" | "floating") => {
+        set({ chatMode: mode });
+      },
+
       // Resizable panel actions
       setSidebarWidth: (width: number) => {
         set({ sidebarWidth: Math.max(200, Math.min(400, width)) });
+      },
+
+      setFilesSidebarWidth: (width: number) => {
+        set({ filesSidebarWidth: Math.max(200, Math.min(400, width)) });
       },
 
       setChatPanelWidth: (width: number) => {
@@ -398,7 +431,7 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       resetPanelWidths: () => {
-        set({ sidebarWidth: 256, chatPanelWidth: 384 });
+        set({ sidebarWidth: 256, filesSidebarWidth: 256, chatPanelWidth: 384 });
       },
 
       // Mobile selection actions
@@ -452,6 +485,7 @@ export const useLayoutStore = create<LayoutState>()(
       partialize: (state) => ({
         // Only persist these fields (not modals state)
         isSidebarOpen: state.isSidebarOpen,
+        isFilesSidebarOpen: state.isFilesSidebarOpen,
         isChatOpen: state.isChatOpen,
         isMindlinesOpen: state.isMindlinesOpen,
         isMindlinesCollapsed: state.isMindlinesCollapsed,
@@ -462,7 +496,9 @@ export const useLayoutStore = create<LayoutState>()(
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,
         lineHeight: state.lineHeight,
+        chatMode: state.chatMode,
         sidebarWidth: state.sidebarWidth,
+        filesSidebarWidth: state.filesSidebarWidth,
         chatPanelWidth: state.chatPanelWidth,
       }),
     }

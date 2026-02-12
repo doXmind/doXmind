@@ -7,21 +7,16 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
-  LayoutTemplate,
   List,
-  Upload,
-  Loader2,
   SearchX,
   Home,
   FolderOpen,
-  FolderPlus,
-  FilePlus,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { cn, getErrorMessage } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { cn, getErrorMessage, formatShortcut } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -42,9 +37,11 @@ import { type SearchResultItem } from "@/lib/api";
 import { markdownToHtml } from "@/lib/markdown";
 import { useDragPageTransition } from "@/hooks/use-drag-page-transition";
 import { TemplatePicker, type FileTemplate } from "@/components/sidebar/template-picker";
+import { TrashPanel } from "@/components/sidebar/trash-panel";
 import { FileCard } from "./file-card";
 import { FileRow } from "./file-row";
 import { EmptyState } from "./empty-state";
+import { NewButton } from "./new-button";
 
 interface FileGridProps {
   files: FileItem[];
@@ -128,6 +125,7 @@ export function FileGrid({
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -235,8 +233,7 @@ export function FileGrid({
 
   const handleCreate = async () => {
     try {
-      const newId = await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
-      router.push(`/editor/${newId}`);
+      await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
@@ -403,7 +400,7 @@ export function FileGrid({
       <div className="mb-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-medium uppercase tracking-widest text-muted-foreground/60">
-            {isSearchActive ? "Results" : currentFolder ? currentFolder.name : "Documents"}
+            {isSearchActive ? "Results" : currentFolder ? currentFolder.name : "All Documents"}
           </h2>
           <span className="text-xs text-muted-foreground/30">{displayFiles.length}</span>
         </div>
@@ -450,64 +447,29 @@ export function FileGrid({
             </>
           )}
 
-          {/* Actions */}
+          {/* Trash */}
           {!hideActions && (
-            <>
-              {/* New Folder button - disabled when inside folder (single-level hierarchy) */}
-              <Tooltip
-                content={currentFolderId ? "Only one folder level allowed" : "Create New Folder"}
-                side="bottom"
+            <Tooltip content="Trash" side="bottom">
+              <button
+                onClick={() => setIsTrashOpen(true)}
+                className="rounded-md p-1.5 text-muted-foreground/30 transition-colors hover:text-foreground"
+                aria-label="Trash"
               >
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 gap-1.5 text-xs font-medium"
-                  onClick={handleCreateFolder}
-                  disabled={!!currentFolderId}
-                >
-                  <FolderPlus className="h-3.5 w-3.5" />
-                  Folder
-                </Button>
-              </Tooltip>
-              <Tooltip content="Create New Document" side="bottom">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 gap-1.5 text-xs font-medium"
-                  onClick={handleCreate}
-                >
-                  <FilePlus className="h-3.5 w-3.5" />
-                  New
-                </Button>
-              </Tooltip>
-              <Tooltip content="New from Template" side="bottom">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 gap-1.5 text-xs font-medium"
-                  onClick={() => setIsTemplatePickerOpen(true)}
-                >
-                  <LayoutTemplate className="h-3.5 w-3.5" />
-                  Template
-                </Button>
-              </Tooltip>
-              <Tooltip content="Import File" side="bottom">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 gap-1.5 text-xs font-medium"
-                  onClick={handleImportClick}
-                  disabled={isImporting}
-                >
-                  {isImporting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
-                  Import
-                </Button>
-              </Tooltip>
-            </>
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          )}
+
+          {/* Actions — single New button with dropdown */}
+          {!hideActions && (
+            <NewButton
+              onCreateFile={handleCreate}
+              onCreateFolder={handleCreateFolder}
+              onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
+              onImportFile={handleImportClick}
+              isImporting={isImporting}
+              disableFolder={!!currentFolderId}
+            />
           )}
         </div>
       </div>
@@ -716,12 +678,18 @@ export function FileGrid({
         </>
       )}
 
+      {/* Writing tip for sparse pages — random on each mount */}
+      {!isSearchActive && displayFiles.length > 0 && displayFiles.length < 4 && <WritingTip />}
+
       {/* Template Picker Modal */}
       <TemplatePicker
         open={isTemplatePickerOpen}
         onClose={() => setIsTemplatePickerOpen(false)}
         onSelect={handleTemplateSelect}
       />
+
+      {/* Trash Panel Modal */}
+      <TrashPanel open={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
     </motion.div>
   );
 }
@@ -963,6 +931,54 @@ function MobileCarousel({
           {dotEnd < totalDots && <span className="h-1 w-1 rounded-full bg-muted-foreground/15" />}
         </div>
       )}
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Random writing tip — shown when few documents exist
+// ---------------------------------------------------------------------------
+
+const Kbd = ({ children }: { children: React.ReactNode }) => (
+  <kbd className="rounded border border-border/50 px-1 py-0.5 font-mono text-[10px]">
+    {children}
+  </kbd>
+);
+
+const WRITING_TIPS: React.ReactNode[] = [
+  <>
+    Press <Kbd>Tab</Kbd> in the editor for AI autocomplete
+  </>,
+  <>
+    Press <Kbd>{formatShortcut("Ctrl+K")}</Kbd> to open the command palette
+  </>,
+  <>Select text to see AI quick edit options</>,
+  <>
+    Press <Kbd>{formatShortcut("Ctrl+F")}</Kbd> to find &amp; replace in your document
+  </>,
+  <>Drag and drop files into folders to stay organized</>,
+  <>
+    Use <Kbd>{formatShortcut("Alt+/")}</Kbd> to trigger AI autocomplete anywhere
+  </>,
+  <>Try &quot;Ask AI&quot; in the search bar to chat about your documents</>,
+  <>
+    Press <Kbd>{formatShortcut("Ctrl+Shift+O")}</Kbd> to toggle the document outline
+  </>,
+  <>Star your important documents to pin them in Favorites</>,
+  <>Export your writing to Markdown, PDF, or Word from the file menu</>,
+];
+
+function WritingTip() {
+  const tip = useMemo(() => WRITING_TIPS[Math.floor(Math.random() * WRITING_TIPS.length)], []);
+
+  return (
+    <motion.div
+      className="mx-auto mt-12 max-w-sm text-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.8, duration: 0.5 }}
+    >
+      <p className="text-xs text-muted-foreground/30">Tip: {tip}</p>
     </motion.div>
   );
 }

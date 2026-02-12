@@ -2,10 +2,8 @@
 
 import { useEditor, EditorContent } from "@tiptap/react";
 import { useCallback, useEffect, useRef } from "react";
-import { EditorToolbar } from "./editor-toolbar";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
-import { TableBubbleMenu } from "./table-bubble-menu";
 import { ImageBubbleMenu } from "./image-bubble-menu";
 import { ImageModal } from "./image-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
@@ -17,7 +15,6 @@ import { ReviewPanel } from "./review-panel";
 import { SearchBar } from "./search-bar";
 import { StatusBar } from "./status-bar";
 import { DocumentTitle } from "./document-title";
-import { Mindlines, OutlineToggle, useHeadings } from "./mindlines";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { getReviewState } from "@/extensions/text-review-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
@@ -26,6 +23,7 @@ import { useTextReview } from "@/hooks/use-text-review";
 import { useMockTextReview } from "@/hooks/use-mock-text-review";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
+import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useDemoStore } from "@/stores/demo-store";
 import { useEditorStore, type LastAIOperation } from "@/stores/editor-store";
@@ -35,6 +33,8 @@ import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
+import { BlockHandle } from "./block-handle";
+import { TableHandles } from "./table-handles";
 import { applyPendingEdit } from "./editor-edit-operations";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { useFeatureHints } from "@/components/onboarding/feature-hints";
@@ -68,18 +68,14 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     lastAIOperation,
     clearLastAIOperation,
     spellcheckEnabled,
+    reviewRequested,
+    clearReviewRequest,
+    setReviewState,
   } = useEditorStore();
 
   // Layout state
-  const {
-    isSearchBarOpen,
-    toggleSearchBar,
-    isFocusMode,
-    editorWidth,
-    fontFamily,
-    fontSize,
-    lineHeight,
-  } = useLayoutStore();
+  const { isSearchBarOpen, isFocusMode, editorWidth, fontFamily, fontSize, lineHeight } =
+    useLayoutStore();
 
   const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
@@ -114,7 +110,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   );
 
   const editor = useEditor({
-    extensions: getEditorExtensions({ enableBlockSelection: isMobile, isMobile }),
+    extensions: getEditorExtensions({ isMobile }),
     content: file.content,
     editorProps: defaultEditorProps,
     editable: !isDemoMode, // Demo mode: read-only to ensure mock scenarios work
@@ -183,9 +179,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       queueMicrotask(() => {
         isFileSwitchingRef.current = true;
         editor.commands.setContent(file.content, false);
-        // Move cursor to start of document to prevent autocomplete triggering
-        // at the end of the document content
-        editor.commands.setTextSelection(0);
+        // Move cursor to start of document and focus editor
+        editor.commands.focus("start");
         // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
         // to prevent false-positive change detection in debouncedSave.
         // TipTap may normalize HTML during parse/serialize (attribute order,
@@ -223,7 +218,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   // Disable autocomplete on mobile - it interferes with touch input
   useAutocomplete({ editor, fileId: file.id, fileName: file.name, enabled: !isMobile });
   useSpellcheck({ editor, enabled: spellcheckEnabled && !isMobile });
-  const { headings } = useHeadings(editor);
+  useBlockKeyboardShortcuts(!isMobile ? editor : null);
 
   // Use mock text review in demo mode, real API otherwise
   const realTextReview = useTextReview({
@@ -330,8 +325,27 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       setReviewPanelOpen(!isReviewPanelOpen);
     } else {
       triggerReview();
+      // Track onboarding step
+      import("@/stores/onboarding-store")
+        .then(({ useOnboardingStore }) => {
+          useOnboardingStore.getState().completeStep("writing-review");
+        })
+        .catch(() => {});
     }
   }, [isReviewActive, isReviewPanelOpen, setReviewPanelOpen, triggerReview]);
+
+  // Sync review state to store (so header can read it)
+  useEffect(() => {
+    setReviewState(isReviewLoading, isReviewActive);
+  }, [isReviewLoading, isReviewActive, setReviewState]);
+
+  // Watch for review requests from header
+  useEffect(() => {
+    if (reviewRequested && editor) {
+      clearReviewRequest();
+      handleReviewClick();
+    }
+  }, [reviewRequested, editor, clearReviewRequest, handleReviewClick]);
 
   // Handle closing the review panel
   const handleReviewPanelClose = useCallback(() => {
@@ -381,18 +395,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
 
   return (
     <div className={cn("flex flex-col", !isMobile && "h-full")}>
-      {/* Desktop Toolbar - hidden on mobile and in focus mode */}
-      {!isMobile && !isFocusMode && (
-        <EditorToolbar
-          editor={editor}
-          onSearchClick={toggleSearchBar}
-          onReviewClick={handleReviewClick}
-          isReviewLoading={isReviewLoading}
-          isReviewActive={isReviewActive}
-          isSearchActive={isSearchBarOpen}
-        />
-      )}
-
       {/* Diff Review Toolbar - shown on both desktop and mobile when active */}
       <DiffReviewToolbar
         editor={editor}
@@ -406,10 +408,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       />
 
       <div className={cn("flex min-w-0 overflow-x-hidden", !isMobile && "min-h-0 flex-1")}>
-        {/* Outline toggle button - shows when outline is closed, hidden in focus mode */}
-        {!isMobile && !isFocusMode && <OutlineToggle headingsCount={headings.length} />}
-        {/* Mindlines outline - hidden on mobile and in focus mode */}
-        {!isMobile && !isFocusMode && <Mindlines editor={editor} />}
         {/* Main editor content area */}
         <div
           className={cn(
@@ -435,10 +433,10 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
               <EditorContent editor={editor} />
             </div>
           ) : (
-            <ScrollArea className="min-h-0 flex-1">
+            <ScrollArea className="min-h-0 flex-1" data-editor-scroll>
               <div
                 className={cn(
-                  "relative mx-auto px-4 pb-2 pt-0 md:px-8 md:py-6",
+                  "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
                   editorWidth === "narrow" && "max-w-2xl",
                   editorWidth === "normal" && "max-w-4xl",
                   editorWidth === "wide" && "max-w-6xl",
@@ -476,13 +474,17 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         )}
       </div>
 
+      {/* Block Handle - Desktop only (+ button and drag grip in left margin) */}
+      {!isMobile && editor && <BlockHandle editor={editor} />}
+      {/* Table Handles - Desktop only (column/row grips and edge + buttons) */}
+      {!isMobile && editor && <TableHandles editor={editor} />}
+
       {/* Bubble Menus & Popups - Desktop only */}
       {/* Mobile uses block-based selection with long-press, no text selection menus */}
       {!isMobile && (
         <>
           <BubbleMenuComponent editor={editor} />
           <LinkBubbleMenu editor={editor} />
-          <TableBubbleMenu editor={editor} />
           <ImageBubbleMenu editor={editor} />
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />

@@ -1,6 +1,7 @@
 "use client";
 
 import { Header } from "./header";
+import { InteractiveTour } from "@/components/onboarding/interactive-tour";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -16,7 +17,8 @@ export function AppShell({ children, hideHeader = false }: AppShellProps) {
       }}
     >
       {!hideHeader && <Header />}
-      <div className="flex-1 overflow-hidden">{children}</div>
+      <div className="relative flex-1 overflow-hidden">{children}</div>
+      <InteractiveTour />
     </div>
   );
 }

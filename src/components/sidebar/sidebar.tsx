@@ -1,252 +1,148 @@
 "use client";
 
-import {
-  FilePlus,
-  Loader2,
-  Upload,
-  Search,
-  FolderPlus,
-  Trash2,
-  LayoutTemplate,
-} from "lucide-react";
-import { toast } from "sonner";
-import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronsUpDown, GitBranch, FileText, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
-import { FolderTree } from "./folder-tree";
-import { SortDropdown } from "./sort-dropdown";
-import { BulkActionBar } from "./bulk-action-bar";
-import { TrashPanel } from "./trash-panel";
-import { TemplatePicker, type FileTemplate } from "./template-picker";
-import { GettingStartedChecklist } from "@/components/onboarding/getting-started-checklist";
+import { OutlineView } from "@/components/editor/mindlines/outline-view";
+import { MindmapFlow } from "@/components/editor/mindlines/mindmap-flow";
+import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { useFileStore } from "@/stores/file-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { getErrorMessage, formatShortcut } from "@/lib/utils";
-import { markdownToHtml } from "@/lib/markdown";
-import { storeLogger } from "@/lib/logger";
-
-const log = storeLogger.child("Sidebar");
+import { useOutlineStore } from "@/stores/outline-store";
+import { buildTree } from "@/components/editor/mindlines/use-tree";
+import { Z_INDEX } from "@/lib/constants";
+import type { Heading } from "@/components/editor/mindlines/types";
 
 export function Sidebar() {
-  const router = useRouter();
-  const { files, createFile, createFolder, importFile, currentFolderId, getFolders } =
-    useFileStore();
-  const { openCommandPalette } = useLayoutStore();
-  const [isImporting, setIsImporting] = useState(false);
-  const [isTrashOpen, setIsTrashOpen] = useState(false);
-  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { currentFileId } = useFileStore();
+  const editor = useEditorRefStore((s) => s.editor);
+  const { toggleSidebar } = useLayoutStore();
+  const { headings, activeId, navigateTo } = useHeadings(editor);
+  const [isMindmapOpen, setIsMindmapOpen] = useState(false);
 
-  const handleCreateFile = async () => {
-    // Get files in current location (folder or root)
-    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+  const handleOutlineNavigate = useCallback(
+    (heading: Heading) => {
+      navigateTo(heading);
+    },
+    [navigateTo]
+  );
 
-    // Find the highest Untitled-X number
-    let maxNum = 0;
-    currentFiles.forEach((file) => {
-      const match = file.name.match(/^Untitled-(\d+)\.md$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
-      }
-    });
+  const handleMindmapNodeClick = useCallback(
+    (heading: Heading) => {
+      navigateTo(heading);
+    },
+    [navigateTo]
+  );
 
-    const name = `Untitled-${maxNum + 1}.md`;
-    try {
-      const newId = await createFile(name, "", currentFolderId);
-      router.push(`/editor/${newId}`);
-    } catch (error) {
-      log.error("Failed to create file", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+  // Outline helpers
+  const { expandAll, collapseAll } = useOutlineStore();
+  const allNodeIds = headings.map((h) => h.id);
+  const handleToggleAllOutline = () => {
+    if (!currentFileId) return;
+    const tree = buildTree(headings);
+    const hasCollapsible = tree.some((n) => n.children.length > 0);
+    if (!hasCollapsible) return;
+    const collapsedNodes = useOutlineStore.getState().getCollapsedNodes(currentFileId);
+    if (collapsedNodes.size > 0) {
+      expandAll(currentFileId);
+    } else {
+      collapseAll(currentFileId, allNodeIds);
     }
-  };
-
-  const handleTemplateSelect = async (template: FileTemplate) => {
-    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
-
-    // Generate unique filename based on template name
-    let counter = 0;
-    let name: string;
-    do {
-      counter++;
-      name =
-        counter === 1
-          ? `${template.defaultFileName}.md`
-          : `${template.defaultFileName} ${counter}.md`;
-    } while (currentFiles.some((f) => f.name === name));
-
-    try {
-      const markdown = template.getContent();
-      const htmlContent = markdown ? markdownToHtml(markdown) : "";
-      const newId = await createFile(name, htmlContent, currentFolderId);
-      router.push(`/editor/${newId}`);
-    } catch (error) {
-      log.error("Failed to create file from template", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
-      throw error;
-    }
-  };
-
-  const handleCreateFolder = async () => {
-    const folders = getFolders(currentFolderId);
-    const name = `New Folder ${folders.length + 1}`;
-    try {
-      await createFolder(name, currentFolderId);
-    } catch (error) {
-      log.error("Failed to create folder", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
-    }
-  };
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Reset input so same file can be selected again
-    e.target.value = "";
-
-    setIsImporting(true);
-    try {
-      const newId = await importFile(file, currentFolderId);
-      router.push(`/editor/${newId}`);
-      toast.success(`Imported "${file.name}" successfully`);
-    } catch (error) {
-      log.error("Failed to import file", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleSearchClick = () => {
-    openCommandPalette();
   };
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border p-3">
-        <div className="flex items-center justify-between">
-          <div className="hidden md:flex">
-            <h2 className="text-sm font-semibold">Files</h2>
-          </div>
-          <div className="flex w-full items-center justify-end gap-1 md:w-auto">
-            <Tooltip content={`Search (${formatShortcut("Ctrl+K")})`} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleSearchClick}
-                aria-label="Search"
-                className="h-10 w-10 md:h-9 md:w-9"
-              >
-                <Search className="h-5 w-5 md:h-4 md:w-4" />
-              </Button>
-            </Tooltip>
-            <SortDropdown />
-            <Tooltip content="Import File (PDF, DOCX, MD)" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleImportClick}
-                disabled={isImporting}
-                aria-label="Import File"
-                className="h-10 w-10 md:h-9 md:w-9"
-              >
-                {isImporting ? (
-                  <Loader2 className="h-5 w-5 animate-spin md:h-4 md:w-4" />
-                ) : (
-                  <Upload className="h-5 w-5 md:h-4 md:w-4" />
-                )}
-              </Button>
-            </Tooltip>
-            <Tooltip content="Create New Folder" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleCreateFolder}
-                aria-label="Create New Folder"
-                className="h-10 w-10 md:h-9 md:w-9"
-              >
-                <FolderPlus className="h-5 w-5 md:h-4 md:w-4" />
-              </Button>
-            </Tooltip>
-            <Tooltip content="Create New File" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleCreateFile}
-                aria-label="Create New File"
-                className="h-10 w-10 md:h-9 md:w-9"
-              >
-                <FilePlus className="h-5 w-5 md:h-4 md:w-4" />
-              </Button>
-            </Tooltip>
-          </div>
-          {/* Hidden file input for import */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx,.md,.markdown"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
+    <div className="flex h-full flex-col" data-onboarding="sidebar-toggle">
+      {/* Outline header */}
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+          Outline
+        </span>
+        <div className="flex gap-1">
+          <Tooltip content="Toggle collapse all" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleToggleAllOutline}
+              disabled={headings.length === 0}
+              aria-label="Toggle collapse all"
+              className="h-8 w-8"
+            >
+              <ChevronsUpDown className="h-4 w-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Mindmap view" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsMindmapOpen(true)}
+              disabled={headings.length === 0}
+              aria-label="Open mindmap"
+              className="h-8 w-8"
+            >
+              <GitBranch className="h-4 w-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Hide Outline" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              aria-label="Hide Outline"
+              className="h-8 w-8"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
+          </Tooltip>
         </div>
       </div>
 
-      {/* File List with Folders */}
+      {/* Outline content */}
       <ScrollArea className="flex-1">
-        <div className="space-y-1 p-2">
-          <FolderTree />
-        </div>
+        {editor && headings.length > 0 ? (
+          <div className="p-2">
+            <OutlineView
+              headings={headings}
+              activeId={activeId}
+              onNavigate={handleOutlineNavigate}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
+            <FileText className="h-8 w-8 text-muted-foreground/40" />
+            <p className="text-xs text-muted-foreground">
+              {editor ? "No headings in this document" : "Open a document to see its outline"}
+            </p>
+          </div>
+        )}
       </ScrollArea>
 
-      {/* Bulk Action Bar */}
-      <BulkActionBar />
-
-      {/* Getting Started Checklist */}
-      <GettingStartedChecklist />
-
-      {/* Bottom actions */}
-      <div className="flex gap-1 border-t border-border p-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="flex-1 justify-start gap-2 text-muted-foreground hover:text-foreground"
-          onClick={() => setIsTemplatePickerOpen(true)}
-        >
-          <LayoutTemplate className="h-4 w-4" />
-          Templates
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="flex-1 justify-start gap-2 text-muted-foreground hover:text-foreground"
-          onClick={() => setIsTrashOpen(true)}
-        >
-          <Trash2 className="h-4 w-4" />
-          Trash
-        </Button>
-      </div>
-
-      {/* Trash panel modal */}
-      <TrashPanel open={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
-
-      {/* Template picker modal */}
-      <TemplatePicker
-        open={isTemplatePickerOpen}
-        onClose={() => setIsTemplatePickerOpen(false)}
-        onSelect={handleTemplateSelect}
-      />
+      {/* Mindmap fullscreen overlay */}
+      {isMindmapOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-background"
+              style={{ zIndex: Z_INDEX.MODAL }}
+            >
+              <MindmapFlow
+                headings={headings}
+                activeId={activeId}
+                onNodeClick={handleMindmapNodeClick}
+                onClose={() => setIsMindmapOpen(false)}
+              />
+            </motion.div>
+          </AnimatePresence>,
+          document.body
+        )}
     </div>
   );
 }

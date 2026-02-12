@@ -317,3 +317,125 @@ class TestHybridSearchIntegration:
         assert result[0]["metadata"]["file_id"] == "f1"
         assert result[0]["distance"] == 0.1
         assert result[0]["extra_field"] == "extra"
+
+
+# =============================================================================
+# RRF with Extra Result Lists (Filename Matching) Tests
+# =============================================================================
+
+
+class TestRRFWithExtraLists:
+    """Tests for RRF with extra result lists (e.g., filename matching)."""
+
+    def test_extra_list_boosts_overlapping_results(self):
+        """Documents in both semantic and filename lists should get boosted."""
+        semantic = [
+            {"id": "a", "content": "doc a"},
+            {"id": "b", "content": "doc b"},
+        ]
+        keyword = [
+            {"id": "c", "content": "doc c"},
+        ]
+        filename = [
+            {"id": "b", "content": "doc b"},  # Also in semantic (rank 2)
+        ]
+
+        result = reciprocal_rank_fusion(
+            semantic, keyword, extra_result_lists=[(filename, 0.5, "filename")]
+        )
+
+        # "b" should be ranked #1 due to semantic + filename boost
+        assert result[0]["id"] == "b"
+        assert result[0]["filename_rank"] == 1
+        assert result[0]["semantic_rank"] == 2
+
+    def test_filename_only_match_appears_in_results(self):
+        """Document only in filename list should still appear."""
+        semantic = [{"id": "a", "content": "doc a"}]
+        keyword = []
+        filename = [{"id": "z", "content": "doc z"}]
+
+        result = reciprocal_rank_fusion(
+            semantic, keyword, extra_result_lists=[(filename, 0.5, "filename")]
+        )
+
+        result_ids = {r["id"] for r in result}
+        assert "z" in result_ids
+        # "z" should have filename_rank but no semantic/keyword rank
+        z_result = next(r for r in result if r["id"] == "z")
+        assert z_result["filename_rank"] == 1
+        assert z_result["semantic_rank"] is None
+        assert z_result["keyword_rank"] is None
+
+    def test_no_extra_lists_backward_compatible(self):
+        """None extra_result_lists should behave identically to old function."""
+        semantic = [{"id": "a", "content": "doc a"}]
+        keyword = [{"id": "b", "content": "doc b"}]
+
+        result_with_none = reciprocal_rank_fusion(
+            semantic, keyword, extra_result_lists=None
+        )
+        result_without = reciprocal_rank_fusion(semantic, keyword)
+
+        assert len(result_with_none) == len(result_without)
+        for r_new, r_old in zip(result_with_none, result_without, strict=True):
+            assert r_new["id"] == r_old["id"]
+            assert r_new["rrf_score"] == r_old["rrf_score"]
+
+    def test_multiple_extra_lists(self):
+        """Should handle multiple extra result lists correctly."""
+        semantic = [{"id": "a", "content": "doc a"}]
+        keyword = []
+        list1 = [{"id": "b", "content": "doc b"}]
+        list2 = [{"id": "c", "content": "doc c"}]
+
+        result = reciprocal_rank_fusion(
+            semantic,
+            keyword,
+            extra_result_lists=[
+                (list1, 0.5, "filename"),
+                (list2, 0.2, "another"),
+            ],
+        )
+
+        result_ids = {r["id"] for r in result}
+        assert result_ids == {"a", "b", "c"}
+
+        # Check that both extra rank fields are present
+        b_result = next(r for r in result if r["id"] == "b")
+        assert b_result["filename_rank"] == 1
+
+        c_result = next(r for r in result if r["id"] == "c")
+        assert c_result["another_rank"] == 1
+
+    def test_empty_extra_list(self):
+        """Empty extra list should not affect results."""
+        semantic = [{"id": "a", "content": "doc a"}]
+        keyword = [{"id": "b", "content": "doc b"}]
+
+        result = reciprocal_rank_fusion(
+            semantic, keyword, extra_result_lists=[([], 0.5, "filename")]
+        )
+
+        assert len(result) == 2
+        assert result[0]["id"] == "a"  # semantic weight > keyword weight
+
+    def test_high_filename_weight_boosts_to_top(self):
+        """A high filename weight should push filename matches to the top."""
+        semantic = [
+            {"id": "a", "content": "doc a"},
+            {"id": "b", "content": "doc b"},
+        ]
+        keyword = [{"id": "a", "content": "doc a"}]
+        filename = [{"id": "c", "content": "doc c"}]
+
+        # Very high filename weight
+        result = reciprocal_rank_fusion(
+            semantic,
+            keyword,
+            semantic_weight=0.1,
+            keyword_weight=0.1,
+            extra_result_lists=[(filename, 5.0, "filename")],
+        )
+
+        assert result[0]["id"] == "c"

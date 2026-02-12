@@ -330,6 +330,93 @@ class RAGService:
             logger.error(f"Keyword search error: {e}")
             return []
 
+    async def _filename_search(
+        self,
+        query: str,
+        file_ids: list[str] | None = None,
+        user_id: str | None = None,
+        top_k: int = 15,
+    ) -> list[dict[str, Any]]:
+        """Search for files whose names match the query, returning their first chunks.
+
+        Uses ILIKE for substring matching on file names. Returns the first chunk
+        (chunk_index=0) of each matching file to maintain result format compatibility
+        with semantic and keyword search results.
+
+        Args:
+            query: Search query text
+            file_ids: Optional list of file IDs to search within
+            user_id: Optional user ID to filter results
+            top_k: Maximum number of results to return
+        """
+        try:
+            params: dict[str, Any] = {
+                "query_like": f"%{query}%",
+                "exact_query": query,
+                "prefix_query": f"{query}%",
+                "limit": top_k,
+            }
+
+            conditions = ["f.deleted_at IS NULL", "f.is_folder = false"]
+
+            if file_ids:
+                conditions.append("f.id = ANY(:file_ids)")
+                params["file_ids"] = file_ids
+
+            if user_id:
+                conditions.append("f.user_id = :user_id")
+                params["user_id"] = user_id
+
+            conditions.append("f.name ILIKE :query_like")
+
+            where_clause = " AND ".join(conditions)
+
+            result = await self.db.execute(
+                text(f"""
+                    SELECT v.id, v.content, v.file_id, v.chunk_index, v.metadata,
+                           f.name as file_name
+                    FROM files f
+                    INNER JOIN vectors v ON v.file_id = f.id
+                        AND v.chunk_type = 'document'
+                        AND v.chunk_index = 0
+                    WHERE {where_clause}
+                    ORDER BY
+                        CASE WHEN LOWER(f.name) = LOWER(:exact_query) THEN 0
+                             WHEN LOWER(f.name) LIKE LOWER(:prefix_query) THEN 1
+                             ELSE 2
+                        END,
+                        f.updated_at DESC
+                    LIMIT :limit
+                """),
+                params,
+            )
+
+            rows = result.fetchall()
+            results = []
+            for row in rows:
+                plain_content = strip_html_tags(row.content)
+
+                if not plain_content or len(plain_content) < 3:
+                    continue
+
+                results.append(
+                    {
+                        "id": row.id,
+                        "content": plain_content,
+                        "metadata": {
+                            "file_id": row.file_id,
+                            "chunk_index": row.chunk_index,
+                            **(row.metadata or {}),
+                        },
+                    }
+                )
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Filename search error: {e}")
+            return []
+
     async def hybrid_search(
         self,
         query: str,
@@ -358,12 +445,13 @@ class RAGService:
         # Fetch more candidates for fusion
         expanded_k = top_k * settings.search_expanded_k_multiplier
 
-        # Run semantic and keyword searches in parallel with graceful degradation
+        # Run semantic, keyword, and filename searches in parallel
         semantic_task = self.search(query, file_ids, expanded_k, user_id)
         keyword_task = self._keyword_search(query, "document", file_ids, user_id, expanded_k)
+        filename_task = self._filename_search(query, file_ids, user_id, expanded_k)
 
-        semantic_results, keyword_results = await asyncio.gather(
-            semantic_task, keyword_task, return_exceptions=True
+        semantic_results, keyword_results, filename_results = await asyncio.gather(
+            semantic_task, keyword_task, filename_task, return_exceptions=True
         )
 
         # Handle partial failures gracefully
@@ -373,10 +461,18 @@ class RAGService:
         if isinstance(keyword_results, Exception):
             logger.error(f"Keyword search failed in hybrid_search: {keyword_results}")
             keyword_results = []
+        if isinstance(filename_results, Exception):
+            logger.error(f"Filename search failed in hybrid_search: {filename_results}")
+            filename_results = []
 
-        # If no keyword results, fall back to semantic only
-        if not keyword_results:
+        # If no keyword or filename results, fall back to semantic only
+        if not keyword_results and not filename_results:
             return semantic_results[:top_k]
+
+        # Build extra result lists for RRF (filename matching)
+        extra_lists = []
+        if filename_results:
+            extra_lists.append((filename_results, settings.filename_weight, "filename"))
 
         # Fuse results using RRF
         fused = reciprocal_rank_fusion(
@@ -385,11 +481,13 @@ class RAGService:
             k=settings.rrf_k,
             semantic_weight=settings.semantic_weight,
             keyword_weight=settings.keyword_weight,
+            extra_result_lists=extra_lists if extra_lists else None,
         )
 
         logger.info(
             f"Hybrid search: {len(semantic_results)} semantic, "
-            f"{len(keyword_results)} keyword, {len(fused)} fused"
+            f"{len(keyword_results)} keyword, {len(filename_results)} filename, "
+            f"{len(fused)} fused"
         )
 
         return fused[:top_k]

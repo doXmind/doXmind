@@ -80,6 +80,14 @@ export const AutocompleteKeymap = Extension.create({
                   triggerMode: undefined,
                 });
                 view.dispatch(tr);
+
+                // Track onboarding step completion
+                import("@/stores/onboarding-store")
+                  .then(({ useOnboardingStore }) => {
+                    useOnboardingStore.getState().completeStep("autocomplete");
+                  })
+                  .catch(() => {});
+
                 return true;
               }
             }

@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useChatContextStore } from "@/stores/chat-context-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { isDiffReviewActive } from "@/extensions/diff-review";
 
 interface ImageBubbleMenuProps {
@@ -94,6 +95,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
         src,
         alt: alt || undefined,
       });
+      useLayoutStore.getState().setChatOpen(true);
     }
   }, [src, alt, addChatContext]);
 

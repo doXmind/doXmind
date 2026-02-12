@@ -32,11 +32,11 @@ import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
 import { DiffReviewExtension } from "@/extensions/diff-review";
 import { TextReviewExtension } from "@/extensions/text-review-extension";
 import { BlockSelectionExtension } from "@/extensions/block-selection-extension";
+import { BlockHandleExtension } from "@/extensions/block-handle-extension";
+import { BlockColorExtension } from "@/extensions/block-color-extension";
 import type { Extensions } from "@tiptap/react";
 
 export interface EditorExtensionsOptions {
-  /** Whether block selection is enabled (for mobile) */
-  enableBlockSelection?: boolean;
   /** Whether running on mobile device */
   isMobile?: boolean;
 }
@@ -45,7 +45,7 @@ export interface EditorExtensionsOptions {
  * Get all editor extensions with their configurations
  */
 export function getEditorExtensions(options: EditorExtensionsOptions = {}): Extensions {
-  const { enableBlockSelection = false, isMobile = false } = options;
+  const { isMobile = false } = options;
 
   const extensions: Extensions = [
     // Core editing
@@ -123,15 +123,25 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     DiffReviewExtension,
     TextReviewExtension,
 
-    // Mobile block selection (long-press to select)
+    // Block color support (text and background colors for blocks)
+    BlockColorExtension,
+
+    // Block selection (mobile: tap/longpress, desktop: keyboard/handle)
     BlockSelectionExtension.configure({
-      enabled: enableBlockSelection,
+      enabled: true,
+      selectionMode: isMobile ? "tap" : "desktop",
     }),
 
     // AutocompleteKeymap MUST be last to ensure Tab handler has highest priority
     // TipTap processes keyboard shortcuts in reverse order (last extension first)
     AutocompleteKeymap,
   ];
+
+  // Desktop-only: Block handle (hover to show +/grip in left margin)
+  if (!isMobile) {
+    // Insert before AutocompleteKeymap (which must be last)
+    extensions.splice(extensions.length - 1, 0, BlockHandleExtension);
+  }
 
   // Only add Placeholder extension on desktop (mobile uses custom empty state UI)
   if (!isMobile) {

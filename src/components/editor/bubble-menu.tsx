@@ -10,7 +10,6 @@ import {
   Strikethrough,
   Code,
   Link as LinkIcon,
-  Highlighter,
   Sparkles,
   Type,
   Heading1,
@@ -20,6 +19,8 @@ import {
   ListOrdered,
   ListTodo,
   Quote,
+  MessageSquareQuote,
+  ChevronRight as ChevronRightIcon,
   ChevronDown,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -33,75 +34,49 @@ import {
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { isDiffReviewActive } from "@/extensions/diff-review";
+import { CellSelection } from "@tiptap/pm/tables";
 import { LinkModal } from "./link-modal";
+import { ColorPicker } from "./color-picker";
+import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
+
+/** Map icon names to components for the Turn Into dropdown */
+const turnIntoIconMap: Record<string, React.ReactNode> = {
+  Type: <Type className="h-4 w-4" />,
+  Heading1: <Heading1 className="h-4 w-4" />,
+  Heading2: <Heading2 className="h-4 w-4" />,
+  Heading3: <Heading3 className="h-4 w-4" />,
+  List: <List className="h-4 w-4" />,
+  ListOrdered: <ListOrdered className="h-4 w-4" />,
+  ListTodo: <ListTodo className="h-4 w-4" />,
+  Quote: <Quote className="h-4 w-4" />,
+  Code: <Code className="h-4 w-4" />,
+  MessageSquareQuote: <MessageSquareQuote className="h-4 w-4" />,
+  ChevronRight: <ChevronRightIcon className="h-4 w-4" />,
+};
 
 interface BubbleMenuComponentProps {
   editor: Editor;
   disabled?: boolean;
 }
 
-const turnIntoOptions = [
-  {
-    label: "Text",
-    icon: <Type className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().setParagraph().run(),
-    isActive: (editor: Editor) =>
-      editor.isActive("paragraph") &&
-      !editor.isActive("bulletList") &&
-      !editor.isActive("orderedList") &&
-      !editor.isActive("taskList"),
-  },
-  {
-    label: "Heading 1",
-    icon: <Heading1 className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleHeading({ level: 1 }).run(),
-    isActive: (editor: Editor) => editor.isActive("heading", { level: 1 }),
-  },
-  {
-    label: "Heading 2",
-    icon: <Heading2 className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-    isActive: (editor: Editor) => editor.isActive("heading", { level: 2 }),
-  },
-  {
-    label: "Heading 3",
-    icon: <Heading3 className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
-    isActive: (editor: Editor) => editor.isActive("heading", { level: 3 }),
-  },
-  { separator: true as const },
-  {
-    label: "Bullet List",
-    icon: <List className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleBulletList().run(),
-    isActive: (editor: Editor) => editor.isActive("bulletList"),
-  },
-  {
-    label: "Numbered List",
-    icon: <ListOrdered className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleOrderedList().run(),
-    isActive: (editor: Editor) => editor.isActive("orderedList"),
-  },
-  {
-    label: "Task List",
-    icon: <ListTodo className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleTaskList().run(),
-    isActive: (editor: Editor) => editor.isActive("taskList"),
-  },
-  { separator: true as const },
-  {
-    label: "Quote",
-    icon: <Quote className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleBlockquote().run(),
-    isActive: (editor: Editor) => editor.isActive("blockquote"),
-  },
-  {
-    label: "Code Block",
-    icon: <Code className="h-4 w-4" />,
-    action: (editor: Editor) => editor.chain().focus().toggleCodeBlock().run(),
-    isActive: (editor: Editor) => editor.isActive("codeBlock"),
-  },
-];
+/** Get the current block's text and background color attributes */
+function getCurrentBlockColors(editor: Editor): {
+  textColor: string | null;
+  backgroundColor: string | null;
+} {
+  const { $from } = editor.state.selection;
+  // Walk up to find the nearest block node with color attributes
+  for (let depth = $from.depth; depth >= 0; depth--) {
+    const node = $from.node(depth);
+    if (node.attrs.textColor !== undefined || node.attrs.backgroundColor !== undefined) {
+      return {
+        textColor: node.attrs.textColor || null,
+        backgroundColor: node.attrs.backgroundColor || null,
+      };
+    }
+  }
+  return { textColor: null, backgroundColor: null };
+}
 
 function getCurrentBlockLabel(editor: Editor): string {
   if (editor.isActive("heading", { level: 1 })) return "H1";
@@ -129,15 +104,44 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
     editor.chain().focus().setLink({ href: url }).run();
   };
 
+  const handleColorChange = useCallback(
+    (colorValue: string, type: "text" | "background") => {
+      const { $from } = editor.state.selection;
+      // Find the nearest block node with color attributes
+      for (let depth = $from.depth; depth >= 0; depth--) {
+        const node = $from.node(depth);
+        if (node.attrs.textColor !== undefined || node.attrs.backgroundColor !== undefined) {
+          const nodeType = node.type.name;
+          if (type === "text") {
+            editor
+              .chain()
+              .focus()
+              .updateAttributes(nodeType, { textColor: colorValue || null })
+              .run();
+          } else {
+            editor
+              .chain()
+              .focus()
+              .updateAttributes(nodeType, { backgroundColor: colorValue || null })
+              .run();
+          }
+          return;
+        }
+      }
+    },
+    [editor]
+  );
+
   const shouldShow = useCallback(() => {
     if (isDiffReviewActive(editor)) return false;
+    // Don't show text formatting menu for table cell selections
+    if (editor.state.selection instanceof CellSelection) return false;
     const { from, to } = editor.state.selection;
     const hasSelection = to - from > 0;
-    const isInTable = editor.isActive("table");
     const isImage = editor.isActive("image");
     const isInlineMath = editor.isActive("inlineMath");
     const isBlockMath = editor.isActive("blockMath");
-    return hasSelection && !isInTable && !isImage && !isInlineMath && !isBlockMath;
+    return hasSelection && !isImage && !isInlineMath && !isBlockMath;
   }, [editor]);
 
   return (
@@ -154,7 +158,7 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
           animation: false,
         }}
         shouldShow={shouldShow}
-        className="bubble-menu rounded-lg border border-border bg-popover p-1 shadow-lg"
+        className="bubble-menu rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
       >
         <motion.div
           initial={{ opacity: 0, y: 8, scale: 0.96 }}
@@ -185,7 +189,7 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
             </Tooltip>
             <DropdownMenuContent align="start" className="min-w-[160px]">
               {turnIntoOptions.map((option, index) => {
-                if ("separator" in option) {
+                if (isTurnIntoSeparator(option)) {
                   return <DropdownMenuSeparator key={`sep-${index}`} />;
                 }
                 return (
@@ -194,7 +198,7 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
                     onClick={() => option.action(editor)}
                     className={cn(option.isActive(editor) && "bg-accent")}
                   >
-                    {option.icon}
+                    {turnIntoIconMap[option.iconName] || <Type className="h-4 w-4" />}
                     <span className="ml-2">{option.label}</span>
                   </DropdownMenuItem>
                 );
@@ -234,12 +238,8 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
             isActive={editor.isActive("code")}
             tooltip="Inline Code (Ctrl+E)"
           />
-          <BubbleButton
-            icon={<Highlighter className="h-4 w-4" />}
-            onClick={() => editor.chain().focus().toggleHighlight().run()}
-            isActive={editor.isActive("highlight")}
-            tooltip="Highlight"
-          />
+          {/* Color dropdown (replaces standalone Highlight button) */}
+          <ColorDropdown editor={editor} onColorChange={handleColorChange} />
           <BubbleButton
             icon={<LinkIcon className="h-4 w-4" />}
             onClick={() => setLinkModalOpen(true)}
@@ -267,6 +267,61 @@ interface BubbleButtonProps {
   isActive?: boolean;
   className?: string;
   tooltip?: string;
+}
+
+/** Color dropdown button for the bubble menu — shows "A" with colored underline */
+function ColorDropdown({
+  editor,
+  onColorChange,
+}: {
+  editor: Editor;
+  onColorChange: (color: string, type: "text" | "background") => void;
+}) {
+  const { textColor, backgroundColor } = getCurrentBlockColors(editor);
+  const hasColor = !!textColor || !!backgroundColor;
+
+  return (
+    <DropdownMenu>
+      <Tooltip content="Color" side="top">
+        <DropdownMenuTrigger asChild>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 20 }}
+            className={cn(
+              "h-11 w-11 md:h-8 md:w-8",
+              "inline-flex flex-col items-center justify-center rounded-md",
+              "hover:bg-accent hover:text-accent-foreground",
+              hasColor && "text-accent-foreground"
+            )}
+          >
+            <span
+              className="text-sm font-bold leading-none md:text-xs"
+              style={textColor ? { color: textColor } : undefined}
+            >
+              A
+            </span>
+            <span
+              className="mt-0.5 h-[3px] w-3.5 rounded-full md:h-[2px] md:w-3"
+              style={{
+                backgroundColor: textColor || backgroundColor || "currentColor",
+                opacity: hasColor ? 1 : 0.4,
+              }}
+            />
+          </motion.button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent align="start" className="p-0">
+        <ColorPicker
+          activeTextColor={textColor}
+          activeBackgroundColor={backgroundColor}
+          onTextColorChange={(color) => onColorChange(color, "text")}
+          onBackgroundColorChange={(color) => onColorChange(color, "background")}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function BubbleButton({ icon, onClick, isActive, className, tooltip }: BubbleButtonProps) {

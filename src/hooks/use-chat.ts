@@ -120,10 +120,10 @@ export function useChat() {
         contexts,
       });
 
-      // Track onboarding checklist
+      // Track onboarding step
       import("@/stores/onboarding-store")
         .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeChecklistItem("triedAIChat");
+          useOnboardingStore.getState().completeStep("ai-chat");
         })
         .catch(() => {});
 
@@ -554,6 +554,7 @@ export function useChat() {
       setTodos,
       demoFile,
       saveMessageToBackend,
+      clearTodos,
     ]
   );
 

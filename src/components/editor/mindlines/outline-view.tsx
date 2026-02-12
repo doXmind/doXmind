@@ -81,7 +81,7 @@ function OutlineItem({
         className={cn(
           "group flex cursor-pointer items-start gap-1 rounded-md px-2 py-1.5 transition-colors",
           "hover:bg-accent/50",
-          isActive && "border-l-2 border-primary bg-accent/30",
+          isActive && "bg-accent text-accent-foreground",
           isSelected && "ring-2 ring-inset ring-primary/50"
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}

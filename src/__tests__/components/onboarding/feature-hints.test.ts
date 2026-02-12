@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Test the pure localStorage helper functions
 const HINTS_STORAGE_KEY = "doxmind-feature-hints";
-const ONBOARDING_STORAGE_KEY = "doxmind-onboarding-completed";
+const ONBOARDING_STORE_KEY = "doxmind-onboarding";
 
 // Inline the helper functions from feature-hints.tsx for unit testing
 type FeatureHintId =
@@ -98,16 +98,22 @@ describe("Feature Hints", () => {
 
   describe("onboarding gate logic", () => {
     it("should not show hints when onboarding is not completed", () => {
-      // Simulate: onboarding not completed
-      const onboardingDone = localStorage.getItem(ONBOARDING_STORAGE_KEY);
-      expect(onboardingDone).toBeNull();
-      // Feature hints should be gated behind onboarding completion
+      // Simulate: store exists but onboarding not completed
+      localStorage.setItem(
+        ONBOARDING_STORE_KEY,
+        JSON.stringify({ state: { onboardingCompleted: false, currentStepIndex: -1 } })
+      );
+      const storeData = JSON.parse(localStorage.getItem(ONBOARDING_STORE_KEY)!);
+      expect(storeData.state.onboardingCompleted).toBe(false);
     });
 
     it("should allow hints after onboarding is completed", () => {
-      localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
-      const onboardingDone = localStorage.getItem(ONBOARDING_STORAGE_KEY);
-      expect(onboardingDone).toBe("true");
+      localStorage.setItem(
+        ONBOARDING_STORE_KEY,
+        JSON.stringify({ state: { onboardingCompleted: true, currentStepIndex: -1 } })
+      );
+      const storeData = JSON.parse(localStorage.getItem(ONBOARDING_STORE_KEY)!);
+      expect(storeData.state.onboardingCompleted).toBe(true);
     });
   });
 

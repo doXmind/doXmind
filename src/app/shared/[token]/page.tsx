@@ -29,7 +29,6 @@ export default function SharedDocumentPage() {
   // Read-only editor with minimal extensions
   const editor = useEditor({
     extensions: getEditorExtensions({
-      enableBlockSelection: false,
       isMobile: false,
     }),
     content: "",
