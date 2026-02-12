@@ -563,7 +563,51 @@ export function DropdownMenuSubContent({
 }) {
   const { open, setOpen, triggerRef, cancelClose, startClose } =
     React.useContext(DropdownMenuSubContext);
+  const parentCtx = React.useContext(DropdownMenuContext);
   const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+
+  // Independent hover state for sub-menu items
+  const [subFocusedId, setSubFocusedId] = React.useState<string | null>(null);
+  const [subItemIds, setSubItemIds] = React.useState<string[]>([]);
+  const [subHasOpenSub, setSubHasOpenSub] = React.useState(false);
+
+  const registerItem = React.useCallback((id: string) => {
+    setSubItemIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+  const unregisterItem = React.useCallback((id: string) => {
+    setSubItemIds((prev) => prev.filter((i) => i !== id));
+  }, []);
+
+  // Reset focused item when sub-menu closes
+  React.useEffect(() => {
+    if (!open) setSubFocusedId(null);
+  }, [open]);
+
+  const subCtxValue = React.useMemo(
+    () => ({
+      open: parentCtx.open,
+      setOpen: parentCtx.setOpen,
+      triggerRef: parentCtx.triggerRef,
+      focusedId: subFocusedId,
+      setFocusedId: setSubFocusedId,
+      itemIds: subItemIds,
+      registerItem,
+      unregisterItem,
+      hoverReady: true,
+      hasOpenSub: subHasOpenSub,
+      setHasOpenSub: setSubHasOpenSub,
+    }),
+    [
+      parentCtx.open,
+      parentCtx.setOpen,
+      parentCtx.triggerRef,
+      subFocusedId,
+      subItemIds,
+      registerItem,
+      unregisterItem,
+      subHasOpenSub,
+    ]
+  );
 
   // Calculate position from trigger element
   React.useEffect(() => {
@@ -610,24 +654,26 @@ export function DropdownMenuSubContent({
   if (!open || !pos) return null;
 
   return createPortal(
-    <div
-      data-dropdown-sub-content
-      data-dropdown-portal=""
-      role="menu"
-      aria-orientation="vertical"
-      onMouseDown={(e) => e.preventDefault()}
-      onMouseEnter={cancelClose}
-      onMouseLeave={startClose}
-      className={cn(
-        "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
-        "animate-in fade-in-0 zoom-in-95",
-        "max-h-[300px] overflow-y-auto",
-        className
-      )}
-      style={{ top: pos.top, left: pos.left }}
-    >
-      {children}
-    </div>,
+    <DropdownMenuContext.Provider value={subCtxValue}>
+      <div
+        data-dropdown-sub-content
+        data-dropdown-portal=""
+        role="menu"
+        aria-orientation="vertical"
+        onMouseDown={(e) => e.preventDefault()}
+        onMouseEnter={cancelClose}
+        onMouseLeave={startClose}
+        className={cn(
+          "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+          "animate-in fade-in-0 zoom-in-95",
+          "max-h-[300px] overflow-y-auto",
+          className
+        )}
+        style={{ top: pos.top, left: pos.left }}
+      >
+        {children}
+      </div>
+    </DropdownMenuContext.Provider>,
     document.body
   );
 }
