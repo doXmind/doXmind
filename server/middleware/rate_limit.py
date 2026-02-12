@@ -6,6 +6,7 @@ Supports per-user rate limiting via JWT tokens with IP fallback.
 """
 
 import logging
+import ssl
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -73,10 +74,17 @@ def get_rate_limit_key(request: Request) -> str:
 
 # Create limiter instance
 settings = get_settings()
+
+# Heroku Redis uses self-signed certificates; skip verification for rediss:// URIs
+_storage_options = {}
+if settings.rate_limit_storage_uri.startswith("rediss://"):
+    _storage_options["ssl_cert_reqs"] = ssl.CERT_NONE
+
 limiter = Limiter(
     key_func=get_rate_limit_key,
     default_limits=[f"{settings.rate_limit_per_minute}/minute"],
     storage_uri=settings.rate_limit_storage_uri,
+    storage_options=_storage_options,
     strategy="fixed-window",
 )
 
