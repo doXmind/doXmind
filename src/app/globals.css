@@ -2156,6 +2156,453 @@ html {
 }
 
 /* ====================================
+   Presentation Mode
+   Full-screen slide presentation overlay
+   ==================================== */
+
+/* Dark theme (default) */
+.presentation-overlay {
+  --pres-bg: #0a0a0a;
+  --pres-text: rgba(255, 255, 255, 0.9);
+  --pres-text-strong: #ffffff;
+  --pres-text-secondary: rgba(255, 255, 255, 0.78);
+  --pres-text-muted: rgba(255, 255, 255, 0.55);
+  --pres-text-faint: rgba(255, 255, 255, 0.35);
+  --pres-border: rgba(255, 255, 255, 0.12);
+  --pres-border-subtle: rgba(255, 255, 255, 0.06);
+  --pres-surface: rgba(255, 255, 255, 0.05);
+  --pres-surface-hover: rgba(255, 255, 255, 0.08);
+  --pres-control-bg: rgba(255, 255, 255, 0.08);
+  --pres-control-bg-hover: rgba(255, 255, 255, 0.15);
+  --pres-control-color: rgba(255, 255, 255, 0.5);
+  --pres-control-color-hover: rgba(255, 255, 255, 0.9);
+  --pres-link: rgba(120, 170, 255, 0.9);
+  --pres-mark: rgba(255, 220, 100, 0.25);
+  --pres-code-color: rgba(255, 255, 255, 0.85);
+  --pres-scrollbar: rgba(255, 255, 255, 0.08);
+  --pres-progress: rgba(255, 255, 255, 0.3);
+  --pres-progress-track: rgba(255, 255, 255, 0.04);
+  --pres-counter: rgba(255, 255, 255, 0.3);
+
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  cursor: default;
+}
+
+/* Light theme */
+.presentation-overlay.presentation-light {
+  --pres-bg: #ffffff;
+  --pres-text: rgba(0, 0, 0, 0.85);
+  --pres-text-strong: #1a1a1a;
+  --pres-text-secondary: rgba(0, 0, 0, 0.68);
+  --pres-text-muted: rgba(0, 0, 0, 0.45);
+  --pres-text-faint: rgba(0, 0, 0, 0.25);
+  --pres-border: rgba(0, 0, 0, 0.1);
+  --pres-border-subtle: rgba(0, 0, 0, 0.05);
+  --pres-surface: rgba(0, 0, 0, 0.03);
+  --pres-surface-hover: rgba(0, 0, 0, 0.06);
+  --pres-control-bg: rgba(0, 0, 0, 0.06);
+  --pres-control-bg-hover: rgba(0, 0, 0, 0.1);
+  --pres-control-color: rgba(0, 0, 0, 0.4);
+  --pres-control-color-hover: rgba(0, 0, 0, 0.8);
+  --pres-link: rgba(0, 100, 220, 0.9);
+  --pres-mark: rgba(255, 220, 100, 0.4);
+  --pres-code-color: rgba(0, 0, 0, 0.78);
+  --pres-scrollbar: rgba(0, 0, 0, 0.08);
+  --pres-progress: rgba(0, 0, 0, 0.2);
+  --pres-progress-track: rgba(0, 0, 0, 0.04);
+  --pres-counter: rgba(0, 0, 0, 0.3);
+}
+
+.presentation-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--pres-bg);
+  transition: background 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Auto-hide controls */
+.presentation-idle {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/* Top-right controls row */
+.presentation-top-controls {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: opacity 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.presentation-control-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--pres-control-bg);
+  color: var(--pres-control-color);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+  backdrop-filter: blur(12px);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.presentation-close-label {
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+.presentation-control-btn:hover {
+  background: var(--pres-control-bg-hover);
+  color: var(--pres-control-color-hover);
+  transform: scale(1.04);
+}
+
+/* Stage */
+.presentation-stage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 880px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5rem 3rem 4rem;
+}
+
+/* Individual slide */
+.presentation-slide {
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pres-scrollbar) transparent;
+}
+
+.presentation-slide::-webkit-scrollbar {
+  width: 4px;
+}
+
+.presentation-slide::-webkit-scrollbar-thumb {
+  background: var(--pres-scrollbar);
+  border-radius: 2px;
+}
+
+/* Slide content — Apple-level typography */
+.presentation-content {
+  color: var(--pres-text);
+  font-family:
+    var(--font-inter),
+    system-ui,
+    -apple-system,
+    sans-serif;
+  line-height: 1.7;
+  letter-spacing: -0.01em;
+  transition: color 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.presentation-content > *:first-child {
+  margin-top: 0;
+}
+
+.presentation-content > *:last-child {
+  margin-bottom: 0;
+}
+
+.presentation-content h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+  margin-bottom: 1.5rem;
+  color: var(--pres-text-strong);
+}
+
+.presentation-content h2 {
+  font-size: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  margin-bottom: 1.25rem;
+  color: var(--pres-text-strong);
+}
+
+.presentation-content h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  margin-bottom: 1rem;
+  color: var(--pres-text-strong);
+}
+
+.presentation-content h4 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+  margin-bottom: 0.75rem;
+  color: var(--pres-text-strong);
+}
+
+.presentation-content p {
+  font-size: 1.25rem;
+  margin-bottom: 1.25rem;
+  color: var(--pres-text-secondary);
+}
+
+.presentation-content ul,
+.presentation-content ol {
+  font-size: 1.25rem;
+  padding-left: 1.75rem;
+  margin-bottom: 1.25rem;
+  color: var(--pres-text-secondary);
+}
+
+.presentation-content li {
+  margin-bottom: 0.5rem;
+}
+
+.presentation-content li::marker {
+  color: var(--pres-text-faint);
+}
+
+.presentation-content blockquote {
+  border-left: 3px solid var(--pres-border);
+  padding-left: 1.5rem;
+  font-style: italic;
+  color: var(--pres-text-muted);
+  margin: 1.5rem 0;
+}
+
+.presentation-content pre {
+  background: var(--pres-surface);
+  border: 1px solid var(--pres-border-subtle);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  font-size: 0.95rem;
+  margin: 1.5rem 0;
+  line-height: 1.6;
+}
+
+.presentation-content code {
+  background: var(--pres-surface-hover);
+  border-radius: 5px;
+  padding: 0.15em 0.4em;
+  font-size: 0.9em;
+  font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  color: var(--pres-code-color);
+}
+
+.presentation-content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  border-radius: 0;
+}
+
+.presentation-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 1.5rem auto;
+  display: block;
+}
+
+.presentation-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 1.1rem;
+}
+
+.presentation-content th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--pres-border);
+  color: var(--pres-text-strong);
+  font-weight: 600;
+}
+
+.presentation-content td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--pres-border-subtle);
+  color: var(--pres-text-secondary);
+}
+
+.presentation-content a {
+  color: var(--pres-link);
+  text-decoration: none;
+}
+
+.presentation-content strong {
+  color: var(--pres-text-strong);
+  font-weight: 600;
+}
+
+.presentation-content em {
+  color: var(--pres-text-muted);
+}
+
+.presentation-content mark {
+  background: var(--pres-mark);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0.1em 0.2em;
+}
+
+/* Title slide */
+.presentation-title-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 50vh;
+}
+
+.presentation-title-heading {
+  font-size: 3.5rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  color: var(--pres-text-strong);
+  margin-bottom: 1.5rem;
+}
+
+.presentation-title-meta {
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--pres-text-muted);
+  letter-spacing: 0.01em;
+}
+
+/* Task list in presentation */
+.presentation-content ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.presentation-content ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/* Navigation buttons */
+.presentation-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: var(--pres-control-bg);
+  color: var(--pres-control-color);
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+  backdrop-filter: blur(12px);
+}
+
+.presentation-nav-prev {
+  left: 1.5rem;
+}
+
+.presentation-nav-next {
+  right: 1.5rem;
+}
+
+.presentation-nav-btn:hover {
+  background: var(--pres-control-bg-hover);
+  color: var(--pres-control-color-hover);
+  transform: translateY(-50%) scale(1.08);
+}
+
+/* Invisible click zones */
+.presentation-click-zone-left,
+.presentation-click-zone-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12%;
+  z-index: 2;
+  cursor: pointer;
+}
+
+.presentation-click-zone-left {
+  left: 0;
+}
+
+.presentation-click-zone-right {
+  right: 0;
+}
+
+/* Bottom bar */
+.presentation-bottom-bar {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  transition: opacity 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.presentation-counter {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--pres-counter);
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+/* Progress bar */
+.presentation-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--pres-progress-track);
+  z-index: 10;
+}
+
+.presentation-progress-fill {
+  height: 100%;
+  background: var(--pres-progress);
+  border-radius: 0 1px 1px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presentation-overlay,
+  .presentation-slide,
+  .presentation-progress-fill {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ====================================
    Print Styles
    ==================================== */
 @media print {

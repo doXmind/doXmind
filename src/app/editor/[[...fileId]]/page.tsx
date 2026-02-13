@@ -39,6 +39,7 @@ import { WelcomeScreen } from "@/components/welcome-screen";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { FloatingChatButton } from "@/components/ai/floating-chat-button";
 import { FloatingChatWindow } from "@/components/ai/floating-chat-window";
+import { PresentationMode } from "@/components/editor/presentation-mode";
 
 export default function EditorPage() {
   const params = useParams();
@@ -199,6 +200,9 @@ export default function EditorPage() {
           {/* Quick File Switcher */}
           <QuickSwitcher />
 
+          {/* Presentation Mode */}
+          <PresentationMode />
+
           {/* Network Status */}
           <NetworkStatusIndicator />
         </AppShell>
@@ -352,6 +356,9 @@ export default function EditorPage() {
 
           {/* Quick File Switcher */}
           <QuickSwitcher />
+
+          {/* Presentation Mode */}
+          <PresentationMode />
 
           {/* Network Status */}
           <NetworkStatusIndicator />

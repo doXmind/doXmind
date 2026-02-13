@@ -18,6 +18,7 @@ import {
   Sun,
   Moon,
   SpellCheck,
+  Play,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ export function UnifiedHeader() {
     toggleVersionHistory,
     toggleSearchBar,
     setKeyboardShortcutsOpen,
+    setPresentationMode,
   } = useLayoutStore();
   const { currentFileId, files } = useFileStore();
   const {
@@ -147,6 +149,19 @@ export function UnifiedHeader() {
       <div className="flex items-center gap-0.5">
         {currentFile && (
           <>
+            {/* Present */}
+            <Tooltip content="Present" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setPresentationMode(true)}
+                aria-label="Present"
+              >
+                <Play className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
             {/* Search */}
             <Tooltip content={`Find (${formatShortcut("Ctrl+F")})`} side="bottom">
               <Button

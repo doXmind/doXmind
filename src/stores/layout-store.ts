@@ -42,6 +42,9 @@ interface LayoutState {
   // Focus mode
   isFocusMode: boolean;
 
+  // Presentation mode
+  isPresentationMode: boolean;
+
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
   shouldOpenSearchWithAI: boolean; // Flag to open search in AI mode
@@ -103,6 +106,9 @@ interface LayoutState {
   // Focus mode actions
   setFocusMode: (enabled: boolean) => void;
   toggleFocusMode: () => void;
+
+  // Presentation mode actions
+  setPresentationMode: (enabled: boolean) => void;
 
   // Version history actions
   setVersionHistoryOpen: (open: boolean) => void;
@@ -187,6 +193,9 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Focus mode
       isFocusMode: false,
+
+      // Presentation mode
+      isPresentationMode: false,
 
       // Version history panel
       isVersionHistoryOpen: false,
@@ -344,6 +353,11 @@ export const useLayoutStore = create<LayoutState>()(
 
       toggleFocusMode: () => {
         set((state) => ({ isFocusMode: !state.isFocusMode }));
+      },
+
+      // Presentation mode actions
+      setPresentationMode: (enabled: boolean) => {
+        set({ isPresentationMode: enabled });
       },
 
       // Version history actions

@@ -12,8 +12,9 @@ import { api, type SharedDocumentResponse } from "@/lib/api";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
-import { AlertCircle, Lock, Search } from "lucide-react";
+import { AlertCircle, Lock, Play, Search } from "lucide-react";
 import { SharedOutline } from "@/components/shared/shared-outline";
+import { PresentationMode } from "@/components/editor/presentation-mode";
 
 export default function SharedDocumentPage() {
   const params = useParams();
@@ -25,7 +26,7 @@ export default function SharedDocumentPage() {
 
   // Zustand stores for search functionality
   const { setEditor } = useEditorRefStore();
-  const { setSearchBarOpen } = useLayoutStore();
+  const { setSearchBarOpen, setPresentationMode } = useLayoutStore();
 
   // Read-only editor with minimal extensions
   const editor = useEditor({
@@ -158,15 +159,26 @@ export default function SharedDocumentPage() {
                 </h1>
               </div>
 
-              {/* Search Button */}
-              <button
-                onClick={handleSearchClick}
-                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                title="Search in document"
-              >
-                <Search className="h-4 w-4" />
-                <span className="hidden sm:inline">Search</span>
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Present Button */}
+                <button
+                  onClick={() => setPresentationMode(true)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Present"
+                >
+                  <Play className="h-4 w-4" />
+                </button>
+
+                {/* Search Button */}
+                <button
+                  onClick={handleSearchClick}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Search in document"
+                >
+                  <Search className="h-4 w-4" />
+                  <span className="hidden sm:inline">Search</span>
+                </button>
+              </div>
             </div>
 
             <div className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
@@ -198,6 +210,16 @@ export default function SharedDocumentPage() {
             <SearchBar />
           </main>
         </div>
+
+        {/* Presentation Mode */}
+        <PresentationMode
+          title={document.name.replace(/\.md$/, "")}
+          date={new Date(document.updated_at).toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}
+        />
 
         {/* Footer - Branding */}
         <footer className="border-t border-border bg-card px-6 py-3 text-center text-sm text-muted-foreground">
