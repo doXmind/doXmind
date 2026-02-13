@@ -13,6 +13,7 @@ import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
 import { AlertCircle, Lock, Search } from "lucide-react";
+import { SharedOutline } from "@/components/shared/shared-outline";
 
 export default function SharedDocumentPage() {
   const params = useParams();
@@ -94,6 +95,7 @@ export default function SharedDocumentPage() {
         if (editor && doc.content) {
           queueMicrotask(() => {
             editor.commands.setContent(doc.content);
+            editor.emit("update", { editor, transaction: editor.state.tr });
           });
         }
       } catch (err) {
@@ -185,13 +187,17 @@ export default function SharedDocumentPage() {
         </header>
 
         {/* Editor Content - Read-Only */}
-        <main className="flex-1 overflow-auto">
-          <div className="relative mx-auto max-w-4xl px-6 py-8">
-            <EditorContent editor={editor} />
-            {/* Search Bar - positioned within editor content area */}
+        <div className="relative flex min-h-0 flex-1">
+          {/* Outline sidebar - separate scroll context, desktop only */}
+          <SharedOutline />
+          <main className="relative min-w-0 flex-1 overflow-auto">
+            <div className="mx-auto max-w-4xl px-6 py-8">
+              <EditorContent editor={editor} />
+            </div>
+            {/* SearchBar inside main so it stays pinned to this area */}
             <SearchBar />
-          </div>
-        </main>
+          </main>
+        </div>
 
         {/* Footer - Branding */}
         <footer className="border-t border-border bg-card px-6 py-3 text-center text-sm text-muted-foreground">

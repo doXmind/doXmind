@@ -95,10 +95,10 @@ export function useHeadings(editor: Editor | null) {
     (heading: Heading) => {
       if (!editor) return;
 
-      // Set cursor position
-      editor.chain().focus().setTextSelection(heading.pos).run();
+      if (editor.isEditable) {
+        editor.chain().focus().setTextSelection(heading.pos).run();
+      }
 
-      // Get the heading DOM element using nodeDOM which returns the actual node element
       const dom = editor.view.nodeDOM(heading.pos);
       const element = dom instanceof HTMLElement ? dom : null;
 

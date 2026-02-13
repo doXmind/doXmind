@@ -276,7 +276,7 @@ export function SearchBar() {
           className={cn(
             "absolute top-2 z-[45]",
             // Mobile: full width with padding, Desktop: fixed width on right
-            "left-2 right-2 md:left-auto md:right-4 md:w-[400px]",
+            "left-2 right-2 md:left-auto md:right-4 md:w-[540px]",
             "rounded-lg border border-border bg-popover",
             "shadow-lg shadow-black/10 dark:shadow-black/30"
           )}
@@ -300,7 +300,7 @@ export function SearchBar() {
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={isAIMode ? "AI semantic search..." : "Find in document..."}
               className={cn(
-                "min-w-0 flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm",
+                "min-w-[80px] flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm",
                 isAIMode && "placeholder:text-purple-400"
               )}
               aria-label="Search text"

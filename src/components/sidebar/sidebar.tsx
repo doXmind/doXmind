@@ -102,7 +102,7 @@ export function Sidebar() {
       </div>
 
       {/* Outline content */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="autohide-scrollbar flex-1">
         {editor && headings.length > 0 ? (
           <div className="p-2">
             <OutlineView

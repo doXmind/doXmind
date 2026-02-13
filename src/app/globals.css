@@ -1628,6 +1628,30 @@ html {
   display: none;
 }
 
+/* Auto-hide scrollbar: transparent by default, visible on hover */
+.autohide-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.3s;
+}
+
+.autohide-scrollbar:hover {
+  scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+}
+
+.autohide-scrollbar::-webkit-scrollbar {
+  @apply w-1.5;
+}
+
+.autohide-scrollbar::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-transparent;
+  transition: background-color 0.3s;
+}
+
+.autohide-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.2);
+}
+
 /* Safe area padding utilities */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom);
