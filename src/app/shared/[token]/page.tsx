@@ -12,7 +12,7 @@ import { api, type SharedDocumentResponse } from "@/lib/api";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
-import { AlertCircle, Lock, Play, Search } from "lucide-react";
+import { AlertCircle, Play, Search } from "lucide-react";
 import { SharedOutline } from "@/components/shared/shared-outline";
 import { PresentationMode } from "@/components/editor/presentation-mode";
 
@@ -40,6 +40,7 @@ export default function SharedDocumentPage() {
         class: cn(
           "prose prose-lg max-w-none",
           "prose-headings:font-bold prose-headings:text-foreground",
+          "prose-strong:text-foreground prose-em:text-foreground",
           "prose-p:text-foreground prose-p:leading-relaxed",
           "prose-li:text-foreground",
           "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
@@ -92,6 +93,9 @@ export default function SharedDocumentPage() {
         const doc = await api.getSharedDocument(token);
         setDocument(doc);
 
+        // Set browser tab title to document name
+        window.document.title = doc.name.replace(/\.md$/i, "");
+
         // Set editor content after loading (defer to avoid flushSync warning)
         if (editor && doc.content) {
           queueMicrotask(() => {
@@ -142,58 +146,50 @@ export default function SharedDocumentPage() {
     <AppShell hideHeader>
       <div className="flex h-screen flex-col bg-background">
         {/* Header - Document Title */}
-        <header className="border-b border-border bg-card px-6 py-4 shadow-sm">
-          <div className="mx-auto max-w-4xl">
-            <div className="flex items-center justify-between">
-              {/* Logo and Title */}
-              <div className="flex items-center gap-3">
-                <Image
-                  src="/icon.svg"
-                  alt="doXmind"
-                  width={32}
-                  height={32}
-                  className="flex-shrink-0"
-                />
-                <h1 className="text-2xl font-bold text-foreground">
-                  {document.name.replace(/\.md$/, "")}
-                </h1>
-              </div>
-
-              <div className="flex items-center gap-1">
-                {/* Present Button */}
-                <button
-                  onClick={() => setPresentationMode(true)}
-                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  title="Present"
-                >
-                  <Play className="h-4 w-4" />
-                </button>
-
-                {/* Search Button */}
-                <button
-                  onClick={handleSearchClick}
-                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  title="Search in document"
-                >
-                  <Search className="h-4 w-4" />
-                  <span className="hidden sm:inline">Search</span>
-                </button>
-              </div>
+        <header className="border-b border-border bg-card px-6 py-3 shadow-sm">
+          <div className="flex items-center justify-between">
+            {/* Logo, Title & Meta */}
+            <div className="flex min-w-0 items-center gap-2.5">
+              <a
+                href="https://beta.doxmind.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-shrink-0"
+              >
+                <Image src="/icon.svg" alt="doXmind" width={28} height={28} />
+              </a>
+              <h1 className="truncate text-lg font-bold text-foreground">
+                {document.name.replace(/\.md$/, "")}
+              </h1>
+              <span className="hidden flex-shrink-0 text-xs text-muted-foreground/60 sm:inline">
+                Read-Only
+                {document.is_snapshot && (
+                  <> · Snapshot {new Date(document.created_at).toLocaleDateString()}</>
+                )}
+                {" · "}
+                {new Date(document.updated_at).toLocaleDateString()}
+              </span>
             </div>
 
-            <div className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Lock className="h-4 w-4" />
-                Shared Document (Read-Only)
-              </span>
-              {document.is_snapshot && (
-                <span className="rounded bg-muted px-2 py-1 text-xs font-medium">
-                  Snapshot from {new Date(document.created_at).toLocaleDateString()}
-                </span>
-              )}
-              <span className="text-xs">
-                Last updated {new Date(document.updated_at).toLocaleDateString()}
-              </span>
+            <div className="flex flex-shrink-0 items-center gap-1">
+              {/* Present Button */}
+              <button
+                onClick={() => setPresentationMode(true)}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Present"
+              >
+                <Play className="h-4 w-4" />
+              </button>
+
+              {/* Search Button */}
+              <button
+                onClick={handleSearchClick}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Search in document"
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden sm:inline">Search</span>
+              </button>
             </div>
           </div>
         </header>
@@ -220,19 +216,6 @@ export default function SharedDocumentPage() {
             day: "numeric",
           })}
         />
-
-        {/* Footer - Branding */}
-        <footer className="border-t border-border bg-card px-6 py-3 text-center text-sm text-muted-foreground">
-          Powered by{" "}
-          <a
-            href="https://doxmind.com"
-            className="font-medium text-primary hover:underline"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            doXmind
-          </a>
-        </footer>
       </div>
     </AppShell>
   );

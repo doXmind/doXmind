@@ -170,7 +170,7 @@ export function FloatingOutline() {
                 "p-2.5 transition-colors",
                 hasPrev
                   ? "text-foreground hover:bg-accent/50 active:bg-accent"
-                  : "text-muted-foreground/50 hover:bg-accent/50 active:bg-accent"
+                  : "text-muted-foreground/50 hover:bg-accent/50 active:bg-accent dark:text-muted-foreground/70"
               )}
             >
               <ChevronUp className="h-5 w-5" />
@@ -184,7 +184,7 @@ export function FloatingOutline() {
                 "p-2.5 transition-colors",
                 hasNext
                   ? "text-foreground hover:bg-accent/50 active:bg-accent"
-                  : "text-muted-foreground/50 hover:bg-accent/50 active:bg-accent"
+                  : "text-muted-foreground/50 hover:bg-accent/50 active:bg-accent dark:text-muted-foreground/70"
               )}
             >
               <ChevronDown className="h-5 w-5" />

@@ -98,7 +98,7 @@ export function TourTooltip({
         </span>
         <button
           onClick={onSkip}
-          className="rounded-md p-0.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-md p-0.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground dark:text-muted-foreground/70"
           aria-label="Skip tutorial"
         >
           <X className="h-3.5 w-3.5" />
@@ -126,11 +126,11 @@ export function TourTooltip({
       {/* Footer: step counter + buttons */}
       <div className="flex items-center justify-between px-4 pb-3.5 pt-3">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-muted-foreground/60">
+          <span className="text-[11px] text-muted-foreground/60 dark:text-muted-foreground/80">
             {stepIndex + 1} / {totalSteps}
           </span>
           {isActionRequired && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground/50">
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground/50 dark:text-muted-foreground/70">
               <Loader2 className="h-3 w-3 animate-spin" />
               Try it
             </span>

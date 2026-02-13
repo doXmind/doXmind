@@ -185,10 +185,9 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Global text selection - Black & White style */
+  /* Global text selection */
   ::selection {
     background-color: hsl(var(--foreground) / 0.15);
-    color: hsl(var(--foreground));
   }
 
   /* Firefox compatibility */
@@ -445,6 +444,49 @@
   @apply rounded bg-yellow-200 px-0.5 dark:bg-yellow-800;
 }
 
+/* Block text colors — dark mode overrides for Notion-style text colors */
+.dark [data-text-color="#92400e"] {
+  color: #fbbf24 !important;
+} /* Brown → amber-400 */
+.dark [data-text-color="#64748b"] {
+  color: #94a3b8 !important;
+} /* Gray → slate-400 */
+
+/* Block background colors — dark mode overrides for light pastels */
+.dark [data-bg-color="#f1f5f9"] {
+  background-color: rgba(100, 116, 139, 0.15) !important;
+} /* Gray */
+.dark [data-bg-color="#fef3c7"] {
+  background-color: rgba(251, 191, 36, 0.15) !important;
+} /* Brown/Amber */
+.dark [data-bg-color="#fee2e2"] {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+} /* Red */
+.dark [data-bg-color="#fce7f3"] {
+  background-color: rgba(236, 72, 153, 0.15) !important;
+} /* Pink */
+.dark [data-bg-color="#ffedd5"] {
+  background-color: rgba(249, 115, 22, 0.15) !important;
+} /* Orange */
+.dark [data-bg-color="#fef9c3"] {
+  background-color: rgba(234, 179, 8, 0.15) !important;
+} /* Yellow */
+.dark [data-bg-color="#dcfce7"] {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+} /* Green */
+.dark [data-bg-color="#ccfbf1"] {
+  background-color: rgba(20, 184, 166, 0.15) !important;
+} /* Teal */
+.dark [data-bg-color="#dbeafe"] {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+} /* Blue */
+.dark [data-bg-color="#e0e7ff"] {
+  background-color: rgba(99, 102, 241, 0.15) !important;
+} /* Indigo */
+.dark [data-bg-color="#f3e8ff"] {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+} /* Purple */
+
 /* Task List */
 .ProseMirror ul[data-type="taskList"] {
   @apply list-none pl-0;
@@ -545,10 +587,9 @@
   background-color: hsl(var(--primary) / 0.06);
 }
 
-/* Selection - Black & White style */
+/* Selection - preserve inline text color for colored text */
 .ProseMirror ::selection {
   background-color: hsl(var(--foreground) / 0.15);
-  color: hsl(var(--foreground));
 }
 
 /* Bubble Menu Animation */
@@ -1334,10 +1375,9 @@ html {
   @apply text-orange-300;
 }
 
-/* Selection within code block - Black & White style */
+/* Selection within code block */
 .ProseMirror .code-block-content ::selection {
   background-color: hsl(var(--foreground) / 0.2);
-  color: hsl(var(--foreground));
 }
 
 /* Line height for code lines - must match line-numbers */

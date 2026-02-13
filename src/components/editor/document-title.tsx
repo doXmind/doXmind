@@ -89,7 +89,7 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
           {icon ? (
             <span className="text-2xl leading-none">{icon}</span>
           ) : (
-            <Smile className="h-5 w-5 text-muted-foreground/40" />
+            <Smile className="h-5 w-5 text-muted-foreground/40 dark:text-muted-foreground/60" />
           )}
         </button>
 
@@ -107,7 +107,7 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
           }}
           placeholder="Untitled"
           rows={1}
-          className="w-full resize-none overflow-hidden border-none bg-transparent text-3xl font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-muted-foreground/30 focus:ring-0"
+          className="w-full resize-none overflow-hidden border-none bg-transparent text-3xl font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-muted-foreground/30 focus:ring-0 dark:placeholder:text-muted-foreground/50"
           style={{ letterSpacing: "-0.02em" }}
           spellCheck={false}
         />
@@ -118,7 +118,7 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
             variant="ghost"
             size="icon"
             onClick={() => setShowShareDialog(true)}
-            className="mt-1 h-9 w-9 flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground"
+            className="mt-1 h-9 w-9 flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground dark:text-muted-foreground/60"
             aria-label="Share document"
           >
             <Share2 className="h-4 w-4" />

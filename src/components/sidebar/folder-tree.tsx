@@ -538,7 +538,9 @@ export function FolderTree() {
               <FolderOpen
                 className={cn(
                   "h-12 w-12 transition-colors",
-                  isDraggingOverEmptyFolder ? "text-primary" : "text-muted-foreground/30"
+                  isDraggingOverEmptyFolder
+                    ? "text-primary"
+                    : "text-muted-foreground/30 dark:text-muted-foreground/50"
                 )}
               />
               <div className="space-y-1">
@@ -569,7 +571,7 @@ export function FolderTree() {
       {/* Empty state */}
       {files.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-          <FileText className="h-12 w-12 text-muted-foreground/30" />
+          <FileText className="h-12 w-12 text-muted-foreground/30 dark:text-muted-foreground/50" />
           <div className="space-y-1">
             <p className="text-sm font-medium text-muted-foreground">No files yet</p>
             <p className="text-xs text-muted-foreground/70">

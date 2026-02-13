@@ -62,12 +62,12 @@ export function FavoritesSection({ favorites }: FavoritesSectionProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
     >
-      <h2 className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground/50">
+      <h2 className="mb-3.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 dark:text-muted-foreground/70">
         <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
         Favorites
       </h2>
 
-      <div className="flex gap-4 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
+      <div className="grid gap-2.5 sm:grid-cols-3">
         {favorites.map((file, index) => (
           <FavoriteTile key={file.id} file={file} index={index} onOpen={handleOpen} />
         ))}
@@ -87,7 +87,6 @@ function FavoriteTile({
 }) {
   const { toggleFavorite, deleteFile } = useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const preview = stripHtml(file.content).slice(0, 80);
   const wordCount = getWordCount(file.content);
 
   const handleDelete = async () => {
@@ -102,7 +101,7 @@ function FavoriteTile({
   return (
     <>
       <motion.div
-        className="group relative min-w-[200px] max-w-[280px] flex-shrink-0 cursor-pointer rounded-lg border border-stone-200/40 bg-[#fdfcfa] p-4 dark:border-neutral-700/25 dark:bg-[#1e1e20] sm:min-w-0 sm:flex-1"
+        className="group relative flex cursor-pointer items-center gap-3 rounded-lg border border-stone-200/40 bg-[#fdfcfa] px-4 py-3 dark:border-neutral-700/25 dark:bg-[#1e1e20]"
         style={{ boxShadow: PAPER_SHADOW }}
         initial={{ opacity: 0, y: 8 }}
         animate={{
@@ -110,13 +109,23 @@ function FavoriteTile({
           y: 0,
           transition: { duration: 0.4, delay: 0.05 * index, ease: [0.16, 1, 0.3, 1] },
         }}
-        whileHover={{ y: -2, scale: 1.02, transition: { duration: 0.2, ease: [0.16, 1, 0.3, 1] } }}
+        whileHover={{ y: -1, transition: { duration: 0.2, ease: [0.16, 1, 0.3, 1] } }}
         whileTap={{ scale: 0.98 }}
         onClick={() => onOpen(file)}
       >
+        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/85">
+          {file.name?.replace(/\.md$/i, "") || "Untitled"}
+        </h3>
+        <span className="flex-shrink-0 text-xs tracking-wide text-foreground/45 dark:text-foreground/55">
+          {formatRelativeDate(file.updatedAt)}
+        </span>
+        <span className="flex-shrink-0 text-xs text-foreground/40 dark:text-foreground/50">
+          {formatWordCount(wordCount)}
+        </span>
+
         {/* Options menu */}
         <div
-          className="absolute right-1.5 top-1.5 z-[2] opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+          className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu>
@@ -124,7 +133,7 @@ function FavoriteTile({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 rounded-md"
+                className="h-7 w-7 rounded-md"
                 aria-label="File options"
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
@@ -145,19 +154,6 @@ function FavoriteTile({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-
-        <h3 className="truncate pr-5 font-serif text-sm font-bold leading-snug tracking-tight text-foreground/85">
-          {file.name || "Untitled"}
-        </h3>
-        <p className="mt-1.5 truncate text-xs leading-relaxed text-foreground/30">
-          {preview || <span className="italic">No content yet</span>}
-        </p>
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-[10px] tracking-wide text-foreground/25">
-            {formatRelativeDate(file.updatedAt)}
-          </span>
-          <span className="text-[10px] text-foreground/20">{formatWordCount(wordCount)}</span>
         </div>
       </motion.div>
 

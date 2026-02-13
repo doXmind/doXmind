@@ -289,23 +289,23 @@ export function HomeDashboard() {
         }}
       />
 
-      <main className="relative flex-1 px-5 pb-12 md:px-8">
+      <main className="relative flex-1 px-6 pb-16 md:px-10">
         {/* Hero section */}
-        <div className="mx-auto max-w-xl pt-12 md:pt-16">
+        <div className="mx-auto max-w-xl pt-14 md:pt-20">
           {/* Greeting */}
           <motion.div
-            className="mb-8 text-center"
+            className="mb-10 text-center"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           >
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight md:text-[28px]">
               <TypewriterText
                 text={firstName ? `${greeting}, ${firstName}` : greeting}
                 onDone={() => setTitleDone(true)}
               />
             </h1>
-            <p className="mt-2 text-sm text-muted-foreground/50">
+            <p className="mt-2.5 text-[13px] text-muted-foreground/60 dark:text-muted-foreground/70">
               {titleDone && (
                 <TypewriterText
                   text={files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
@@ -328,14 +328,14 @@ export function HomeDashboard() {
 
         {/* Continue writing — recent files */}
         {showRecent && (
-          <div className="mx-auto mt-8 max-w-5xl">
+          <div className="mx-auto mt-10 max-w-5xl">
             <RecentFiles files={recentFiles} />
           </div>
         )}
 
         {/* Favorites */}
         {showFavorites && (
-          <div className="mx-auto mt-6 max-w-5xl">
+          <div className="mx-auto mt-8 max-w-5xl">
             <FavoritesSection favorites={favorites} />
           </div>
         )}

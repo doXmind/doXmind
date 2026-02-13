@@ -150,7 +150,7 @@ export function FileRow({ file }: FileRowProps) {
     <>
       <div
         className={cn(
-          "group flex cursor-pointer items-center gap-4 px-4 py-3.5 transition-colors duration-150",
+          "group flex cursor-pointer items-center gap-4 px-5 py-4 transition-colors duration-150",
           "bg-[#fdfcfa]/60 dark:bg-[#1e1e20]/40",
           "hover:bg-[#f8f6f2] dark:hover:bg-[#242426]",
           "active:scale-[0.998]",
@@ -192,13 +192,13 @@ export function FileRow({ file }: FileRowProps) {
           <Star className="h-3 w-3 flex-shrink-0 fill-amber-400 text-amber-400" />
         )}
 
-        <span className="min-w-0 flex-shrink-0 font-serif text-sm font-semibold text-foreground/80">
+        <span className="min-w-0 flex-shrink-0 font-serif text-sm font-semibold text-foreground/85">
           {displayName}
         </span>
 
         {/* Preview text or folder file count */}
         {file.isFolder ? (
-          <span className="hidden min-w-0 flex-1 truncate text-[13px] text-foreground/25 md:block">
+          <span className="hidden min-w-0 flex-1 truncate text-[13px] text-foreground/45 dark:text-foreground/55 md:block">
             {folderFileCount === 0
               ? "Empty"
               : folderFileCount === 1
@@ -206,7 +206,7 @@ export function FileRow({ file }: FileRowProps) {
                 : `${folderFileCount} files`}
           </span>
         ) : preview ? (
-          <span className="hidden min-w-0 flex-1 truncate text-[13px] text-foreground/25 md:block">
+          <span className="hidden min-w-0 flex-1 truncate text-[13px] text-foreground/45 dark:text-foreground/55 md:block">
             {preview}
           </span>
         ) : (
@@ -214,7 +214,7 @@ export function FileRow({ file }: FileRowProps) {
         )}
 
         {/* Word count (files only) */}
-        <span className="hidden flex-shrink-0 text-[11px] text-foreground/20 md:block">
+        <span className="hidden flex-shrink-0 text-xs text-foreground/40 dark:text-foreground/50 md:block">
           {!file.isFolder && wordCount > 0
             ? wordCount < 1000
               ? `${wordCount}w`
@@ -223,7 +223,7 @@ export function FileRow({ file }: FileRowProps) {
         </span>
 
         {/* Date */}
-        <span className="flex-shrink-0 text-[11px] tracking-wide text-foreground/25">
+        <span className="flex-shrink-0 text-xs tracking-wide text-foreground/45 dark:text-foreground/55">
           {formatRelativeDate(file.updatedAt)}
         </span>
 
@@ -237,7 +237,7 @@ export function FileRow({ file }: FileRowProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-md"
+                className="h-8 w-8 rounded-md"
                 aria-label="File options"
               >
                 <MoreHorizontal className="h-4 w-4" />

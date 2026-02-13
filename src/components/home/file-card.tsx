@@ -257,7 +257,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
           {/* Folder Card - Paper aesthetic with folder tab accent */}
           <div
             className={cn(
-              "relative flex min-h-[230px] flex-col rounded-[3px]",
+              "relative flex min-h-[240px] flex-col rounded-[3px]",
               "bg-[#fdfcfa] dark:bg-[#1e1e20]",
               "border border-stone-200/50 dark:border-neutral-700/30",
               isDragOver && "border-amber-400/50 ring-2 ring-amber-400/30 dark:ring-amber-500/25"
@@ -326,20 +326,20 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             {/* Content area */}
             <div className="relative z-[1] flex flex-col p-5 pt-0">
               {/* Title */}
-              <h3 className="line-clamp-2 font-serif text-[15px] font-bold leading-snug tracking-tight text-foreground/85">
+              <h3 className="line-clamp-2 font-serif text-sm font-semibold leading-snug tracking-tight text-foreground/90">
                 {displayName}
               </h3>
 
               {/* Footer: file count + date */}
               <div className="mt-auto flex items-center justify-between pt-4">
-                <span className="text-[10.5px] tracking-wide text-foreground/30">
+                <span className="text-xs tracking-wide text-foreground/45 dark:text-foreground/55">
                   {folderFileCount === 0
                     ? "Empty"
                     : folderFileCount === 1
                       ? "1 file"
                       : `${folderFileCount} files`}
                 </span>
-                <span className="text-foreground/18 text-[10.5px]">
+                <span className="text-xs text-foreground/40 dark:text-foreground/50">
                   {formatRelativeDate(file.updatedAt)}
                 </span>
               </div>
@@ -435,7 +435,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
         {/* ═══ MAIN PAPER CARD ═══ */}
         <div
           className={cn(
-            "relative flex min-h-[230px] flex-col rounded-[3px]",
+            "relative flex min-h-[240px] flex-col rounded-[3px]",
             // Warm off-white paper — not pure white
             "bg-[#fdfcfa] dark:bg-[#1e1e20]",
             // Thin paper edge
@@ -459,8 +459,8 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             className="pointer-events-none absolute inset-0 opacity-[0.025] dark:opacity-[0.035]"
             style={{
               backgroundImage: "linear-gradient(to bottom, transparent 95%, currentColor 95%)",
-              backgroundSize: "100% 26px",
-              backgroundPosition: "0 14px",
+              backgroundSize: "100% 22px",
+              backgroundPosition: "0 16px",
             }}
           />
 
@@ -489,10 +489,10 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
           )}
 
           {/* Content area */}
-          <div className="relative z-[1] flex flex-1 flex-col p-5 pl-[68px] pt-4">
+          <div className="relative z-[1] flex flex-1 flex-col p-5 pl-[68px] pt-5">
             {/* Title + menu */}
             <div className="flex items-start justify-between gap-2">
-              <h3 className="line-clamp-2 font-serif text-[15px] font-bold leading-snug tracking-tight text-foreground/85">
+              <h3 className="line-clamp-2 font-serif text-sm font-semibold leading-snug tracking-tight text-foreground/90">
                 {displayName}
               </h3>
 
@@ -564,24 +564,28 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             </div>
 
             {/* Preview text — like typewritten text on paper */}
-            <p className="mt-3 line-clamp-4 flex-1 text-[12.5px] leading-[26px] text-foreground/35">
+            <p className="mt-2.5 line-clamp-4 flex-1 text-[13px] leading-[22px] text-foreground/45 dark:text-foreground/55">
               {searchMatch?.snippet ? (
-                <span className="text-foreground/45">
+                <span className="text-foreground/55 dark:text-foreground/65">
                   {highlightQuery(searchMatch.snippet, searchMatch.query)}
                 </span>
               ) : preview ? (
                 preview
               ) : (
-                <span className="italic text-foreground/15">Empty document</span>
+                <span className="italic text-foreground/25 dark:text-foreground/35">
+                  Empty document
+                </span>
               )}
             </p>
 
             {/* Footer: date + word count */}
-            <div className="mt-auto flex items-center justify-between pt-3">
-              <span className="text-[10.5px] tracking-wide text-foreground/25">
+            <div className="mt-auto flex items-center justify-between pt-4">
+              <span className="text-xs tracking-wide text-foreground/45 dark:text-foreground/55">
                 {formatRelativeDate(file.updatedAt)}
               </span>
-              <span className="text-foreground/18 text-[10.5px]">{formatWordCount(wordCount)}</span>
+              <span className="text-xs text-foreground/40 dark:text-foreground/50">
+                {formatWordCount(wordCount)}
+              </span>
             </div>
           </div>
         </div>

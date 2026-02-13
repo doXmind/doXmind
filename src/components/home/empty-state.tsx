@@ -174,14 +174,14 @@ export function EmptyState() {
 
   return (
     <motion.div
-      className="mx-auto flex max-w-lg flex-col items-center justify-center py-20 text-center"
+      className="mx-auto flex max-w-lg flex-col items-center justify-center py-24 text-center"
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.7, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
     >
       {/* Decorative icon */}
       <motion.div
-        className="mb-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-foreground/[0.04] dark:bg-foreground/[0.08]"
+        className="mb-10 flex h-[72px] w-[72px] items-center justify-center rounded-2xl bg-foreground/[0.04] dark:bg-foreground/[0.08]"
         initial={{ scale: 0.8 }}
         animate={{ scale: 1 }}
         transition={{
@@ -190,18 +190,21 @@ export function EmptyState() {
           ease: [0.34, 1.56, 0.64, 1],
         }}
       >
-        <PenLine className="h-7 w-7 text-muted-foreground/40" strokeWidth={1.5} />
+        <PenLine
+          className="h-8 w-8 text-muted-foreground/55 dark:text-muted-foreground/65"
+          strokeWidth={1.5}
+        />
       </motion.div>
 
       <h2 className="text-xl font-semibold tracking-tight">Your blank canvas awaits</h2>
-      <p className="mt-3 text-sm leading-relaxed text-muted-foreground/60">
+      <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground/65 dark:text-muted-foreground/75">
         Every great piece of writing starts with a single word.
         <br />
         Pick a template to get started.
       </p>
 
       {/* Template cards grid */}
-      <div className="mt-8 grid w-full grid-cols-2 gap-3">
+      <div className="mt-10 grid w-full grid-cols-2 gap-3.5">
         {TEMPLATE_CARDS.map((template, index) => {
           const isCreating = creatingId === template.id;
           return (
@@ -213,7 +216,7 @@ export function EmptyState() {
               disabled={creatingId !== null}
               onClick={() => handleTemplateCreate(template)}
               className={cn(
-                "flex flex-col items-start gap-1.5 rounded-xl border p-4 text-left transition-all",
+                "flex flex-col items-start gap-2 rounded-xl border p-5 text-left transition-all",
                 "hover:border-primary/50 hover:bg-accent/50 hover:shadow-sm",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 template.highlight ? "border-primary/30 bg-primary/[0.03]" : "border-border",
@@ -227,14 +230,14 @@ export function EmptyState() {
                 </div>
                 <span className="text-sm font-medium">{template.name}</span>
               </div>
-              <p className="text-xs text-muted-foreground">{template.description}</p>
+              <p className="text-xs text-muted-foreground/80">{template.description}</p>
             </motion.button>
           );
         })}
       </div>
 
       {/* Import link */}
-      <p className="mt-6 text-xs text-muted-foreground/50">
+      <p className="mt-8 text-xs text-muted-foreground/55 dark:text-muted-foreground/65">
         or{" "}
         <button
           onClick={handleImportClick}

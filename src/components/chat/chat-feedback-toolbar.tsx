@@ -92,7 +92,7 @@ export function ChatFeedbackToolbar({
       <button
         type="button"
         onClick={handleCopy}
-        className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+        className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground dark:text-muted-foreground/70"
         title="Copy"
         aria-label="Copy response"
       >
@@ -113,7 +113,7 @@ export function ChatFeedbackToolbar({
           "hover:bg-muted",
           feedback === "positive"
             ? "text-green-500 dark:text-green-400"
-            : "text-muted-foreground/50 hover:text-foreground"
+            : "text-muted-foreground/50 hover:text-foreground dark:text-muted-foreground/70"
         )}
         title="Good response"
         aria-label="Mark as good response"
@@ -131,7 +131,7 @@ export function ChatFeedbackToolbar({
           "hover:bg-muted",
           feedback === "negative"
             ? "text-red-500 dark:text-red-400"
-            : "text-muted-foreground/50 hover:text-foreground"
+            : "text-muted-foreground/50 hover:text-foreground dark:text-muted-foreground/70"
         )}
         title="Poor response"
         aria-label="Mark as poor response"

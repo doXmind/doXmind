@@ -1,5 +1,8 @@
-// Demo components - for pure frontend mock demo mode
-export { DemoChatPanel } from "./demo-chat-panel";
-export { MobileDemoChatPanel } from "./mobile-demo-chat-panel";
-export { DEMO_SCENARIOS, DEMO_DOCUMENT_CONTENT, getScenarioById } from "./demo-scenarios";
-export type { DemoScenario, IconName } from "./demo-scenarios";
+// Demo components - static showcase mock
+export { MockEditorShowcase } from "./mock-editor-showcase";
+export { MockSidebar } from "./mock-sidebar";
+export { MockEditorArea } from "./mock-editor-area";
+export { MockChatPanel } from "./mock-chat-panel";
+export { MockStatusBar } from "./mock-status-bar";
+export { FeatureCallout } from "./feature-callout";
+export { FeatureHighlights } from "./feature-highlights";

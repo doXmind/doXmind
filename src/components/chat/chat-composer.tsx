@@ -181,7 +181,7 @@ export function ChatComposer({
 
       {/* Hint text */}
       {showHint && (
-        <p className="mt-1.5 hidden text-center text-[11px] text-muted-foreground/50 md:block">
+        <p className="mt-1.5 hidden text-center text-[11px] text-muted-foreground/50 dark:text-muted-foreground/70 md:block">
           Press Enter to send, Shift+Enter for new line
         </p>
       )}

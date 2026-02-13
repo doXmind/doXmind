@@ -330,7 +330,7 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
       {activeColHandle && activeColIndex !== null && (
         <button
           type="button"
-          className="table-col-handle fixed z-30 flex items-center justify-center rounded-[3px] border border-transparent text-muted-foreground/50 transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground"
+          className="table-col-handle fixed z-30 flex items-center justify-center rounded-[3px] border border-transparent text-muted-foreground/50 transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground dark:text-muted-foreground/70"
           style={{
             left: activeColHandle.left - 12,
             top: tableRect.top - 24,
@@ -351,7 +351,7 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
       {activeRowHandle && activeRowIndex !== null && (
         <button
           type="button"
-          className="table-row-handle fixed z-30 flex items-center justify-center rounded-[3px] border border-transparent text-muted-foreground/50 transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground"
+          className="table-row-handle fixed z-30 flex items-center justify-center rounded-[3px] border border-transparent text-muted-foreground/50 transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground dark:text-muted-foreground/70"
           style={{
             left: tableRect.left - 28,
             top: activeRowHandle.top - 10,

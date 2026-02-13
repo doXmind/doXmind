@@ -28,7 +28,7 @@ export function ChatEmptyState({
 }: ChatEmptyStateProps) {
   return (
     <div className={cn("flex h-full flex-col items-center justify-center px-4 py-8", className)}>
-      <Sparkles className="mb-4 h-8 w-8 text-muted-foreground/30" />
+      <Sparkles className="mb-4 h-8 w-8 text-muted-foreground/30 dark:text-muted-foreground/50" />
       <h3 className="mb-1 text-lg font-medium">{greeting}</h3>
       <p className="mb-6 max-w-[250px] text-center text-sm text-muted-foreground">{subtitle}</p>
       <div className="grid w-full max-w-sm grid-cols-1 gap-2 sm:grid-cols-2">

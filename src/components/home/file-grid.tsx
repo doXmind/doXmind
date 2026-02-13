@@ -57,9 +57,9 @@ interface FileGridProps {
 // Layout constants for page size calculation
 // Overhead: header(48) + hero(pt-12 + greeting + mb-8 + search ≈ 220) + section-header(mt-10 + mb-6 + row ≈ 96) + pagination(mt-8 + controls ≈ 60) + bottom-pad(48)
 const LAYOUT_OVERHEAD = 472;
-const GRID_CARD_HEIGHT = 242; // min-h-[230px] + pb-1.5 + stacked pages offset
-const GRID_GAP = 32; // gap-8
-const LIST_ROW_HEIGHT = 53; // py-3.5 + content + border
+const GRID_CARD_HEIGHT = 252; // min-h-[240px] + pb-1.5 + stacked pages offset
+const GRID_GAP = 24; // gap-6
+const LIST_ROW_HEIGHT = 57; // py-4 + content + border
 
 function usePageSize(isGrid: boolean) {
   const calc = useCallback(() => {
@@ -355,7 +355,7 @@ export function FileGrid({
 
   return (
     <motion.div
-      className="mx-auto mt-10 w-full max-w-5xl md:mt-12"
+      className="mx-auto mt-12 w-full max-w-5xl md:mt-14"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5, delay: 0.4 }}
@@ -380,7 +380,7 @@ export function FileGrid({
           </button>
           {currentFolder && !isSearchActive && (
             <>
-              <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground/50 dark:text-muted-foreground/60" />
               <div className="flex items-center gap-1.5 rounded-md bg-accent/50 px-2 py-1">
                 <FolderOpen className="h-4 w-4 text-amber-500" />
                 <span className="font-medium text-foreground">{currentFolder.name}</span>
@@ -389,8 +389,10 @@ export function FileGrid({
           )}
           {isSearchActive && (
             <>
-              <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
-              <span className="text-muted-foreground/60">Search Results</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/50 dark:text-muted-foreground/60" />
+              <span className="text-muted-foreground/70 dark:text-muted-foreground/80">
+                Search Results
+              </span>
             </>
           )}
         </div>
@@ -399,10 +401,12 @@ export function FileGrid({
       {/* Section header */}
       <div className="mb-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-medium uppercase tracking-widest text-muted-foreground/60">
+          <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 dark:text-muted-foreground/70">
             {isSearchActive ? "Results" : currentFolder ? currentFolder.name : "All Documents"}
           </h2>
-          <span className="text-xs text-muted-foreground/30">{displayFiles.length}</span>
+          <span className="text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60">
+            {displayFiles.length}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -417,7 +421,7 @@ export function FileGrid({
                       "rounded-md p-1.5 transition-colors",
                       homeViewMode === "grid"
                         ? "text-foreground"
-                        : "text-muted-foreground/30 hover:text-muted-foreground"
+                        : "text-muted-foreground/50 hover:text-muted-foreground dark:text-muted-foreground/60"
                     )}
                     aria-label="Grid view"
                   >
@@ -431,7 +435,7 @@ export function FileGrid({
                       "rounded-md p-1.5 transition-colors",
                       homeViewMode === "list"
                         ? "text-foreground"
-                        : "text-muted-foreground/30 hover:text-muted-foreground"
+                        : "text-muted-foreground/50 hover:text-muted-foreground dark:text-muted-foreground/60"
                     )}
                     aria-label="List view"
                   >
@@ -452,7 +456,7 @@ export function FileGrid({
             <Tooltip content="Trash" side="bottom">
               <button
                 onClick={() => setIsTrashOpen(true)}
-                className="rounded-md p-1.5 text-muted-foreground/30 transition-colors hover:text-foreground"
+                className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:text-foreground dark:text-muted-foreground/60"
                 aria-label="Trash"
               >
                 <Trash2 className="h-4 w-4" />
@@ -491,8 +495,8 @@ export function FileGrid({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <SearchX className="mb-4 h-10 w-10 text-muted-foreground/20" />
-          <p className="text-sm text-muted-foreground/50">
+          <SearchX className="mb-4 h-10 w-10 text-muted-foreground/40 dark:text-muted-foreground/50" />
+          <p className="text-sm text-muted-foreground/60 dark:text-muted-foreground/70">
             No documents match &quot;{searchQuery}&quot;
           </p>
         </motion.div>
@@ -518,7 +522,7 @@ export function FileGrid({
 
                 <motion.div
                   className={cn(
-                    "grid gap-8 py-2 sm:grid-cols-2",
+                    "grid gap-6 py-2 sm:grid-cols-2",
                     maxColumns !== 2 && "lg:grid-cols-3"
                   )}
                   initial={{ opacity: 0 }}
@@ -634,11 +638,11 @@ export function FileGrid({
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="mt-8 flex items-center justify-center gap-1">
+            <div className="mt-10 flex items-center justify-center gap-1">
               <button
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+                className="rounded-md p-2 text-muted-foreground/40 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
                 aria-label="Previous page"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -652,7 +656,7 @@ export function FileGrid({
                     onClick={() => setPage(i)}
                     {...pageDragProps}
                     className={cn(
-                      "h-7 min-w-[28px] rounded-md px-1.5 text-xs transition-all",
+                      "h-8 min-w-[32px] rounded-md px-1.5 text-xs transition-all",
                       i === page
                         ? "bg-foreground/[0.07] font-medium text-foreground"
                         : "text-muted-foreground/40 hover:text-foreground",
@@ -668,7 +672,7 @@ export function FileGrid({
               <button
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={page === totalPages - 1}
-                className="rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+                className="rounded-md p-2 text-muted-foreground/40 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
                 aria-label="Next page"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -973,12 +977,12 @@ function WritingTip() {
 
   return (
     <motion.div
-      className="mx-auto mt-12 max-w-sm text-center"
+      className="mx-auto mt-14 max-w-md text-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ delay: 0.8, duration: 0.5 }}
     >
-      <p className="text-xs text-muted-foreground/30">Tip: {tip}</p>
+      <p className="text-xs text-muted-foreground/45 dark:text-muted-foreground/55">Tip: {tip}</p>
     </motion.div>
   );
 }

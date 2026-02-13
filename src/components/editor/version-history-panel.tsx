@@ -155,7 +155,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
           </div>
         ) : versions.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-            <Clock className="h-8 w-8 text-muted-foreground/30" />
+            <Clock className="h-8 w-8 text-muted-foreground/30 dark:text-muted-foreground/50" />
             <p className="text-sm text-muted-foreground">No versions yet</p>
             <p className="px-4 text-xs text-muted-foreground/70">
               Versions are created automatically when AI edits your document.

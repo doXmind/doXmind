@@ -7,6 +7,8 @@
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
+import TextStyle from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
 import Underline from "@tiptap/extension-underline";
 import Typography from "@tiptap/extension-typography";
 import Link from "@tiptap/extension-link";
@@ -58,6 +60,8 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
 
     // Text enhancements
     Underline,
+    TextStyle,
+    Color,
     Highlight.configure({
       multicolor: true,
     }),

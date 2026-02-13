@@ -113,7 +113,7 @@ export function Sidebar() {
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-            <FileText className="h-8 w-8 text-muted-foreground/40" />
+            <FileText className="h-8 w-8 text-muted-foreground/40 dark:text-muted-foreground/60" />
             <p className="text-xs text-muted-foreground">
               {editor ? "No headings in this document" : "Open a document to see its outline"}
             </p>

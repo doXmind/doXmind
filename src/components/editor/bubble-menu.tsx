@@ -59,23 +59,15 @@ interface BubbleMenuComponentProps {
   disabled?: boolean;
 }
 
-/** Get the current block's text and background color attributes */
-function getCurrentBlockColors(editor: Editor): {
+/** Get the current selection's inline text and background color marks */
+function getSelectionColors(editor: Editor): {
   textColor: string | null;
   backgroundColor: string | null;
 } {
-  const { $from } = editor.state.selection;
-  // Walk up to find the nearest block node with color attributes
-  for (let depth = $from.depth; depth >= 0; depth--) {
-    const node = $from.node(depth);
-    if (node.attrs.textColor !== undefined || node.attrs.backgroundColor !== undefined) {
-      return {
-        textColor: node.attrs.textColor || null,
-        backgroundColor: node.attrs.backgroundColor || null,
-      };
-    }
-  }
-  return { textColor: null, backgroundColor: null };
+  const textColor = editor.getAttributes("textStyle").color || null;
+  const highlightAttrs = editor.getAttributes("highlight");
+  const backgroundColor = highlightAttrs.color || null;
+  return { textColor, backgroundColor };
 }
 
 function getCurrentBlockLabel(editor: Editor): string {
@@ -106,26 +98,17 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
 
   const handleColorChange = useCallback(
     (colorValue: string, type: "text" | "background") => {
-      const { $from } = editor.state.selection;
-      // Find the nearest block node with color attributes
-      for (let depth = $from.depth; depth >= 0; depth--) {
-        const node = $from.node(depth);
-        if (node.attrs.textColor !== undefined || node.attrs.backgroundColor !== undefined) {
-          const nodeType = node.type.name;
-          if (type === "text") {
-            editor
-              .chain()
-              .focus()
-              .updateAttributes(nodeType, { textColor: colorValue || null })
-              .run();
-          } else {
-            editor
-              .chain()
-              .focus()
-              .updateAttributes(nodeType, { backgroundColor: colorValue || null })
-              .run();
-          }
-          return;
+      if (type === "text") {
+        if (colorValue) {
+          editor.chain().focus().setColor(colorValue).run();
+        } else {
+          editor.chain().focus().unsetColor().run();
+        }
+      } else {
+        if (colorValue) {
+          editor.chain().focus().setHighlight({ color: colorValue }).run();
+        } else {
+          editor.chain().focus().unsetHighlight().run();
         }
       }
     },
@@ -277,7 +260,7 @@ function ColorDropdown({
   editor: Editor;
   onColorChange: (color: string, type: "text" | "background") => void;
 }) {
-  const { textColor, backgroundColor } = getCurrentBlockColors(editor);
+  const { textColor, backgroundColor } = getSelectionColors(editor);
   const hasColor = !!textColor || !!backgroundColor;
 
   return (

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Sparkles,
   Type,
@@ -17,7 +17,11 @@ import {
   Keyboard,
   Zap,
   Layout,
+  Home,
   ChevronDown,
+  Star,
+  Plus,
+  LayoutTemplate,
   ChevronRight,
   MousePointerClick,
   Mic,
@@ -28,6 +32,7 @@ import {
   ArrowDown,
   Languages,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Logo } from "@/components/ui/logo";
 import { FeatureCard } from "@/components/help/feature-card";
 import { StepGuide } from "@/components/help/step-guide";
@@ -46,10 +51,12 @@ import {
   OutlineIllustration,
   CustomizationIllustration,
   SharingIllustration,
+  HomeDashboardIllustration,
 } from "@/components/help/help-illustrations";
 
 const TOC_ITEMS = [
   { id: "getting-started", label: "Getting Started", icon: Layout },
+  { id: "home-dashboard", label: "Home Dashboard", icon: Home },
   { id: "editor", label: "Editor Basics", icon: Type },
   { id: "quick-edit", label: "AI Quick Edit", icon: Sparkles },
   { id: "autocomplete", label: "AI Autocomplete", icon: Zap },
@@ -65,8 +72,46 @@ const TOC_ITEMS = [
   { id: "shortcuts", label: "Keyboard Shortcuts", icon: Keyboard },
 ] as const;
 
+function useActiveSection() {
+  const [activeId, setActiveId] = useState<string>("");
+  const headingIds = useRef(TOC_ITEMS.map((item) => item.id));
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find all currently intersecting sections
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+        if (visible.length > 0) {
+          setActiveId(visible[0].target.id);
+        }
+      },
+      { rootMargin: "-80px 0px -60% 0px", threshold: 0 }
+    );
+
+    const ids = headingIds.current;
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    return () => {
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) observer.unobserve(el);
+      });
+    };
+  }, []);
+
+  return activeId;
+}
+
 function TocNav() {
   const [open, setOpen] = useState(false);
+  const activeId = useActiveSection();
+
   return (
     <>
       {/* Desktop: sticky sidebar */}
@@ -79,7 +124,12 @@ function TocNav() {
             <li key={item.id}>
               <a
                 href={`#${item.id}`}
-                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
+                  activeId === item.id
+                    ? "bg-primary/10 font-medium text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
               >
                 <item.icon className="h-3 w-3 shrink-0" />
                 {item.label}
@@ -97,7 +147,9 @@ function TocNav() {
         >
           <span className="flex items-center gap-2">
             <List className="h-4 w-4" />
-            Table of Contents
+            {activeId
+              ? (TOC_ITEMS.find((item) => item.id === activeId)?.label ?? "Table of Contents")
+              : "Table of Contents"}
           </span>
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
@@ -108,7 +160,12 @@ function TocNav() {
                 <a
                   href={`#${item.id}`}
                   onClick={() => setOpen(false)}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs",
+                    activeId === item.id
+                      ? "font-medium text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
                   <item.icon className="h-3 w-3 shrink-0" />
                   {item.label}
@@ -198,6 +255,129 @@ export default function HelpPage() {
                 in, an interactive tour walks you through the key features. You can restart it
                 anytime from the user menu →{" "}
                 <strong className="text-foreground">Restart Tour</strong>.
+              </p>
+            </div>
+          </section>
+
+          {/* ─── Home Dashboard ─────────────────────────────────────────── */}
+          <section>
+            <SectionHeading id="home-dashboard" icon={Home}>
+              Home Dashboard
+            </SectionHeading>
+            <p className="mb-6 leading-relaxed text-muted-foreground">
+              The home dashboard is your central hub for finding, creating, and managing documents.
+              It features a dual-mode search bar, recent files, favorites, and quick actions.
+            </p>
+            <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
+              <HomeDashboardIllustration />
+            </div>
+
+            <h3 className="mb-3 text-lg font-semibold">Search & Ask AI</h3>
+            <div className="mb-6 space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                The search bar at the top has two modes, toggled by the pill buttons on the left:
+              </p>
+              <p>
+                <strong className="text-foreground">Ask AI mode</strong> (default): Type a question
+                about your writing and press <ShortcutKey>Enter</ShortcutKey>. The AI searches
+                across all your documents and returns an answer with source citations. You can ask
+                follow-up questions in the answer card for a multi-turn conversation.
+              </p>
+              <p>
+                <strong className="text-foreground">Search mode:</strong> Type to search documents
+                by title or content. Results appear instantly as you type (300ms debounce). Each
+                result shows a relevance score and a highlighted snippet matching your query.
+              </p>
+            </div>
+
+            <h3 className="mb-3 text-lg font-semibold">Recent Files & Favorites</h3>
+            <div className="mb-6 space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                <strong className="text-foreground">Continue writing:</strong> Your 3 most recently
+                edited documents appear at the top for quick access. Click any tile to open it in
+                the editor.
+              </p>
+              <p>
+                <strong className="text-foreground">Favorites:</strong> Star important documents by
+                clicking the <Star className="inline h-3.5 w-3.5" /> star icon in the file menu.
+                Starred documents are pinned in a dedicated Favorites section on the dashboard.
+              </p>
+            </div>
+
+            <h3 className="mb-3 text-lg font-semibold">Creating Documents</h3>
+            <div className="mb-6 space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                Click the <Plus className="inline h-3.5 w-3.5" /> button in the top-right corner of
+                the file grid. A dropdown offers four options:
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-border px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground">New Document</p>
+                  <p className="text-xs">Creates a blank document and opens it in the editor.</p>
+                </div>
+                <div className="rounded-lg border border-border px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground">New Folder</p>
+                  <p className="text-xs">Creates a folder at the root level to organize files.</p>
+                </div>
+                <div className="rounded-lg border border-border px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground">From Template</p>
+                  <p className="text-xs">
+                    Pick from 4 templates: Welcome tutorial, Blank, Blog Post, or Meeting Notes.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground">Import File</p>
+                  <p className="text-xs">
+                    Upload a PDF, DOCX, or Markdown file to convert into a document.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <h3 className="mb-3 text-lg font-semibold">File Actions</h3>
+            <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                Hover over any file card (or tap the three-dot menu on mobile) to access actions:
+              </p>
+              <ul className="ml-4 list-disc space-y-1">
+                <li>
+                  <strong className="text-foreground">Rename</strong> — Change the file or folder
+                  name
+                </li>
+                <li>
+                  <strong className="text-foreground">Share</strong> — Generate a read-only share
+                  link
+                </li>
+                <li>
+                  <strong className="text-foreground">Add to Favorites</strong> — Pin to the
+                  Favorites section
+                </li>
+                <li>
+                  <strong className="text-foreground">Export As</strong> — Download as Markdown,
+                  PDF, or Word
+                </li>
+                <li>
+                  <strong className="text-foreground">Delete</strong> — Move to trash (recoverable)
+                </li>
+              </ul>
+            </div>
+
+            <h3 className="mb-3 text-lg font-semibold">View & Sort</h3>
+            <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                <strong className="text-foreground">Grid / List view:</strong> Toggle between card
+                grid and compact list using the view icons in the top-right corner. On mobile,
+                documents display as a horizontal swipeable carousel.
+              </p>
+              <p>
+                <strong className="text-foreground">Sort:</strong> Click the sort icon to order
+                files by name (A–Z / Z–A), modified date, or created date. Folders always appear
+                first.
+              </p>
+              <p>
+                <strong className="text-foreground">Drag & drop:</strong> Drag files onto folder
+                cards to move them into that folder. Drag files to the &quot;All Files&quot;
+                breadcrumb to move them back to the root.
               </p>
             </div>
           </section>
@@ -633,8 +813,10 @@ export default function HelpPage() {
             <h3 className="mb-3 text-lg font-semibold">Organization</h3>
             <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">Folders:</strong> Create folders to organize
-                your documents hierarchically. Drag and drop files between folders.
+                <strong className="text-foreground">Folders:</strong> Create folders at the root
+                level to organize your documents hierarchically. Drag and drop files between
+                folders, or drag to the &quot;All Files&quot; breadcrumb to move files back to the
+                root.
               </p>
               <p>
                 <strong className="text-foreground">Bulk actions:</strong> Select multiple files to
@@ -642,12 +824,51 @@ export default function HelpPage() {
               </p>
               <p>
                 <strong className="text-foreground">Trash:</strong> Deleted files go to the trash
-                first. You can recover them or permanently delete.
+                first. Open the trash panel (trash icon in the top-right corner of the file grid) to
+                recover or permanently delete files.
+              </p>
+            </div>
+
+            <h3 className="mb-3 text-lg font-semibold">Import & Templates</h3>
+            <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                <strong className="text-foreground">Import:</strong> Click the{" "}
+                <Plus className="inline h-3.5 w-3.5" /> button →{" "}
+                <strong className="text-foreground">Import File</strong> to upload a PDF, DOCX, or
+                Markdown file. The file is converted and opened in the editor automatically.
               </p>
               <p>
-                <strong className="text-foreground">Import:</strong> Upload existing markdown files
-                or use a template to start quickly.
+                <strong className="text-foreground">Templates:</strong> Click{" "}
+                <Plus className="inline h-3.5 w-3.5" /> →{" "}
+                <strong className="text-foreground">From Template</strong> to start from a pre-built
+                structure:
               </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg border border-border px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Welcome Tutorial
+                  </p>
+                  <p className="text-xs">Interactive guide to all features</p>
+                </div>
+                <div className="rounded-lg border border-border px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <FileText className="h-3.5 w-3.5 text-primary" /> Blank Document
+                  </p>
+                  <p className="text-xs">Empty canvas to start from scratch</p>
+                </div>
+                <div className="rounded-lg border border-border px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <LayoutTemplate className="h-3.5 w-3.5 text-primary" /> Blog Post
+                  </p>
+                  <p className="text-xs">Article with intro, body, and conclusion</p>
+                </div>
+                <div className="rounded-lg border border-border px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <FileText className="h-3.5 w-3.5 text-primary" /> Meeting Notes
+                  </p>
+                  <p className="text-xs">Agenda, notes, and action items table</p>
+                </div>
+              </div>
             </div>
 
             <h3 className="mb-3 text-lg font-semibold">Version History</h3>

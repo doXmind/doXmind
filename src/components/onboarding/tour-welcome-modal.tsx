@@ -99,7 +99,7 @@ export function TourWelcomeModal({ onStart, onSkip }: TourWelcomeModalProps) {
             </Button>
             <button
               onClick={onSkip}
-              className="text-xs text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+              className="text-xs text-muted-foreground/50 transition-colors hover:text-muted-foreground dark:text-muted-foreground/70"
             >
               Skip &mdash; I&apos;ll explore on my own
             </button>

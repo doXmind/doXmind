@@ -14,7 +14,7 @@ export function LineNumbers({ count, className }: LineNumbersProps) {
         "line-numbers",
         "select-none pb-4 pl-4 pr-4 pt-4 text-right",
         "font-mono text-sm leading-relaxed",
-        "text-muted-foreground/50",
+        "text-muted-foreground/50 dark:text-muted-foreground/70",
         "border-r border-border/30",
         "bg-muted/20",
         "shrink-0",

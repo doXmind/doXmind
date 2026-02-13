@@ -143,7 +143,7 @@ export function TourCompleteModal({ onFinish, onRestart }: TourCompleteModalProp
           </Button>
           <button
             onClick={onRestart}
-            className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+            className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/50 transition-colors hover:text-muted-foreground dark:text-muted-foreground/70"
           >
             <RotateCcw className="h-3 w-3" />
             Restart Tour
