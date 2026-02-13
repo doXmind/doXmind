@@ -90,7 +90,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         <Button
           variant="ghost"
           size="icon"
-          className={cn("relative rounded-full", compact ? "h-6 w-6" : "h-8 w-8")}
+          className={cn("relative rounded-full", compact ? "h-7 w-7" : "h-8 w-8")}
           aria-label="User menu"
         >
           {user?.avatar_url ? (
@@ -98,13 +98,13 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
             <img
               src={user.avatar_url}
               alt={user.username || user.email}
-              className={cn("rounded-full object-cover", compact ? "h-6 w-6" : "h-8 w-8")}
+              className={cn("rounded-full object-cover", compact ? "h-7 w-7" : "h-8 w-8")}
             />
           ) : (
             <div
               className={cn(
                 "flex items-center justify-center rounded-full bg-primary/10 font-medium text-primary",
-                compact ? "h-6 w-6 text-[10px]" : "h-8 w-8 text-xs"
+                compact ? "h-7 w-7 text-xs" : "h-8 w-8 text-xs"
               )}
             >
               {getInitials()}

@@ -372,9 +372,7 @@ class TestRRFWithExtraLists:
         semantic = [{"id": "a", "content": "doc a"}]
         keyword = [{"id": "b", "content": "doc b"}]
 
-        result_with_none = reciprocal_rank_fusion(
-            semantic, keyword, extra_result_lists=None
-        )
+        result_with_none = reciprocal_rank_fusion(semantic, keyword, extra_result_lists=None)
         result_without = reciprocal_rank_fusion(semantic, keyword)
 
         assert len(result_with_none) == len(result_without)

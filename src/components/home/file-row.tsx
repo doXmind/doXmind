@@ -346,6 +346,7 @@ export function FileRow({ file }: FileRowProps) {
         onClose={() => setShowShareDialog(false)}
         fileId={file.id}
         fileName={displayName}
+        isFolder={file.isFolder}
       />
     </>
   );

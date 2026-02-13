@@ -87,6 +87,30 @@ export interface SharedDocumentResponse {
   owner_name?: string;
 }
 
+export interface SharedFolderItem {
+  id: string;
+  name: string;
+  is_folder: boolean;
+  icon: string | null;
+  updated_at: string;
+  created_at: string;
+}
+
+export interface SharedItemResponse {
+  name: string;
+  is_folder: boolean;
+  created_at: string;
+  updated_at: string;
+  is_snapshot: boolean;
+  owner_name?: string;
+  // Document fields (when is_folder is false)
+  content?: string;
+  // Folder fields (when is_folder is true)
+  items?: SharedFolderItem[];
+  breadcrumbs?: SharedFolderItem[];
+  root_folder_name?: string;
+}
+
 export class ApiClient {
   private baseUrl: string;
   private accessToken: string | null = null;
@@ -900,8 +924,11 @@ export class ApiClient {
    * @param shareToken - The share token from the URL
    * @returns The shared document content
    */
-  async getSharedDocument(shareToken: string): Promise<SharedDocumentResponse> {
-    const url = `${this.baseUrl}/api/shares/public/${shareToken}`;
+  async getSharedDocument(shareToken: string, path?: string): Promise<SharedItemResponse> {
+    let url = `${this.baseUrl}/api/shares/public/${shareToken}`;
+    if (path) {
+      url += `?path=${encodeURIComponent(path)}`;
+    }
     const response = await fetch(url); // No auth headers for public access
 
     if (!response.ok) {

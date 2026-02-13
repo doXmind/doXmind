@@ -292,6 +292,10 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
+                    <Share2 className="mr-2 h-4 w-4" />
+                    Share
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleRenameOpen}>
                     <Pencil className="mr-2 h-4 w-4" />
                     Rename
@@ -390,6 +394,15 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             </Button>
           </ModalFooter>
         </Modal>
+
+        {/* Share dialog */}
+        <ShareDialog
+          open={showShareDialog}
+          onClose={() => setShowShareDialog(false)}
+          fileId={file.id}
+          fileName={file.name}
+          isFolder
+        />
       </>
     );
   }

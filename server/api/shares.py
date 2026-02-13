@@ -10,8 +10,8 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.database import DocumentShare, File, get_db
-from exceptions import DocumentNotFoundError, NotFoundError
+from db.database import DocumentShare, File, User, get_db
+from exceptions import BadRequestError, DocumentNotFoundError, NotFoundError
 from middleware.rate_limit import limiter
 from services.auth_service import TokenData, require_auth
 
@@ -67,7 +67,7 @@ class ShareListResponse(BaseModel):
 
 
 class SharedDocumentResponse(BaseModel):
-    """Public document view response."""
+    """Public document view response (legacy, kept for compatibility)."""
 
     name: str
     content: str
@@ -75,6 +75,34 @@ class SharedDocumentResponse(BaseModel):
     updated_at: str
     is_snapshot: bool
     owner_name: str | None = None  # Optional, redacted for privacy
+
+
+class SharedFolderItem(BaseModel):
+    """An item in a shared folder listing."""
+
+    id: str
+    name: str
+    is_folder: bool
+    icon: str | None = None
+    updated_at: str
+    created_at: str
+
+
+class SharedItemResponse(BaseModel):
+    """Unified public response for shared items (document or folder)."""
+
+    name: str
+    is_folder: bool
+    created_at: str
+    updated_at: str
+    is_snapshot: bool
+    owner_name: str | None = None
+    # Document fields (present when is_folder=False)
+    content: str | None = None
+    # Folder fields (present when is_folder=True)
+    items: list[SharedFolderItem] | None = None
+    breadcrumbs: list[SharedFolderItem] | None = None
+    root_folder_name: str | None = None
 
 
 # =============================================================================
@@ -102,6 +130,10 @@ async def create_share(
 
     if not file:
         raise DocumentNotFoundError(file_id=share_request.file_id)
+
+    # Folder shares only support "live" mode (snapshot would be complex)
+    if file.is_folder and share_request.content_mode != "live":
+        raise BadRequestError(message="Folder shares only support 'live' content mode")
 
     # Generate cryptographically secure token
     share_token = secrets.token_urlsafe(32)
@@ -229,18 +261,80 @@ async def revoke_share(
 
 
 # =============================================================================
+# Shared Folder Helpers
+# =============================================================================
+
+
+async def is_descendant_of(db: AsyncSession, file_id: str, ancestor_id: str) -> bool:
+    """Check if file_id is a descendant of ancestor_id in the folder tree."""
+    current_id = file_id
+    visited: set[str] = set()
+    while current_id is not None:
+        if current_id == ancestor_id:
+            return True
+        if current_id in visited:
+            return False  # Cycle detection
+        visited.add(current_id)
+        result = await db.execute(select(File.parent_id).where(File.id == current_id))
+        parent = result.scalar_one_or_none()
+        current_id = parent
+    return False
+
+
+async def get_breadcrumbs(db: AsyncSession, file_id: str, root_id: str) -> list[SharedFolderItem]:
+    """Build breadcrumb trail from shared root down to file_id."""
+    chain: list[SharedFolderItem] = []
+    current_id = file_id
+
+    while current_id is not None and current_id != root_id:
+        result = await db.execute(
+            select(
+                File.id,
+                File.name,
+                File.is_folder,
+                File.icon,
+                File.parent_id,
+                File.updated_at,
+                File.created_at,
+            ).where(File.id == current_id)
+        )
+        row = result.one_or_none()
+        if not row:
+            break
+        chain.append(
+            SharedFolderItem(
+                id=row.id,
+                name=row.name,
+                is_folder=row.is_folder,
+                icon=row.icon,
+                updated_at=row.updated_at.isoformat(),
+                created_at=row.created_at.isoformat(),
+            )
+        )
+        current_id = row.parent_id
+
+    chain.reverse()  # Root-first order
+    return chain
+
+
+# =============================================================================
 # Public Endpoint (Unauthenticated)
 # =============================================================================
 
 
-@router.get("/public/{share_token}", response_model=SharedDocumentResponse)
+@router.get("/public/{share_token}", response_model=SharedItemResponse)
 @limiter.limit("60/minute")  # Rate limit to prevent scraping
-async def view_shared_document(
+async def view_shared_item(
     request: Request,
     share_token: str,
+    path: str | None = Query(None, description="Subfolder or file ID within shared folder"),
     db: AsyncSession = Depends(get_db),
 ):
-    """View a shared document (public, no authentication required)."""
+    """View a shared item - document or folder (public, no authentication required).
+
+    For folder shares, use the `path` query parameter to navigate into subfolders
+    or view individual files within the shared tree.
+    """
     now = datetime.now(UTC)
 
     # Find active, non-expired share
@@ -263,18 +357,95 @@ async def view_shared_document(
     share.last_viewed_at = now
     await db.commit()
 
-    # Get document content (V1: only support "live" mode)
+    # Load the shared root item
     result = await db.execute(select(File).where(File.id == share.file_id))
-    file = result.scalar_one_or_none()
+    root_file = result.scalar_one_or_none()
 
-    if not file:
+    if not root_file:
         raise DocumentNotFoundError(file_id=share.file_id)
 
-    return SharedDocumentResponse(
-        name=file.name,
-        content=file.content,
-        created_at=file.created_at.isoformat(),
-        updated_at=file.updated_at.isoformat(),
-        is_snapshot=False,  # V1: always live
-        owner_name=None,  # Privacy: don't expose owner info
-    )
+    # Look up owner display name
+    owner_name = None
+    if share.user_id:
+        result = await db.execute(select(User.username).where(User.id == share.user_id))
+        owner_name = result.scalar_one_or_none()
+
+    # Determine the target item (root or navigated-to child)
+    target_file = root_file
+    if path:
+        # Navigating within a shared folder — validate ancestry
+        if not root_file.is_folder:
+            raise BadRequestError(message="Cannot use path parameter on a document share")
+
+        result = await db.execute(select(File).where(File.id == path, File.deleted_at.is_(None)))
+        target_file = result.scalar_one_or_none()
+
+        if not target_file:
+            raise NotFoundError(resource="File", message="Item not found in shared folder")
+
+        # Security: verify the target is a descendant of the shared root
+        if target_file.id != root_file.id and not await is_descendant_of(
+            db, target_file.id, root_file.id
+        ):
+            raise NotFoundError(resource="File", message="Item not found in shared folder")
+
+    # Return folder listing or document content
+    if target_file.is_folder:
+        # Query children of this folder
+        children_query = (
+            select(File)
+            .where(
+                File.parent_id == target_file.id,
+                File.deleted_at.is_(None),
+            )
+            .order_by(File.is_folder.desc(), File.position.asc(), File.updated_at.desc())
+        )
+        result = await db.execute(children_query)
+        children = result.scalars().all()
+
+        items = [
+            SharedFolderItem(
+                id=child.id,
+                name=child.name,
+                is_folder=child.is_folder,
+                icon=child.icon,
+                updated_at=child.updated_at.isoformat(),
+                created_at=child.created_at.isoformat(),
+            )
+            for child in children
+        ]
+
+        # Build breadcrumbs (from root to current folder, excluding root itself)
+        breadcrumbs = []
+        if target_file.id != root_file.id:
+            breadcrumbs = await get_breadcrumbs(db, target_file.id, root_file.id)
+
+        return SharedItemResponse(
+            name=target_file.name,
+            is_folder=True,
+            created_at=target_file.created_at.isoformat(),
+            updated_at=target_file.updated_at.isoformat(),
+            is_snapshot=False,
+            owner_name=owner_name,
+            items=items,
+            breadcrumbs=breadcrumbs,
+            root_folder_name=root_file.name if target_file.id != root_file.id else None,
+        )
+    else:
+        # Document view
+        # Build breadcrumbs if this document is inside a shared folder
+        breadcrumbs = []
+        if path and root_file.is_folder:
+            breadcrumbs = await get_breadcrumbs(db, target_file.id, root_file.id)
+
+        return SharedItemResponse(
+            name=target_file.name,
+            is_folder=False,
+            content=target_file.content,
+            created_at=target_file.created_at.isoformat(),
+            updated_at=target_file.updated_at.isoformat(),
+            is_snapshot=False,
+            owner_name=owner_name,
+            breadcrumbs=breadcrumbs if breadcrumbs else None,
+            root_folder_name=root_file.name if path and root_file.is_folder else None,
+        )

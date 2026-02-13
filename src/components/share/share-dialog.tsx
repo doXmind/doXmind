@@ -12,9 +12,10 @@ interface ShareDialogProps {
   onClose: () => void;
   fileId: string;
   fileName: string;
+  isFolder?: boolean;
 }
 
-export function ShareDialog({ open, onClose, fileId, fileName }: ShareDialogProps) {
+export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: ShareDialogProps) {
   const [shares, setShares] = useState<Share[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -102,7 +103,9 @@ export function ShareDialog({ open, onClose, fileId, fileName }: ShareDialogProp
       <ModalHeader onClose={onClose}>Share &quot;{fileName}&quot;</ModalHeader>
 
       <p className="mb-6 text-sm text-muted-foreground">
-        Create a read-only link to share this document. Anyone with the link can view it.
+        Create a read-only link to share this {isFolder ? "folder" : "document"}. Anyone with the
+        link can view it.
+        {isFolder && " All files and subfolders will be included."}
       </p>
 
       {error && (

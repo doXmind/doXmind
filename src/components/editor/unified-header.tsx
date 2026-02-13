@@ -118,35 +118,35 @@ export function UnifiedHeader() {
   };
 
   return (
-    <header className="bg-sidebar relative z-20 flex h-11 shrink-0 items-center justify-between border-b border-border/40 px-2.5">
+    <header className="bg-sidebar relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-6">
       {/* Left: Home + Sidebar toggle + Breadcrumb */}
-      <div className="flex min-w-0 items-center gap-0.5">
+      <div className="flex min-w-0 items-center gap-1">
         <Tooltip content="Home" side="bottom">
           <Link
             href="/"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"
           >
-            <Logo variant="icon" size="sm" className="h-4 w-4" />
+            <Logo variant="icon" size="sm" className="h-6 w-6" />
           </Link>
         </Tooltip>
 
-        <div className="mx-1 h-4 w-px bg-border/40" />
+        <div className="mx-1 h-5 w-px bg-border/40" />
 
         <Tooltip content={isFilesSidebarOpen ? "Hide Files" : "Show Files"} side="bottom">
           <Button
             variant="ghost"
             size="icon"
-            className={cn("h-7 w-7 text-foreground", isFilesSidebarOpen && "bg-accent")}
+            className={cn("h-8 w-8 text-foreground", isFilesSidebarOpen && "bg-accent")}
             onClick={toggleFilesSidebar}
             aria-label={isFilesSidebarOpen ? "Hide Files" : "Show Files"}
           >
-            <PanelLeft className="h-3.5 w-3.5" />
+            <PanelLeft className="h-4 w-4" />
           </Button>
         </Tooltip>
       </div>
 
       {/* Right: Action buttons — only when a file is open */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-1">
         {currentFile && (
           <>
             {/* Present */}
@@ -154,11 +154,11 @@ export function UnifiedHeader() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
                 onClick={() => setPresentationMode(true)}
                 aria-label="Present"
               >
-                <Play className="h-3.5 w-3.5" />
+                <Play className="h-4 w-4" />
               </Button>
             </Tooltip>
 
@@ -168,13 +168,13 @@ export function UnifiedHeader() {
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "h-7 w-7 text-muted-foreground hover:text-foreground",
+                  "h-8 w-8 text-muted-foreground hover:text-foreground",
                   isSearchBarOpen && "bg-accent text-accent-foreground"
                 )}
                 onClick={toggleSearchBar}
                 aria-label="Search"
               >
-                <Search className="h-3.5 w-3.5" />
+                <Search className="h-4 w-4" />
               </Button>
             </Tooltip>
 
@@ -185,11 +185,11 @@ export function UnifiedHeader() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     aria-label="More actions"
                     data-onboarding="more-menu"
                   >
-                    <MoreHorizontal className="h-3.5 w-3.5" />
+                    <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
               </Tooltip>
@@ -326,7 +326,7 @@ export function UnifiedHeader() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <div className="mx-1 h-4 w-px bg-border/30" />
+            <div className="mx-1 h-5 w-px bg-border/30" />
           </>
         )}
         <UserMenu compact />
