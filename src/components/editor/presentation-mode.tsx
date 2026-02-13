@@ -84,7 +84,8 @@ export function PresentationMode({
   author: authorProp,
   date: dateProp,
 }: PresentationModeProps = {}) {
-  const { isPresentationMode, setPresentationMode } = useLayoutStore();
+  const { isPresentationMode, setPresentationMode, fontFamily, fontSize, lineHeight } =
+    useLayoutStore();
   const editor = useEditorRefStore((s) => s.editor);
   const { currentFileId, files } = useFileStore();
   const user = useAuthStore((s) => s.user);
@@ -280,7 +281,13 @@ export function PresentationMode({
             <div
               className={cn(
                 "presentation-content",
-                slides[currentSlide].type === "title" && "presentation-title-slide"
+                slides[currentSlide].type === "title" && "presentation-title-slide",
+                fontFamily === "serif" && "pres-font-serif",
+                fontFamily === "mono" && "pres-font-mono",
+                fontSize === "small" && "pres-size-small",
+                fontSize === "large" && "pres-size-large",
+                lineHeight === "compact" && "pres-leading-compact",
+                lineHeight === "relaxed" && "pres-leading-relaxed"
               )}
               dangerouslySetInnerHTML={{ __html: slides[currentSlide].html }}
             />

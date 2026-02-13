@@ -2276,7 +2276,7 @@ html {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 880px;
+  max-width: 90%;
   height: 100%;
   display: flex;
   align-items: center;
@@ -2312,7 +2312,50 @@ html {
     sans-serif;
   line-height: 1.7;
   letter-spacing: -0.01em;
+  max-width: 64rem;
+  margin-left: auto;
+  margin-right: auto;
   transition: color 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Presentation Typography — respect user settings */
+.presentation-content.pres-font-serif {
+  font-family: Georgia, "Times New Roman", Times, serif;
+}
+.presentation-content.pres-font-mono {
+  font-family:
+    "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+.presentation-content.pres-size-small {
+  font-size: 0.9em;
+}
+.presentation-content.pres-size-small h1 {
+  font-size: 2.5rem;
+}
+.presentation-content.pres-size-small h2 {
+  font-size: 1.875rem;
+}
+.presentation-content.pres-size-small h3 {
+  font-size: 1.25rem;
+}
+.presentation-content.pres-size-large {
+  font-size: 1.15em;
+}
+.presentation-content.pres-size-large h1 {
+  font-size: 3.5rem;
+}
+.presentation-content.pres-size-large h2 {
+  font-size: 2.75rem;
+}
+.presentation-content.pres-size-large h3 {
+  font-size: 1.75rem;
+}
+.presentation-content.pres-leading-compact {
+  line-height: 1.4;
+}
+.presentation-content.pres-leading-relaxed {
+  line-height: 1.9;
 }
 
 .presentation-content > *:first-child {

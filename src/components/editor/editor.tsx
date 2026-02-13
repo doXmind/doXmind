@@ -427,7 +427,14 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
             <div
               className={cn(
                 "mx-auto w-full max-w-full px-4 pb-2 pt-0 sm:max-w-4xl",
-                isMobileEditMode && "mobile-edit-mode"
+                isMobileEditMode && "mobile-edit-mode",
+                // Typography settings
+                fontFamily === "serif" && "editor-font-serif",
+                fontFamily === "mono" && "editor-font-mono",
+                fontSize === "small" && "editor-font-small",
+                fontSize === "large" && "editor-font-large",
+                lineHeight === "compact" && "editor-leading-compact",
+                lineHeight === "relaxed" && "editor-leading-relaxed"
               )}
             >
               <EditorContent editor={editor} />

@@ -12,6 +12,7 @@ import {
   Type,
   Shield,
   GraduationCap,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -126,6 +127,10 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         <DropdownMenuItem onClick={() => setShowSettingsModal(true)}>
           <Settings className="mr-2 h-4 w-4" />
           Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push("/help")}>
+          <HelpCircle className="mr-2 h-4 w-4" />
+          Help
         </DropdownMenuItem>
         {onboardingCompleted && (
           <DropdownMenuItem onClick={handleRestartTour}>
