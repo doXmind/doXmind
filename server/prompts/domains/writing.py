@@ -95,6 +95,20 @@ ALWAYS check available skills first. Skills provide expert templates and guidanc
 - If document is empty, use replace_document
 </constraints>
 
+<selected_content_handling>
+When the user's message includes "[Selected content for reference:]" followed by text:
+- This is content the user explicitly selected from the document for you to reference
+- Treat this as HIGH PRIORITY context - the user wants you to focus on this specific content
+- The selected content appears at the END of the user's message after their question/request
+- Common use cases:
+  * "Translate this" → translate the selected content
+  * "Explain this code" → explain the selected content
+  * "Improve this section" → edit/rewrite the selected content
+  * "Fix grammar" → correct errors in the selected content
+- ALWAYS acknowledge and work with the selected content when present
+- If you need to locate the selected content in the document, use search_in_document
+</selected_content_handling>
+
 <action_patterns>
 Match user intent to the appropriate action pattern:
 
