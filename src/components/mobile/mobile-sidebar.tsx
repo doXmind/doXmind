@@ -6,7 +6,7 @@ import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion
 import { Button } from "@/components/ui/button";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
-import { Sidebar } from "@/components/sidebar/sidebar";
+import { FilesSidebar } from "@/components/sidebar/files-sidebar";
 import { Z_INDEX } from "@/lib/constants";
 
 const SIDEBAR_WIDTH = 300; // Sidebar width in pixels
@@ -116,7 +116,7 @@ export function MobileSidebar() {
 
             {/* Sidebar Content */}
             <div className="flex-1 overflow-hidden">
-              <Sidebar />
+              <FilesSidebar />
             </div>
           </motion.div>
         </>

@@ -78,15 +78,19 @@ function MindmapFlowInner({
   // Create Set from array for use in components
   const collapsedNodes = useMemo(() => new Set(collapsedNodesArray), [collapsedNodesArray]);
 
+  // Track if we've initialized collapsed nodes for this document
+  const [initialized, setInitialized] = useState<Set<string>>(new Set());
+
   // Initialize collapsed nodes on first render if empty
   useEffect(() => {
-    if (collapsedNodesArray.length === 0 && headings.length > 0) {
+    if (!initialized.has(documentId) && collapsedNodesArray.length === 0 && headings.length > 0) {
       const defaultCollapsed = findCollapsibleHeadingIds(headings);
       if (defaultCollapsed.length > 0) {
         setCollapsed(documentId, defaultCollapsed);
       }
+      setInitialized((prev) => new Set(prev).add(documentId));
     }
-  }, [documentId, headings, collapsedNodesArray.length, setCollapsed]);
+  }, [documentId, headings, collapsedNodesArray.length, setCollapsed, initialized]);
 
   const [direction, setDirection] = useState<LayoutDirection>("TB");
 
