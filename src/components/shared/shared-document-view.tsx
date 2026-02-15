@@ -119,7 +119,7 @@ export function SharedDocumentView({ data, breadcrumbs, onNavigate }: SharedDocu
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-full flex-col bg-background">
       {/* Mobile Header */}
       <header className="border-b border-border bg-card md:hidden">
         <div className="flex h-12 items-center justify-between px-2">

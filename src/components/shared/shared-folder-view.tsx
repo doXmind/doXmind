@@ -30,7 +30,7 @@ export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
   const isSubfolder = breadcrumbs.length > 0;
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-full flex-col bg-background">
       {/* Compact header with logo + breadcrumbs */}
       <header className="border-b border-border bg-card px-6 py-3 shadow-sm">
         <div className="flex items-center justify-between gap-2.5">
