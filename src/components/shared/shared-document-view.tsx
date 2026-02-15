@@ -120,8 +120,55 @@ export function SharedDocumentView({ data, breadcrumbs, onNavigate }: SharedDocu
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card px-6 py-3 shadow-sm">
+      {/* Mobile Header */}
+      <header className="border-b border-border bg-card md:hidden">
+        <div className="flex h-12 items-center justify-between px-2">
+          {/* Left: Logo + Back Button */}
+          <div className="flex items-center gap-1">
+            <a
+              href="https://beta.doxmind.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-accent active:scale-95"
+              aria-label="doXmind"
+            >
+              <Logo variant="icon" size="sm" className="h-5 w-5" />
+            </a>
+            {breadcrumbs && breadcrumbs.length > 0 && onNavigate && (
+              <>
+                <div className="mx-0.5 h-5 w-px bg-border" />
+                <button
+                  onClick={() => onNavigate(null)}
+                  className="flex h-10 items-center rounded-full px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent active:scale-95"
+                  aria-label="Back to folder"
+                >
+                  ← Folder
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Center: Document Title */}
+          <div className="flex-1 px-2 text-center">
+            <h1 className="truncate text-sm font-semibold">{data.name.replace(/\.md$/, "")}</h1>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-1">
+            <SharedThemeToggle />
+            <button
+              onClick={handleSearchClick}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent active:scale-95"
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Desktop Header */}
+      <header className="hidden border-b border-border bg-card px-6 py-3 shadow-sm md:block">
         <div className="flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-2.5">
             <Tooltip content="doXmind" side="bottom">
@@ -216,7 +263,7 @@ export function SharedDocumentView({ data, breadcrumbs, onNavigate }: SharedDocu
         <SharedOutline />
         <div className="relative flex min-w-0 flex-1 flex-col">
           <main className="relative min-w-0 flex-1 overflow-auto">
-            <div className="mx-auto max-w-4xl px-6 py-8">
+            <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
               <EditorContent editor={editor} />
             </div>
             <SearchBar />
@@ -224,7 +271,7 @@ export function SharedDocumentView({ data, breadcrumbs, onNavigate }: SharedDocu
 
           {/* Fixed bottom stats bar */}
           {stats.words > 0 && (
-            <div className="bg-background px-6 py-1.5 text-[11px] text-muted-foreground/60 md:px-12">
+            <div className="bg-background px-4 py-1.5 text-[11px] text-muted-foreground/60 md:px-12">
               <div className="flex items-center gap-3">
                 <span className="text-border">&middot;</span>
                 <span>
