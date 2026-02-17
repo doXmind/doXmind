@@ -255,6 +255,16 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
     }
   }, [editor, activeTable]);
 
+  // --- Toggle `table-editing` class on the active table for visible borders ---
+  useEffect(() => {
+    if (activeTable) {
+      activeTable.element.classList.add("table-editing");
+    }
+    return () => {
+      activeTable?.element.classList.remove("table-editing");
+    };
+  }, [activeTable]);
+
   // --- Column/row highlight via direct DOM class toggle ---
   useEffect(() => {
     if (!activeTable) return;

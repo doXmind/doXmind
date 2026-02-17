@@ -14,6 +14,12 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn, formatRelativeDate } from "@/lib/utils";
+import {
+  stripHtml,
+  getWordCount,
+  formatWordCount,
+  getNameWithoutExtension,
+} from "@/lib/file-utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -61,29 +67,6 @@ const SCATTER = [
   { rotate: -0.3, y: 2 },
   { rotate: 1.8, y: -3 },
 ];
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getNameWithoutExtension(name: string) {
-  return name.replace(/\.md$/, "");
-}
-
-function getWordCount(content: string): number {
-  const text = stripHtml(content);
-  if (!text) return 0;
-  return text.split(/\s+/).filter(Boolean).length;
-}
-
-function formatWordCount(count: number): string {
-  if (count === 0) return "Empty";
-  if (count < 1000) return `${count} words`;
-  return `${(count / 1000).toFixed(1)}k words`;
-}
 
 function highlightQuery(text: string, query: string) {
   if (!query.trim()) return text;

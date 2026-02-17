@@ -516,6 +516,16 @@
   border: 1px solid hsl(var(--foreground) / 0.08);
   line-height: 1.4;
   vertical-align: top;
+  transition:
+    border-color 0.15s ease,
+    border-width 0.15s ease;
+}
+
+/* Active table: more visible borders when cursor is inside */
+.ProseMirror table.table-editing th,
+.ProseMirror table.table-editing td {
+  border-color: hsl(var(--foreground) / 0.25);
+  border-width: 1.5px;
 }
 
 /* Remove paragraph/block margins inside table cells for Notion-like compact layout */
@@ -2587,6 +2597,22 @@ html {
   gap: 0.5rem;
 }
 
+/* ---- Read-only TipTap editor inside presentation ---- */
+/* Reset editor min-height and padding for slide context */
+.presentation-content .ProseMirror {
+  min-height: unset;
+  padding: 0;
+}
+
+/* Neutralize presentation pre/code styles for code-block NodeView */
+.presentation-content .code-block-wrapper pre {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+}
+
 /* Navigation buttons */
 .presentation-nav-btn {
   position: absolute;
@@ -2657,6 +2683,117 @@ html {
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
   font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+.presentation-counter-btn {
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.presentation-counter-btn:hover {
+  background: var(--pres-surface-hover);
+}
+
+/* ---- Slide Navigator Panel ---- */
+.presentation-navigator {
+  position: absolute;
+  bottom: 3.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: var(--pres-surface);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--pres-border);
+  border-radius: 16px;
+  padding: 0.75rem;
+  max-width: 500px;
+  width: 90vw;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pres-scrollbar) transparent;
+}
+
+.presentation-navigator-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--pres-border-subtle);
+  margin-bottom: 0.5rem;
+}
+
+.presentation-navigator-title {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--pres-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.presentation-navigator-jump {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--pres-text-strong);
+  font-variant-numeric: tabular-nums;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.presentation-navigator-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.presentation-navigator-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--pres-text-secondary);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s ease;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+
+.presentation-navigator-item:hover {
+  background: var(--pres-surface-hover);
+}
+
+.presentation-navigator-item-active {
+  background: var(--pres-surface-hover);
+  color: var(--pres-text-strong);
+}
+
+.presentation-navigator-item-active .presentation-navigator-number {
+  color: var(--pres-link);
+}
+
+.presentation-navigator-number {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--pres-text-faint);
+  min-width: 1.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.presentation-navigator-label {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
 }
 
 /* Progress bar */

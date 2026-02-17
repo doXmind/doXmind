@@ -15,30 +15,11 @@ import {
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { formatRelativeDate } from "@/lib/utils";
+import { stripHtml, getWordCount, formatWordCount } from "@/lib/file-utils";
 import { toast } from "sonner";
 
 const PAPER_SHADOW =
   "0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.025), inset 0 0.5px 0 rgba(255,255,255,0.04)";
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .trim();
-}
-
-function getWordCount(content: string): number {
-  const text = stripHtml(content);
-  if (!text) return 0;
-  return text.split(/\s+/).filter(Boolean).length;
-}
-
-function formatWordCount(count: number): string {
-  if (count === 0) return "Empty";
-  if (count < 1000) return `${count} words`;
-  return `${(count / 1000).toFixed(1)}k words`;
-}
 
 interface FavoritesSectionProps {
   favorites: FileItem[];
@@ -88,6 +69,7 @@ function FavoriteTile({
   const { toggleFavorite, deleteFile } = useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const wordCount = getWordCount(file.content);
+  const preview = stripHtml(file.content).slice(0, 80);
 
   const handleDelete = async () => {
     try {
@@ -101,7 +83,7 @@ function FavoriteTile({
   return (
     <>
       <motion.div
-        className="group relative flex cursor-pointer items-center gap-3 rounded-lg border border-stone-200/40 bg-[#fdfcfa] px-4 py-3 dark:border-neutral-700/25 dark:bg-[#1e1e20]"
+        className="group relative flex cursor-pointer gap-3 rounded-lg border border-stone-200/40 bg-[#fdfcfa] px-4 py-3.5 dark:border-neutral-700/25 dark:bg-[#1e1e20] sm:items-center sm:py-3"
         style={{ boxShadow: PAPER_SHADOW }}
         initial={{ opacity: 0, y: 8 }}
         animate={{
@@ -113,15 +95,35 @@ function FavoriteTile({
         whileTap={{ scale: 0.98 }}
         onClick={() => onOpen(file)}
       >
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/85">
-          {file.name?.replace(/\.md$/i, "") || "Untitled"}
-        </h3>
-        <span className="flex-shrink-0 text-xs tracking-wide text-foreground/45 dark:text-foreground/55">
-          {formatRelativeDate(file.updatedAt)}
-        </span>
-        <span className="flex-shrink-0 text-xs text-foreground/40 dark:text-foreground/50">
-          {formatWordCount(wordCount)}
-        </span>
+        {/* Mobile: stacked layout with content preview */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/85">
+              {file.name?.replace(/\.md$/i, "") || "Untitled"}
+            </h3>
+            {/* Desktop-only inline metadata */}
+            <span className="hidden flex-shrink-0 text-xs tracking-wide text-foreground/45 dark:text-foreground/55 sm:inline">
+              {formatRelativeDate(file.updatedAt)}
+            </span>
+            <span className="hidden flex-shrink-0 text-xs text-foreground/40 dark:text-foreground/50 sm:inline">
+              {formatWordCount(wordCount)}
+            </span>
+          </div>
+          {/* Mobile content preview */}
+          <p className="mt-1 line-clamp-1 text-[13px] text-foreground/40 dark:text-foreground/50 sm:hidden">
+            {preview || <span className="italic text-foreground/25">Empty document</span>}
+          </p>
+          {/* Mobile metadata row */}
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60 sm:hidden">
+            <span>{formatRelativeDate(file.updatedAt)}</span>
+            {wordCount > 0 && (
+              <>
+                <span className="text-muted-foreground/30">·</span>
+                <span>{formatWordCount(wordCount)}</span>
+              </>
+            )}
+          </div>
+        </div>
 
         {/* Options menu */}
         <div

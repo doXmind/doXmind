@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal, Pencil, Share2, FileDown, Trash2, Folder, Star } from "lucide-react";
 import { cn, formatRelativeDate } from "@/lib/utils";
+import { stripHtml, getWordCount, getNameWithoutExtension } from "@/lib/file-utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,23 +23,6 @@ import { toast } from "sonner";
 interface FileRowProps {
   file: FileItem;
   index: number;
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getNameWithoutExtension(name: string) {
-  return name.replace(/\.md$/, "");
-}
-
-function getWordCount(content: string): number {
-  const text = stripHtml(content);
-  if (!text) return 0;
-  return text.split(/\s+/).filter(Boolean).length;
 }
 
 export function FileRow({ file }: FileRowProps) {

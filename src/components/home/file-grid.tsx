@@ -40,6 +40,7 @@ import { TemplatePicker, type FileTemplate } from "@/components/sidebar/template
 import { TrashPanel } from "@/components/sidebar/trash-panel";
 import { FileCard } from "./file-card";
 import { FileRow } from "./file-row";
+import { MobileDocumentRow } from "./mobile-document-row";
 import { EmptyState } from "./empty-state";
 import { NewButton } from "./new-button";
 
@@ -464,16 +465,18 @@ export function FileGrid({
             </Tooltip>
           )}
 
-          {/* Actions — single New button with dropdown */}
+          {/* Actions — single New button with dropdown (hidden on mobile, FAB replaces it) */}
           {!hideActions && (
-            <NewButton
-              onCreateFile={handleCreate}
-              onCreateFolder={handleCreateFolder}
-              onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
-              onImportFile={handleImportClick}
-              isImporting={isImporting}
-              disableFolder={!!currentFolderId}
-            />
+            <div className="hidden md:block">
+              <NewButton
+                onCreateFile={handleCreate}
+                onCreateFolder={handleCreateFolder}
+                onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
+                onImportFile={handleImportClick}
+                isImporting={isImporting}
+                disableFolder={!!currentFolderId}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -574,8 +577,8 @@ export function FileGrid({
                 )}
               </div>
 
-              {/* Mobile: horizontal scroll carousel */}
-              <MobileCarousel
+              {/* Mobile: vertical document list */}
+              <MobileDocumentList
                 files={displayFiles}
                 isSearchActive={isSearchActive}
                 searchMatchMap={searchMatchMap}
@@ -823,15 +826,15 @@ function DragEdgeIndicator({ side, progress }: { side: "left" | "right"; progres
 }
 
 // ---------------------------------------------------------------------------
-// Mobile horizontal carousel with snap-scroll + dot indicators
+// Mobile vertical document list (replaces horizontal carousel)
 // ---------------------------------------------------------------------------
 
-function MobileCarousel({
+function MobileDocumentList({
   files,
   isSearchActive,
   searchMatchMap,
   searchQuery,
-  onResultClick,
+  onResultClick: _onResultClick,
 }: {
   files: FileItem[];
   isSearchActive: boolean;
@@ -839,102 +842,45 @@ function MobileCarousel({
   searchQuery: string;
   onResultClick?: (fileId: string, position: number, score: number) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  // Track scroll position to update dot indicator
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const onScroll = () => {
-      const scrollLeft = el.scrollLeft;
-      const cardWidth = el.firstElementChild
-        ? (el.firstElementChild as HTMLElement).offsetWidth
-        : 1;
-      // gap-4 = 16px
-      setActiveIndex(Math.round(scrollLeft / (cardWidth + 16)));
-    };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [files.length]);
-
-  const totalDots = files.length;
-  // Show max 7 dots, centered around active
-  const maxDots = 7;
-  let dotStart = 0;
-  let dotEnd = totalDots;
-  if (totalDots > maxDots) {
-    dotStart = Math.max(0, activeIndex - Math.floor(maxDots / 2));
-    dotEnd = dotStart + maxDots;
-    if (dotEnd > totalDots) {
-      dotEnd = totalDots;
-      dotStart = dotEnd - maxDots;
-    }
-  }
-
   return (
-    <motion.div className="sm:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {/* Scrollable row — extend to viewport edges with negative margin + padding */}
+    <motion.div className="pb-24 sm:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div
-        ref={scrollRef}
-        className="hide-scrollbar -mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 py-2"
-        style={{ WebkitOverflowScrolling: "touch" }}
+        className={cn(
+          "overflow-hidden rounded-lg will-change-transform",
+          "border border-stone-200/40 dark:border-neutral-700/25",
+          "bg-[#fdfcfa]/60 dark:bg-[#1e1e20]/40"
+        )}
+        style={{ boxShadow: LIST_SHADOW }}
       >
         {files.map((file, i) => (
           <motion.div
             key={file.id}
-            className="w-[80vw] max-w-[320px] flex-shrink-0 snap-center"
-            initial={{ opacity: 0, x: 30 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{
               opacity: 1,
-              x: 0,
+              y: 0,
               transition: {
-                duration: 0.4,
-                delay: Math.min(i * 0.06, 0.3),
+                duration: 0.35,
+                delay: Math.min(i * 0.04, 0.3),
                 ease: [0.16, 1, 0.3, 1] as const,
               },
             }}
+            className={cn(i > 0 && "border-t border-stone-200/20 dark:border-neutral-700/15")}
           >
-            <FileCard
+            <MobileDocumentRow
               file={file}
-              index={i}
               searchMatch={
-                isSearchActive
+                isSearchActive && searchMatchMap.has(file.id)
                   ? {
                       ...searchMatchMap.get(file.id)!,
                       query: searchQuery,
                     }
                   : undefined
               }
-              onResultClick={onResultClick}
             />
           </motion.div>
         ))}
       </div>
-
-      {/* Dot indicators */}
-      {totalDots > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-1.5">
-          {dotStart > 0 && <span className="h-1 w-1 rounded-full bg-muted-foreground/15" />}
-          {Array.from({ length: dotEnd - dotStart }).map((_, i) => {
-            const idx = dotStart + i;
-            return (
-              <span
-                key={idx}
-                className={cn(
-                  "rounded-full transition-all duration-200",
-                  idx === activeIndex
-                    ? "h-1.5 w-1.5 bg-foreground/40"
-                    : "h-1 w-1 bg-muted-foreground/15"
-                )}
-              />
-            );
-          })}
-          {dotEnd < totalDots && <span className="h-1 w-1 rounded-full bg-muted-foreground/15" />}
-        </div>
-      )}
     </motion.div>
   );
 }

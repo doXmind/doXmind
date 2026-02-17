@@ -8,11 +8,13 @@ import { api, type SearchResultItem } from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useKBAgent } from "@/hooks/use-kb-agent";
 import { telemetry } from "@/lib/telemetry";
+import { useIsMobile } from "@/hooks/use-device-type";
 import { HomeSearch, type SearchMode } from "./home-search";
 import { FileGrid } from "./file-grid";
 import { KBAnswerCard } from "./kb-answer-card";
 import { RecentFiles } from "./recent-files";
 import { FavoritesSection } from "./favorites-section";
+import { MobileFAB } from "./mobile-fab";
 
 function getGreeting(): { title: string; subtitle: string } {
   const hour = new Date().getHours();
@@ -99,6 +101,7 @@ function TypewriterText({
 export function HomeDashboard() {
   const { files, loadFiles, isLoading, getRecentFiles, getFavorites } = useFileStore();
   const { user } = useAuthStore();
+  const isMobile = useIsMobile();
   // Onboarding auto-start disabled while tour is being tuned.
   // Users can manually start via User Menu → Restart Tour.
 
@@ -291,10 +294,10 @@ export function HomeDashboard() {
 
       <main className="relative flex-1 px-6 pb-16 md:px-10">
         {/* Hero section */}
-        <div className="mx-auto max-w-xl pt-14 md:pt-20">
+        <div className="mx-auto max-w-xl pt-8 md:pt-20">
           {/* Greeting */}
           <motion.div
-            className="mb-10 text-center"
+            className="mb-6 text-center md:mb-10"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
@@ -328,14 +331,14 @@ export function HomeDashboard() {
 
         {/* Continue writing — recent files */}
         {showRecent && (
-          <div className="mx-auto mt-10 max-w-5xl">
+          <div className="mx-auto mt-6 max-w-5xl md:mt-10">
             <RecentFiles files={recentFiles} />
           </div>
         )}
 
         {/* Favorites */}
         {showFavorites && (
-          <div className="mx-auto mt-8 max-w-5xl">
+          <div className="mx-auto mt-6 max-w-5xl md:mt-8">
             <FavoritesSection favorites={favorites} />
           </div>
         )}
@@ -368,6 +371,9 @@ export function HomeDashboard() {
           />
         )}
       </main>
+
+      {/* Mobile floating action button */}
+      {isMobile && !showAnswerCard && <MobileFAB />}
     </div>
   );
 }

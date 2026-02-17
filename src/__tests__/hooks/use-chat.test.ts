@@ -615,19 +615,19 @@ describe("useChat", () => {
 
       const { result } = renderHook(() => useChat());
 
-      // Start sending (don't await - we want to abort it)
-      const sendPromise = result.current.sendMessage("Hello", ["file-1"]);
+      await act(async () => {
+        // Start sending (don't await - we want to abort it)
+        const sendPromise = result.current.sendMessage("Hello", ["file-1"]);
 
-      // Give it a moment to start the fetch
-      await new Promise((r) => setTimeout(r, 50));
+        // Give it a moment to start the fetch
+        await new Promise((r) => setTimeout(r, 50));
 
-      // Stop streaming - this should abort the fetch
-      act(() => {
+        // Stop streaming - this should abort the fetch
         result.current.stopStreaming();
-      });
 
-      // Wait for the promise to settle (with abort error)
-      await sendPromise;
+        // Wait for the promise to settle (with abort error)
+        await sendPromise;
+      });
 
       // The message should include "Stopped" since AbortError was caught
       expect(mockAppendToMessage).toHaveBeenCalledWith(
