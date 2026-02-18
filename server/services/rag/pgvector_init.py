@@ -19,6 +19,8 @@ async def init_pgvector(db: AsyncSession):
     """Initialize pgvector extension and create vector table.
 
     Should be called once at application startup.
+    Uses a PostgreSQL advisory lock to prevent deadlocks when
+    multiple workers start concurrently.
     """
     settings = get_settings()
 
@@ -27,6 +29,9 @@ async def init_pgvector(db: AsyncSession):
         return
 
     try:
+        # Acquire advisory lock to serialize init across workers (key: 42424242)
+        await db.execute(text("SELECT pg_advisory_lock(42424242)"))
+
         # Create pgvector extension
         await db.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
@@ -156,3 +161,9 @@ async def init_pgvector(db: AsyncSession):
         await db.rollback()
         logger.error(f"Failed to initialize pgvector: {e}")
         raise
+    finally:
+        # Release advisory lock so other workers can proceed
+        try:
+            await db.execute(text("SELECT pg_advisory_unlock(42424242)"))
+        except Exception:
+            pass

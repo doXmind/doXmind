@@ -27,7 +27,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -36,9 +36,10 @@ services:
   # PostgreSQL with pgvector extension
   # =========================================================================
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg17
     container_name: doxmind-postgres
     restart: unless-stopped
+    shm_size: 256m
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
