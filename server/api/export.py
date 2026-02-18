@@ -15,7 +15,7 @@ from config import get_cors_headers
 from db.database import File, get_db
 from exceptions import AppException, BadRequestError, DocumentNotFoundError, InternalError
 from services.auth_service import TokenData, require_auth
-from services.export_service import export_service
+from services.export_service import get_export_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -59,16 +59,17 @@ async def export_file(
         base_filename = base_filename[:-3]
 
     try:
+        svc = get_export_service()
         if format == "markdown":
-            content = export_service.export_markdown(file.content, base_filename)
+            content = svc.export_markdown(file.content, base_filename)
             media_type = "text/markdown"
             extension = "md"
         elif format == "pdf":
-            content = export_service.export_pdf(file.content, base_filename)
+            content = svc.export_pdf(file.content, base_filename)
             media_type = "application/pdf"
             extension = "pdf"
         elif format == "docx":
-            content = export_service.export_docx(file.content, base_filename)
+            content = svc.export_docx(file.content, base_filename)
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             extension = "docx"
         else:

@@ -86,8 +86,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
 
     # Connection pool tuning (per-worker settings)
-    db_pool_size: int = 10  # Base connections per worker
-    db_max_overflow: int = 20  # Additional temporary connections under load
+    # Heroku Standard-2X has 1 GB RAM; keep pool small for single-worker async
+    db_pool_size: int = 3  # Base connections per worker
+    db_max_overflow: int = 7  # Additional temporary connections under load
     db_pool_recycle: int = 300  # Recycle connections after 5 minutes
 
     @property

@@ -24,6 +24,49 @@ turndownService.addRule("strikethrough", {
   },
 });
 
+// Convert mermaid chart divs to ```mermaid code fences
+turndownService.addRule("mermaidChart", {
+  filter: function (node) {
+    return (
+      node.nodeName === "DIV" && (node as HTMLElement).getAttribute("data-type") === "mermaid-chart"
+    );
+  },
+  replacement: function (_content, node) {
+    const code = (node as HTMLElement).getAttribute("data-code") || "";
+    return "\n\n```mermaid\n" + code + "\n```\n\n";
+  },
+});
+
+// Convert block math divs to $$...$$ fences
+turndownService.addRule("blockMath", {
+  filter: function (node) {
+    return (
+      node.nodeName === "DIV" && (node as HTMLElement).getAttribute("data-type") === "block-math"
+    );
+  },
+  replacement: function (_content, node) {
+    const latex = (node as HTMLElement).getAttribute("data-latex") || "";
+    return "\n\n$$\n" + latex + "\n$$\n\n";
+  },
+});
+
+// Configure marked to handle mermaid code fences
+marked.use({
+  renderer: {
+    code({ text, lang }: { text: string; lang?: string }): string | false {
+      if (lang === "mermaid") {
+        const escaped = text
+          .replace(/&/g, "&amp;")
+          .replace(/"/g, "&quot;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return `<div data-type="mermaid-chart" data-code="${escaped}" class="mermaid-chart"></div>`;
+      }
+      return false; // Use default renderer for other languages
+    },
+  },
+});
+
 /**
  * Normalize TipTap table HTML to standard format for turndown.
  *

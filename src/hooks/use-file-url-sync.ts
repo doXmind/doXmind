@@ -96,6 +96,14 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     if (currentFileId === lastSyncedId.current) return;
 
     lastSyncedId.current = currentFileId;
+
+    // Skip navigation if the URL already shows the correct file.
+    // This prevents unnecessary RSC fetches when the init effect calls
+    // setCurrentFile to match the URL (e.g., syncing localStorage → URL).
+    const urlAlreadyMatches =
+      (currentFileId && fileIdFromUrl === currentFileId) || (!currentFileId && !fileIdFromUrl);
+    if (urlAlreadyMatches) return;
+
     const newPath = currentFileId ? `/editor/${currentFileId}` : "/editor";
     router.replace(newPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to store changes

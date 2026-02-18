@@ -22,8 +22,10 @@ from services.export_service import (
     HTMLToDocumentParser,
     NodeType,
     PDFRenderer,
-    export_service,
+    get_export_service,
 )
+
+export_service = get_export_service()
 
 # ============================================================================
 # DocumentNode Model Tests

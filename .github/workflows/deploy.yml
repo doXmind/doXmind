@@ -9,7 +9,7 @@ on:
 
 jobs:
   # ============================================================================
-  # Deploy to Heroku using Git push
+  # Deploy Frontend to Heroku
   # ============================================================================
   deploy-frontend:
     name: Deploy Frontend to Heroku
@@ -30,8 +30,11 @@ jobs:
           git remote add heroku-frontend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_FRONTEND_APP }}.git 2>/dev/null || true
           git push heroku-frontend main:main --force
 
+  # ============================================================================
+  # Deploy Backend to AWS EC2
+  # ============================================================================
   deploy-backend:
-    name: Deploy Backend to Heroku
+    name: Deploy Backend to EC2
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
@@ -39,17 +42,72 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Deploy to Heroku
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+      - name: Set up SSH
         run: |
-          # Use git subtree to push only the server directory
-          git remote add heroku-backend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_BACKEND_APP }}.git 2>/dev/null || true
-          git subtree push --prefix server heroku-backend main --force || \
-            git push heroku-backend $(git subtree split --prefix server main):main --force
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sync server code to EC2
+        run: |
+          rsync -avz --delete \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='*.pyc' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            ./server/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/server/
+
+      - name: Sync infrastructure files to EC2
+        run: |
+          scp ./docker-compose.prod.yml ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/docker-compose.prod.yml
+          rsync -avz ./nginx/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/nginx/
+          rsync -avz ./scripts/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/scripts/
+
+      - name: Build, migrate, and deploy
+        run: |
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOY'
+            set -euo pipefail
+            cd /opt/doxmind
+
+            echo "=== Tagging current image as rollback ==="
+            docker tag doxmind-backend:latest doxmind-backend:previous 2>/dev/null || true
+
+            echo "=== Building new backend image ==="
+            docker compose -f docker-compose.prod.yml build backend
+
+            echo "=== Running database migrations ==="
+            docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+
+            echo "=== Restarting backend ==="
+            docker compose -f docker-compose.prod.yml up -d backend
+
+            echo "=== Waiting for health check ==="
+            for i in $(seq 1 30); do
+              if docker exec doxmind-backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Backend is healthy!"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "Health check failed after 30 attempts!"
+                echo "=== Backend logs ==="
+                docker logs doxmind-backend --tail 50
+                exit 1
+              fi
+              echo "Waiting for backend... ($i/30)"
+              sleep 2
+            done
+
+            echo "=== Reloading nginx ==="
+            docker exec doxmind-nginx nginx -s reload 2>/dev/null || true
+
+            echo "=== Cleaning up old Docker images ==="
+            docker image prune -f
+
+            echo "=== Deployment complete ==="
+          DEPLOY
 
   # ============================================================================
   # Notify on Completion
@@ -71,5 +129,5 @@ jobs:
           fi
 
           echo "All deployments successful!"
-          echo "Frontend: https://doxmind-mini-frontend-2fac03803995.herokuapp.com/"
-          echo "Backend: https://doxmind-mini-server-31d83014622f.herokuapp.com/"
+          echo "Frontend: https://beta.doxmind.com"
+          echo "Backend: https://api.doxmind.com"

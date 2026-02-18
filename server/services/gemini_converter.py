@@ -8,10 +8,6 @@ import io
 import logging
 from functools import lru_cache
 
-from docx import Document
-from google import genai
-from google.genai import types
-
 from config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -60,8 +56,10 @@ Document content:
 
 
 @lru_cache
-def get_gemini_client() -> genai.Client:
+def get_gemini_client():
     """Get cached Gemini client instance."""
+    from google import genai
+
     settings = get_settings()
     if not settings.google_api_key:
         raise ValueError("GOOGLE_API_KEY is not configured")
@@ -77,6 +75,8 @@ def extract_docx_content(content: bytes) -> str:
     Returns:
         Extracted text content with basic structure preserved
     """
+    from docx import Document
+
     doc = Document(io.BytesIO(content))
     parts = []
 
@@ -153,6 +153,8 @@ async def convert_file_to_markdown(
 
     def _sync_generate() -> str:
         """Synchronous Gemini API call to run in thread pool."""
+        from google.genai import types
+
         client = get_gemini_client()
         response = client.models.generate_content(
             model=model,

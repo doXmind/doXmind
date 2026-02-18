@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, Suspense } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
@@ -41,22 +41,30 @@ import { FloatingChatButton } from "@/components/ai/floating-chat-button";
 import { FloatingChatWindow } from "@/components/ai/floating-chat-window";
 import { PresentationMode } from "@/components/editor/presentation-mode";
 
-export default function EditorPage() {
-  const params = useParams();
+/**
+ * Legacy URL redirect: /editor?id=xxx -> /editor/xxx
+ * Wrapped in Suspense because useSearchParams() requires it in Next.js 15
+ * to avoid suspending the entire page tree during client-side navigation.
+ */
+function LegacyUrlRedirect() {
   const searchParams = useSearchParams();
   const router = useRouter();
-
-  // [[...fileId]] gives params.fileId as string[] | undefined
-  // /editor -> undefined, /editor/abc123 -> ["abc123"]
-  const fileIdFromUrl = (params.fileId as string[] | undefined)?.[0] ?? null;
-
-  // Legacy URL format: /editor?id=xxx -> /editor/xxx
   const legacyId = searchParams.get("id");
   useEffect(() => {
     if (legacyId) {
       router.replace(`/editor/${legacyId}`);
     }
   }, [legacyId, router]);
+  return null;
+}
+
+export default function EditorPage() {
+  const params = useParams();
+  const router = useRouter();
+
+  // [[...fileId]] gives params.fileId as string[] | undefined
+  // /editor -> undefined, /editor/abc123 -> ["abc123"]
+  const fileIdFromUrl = (params.fileId as string[] | undefined)?.[0] ?? null;
 
   const { currentFileId, files, loadFiles, isLoading } = useFileStore();
 
@@ -177,6 +185,10 @@ export default function EditorPage() {
   if (isMobile) {
     return (
       <LoadingScreen isLoading={isLoading} isMobile={true}>
+        {/* Legacy URL handler — isolated in Suspense to avoid blocking the page */}
+        <Suspense fallback={null}>
+          <LegacyUrlRedirect />
+        </Suspense>
         <AppShell hideHeader>
           <MobileEditorLayout>
             {/* Editor Content - no overflow-hidden to allow parent scrolling */}
@@ -213,6 +225,10 @@ export default function EditorPage() {
   // Desktop Layout: Three-panel view
   return (
     <LoadingScreen isLoading={isLoading} isMobile={false}>
+      {/* Legacy URL handler — isolated in Suspense to avoid blocking the page */}
+      <Suspense fallback={null}>
+        <LegacyUrlRedirect />
+      </Suspense>
       <AppShell hideHeader>
         <div className="flex h-full flex-col">
           {/* Unified Header — spans full width, above all panels */}

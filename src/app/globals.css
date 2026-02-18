@@ -1502,6 +1502,33 @@ html {
   font-style: italic;
 }
 
+/* ============================================
+   Mermaid Chart Styles
+   ============================================ */
+
+/* Mermaid chart wrapper */
+.ProseMirror .mermaid-chart-wrapper {
+  @apply my-4 block;
+}
+
+/* Empty chart placeholder */
+.ProseMirror .mermaid-chart-wrapper .mermaid-empty-placeholder {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+/* Mermaid editor panel animation */
+.mermaid-editor-panel {
+  animation: mathPanelFadeIn 0.15s ease-out;
+}
+
+/* Ensure mermaid SVGs are responsive */
+.ProseMirror .mermaid-chart-wrapper .mermaid-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* ====================================
    Mobile Auto-Zoom Prevention
    Ensure inputs have 16px+ font size to prevent iOS/Chrome auto-zoom

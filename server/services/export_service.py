@@ -4,17 +4,17 @@ This module provides multi-format export with a unified HTML parsing layer
 to avoid code duplication between formats.
 """
 
+from __future__ import annotations
+
 import io
 import os
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
-import markdown
-from bs4 import BeautifulSoup
-from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from fpdf import FPDF
-from markdownify import markdownify as md
+if TYPE_CHECKING:
+    from docx.document import Document
+    from fpdf import FPDF
 
 # ============================================================================
 # Document Node Model (Intermediate Representation)
@@ -35,6 +35,7 @@ class NodeType(Enum):
     TABLE_ROW = "table_row"
     TABLE_CELL = "table_cell"
     HORIZONTAL_RULE = "hr"
+    MERMAID_CHART = "mermaid_chart"
     INLINE_BOLD = "bold"
     INLINE_ITALIC = "italic"
     INLINE_CODE = "code"
@@ -47,7 +48,7 @@ class DocumentNode:
 
     node_type: NodeType
     content: str = ""
-    children: list["DocumentNode"] = field(default_factory=list)
+    children: list[DocumentNode] = field(default_factory=list)
 
     # Type-specific attributes
     level: int = 1  # For headings (1-6)
@@ -66,6 +67,8 @@ class HTMLToDocumentParser:
 
     def parse(self, html: str) -> list[DocumentNode]:
         """Parse HTML string into document nodes."""
+        from bs4 import BeautifulSoup
+
         soup = BeautifulSoup(html, "html.parser")
         return self._parse_children(soup)
 
@@ -119,6 +122,11 @@ class HTMLToDocumentParser:
         # Horizontal rule
         if name == "hr":
             return DocumentNode(NodeType.HORIZONTAL_RULE)
+
+        # Mermaid chart
+        if name == "div" and element.get("data-type") == "mermaid-chart":
+            code = element.get("data-code", "")
+            return DocumentNode(NodeType.MERMAID_CHART, content=code)
 
         # Div - recurse
         if name == "div":
@@ -320,6 +328,8 @@ class PDFRenderer:
 
     def render(self, nodes: list[DocumentNode]) -> bytes:
         """Render document nodes to PDF bytes."""
+        from fpdf import FPDF
+
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -363,6 +373,17 @@ class PDFRenderer:
             pdf.ln(3)
 
         elif node.node_type == NodeType.CODE_BLOCK:
+            pdf.set_font(font, size=9)
+            pdf.set_fill_color(245, 245, 245)
+            pdf.set_x(pdf.l_margin + 5)
+            pdf.multi_cell(0, 5, node.content, fill=True)
+            pdf.set_font(font, size=11)
+            pdf.ln(3)
+
+        elif node.node_type == NodeType.MERMAID_CHART:
+            # Render mermaid source as code block fallback
+            pdf.set_font(font, "B", 10)
+            pdf.cell(0, 6, "[Mermaid Diagram]", new_x="LMARGIN", new_y="NEXT")
             pdf.set_font(font, size=9)
             pdf.set_fill_color(245, 245, 245)
             pdf.set_x(pdf.l_margin + 5)
@@ -465,6 +486,9 @@ class DOCXRenderer:
 
     def render(self, nodes: list[DocumentNode]) -> bytes:
         """Render document nodes to DOCX bytes."""
+        from docx import Document
+        from docx.shared import Pt
+
         doc = Document()
 
         # Set default font
@@ -482,6 +506,8 @@ class DOCXRenderer:
 
     def _render_node(self, doc: Document, node: DocumentNode, level: int = 0):
         """Render a single node to the document."""
+        from docx.shared import Inches, Pt, RGBColor
+
         if node.node_type == NodeType.TEXT:
             doc.add_paragraph(node.content)
 
@@ -493,6 +519,17 @@ class DOCXRenderer:
             self._render_inline_content(para, node.children)
 
         elif node.node_type == NodeType.CODE_BLOCK:
+            para = doc.add_paragraph()
+            run = para.add_run(node.content)
+            run.font.name = "Consolas"
+            run.font.size = Pt(10)
+            para.paragraph_format.left_indent = Inches(0.25)
+
+        elif node.node_type == NodeType.MERMAID_CHART:
+            # Render mermaid source as code block fallback
+            para = doc.add_paragraph()
+            run = para.add_run("[Mermaid Diagram]")
+            run.bold = True
             para = doc.add_paragraph()
             run = para.add_run(node.content)
             run.font.name = "Consolas"
@@ -518,6 +555,8 @@ class DOCXRenderer:
 
     def _render_inline_content(self, para, children: list[DocumentNode]):
         """Render inline content to a paragraph."""
+        from docx.shared import Pt, RGBColor
+
         for child in children:
             if child.node_type == NodeType.TEXT:
                 para.add_run(child.content)
@@ -538,6 +577,8 @@ class DOCXRenderer:
 
     def _render_list(self, doc: Document, node: DocumentNode, level: int = 0):
         """Render a list to the document."""
+        from docx.shared import Inches
+
         counter = 1
         for item in node.children:
             if item.node_type == NodeType.LIST_ITEM:
@@ -584,6 +625,8 @@ class ExportService:
     """Service for exporting content to various formats."""
 
     def __init__(self):
+        import markdown
+
         self.md = markdown.Markdown(extensions=["tables", "fenced_code", "toc"])
         self.parser = HTMLToDocumentParser()
         self.pdf_renderer = PDFRenderer()
@@ -591,6 +634,8 @@ class ExportService:
 
     def export_markdown(self, content: str, filename: str) -> bytes:  # noqa: ARG002
         """Export content as Markdown."""
+        from markdownify import markdownify as md
+
         markdown_content = md(
             content, heading_style="ATX", code_language_callback=self._get_code_language
         )
@@ -620,5 +665,13 @@ class ExportService:
         return self.docx_renderer.render(nodes)
 
 
-# Singleton instance
-export_service = ExportService()
+# Lazy singleton — instantiated on first use, not at import time
+_export_service: ExportService | None = None
+
+
+def get_export_service() -> ExportService:
+    """Get cached export service instance."""
+    global _export_service
+    if _export_service is None:
+        _export_service = ExportService()
+    return _export_service

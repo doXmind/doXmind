@@ -3,9 +3,6 @@
 import logging
 from functools import lru_cache
 
-import boto3
-from botocore.exceptions import ClientError
-
 from config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -15,6 +12,8 @@ class StorageService:
     """Service for S3 file storage operations."""
 
     def __init__(self):
+        import boto3
+
         settings = get_settings()
         self.bucket = settings.aws_s3_bucket
         self.region = settings.aws_s3_region
@@ -44,6 +43,8 @@ class StorageService:
         Raises:
             FileNotFoundError: If the key does not exist
         """
+        from botocore.exceptions import ClientError
+
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
             data = response["Body"].read()

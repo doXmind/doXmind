@@ -21,6 +21,7 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import { CustomCodeBlock } from "@/extensions/code-block";
 import { InlineMath, BlockMath } from "@/extensions/math";
+import { MermaidChart } from "@/extensions/mermaid";
 import { Callout } from "@/extensions/callout";
 import { Toggle } from "@/extensions/toggle";
 import { TableOfContents } from "@/extensions/toc";
@@ -103,6 +104,9 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Math support (LaTeX/KaTeX)
     InlineMath,
     BlockMath,
+
+    // Mermaid diagram blocks
+    MermaidChart,
 
     // Callout blocks (info, warning, error, tip)
     Callout,

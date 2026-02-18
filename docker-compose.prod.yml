@@ -1,0 +1,125 @@
+# =============================================================================
+# doXmind Mini - Production Docker Compose (AWS EC2)
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml logs -f
+#   docker compose -f docker-compose.prod.yml down
+# =============================================================================
+
+services:
+  # =========================================================================
+  # Nginx - Reverse Proxy + SSL Termination
+  # =========================================================================
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: doxmind-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./nginx/certbot-webroot:/var/www/certbot:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =========================================================================
+  # PostgreSQL with pgvector extension
+  # =========================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: doxmind-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./backups:/backups
+    # NOT exposed to host - only accessible within Docker network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # PostgreSQL tuning for 4GB RAM shared with Redis + App
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=1536MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
+      -c max_connections=50
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c wal_buffers=16MB
+      -c max_wal_size=2GB
+      -c checkpoint_completion_target=0.9
+
+  # =========================================================================
+  # Redis - Rate limiting only (stateless)
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: doxmind-redis
+    restart: unless-stopped
+    # NOT exposed to host
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+
+  # =========================================================================
+  # FastAPI Backend
+  # =========================================================================
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.prod
+    container_name: doxmind-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      # Override database/redis URLs for Docker networking
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - RATE_LIMIT_STORAGE_URI=redis://redis:6379
+      - PGVECTOR_ENABLED=true
+      - DEBUG=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    # NOT exposed to host - nginx proxies to backend:8000
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: doxmind-network
