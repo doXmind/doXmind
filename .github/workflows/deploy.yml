@@ -76,13 +76,13 @@ jobs:
             docker tag doxmind-backend:latest doxmind-backend:previous 2>/dev/null || true
 
             echo "=== Building new backend image ==="
-            docker compose -f docker-compose.prod.yml build backend
+            docker compose --env-file .env.production -f docker-compose.prod.yml build backend
 
             echo "=== Running database migrations ==="
-            docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+            docker compose --env-file .env.production -f docker-compose.prod.yml run --rm backend alembic upgrade head
 
             echo "=== Restarting backend ==="
-            docker compose -f docker-compose.prod.yml up -d backend
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d backend
 
             echo "=== Waiting for health check ==="
             for i in $(seq 1 30); do
