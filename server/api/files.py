@@ -205,8 +205,21 @@ async def list_files(
     user_id = get_user_id(token)
 
     # Build query with folder-aware ordering: folders first, then by position, then by date
+    # Optimized: exclude content column to reduce payload size (~160KB → ~5KB)
+    # Content is loaded on demand via GET /files/{file_id}
     query = (
-        select(File)
+        select(
+            File.id,
+            File.name,
+            File.is_folder,
+            File.parent_id,
+            File.position,
+            File.summary,
+            File.is_favorite,
+            File.icon,
+            File.created_at,
+            File.updated_at,
+        )
         .where(File.deleted_at.is_(None))
         .order_by(
             File.is_folder.desc(),  # Folders first
@@ -224,28 +237,28 @@ async def list_files(
 
     query = query.limit(limit).offset(offset)
     result = await db.execute(query)
-    files = result.scalars().all()
+    rows = result.all()
 
     response_data = [
         FileResponse(
-            id=f.id,
-            name=f.name,
-            content=f.content,
-            is_folder=f.is_folder,
-            parent_id=f.parent_id,
-            position=f.position,
-            summary=f.summary,
-            is_favorite=f.is_favorite or False,
-            icon=f.icon,
-            created_at=f.created_at.isoformat(),
-            updated_at=f.updated_at.isoformat(),
+            id=row.id,
+            name=row.name,
+            content="",  # Content excluded from list — loaded on demand
+            is_folder=row.is_folder,
+            parent_id=row.parent_id,
+            position=row.position,
+            summary=row.summary,
+            is_favorite=row.is_favorite or False,
+            icon=row.icon,
+            created_at=row.created_at.isoformat(),
+            updated_at=row.updated_at.isoformat(),
         )
-        for f in files
+        for row in rows
     ]
 
     # Generate ETag from file timestamps for conditional request support
     etag = hashlib.md5(
-        "|".join(f.updated_at.isoformat() for f in files).encode()
+        "|".join(row.updated_at.isoformat() for row in rows).encode()
     ).hexdigest()
 
     from fastapi.responses import JSONResponse

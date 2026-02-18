@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { haptics } from "@/lib/haptics";
-import { MOBILE_SPRINGS } from "@/lib/constants";
 import { toast } from "sonner";
 
 interface MobileDocumentRowProps {
@@ -196,11 +195,12 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
           )}
           drag="x"
           dragDirectionLock
-          dragConstraints={{ left: -DELETE_ACTION_WIDTH, right: SWIPE_THRESHOLD + 20 }}
-          dragElastic={{ left: 0.1, right: 0.2 }}
+          dragConstraints={{ left: -DELETE_ACTION_WIDTH, right: SWIPE_THRESHOLD }}
+          dragElastic={{ left: 0.05, right: 0.1 }}
+          dragMomentum={false}
           style={{ x }}
           animate={isActionsRevealed ? { x: -DELETE_ACTION_WIDTH } : { x: 0 }}
-          transition={{ type: "spring", ...MOBILE_SPRINGS.SNAPPY }}
+          transition={{ type: "spring", stiffness: 500, damping: 40, mass: 0.5 }}
           onDrag={handleDrag}
           onDragEnd={handleDragEnd}
           onClick={handleOpen}

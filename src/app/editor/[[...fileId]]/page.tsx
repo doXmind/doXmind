@@ -66,7 +66,15 @@ export default function EditorPage() {
   // /editor -> undefined, /editor/abc123 -> ["abc123"]
   const fileIdFromUrl = (params.fileId as string[] | undefined)?.[0] ?? null;
 
-  const { currentFileId, files, loadFiles, isLoading } = useFileStore();
+  const {
+    currentFileId,
+    files,
+    loadFiles,
+    isLoading,
+    isSynced,
+    loadFileContent,
+    loadedContentIds,
+  } = useFileStore();
 
   // Sync URL <-> Zustand store
   useFileUrlSync(fileIdFromUrl);
@@ -172,6 +180,13 @@ export default function EditorPage() {
     loadFiles();
   }, [loadFiles]);
 
+  // Load file content on demand when current file changes
+  useEffect(() => {
+    if (currentFileId && !loadedContentIds.has(currentFileId)) {
+      loadFileContent(currentFileId);
+    }
+  }, [currentFileId, loadedContentIds, loadFileContent]);
+
   // Update browser tab title based on current file
   useEffect(() => {
     if (currentFile) {
@@ -193,7 +208,21 @@ export default function EditorPage() {
           <MobileEditorLayout>
             {/* Editor Content - no overflow-hidden to allow parent scrolling */}
             <div id="main-content">
-              {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
+              {currentFile ? (
+                loadedContentIds.has(currentFile.id) ? (
+                  <Editor file={currentFile} />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center">
+                    <div className="animate-pulse text-muted-foreground">Loading...</div>
+                  </div>
+                )
+              ) : !isSynced && currentFileId ? (
+                <div className="flex flex-1 items-center justify-center">
+                  <div className="animate-pulse text-muted-foreground">Loading...</div>
+                </div>
+              ) : (
+                <WelcomeScreen />
+              )}
             </div>
           </MobileEditorLayout>
 
@@ -301,7 +330,21 @@ export default function EditorPage() {
                     <PanelLeftOpen className="h-4 w-4" />
                   </button>
                 )}
-                {currentFile ? <Editor file={currentFile} /> : <WelcomeScreen />}
+                {currentFile ? (
+                  loadedContentIds.has(currentFile.id) ? (
+                    <Editor file={currentFile} />
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center">
+                      <div className="animate-pulse text-muted-foreground">Loading...</div>
+                    </div>
+                  )
+                ) : !isSynced && currentFileId ? (
+                  <div className="flex flex-1 items-center justify-center">
+                    <div className="animate-pulse text-muted-foreground">Loading...</div>
+                  </div>
+                ) : (
+                  <WelcomeScreen />
+                )}
                 {/* Floating chat window — overlays editor when in floating mode */}
                 {!isFocusMode && currentFile && chatMode === "floating" && <FloatingChatWindow />}
                 {/* Floating AI button — visible when chat is closed */}

@@ -587,56 +587,68 @@ export function FileGrid({
               />
             </>
           ) : (
-            <div
-              ref={gridRef}
-              className="relative"
-              onDragOver={handleGridDragOver}
-              onDragLeave={handleGridDragLeave}
-              onDrop={handleGridDrop}
-            >
-              {/* Left edge indicator */}
-              {activeEdge === "left" && page > 0 && (
-                <DragEdgeIndicator side="left" progress={dwellProgress} />
-              )}
-
-              <motion.div
-                className={cn(
-                  "rounded-[3px]",
-                  "border border-stone-200/40 dark:border-neutral-700/25",
-                  "bg-[#fdfcfa]/40 dark:bg-[#1e1e20]/30"
-                )}
-                style={{ boxShadow: LIST_SHADOW }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                key={listKey}
+            <>
+              {/* Desktop: list view with FileRow */}
+              <div
+                ref={gridRef}
+                className="relative hidden sm:block"
+                onDragOver={handleGridDragOver}
+                onDragLeave={handleGridDragLeave}
+                onDrop={handleGridDrop}
               >
-                {pagedFiles.map((file, i) => (
-                  <motion.div
-                    key={file.id}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      transition: {
-                        duration: isDragActive ? 0.15 : 0.4,
-                        delay: isDragActive ? 0 : i * 0.06,
-                        ease: [0.16, 1, 0.3, 1] as const,
-                      },
-                    }}
-                    className={cn(
-                      i > 0 && "border-t border-stone-200/25 dark:border-neutral-700/15"
-                    )}
-                  >
-                    <FileRow file={file} index={i} />
-                  </motion.div>
-                ))}
-              </motion.div>
+                {/* Left edge indicator */}
+                {activeEdge === "left" && page > 0 && (
+                  <DragEdgeIndicator side="left" progress={dwellProgress} />
+                )}
 
-              {/* Right edge indicator */}
-              {activeEdge === "right" && page < totalPages - 1 && (
-                <DragEdgeIndicator side="right" progress={dwellProgress} />
-              )}
-            </div>
+                <motion.div
+                  className={cn(
+                    "rounded-[3px]",
+                    "border border-stone-200/40 dark:border-neutral-700/25",
+                    "bg-[#fdfcfa]/40 dark:bg-[#1e1e20]/30"
+                  )}
+                  style={{ boxShadow: LIST_SHADOW }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  key={listKey}
+                >
+                  {pagedFiles.map((file, i) => (
+                    <motion.div
+                      key={file.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{
+                        opacity: 1,
+                        y: 0,
+                        transition: {
+                          duration: isDragActive ? 0.15 : 0.4,
+                          delay: isDragActive ? 0 : i * 0.06,
+                          ease: [0.16, 1, 0.3, 1] as const,
+                        },
+                      }}
+                      className={cn(
+                        i > 0 && "border-t border-stone-200/25 dark:border-neutral-700/15"
+                      )}
+                    >
+                      <FileRow file={file} index={i} />
+                    </motion.div>
+                  ))}
+                </motion.div>
+
+                {/* Right edge indicator */}
+                {activeEdge === "right" && page < totalPages - 1 && (
+                  <DragEdgeIndicator side="right" progress={dwellProgress} />
+                )}
+              </div>
+
+              {/* Mobile: swipeable document list */}
+              <MobileDocumentList
+                files={displayFiles}
+                isSearchActive={isSearchActive}
+                searchMatchMap={searchMatchMap}
+                searchQuery={searchQuery}
+                onResultClick={onResultClick}
+              />
+            </>
           )}
 
           {/* Pagination */}

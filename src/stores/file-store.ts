@@ -57,9 +57,11 @@ interface FileState {
   justCreatedFileId: string | null;
   expandedFolderIds: Set<string>;
   selectedFileIds: Set<string>;
+  loadedContentIds: Set<string>;
 
   // File actions
   loadFiles: () => Promise<void>;
+  loadFileContent: (fileId: string) => Promise<void>;
   createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
   importFile: (file: File, parentId?: string | null) => Promise<string>;
   updateFile: (id: string, updates: Partial<Pick<FileItem, "name" | "content">>) => Promise<void>;
@@ -131,6 +133,7 @@ export const useFileStore = create<FileState>()(
       trashFiles: [],
       isTrashLoading: false,
       selectedFileIds: new Set<string>(),
+      loadedContentIds: new Set<string>(),
 
       loadFiles: async () => {
         set({ isLoading: true });
@@ -174,6 +177,21 @@ export const useFileStore = create<FileState>()(
         }
       },
 
+      loadFileContent: async (fileId: string) => {
+        if (get().loadedContentIds.has(fileId)) return;
+        try {
+          const fullFile = await api.getFile(fileId);
+          set((state) => ({
+            files: state.files.map((f) =>
+              f.id === fileId ? { ...f, content: fullFile.content } : f
+            ),
+            loadedContentIds: new Set([...state.loadedContentIds, fileId]),
+          }));
+        } catch (error) {
+          log.error("Failed to load file content", error);
+        }
+      },
+
       createFile: async (name: string, content: string = "", parentId: string | null = null) => {
         try {
           // Validate parentId exists as a folder; fall back to root if stale
@@ -199,6 +217,7 @@ export const useFileStore = create<FileState>()(
             files: [newFile, ...state.files],
             currentFileId: newFile.id,
             justCreatedFileId: newFile.id,
+            loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
           }));
 
           return newFile.id;
@@ -228,6 +247,7 @@ export const useFileStore = create<FileState>()(
           set((state) => ({
             files: [newFile, ...state.files],
             currentFileId: newFile.id,
+            loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
           }));
 
           return newFile.id;
@@ -243,6 +263,10 @@ export const useFileStore = create<FileState>()(
           files: state.files.map((file) =>
             file.id === id ? { ...file, ...updates, updatedAt: new Date().toISOString() } : file
           ),
+          // If content is being updated, mark as loaded
+          ...(updates.content !== undefined && {
+            loadedContentIds: new Set([...state.loadedContentIds, id]),
+          }),
         }));
 
         try {
@@ -628,7 +652,6 @@ export const useFileStore = create<FileState>()(
     {
       name: "doxmind-files",
       partialize: (state) => ({
-        files: state.files,
         currentFileId: state.currentFileId,
         currentFolderId: state.currentFolderId,
         sortBy: state.sortBy,
@@ -638,6 +661,7 @@ export const useFileStore = create<FileState>()(
       merge: (persistedState: any, currentState: FileState) => ({
         ...currentState,
         ...persistedState,
+        files: currentState.files, // Always use runtime files, never from localStorage
         expandedFolderIds: new Set(persistedState.expandedFolderIds || []),
       }),
     }

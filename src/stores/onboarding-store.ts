@@ -484,11 +484,9 @@ export const useOnboardingStore = create<OnboardingState>()(
       },
       onRehydrateStorage: () => {
         return (state) => {
-          // Clean up all legacy localStorage keys
+          // Clean up legacy onboarding key (one-time migration)
           if (typeof window !== "undefined") {
             localStorage.removeItem("doxmind-onboarding-completed");
-            localStorage.removeItem("doxmind-feature-hints");
-            localStorage.removeItem("doxmind-mobile-hints-seen");
           }
           // Validate step index against current steps array
           if (state && state.currentStepIndex >= ONBOARDING_STEPS.length) {
