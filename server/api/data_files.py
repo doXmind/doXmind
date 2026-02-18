@@ -204,8 +204,11 @@ async def upload_data_file(
     os.makedirs(temp_dir, exist_ok=True)
     storage_path = os.path.join(temp_dir, f"{file_id}{ext}")
 
-    with open(storage_path, "wb") as f:
-        f.write(content)
+    def _write_file_sync(path: str, data: bytes) -> None:
+        with open(path, "wb") as f:
+            f.write(data)
+
+    await asyncio.to_thread(_write_file_sync, storage_path, content)
 
     # Determine Claude upload strategy
     # Skip for: images, PDFs (use native multimodal), small files (use base64 inline)
@@ -393,8 +396,11 @@ async def get_data_file_content(
     if not os.path.exists(data_file.storage_path):
         return None
 
-    with open(data_file.storage_path, "rb") as f:
-        content = f.read()
+    def _read_file_sync(path: str) -> bytes:
+        with open(path, "rb") as f:
+            return f.read()
+
+    content = await asyncio.to_thread(_read_file_sync, data_file.storage_path)
 
     return (
         content,

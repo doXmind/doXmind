@@ -7,7 +7,7 @@ split from chat.py to separate CRUD from streaming logic.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -138,7 +138,10 @@ async def get_conversation(
 
 @router.get("/conversations")
 async def list_conversations(
-    db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
 ):
     """List conversations for the current user."""
     user_id = get_user_id(token)
@@ -149,6 +152,7 @@ async def list_conversations(
     else:
         query = query.where(Conversation.user_id.is_(None))
 
+    query = query.limit(limit).offset(offset)
     result = await db.execute(query)
     conversations = result.scalars().all()
 

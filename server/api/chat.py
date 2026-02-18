@@ -94,7 +94,9 @@ async def chat_stream(
         user_api_settings = await api_key_service.get_user_settings(auth.sub)
 
         if api_key_service.has_api_key(user_api_settings):
-            user_api_key = await api_key_service.get_decrypted_key(auth.sub)
+            user_api_key = await api_key_service.get_decrypted_key(
+                auth.sub, settings=user_api_settings
+            )
             user_model = user_api_settings.preferred_model
             logger.info(f"Using user's API key with model: {user_model}")
 
@@ -126,16 +128,15 @@ async def chat_stream(
 
         if conversation:
             # Load up to 50 messages for 3-1-3 compression (exclude soft-deleted)
+            # Only select fields needed by HistoryCompressor: role, content, tool_calls
             messages_result = await db.execute(
-                select(Message)
+                select(Message.role, Message.content, Message.tool_calls)
                 .where(Message.conversation_id == conversation.id)
                 .where(Message.deleted_at.is_(None))
                 .order_by(desc(Message.created_at))
                 .limit(50)
             )
-            messages = messages_result.scalars().all()
-            # Reverse to get chronological order
-            messages = list(reversed(messages))
+            messages = list(reversed(messages_result.all()))
 
             # Compress history using 3-1-3 rule
             compressor = HistoryCompressor()
@@ -186,26 +187,38 @@ async def chat_stream(
                 logger.info(f"Found {len(data_files_metadata)} data file(s) in conversation")
 
             # Load data files CONTENT for code execution (all ready files)
+            # Uses asyncio.to_thread for non-blocking I/O + asyncio.gather for parallel reads
             data_files_content = []
             if all_data_files:
                 import os
 
-                for data_file in all_data_files:
+                def _read_file_sync(path: str) -> bytes:
+                    with open(path, "rb") as f:
+                        return f.read()
+
+                async def _read_data_file(data_file):
                     if data_file.storage_path and os.path.exists(data_file.storage_path):
-                        with open(data_file.storage_path, "rb") as f:
-                            content = f.read()
-                        data_files_content.append(
-                            {
-                                "id": data_file.id,
-                                "filename": data_file.original_filename,
-                                "mime_type": data_file.mime_type,
-                                "content": content,
-                                # Claude Files API info for optimized upload
-                                "claude_file_id": data_file.claude_file_id,
-                                "claude_upload_status": data_file.claude_upload_status or "pending",
-                                "file_size": data_file.file_size,
-                            }
+                        content = await asyncio.to_thread(
+                            _read_file_sync, data_file.storage_path
                         )
+                        return {
+                            "id": data_file.id,
+                            "filename": data_file.original_filename,
+                            "mime_type": data_file.mime_type,
+                            "content": content,
+                            # Claude Files API info for optimized upload
+                            "claude_file_id": data_file.claude_file_id,
+                            "claude_upload_status": data_file.claude_upload_status
+                            or "pending",
+                            "file_size": data_file.file_size,
+                        }
+                    return None
+
+                results = await asyncio.gather(
+                    *[_read_data_file(df) for df in all_data_files]
+                )
+                data_files_content = [r for r in results if r is not None]
+
                 if data_files_content:
                     logger.info(
                         f"Loaded {len(data_files_content)} data file(s) content for analysis"

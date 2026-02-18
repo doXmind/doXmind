@@ -40,6 +40,11 @@ class AutocompleteCache:
             Cached suggestion or None if not found/expired
         """
         with self._lock:
+            # Probabilistic cleanup: every ~100 requests, purge expired entries
+            total = self._hits + self._misses
+            if total > 0 and total % 100 == 0:
+                self._cleanup_expired_unlocked()
+
             if key not in self._cache:
                 self._misses += 1
                 return None
@@ -56,6 +61,20 @@ class AutocompleteCache:
             self._cache.move_to_end(key)
             self._hits += 1
             return value
+
+    def _cleanup_expired_unlocked(self) -> int:
+        """Remove expired entries (must be called while holding self._lock)."""
+        removed = 0
+        current_time = time.time()
+        expired_keys = [
+            key
+            for key, (_, timestamp) in self._cache.items()
+            if current_time - timestamp > self.ttl_seconds
+        ]
+        for key in expired_keys:
+            del self._cache[key]
+            removed += 1
+        return removed
 
     def set(self, key: str, value: str) -> None:
         """

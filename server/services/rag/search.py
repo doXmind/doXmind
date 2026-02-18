@@ -80,38 +80,35 @@ class RAGService:
                 {"file_id": file_id},
             )
 
-            # Insert chunks with embeddings and position metadata
+            # Insert chunks with embeddings and position metadata (batch insert)
             base_metadata = metadata or {}
 
+            value_clauses = []
+            params: dict[str, Any] = {"file_id": file_id}
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
-                chunk_id = f"{file_id}_{i}"
                 start_pos, end_pos = chunk_positions[i]
+                chunk_metadata = {**base_metadata, "start": start_pos, "end": end_pos}
 
-                # Include position in metadata for highlighting
-                chunk_metadata = {
-                    **base_metadata,
-                    "start": start_pos,
-                    "end": end_pos,
-                }
-                metadata_json = json.dumps(chunk_metadata)
+                value_clauses.append(
+                    f"(:id_{i}, :content_{i}, :embedding_{i}, 'document', :file_id, :idx_{i}, CAST(:meta_{i} AS jsonb))"
+                )
+                params[f"id_{i}"] = f"{file_id}_{i}"
+                params[f"content_{i}"] = chunk
+                params[f"embedding_{i}"] = str(embedding)
+                params[f"idx_{i}"] = i
+                params[f"meta_{i}"] = json.dumps(chunk_metadata)
 
+            if value_clauses:
                 await self.db.execute(
-                    text("""
+                    text(f"""
                         INSERT INTO vectors (id, content, embedding, chunk_type, file_id, chunk_index, metadata)
-                        VALUES (:id, :content, :embedding, 'document', :file_id, :chunk_index, CAST(:metadata AS jsonb))
+                        VALUES {", ".join(value_clauses)}
                         ON CONFLICT (id) DO UPDATE SET
                             content = EXCLUDED.content,
                             embedding = EXCLUDED.embedding,
                             metadata = EXCLUDED.metadata
                     """),
-                    {
-                        "id": chunk_id,
-                        "content": chunk,
-                        "embedding": str(embedding),
-                        "file_id": file_id,
-                        "chunk_index": i,
-                        "metadata": metadata_json,
-                    },
+                    params,
                 )
 
             await self.db.commit()
@@ -571,28 +568,32 @@ class RAGService:
                 {"file_id": file_id},
             )
 
-            # Serialize metadata to JSON string for asyncpg JSONB support
+            # Batch insert all sentence chunks in a single statement
             metadata_json = json.dumps(metadata or {})
 
+            value_clauses = []
+            params: dict[str, Any] = {"file_id": file_id}
             for i, (sentence, embedding) in enumerate(zip(sentences, embeddings, strict=False)):
-                chunk_id = f"{file_id}_sent_{i}"
+                value_clauses.append(
+                    f"(:id_{i}, :content_{i}, :embedding_{i}, 'sentence', :file_id, :idx_{i}, CAST(:meta_{i} AS jsonb))"
+                )
+                params[f"id_{i}"] = f"{file_id}_sent_{i}"
+                params[f"content_{i}"] = sentence
+                params[f"embedding_{i}"] = str(embedding)
+                params[f"idx_{i}"] = i
+                params[f"meta_{i}"] = metadata_json
+
+            if value_clauses:
                 await self.db.execute(
-                    text("""
+                    text(f"""
                         INSERT INTO vectors (id, content, embedding, chunk_type, file_id, chunk_index, metadata)
-                        VALUES (:id, :content, :embedding, 'sentence', :file_id, :chunk_index, CAST(:metadata AS jsonb))
+                        VALUES {", ".join(value_clauses)}
                         ON CONFLICT (id) DO UPDATE SET
                             content = EXCLUDED.content,
                             embedding = EXCLUDED.embedding,
                             metadata = EXCLUDED.metadata
                     """),
-                    {
-                        "id": chunk_id,
-                        "content": sentence,
-                        "embedding": str(embedding),
-                        "file_id": file_id,
-                        "chunk_index": i,
-                        "metadata": metadata_json,
-                    },
+                    params,
                 )
 
             await self.db.commit()
@@ -831,26 +832,33 @@ class RAGService:
                 {"attachment_id": attachment_id},
             )
 
+            # Batch insert all KB chunks in a single statement
+            value_clauses = []
+            params: dict[str, Any] = {
+                "conversation_id": conversation_id,
+                "attachment_id": attachment_id,
+                "filename": filename,
+                "total_chunks": total_chunks,
+            }
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
-                chunk_id = f"kb_{attachment_id}_{i}"
+                value_clauses.append(
+                    f"(:id_{i}, :content_{i}, :embedding_{i}, 'kb', :conversation_id, :attachment_id, :filename, :idx_{i}, :total_chunks)"
+                )
+                params[f"id_{i}"] = f"kb_{attachment_id}_{i}"
+                params[f"content_{i}"] = chunk
+                params[f"embedding_{i}"] = str(embedding)
+                params[f"idx_{i}"] = i
+
+            if value_clauses:
                 await self.db.execute(
-                    text("""
+                    text(f"""
                         INSERT INTO vectors (id, content, embedding, chunk_type, conversation_id, attachment_id, filename, chunk_index, total_chunks)
-                        VALUES (:id, :content, :embedding, 'kb', :conversation_id, :attachment_id, :filename, :chunk_index, :total_chunks)
+                        VALUES {", ".join(value_clauses)}
                         ON CONFLICT (id) DO UPDATE SET
                             content = EXCLUDED.content,
                             embedding = EXCLUDED.embedding
                     """),
-                    {
-                        "id": chunk_id,
-                        "content": chunk,
-                        "embedding": str(embedding),
-                        "conversation_id": conversation_id,
-                        "attachment_id": attachment_id,
-                        "filename": filename,
-                        "chunk_index": i,
-                        "total_chunks": total_chunks,
-                    },
+                    params,
                 )
 
             await self.db.commit()

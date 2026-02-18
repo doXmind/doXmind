@@ -58,8 +58,15 @@ class APIKeyService:
             await self.db.commit()
             audit_logger.info("api_key_deleted", extra={"user_id": user_id, "action": "delete"})
 
-    async def get_decrypted_key(self, user_id: str) -> str | None:
+    async def get_decrypted_key(
+        self, user_id: str, settings: "UserAPISettings | None" = None
+    ) -> str | None:
         """Get decrypted API key for user.
+
+        Args:
+            user_id: User ID to look up
+            settings: Pre-fetched UserAPISettings to avoid duplicate DB query.
+                If None, will be fetched from the database.
 
         Returns None if user has no API key configured or encryption is not available.
         """
@@ -67,7 +74,8 @@ class APIKeyService:
             logger.warning(f"Cannot decrypt API key for user {user_id}: encryption not configured")
             return None
 
-        settings = await self.get_user_settings(user_id)
+        if settings is None:
+            settings = await self.get_user_settings(user_id)
         if settings and settings.encrypted_anthropic_key:
             try:
                 key = self.encryption.decrypt(settings.encrypted_anthropic_key)

@@ -8,7 +8,7 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, get_db, utcnow
@@ -50,63 +50,90 @@ MAX_FOLDER_DEPTH = 3  # Maximum nesting depth (root=1, sub=2, sub-sub=3)
 
 
 async def get_folder_depth(db: AsyncSession, folder_id: str | None) -> int:
-    """Get the depth of a folder (root level = 0, first subfolder = 1, etc.)."""
-    depth = 0
-    current_id = folder_id
-    visited = set()
+    """Get the depth of a folder using a single recursive CTE query."""
+    if folder_id is None:
+        return 0
 
-    while current_id is not None:
-        if current_id in visited:
-            raise BadRequestError(message="Circular folder reference detected")
-        visited.add(current_id)
-        result = await db.execute(select(File.parent_id).where(File.id == current_id))
-        row = result.scalar_one_or_none()
-        if row is None:
-            # parent_id is None means root level
-            break
-        current_id = row
-        depth += 1
+    result = await db.execute(
+        text("""
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM files
+                WHERE id = :folder_id
 
-    return depth
+                UNION ALL
+
+                SELECT f.id, f.parent_id, a.depth + 1
+                FROM files f
+                INNER JOIN ancestors a ON f.id = a.parent_id
+                WHERE a.depth < :max_depth
+            )
+            SELECT MAX(depth) AS folder_depth FROM ancestors
+        """),
+        {"folder_id": folder_id, "max_depth": MAX_FOLDER_DEPTH + 1},
+    )
+    row = result.fetchone()
+    return row[0] if row and row[0] is not None else 0
 
 
 async def get_max_subtree_depth(db: AsyncSession, folder_id: str) -> int:
-    """Get the maximum depth of a folder's subtree (the folder itself = 0)."""
-    max_depth = 0
-
-    # Find direct children that are folders
+    """Get the maximum depth of a folder's subtree using a single recursive CTE."""
     result = await db.execute(
-        select(File.id).where(
-            File.parent_id == folder_id,
-            File.is_folder.is_(True),
-            File.deleted_at.is_(None),
-        )
+        text("""
+            WITH RECURSIVE descendants AS (
+                SELECT id, 0 AS depth
+                FROM files
+                WHERE parent_id = :folder_id
+                  AND is_folder = true
+                  AND deleted_at IS NULL
+
+                UNION ALL
+
+                SELECT f.id, d.depth + 1
+                FROM files f
+                INNER JOIN descendants d ON f.parent_id = d.id
+                WHERE f.is_folder = true
+                  AND f.deleted_at IS NULL
+                  AND d.depth < :max_depth
+            )
+            SELECT COALESCE(MAX(depth) + 1, 0) AS max_subtree_depth FROM descendants
+        """),
+        {"folder_id": folder_id, "max_depth": MAX_FOLDER_DEPTH},
     )
-    child_folder_ids = result.scalars().all()
-
-    for child_id in child_folder_ids:
-        child_depth = await get_max_subtree_depth(db, child_id)
-        max_depth = max(max_depth, 1 + child_depth)
-
-    return max_depth
+    row = result.fetchone()
+    return row[0] if row and row[0] is not None else 0
 
 
 async def would_create_cycle(db: AsyncSession, folder_id: str, target_parent_id: str) -> bool:
-    """Check if moving folder_id under target_parent_id would create a cycle."""
-    current_id: str | None = target_parent_id
-    visited = set()
+    """Check if moving folder_id under target_parent_id would create a cycle.
 
-    while current_id is not None:
-        if current_id == folder_id:
-            return True
-        if current_id in visited:
-            return True
-        visited.add(current_id)
-        result = await db.execute(select(File.parent_id).where(File.id == current_id))
-        parent = result.scalar_one_or_none()
-        current_id = parent
+    Uses a single CTE to walk up from target_parent_id and check if folder_id
+    is encountered in the ancestor chain.
+    """
+    result = await db.execute(
+        text("""
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM files
+                WHERE id = :target_parent_id
 
-    return False
+                UNION ALL
+
+                SELECT f.id, f.parent_id, a.depth + 1
+                FROM files f
+                INNER JOIN ancestors a ON f.id = a.parent_id
+                WHERE a.depth < :max_depth
+            )
+            SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = :folder_id) AS has_cycle
+        """),
+        {
+            "target_parent_id": target_parent_id,
+            "folder_id": folder_id,
+            "max_depth": MAX_FOLDER_DEPTH + 1,
+        },
+    )
+    row = result.fetchone()
+    return bool(row[0]) if row else False
 
 
 class FileCreate(BaseModel):
@@ -162,6 +189,8 @@ class FileResponse(BaseModel):
 async def list_files(
     parent_id: str | None = Query(None),
     filter_by_parent: bool = Query(False),
+    limit: int = Query(500, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
@@ -170,6 +199,8 @@ async def list_files(
     Args:
         parent_id: If provided with filter_by_parent=True, only return files/folders within this folder.
         filter_by_parent: If True, filter by parent_id. If False (default), return all files.
+        limit: Maximum number of files to return (default 500, max 1000).
+        offset: Number of files to skip (for pagination).
     """
     user_id = get_user_id(token)
 
@@ -191,9 +222,11 @@ async def list_files(
     if filter_by_parent:
         query = query.where(File.parent_id == parent_id)
 
+    query = query.limit(limit).offset(offset)
     result = await db.execute(query)
     files = result.scalars().all()
-    return [
+
+    response_data = [
         FileResponse(
             id=f.id,
             name=f.name,
@@ -209,6 +242,21 @@ async def list_files(
         )
         for f in files
     ]
+
+    # Generate ETag from file timestamps for conditional request support
+    etag = hashlib.md5(
+        "|".join(f.updated_at.isoformat() for f in files).encode()
+    ).hexdigest()
+
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        content=[r.model_dump() for r in response_data],
+        headers={
+            "ETag": f'"{etag}"',
+            "Cache-Control": "private, max-age=5",
+        },
+    )
 
 
 @router.post("/", response_model=FileResponse)
@@ -451,19 +499,23 @@ async def delete_file(
     # Collect all descendant IDs for recursive soft-delete (for folders)
     descendant_ids: list[str] = []
     if file.is_folder:
-        # Recursively find all descendants
-        async def collect_descendants(parent_id: str) -> None:
-            result = await db.execute(
-                select(File.id, File.is_folder).where(
-                    File.parent_id == parent_id, File.deleted_at.is_(None)
-                )
-            )
-            for row in result.all():
-                descendant_ids.append(row[0])
-                if row[1]:  # is_folder
-                    await collect_descendants(row[0])
+        desc_result = await db.execute(
+            text("""
+                WITH RECURSIVE descendants AS (
+                    SELECT id FROM files
+                    WHERE parent_id = :folder_id AND deleted_at IS NULL
 
-        await collect_descendants(file_id)
+                    UNION ALL
+
+                    SELECT f.id FROM files f
+                    INNER JOIN descendants d ON f.parent_id = d.id
+                    WHERE f.deleted_at IS NULL
+                )
+                SELECT id FROM descendants
+            """),
+            {"folder_id": file_id},
+        )
+        descendant_ids = [row[0] for row in desc_result.fetchall()]
 
         # Soft-delete all descendants
         if descendant_ids:
@@ -924,24 +976,29 @@ async def restore_file(
     if not file:
         raise DocumentNotFoundError(message="File not found in trash")
 
-    # If it's a folder, recursively restore all descendants
+    # If it's a folder, restore all descendants using a single CTE query
     if file.is_folder:
+        desc_result = await db.execute(
+            text("""
+                WITH RECURSIVE descendants AS (
+                    SELECT id FROM files
+                    WHERE parent_id = :folder_id AND deleted_at IS NOT NULL
 
-        async def restore_descendants(parent_id: str) -> None:
-            result = await db.execute(
-                select(File.id, File.is_folder).where(
-                    File.parent_id == parent_id, File.deleted_at.is_not(None)
+                    UNION ALL
+
+                    SELECT f.id FROM files f
+                    INNER JOIN descendants d ON f.parent_id = d.id
+                    WHERE f.deleted_at IS NOT NULL
                 )
+                SELECT id FROM descendants
+            """),
+            {"folder_id": file_id},
+        )
+        descendant_ids = [row[0] for row in desc_result.fetchall()]
+        if descendant_ids:
+            await db.execute(
+                update(File).where(File.id.in_(descendant_ids)).values(deleted_at=None)
             )
-            children = result.all()
-            child_ids = [row[0] for row in children]
-            if child_ids:
-                await db.execute(update(File).where(File.id.in_(child_ids)).values(deleted_at=None))
-            for row in children:
-                if row[1]:  # is_folder
-                    await restore_descendants(row[0])
-
-        await restore_descendants(file_id)
 
     # Restore the file/folder
     file.deleted_at = None

@@ -9,10 +9,19 @@ Compresses conversation history while preserving:
 
 import json
 import re
-from typing import TYPE_CHECKING
+from typing import Any, Protocol
 
-if TYPE_CHECKING:
-    from server.db.database import Message
+
+class _MessageLike(Protocol):
+    """Protocol for objects with role, content, and tool_calls attributes.
+
+    Supports both full Message ORM objects and lightweight Row tuples
+    from column-projected queries.
+    """
+
+    role: str
+    content: str | None
+    tool_calls: Any
 
 
 class HistoryCompressor:
@@ -22,7 +31,7 @@ class HistoryCompressor:
     LAST_MESSAGES_COUNT = 6  # Keep last 6 messages (3 turns)
     COMPRESSION_THRESHOLD = 10  # Only compress if > 10 messages
 
-    def compress(self, messages: list["Message"]) -> list[dict[str, str]]:
+    def compress(self, messages: list[_MessageLike]) -> list[dict[str, str]]:
         """
         Compress conversation history using 3-1-3 rule.
 
@@ -66,7 +75,7 @@ class HistoryCompressor:
         self._inject_todo_context(history, messages)
         return history
 
-    def _extract_key_notes(self, messages: list["Message"]) -> str:
+    def _extract_key_notes(self, messages: list[_MessageLike]) -> str:
         """
         Extract important information from middle messages.
 
@@ -133,11 +142,11 @@ class HistoryCompressor:
 
         return "\n".join(sections)
 
-    def _to_history_format(self, messages: list["Message"]) -> list[dict[str, str]]:
+    def _to_history_format(self, messages: list[_MessageLike]) -> list[dict[str, str]]:
         """Convert Message objects to API format."""
         return [{"role": msg.role, "content": msg.content or ""} for msg in messages]
 
-    def _extract_last_todo_state(self, messages: list["Message"]) -> list[dict] | None:
+    def _extract_last_todo_state(self, messages: list[_MessageLike]) -> list[dict] | None:
         """Extract the most recent TodoWrite state from tool_calls in history."""
         for msg in reversed(messages):
             if msg.role == "assistant" and msg.tool_calls:
@@ -155,7 +164,7 @@ class HistoryCompressor:
         return None
 
     def _inject_todo_context(
-        self, history: list[dict[str, str]], messages: list["Message"]
+        self, history: list[dict[str, str]], messages: list[_MessageLike]
     ) -> None:
         """Inject incomplete todo context into history so the agent can resume tasks."""
         last_todos = self._extract_last_todo_state(messages)

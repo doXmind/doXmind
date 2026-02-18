@@ -4,6 +4,7 @@ Creates the pgvector extension, vectors table, indexes,
 and full-text search support on application startup.
 """
 
+import contextlib
 import logging
 
 from sqlalchemy import text
@@ -163,7 +164,5 @@ async def init_pgvector(db: AsyncSession):
         raise
     finally:
         # Release advisory lock so other workers can proceed
-        try:
+        with contextlib.suppress(Exception):
             await db.execute(text("SELECT pg_advisory_unlock(42424242)"))
-        except Exception:
-            pass

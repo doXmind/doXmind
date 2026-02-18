@@ -197,6 +197,9 @@ class Message(Base):
     """
 
     __tablename__ = "messages"
+    __table_args__ = (
+        Index("idx_messages_conversation_deleted", "conversation_id", "deleted_at"),
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conversation_id = Column(String(36), ForeignKey("conversations.id"))
@@ -440,6 +443,7 @@ engine = create_async_engine(
     max_overflow=settings.db_max_overflow,
     pool_pre_ping=True,  # Verify connections before use
     pool_recycle=settings.db_pool_recycle,
+    pool_timeout=settings.db_pool_timeout,
 )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
