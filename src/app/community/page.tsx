@@ -31,6 +31,10 @@ function CommunityContent() {
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
+  const loadItemsRef = useRef(loadItems);
+  const updateUrlRef = useRef(updateUrl);
+  loadItemsRef.current = loadItems;
+  updateUrlRef.current = updateUrl;
 
   // Initialize store from URL params on mount
   useEffect(() => {
@@ -81,11 +85,11 @@ function CommunityContent() {
       setSearchQuery(query);
       clearTimeout(searchTimerRef.current);
       searchTimerRef.current = setTimeout(() => {
-        loadItems();
-        updateUrl({ q: query || undefined });
-      }, 400);
+        loadItemsRef.current();
+        updateUrlRef.current({ q: query || undefined });
+      }, 500);
     },
-    [setSearchQuery, loadItems, updateUrl]
+    [setSearchQuery]
   );
 
   const handleSortChange = useCallback(

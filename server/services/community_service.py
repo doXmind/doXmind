@@ -5,7 +5,8 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, cast, func, or_, select, update
+from sqlalchemy.types import Text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import Bookmark, DocumentShare, File, Fork, User, utcnow
@@ -134,15 +135,20 @@ class CommunityService:
 
         # Apply tag filter
         if tag:
-            # JSON array contains - works for PostgreSQL
-            tag_filter = DocumentShare.tags.contains([tag])
+            # Cast JSON to text for LIKE since JSON type doesn't support contains
+            tag_filter = cast(DocumentShare.tags, Text).like(f'%"{tag}"%')
             query = query.where(tag_filter)
             count_query = count_query.where(tag_filter)
 
         # Apply sort
         if sort == "popular":
             query = query.order_by(
-                (DocumentShare.fork_count + DocumentShare.bookmark_count).desc(),
+                (
+                    DocumentShare.view_count
+                    + DocumentShare.fork_count * 5
+                    + DocumentShare.bookmark_count * 3
+                    + DocumentShare.comment_count * 2
+                ).desc(),
                 DocumentShare.published_at.desc(),
             )
         elif sort == "most_viewed":
