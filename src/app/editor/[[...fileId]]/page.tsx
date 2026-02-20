@@ -190,10 +190,10 @@ export default function EditorPage() {
   // Wait for isSynced to avoid racing with loadFiles() which clears loadedContentIds.
   useEffect(() => {
     if (!isSynced) return;
-    if (currentFileId && !loadedContentIds.has(currentFileId)) {
+    if (currentFileId && !useFileStore.getState().loadedContentIds.has(currentFileId)) {
       loadFileContent(currentFileId);
     }
-  }, [currentFileId, loadedContentIds, loadFileContent, isSynced]);
+  }, [currentFileId, loadFileContent, isSynced]);
 
   // Update browser tab title based on current file
   useEffect(() => {

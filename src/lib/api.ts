@@ -1106,6 +1106,23 @@ export class ApiClient {
     });
   }
 
+  async updateShareMetadata(
+    shareId: string,
+    metadata: { title?: string; description?: string; tags?: string[] }
+  ): Promise<{
+    id: string;
+    share_token: string;
+    title: string;
+    description: string | null;
+    tags: string[] | null;
+    updated_at: string | null;
+  }> {
+    return this.request(`/api/shares/${shareId}/metadata`, {
+      method: "PATCH",
+      body: JSON.stringify(metadata),
+    });
+  }
+
   /**
    * Get a shared document or folder.
    * Sends auth headers when available (required for private shares).

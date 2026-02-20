@@ -90,10 +90,10 @@ export function SharedDocumentView({
   // Set editor content when data changes
   useEffect(() => {
     if (editor && data.content) {
-      queueMicrotask(() => {
+      setTimeout(() => {
         editor.commands.setContent(data.content!);
         editor.emit("update", { editor, transaction: editor.state.tr });
-      });
+      }, 0);
     }
   }, [editor, data.content]);
 

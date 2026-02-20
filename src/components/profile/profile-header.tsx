@@ -22,7 +22,7 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
 
   return (
     <>
-      <div className="flex items-start gap-6">
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
         {/* Avatar */}
         {profile.avatar_url ? (
           <Image
@@ -39,19 +39,20 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
           </div>
         )}
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 text-center sm:text-left">
           {/* Name + Edit */}
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <div className="flex items-center justify-center gap-3 sm:justify-start">
+            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               {profile.username || "Anonymous"}
             </h1>
             {isOwnProfile && (
               <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground"
+                className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground sm:px-3"
               >
                 <Pencil className="h-3.5 w-3.5" />
-                Edit Profile
+                <span className="hidden sm:inline">Edit Profile</span>
+                <span className="sm:hidden">Edit</span>
               </button>
             )}
           </div>
@@ -62,7 +63,7 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
           )}
 
           {/* Links + Joined */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-muted-foreground">
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[13px] text-muted-foreground sm:justify-start">
             {profile.website && (
               <a
                 href={profile.website}
@@ -113,29 +114,29 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
           </div>
 
           {/* Stats row */}
-          <div className="mt-4 flex items-center gap-5 text-[13px]">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
+          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[13px] sm:flex sm:items-center sm:gap-5">
+            <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <FileText className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_published)}
               </span>
               published
             </span>
-            <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <Eye className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_views)}
               </span>
               views
             </span>
-            <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <GitFork className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_forks_received)}
               </span>
               forks
             </span>
-            <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <Bookmark className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_bookmarks_received)}

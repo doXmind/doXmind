@@ -8,6 +8,7 @@ import { LoadingScreen } from "@/components/loading-screen";
 import { api, type UserProfileResponse, type CommunityItem } from "@/lib/api";
 import { ProfileHeader } from "@/components/profile/profile-header";
 import { CommunityGrid } from "@/components/community/community-grid";
+import { EditShareModal } from "@/components/community/edit-share-modal";
 import { AlertCircle, ArrowLeft, Globe } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
 
@@ -20,6 +21,7 @@ export default function ProfilePage() {
   const [published, setPublished] = useState<CommunityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<CommunityItem | null>(null);
 
   const isOwnProfile = currentUser?.id === userId;
 
@@ -84,13 +86,13 @@ export default function ProfilePage() {
       <div className="flex-1 overflow-y-auto">
         {/* Header area */}
         <div className="border-b border-border/40">
-          <div className="mx-auto max-w-5xl px-6 pb-6 pt-10 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-5xl px-4 pb-5 pt-6 sm:px-8 sm:pb-6 sm:pt-10 lg:px-10">
             <ProfileHeader profile={profile} isOwnProfile={isOwnProfile} />
           </div>
         </div>
 
         {/* Published content */}
-        <div className="mx-auto max-w-5xl px-6 py-10 sm:px-8 lg:px-10">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10 lg:px-10">
           <h2 className="mb-6 flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
             <Globe className="h-3.5 w-3.5" />
             Published
@@ -98,7 +100,7 @@ export default function ProfilePage() {
           </h2>
 
           {published.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="flex flex-col items-center justify-center py-12 text-center sm:py-20">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
                 <Globe className="h-6 w-6 text-muted-foreground/40" />
               </div>
@@ -112,10 +114,42 @@ export default function ProfilePage() {
               </p>
             </div>
           ) : (
-            <CommunityGrid items={published} isLoading={false} />
+            <CommunityGrid
+              items={published}
+              isLoading={false}
+              onEditItem={isOwnProfile ? setEditingItem : undefined}
+            />
           )}
         </div>
       </div>
+
+      {editingItem && (
+        <EditShareModal
+          open={!!editingItem}
+          onClose={() => setEditingItem(null)}
+          item={{
+            shareId: editingItem.share_id,
+            title: editingItem.title,
+            description: editingItem.description,
+            tags: editingItem.tags,
+          }}
+          onSave={(updated) => {
+            setPublished((prev) =>
+              prev.map((p) =>
+                p.share_id === editingItem.share_id
+                  ? {
+                      ...p,
+                      title: updated.title,
+                      description: updated.description,
+                      tags: updated.tags,
+                    }
+                  : p
+              )
+            );
+            setEditingItem(null);
+          }}
+        />
+      )}
     </AppShell>
   );
 }

@@ -12,6 +12,7 @@ interface CommunityGridProps {
   searchQuery?: string;
   onClearFilters?: () => void;
   onTagClick?: (tag: string) => void;
+  onEditItem?: (item: CommunityItem) => void;
 }
 
 export function CommunityGrid({
@@ -21,6 +22,7 @@ export function CommunityGrid({
   searchQuery,
   onClearFilters,
   onTagClick,
+  onEditItem,
 }: CommunityGridProps) {
   if (isLoading && items.length === 0) {
     return (
@@ -98,7 +100,12 @@ export function CommunityGrid({
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
       {items.map((item) => (
-        <CommunityCard key={item.share_id} item={item} onTagClick={onTagClick} />
+        <CommunityCard
+          key={item.share_id}
+          item={item}
+          onTagClick={onTagClick}
+          onEditItem={onEditItem}
+        />
       ))}
     </div>
   );

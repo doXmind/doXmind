@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useFileStore } from "@/stores/file-store";
 
@@ -57,7 +57,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
       const exists = files.some((f) => f.id === currentFileId);
       if (exists) {
         lastSyncedId.current = currentFileId;
-        router.replace(`/editor/${currentFileId}`);
+        startTransition(() => router.replace(`/editor/${currentFileId}`));
       } else {
         setCurrentFile(null);
         lastSyncedId.current = currentFileId;
@@ -80,7 +80,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
         setCurrentFile(fileIdFromUrl);
       } else {
         setCurrentFile(null);
-        router.replace("/editor");
+        startTransition(() => router.replace("/editor"));
         lastSyncedId.current = null;
       }
     } else {
@@ -115,7 +115,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     const newPath = liveCurrentFileId ? `/editor/${liveCurrentFileId}` : "/editor";
     // Use push (not replace) so sidebar file switches create history entries
     // for browser back/forward navigation.
-    router.push(newPath);
+    startTransition(() => router.push(newPath));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to store changes
   }, [currentFileId]);
 
@@ -146,7 +146,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
       const nextId = nextFile?.id ?? null;
       setCurrentFile(nextId);
       lastSyncedId.current = nextId;
-      router.replace(nextId ? `/editor/${nextId}` : "/editor");
+      startTransition(() => router.replace(nextId ? `/editor/${nextId}` : "/editor"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- guard against stale URL after file list membership changes
   }, [fileIds, fileIdFromUrl]);

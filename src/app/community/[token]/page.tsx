@@ -22,6 +22,8 @@ import { ReadingStatsBar } from "@/components/shared/reading-stats-bar";
 import { PresentationMode } from "@/components/editor/presentation-mode";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { EditShareModal } from "@/components/community/edit-share-modal";
+import { useAuthStore } from "@/stores/auth-store";
 import {
   AlertCircle,
   ArrowLeft,
@@ -31,6 +33,7 @@ import {
   FileText,
   Folder,
   Loader2,
+  Pencil,
 } from "lucide-react";
 
 export default function CommunityDetailPage() {
@@ -38,10 +41,13 @@ export default function CommunityDetailPage() {
   const router = useRouter();
   const token = params.token as string;
 
+  const currentUser = useAuthStore((s) => s.user);
+
   const [detail, setDetail] = useState<CommunityDetailResponse | null>(null);
   const [docData, setDocData] = useState<SharedItemResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isEditingMeta, setIsEditingMeta] = useState(false);
   const actionBarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -265,12 +271,21 @@ export default function CommunityDetailPage() {
               )}
 
               {/* Action buttons */}
-              <div ref={actionBarRef}>
+              <div ref={actionBarRef} className="flex items-center gap-3">
                 <CommunityActionBar
                   detail={detail}
                   shareToken={token}
                   onForkSuccess={handleForkSuccess}
                 />
+                {currentUser?.id === detail.owner.id && (
+                  <button
+                    onClick={() => setIsEditingMeta(true)}
+                    className="mt-6 inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-2 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -375,6 +390,32 @@ export default function CommunityDetailPage() {
           </div>
         )}
       </div>
+
+      {isEditingMeta && detail && (
+        <EditShareModal
+          open={isEditingMeta}
+          onClose={() => setIsEditingMeta(false)}
+          item={{
+            shareId: detail.share_id,
+            title: detail.title,
+            description: detail.description,
+            tags: detail.tags,
+          }}
+          onSave={(updated) => {
+            setDetail((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    title: updated.title,
+                    description: updated.description,
+                    tags: updated.tags,
+                  }
+                : prev
+            );
+            setIsEditingMeta(false);
+          }}
+        />
+      )}
     </AppShell>
   );
 }

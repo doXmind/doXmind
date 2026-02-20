@@ -3,16 +3,17 @@
 import Link from "next/link";
 import Image from "next/image";
 import { CommunityItem } from "@/lib/api";
-import { Eye, GitFork, Bookmark, MessageSquare } from "lucide-react";
+import { Eye, GitFork, Bookmark, MessageSquare, Pencil } from "lucide-react";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
 
 interface CommunityCardProps {
   item: CommunityItem;
   onTagClick?: (tag: string) => void;
+  onEditItem?: (item: CommunityItem) => void;
 }
 
-export function CommunityCard({ item, onTagClick }: CommunityCardProps) {
+export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardProps) {
   const user = useAuthStore((s) => s.user);
   const isBookmarked = useBookmarksStore((s) => s.isBookmarked(item.share_id));
   const toggleBookmark = useBookmarksStore((s) => s.toggleBookmark);
@@ -36,8 +37,23 @@ export function CommunityCard({ item, onTagClick }: CommunityCardProps) {
   return (
     <Link href={`/community/${item.share_token}`} className="group block">
       <div className="relative flex h-full flex-col rounded-2xl border border-border/50 bg-card p-6 transition-all duration-300 hover:border-border hover:shadow-lg hover:shadow-black/[0.04] dark:hover:shadow-black/[0.15]">
+        {/* Edit button (own posts) */}
+        {onEditItem && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEditItem(item);
+            }}
+            className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground/60 opacity-0 transition-all duration-200 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+            aria-label="Edit post"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
+
         {/* Bookmark button */}
-        {user && (
+        {user && !onEditItem && (
           <button
             onClick={handleBookmarkClick}
             className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground/60 opacity-0 transition-all duration-200 hover:bg-muted hover:text-foreground group-hover:opacity-100"

@@ -86,30 +86,36 @@ export function UnifiedHeader() {
     }
   };
 
-  const handleExport = async (format: "markdown" | "pdf" | "docx") => {
+  const handleExport = (format: "markdown" | "pdf" | "docx") => {
     if (!currentFile) return;
-    try {
-      const blob = await api.exportFile(currentFile.id, format);
-      const baseName = currentFile.name.replace(/\.md$/, "");
-      const extension = format === "markdown" ? "md" : format;
-      const filename = `${baseName}.${extension}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+    const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
-      import("@/stores/onboarding-store")
-        .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeStep("export");
-        })
-        .catch(() => {});
-    } catch {
-      toast.error(`Failed to export as ${format.toUpperCase()}`);
-    }
+    toast.promise(
+      api.exportFile(currentFile.id, format).then((blob) => {
+        const baseName = currentFile.name.replace(/\.md$/, "");
+        const extension = format === "markdown" ? "md" : format;
+        const filename = `${baseName}.${extension}`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        import("@/stores/onboarding-store")
+          .then(({ useOnboardingStore }) => {
+            useOnboardingStore.getState().completeStep("export");
+          })
+          .catch(() => {});
+      }),
+      {
+        loading: `Exporting as ${formatLabel}...`,
+        success: `Exported as ${formatLabel}`,
+        error: `Failed to export as ${formatLabel}`,
+      }
+    );
   };
 
   const setAutocomplete = (mode: AutocompleteMode) => {

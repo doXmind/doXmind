@@ -591,6 +591,49 @@ async def unpublish_share(
     return {"status": "unpublished", "share_id": share.id, "is_published": False}
 
 
+class UpdateShareMetadataRequest(BaseModel):
+    """Request to update metadata on a published share."""
+
+    title: str | None = None
+    description: str | None = Field(None, max_length=500)
+    tags: list[str] | None = Field(None, max_length=10)
+
+
+@router.patch("/{share_id}/metadata")
+@limiter.limit("20/minute")
+async def update_share_metadata(
+    request: Request,
+    share_id: str,
+    body: UpdateShareMetadataRequest,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Update title, description, and tags on a published share."""
+    from services.community_service import CommunityService
+
+    user_id = get_user_id(token)
+    if not user_id:
+        raise BadRequestError(message="Authentication required")
+
+    service = CommunityService(db)
+    share = await service.update_share_metadata(
+        share_id=share_id,
+        user_id=user_id,
+        title=body.title,
+        description=body.description,
+        tags=body.tags,
+    )
+
+    return {
+        "id": share.id,
+        "share_token": share.share_token,
+        "title": share.title,
+        "description": share.description,
+        "tags": share.tags,
+        "updated_at": share.updated_at.isoformat() if share.updated_at else None,
+    }
+
+
 # =============================================================================
 # Shared Folder Helpers
 # =============================================================================

@@ -82,12 +82,13 @@ export function useSpellcheck({ editor, enabled = true }: UseSpellcheckOptions) 
    */
   const clearSpellcheck = useCallback(() => {
     if (editor) {
-      // Defer to avoid flushSync warning when called during React lifecycle (useEffect)
-      queueMicrotask(() => {
+      // Defer to a new macrotask to avoid flushSync warning during React lifecycle.
+      // queueMicrotask runs within React's commit phase; setTimeout(0) runs after.
+      setTimeout(() => {
         if (!editor.isDestroyed) {
           editor.commands.clearSpellcheck();
         }
-      });
+      }, 0);
     }
 
     // Cancel pending request
@@ -225,10 +226,10 @@ export function useSpellcheck({ editor, enabled = true }: UseSpellcheckOptions) 
 
     editor.on("update", handleUpdate);
 
-    // Initial check — deferred to avoid flushSync during useEffect
-    queueMicrotask(() => {
+    // Initial check — deferred to a new macrotask to avoid flushSync during useEffect
+    setTimeout(() => {
       checkDocument();
-    });
+    }, 0);
 
     return () => {
       editor.off("update", handleUpdate);

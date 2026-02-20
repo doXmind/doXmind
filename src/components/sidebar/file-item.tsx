@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { api } from "@/lib/api";
 import { storeLogger } from "@/lib/logger";
 
@@ -214,6 +215,12 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       }
       setCurrentFile(file.id);
       lastClickedFileId = file.id;
+
+      // Auto-close mobile sidebar to prevent competing renders
+      // between the overlay and the editor content updating underneath
+      if (useLayoutStore.getState().isMobileSidebarOpen) {
+        useLayoutStore.getState().setMobileSidebarOpen(false);
+      }
     }
   };
 
@@ -295,26 +302,30 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     }
   };
 
-  const handleExport = async (format: "markdown" | "pdf" | "docx") => {
-    try {
-      const blob = await api.exportFile(file.id, format);
-      const baseName = getNameWithoutExtension(file.name);
-      const extension = format === "markdown" ? "md" : format;
-      const filename = `${baseName}.${extension}`;
+  const handleExport = (format: "markdown" | "pdf" | "docx") => {
+    const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
-      // Create download link
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      log.error(`Failed to export as ${format}`, error);
-      toast.error(`Failed to export as ${format.toUpperCase()}`);
-    }
+    toast.promise(
+      api.exportFile(file.id, format).then((blob) => {
+        const baseName = getNameWithoutExtension(file.name);
+        const extension = format === "markdown" ? "md" : format;
+        const filename = `${baseName}.${extension}`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }),
+      {
+        loading: `Exporting as ${formatLabel}...`,
+        success: `Exported as ${formatLabel}`,
+        error: `Failed to export as ${formatLabel}`,
+      }
+    );
   };
 
   // Context menu action handlers

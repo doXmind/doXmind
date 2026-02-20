@@ -353,6 +353,42 @@ class CommunityService:
         await self.db.refresh(share)
         return share
 
+    async def update_share_metadata(
+        self,
+        share_id: str,
+        user_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        tags: list[str] | None = None,
+    ) -> DocumentShare:
+        """Update metadata (title, description, tags) on a published share."""
+        result = await self.db.execute(
+            select(DocumentShare).where(
+                DocumentShare.id == share_id, DocumentShare.user_id == user_id
+            )
+        )
+        share = result.scalar_one_or_none()
+        if not share:
+            raise NotFoundError(resource="Share", resource_id=share_id)
+
+        if not share.is_published:
+            raise BadRequestError(message="Cannot update metadata on an unpublished share")
+
+        if not share.is_active:
+            raise BadRequestError(message="Cannot update metadata on an inactive share")
+
+        if title is not None:
+            share.title = title
+        if description is not None:
+            share.description = description
+        if tags is not None:
+            normalized_tags = list(dict.fromkeys(t.strip().lower() for t in tags if t.strip()))
+            share.tags = normalized_tags[:10] if normalized_tags else None
+
+        await self.db.commit()
+        await self.db.refresh(share)
+        return share
+
     # =========================================================================
     # Forks
     # =========================================================================

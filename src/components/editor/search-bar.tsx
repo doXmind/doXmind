@@ -118,8 +118,9 @@ export function SearchBar() {
   // Sync search term with editor (only for keyword search)
   useEffect(() => {
     if (!editor) return;
-    // Defer the editor command to avoid flushSync warning during React render
-    queueMicrotask(() => {
+    // Defer the editor command to a new macrotask to avoid flushSync warning.
+    // queueMicrotask runs within React's commit phase; setTimeout(0) runs after.
+    setTimeout(() => {
       // Only do keyword search when not in AI mode
       if (!isAIMode) {
         editor.commands.setSearchTerm(searchTerm);
@@ -132,33 +133,33 @@ export function SearchBar() {
   // Sync case sensitivity with editor
   useEffect(() => {
     if (!editor) return;
-    queueMicrotask(() => {
+    setTimeout(() => {
       editor.commands.setCaseSensitive(caseSensitive);
-    });
+    }, 0);
   }, [editor, caseSensitive]);
 
   // Sync whole word with editor
   useEffect(() => {
     if (!editor) return;
-    queueMicrotask(() => {
+    setTimeout(() => {
       editor.commands.setWholeWord(wholeWord);
-    });
+    }, 0);
   }, [editor, wholeWord]);
 
   // Sync regex mode with editor
   useEffect(() => {
     if (!editor) return;
-    queueMicrotask(() => {
+    setTimeout(() => {
       editor.commands.setUseRegex(useRegex);
-    });
+    }, 0);
   }, [editor, useRegex]);
 
   // Clear search when closed
   useEffect(() => {
     if (!isSearchBarOpen && editor) {
-      queueMicrotask(() => {
+      setTimeout(() => {
         editor.commands.closeSearch();
-      });
+      }, 0);
       setSearchTerm("");
       setReplaceTerm("");
       setShowReplace(false);
@@ -212,7 +213,7 @@ export function SearchBar() {
   useEffect(() => {
     if (!editor) return;
 
-    queueMicrotask(() => {
+    setTimeout(() => {
       if (isAIMode) {
         // Switching to AI mode - clear keyword highlights, trigger AI search
         editor.commands.setSearchTerm("");
@@ -228,7 +229,7 @@ export function SearchBar() {
           editor.commands.setSearchTerm(searchTerm);
         }
       }
-    });
+    }, 0);
     // Only run when isAIMode changes, not on every searchTerm change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAIMode, editor]);

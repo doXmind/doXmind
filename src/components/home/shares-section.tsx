@@ -11,10 +11,12 @@ import {
   Loader2,
   Users,
   UserPlus,
+  Pencil,
   X,
 } from "lucide-react";
 
 import { type Share, type InviteEntry, type SearchUserResult, api } from "@/lib/api";
+import { EditShareModal, type EditableShareItem } from "@/components/community/edit-share-modal";
 import { UserSearchInput } from "@/components/share/user-search-input";
 import { toast } from "sonner";
 
@@ -41,6 +43,7 @@ function EmptyState() {
 
 export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [editingShare, setEditingShare] = useState<EditableShareItem | null>(null);
 
   // Invite management
   const [expandedShareId, setExpandedShareId] = useState<string | null>(null);
@@ -207,6 +210,22 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                       <Users className="h-3.5 w-3.5" />
                     </button>
                   )}
+                  {share.visibility === "public" && (
+                    <button
+                      onClick={() =>
+                        setEditingShare({
+                          shareId: share.id,
+                          title: share.title || share.file_name || "Untitled",
+                          description: share.description ?? null,
+                          tags: share.tags ?? [],
+                        })
+                      }
+                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      title="Edit description & tags"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <a
                     href={share.share_url}
                     target="_blank"
@@ -306,6 +325,29 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
           );
         })}
       </div>
+
+      {editingShare && (
+        <EditShareModal
+          open={!!editingShare}
+          onClose={() => setEditingShare(null)}
+          item={editingShare}
+          onSave={(updated) => {
+            onSharesChange((prev) =>
+              prev.map((s) =>
+                s.id === editingShare.shareId
+                  ? {
+                      ...s,
+                      title: updated.title,
+                      description: updated.description,
+                      tags: updated.tags,
+                    }
+                  : s
+              )
+            );
+            setEditingShare(null);
+          }}
+        />
+      )}
     </>
   );
 }

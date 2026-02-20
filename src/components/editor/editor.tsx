@@ -80,6 +80,10 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
+  // Track initial file.id to skip redundant setContent on first editor mount.
+  // useEditor already initializes with the correct content; calling setContent
+  // again destroys/recreates React node views, triggering flushSync errors.
+  const initialFileIdRef = useRef<string | null>(file.id);
 
   // Debounced save function
   // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce returns a new function, deps are intentionally limited
@@ -170,27 +174,60 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
 
   // Reset when file changes
   useEffect(() => {
-    if (editor) {
-      // Cancel any pending debounced save from the previous file to prevent
-      // stale saves that would unnecessarily update the old file's updatedAt
-      debouncedSave.cancel();
-      // Reset dirty state — the new file's content is already saved on the server
-      setDirty(false);
-      queueMicrotask(() => {
-        isFileSwitchingRef.current = true;
-        editor.commands.setContent(file.content, false);
-        // Move cursor to start of document and focus editor
-        editor.commands.focus("start");
-        // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
-        // to prevent false-positive change detection in debouncedSave.
-        // TipTap may normalize HTML during parse/serialize (attribute order,
-        // whitespace, etc.), so raw stored HTML can differ from getHTML() output
-        // even when content is semantically identical.
-        lastContentRef.current = editor.getHTML();
-        editor.emit("update", { editor, transaction: editor.state.tr });
+    if (!editor) return;
+
+    // Skip on initial mount — useEditor already initialized with the correct
+    // content. Calling setContent again would destroy/recreate React node views,
+    // triggering "flushSync was called from inside a lifecycle method" and
+    // "Maximum update depth exceeded" errors.
+    if (initialFileIdRef.current === file.id) {
+      initialFileIdRef.current = null;
+      lastContentRef.current = editor.getHTML();
+      return;
+    }
+
+    // Cancel any pending debounced save from the previous file to prevent
+    // stale saves that would unnecessarily update the old file's updatedAt
+    debouncedSave.cancel();
+    // Reset dirty state — the new file's content is already saved on the server
+    setDirty(false);
+    // Mark as switching immediately so onUpdate skips saves
+    isFileSwitchingRef.current = true;
+
+    // Use setTimeout(0) to run content replacement in a new macrotask, AFTER
+    // React's commit phase is fully complete. queueMicrotask runs during the
+    // same task and conflicts with React 19's stricter render cycle enforcement
+    // when TipTap's ReactRenderer.destroy → forceStoreRerender triggers state
+    // updates during rendering.
+    const timeoutId = setTimeout(() => {
+      // Stop ProseMirror's DOM observer to prevent it from misinterpreting
+      // content replacement DOM mutations as user input (e.g., Enter keypresses
+      // that cause splitListItem, adding empty lines to the document).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- domObserver is internal ProseMirror API
+      const domObserver = (editor.view as any).domObserver;
+      domObserver?.stop();
+
+      editor.commands.setContent(file.content, false);
+      editor.commands.focus("start");
+      // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
+      // to prevent false-positive change detection in debouncedSave.
+      lastContentRef.current = editor.getHTML();
+      editor.emit("update", { editor, transaction: editor.state.tr });
+
+      // Restart DOM observer after content is fully replaced
+      domObserver?.start();
+
+      // Delay resetting the file switching flag to allow any queued
+      // DOM observer callbacks to be discarded
+      requestAnimationFrame(() => {
         isFileSwitchingRef.current = false;
       });
-    }
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutId);
+      isFileSwitchingRef.current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on file.id change, not content
   }, [file.id, editor]);
 
@@ -208,14 +245,26 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       editorHTML === '<p><br class="ProseMirror-trailingBreak"></p>';
     if (!isEmpty) return;
 
-    queueMicrotask(() => {
-      isFileSwitchingRef.current = true;
+    isFileSwitchingRef.current = true;
+    const timeoutId = setTimeout(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- domObserver is internal ProseMirror API
+      const domObserver = (editor.view as any).domObserver;
+      domObserver?.stop();
+
       editor.commands.setContent(file.content, false);
       editor.commands.focus("start");
       lastContentRef.current = editor.getHTML();
       editor.emit("update", { editor, transaction: editor.state.tr });
+
+      domObserver?.start();
+      requestAnimationFrame(() => {
+        isFileSwitchingRef.current = false;
+      });
+    }, 0);
+    return () => {
+      clearTimeout(timeoutId);
       isFileSwitchingRef.current = false;
-    });
+    };
   }, [file.content, editor]);
 
   // Apply pending edits from AI through the editor's transaction system
