@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { Suspense, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { CommunityHeader } from "@/components/community/community-header";
@@ -9,7 +9,7 @@ import { TagFilterBar } from "@/components/community/tag-filter-bar";
 import { useCommunityStore } from "@/stores/community-store";
 import { AlertCircle, Loader2 } from "lucide-react";
 
-export default function CommunityPage() {
+function CommunityContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -190,5 +190,21 @@ export default function CommunityPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+export default function CommunityPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell>
+          <div className="flex h-screen items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        </AppShell>
+      }
+    >
+      <CommunityContent />
+    </Suspense>
   );
 }
