@@ -91,6 +91,8 @@ export function useHeadings(editor: Editor | null) {
   }, [editor, headings]);
 
   // Navigate to a specific heading
+  // Uses manual scroll calculation instead of scrollIntoView for reliable
+  // positioning across different layouts (editor, shared pages, community pages)
   const navigateTo = useCallback(
     (heading: Heading) => {
       if (!editor) return;
@@ -99,11 +101,23 @@ export function useHeadings(editor: Editor | null) {
         editor.chain().focus().setTextSelection(heading.pos).run();
       }
 
-      const dom = editor.view.nodeDOM(heading.pos);
-      const element = dom instanceof HTMLElement ? dom : null;
+      try {
+        const dom = editor.view.nodeDOM(heading.pos);
+        const element = dom instanceof HTMLElement ? dom : null;
+        if (!element) return;
 
-      if (element) {
-        element.scrollIntoView({ block: "start", behavior: "smooth" });
+        const scrollParent = getScrollParent(editor.view.dom as HTMLElement);
+        const elementRect = element.getBoundingClientRect();
+        const containerRect = scrollParent.getBoundingClientRect();
+        const relativeTop = elementRect.top - containerRect.top;
+        const targetScrollTop = scrollParent.scrollTop + relativeTop - 80;
+
+        scrollParent.scrollTo({
+          top: Math.max(0, targetScrollTop),
+          behavior: "smooth",
+        });
+      } catch {
+        // Silently fail if coordinates can't be determined
       }
     },
     [editor]

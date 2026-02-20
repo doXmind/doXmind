@@ -44,10 +44,28 @@ function OutlineItem({
   const isSelected = node.id === selectedId;
   const itemRef = useRef<HTMLDivElement>(null);
 
-  // Scroll active or selected item into view within the outline panel
+  // Scroll active or selected item into view within the outline panel.
+  // Uses manual scroll on the nearest scroll container only, avoiding
+  // scrollIntoView which cascades to all ancestors and can interfere
+  // with page scroll in sticky outline layouts (community/shared pages).
   useEffect(() => {
-    if ((isActive || isSelected) && itemRef.current) {
-      itemRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!(isActive || isSelected) || !itemRef.current) return;
+
+    const el = itemRef.current;
+    let scrollParent: HTMLElement | null = el.parentElement;
+    while (scrollParent) {
+      const { overflowY } = getComputedStyle(scrollParent);
+      if (overflowY === "auto" || overflowY === "scroll") break;
+      scrollParent = scrollParent.parentElement;
+    }
+    if (!scrollParent) return;
+
+    const elRect = el.getBoundingClientRect();
+    const parentRect = scrollParent.getBoundingClientRect();
+    if (elRect.top < parentRect.top) {
+      scrollParent.scrollTop += elRect.top - parentRect.top - 8;
+    } else if (elRect.bottom > parentRect.bottom) {
+      scrollParent.scrollTop += elRect.bottom - parentRect.bottom + 8;
     }
   }, [isActive, isSelected]);
 

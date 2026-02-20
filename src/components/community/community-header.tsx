@@ -27,7 +27,7 @@ export function CommunityHeader({
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="mb-4 space-y-3">
+    <div className="sticky top-0 z-10 -mx-1 mb-4 space-y-3 bg-background/95 px-1 pb-1 pt-2 backdrop-blur-sm sm:-mx-3 sm:px-3">
       {/* Search bar */}
       <div className="flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 transition-colors focus-within:border-foreground/20">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground/40" />
