@@ -32,9 +32,7 @@ function CommunityContent() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const loadItemsRef = useRef(loadItems);
-  const updateUrlRef = useRef(updateUrl);
   loadItemsRef.current = loadItems;
-  updateUrlRef.current = updateUrl;
 
   // Initialize store from URL params on mount
   useEffect(() => {
@@ -79,6 +77,9 @@ function CommunityContent() {
     },
     [searchParams, router]
   );
+
+  const updateUrlRef = useRef(updateUrl);
+  updateUrlRef.current = updateUrl;
 
   const handleSearchChange = useCallback(
     (query: string) => {
