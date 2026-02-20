@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { CommentResponse } from "@/lib/api";
 import { Reply, Pencil, Trash2 } from "lucide-react";
 import { EmojiReactionPicker } from "./emoji-reaction-picker";
@@ -52,10 +53,13 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
           className="flex items-center gap-2 transition-colors hover:opacity-80"
         >
           {comment.author.avatar_url ? (
-            <img
+            <Image
               src={comment.author.avatar_url}
               alt=""
+              width={24}
+              height={24}
               className="h-6 w-6 rounded-full ring-1 ring-border/50"
+              unoptimized
             />
           ) : (
             <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-1 ring-border/50">

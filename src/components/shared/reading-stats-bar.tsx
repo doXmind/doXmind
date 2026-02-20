@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 
 function getWordCount(text: string): number {
@@ -16,27 +16,20 @@ function getReadingTime(wordCount: number): string {
 
 export function ReadingStatsBar() {
   const editor = useEditorRefStore((s) => s.editor);
-  const [docSize, setDocSize] = useState(0);
+  const [stats, setStats] = useState({ words: 0, characters: 0 });
 
-  // Listen to editor update events so we re-render when content changes
-  // (needed when this component is rendered outside SharedDocumentView)
   useEffect(() => {
     if (!editor) return;
-    const handler = () => setDocSize(editor.state.doc.content.size);
+    const handler = () => {
+      const text = editor.getText();
+      setStats({ words: getWordCount(text), characters: text.length });
+    };
     handler();
     editor.on("update", handler);
     return () => {
       editor.off("update", handler);
     };
   }, [editor]);
-
-  const stats = useMemo(() => {
-    if (!editor) return { words: 0, characters: 0 };
-    const text = editor.getText();
-    const words = getWordCount(text);
-    const characters = text.length;
-    return { words, characters };
-  }, [editor, docSize]);
 
   if (stats.words === 0) return null;
 

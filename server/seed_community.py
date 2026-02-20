@@ -9,15 +9,13 @@ import random
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 import markdown
 
 # Database connection - works inside Docker container
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://doxmind:doxmind@postgres:5432/doxmind"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://doxmind:doxmind@postgres:5432/doxmind")
 # Normalize URL for asyncpg (strip asyncpg dialect prefix if present)
 if "asyncpg" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
@@ -272,11 +270,32 @@ def extract_tags(filename: str, category_folder: str) -> list[str]:
             if len(w) > 3
             and w
             not in (
-                "the", "and", "for", "with", "your", "from", "that",
-                "what", "when", "how", "over", "guide", "practical",
-                "advanced", "master", "masterclass", "playbook",
-                "framework", "strategies", "complete", "ranked",
-                "reality", "check", "simplified", "evidence", "based",
+                "the",
+                "and",
+                "for",
+                "with",
+                "your",
+                "from",
+                "that",
+                "what",
+                "when",
+                "how",
+                "over",
+                "guide",
+                "practical",
+                "advanced",
+                "master",
+                "masterclass",
+                "playbook",
+                "framework",
+                "strategies",
+                "complete",
+                "ranked",
+                "reality",
+                "check",
+                "simplified",
+                "evidence",
+                "based",
             )
         ]
         if meaningful:
@@ -300,7 +319,7 @@ def md_to_html(content: str) -> str:
 
 
 async def main():
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     conn = await asyncpg.connect(DATABASE_URL)
 
     try:
@@ -313,14 +332,14 @@ async def main():
             print(f"Found {existing} seed users already exist. Aborting to prevent duplicates.")
             return
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         total_articles = 0
         random.seed(42)  # Reproducible randomness
 
         for i, user in enumerate(USERS):
-            print(f"\n{'='*60}")
-            print(f"User {i+1}/10: {user['username']} ({user['email']})")
-            print(f"{'='*60}")
+            print(f"\n{'=' * 60}")
+            print(f"User {i + 1}/10: {user['username']} ({user['email']})")
+            print(f"{'=' * 60}")
 
             # Stagger user creation: 4 weeks ago to 1 week ago
             user_created = now - timedelta(days=28 - i * 2, hours=random.randint(0, 12))
@@ -350,7 +369,7 @@ async def main():
 
             for j, md_file in enumerate(md_files):
                 file_path = os.path.join(folder_path, md_file)
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     md_content = f.read()
 
                 # Extract metadata from markdown
@@ -414,12 +433,12 @@ async def main():
                 )
 
                 total_articles += 1
-                print(f"  [{j+1:2d}/10] {title}")
+                print(f"  [{j + 1:2d}/10] {title}")
                 print(f"         tags: {tags}")
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"DONE: Created 10 users and {total_articles} published articles")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     except Exception as e:
         print(f"\nERROR: {e}")

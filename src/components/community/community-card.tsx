@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { CommunityItem } from "@/lib/api";
 import { Eye, GitFork, Bookmark, MessageSquare } from "lucide-react";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
@@ -91,10 +92,13 @@ export function CommunityCard({ item, onTagClick }: CommunityCardProps) {
         <div className="mt-5 flex items-center justify-between border-t border-border/40 pt-4">
           <div className="flex items-center gap-2.5">
             {owner.avatar_url ? (
-              <img
+              <Image
                 src={owner.avatar_url}
                 alt=""
+                width={24}
+                height={24}
                 className="h-6 w-6 rounded-full ring-1 ring-border/50"
+                unoptimized
               />
             ) : (
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-1 ring-border/50">

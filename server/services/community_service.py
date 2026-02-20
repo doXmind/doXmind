@@ -6,8 +6,8 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, cast, func, or_, select, update
-from sqlalchemy.types import Text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.types import Text
 
 from db.database import Bookmark, DocumentShare, File, Fork, User, utcnow
 from exceptions import BadRequestError, NotFoundError
@@ -95,8 +95,12 @@ class CommunityService:
             or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
         )
 
-        # Count total
-        count_query = select(func.count(DocumentShare.id)).where(base_filter)
+        # Count total (join File so search filter on File.name doesn't cause cross join)
+        count_query = (
+            select(func.count(DocumentShare.id))
+            .join(File, DocumentShare.file_id == File.id)
+            .where(base_filter)
+        )
 
         # Build main query
         query = (

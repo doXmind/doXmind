@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { AppShell } from "@/components/layout/app-shell";
 import { LoadingScreen } from "@/components/loading-screen";
 import {
@@ -217,10 +218,13 @@ export default function CommunityDetailPage() {
                   className="flex items-center gap-2.5 font-medium transition-colors hover:text-foreground"
                 >
                   {detail.owner.avatar_url ? (
-                    <img
+                    <Image
                       src={detail.owner.avatar_url}
                       alt=""
+                      width={28}
+                      height={28}
                       className="h-7 w-7 rounded-full ring-1 ring-border/50"
+                      unoptimized
                     />
                   ) : (
                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground ring-1 ring-border/50">

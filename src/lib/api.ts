@@ -2,6 +2,8 @@
  * API client for communicating with the backend
  */
 
+import type { MessageContextItem, ToolCall, EditOperation } from "@/types";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const TOKEN_STORAGE_KEY = "doxmind_access_token";
 const AUTH_COOKIE_NAME = "doxmind_auth";
@@ -839,7 +841,17 @@ export class ApiClient {
   async getConversation(fileId: string): Promise<{
     id: string;
     fileId: string;
-    messages: any[];
+    messages: {
+      id: string;
+      role: "user" | "assistant";
+      content: string;
+      contexts?: MessageContextItem[] | null;
+      thinking?: string | null;
+      toolCalls?: ToolCall[] | null;
+      edits?: EditOperation[] | null;
+      model?: string | null;
+      createdAt: string;
+    }[];
     createdAt: string;
   }> {
     return this.request(`/api/chat/conversations/${fileId}`);

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { CommunityDetailResponse } from "@/lib/api";
 import { Eye, Calendar } from "lucide-react";
 
@@ -30,7 +31,14 @@ export function CommunityDetailHeader({ detail }: CommunityDetailHeaderProps) {
           className="flex items-center gap-2 transition-colors hover:text-foreground"
         >
           {detail.owner.avatar_url ? (
-            <img src={detail.owner.avatar_url} alt="" className="h-6 w-6 rounded-full" />
+            <Image
+              src={detail.owner.avatar_url}
+              alt=""
+              width={24}
+              height={24}
+              className="h-6 w-6 rounded-full"
+              unoptimized
+            />
           ) : (
             <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
               {(detail.owner.username || "?")[0].toUpperCase()}

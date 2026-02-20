@@ -117,13 +117,21 @@ function CommunityContent() {
   }, [setSearchQuery, setTagFilter, loadItems, router]);
 
   // Infinite scroll via IntersectionObserver
+  // Use refs to avoid recreating observer on every isLoading toggle
+  const hasMoreRef = useRef(hasMore);
+  const isLoadingRef = useRef(isLoading);
+  const sentinelVisibleRef = useRef(false);
+  hasMoreRef.current = hasMore;
+  isLoadingRef.current = isLoading;
+
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoading) {
+        sentinelVisibleRef.current = entries[0].isIntersecting;
+        if (entries[0].isIntersecting && hasMoreRef.current && !isLoadingRef.current) {
           loadMore();
         }
       },
@@ -131,8 +139,18 @@ function CommunityContent() {
     );
 
     observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, isLoading, loadMore]);
+    return () => {
+      sentinelVisibleRef.current = false;
+      observer.disconnect();
+    };
+  }, [loadMore]);
+
+  // When loading finishes, check if sentinel is still visible and load more
+  useEffect(() => {
+    if (!isLoading && hasMore && sentinelVisibleRef.current) {
+      loadMore();
+    }
+  }, [isLoading, hasMore, loadMore]);
 
   const hasActiveFilters = !!(searchQuery || tagFilter);
 

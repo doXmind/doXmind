@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { UserProfileResponse } from "@/lib/api";
 import { ExternalLink, Pencil, FileText, Eye, GitFork, Bookmark } from "lucide-react";
 import { ProfileEditModal } from "./profile-edit-modal";
@@ -24,10 +25,13 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
       <div className="flex items-start gap-6">
         {/* Avatar */}
         {profile.avatar_url ? (
-          <img
+          <Image
             src={profile.avatar_url}
             alt={profile.username || "User"}
+            width={96}
+            height={96}
             className="h-20 w-20 shrink-0 rounded-full ring-1 ring-border/50 sm:h-24 sm:w-24"
+            unoptimized
           />
         ) : (
           <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-bold text-muted-foreground ring-1 ring-border/50 sm:h-24 sm:w-24">

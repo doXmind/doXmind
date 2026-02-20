@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { X, Search, Loader2 } from "lucide-react";
 import { api, type SearchUserResult } from "@/lib/api";
 
@@ -19,8 +20,6 @@ export function UserSearchInput({ selectedUsers, onAdd, onRemove }: UserSearchIn
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const selectedIds = new Set(selectedUsers.map((u) => u.id));
-
   const search = useCallback(
     async (q: string) => {
       if (!q.trim()) {
@@ -29,10 +28,11 @@ export function UserSearchInput({ selectedUsers, onAdd, onRemove }: UserSearchIn
         return;
       }
 
+      const currentSelectedIds = new Set(selectedUsers.map((u) => u.id));
       setLoading(true);
       try {
         const { users } = await api.searchUsersForInvite(q.trim());
-        setResults(users.filter((u) => !selectedIds.has(u.id)));
+        setResults(users.filter((u) => !currentSelectedIds.has(u.id)));
         setShowDropdown(true);
       } catch {
         setResults([]);
@@ -81,7 +81,14 @@ export function UserSearchInput({ selectedUsers, onAdd, onRemove }: UserSearchIn
               className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 py-1 pl-1.5 pr-2 text-[12px]"
             >
               {user.avatar_url ? (
-                <img src={user.avatar_url} alt="" className="h-4 w-4 rounded-full" />
+                <Image
+                  src={user.avatar_url}
+                  alt=""
+                  width={16}
+                  height={16}
+                  className="h-4 w-4 rounded-full"
+                  unoptimized
+                />
               ) : (
                 <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
                   {(user.username || user.email)[0].toUpperCase()}
@@ -133,7 +140,14 @@ export function UserSearchInput({ selectedUsers, onAdd, onRemove }: UserSearchIn
                 className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
               >
                 {user.avatar_url ? (
-                  <img src={user.avatar_url} alt="" className="h-7 w-7 rounded-full" />
+                  <Image
+                    src={user.avatar_url}
+                    alt=""
+                    width={28}
+                    height={28}
+                    className="h-7 w-7 rounded-full"
+                    unoptimized
+                  />
                 ) : (
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
                     {(user.username || user.email)[0].toUpperCase()}

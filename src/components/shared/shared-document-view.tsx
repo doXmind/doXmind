@@ -12,6 +12,7 @@ import { ReadingToolbar } from "@/components/shared/reading-toolbar";
 import { ReadingStatsBar } from "@/components/shared/reading-stats-bar";
 import { StickyReadingBar } from "@/components/shared/sticky-reading-bar";
 import { PresentationMode } from "@/components/editor/presentation-mode";
+import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
 import type { SharedItemResponse, SharedFolderItem } from "@/lib/api";
 
@@ -178,9 +179,11 @@ export function SharedDocumentView({
                 <>
                   <span className="flex items-center gap-2.5 font-medium">
                     {data.owner_avatar_url ? (
-                      <img
+                      <Image
                         src={data.owner_avatar_url}
                         alt=""
+                        width={28}
+                        height={28}
                         className="h-7 w-7 rounded-full ring-1 ring-border/50"
                       />
                     ) : (

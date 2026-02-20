@@ -6,13 +6,11 @@ import json
 import os
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://doxmind:doxmind@postgres:5432/doxmind"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://doxmind:doxmind@postgres:5432/doxmind")
 if "asyncpg" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
@@ -234,7 +232,7 @@ async def main():
         print(f"Found {len(shares)} published articles\n")
 
         random.seed(123)  # Reproducible
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         total_comments = 0
 
         for share in shares:
@@ -261,9 +259,7 @@ async def main():
                 continue
 
             # Select random commenters (with possible repeats if >len)
-            selected_commenters = random.sample(
-                commenters, min(num_comments, len(commenters))
-            )
+            selected_commenters = random.sample(commenters, min(num_comments, len(commenters)))
             if len(selected_commenters) < num_comments:
                 selected_commenters += random.choices(
                     commenters, k=num_comments - len(selected_commenters)
@@ -271,14 +267,12 @@ async def main():
 
             # Get relevant comment pool
             comment_pool = get_comments_for_tags(tags)
-            selected_comments = random.sample(
-                comment_pool, min(num_comments, len(comment_pool))
-            )
+            selected_comments = random.sample(comment_pool, min(num_comments, len(comment_pool)))
 
             print(f"[{num_comments} comments] {title[:60]}")
 
-            for k, (comment_text, (commenter_id, commenter_name)) in enumerate(
-                zip(selected_comments, selected_commenters)
+            for comment_text, (commenter_id, _) in zip(
+                selected_comments, selected_commenters, strict=False
             ):
                 comment_id = str(uuid.uuid4())
 
@@ -313,9 +307,9 @@ async def main():
                 share_id,
             )
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"DONE: Added {total_comments} comments across {len(shares)} articles")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     except Exception as e:
         print(f"\nERROR: {e}")

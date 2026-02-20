@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Folder, FolderOpen, FileText, ChevronRight, ArrowLeft, Calendar } from "lucide-react";
+import Image from "next/image";
 import type { SharedItemResponse } from "@/lib/api";
 import { Logo } from "@/components/ui/logo";
 
@@ -78,9 +79,11 @@ export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
                 <>
                   <span className="flex items-center gap-2.5 font-medium">
                     {data.owner_avatar_url ? (
-                      <img
+                      <Image
                         src={data.owner_avatar_url}
                         alt=""
+                        width={28}
+                        height={28}
                         className="h-7 w-7 rounded-full ring-1 ring-border/50"
                       />
                     ) : (
