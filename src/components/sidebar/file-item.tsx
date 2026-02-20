@@ -205,12 +205,14 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     } else if (e?.shiftKey && lastClickedFileId) {
       selectFileRange(lastClickedFileId, file.id);
     } else {
-      // Normal click: clear selection if any, then set as current file
+      // Normal click: clear selection if any, then set as current file.
+      // Only call setCurrentFile — useFileUrlSync's Store→URL effect handles
+      // the URL update. Calling both setCurrentFile + router.push caused
+      // duplicate navigations and page remounts.
       if (selectedFileIds.size > 0) {
         clearSelection();
       }
       setCurrentFile(file.id);
-      router.push(`/editor/${file.id}`);
       lastClickedFileId = file.id;
     }
   };

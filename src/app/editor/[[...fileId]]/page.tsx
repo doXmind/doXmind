@@ -177,17 +177,23 @@ export default function EditorPage() {
     }
   }, [onboardingCompleted, currentStepIndex, isLoading, files, router]);
 
-  // Load files from server on mount
+  // Load files from server on mount. Skip if already synced to avoid redundant
+  // fetches on page remounts (Next.js re-keys the page on param changes).
   useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
+    if (!isSynced) {
+      loadFiles();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
+  }, []);
 
-  // Load file content on demand when current file changes
+  // Load file content on demand when current file changes.
+  // Wait for isSynced to avoid racing with loadFiles() which clears loadedContentIds.
   useEffect(() => {
+    if (!isSynced) return;
     if (currentFileId && !loadedContentIds.has(currentFileId)) {
       loadFileContent(currentFileId);
     }
-  }, [currentFileId, loadedContentIds, loadFileContent]);
+  }, [currentFileId, loadedContentIds, loadFileContent, isSynced]);
 
   // Update browser tab title based on current file
   useEffect(() => {

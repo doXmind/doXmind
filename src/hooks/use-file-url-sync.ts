@@ -113,7 +113,9 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     if (urlAlreadyMatches) return;
 
     const newPath = liveCurrentFileId ? `/editor/${liveCurrentFileId}` : "/editor";
-    router.replace(newPath);
+    // Use push (not replace) so sidebar file switches create history entries
+    // for browser back/forward navigation.
+    router.push(newPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to store changes
   }, [currentFileId]);
 
@@ -121,15 +123,21 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
   // This handles cases where the Store→URL effect doesn't fire (e.g., component
   // unmount race conditions, lastSyncedId ref getting out of sync), AND handles
   // newly-created files (e.g., fork) that weren't in the file list during init.
+  //
+  // Only react to file list *membership* changes (files added/removed), not
+  // content updates from loadFileContent which mutate the same array reference.
+  const fileIds = files.map((f) => f.id).join(",");
   useEffect(() => {
     if (!hasInitialized.current) return;
     if (!fileIdFromUrl) return;
     if (isLoading) return;
 
+    // Use live store value to avoid stale closure issues
+    const liveCurrentFileId = useFileStore.getState().currentFileId;
     const exists = files.some((f) => f.id === fileIdFromUrl);
     if (exists) {
       // File now exists (e.g., loadFiles completed after fork) — sync store
-      if (currentFileId !== fileIdFromUrl) {
+      if (liveCurrentFileId !== fileIdFromUrl) {
         setCurrentFile(fileIdFromUrl);
         lastSyncedId.current = fileIdFromUrl;
       }
@@ -140,6 +148,6 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
       lastSyncedId.current = nextId;
       router.replace(nextId ? `/editor/${nextId}` : "/editor");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- guard against stale URL after file list changes
-  }, [files, fileIdFromUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- guard against stale URL after file list membership changes
+  }, [fileIds, fileIdFromUrl]);
 }

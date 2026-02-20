@@ -6,6 +6,9 @@ import type { FileItem } from "@/types";
 
 const log = storeLogger.child("File");
 
+// Track in-progress content fetches to deduplicate concurrent loadFileContent calls
+const pendingContentLoads = new Set<string>();
+
 // Re-export for convenience
 export type { FileItem } from "@/types";
 
@@ -139,50 +142,72 @@ export const useFileStore = create<FileState>()(
         set({ isLoading: true });
         try {
           const serverFiles = await api.listFiles();
-          const files: FileItem[] = serverFiles.map((f) => ({
-            id: f.id,
-            name: f.name,
-            content: f.content,
-            isFolder: f.is_folder || false,
-            parentId: f.parent_id || null,
-            position: f.position || 0,
-            isFavorite: f.is_favorite || false,
-            icon: f.icon || null,
-            createdAt: f.created_at,
-            updatedAt: f.updated_at,
-            wordCount: f.word_count || 0,
-            preview: f.preview || "",
-            fork_id: f.fork_id || undefined,
-            forked_from_share_id: f.forked_from_share_id || undefined,
-            forked_from_title: f.forked_from_title || undefined,
-            forked_from_author: f.forked_from_author || undefined,
-          }));
+          const newFileIds = new Set(serverFiles.map((f) => f.id));
 
-          // Clear currentFileId / currentFolderId if they no longer exist in loaded files
-          const { currentFileId, currentFolderId, selectedFileIds } = get();
-          const fileIds = new Set(files.map((f) => f.id));
-          const validCurrentFileId =
-            currentFileId && fileIds.has(currentFileId) ? currentFileId : null;
-          const validCurrentFolderId =
-            currentFolderId && files.some((f) => f.id === currentFolderId && f.isFolder)
-              ? currentFolderId
-              : null;
+          // Use set callback to read the latest state atomically, preventing
+          // race conditions where a concurrent loadFileContent updates
+          // loadedContentIds between our read and write.
+          set((state) => {
+            // Preserve loadedContentIds for files that still exist on server
+            const preservedContentIds = new Set(
+              Array.from(state.loadedContentIds).filter((id) => newFileIds.has(id))
+            );
 
-          // Clear selection of files that no longer exist
-          const validSelectedFileIds = new Set(
-            Array.from(selectedFileIds).filter((id) => fileIds.has(id))
-          );
+            // Build a map of previously loaded content to merge into new file list
+            const prevContentMap = new Map<string, string>();
+            if (preservedContentIds.size > 0) {
+              for (const f of state.files) {
+                if (preservedContentIds.has(f.id) && f.content) {
+                  prevContentMap.set(f.id, f.content);
+                }
+              }
+            }
 
-          set({
-            files,
-            currentFileId: validCurrentFileId,
-            currentFolderId: validCurrentFolderId,
-            selectedFileIds: validSelectedFileIds,
-            // Clear loadedContentIds because file objects now have content=""
-            // (list endpoint optimization). Content must be re-loaded on demand.
-            loadedContentIds: new Set<string>(),
-            isSynced: true,
-            isLoading: false,
+            const files: FileItem[] = serverFiles.map((f) => ({
+              id: f.id,
+              name: f.name,
+              // Preserve already-loaded content; list endpoint returns content=""
+              content: prevContentMap.get(f.id) ?? f.content,
+              isFolder: f.is_folder || false,
+              parentId: f.parent_id || null,
+              position: f.position || 0,
+              isFavorite: f.is_favorite || false,
+              icon: f.icon || null,
+              createdAt: f.created_at,
+              updatedAt: f.updated_at,
+              wordCount: f.word_count || 0,
+              preview: f.preview || "",
+              fork_id: f.fork_id || undefined,
+              forked_from_share_id: f.forked_from_share_id || undefined,
+              forked_from_title: f.forked_from_title || undefined,
+              forked_from_author: f.forked_from_author || undefined,
+            }));
+
+            // Clear currentFileId / currentFolderId if they no longer exist
+            const validCurrentFileId =
+              state.currentFileId && newFileIds.has(state.currentFileId)
+                ? state.currentFileId
+                : null;
+            const validCurrentFolderId =
+              state.currentFolderId &&
+              files.some((f) => f.id === state.currentFolderId && f.isFolder)
+                ? state.currentFolderId
+                : null;
+
+            // Clear selection of files that no longer exist
+            const validSelectedFileIds = new Set(
+              Array.from(state.selectedFileIds).filter((id) => newFileIds.has(id))
+            );
+
+            return {
+              files,
+              currentFileId: validCurrentFileId,
+              currentFolderId: validCurrentFolderId,
+              selectedFileIds: validSelectedFileIds,
+              loadedContentIds: preservedContentIds,
+              isSynced: true,
+              isLoading: false,
+            };
           });
         } catch (error) {
           log.error("Failed to load files from server", error);
@@ -193,6 +218,9 @@ export const useFileStore = create<FileState>()(
 
       loadFileContent: async (fileId: string) => {
         if (get().loadedContentIds.has(fileId)) return;
+        // Prevent duplicate concurrent fetches for the same file
+        if (pendingContentLoads.has(fileId)) return;
+        pendingContentLoads.add(fileId);
         try {
           const fullFile = await api.getFile(fileId);
           set((state) => {
@@ -220,6 +248,8 @@ export const useFileStore = create<FileState>()(
           });
         } catch (error) {
           log.error("Failed to load file content", error);
+        } finally {
+          pendingContentLoads.delete(fileId);
         }
       },
 
