@@ -14,12 +14,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import {
-  stripHtml,
-  getWordCount,
-  formatWordCount,
-  getNameWithoutExtension,
-} from "@/lib/file-utils";
+import { formatWordCount, getNameWithoutExtension } from "@/lib/file-utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -41,32 +36,6 @@ interface FileCardProps {
   searchMatch?: { snippet: string; score: number; query: string };
   onResultClick?: (fileId: string, position: number, score: number) => void;
 }
-
-// SVG fractal noise for paper grain texture
-const PAPER_GRAIN = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
-
-// Layered shadow for resting paper
-const PAPER_SHADOW = [
-  "0 1px 1px rgba(0,0,0,0.04)",
-  "0 2px 2px rgba(0,0,0,0.03)",
-  "0 4px 4px rgba(0,0,0,0.025)",
-  "0 8px 8px rgba(0,0,0,0.02)",
-  "inset 0 0 0 0.5px rgba(0,0,0,0.04)",
-].join(",");
-
-// Predefined scatter transforms — like papers casually dropped on a desk
-const SCATTER = [
-  { rotate: -1.8, y: 0 },
-  { rotate: 1.2, y: 2 },
-  { rotate: -0.6, y: -1 },
-  { rotate: 2.0, y: 1 },
-  { rotate: -1.2, y: -2 },
-  { rotate: 0.5, y: 3 },
-  { rotate: -2.2, y: 0 },
-  { rotate: 1.5, y: -1 },
-  { rotate: -0.3, y: 2 },
-  { rotate: 1.8, y: -3 },
-];
 
 function highlightQuery(text: string, query: string) {
   if (!query.trim()) return text;
@@ -97,7 +66,6 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     moveFileToFolder,
     toggleFavorite,
   } = useFileStore();
-  const scatter = SCATTER[index % SCATTER.length];
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -107,8 +75,8 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
-  const preview = stripHtml(file.content).slice(0, 200);
-  const wordCount = getWordCount(file.content);
+  const preview = file.preview;
+  const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
 
   const handleOpen = () => {
@@ -209,55 +177,26 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     return (
       <>
         <motion.div
-          className="group relative cursor-pointer pb-1.5"
+          className="group relative cursor-pointer"
           onClick={handleOpen}
           onHoverStart={() => setIsHovering(true)}
           onHoverEnd={() => setIsHovering(false)}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          style={{ rotate: scatter.rotate, y: scatter.y }}
           transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          whileHover={{
-            rotate: 0,
-            y: -6,
-            scale: 1.02,
-          }}
+          whileHover={{ y: -4 }}
           whileTap={{ scale: 0.97 }}
         >
-          {/* Stacked page (folders have only 1 back page - thinner than files) */}
           <div
             className={cn(
-              "absolute inset-x-[2.5px] bottom-[2px] top-[4px] rounded-[2px]",
-              "bg-stone-100/50 dark:bg-[#1e1e20]",
-              "border border-stone-200/20 dark:border-neutral-700/10"
-            )}
-          />
-
-          {/* Soft ambient glow on hover */}
-          <div className="pointer-events-none absolute -inset-4 rounded-3xl bg-foreground/[0.015] opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100 dark:bg-foreground/[0.04]" />
-
-          {/* Folder Card - Paper aesthetic with folder tab accent */}
-          <div
-            className={cn(
-              "relative flex min-h-[240px] flex-col rounded-[3px]",
-              "bg-[#fdfcfa] dark:bg-[#1e1e20]",
-              "border border-stone-200/50 dark:border-neutral-700/30",
+              "relative flex min-h-[200px] flex-col rounded-2xl border bg-card p-5",
+              "border-border/50 transition-all duration-300",
+              "hover:border-border hover:shadow-lg hover:shadow-black/[0.04]",
+              "dark:hover:shadow-black/[0.15]",
               isDragOver && "border-amber-400/50 ring-2 ring-amber-400/30 dark:ring-amber-500/25"
             )}
-            style={{ boxShadow: PAPER_SHADOW }}
           >
-            {/* Paper grain texture */}
-            <div
-              className="pointer-events-none absolute inset-0 opacity-[0.035] dark:opacity-[0.06]"
-              style={{
-                backgroundImage: PAPER_GRAIN,
-                backgroundSize: "200px",
-                backgroundRepeat: "repeat",
-                mixBlendMode: "multiply",
-              }}
-            />
-
             {/* Menu - top right */}
             <div
               className="absolute right-2 top-2 z-[2] flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
@@ -296,24 +235,24 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             </div>
 
             {/* Folder icon - large and centered */}
-            <div className="flex flex-1 items-center justify-center pb-4 pt-10">
+            <div className="flex flex-1 items-center justify-center pb-4 pt-6">
               {isHovering ? (
                 <FolderOpen
-                  className="h-20 w-20 text-amber-500/70 transition-all dark:text-amber-400/60"
+                  className="h-16 w-16 text-amber-500/70 transition-all dark:text-amber-400/60"
                   strokeWidth={1.5}
                 />
               ) : (
                 <Folder
-                  className="h-20 w-20 text-amber-500/70 transition-all dark:text-amber-400/60"
+                  className="h-16 w-16 text-amber-500/70 transition-all dark:text-amber-400/60"
                   strokeWidth={1.5}
                 />
               )}
             </div>
 
             {/* Content area */}
-            <div className="relative z-[1] flex flex-col p-5 pt-0">
+            <div className="flex flex-col">
               {/* Title */}
-              <h3 className="line-clamp-2 font-serif text-sm font-semibold leading-snug tracking-tight text-foreground/90">
+              <h3 className="line-clamp-2 text-sm font-semibold leading-snug tracking-tight text-foreground/90">
                 {displayName}
               </h3>
 
@@ -394,81 +333,26 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
   return (
     <>
       <motion.div
-        className="group relative cursor-pointer pb-1.5"
+        className="group relative cursor-pointer"
         data-onboarding="file-card"
         onClick={handleOpen}
         draggable={true}
         onDragStart={handleDragStart}
-        style={{ rotate: scatter.rotate, y: scatter.y }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        whileHover={{
-          rotate: 0,
-          y: -6,
-          scale: 1.02,
-        }}
+        whileHover={{ y: -4 }}
         whileTap={{ scale: 0.98 }}
       >
-        {/* Stacked page 2 (furthest back) — peek at bottom */}
         <div
           className={cn(
-            "absolute inset-x-[5px] bottom-0 top-[7px] rounded-[2px]",
-            "bg-stone-200/40 dark:bg-neutral-700/20",
-            "border border-stone-200/30 dark:border-neutral-700/15"
+            "relative flex h-full min-h-[200px] flex-col rounded-2xl border bg-card p-5",
+            "border-border/50 transition-all duration-300",
+            "hover:border-border hover:shadow-lg hover:shadow-black/[0.04]",
+            "dark:hover:shadow-black/[0.15]"
           )}
-        />
-        {/* Stacked page 1 */}
-        <div
-          className={cn(
-            "absolute inset-x-[2.5px] bottom-[3px] top-[3.5px] rounded-[2px]",
-            "bg-stone-100/60 dark:bg-neutral-700/15",
-            "border border-stone-200/20 dark:border-neutral-700/10"
-          )}
-        />
-
-        {/* Soft ambient glow on hover */}
-        <div className="pointer-events-none absolute -inset-4 rounded-3xl bg-foreground/[0.015] opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100 dark:bg-foreground/[0.04]" />
-
-        {/* ═══ MAIN PAPER CARD ═══ */}
-        <div
-          className={cn(
-            "relative flex min-h-[240px] flex-col rounded-[3px]",
-            // Warm off-white paper — not pure white
-            "bg-[#fdfcfa] dark:bg-[#1e1e20]",
-            // Thin paper edge
-            "border border-stone-200/50 dark:border-neutral-700/30"
-          )}
-          style={{ boxShadow: PAPER_SHADOW }}
         >
-          {/* Paper grain texture */}
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.035] dark:opacity-[0.06]"
-            style={{
-              backgroundImage: PAPER_GRAIN,
-              backgroundSize: "200px",
-              backgroundRepeat: "repeat",
-              mixBlendMode: "multiply",
-            }}
-          />
-
-          {/* Faint ruled lines */}
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.025] dark:opacity-[0.035]"
-            style={{
-              backgroundImage: "linear-gradient(to bottom, transparent 95%, currentColor 95%)",
-              backgroundSize: "100% 22px",
-              backgroundPosition: "0 16px",
-            }}
-          />
-
-          {/* Red margin line (very subtle, like notebook paper) */}
-          <div
-            className="pointer-events-none absolute bottom-0 left-[52px] top-0 w-px opacity-[0.06] dark:opacity-[0.05]"
-            style={{ backgroundColor: "#c44" }}
-          />
-
           {/* Relevance badge — search mode only */}
           {searchMatch && (
-            <div className="absolute left-2 top-2 z-[2]">
+            <div className="absolute left-3 top-3 z-[2]">
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide",
@@ -476,7 +360,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
                     ? "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                     : searchMatch.score >= 40
                       ? "bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                      : "bg-stone-100/80 text-stone-500 dark:bg-neutral-800/50 dark:text-neutral-400"
+                      : "bg-muted text-muted-foreground dark:bg-neutral-800/50 dark:text-neutral-400"
                 )}
               >
                 {searchMatch.score}%
@@ -484,105 +368,98 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
             </div>
           )}
 
-          {/* Content area */}
-          <div className="relative z-[1] flex flex-1 flex-col p-5 pl-[68px] pt-5">
-            {/* Title + menu */}
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="line-clamp-2 font-serif text-sm font-semibold leading-snug tracking-tight text-foreground/90">
-                {displayName}
-              </h3>
+          {/* Title + menu */}
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-foreground">
+              {displayName}
+            </h3>
 
-              <div
-                className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-md"
-                      aria-label="File options"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={handleRenameOpen}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Rename
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
-                      <Share2 className="mr-2 h-4 w-4" />
-                      Share
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFavorite(file.id);
-                      }}
-                    >
-                      <Star
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          file.isFavorite && "fill-amber-500 text-amber-500"
-                        )}
-                      />
-                      {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      Export as
-                    </DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                      <FileDown className="mr-2 h-4 w-4" />
-                      Markdown
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleExport("pdf")}>
-                      <FileDown className="mr-2 h-4 w-4" />
-                      PDF
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleExport("docx")}>
-                      <FileDown className="mr-2 h-4 w-4" />
-                      Word
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => setShowDeleteModal(true)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+            <div
+              className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-md"
+                    aria-label="File options"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleRenameOpen}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
+                    <Share2 className="mr-2 h-4 w-4" />
+                    Share
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(file.id);
+                    }}
+                  >
+                    <Star
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        file.isFavorite && "fill-amber-500 text-amber-500"
+                      )}
+                    />
+                    {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
+                    Export as
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Markdown
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                    <FileDown className="mr-2 h-4 w-4" />
+                    PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("docx")}>
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Word
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setShowDeleteModal(true)}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+          </div>
 
-            {/* Preview text — like typewritten text on paper */}
-            <p className="mt-2.5 line-clamp-4 flex-1 text-[13px] leading-[22px] text-foreground/45 dark:text-foreground/55">
-              {searchMatch?.snippet ? (
-                <span className="text-foreground/55 dark:text-foreground/65">
-                  {highlightQuery(searchMatch.snippet, searchMatch.query)}
-                </span>
-              ) : preview ? (
-                preview
-              ) : (
-                <span className="italic text-foreground/25 dark:text-foreground/35">
-                  Empty document
-                </span>
-              )}
-            </p>
+          {/* Preview text */}
+          <p className="mt-2 line-clamp-4 flex-1 text-[13px] leading-relaxed text-muted-foreground">
+            {searchMatch?.snippet ? (
+              <span className="text-foreground/55 dark:text-foreground/65">
+                {highlightQuery(searchMatch.snippet, searchMatch.query)}
+              </span>
+            ) : preview ? (
+              preview
+            ) : (
+              <span className="italic text-muted-foreground/50">Empty document</span>
+            )}
+          </p>
 
-            {/* Footer: date + word count */}
-            <div className="mt-auto flex items-center justify-between pt-4">
-              <span className="text-xs tracking-wide text-foreground/45 dark:text-foreground/55">
-                {formatRelativeDate(file.updatedAt)}
-              </span>
-              <span className="text-xs text-foreground/40 dark:text-foreground/50">
-                {formatWordCount(wordCount)}
-              </span>
-            </div>
+          {/* Footer: date + word count */}
+          <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-4">
+            <span className="text-xs text-muted-foreground/60">
+              {formatRelativeDate(file.updatedAt)}
+            </span>
+            <span className="text-xs text-muted-foreground/60">{formatWordCount(wordCount)}</span>
           </div>
         </div>
       </motion.div>

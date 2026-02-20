@@ -17,6 +17,8 @@ from api import (
     auth,
     autocomplete,
     chat,
+    comments,
+    community,
     conversations,
     data_files,
     edit,
@@ -285,6 +287,8 @@ app.include_router(kb_agent.router, prefix="/api/kb-agent", tags=["kb_agent"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
 app.include_router(data_files.router, tags=["data_files"])
 app.include_router(shares.router, prefix="/api/shares", tags=["shares"])
+app.include_router(community.router, prefix="/api/community", tags=["community"])
+app.include_router(comments.router, prefix="/api/comments", tags=["comments"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])

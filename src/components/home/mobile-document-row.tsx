@@ -2,15 +2,10 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Star, Share2, Trash2, Folder } from "lucide-react";
+import { Star, Share2, Trash2, Folder, FileText } from "lucide-react";
 import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import {
-  stripHtml,
-  getWordCount,
-  formatWordCount,
-  getNameWithoutExtension,
-} from "@/lib/file-utils";
+import { formatWordCount, getNameWithoutExtension } from "@/lib/file-utils";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -58,8 +53,8 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
   const hasTriggeredLeftHapticRef = useRef(false);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
-  const preview = stripHtml(file.content).slice(0, 100);
-  const wordCount = getWordCount(file.content);
+  const preview = file.preview;
+  const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
 
   // Swipe right: favorite indicator opacity
@@ -212,10 +207,7 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
               strokeWidth={1.5}
             />
           ) : (
-            <div className="relative mt-0.5 h-5 w-4 flex-shrink-0">
-              <div className="absolute inset-0 translate-x-[1px] translate-y-[1px] rounded-[1px] border border-stone-200/40 bg-stone-100/50 dark:border-neutral-700/20 dark:bg-neutral-700/15" />
-              <div className="absolute inset-0 rounded-[1px] border border-stone-200/50 bg-[#fdfcfa] dark:border-neutral-700/30 dark:bg-[#1e1e20]" />
-            </div>
+            <FileText className="mt-0.5 h-5 w-5 flex-shrink-0 text-muted-foreground/50" />
           )}
 
           {/* Content */}

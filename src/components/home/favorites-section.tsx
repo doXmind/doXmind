@@ -16,12 +16,9 @@ import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import { stripHtml, getWordCount, formatWordCount } from "@/lib/file-utils";
+import { formatWordCount } from "@/lib/file-utils";
 import { haptics } from "@/lib/haptics";
 import { toast } from "sonner";
-
-const PAPER_SHADOW =
-  "0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.03), 0 4px 8px rgba(0,0,0,0.025), inset 0 0.5px 0 rgba(255,255,255,0.04)";
 
 interface FavoritesSectionProps {
   favorites: FileItem[];
@@ -74,8 +71,8 @@ function FavoriteTile({
   const { toggleFavorite, deleteFile } = useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const isMobile = useIsMobile();
-  const wordCount = getWordCount(file.content);
-  const preview = stripHtml(file.content).slice(0, 80);
+  const wordCount = file.wordCount;
+  const preview = file.preview;
 
   // Swipe state (mobile only)
   const x = useMotionValue(0);
@@ -181,8 +178,7 @@ function FavoriteTile({
       {isMobile ? (
         /* Mobile: swipe-to-reveal actions */
         <motion.div
-          className="relative overflow-hidden rounded-lg border border-stone-200/40 will-change-transform dark:border-neutral-700/25"
-          style={{ boxShadow: PAPER_SHADOW }}
+          className="relative overflow-hidden rounded-xl border border-border/50 will-change-transform"
           initial={{ opacity: 0, y: 8 }}
           animate={{
             opacity: 1,
@@ -216,7 +212,7 @@ function FavoriteTile({
 
           {/* Draggable row */}
           <motion.div
-            className="relative z-10 flex cursor-pointer gap-3 bg-[#fdfcfa] px-4 py-3.5 active:bg-accent/30 dark:bg-[#1e1e20]"
+            className="relative z-10 flex cursor-pointer gap-3 bg-card px-4 py-3.5 active:bg-accent/30"
             drag="x"
             dragDirectionLock
             dragConstraints={{ left: -DELETE_ACTION_WIDTH, right: SWIPE_THRESHOLD }}
@@ -235,8 +231,7 @@ function FavoriteTile({
       ) : (
         /* Desktop: static card with hover dropdown */
         <motion.div
-          className="group relative flex cursor-pointer gap-3 rounded-lg border border-stone-200/40 bg-[#fdfcfa] px-4 py-3.5 dark:border-neutral-700/25 dark:bg-[#1e1e20] sm:items-center sm:py-3"
-          style={{ boxShadow: PAPER_SHADOW }}
+          className="group relative flex cursor-pointer gap-3 rounded-xl border border-border/50 bg-card px-4 py-3.5 transition-all duration-300 hover:border-border hover:shadow-md sm:items-center sm:py-3"
           initial={{ opacity: 0, y: 8 }}
           animate={{
             opacity: 1,

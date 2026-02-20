@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Editor } from "@tiptap/react";
 import {
   X,
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Sparkles,
   Loader2,
   ArrowRight,
@@ -20,6 +21,7 @@ import {
   ReviewSuggestion,
   TextReviewPluginKey,
 } from "@/extensions/text-review-extension";
+import { scrollToPosition } from "@/lib/editor-utils";
 
 interface ReviewPanelProps {
   editor: Editor;
@@ -85,21 +87,45 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
 
   const handleNavigate = useCallback(
     (suggestion: ReviewSuggestion) => {
-      // Highlight the suggestion
+      // Set active highlight in editor
       editor.commands.setActiveSuggestion(suggestion.id);
 
-      // Scroll to and select the suggestion in editor
-      editor
-        .chain()
-        .focus()
-        .setTextSelection({
-          from: suggestion.from,
-          to: suggestion.to,
-        })
-        .scrollIntoView()
-        .run();
+      // Move cursor to suggestion position and scroll (cursor only, no range selection to avoid bubble menu)
+      editor.commands.setTextSelection(suggestion.from);
+      scrollToPosition(editor, suggestion.from);
     },
     [editor]
+  );
+
+  // Navigate to previous/next suggestion (cycling)
+  const navigateIndexRef = useRef(-1);
+
+  const handleNavigateStep = useCallback(
+    (direction: "prev" | "next") => {
+      if (pendingSuggestions.length === 0) return;
+
+      if (direction === "next") {
+        navigateIndexRef.current =
+          navigateIndexRef.current < pendingSuggestions.length - 1
+            ? navigateIndexRef.current + 1
+            : 0;
+      } else {
+        navigateIndexRef.current =
+          navigateIndexRef.current > 0
+            ? navigateIndexRef.current - 1
+            : pendingSuggestions.length - 1;
+      }
+
+      const suggestion = pendingSuggestions[navigateIndexRef.current];
+      // Auto-expand the category
+      setExpandedCategories((prev) => {
+        const next = new Set(prev);
+        next.add(suggestion.category);
+        return next;
+      });
+      handleNavigate(suggestion);
+    },
+    [pendingSuggestions, handleNavigate]
   );
 
   const toggleCategory = (category: ReviewCategory) => {
@@ -129,9 +155,33 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
             </span>
           )}
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7">
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          {pendingSuggestions.length > 0 && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleNavigateStep("prev")}
+                className="h-7 w-7"
+                title="Previous suggestion"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleNavigateStep("next")}
+                className="h-7 w-7"
+                title="Next suggestion"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+          <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Loading State */}

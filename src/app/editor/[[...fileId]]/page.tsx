@@ -34,9 +34,11 @@ import { useFileUrlSync } from "@/hooks/use-file-url-sync";
 import { useOnboardingStepDetector } from "@/hooks/use-onboarding-step-detector";
 import { PanelLeftOpen } from "lucide-react";
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
+import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { UnifiedHeader } from "@/components/editor/unified-header";
+import { ForkIndicator } from "@/components/editor/fork-indicator";
 import { FloatingChatButton } from "@/components/ai/floating-chat-button";
 import { FloatingChatWindow } from "@/components/ai/floating-chat-window";
 import { PresentationMode } from "@/components/editor/presentation-mode";
@@ -104,7 +106,7 @@ export default function EditorPage() {
   } = useLayoutStore();
 
   const { editor } = useEditorRefStore();
-  const { headings } = useHeadings(editor);
+  const { headings, activeId, navigateTo } = useHeadings(editor);
   const hasHeadings = headings.length > 0;
   const currentFile = files.find((f) => f.id === currentFileId);
   const isMobile = useIsMobile();
@@ -263,6 +265,15 @@ export default function EditorPage() {
           {/* Unified Header — spans full width, above all panels */}
           {!isFocusMode && <UnifiedHeader />}
 
+          {/* Fork indicator — shown when editing a forked document */}
+          {!isFocusMode && currentFile?.fork_id && currentFile.forked_from_title && (
+            <ForkIndicator
+              forkId={currentFile.fork_id}
+              sourceTitle={currentFile.forked_from_title}
+              sourceAuthor={currentFile.forked_from_author || "Unknown"}
+            />
+          )}
+
           <div className="flex min-h-0 flex-1">
             {/* Files Sidebar - independent, hidden in focus mode */}
             {!isFocusMode && (
@@ -297,39 +308,52 @@ export default function EditorPage() {
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
             >
               {/* Inline Outline Panel — fused with editor */}
-              {!isFocusMode && hasHeadings && (
-                <div
-                  style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
-                  className={cn(
-                    "flex-shrink-0 overflow-hidden",
-                    !isResizing &&
-                      "transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
-                  )}
-                >
-                  <div style={{ minWidth: sidebarWidth }} className="h-full">
-                    <Sidebar />
+              {!isFocusMode &&
+                hasHeadings &&
+                (isSidebarOpen ? (
+                  <div
+                    style={{ width: sidebarWidth }}
+                    className={cn(
+                      "flex-shrink-0 overflow-hidden",
+                      !isResizing &&
+                        "transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+                    )}
+                  >
+                    <div style={{ minWidth: sidebarWidth }} className="h-full">
+                      <Sidebar />
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  /* Collapsed outline with line indicators */
+                  <div className="flex h-full w-12 flex-shrink-0 flex-col">
+                    <div className="flex items-center justify-center px-1.5 py-2">
+                      <button
+                        onClick={toggleSidebar}
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        title="Expand outline"
+                        aria-label="Expand outline"
+                      >
+                        <PanelLeftOpen className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      <OutlineCollapsed
+                        headings={headings}
+                        activeId={activeId}
+                        onNavigate={navigateTo}
+                        onExpand={toggleSidebar}
+                      />
+                    </div>
+                  </div>
+                ))}
 
-              {/* Outline border when open */}
+              {/* Outline border when expanded */}
               {!isFocusMode && hasHeadings && isSidebarOpen && (
-                <div className="h-full w-px flex-shrink-0 bg-border/30" />
+                <div className="h-full w-px flex-shrink-0" />
               )}
 
               {/* Editor content */}
               <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-                {/* Show Outline button when collapsed */}
-                {!isFocusMode && hasHeadings && !isSidebarOpen && (
-                  <button
-                    onClick={toggleSidebar}
-                    className="absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                    aria-label="Show Outline"
-                    title="Show Outline"
-                  >
-                    <PanelLeftOpen className="h-4 w-4" />
-                  </button>
-                )}
                 {currentFile ? (
                   loadedContentIds.has(currentFile.id) ? (
                     <Editor file={currentFile} />

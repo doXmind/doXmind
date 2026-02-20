@@ -12,7 +12,12 @@ import { AnimatedLogoIcon, GlitchProvider } from "@/components/ui/animated-logo"
 export default function HomePage() {
   const { isInitialized, initialize } = useAuthStore();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(() => {
+    if (typeof window !== "undefined" && sessionStorage.getItem("doxmind_splash_shown")) {
+      return false;
+    }
+    return true;
+  });
 
   useEffect(() => {
     initialize();
@@ -24,11 +29,15 @@ export default function HomePage() {
     }
   }, [isInitialized]);
 
-  // Logo splash → content after 2s (matches editor timing)
+  // Logo splash → content after 800ms, skip on return visits within session
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2000);
+    if (!showSplash) return;
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+      sessionStorage.setItem("doxmind_splash_shown", "1");
+    }, 800);
     return () => clearTimeout(timer);
-  }, []);
+  }, [showSplash]);
 
   return (
     <AnimatePresence mode="wait">

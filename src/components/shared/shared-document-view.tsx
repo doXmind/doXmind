@@ -1,40 +1,37 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { SearchBar } from "@/components/editor/search-bar";
 import { getEditorExtensions } from "@/components/editor/editor-extensions";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
-import { Play, Search } from "lucide-react";
-import { SharedOutline } from "@/components/shared/shared-outline";
-import { SharedThemeToggle } from "@/components/shared/shared-theme-toggle";
-import { Logo } from "@/components/ui/logo";
-import { Tooltip } from "@/components/ui/tooltip";
+import { StickyOutline } from "@/components/shared/sticky-outline";
+import { ReadingToolbar } from "@/components/shared/reading-toolbar";
+import { ReadingStatsBar } from "@/components/shared/reading-stats-bar";
+import { StickyReadingBar } from "@/components/shared/sticky-reading-bar";
 import { PresentationMode } from "@/components/editor/presentation-mode";
+import { ArrowLeft } from "lucide-react";
 import type { SharedItemResponse, SharedFolderItem } from "@/lib/api";
 
 interface SharedDocumentViewProps {
   data: SharedItemResponse;
   breadcrumbs?: SharedFolderItem[];
   onNavigate?: (path: string | null) => void;
+  /** When true, hides headers/outline/stats — just renders the content */
+  embedded?: boolean;
 }
 
-function getWordCount(text: string): number {
-  if (!text) return 0;
-  return text.split(/\s+/).filter(Boolean).length;
-}
-
-function getReadingTime(wordCount: number): string {
-  const minutes = Math.ceil(wordCount / 200);
-  if (minutes < 1) return "< 1 min read";
-  return `${minutes} min read`;
-}
-
-export function SharedDocumentView({ data, breadcrumbs, onNavigate }: SharedDocumentViewProps) {
+export function SharedDocumentView({
+  data,
+  breadcrumbs,
+  onNavigate,
+  embedded = false,
+}: SharedDocumentViewProps) {
   const { setEditor } = useEditorRefStore();
-  const { setSearchBarOpen, setPresentationMode } = useLayoutStore();
+  const { setSearchBarOpen } = useLayoutStore();
+  const headerRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
     extensions: getEditorExtensions({ isMobile: false }),
@@ -104,198 +101,137 @@ export function SharedDocumentView({ data, breadcrumbs, onNavigate }: SharedDocu
     window.document.title = data.name.replace(/\.md$/i, "");
   }, [data.name]);
 
-  // Document stats
-  const stats = useMemo(() => {
-    if (!editor) return { words: 0, characters: 0 };
-    const text = editor.getText();
-    const words = getWordCount(text);
-    const characters = text.length;
-    return { words, characters };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor?.state.doc.content.size]);
+  if (embedded) {
+    return (
+      <div className="bg-background">
+        <div className="mx-auto max-w-none px-0">
+          <EditorContent editor={editor} />
+        </div>
+        <SearchBar />
+      </div>
+    );
+  }
 
-  const handleSearchClick = () => {
-    setSearchBarOpen(true);
-  };
+  const formattedDate = new Date(data.updated_at).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const hasBreadcrumbs = breadcrumbs && breadcrumbs.length > 0 && onNavigate;
+  const title = data.name.replace(/\.md$/, "");
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {/* Mobile Header */}
-      <header className="border-b border-border bg-card md:hidden">
-        <div className="flex h-12 items-center justify-between px-2">
-          {/* Left: Logo + Back Button */}
-          <div className="flex items-center gap-1">
-            <a
-              href="https://beta.doxmind.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-accent active:scale-95"
-              aria-label="doXmind"
-            >
-              <Logo variant="icon" size="sm" className="h-5 w-5" />
-            </a>
-            {breadcrumbs && breadcrumbs.length > 0 && onNavigate && (
-              <>
-                <div className="mx-0.5 h-5 w-px bg-border" />
-                <button
-                  onClick={() => onNavigate(null)}
-                  className="flex h-10 items-center rounded-full px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent active:scale-95"
-                  aria-label="Back to folder"
-                >
-                  ← Folder
-                </button>
-              </>
-            )}
-          </div>
+      {/* Scrollable content area — same pattern as community page */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Sticky reading bar — appears when header scrolls out of view */}
+        <StickyReadingBar title={title} triggerRef={headerRef} />
 
-          {/* Center: Document Title */}
-          <div className="flex-1 px-2 text-center">
-            <h1 className="truncate text-sm font-semibold">{data.name.replace(/\.md$/, "")}</h1>
-          </div>
+        {/* Editorial header */}
+        <div ref={headerRef} className="border-b border-border/40">
+          <div className="mx-auto max-w-3xl px-6 pb-10 pt-10 sm:px-8 lg:max-w-5xl">
+            {/* Top row: Back link / breadcrumbs ... Reading toolbar */}
+            <div className="mb-8 flex items-center justify-between">
+              <div className="flex min-w-0 items-center gap-2">
+                {hasBreadcrumbs && (
+                  <>
+                    <button
+                      onClick={() => onNavigate(null)}
+                      className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground/70 transition-colors hover:text-foreground"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      {data.root_folder_name || "Folder"}
+                    </button>
+                    {breadcrumbs.map((crumb) => (
+                      <span key={crumb.id} className="flex items-center gap-1 text-[13px]">
+                        <span className="text-muted-foreground/50">/</span>
+                        {crumb.is_folder ? (
+                          <button
+                            onClick={() => onNavigate(crumb.id)}
+                            className="text-muted-foreground/70 transition-colors hover:text-foreground"
+                          >
+                            {crumb.name}
+                          </button>
+                        ) : (
+                          <span className="font-medium text-muted-foreground">
+                            {crumb.name.replace(/\.md$/, "")}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </>
+                )}
+              </div>
 
-          {/* Right: Actions */}
-          <div className="flex items-center gap-1">
-            <SharedThemeToggle />
-            <button
-              onClick={handleSearchClick}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent active:scale-95"
-              aria-label="Search"
-            >
-              <Search className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-      </header>
+              <ReadingToolbar />
+            </div>
 
-      {/* Desktop Header */}
-      <header className="hidden border-b border-border bg-card px-6 py-3 shadow-sm md:block">
-        <div className="flex items-center justify-between">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Tooltip content="doXmind" side="bottom">
-              <a
-                href="https://beta.doxmind.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"
-              >
-                <Logo variant="icon" size="sm" className="h-6 w-6" />
-              </a>
-            </Tooltip>
+            {/* Title — editorial style, matches community page */}
+            <h1 className="text-3xl font-bold leading-tight tracking-tight text-foreground sm:text-4xl">
+              {title}
+            </h1>
 
-            {/* Breadcrumbs for documents inside shared folders */}
-            {breadcrumbs && breadcrumbs.length > 0 && onNavigate && (
-              <>
-                <Tooltip content="Back to folder" side="bottom">
-                  <button
-                    onClick={() => onNavigate(null)}
-                    className="flex-shrink-0 truncate text-sm font-medium text-foreground transition-colors hover:text-foreground/70"
-                    style={{ maxWidth: "10rem" }}
-                  >
-                    {data.root_folder_name || "..."}
-                  </button>
-                </Tooltip>
-                {breadcrumbs.map((crumb) => (
-                  <span key={crumb.id} className="flex items-center gap-1">
-                    <span className="text-muted-foreground">/</span>
-                    {crumb.is_folder ? (
-                      <button
-                        onClick={() => onNavigate(crumb.id)}
-                        className="flex-shrink-0 truncate text-sm text-muted-foreground transition-colors hover:text-foreground"
-                      >
-                        {crumb.name}
-                      </button>
+            {/* Meta row — matches community page pattern */}
+            <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
+              {data.owner_name && (
+                <>
+                  <span className="flex items-center gap-2.5 font-medium">
+                    {data.owner_avatar_url ? (
+                      <img
+                        src={data.owner_avatar_url}
+                        alt=""
+                        className="h-7 w-7 rounded-full ring-1 ring-border/50"
+                      />
                     ) : (
-                      <span className="truncate text-sm font-medium text-foreground">
-                        {crumb.name.replace(/\.md$/, "")}
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground ring-1 ring-border/50">
+                        {data.owner_name[0].toUpperCase()}
                       </span>
                     )}
+                    <span className="text-foreground/80">{data.owner_name}</span>
                   </span>
-                ))}
-              </>
-            )}
-
-            {/* Title when no breadcrumbs (standalone document share) */}
-            {(!breadcrumbs || breadcrumbs.length === 0) && (
-              <h1 className="truncate text-lg font-bold text-foreground">
-                {data.name.replace(/\.md$/, "")}
-              </h1>
-            )}
-
-            <span className="hidden flex-shrink-0 text-xs text-muted-foreground/60 sm:inline">
-              {data.owner_name && <>{data.owner_name} · </>}
-              Read-Only
-              {data.is_snapshot && (
-                <> · Snapshot {new Date(data.created_at).toLocaleDateString()}</>
+                  <span className="text-border/60">&middot;</span>
+                </>
               )}
-              {" · "}
-              {new Date(data.updated_at).toLocaleDateString()}
-            </span>
-          </div>
-
-          <div className="flex flex-shrink-0 items-center gap-1">
-            <SharedThemeToggle />
-
-            <Tooltip content="Present" side="bottom">
-              <button
-                onClick={() => setPresentationMode(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                aria-label="Present"
-              >
-                <Play className="h-4 w-4" />
-              </button>
-            </Tooltip>
-
-            <Tooltip content="Search" side="bottom">
-              <button
-                onClick={handleSearchClick}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                aria-label="Search in document"
-              >
-                <Search className="h-4 w-4" />
-              </button>
-            </Tooltip>
+              <span>{formattedDate}</span>
+              {data.is_snapshot && (
+                <>
+                  <span className="text-border/60">&middot;</span>
+                  <span>Snapshot</span>
+                </>
+              )}
+              <span className="text-border/60">&middot;</span>
+              <span>Read-Only</span>
+            </div>
           </div>
         </div>
-      </header>
 
-      {/* Editor Content - Read-Only */}
-      <div className="relative flex min-h-0 flex-1">
-        <SharedOutline />
-        <div className="relative flex min-w-0 flex-1 flex-col">
-          <main className="relative min-w-0 flex-1 overflow-auto">
-            <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
+        {/* Content area with sticky outline — same pattern as community page */}
+        <div className="mx-auto flex max-w-3xl gap-8 px-6 sm:px-8 lg:max-w-5xl">
+          {/* Sticky outline sidebar (lg+ only) */}
+          <StickyOutline maxHeight="calc(100vh - 8rem)" />
+
+          {/* Main content column */}
+          <div className="relative min-w-0 flex-1">
+            {/* Document content */}
+            <article className="py-10">
               <EditorContent editor={editor} />
-            </div>
-            <SearchBar />
-          </main>
+            </article>
+          </div>
+        </div>
 
-          {/* Fixed bottom stats bar */}
-          {stats.words > 0 && (
-            <div className="bg-background px-4 py-1.5 text-[11px] text-muted-foreground/60 md:px-12">
-              <div className="flex items-center gap-3">
-                <span className="text-border">&middot;</span>
-                <span>
-                  {stats.words.toLocaleString()} {stats.words === 1 ? "word" : "words"}
-                </span>
-                <span className="text-border">&middot;</span>
-                <span>{stats.characters.toLocaleString()} characters</span>
-                <span className="text-border">&middot;</span>
-                <span>{getReadingTime(stats.words)}</span>
-              </div>
-            </div>
-          )}
+        <SearchBar />
+      </div>
+
+      {/* Fixed bottom stats bar */}
+      <div className="border-t border-border/40 bg-background">
+        <div className="mx-auto max-w-3xl px-6 sm:px-8 lg:max-w-5xl">
+          <ReadingStatsBar />
         </div>
       </div>
 
       {/* Presentation Mode */}
-      <PresentationMode
-        title={data.name.replace(/\.md$/, "")}
-        date={new Date(data.updated_at).toLocaleDateString(undefined, {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })}
-      />
+      <PresentationMode title={title} author={data.owner_name || undefined} date={formattedDate} />
     </div>
   );
 }

@@ -71,13 +71,6 @@ export function Mindlines({ editor }: MindlinesProps) {
     setMindlinesCollapsed(false);
   }, [setMindlinesCollapsed]);
 
-  // Handle container click - expand when in collapsed state
-  const handleContainerClick = useCallback(() => {
-    if (isMindlinesCollapsed) {
-      toggleMindlinesCollapsed();
-    }
-  }, [isMindlinesCollapsed, toggleMindlinesCollapsed]);
-
   if (!isMindlinesOpen || !editor || headings.length === 0) return null;
 
   const isExpanded = mode === "expanded";
@@ -134,8 +127,6 @@ export function Mindlines({ editor }: MindlinesProps) {
           "relative flex min-h-0 flex-col border-r bg-background/95 backdrop-blur-sm",
           // Non-expanded: standard sidebar
           !isExpanded && "z-30 h-full shrink-0",
-          // Collapsed: cursor pointer and hover effect for click-to-expand
-          isMindlinesCollapsed && !isExpanded && "cursor-pointer hover:bg-accent/20",
           // Expanded: fixed overlay - use calc for proper height with margins
           isExpanded && "fixed z-30 overflow-hidden rounded-lg border-r-0 shadow-2xl"
         )}
@@ -151,7 +142,6 @@ export function Mindlines({ editor }: MindlinesProps) {
               }
             : {}),
         }}
-        onClick={isMindlinesCollapsed && !isExpanded ? handleContainerClick : undefined}
         {...animationProps}
         role="navigation"
         aria-label={isExpanded ? "Document mindmap" : "Document outline"}

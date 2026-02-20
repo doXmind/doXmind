@@ -293,6 +293,7 @@ export function useAutocomplete({
       }
 
       setIsLoading(true);
+      editor.commands.setLoading(true);
 
       try {
         const mode = forceMode || (shouldUseLongMode(editor, autocompleteMode) ? "long" : "short");
@@ -339,6 +340,9 @@ export function useAutocomplete({
         log.error("Autocomplete request failed", error);
       } finally {
         setIsLoading(false);
+        if (editor && !editor.isDestroyed) {
+          editor.commands.setLoading(false);
+        }
       }
     },
     [editor, isEnabled, fileId, fileName, autocompleteTriggerMode, autocompleteMode, openFileIds]

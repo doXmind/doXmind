@@ -251,6 +251,13 @@ async def require_auth(
                     raise UnauthorizedError(message="Session expired. Please log in again.")
         return token
 
+    # If a Bearer token was sent but failed validation, return 401.
+    # Don't silently fall back to dev-user — the frontend needs to know
+    # its token is invalid so it can clear it and re-authenticate.
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        raise UnauthorizedError(message="Invalid or expired token. Please log in again.")
+
     # Check API key
     if api_key is not None:
         return TokenData(

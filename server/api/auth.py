@@ -83,6 +83,9 @@ class UpdateProfileRequest(BaseModel):
 
     username: str | None = Field(None, min_length=2, max_length=100)
     avatar_url: str | None = None
+    bio: str | None = Field(None, max_length=500)
+    website: str | None = Field(None, max_length=500)
+    social_links: dict[str, str] | None = None
 
 
 class TokenResponse(BaseModel):
@@ -108,6 +111,9 @@ class UserResponse(BaseModel):
     email: str
     username: str | None
     avatar_url: str | None
+    bio: str | None = None
+    website: str | None = None
+    social_links: dict[str, str] | None = None
     is_verified: bool
     oauth_provider: str | None
     created_at: str
@@ -134,6 +140,9 @@ def user_to_response(user: User) -> UserResponse:
         email=user.email,
         username=user.username,
         avatar_url=user.avatar_url,
+        bio=user.bio,
+        website=user.website,
+        social_links=user.social_links,
         is_verified=user.is_verified,
         oauth_provider=user.oauth_provider,
         created_at=user.created_at.isoformat() if user.created_at else "",
@@ -521,7 +530,12 @@ async def update_profile(
     user_service = UserService(db)
 
     success, message, user = await user_service.update_profile(
-        user_id=token_data.sub, username=body.username, avatar_url=body.avatar_url
+        user_id=token_data.sub,
+        username=body.username,
+        avatar_url=body.avatar_url,
+        bio=body.bio,
+        website=body.website,
+        social_links=body.social_links,
     )
 
     if not success or not user:

@@ -176,6 +176,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
           {
             id: "old-2",
@@ -188,6 +190,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -293,6 +297,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "2024-01-01T00:00:00Z",
             updatedAt: "2024-01-01T00:00:00Z",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -371,6 +377,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
           {
             id: "file-2",
@@ -383,6 +391,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -413,6 +423,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
           {
             id: "file-2",
@@ -425,6 +437,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
         currentFileId: "file-1",
@@ -479,6 +493,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
         currentFileId: "file-1",
@@ -550,6 +566,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -591,6 +609,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
           {
             id: "file-2",
@@ -603,6 +623,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -640,6 +662,8 @@ describe("useFileStore", () => {
             icon: null,
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -669,6 +693,8 @@ describe("useFileStore", () => {
             icon: "📝",
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -724,9 +750,11 @@ describe("useFileStore", () => {
             parentId: null,
             position: 0,
             isFavorite: false,
-            icon: "⭐",
+            icon: "\u{1F4DD}",
             createdAt: "",
             updatedAt: "",
+            wordCount: 0,
+            preview: "",
           },
         ],
       });
@@ -736,7 +764,7 @@ describe("useFileStore", () => {
 
       // Should revert to the previous icon
       const file = useFileStore.getState().getFile("file-1");
-      expect(file?.icon).toBe("⭐");
+      expect(file?.icon).toBe("\u{1F4DD}");
     });
   });
 });

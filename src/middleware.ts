@@ -15,7 +15,12 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow public routes (no auth required)
-  if (pathname.startsWith("/shared") || pathname.startsWith("/demo")) {
+  if (
+    pathname.startsWith("/shared") ||
+    pathname.startsWith("/demo") ||
+    pathname.startsWith("/community") ||
+    pathname.startsWith("/profile")
+  ) {
     return NextResponse.next();
   }
 

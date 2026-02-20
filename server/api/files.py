@@ -3,15 +3,16 @@
 import contextlib
 import hashlib
 import logging
+import re
 from datetime import datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import File, get_db, utcnow
+from db.database import DocumentShare, File, Fork, User, get_db, utcnow
 from exceptions import (
     AppException,
     BadRequestError,
@@ -44,6 +45,18 @@ def get_user_id(token: TokenData) -> str | None:
 def compute_content_hash(content: str) -> str:
     """Compute SHA-256 hash of content for change detection."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
+_NBSP_RE = re.compile(r"&nbsp;")
+
+
+def _strip_html(html: str) -> str:
+    """Strip HTML tags and collapse whitespace, matching the frontend stripHtml()."""
+    text = _HTML_TAG_RE.sub(" ", html)
+    text = _NBSP_RE.sub(" ", text)
+    return _WHITESPACE_RE.sub(" ", text).strip()
 
 
 MAX_FOLDER_DEPTH = 3  # Maximum nesting depth (root=1, sub=2, sub-sub=3)
@@ -180,6 +193,14 @@ class FileResponse(BaseModel):
     icon: str | None = None
     created_at: str
     updated_at: str
+    # Lightweight preview fields (populated in list, avoids sending full content)
+    word_count: int = 0
+    preview: str = ""
+    # Fork info (populated when this file was forked from a community item)
+    fork_id: str | None = None
+    forked_from_share_id: str | None = None
+    forked_from_title: str | None = None
+    forked_from_author: str | None = None
 
     class Config:
         from_attributes = True
@@ -207,6 +228,8 @@ async def list_files(
     # Build query with folder-aware ordering: folders first, then by position, then by date
     # Optimized: exclude content column to reduce payload size (~160KB → ~5KB)
     # Content is loaded on demand via GET /files/{file_id}
+    # LEFT JOIN with Fork + DocumentShare + User to populate fork provenance
+    source_author = User.__table__.alias("source_author")
     query = (
         select(
             File.id,
@@ -219,7 +242,17 @@ async def list_files(
             File.icon,
             File.created_at,
             File.updated_at,
+            # Lightweight preview: first 1000 chars of content + total length
+            func.substr(File.content, 1, 1000).label("content_head"),
+            func.length(File.content).label("content_length"),
+            Fork.id.label("fork_id"),
+            Fork.source_share_id.label("forked_from_share_id"),
+            DocumentShare.title.label("forked_from_title"),
+            source_author.c.username.label("forked_from_author"),
         )
+        .outerjoin(Fork, Fork.forked_file_id == File.id)
+        .outerjoin(DocumentShare, Fork.source_share_id == DocumentShare.id)
+        .outerjoin(source_author, DocumentShare.user_id == source_author.c.id)
         .where(File.deleted_at.is_(None))
         .order_by(
             File.is_folder.desc(),  # Folders first
@@ -239,27 +272,48 @@ async def list_files(
     result = await db.execute(query)
     rows = result.all()
 
-    response_data = [
-        FileResponse(
-            id=row.id,
-            name=row.name,
-            content="",  # Content excluded from list — loaded on demand
-            is_folder=row.is_folder,
-            parent_id=row.parent_id,
-            position=row.position,
-            summary=row.summary,
-            is_favorite=row.is_favorite or False,
-            icon=row.icon,
-            created_at=row.created_at.isoformat(),
-            updated_at=row.updated_at.isoformat(),
+    logger.debug(
+        "list_files: user_id=%s, filter_by_parent=%s, count=%d",
+        user_id,
+        filter_by_parent,
+        len(rows),
+    )
+
+    response_data = []
+    for row in rows:
+        # Compute preview and word count from content_head (first 1000 chars)
+        plain = _strip_html(row.content_head or "") if not row.is_folder else ""
+        preview = plain[:200] if plain else ""
+        word_count = len(plain.split()) if plain else 0
+        # If content was truncated (>1000 chars), estimate full word count
+        if row.content_length and row.content_length > 1000 and word_count > 0:
+            ratio = row.content_length / min(len(row.content_head or ""), 1000)
+            word_count = int(word_count * ratio)
+
+        response_data.append(
+            FileResponse(
+                id=row.id,
+                name=row.name,
+                content="",  # Content excluded from list — loaded on demand
+                is_folder=row.is_folder,
+                parent_id=row.parent_id,
+                position=row.position,
+                summary=row.summary,
+                is_favorite=row.is_favorite or False,
+                icon=row.icon,
+                created_at=row.created_at.isoformat(),
+                updated_at=row.updated_at.isoformat(),
+                word_count=word_count,
+                preview=preview,
+                fork_id=row.fork_id,
+                forked_from_share_id=row.forked_from_share_id,
+                forked_from_title=row.forked_from_title,
+                forked_from_author=row.forked_from_author,
+            )
         )
-        for row in rows
-    ]
 
     # Generate ETag from file timestamps for conditional request support
-    etag = hashlib.md5(
-        "|".join(row.updated_at.isoformat() for row in rows).encode()
-    ).hexdigest()
+    etag = hashlib.md5("|".join(row.updated_at.isoformat() for row in rows).encode()).hexdigest()
 
     from fastapi.responses import JSONResponse
 
@@ -385,6 +439,34 @@ async def get_file(
     if not file:
         raise DocumentNotFoundError(file_id=file_id)
 
+    # Check if this file is a fork
+    fork_id = None
+    forked_from_share_id = None
+    forked_from_title = None
+    forked_from_author = None
+
+    fork_query = select(Fork.id, Fork.source_share_id).where(
+        Fork.forked_file_id == file_id, Fork.user_id == user_id
+    )
+    fork_result = await db.execute(fork_query)
+    fork_row = fork_result.first()
+
+    if fork_row:
+        fork_id = fork_row.id
+        forked_from_share_id = fork_row.source_share_id
+
+        if fork_row.source_share_id:
+            share_query = (
+                select(DocumentShare.title, User.username)
+                .join(User, DocumentShare.user_id == User.id)
+                .where(DocumentShare.id == fork_row.source_share_id)
+            )
+            share_result = await db.execute(share_query)
+            share_row = share_result.first()
+            if share_row:
+                forked_from_title = share_row.title or file.name
+                forked_from_author = share_row.username or "Unknown"
+
     return FileResponse(
         id=file.id,
         name=file.name,
@@ -397,6 +479,10 @@ async def get_file(
         icon=file.icon,
         created_at=file.created_at.isoformat(),
         updated_at=file.updated_at.isoformat(),
+        fork_id=fork_id,
+        forked_from_share_id=forked_from_share_id,
+        forked_from_title=forked_from_title,
+        forked_from_author=forked_from_author,
     )
 
 

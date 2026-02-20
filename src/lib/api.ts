@@ -30,6 +30,9 @@ export interface User {
   email: string;
   username?: string;
   avatar_url?: string;
+  bio?: string;
+  website?: string;
+  social_links?: { github?: string; twitter?: string; linkedin?: string };
   is_verified: boolean;
   oauth_provider?: string;
   created_at?: string;
@@ -58,10 +61,16 @@ export interface MessageResponse {
 export interface Share {
   id: string;
   file_id: string;
+  file_name?: string | null;
   share_token: string;
   share_url: string;
   expires_at: string | null;
   is_active: boolean;
+  is_published: boolean;
+  visibility: "public" | "private";
+  title?: string | null;
+  description?: string | null;
+  tags?: string[] | null;
   content_mode: string;
   view_count: number;
   created_at: string;
@@ -76,6 +85,14 @@ export interface CreateShareRequest {
   file_id: string;
   expires_in_days: number | null;
   content_mode: "live";
+  visibility: "public" | "private";
+  // Public mode fields
+  title?: string;
+  description?: string;
+  tags?: string[];
+  // Private mode fields
+  invited_user_ids?: string[];
+  invited_emails?: string[];
 }
 
 export interface SharedDocumentResponse {
@@ -102,13 +119,142 @@ export interface SharedItemResponse {
   created_at: string;
   updated_at: string;
   is_snapshot: boolean;
+  visibility?: "public" | "private";
   owner_name?: string;
+  owner_avatar_url?: string;
   // Document fields (when is_folder is false)
   content?: string;
   // Folder fields (when is_folder is true)
   items?: SharedFolderItem[];
   breadcrumbs?: SharedFolderItem[];
   root_folder_name?: string;
+}
+
+// Community types
+export interface CommunityAuthor {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+  bio?: string | null;
+}
+
+export interface CommunityItem {
+  share_id: string;
+  share_token: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  owner: CommunityAuthor;
+  is_folder: boolean;
+  view_count: number;
+  fork_count: number;
+  bookmark_count: number;
+  comment_count: number;
+  published_at: string;
+  updated_at: string;
+  is_bookmarked: boolean;
+  is_forked: boolean;
+}
+
+export interface CommunityListResponse {
+  items: CommunityItem[];
+  total: number;
+  has_more: boolean;
+}
+
+export interface CommunityDetailResponse extends CommunityItem {
+  fork_id: string | null;
+}
+
+export interface CommentReactionSummary {
+  emoji: string;
+  count: number;
+  has_reacted: boolean;
+}
+
+export interface CommentResponse {
+  id: string;
+  content: string;
+  author: CommunityAuthor;
+  parent_id: string | null;
+  mentions: string[] | null;
+  reactions: CommentReactionSummary[];
+  reply_count: number;
+  is_deleted: boolean;
+  is_edited: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommentsListResponse {
+  comments: CommentResponse[];
+  total: number;
+  has_more: boolean;
+}
+
+export interface ForkResponse {
+  fork_id: string;
+  forked_file_id: string;
+  forked_file_name: string;
+  source_share_id: string;
+  created_at: string;
+}
+
+export interface ForkInfo {
+  id: string;
+  source_share_id: string | null;
+  source_file_id: string | null;
+  forked_file_id: string;
+  forked_file_name: string;
+  source_title: string | null;
+  source_author: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+}
+
+export interface UserProfileResponse {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  website: string | null;
+  social_links: { github?: string; twitter?: string; linkedin?: string } | null;
+  created_at: string;
+  stats: {
+    total_published: number;
+    total_views: number;
+    total_forks_received: number;
+    total_bookmarks_received: number;
+  };
+}
+
+export interface InviteEntry {
+  id: string;
+  user_id: string;
+  username: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  created_at: string;
+}
+
+export interface SearchUserResult {
+  id: string;
+  username: string | null;
+  email: string;
+  avatar_url: string | null;
+}
+
+export interface SharedWithMeItem {
+  share_id: string;
+  share_token: string;
+  title: string;
+  share_url: string;
+  is_folder: boolean;
+  view_count: number;
+  owner: CommunityAuthor;
+  invited_at: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export class ApiClient {
@@ -373,7 +519,13 @@ export class ApiClient {
   /**
    * Update user profile.
    */
-  async updateProfile(updates: { username?: string; avatar_url?: string }): Promise<User> {
+  async updateProfile(updates: {
+    username?: string;
+    avatar_url?: string;
+    bio?: string;
+    website?: string;
+    social_links?: { github?: string; twitter?: string; linkedin?: string };
+  }): Promise<User> {
     return this.request<User>("/api/auth/me", {
       method: "PATCH",
       body: JSON.stringify(updates),
@@ -423,8 +575,14 @@ export class ApiClient {
         icon: string | null;
         created_at: string;
         updated_at: string;
+        word_count: number;
+        preview: string;
+        fork_id: string | null;
+        forked_from_share_id: string | null;
+        forked_from_title: string | null;
+        forked_from_author: string | null;
       }>
-    >("/api/files/");
+    >("/api/files/", { cache: "no-store" });
   }
 
   async getFile(id: string) {
@@ -439,6 +597,10 @@ export class ApiClient {
       icon: string | null;
       created_at: string;
       updated_at: string;
+      fork_id: string | null;
+      forked_from_share_id: string | null;
+      forked_from_title: string | null;
+      forked_from_author: string | null;
     }>(`/api/files/${id}`);
   }
 
@@ -672,7 +834,17 @@ export class ApiClient {
     );
   }
 
-  // Chat API (non-streaming)
+  // Chat API
+
+  async getConversation(fileId: string): Promise<{
+    id: string;
+    fileId: string;
+    messages: any[];
+    createdAt: string;
+  }> {
+    return this.request(`/api/chat/conversations/${fileId}`);
+  }
+
   async simpleChat(message: string, system?: string) {
     return this.request<{ response: string }>("/api/chat/simple", {
       method: "POST",
@@ -907,6 +1079,10 @@ export class ApiClient {
     );
   }
 
+  async getMyShares(): Promise<ShareListResponse> {
+    return this.request<ShareListResponse>("/api/shares/my");
+  }
+
   /**
    * Revoke a share link (deactivate it).
    * @param shareId - The share ID to revoke
@@ -919,17 +1095,34 @@ export class ApiClient {
   }
 
   /**
-   * Get a shared document (public, no authentication required).
-   * This is the only share method that doesn't require authentication.
+   * Get a shared document or folder.
+   * Sends auth headers when available (required for private shares).
    * @param shareToken - The share token from the URL
-   * @returns The shared document content
+   * @param path - Optional subfolder/file ID within a shared folder
+   * @returns The shared item content
    */
   async getSharedDocument(shareToken: string, path?: string): Promise<SharedItemResponse> {
-    let url = `${this.baseUrl}/api/shares/public/${shareToken}`;
+    let endpoint = `/api/shares/public/${shareToken}`;
     if (path) {
-      url += `?path=${encodeURIComponent(path)}`;
+      endpoint += `?path=${encodeURIComponent(path)}`;
     }
-    const response = await fetch(url); // No auth headers for public access
+
+    // Use raw fetch with optional auth headers (supports both public and private)
+    const url = `${this.baseUrl}${endpoint}`;
+    const response = await fetch(url, {
+      headers: {
+        "Content-Type": "application/json",
+        ...this.getAuthHeaders(),
+      },
+    });
+
+    if (response.status === 401) {
+      throw new Error("AUTH_REQUIRED");
+    }
+
+    if (response.status === 403) {
+      throw new Error("ACCESS_DENIED");
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({
@@ -1027,6 +1220,228 @@ export class ApiClient {
     return this.request<{ status: string; id: string }>(
       `/api/data-files/${conversationId}/files/${fileId}`,
       { method: "DELETE" }
+    );
+  }
+
+  // ==========================================================================
+  // Community API
+  // ==========================================================================
+
+  async getCommunityTags(limit = 20): Promise<{ tags: { tag: string; count: number }[] }> {
+    return this.request<{ tags: { tag: string; count: number }[] }>(
+      `/api/community/tags?limit=${limit}`
+    );
+  }
+
+  async getCommunityItems(
+    params: {
+      sort?: string;
+      search?: string;
+      tag?: string;
+      limit?: number;
+      offset?: number;
+    } = {}
+  ): Promise<CommunityListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.sort) searchParams.set("sort", params.sort);
+    if (params.search) searchParams.set("search", params.search);
+    if (params.tag) searchParams.set("tag", params.tag);
+    if (params.limit) searchParams.set("limit", params.limit.toString());
+    if (params.offset) searchParams.set("offset", params.offset.toString());
+
+    const url = `/api/community/discover?${searchParams.toString()}`;
+    return this.request<CommunityListResponse>(url);
+  }
+
+  async getCommunityDetail(shareToken: string): Promise<CommunityDetailResponse> {
+    return this.request<CommunityDetailResponse>(`/api/community/discover/${shareToken}`);
+  }
+
+  // ==========================================================================
+  // Invite API
+  // ==========================================================================
+
+  async searchUsersForInvite(query: string): Promise<{ users: SearchUserResult[] }> {
+    return this.request<{ users: SearchUserResult[] }>(
+      `/api/shares/search-users?q=${encodeURIComponent(query)}`
+    );
+  }
+
+  async inviteUsers(
+    shareId: string,
+    userIds?: string[],
+    emails?: string[]
+  ): Promise<{ status: string; added: number }> {
+    return this.request<{ status: string; added: number }>(`/api/shares/${shareId}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ user_ids: userIds, emails }),
+    });
+  }
+
+  async removeInvite(shareId: string, userId: string): Promise<{ status: string }> {
+    return this.request<{ status: string }>(`/api/shares/${shareId}/invite/${userId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async listInvites(shareId: string): Promise<{ invites: InviteEntry[]; count: number }> {
+    return this.request<{ invites: InviteEntry[]; count: number }>(
+      `/api/shares/${shareId}/invites`
+    );
+  }
+
+  async getSharedWithMe(): Promise<{ shares: SharedWithMeItem[]; count: number }> {
+    return this.request<{ shares: SharedWithMeItem[]; count: number }>(
+      "/api/shares/shared-with-me"
+    );
+  }
+
+  // ==========================================================================
+  // Fork API
+  // ==========================================================================
+
+  async forkDocument(shareToken: string, targetFolderId?: string): Promise<ForkResponse> {
+    return this.request<ForkResponse>(`/api/community/${shareToken}/fork`, {
+      method: "POST",
+      body: JSON.stringify({ target_folder_id: targetFolderId || null }),
+    });
+  }
+
+  async syncFork(
+    forkId: string,
+    options?: { force?: boolean; create_backup?: boolean }
+  ): Promise<{
+    status: "up_to_date" | "synced" | "conflict" | "error";
+    message: string;
+    has_local_changes?: boolean;
+    backup_file_id?: string | null;
+  }> {
+    return this.request(`/api/community/forks/${forkId}/sync`, {
+      method: "POST",
+      body: JSON.stringify(options ?? {}),
+    });
+  }
+
+  async getMyForks(): Promise<{ forks: ForkInfo[] }> {
+    return this.request<{ forks: ForkInfo[] }>("/api/community/forks");
+  }
+
+  // ==========================================================================
+  // Bookmark API
+  // ==========================================================================
+
+  async toggleBookmark(
+    shareToken: string
+  ): Promise<{ bookmarked: boolean; bookmark_count: number }> {
+    return this.request<{ bookmarked: boolean; bookmark_count: number }>(
+      `/api/community/${shareToken}/bookmark`,
+      { method: "POST" }
+    );
+  }
+
+  async getBookmarks(limit = 50, offset = 0): Promise<{ items: CommunityItem[]; total: number }> {
+    return this.request<{ items: CommunityItem[]; total: number }>(
+      `/api/community/bookmarks?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  // ==========================================================================
+  // Comments API
+  // ==========================================================================
+
+  async getComments(
+    shareToken: string,
+    limit = 50,
+    offset = 0,
+    sort: "oldest" | "newest" = "oldest"
+  ): Promise<CommentsListResponse> {
+    return this.request<CommentsListResponse>(
+      `/api/comments/${shareToken}?limit=${limit}&offset=${offset}&sort=${sort}`
+    );
+  }
+
+  async getCommentReplies(
+    shareToken: string,
+    commentId: string,
+    limit = 50,
+    offset = 0
+  ): Promise<CommentsListResponse> {
+    return this.request<CommentsListResponse>(
+      `/api/comments/${shareToken}/${commentId}/replies?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  async createComment(
+    shareToken: string,
+    content: string,
+    parentId?: string | null,
+    mentions?: string[]
+  ): Promise<CommentResponse> {
+    return this.request<CommentResponse>(`/api/comments/${shareToken}`, {
+      method: "POST",
+      body: JSON.stringify({
+        content,
+        parent_id: parentId || null,
+        mentions: mentions || null,
+      }),
+    });
+  }
+
+  async editComment(
+    shareToken: string,
+    commentId: string,
+    content: string,
+    mentions?: string[]
+  ): Promise<CommentResponse> {
+    return this.request<CommentResponse>(`/api/comments/${shareToken}/${commentId}`, {
+      method: "PUT",
+      body: JSON.stringify({ content, mentions: mentions || null }),
+    });
+  }
+
+  async deleteComment(
+    shareToken: string,
+    commentId: string
+  ): Promise<{ status: string; comment_id: string }> {
+    return this.request<{ status: string; comment_id: string }>(
+      `/api/comments/${shareToken}/${commentId}`,
+      { method: "DELETE" }
+    );
+  }
+
+  async toggleReaction(
+    shareToken: string,
+    commentId: string,
+    emoji: string
+  ): Promise<{ reacted: boolean; reactions: CommentReactionSummary[] }> {
+    return this.request<{ reacted: boolean; reactions: CommentReactionSummary[] }>(
+      `/api/comments/${shareToken}/${commentId}/react`,
+      { method: "POST", body: JSON.stringify({ emoji }) }
+    );
+  }
+
+  async searchMentions(query: string): Promise<{ users: CommunityAuthor[] }> {
+    return this.request<{ users: CommunityAuthor[] }>(
+      `/api/comments/mentions/search?q=${encodeURIComponent(query)}`
+    );
+  }
+
+  // ==========================================================================
+  // User Profile API
+  // ==========================================================================
+
+  async getUserProfile(userId: string): Promise<UserProfileResponse> {
+    return this.request<UserProfileResponse>(`/api/community/users/${userId}`);
+  }
+
+  async getUserPublished(
+    userId: string,
+    sort = "newest",
+    limit = 20,
+    offset = 0
+  ): Promise<CommunityListResponse> {
+    return this.request<CommunityListResponse>(
+      `/api/community/users/${userId}/published?sort=${sort}&limit=${limit}&offset=${offset}`
     );
   }
 

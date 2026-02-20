@@ -100,7 +100,7 @@ export function MobileFAB() {
   return (
     <>
       <div
-        className="fixed bottom-6 right-5 md:hidden"
+        className="fixed bottom-[72px] right-5 md:hidden"
         style={{
           zIndex: Z_INDEX.FLOATING_BUTTON,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",

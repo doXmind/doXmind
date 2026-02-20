@@ -4,7 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { api, type SearchResultItem } from "@/lib/api";
+import { useLayoutStore } from "@/stores/layout-store";
+import {
+  api,
+  type SearchResultItem,
+  type Share,
+  type ForkInfo,
+  type CommunityItem,
+} from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useKBAgent } from "@/hooks/use-kb-agent";
 import { telemetry } from "@/lib/telemetry";
@@ -14,6 +21,10 @@ import { FileGrid } from "./file-grid";
 import { KBAnswerCard } from "./kb-answer-card";
 import { RecentFiles } from "./recent-files";
 import { FavoritesSection } from "./favorites-section";
+import { HomeTabs } from "./home-tabs";
+import { SharesSection } from "./shares-section";
+import { ForksSection } from "./forks-section";
+import { BookmarksSection } from "./bookmarks-section";
 import { MobileFAB } from "./mobile-fab";
 
 function getGreeting(): { title: string; subtitle: string } {
@@ -51,42 +62,37 @@ function getGreeting(): { title: string; subtitle: string } {
 function TypewriterText({
   text,
   speed = 80,
-  onDone,
+  delay = 0,
 }: {
   text: string;
   speed?: number;
-  onDone?: () => void;
+  delay?: number;
 }) {
   const [displayed, setDisplayed] = useState("");
   const [done, setDone] = useState(false);
-  const prevText = useRef(text);
-  const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
-
-  const startTyping = useCallback(() => {
-    setDisplayed("");
-    setDone(false);
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setDisplayed(text.slice(0, i));
-      if (i >= text.length) {
-        clearInterval(interval);
-        setDone(true);
-        onDoneRef.current?.();
-      }
-    }, speed);
-    return interval;
-  }, [text, speed]);
 
   useEffect(() => {
-    // Only re-type when the text actually changes (e.g. time-of-day shift)
-    if (prevText.current !== text) {
-      prevText.current = text;
-    }
-    const interval = startTyping();
-    return () => clearInterval(interval);
-  }, [text, startTyping]);
+    setDisplayed("");
+    setDone(false);
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const timeout = setTimeout(() => {
+      let i = 0;
+      interval = setInterval(() => {
+        i++;
+        setDisplayed(text.slice(0, i));
+        if (i >= text.length) {
+          clearInterval(interval!);
+          setDone(true);
+        }
+      }, speed);
+    }, delay);
+
+    return () => {
+      clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    };
+  }, [text, speed, delay]);
 
   return (
     <>
@@ -101,9 +107,14 @@ function TypewriterText({
 export function HomeDashboard() {
   const { files, loadFiles, isLoading, getRecentFiles, getFavorites } = useFileStore();
   const { user } = useAuthStore();
+  const homeActiveTab = useLayoutStore((s) => s.homeActiveTab);
   const isMobile = useIsMobile();
-  // Onboarding auto-start disabled while tour is being tuned.
-  // Users can manually start via User Menu → Restart Tour.
+
+  // Management data (shares, forks, bookmarks)
+  const [shares, setShares] = useState<Share[]>([]);
+  const [forks, setForks] = useState<ForkInfo[]>([]);
+  const [bookmarks, setBookmarks] = useState<CommunityItem[]>([]);
+  const managementLoadedRef = useRef(false);
 
   // Search state — lifted here so FileGrid can filter
   const [query, setQuery] = useState("");
@@ -126,6 +137,20 @@ export function HomeDashboard() {
   useEffect(() => {
     loadFiles();
   }, [loadFiles]);
+
+  // Load management data (shares, forks, bookmarks) once when user is logged in
+  useEffect(() => {
+    if (!user || managementLoadedRef.current) return;
+    managementLoadedRef.current = true;
+
+    Promise.allSettled([api.getMyShares(), api.getMyForks(), api.getBookmarks()]).then(
+      ([sharesResult, forksResult, bookmarksResult]) => {
+        if (sharesResult.status === "fulfilled") setShares(sharesResult.value.shares);
+        if (forksResult.status === "fulfilled") setForks(forksResult.value.forks);
+        if (bookmarksResult.status === "fulfilled") setBookmarks(bookmarksResult.value.items);
+      }
+    );
+  }, [user]);
 
   const performSearch = useDebouncedCallback(async (q: string) => {
     if (!q.trim()) {
@@ -269,7 +294,6 @@ export function HomeDashboard() {
 
   const isAskMode = searchMode === "ask";
 
-  const [titleDone, setTitleDone] = useState(false);
   const { title: greeting, subtitle: greetingSubtitle } = getGreeting();
   const firstName = user?.username?.split(" ")[0];
 
@@ -278,8 +302,16 @@ export function HomeDashboard() {
   const favorites = getFavorites();
   const totalDocs = files.filter((f) => !f.isFolder).length;
   const isSearchActive = query.trim().length > 0;
+  const isDocumentsTab = homeActiveTab === "documents";
   const showRecent = totalDocs >= 4 && !showAnswerCard && !isSearchActive;
   const showFavorites = favorites.length > 0 && !showAnswerCard && !isSearchActive;
+
+  const tabCounts = {
+    documents: totalDocs,
+    shares: shares.length,
+    forks: forks.length,
+    bookmarks: bookmarks.length,
+  };
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
@@ -303,18 +335,14 @@ export function HomeDashboard() {
             transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           >
             <h1 className="text-2xl font-semibold tracking-tight md:text-[28px]">
-              <TypewriterText
-                text={firstName ? `${greeting}, ${firstName}` : greeting}
-                onDone={() => setTitleDone(true)}
-              />
+              <TypewriterText text={firstName ? `${greeting}, ${firstName}` : greeting} />
             </h1>
             <p className="mt-2.5 text-[13px] text-muted-foreground/60 dark:text-muted-foreground/70">
-              {titleDone && (
-                <TypewriterText
-                  text={files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
-                  speed={30}
-                />
-              )}
+              <TypewriterText
+                text={files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
+                speed={30}
+                delay={300}
+              />
             </p>
           </motion.div>
 
@@ -343,6 +371,13 @@ export function HomeDashboard() {
           </div>
         )}
 
+        {/* Tab navigation */}
+        {!showAnswerCard && !isSearchActive && (
+          <div className="mx-auto mt-6 max-w-5xl md:mt-10">
+            <HomeTabs counts={tabCounts} />
+          </div>
+        )}
+
         {/* Content area */}
         {showAnswerCard ? (
           <div className="mx-auto mt-6 max-w-2xl">
@@ -360,7 +395,7 @@ export function HomeDashboard() {
               conversationId={kbAgent.conversationId}
             />
           </div>
-        ) : (
+        ) : isSearchActive || isDocumentsTab ? (
           <FileGrid
             files={files}
             isLoading={isLoading}
@@ -369,11 +404,23 @@ export function HomeDashboard() {
             isSearching={isAskMode ? false : isSearching}
             onResultClick={handleSearchResultClick}
           />
-        )}
+        ) : homeActiveTab === "shares" ? (
+          <div className="mx-auto mt-6 max-w-5xl">
+            <SharesSection shares={shares} onSharesChange={setShares} />
+          </div>
+        ) : homeActiveTab === "forks" ? (
+          <div className="mx-auto mt-6 max-w-5xl">
+            <ForksSection forks={forks} onForksChange={setForks} />
+          </div>
+        ) : homeActiveTab === "bookmarks" ? (
+          <div className="mx-auto mt-6 max-w-5xl">
+            <BookmarksSection bookmarks={bookmarks} />
+          </div>
+        ) : null}
       </main>
 
-      {/* Mobile floating action button */}
-      {isMobile && !showAnswerCard && <MobileFAB />}
+      {/* Mobile floating action button — only on Documents tab */}
+      {isMobile && !showAnswerCard && isDocumentsTab && <MobileFAB />}
     </div>
   );
 }

@@ -10,10 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import (
+    Bookmark,
+    Comment,
+    CommentReaction,
     Conversation,
     ConversationAttachment,
+    DocumentShare,
     EmailVerification,
     File,
+    Fork,
     Message,
     PasswordReset,
     User,
@@ -411,7 +416,13 @@ class UserService:
     # =========================================================================
 
     async def update_profile(
-        self, user_id: str, username: str | None = None, avatar_url: str | None = None
+        self,
+        user_id: str,
+        username: str | None = None,
+        avatar_url: str | None = None,
+        bio: str | None = None,
+        website: str | None = None,
+        social_links: dict | None = None,
     ) -> tuple[bool, str, User | None]:
         """Update user profile.
 
@@ -419,6 +430,9 @@ class UserService:
             user_id: User's ID
             username: New username (optional)
             avatar_url: New avatar URL (optional)
+            bio: User biography (optional)
+            website: Personal website URL (optional)
+            social_links: Social media links dict (optional)
 
         Returns:
             Tuple of (success, message, updated user)
@@ -433,6 +447,15 @@ class UserService:
 
         if avatar_url is not None:
             user.avatar_url = avatar_url
+
+        if bio is not None:
+            user.bio = bio
+
+        if website is not None:
+            user.website = website
+
+        if social_links is not None:
+            user.social_links = social_links
 
         user.updated_at = datetime.now(UTC)
         await self.db.commit()
@@ -528,6 +551,21 @@ class UserService:
 
             # Delete password resets
             await self.db.execute(delete(PasswordReset).where(PasswordReset.user_id == user_id))
+
+            # Delete community data
+            await self.db.execute(delete(CommentReaction).where(CommentReaction.user_id == user_id))
+            await self.db.execute(delete(Comment).where(Comment.user_id == user_id))
+            await self.db.execute(delete(Bookmark).where(Bookmark.user_id == user_id))
+            await self.db.execute(delete(Fork).where(Fork.user_id == user_id))
+
+            # Unpublish all user's shares
+            from sqlalchemy import update
+
+            await self.db.execute(
+                update(DocumentShare)
+                .where(DocumentShare.user_id == user_id)
+                .values(is_published=False)
+            )
 
             # Delete user
             await self.db.delete(user)

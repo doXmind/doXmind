@@ -9,61 +9,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import type { Editor } from "@tiptap/core";
-
-/**
- * Scroll the editor view to make a position visible
- * Works with custom scroll containers (like ScrollArea)
- */
-function scrollToPosition(editor: Editor, pos: number): void {
-  const view = editor.view;
-  if (!view) return;
-
-  // Use requestAnimationFrame to ensure DOM is updated after state change
-  requestAnimationFrame(() => {
-    try {
-      const coords = view.coordsAtPos(pos);
-      const editorElement = view.dom;
-
-      // Find the scrollable container (parent with overflow-y: auto)
-      let scrollContainer: HTMLElement | null = editorElement.parentElement;
-      while (scrollContainer) {
-        const style = window.getComputedStyle(scrollContainer);
-        if (style.overflowY === "auto" || style.overflowY === "scroll") {
-          break;
-        }
-        scrollContainer = scrollContainer.parentElement;
-      }
-
-      if (!scrollContainer) {
-        // Fallback to window scroll
-        window.scrollTo({
-          top: coords.top - window.innerHeight / 2,
-          behavior: "smooth",
-        });
-        return;
-      }
-
-      // Calculate position relative to scroll container
-      const containerRect = scrollContainer.getBoundingClientRect();
-      const relativeTop = coords.top - containerRect.top;
-      const containerHeight = scrollContainer.clientHeight;
-
-      // Only scroll if the position is outside the visible area
-      if (relativeTop < 50 || relativeTop > containerHeight - 50) {
-        // Scroll to center the match in the viewport
-        const targetScrollTop = scrollContainer.scrollTop + relativeTop - containerHeight / 2;
-        scrollContainer.scrollTo({
-          top: targetScrollTop,
-          behavior: "smooth",
-        });
-      }
-    } catch (error) {
-      // Silently fail if coordinates can't be determined
-      console.warn("[Search] Could not scroll to position:", error);
-    }
-  });
-}
+import { scrollToPosition } from "@/lib/editor-utils";
 
 import {
   SearchPluginKey,

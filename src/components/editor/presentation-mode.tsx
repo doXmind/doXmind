@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
@@ -49,7 +49,7 @@ const presentationExtensions: Extensions = [
   Highlight.configure({ multicolor: true }),
   Typography,
   Link.configure({
-    openOnClick: true,
+    openOnClick: false,
     HTMLAttributes: {
       class: "text-primary underline underline-offset-2 cursor-pointer",
     },
@@ -89,48 +89,65 @@ function isEmptySlideJson(nodes: JSONContent[]): boolean {
   });
 }
 
-function splitJsonIntoSlides(doc: JSONContent): JSONContent[] {
+interface SlideSlice {
+  json: JSONContent;
+  startNodeIndex: number;
+  nodeCount: number;
+}
+
+function splitJsonIntoSlides(doc: JSONContent): SlideSlice[] {
   const content = doc.content || [];
 
   // Primary: split by horizontal rules
   const hasHr = content.some((node) => node.type === "horizontalRule");
   if (hasHr) {
-    const groups: JSONContent[][] = [[]];
-    for (const node of content) {
-      if (node.type === "horizontalRule") {
-        groups.push([]);
+    const groups: { nodes: JSONContent[]; startIndex: number }[] = [{ nodes: [], startIndex: 0 }];
+    for (let i = 0; i < content.length; i++) {
+      if (content[i].type === "horizontalRule") {
+        groups.push({ nodes: [], startIndex: i + 1 });
       } else {
-        groups[groups.length - 1].push(node);
+        groups[groups.length - 1].nodes.push(content[i]);
       }
     }
     const slides = groups
-      .filter((nodes) => !isEmptySlideJson(nodes))
-      .map((nodes) => ({ type: "doc" as const, content: nodes }));
+      .filter((g) => !isEmptySlideJson(g.nodes))
+      .map((g) => ({
+        json: { type: "doc" as const, content: g.nodes },
+        startNodeIndex: g.startIndex,
+        nodeCount: g.nodes.length,
+      }));
     if (slides.length > 0) return slides;
   }
 
   // Fallback: split before H1/H2 headings
-  const groups: JSONContent[][] = [[]];
-  for (const node of content) {
+  const groups: { nodes: JSONContent[]; startIndex: number }[] = [{ nodes: [], startIndex: 0 }];
+  for (let i = 0; i < content.length; i++) {
+    const node = content[i];
     if (
       node.type === "heading" &&
       (node.attrs?.level === 1 || node.attrs?.level === 2) &&
-      groups[groups.length - 1].length > 0
+      groups[groups.length - 1].nodes.length > 0
     ) {
-      groups.push([]);
+      groups.push({ nodes: [], startIndex: i });
     }
-    groups[groups.length - 1].push(node);
+    groups[groups.length - 1].nodes.push(node);
   }
 
   if (groups.length > 1) {
     return groups
-      .filter((nodes) => !isEmptySlideJson(nodes))
-      .map((nodes) => ({ type: "doc" as const, content: nodes }));
+      .filter((g) => !isEmptySlideJson(g.nodes))
+      .map((g) => ({
+        json: { type: "doc" as const, content: g.nodes },
+        startNodeIndex: g.startIndex,
+        nodeCount: g.nodes.length,
+      }));
   }
 
   // Single slide: entire document
   if (isEmptySlideJson(content)) return [];
-  return [{ type: "doc" as const, content }];
+  return [
+    { json: { type: "doc" as const, content }, startNodeIndex: 0, nodeCount: content.length },
+  ];
 }
 
 function formatPresentationDate(dateStr: string): string {
@@ -160,20 +177,30 @@ function extractSlideTitleFromJson(doc: JSONContent): string {
   return "Untitled slide";
 }
 
-/* ─── Read-only slide renderer ────────────────────────── */
+/* ─── Slide renderer (optionally editable) ───────────── */
 
-const SlideContent = memo(function SlideContent({
+function SlideContent({
   json,
   className,
+  editable = false,
+  onContentChange,
 }: {
   json: JSONContent;
   className?: string;
+  editable?: boolean;
+  onContentChange?: (json: JSONContent) => void;
 }) {
+  const onContentChangeRef = useRef(onContentChange);
+  onContentChangeRef.current = onContentChange;
+
   const editor = useEditor({
     extensions: presentationExtensions,
     content: json,
-    editable: false,
+    editable,
     immediatelyRender: false,
+    onUpdate: ({ editor: e }) => {
+      onContentChangeRef.current?.(e.getJSON());
+    },
   });
 
   return (
@@ -181,7 +208,7 @@ const SlideContent = memo(function SlideContent({
       <EditorContent editor={editor} />
     </div>
   );
-});
+}
 
 /* ─── Animation variants ──────────────────────────────── */
 
@@ -207,6 +234,8 @@ interface Slide {
   json?: JSONContent;
   title?: string;
   meta?: string;
+  sourceNodeIndex?: number;
+  nodeCount?: number;
 }
 
 interface PresentationModeProps {
@@ -266,7 +295,15 @@ export function PresentationMode({
       meta: metaParts.length > 0 ? metaParts.join(" \u00B7 ") : undefined,
     };
 
-    return [titleSlide, ...contentSlides.map((json) => ({ type: "content" as const, json }))];
+    return [
+      titleSlide,
+      ...contentSlides.map((s) => ({
+        type: "content" as const,
+        json: s.json,
+        sourceNodeIndex: s.startNodeIndex,
+        nodeCount: s.nodeCount,
+      })),
+    ];
   }, [editor, isPresentationMode, currentFile, user, titleProp, authorProp, dateProp]);
 
   // Reset state when entering presentation
@@ -301,9 +338,46 @@ export function PresentationMode({
     setCurrentSlide((prev) => Math.max(prev - 1, 0));
   }, []);
 
+  const canEdit = editor?.isEditable ?? false;
+
+  // Track edits made inside presentation slides (keyed by slide index)
+  const editedContentsRef = useRef<Record<number, JSONContent>>({});
+
+  // Reset edited contents when entering presentation
+  useEffect(() => {
+    if (isPresentationMode) {
+      editedContentsRef.current = {};
+    }
+  }, [isPresentationMode]);
+
+  const syncEditsToEditor = useCallback(() => {
+    if (!editor) return;
+    const edited = editedContentsRef.current;
+    if (Object.keys(edited).length === 0) return;
+
+    const originalDoc = editor.getJSON();
+    const content = [...(originalDoc.content || [])];
+
+    // Process edited slides in reverse order so earlier splices don't shift later indices
+    const sortedEntries = Object.entries(edited)
+      .map(([idx, json]) => [parseInt(idx, 10), json] as [number, JSONContent])
+      .sort(([a], [b]) => b - a);
+
+    for (const [slideIdx, newJson] of sortedEntries) {
+      const slide = slides[slideIdx];
+      if (slide?.type !== "content" || slide.sourceNodeIndex == null || slide.nodeCount == null)
+        continue;
+      const newNodes = newJson.content || [];
+      content.splice(slide.sourceNodeIndex, slide.nodeCount, ...newNodes);
+    }
+
+    editor.commands.setContent({ type: "doc", content });
+  }, [editor, slides]);
+
   const exit = useCallback(() => {
+    syncEditsToEditor();
     setPresentationMode(false);
-  }, [setPresentationMode]);
+  }, [syncEditsToEditor, setPresentationMode]);
 
   const goToSlide = useCallback(
     (index: number) => {
@@ -321,6 +395,18 @@ export function PresentationMode({
     if (!isPresentationMode) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // When typing inside the slide editor, let the editor handle all keys except Escape
+      const target = e.target as HTMLElement;
+      const isInEditor =
+        target.closest?.(".ProseMirror") && target.closest?.(".presentation-slide");
+      if (isInEditor) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          (document.activeElement as HTMLElement)?.blur();
+        }
+        return;
+      }
+
       // When navigator is open, intercept keys for jump input
       if (showNavigator) {
         if (e.key >= "0" && e.key <= "9") {
@@ -490,7 +576,14 @@ export function PresentationMode({
                 {slide.meta && <p className="presentation-title-meta">{slide.meta}</p>}
               </div>
             ) : (
-              <SlideContent json={slide.json!} className={contentClassName} />
+              <SlideContent
+                json={editedContentsRef.current[currentSlide] ?? slide.json!}
+                className={contentClassName}
+                editable={canEdit}
+                onContentChange={(json) => {
+                  editedContentsRef.current[currentSlide] = json;
+                }}
+              />
             )}
           </motion.div>
         </AnimatePresence>

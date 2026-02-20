@@ -21,6 +21,7 @@ import { BlockSelectionPluginKey } from "./block-selection-extension";
 export interface AutocompletePluginState {
   suggestion: string | null;
   position: number | null;
+  loading: boolean; // Whether autocomplete is fetching
   suggestionId?: string; // For telemetry tracking
   textBefore?: string; // Context for RLHF training
   shownAt?: number; // Timestamp when shown (for latency)
@@ -60,6 +61,10 @@ declare module "@tiptap/core" {
        * Clear the suggestion
        */
       clearSuggestion: () => ReturnType;
+      /**
+       * Set loading state for autocomplete
+       */
+      setLoading: (loading: boolean) => ReturnType;
     };
   }
 }
@@ -78,6 +83,7 @@ export const AutocompleteExtension = Extension.create({
           init: () => ({
             suggestion: null,
             position: null,
+            loading: false,
             suggestionId: undefined,
             textBefore: undefined,
             shownAt: undefined,
@@ -107,6 +113,7 @@ export const AutocompleteExtension = Extension.create({
               return {
                 suggestion: null,
                 position: null,
+                loading: value.loading,
                 suggestionId: undefined,
                 textBefore: undefined,
                 shownAt: undefined,
@@ -130,6 +137,7 @@ export const AutocompleteExtension = Extension.create({
               return {
                 suggestion: null,
                 position: null,
+                loading: value.loading,
                 suggestionId: undefined,
                 textBefore: undefined,
                 shownAt: undefined,
@@ -159,6 +167,7 @@ export const AutocompleteExtension = Extension.create({
                 return {
                   suggestion: null,
                   position: null,
+                  loading: value.loading,
                   suggestionId: undefined,
                   textBefore: undefined,
                   shownAt: undefined,
@@ -227,6 +236,40 @@ export const AutocompleteExtension = Extension.create({
               decorations.push(ghostWidget);
             }
 
+            // Show loading indicator while fetching (only if no suggestion yet)
+            if (pluginState?.loading && !pluginState.suggestion) {
+              const loadingWidget = Decoration.widget(
+                state.selection.from,
+                () => {
+                  const container = document.createElement("span");
+                  container.className = "autocomplete-loading";
+                  container.setAttribute("contenteditable", "false");
+                  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                  svg.setAttribute("viewBox", "0 0 16 16");
+                  svg.setAttribute("fill", "none");
+                  svg.classList.add("autocomplete-loading-spinner");
+                  const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                  circle.setAttribute("cx", "8");
+                  circle.setAttribute("cy", "8");
+                  circle.setAttribute("r", "6");
+                  circle.setAttribute("stroke", "currentColor");
+                  circle.setAttribute("stroke-opacity", "0.2");
+                  circle.setAttribute("stroke-width", "2");
+                  const arc = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                  arc.setAttribute("d", "M14 8a6 6 0 0 0-6-6");
+                  arc.setAttribute("stroke", "currentColor");
+                  arc.setAttribute("stroke-width", "2");
+                  arc.setAttribute("stroke-linecap", "round");
+                  svg.appendChild(circle);
+                  svg.appendChild(arc);
+                  container.appendChild(svg);
+                  return container;
+                },
+                { side: 1, key: "autocomplete-loading" }
+              );
+              decorations.push(loadingWidget);
+            }
+
             if (decorations.length === 0) {
               return DecorationSet.empty;
             }
@@ -262,6 +305,7 @@ export const AutocompleteExtension = Extension.create({
             tr.setMeta(AutocompletePluginKey, {
               suggestion,
               position: suggestion ? pos : null,
+              loading: false,
               suggestionId,
               textBefore: options?.textBefore,
               shownAt: suggestion ? Date.now() : undefined,
@@ -317,6 +361,7 @@ export const AutocompleteExtension = Extension.create({
           tr.setMeta(AutocompletePluginKey, {
             suggestion: null,
             position: null,
+            loading: false,
             suggestionId: undefined,
             textBefore: undefined,
             shownAt: undefined,
@@ -367,6 +412,7 @@ export const AutocompleteExtension = Extension.create({
           tr.setMeta(AutocompletePluginKey, {
             suggestion: remaining || null,
             position: remaining ? insertPos + word.length : null,
+            loading: false,
             suggestionId: remaining ? pluginState.suggestionId : undefined,
             textBefore: remaining ? (pluginState.textBefore || "") + word : undefined,
             shownAt: remaining ? pluginState.shownAt : undefined,
@@ -400,10 +446,29 @@ export const AutocompleteExtension = Extension.create({
             tr.setMeta(AutocompletePluginKey, {
               suggestion: null,
               position: null,
+              loading: false,
               suggestionId: undefined,
               textBefore: undefined,
               shownAt: undefined,
               triggerMode: undefined,
+            });
+            dispatch(tr);
+          }
+          return true;
+        },
+
+      setLoading:
+        (loading: boolean) =>
+        ({ tr, state, dispatch }) => {
+          if (dispatch) {
+            const pluginState = AutocompletePluginKey.getState(state);
+            tr.setMeta(AutocompletePluginKey, {
+              ...(pluginState || {
+                suggestion: null,
+                position: null,
+                loading: false,
+              }),
+              loading,
             });
             dispatch(tr);
           }

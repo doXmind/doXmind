@@ -1,6 +1,6 @@
 "use client";
 
-import { List, GitBranch, Maximize2, X } from "lucide-react";
+import { List, GitBranch, Maximize2, X, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MindlinesMode } from "./use-mindlines-state";
@@ -34,58 +34,33 @@ export function MindlinesHeader({
   const title = isExpanded ? "Mindmap" : "Outline";
   const Icon = isExpanded ? GitBranch : List;
 
-  // Collapsed mode: entire header clickable to expand
+  // Collapsed mode: toggle button to expand
   if (isCollapsed && !isExpanded) {
     return (
-      <div
-        className="flex cursor-pointer items-center justify-center border-b border-border/50 px-2 py-2 transition-colors hover:bg-accent/50"
-        onClick={onToggleCollapse}
-        title="Click to expand outline"
-        role="button"
-        aria-expanded={false}
-        aria-label="Expand outline"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onToggleCollapse();
-          }
-        }}
-      >
-        <List className="h-4 w-4 text-muted-foreground" />
+      <div className="flex items-center justify-center border-b border-border/50 px-2 py-2">
+        <button
+          onClick={onToggleCollapse}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title="Expand outline"
+          aria-expanded={false}
+          aria-label="Expand outline"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
       </div>
     );
   }
 
-  // Expanded outline mode: header clickable to collapse, buttons use stopPropagation
-  // Mindmap mode: no click handler on header
+  // Expanded outline or mindmap mode
   return (
     <div
       className={cn(
         "flex shrink-0 items-center justify-between border-b border-border/50 px-3 py-2 transition-colors",
-        // Expanded outline: clickable header with hover effect
-        !isExpanded && "cursor-pointer hover:bg-accent/30",
-        // Mindmap: normal header
         isExpanded && "px-4 py-3"
       )}
-      onClick={!isExpanded ? onToggleCollapse : undefined}
-      role={!isExpanded ? "button" : undefined}
-      aria-expanded={!isExpanded ? true : undefined}
-      aria-label={!isExpanded ? "Collapse outline" : undefined}
-      tabIndex={!isExpanded ? 0 : undefined}
-      onKeyDown={
-        !isExpanded
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onToggleCollapse();
-              }
-            }
-          : undefined
-      }
     >
-      {/* Title with icon - pointer-events-none so clicks pass through to header */}
-      <div className="pointer-events-none flex items-center gap-2">
+      {/* Left: title with icon */}
+      <div className="flex items-center gap-2">
         <Icon className={cn("text-muted-foreground", isExpanded ? "h-5 w-5" : "h-4 w-4")} />
         <span
           className={cn(
@@ -100,9 +75,16 @@ export function MindlinesHeader({
         )}
       </div>
 
-      {/* Action buttons - only show in expanded outline mode, use stopPropagation */}
-      {!isExpanded && (
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      {/* Right: action buttons */}
+      {!isExpanded ? (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onToggleCollapse}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title="Collapse outline"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
           <Button
             variant="ghost"
             size="icon"
@@ -122,7 +104,7 @@ export function MindlinesHeader({
             <X className="h-4 w-4" />
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

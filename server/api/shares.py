@@ -10,10 +10,16 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.database import DocumentShare, File, User, get_db
-from exceptions import BadRequestError, DocumentNotFoundError, NotFoundError
+from db.database import DocumentShare, File, ShareInvite, User, get_db, utcnow
+from exceptions import (
+    BadRequestError,
+    DocumentNotFoundError,
+    ForbiddenError,
+    NotFoundError,
+    UnauthorizedError,
+)
 from middleware.rate_limit import limiter
-from services.auth_service import TokenData, require_auth
+from services.auth_service import TokenData, optional_auth, require_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -43,6 +49,14 @@ class CreateShareRequest(BaseModel):
     file_id: str
     expires_in_days: int | None = Field(None, ge=1, le=365)  # 1-365 days or None
     content_mode: str = Field("live", pattern="^(live|snapshot)$")
+    visibility: str = Field("public", pattern="^(public|private)$")
+    # Public mode — community metadata (auto-published)
+    title: str | None = None
+    description: str | None = Field(None, max_length=500)
+    tags: list[str] | None = Field(None, max_length=10)
+    # Private mode — invite list
+    invited_user_ids: list[str] | None = None
+    invited_emails: list[str] | None = None
 
 
 class ShareResponse(BaseModel):
@@ -50,10 +64,16 @@ class ShareResponse(BaseModel):
 
     id: str
     file_id: str
+    file_name: str | None = None
     share_token: str
-    share_url: str  # Frontend URL: /shared/{share_token}
+    share_url: str  # Frontend URL: /shared/{share_token} or /community/{share_token}
     expires_at: str | None
     is_active: bool
+    is_published: bool
+    visibility: str = "public"
+    title: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
     content_mode: str
     view_count: int
     created_at: str
@@ -96,7 +116,9 @@ class SharedItemResponse(BaseModel):
     created_at: str
     updated_at: str
     is_snapshot: bool
+    visibility: str | None = None
     owner_name: str | None = None
+    owner_avatar_url: str | None = None
     # Document fields (present when is_folder=False)
     content: str | None = None
     # Folder fields (present when is_folder=True)
@@ -118,7 +140,11 @@ async def create_share(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
-    """Create a shareable link for a document (owner only)."""
+    """Create a shareable link for a document (owner only).
+
+    visibility="public" auto-publishes to community.
+    visibility="private" creates invite-only share with specified users.
+    """
     user_id = get_user_id(token)
 
     # Verify file exists, belongs to user, and is not in trash
@@ -143,21 +169,68 @@ async def create_share(
     if share_request.expires_in_days:
         expires_at = datetime.now(UTC) + timedelta(days=share_request.expires_in_days)
 
-    # Create share (V1: only support "live" mode)
+    # Build share object
     share = DocumentShare(
         file_id=file.id,
         user_id=user_id,
         share_token=share_token,
         expires_at=expires_at,
         content_mode=share_request.content_mode,
+        visibility=share_request.visibility,
     )
 
+    if share_request.visibility == "public":
+        # Auto-publish to community
+        share.is_published = True
+        share.published_at = utcnow()
+        share.title = share_request.title or file.name
+        share.description = share_request.description
+        if share_request.tags:
+            normalized = list(
+                dict.fromkeys(t.strip().lower() for t in share_request.tags if t.strip())
+            )
+            share.tags = normalized[:10] if normalized else None
+    else:
+        # Private share — not published
+        share.is_published = False
+
     db.add(share)
+    await db.flush()  # Get share.id before creating invites
+
+    # Create invites for private shares
+    if share_request.visibility == "private":
+        invited_ids = set(share_request.invited_user_ids or [])
+
+        # Resolve emails to user IDs
+        if share_request.invited_emails:
+            email_result = await db.execute(
+                select(User.id).where(
+                    User.email.in_(share_request.invited_emails),
+                    User.is_active == True,  # noqa: E712
+                )
+            )
+            for row in email_result:
+                invited_ids.add(row.id)
+
+        # Create invite records (skip self-invites)
+        for uid in invited_ids:
+            if uid == user_id:
+                continue
+            invite = ShareInvite(
+                share_id=share.id,
+                user_id=uid,
+                invited_by=user_id,
+            )
+            db.add(invite)
+
     await db.commit()
     await db.refresh(share)
 
     settings = get_settings()
-    share_url = f"{settings.frontend_url}/shared/{share_token}"
+    if share.visibility == "public":
+        share_url = f"{settings.frontend_url}/community/{share_token}"
+    else:
+        share_url = f"{settings.frontend_url}/shared/{share_token}"
 
     return ShareResponse(
         id=share.id,
@@ -166,6 +239,11 @@ async def create_share(
         share_url=share_url,
         expires_at=share.expires_at.isoformat() if share.expires_at else None,
         is_active=share.is_active,
+        is_published=share.is_published,
+        visibility=share.visibility,
+        title=share.title,
+        description=share.description,
+        tags=share.tags,
         content_mode=share.content_mode,
         view_count=share.view_count,
         created_at=share.created_at.isoformat(),
@@ -216,9 +294,15 @@ async def list_file_shares(
             id=s.id,
             file_id=s.file_id,
             share_token=s.share_token,
-            share_url=f"{settings.frontend_url}/shared/{s.share_token}",
+            share_url=(
+                f"{settings.frontend_url}/community/{s.share_token}"
+                if s.visibility == "public"
+                else f"{settings.frontend_url}/shared/{s.share_token}"
+            ),
             expires_at=s.expires_at.isoformat() if s.expires_at else None,
             is_active=s.is_active,
+            is_published=s.is_published,
+            visibility=s.visibility or "public",
             content_mode=s.content_mode,
             view_count=s.view_count,
             created_at=s.created_at.isoformat(),
@@ -227,6 +311,179 @@ async def list_file_shares(
     ]
 
     return ShareListResponse(shares=share_responses, count=len(share_responses))
+
+
+@router.get("/my", response_model=ShareListResponse)
+async def list_my_shares(
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """List all shares created by the current user."""
+    user_id = get_user_id(token)
+
+    now = datetime.now(UTC)
+    query = (
+        select(DocumentShare)
+        .where(
+            DocumentShare.user_id == user_id if user_id else DocumentShare.user_id.is_(None),
+            DocumentShare.is_active == True,  # noqa: E712
+            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+        )
+        .order_by(DocumentShare.created_at.desc())
+    )
+
+    result = await db.execute(query)
+    shares = result.scalars().all()
+
+    # Load file names for each share
+    file_ids = [s.file_id for s in shares]
+    file_names: dict[str, str] = {}
+    if file_ids:
+        file_result = await db.execute(select(File.id, File.name).where(File.id.in_(file_ids)))
+        file_names = {row.id: row.name for row in file_result}
+
+    settings = get_settings()
+    share_responses = [
+        ShareResponse(
+            id=s.id,
+            file_id=s.file_id,
+            file_name=file_names.get(s.file_id, "Unknown"),
+            share_token=s.share_token,
+            share_url=(
+                f"{settings.frontend_url}/community/{s.share_token}"
+                if s.visibility == "public"
+                else f"{settings.frontend_url}/shared/{s.share_token}"
+            ),
+            expires_at=s.expires_at.isoformat() if s.expires_at else None,
+            is_active=s.is_active,
+            is_published=s.is_published,
+            visibility=s.visibility or "public",
+            title=s.title,
+            description=s.description,
+            tags=s.tags,
+            content_mode=s.content_mode,
+            view_count=s.view_count,
+            created_at=s.created_at.isoformat(),
+        )
+        for s in shares
+    ]
+
+    return ShareListResponse(shares=share_responses, count=len(share_responses))
+
+
+# =============================================================================
+# User Search for Invites (must be before /{share_id} routes)
+# =============================================================================
+
+
+@router.get("/search-users")
+async def search_users_for_invite(
+    q: str = Query(..., min_length=1, max_length=100),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Search users by username or email for invite autocomplete."""
+    search_term = f"%{q}%"
+
+    result = await db.execute(
+        select(User.id, User.username, User.email, User.avatar_url)
+        .where(
+            User.is_active == True,  # noqa: E712
+            or_(
+                User.username.ilike(search_term),
+                User.email.ilike(search_term),
+            ),
+        )
+        .limit(10)
+    )
+    rows = result.all()
+
+    # Exclude self
+    current_user_id = get_user_id(token)
+    users = [
+        {
+            "id": row.id,
+            "username": row.username,
+            "email": row.email,
+            "avatar_url": row.avatar_url,
+        }
+        for row in rows
+        if row.id != current_user_id
+    ]
+
+    return {"users": users}
+
+
+# =============================================================================
+# Shared With Me (must be before /{share_id} routes)
+# =============================================================================
+
+
+@router.get("/shared-with-me")
+async def list_shared_with_me(
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """List private shares where the current user has been invited."""
+    user_id = get_user_id(token)
+    if not user_id:
+        return {"shares": [], "count": 0}
+
+    now = datetime.now(UTC)
+
+    query = (
+        select(
+            DocumentShare.id,
+            DocumentShare.share_token,
+            DocumentShare.title,
+            DocumentShare.created_at,
+            DocumentShare.updated_at,
+            DocumentShare.view_count,
+            File.name.label("file_name"),
+            File.is_folder,
+            User.id.label("owner_id"),
+            User.username.label("owner_name"),
+            User.avatar_url.label("owner_avatar_url"),
+            ShareInvite.created_at.label("invited_at"),
+        )
+        .join(ShareInvite, ShareInvite.share_id == DocumentShare.id)
+        .join(File, DocumentShare.file_id == File.id)
+        .join(User, DocumentShare.user_id == User.id)
+        .where(
+            ShareInvite.user_id == user_id,
+            DocumentShare.is_active == True,  # noqa: E712
+            DocumentShare.visibility == "private",
+            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+        )
+        .order_by(ShareInvite.created_at.desc())
+        .limit(50)
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    settings = get_settings()
+    shares = [
+        {
+            "share_id": row.id,
+            "share_token": row.share_token,
+            "title": row.title or row.file_name,
+            "share_url": f"{settings.frontend_url}/shared/{row.share_token}",
+            "is_folder": row.is_folder,
+            "view_count": row.view_count,
+            "owner": {
+                "id": row.owner_id,
+                "username": row.owner_name,
+                "avatar_url": row.owner_avatar_url,
+            },
+            "invited_at": row.invited_at.isoformat() if row.invited_at else "",
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+            "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+        }
+        for row in rows
+    ]
+
+    return {"shares": shares, "count": len(shares)}
 
 
 @router.delete("/{share_id}")
@@ -258,6 +515,80 @@ async def revoke_share(
     await db.commit()
 
     return {"status": "revoked", "share_id": share_id}
+
+
+# =============================================================================
+# Community Publishing
+# =============================================================================
+
+
+class PublishRequest(BaseModel):
+    """Request to publish a share to the community."""
+
+    title: str | None = None
+    description: str | None = Field(None, max_length=500)
+    tags: list[str] | None = Field(None, max_length=10)
+
+
+@router.post("/{share_id}/publish")
+@limiter.limit("10/minute")
+async def publish_share(
+    request: Request,
+    share_id: str,
+    body: PublishRequest,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Publish a share to the community discovery page."""
+    from services.community_service import CommunityService
+
+    user_id = get_user_id(token)
+    if not user_id:
+        raise BadRequestError(message="Authentication required")
+
+    service = CommunityService(db)
+    share = await service.publish_share(
+        share_id=share_id,
+        user_id=user_id,
+        title=body.title,
+        description=body.description,
+        tags=body.tags,
+    )
+
+    settings = get_settings()
+    return {
+        "id": share.id,
+        "file_id": share.file_id,
+        "share_token": share.share_token,
+        "share_url": f"{settings.frontend_url}/community/{share.share_token}",
+        "is_published": share.is_published,
+        "visibility": share.visibility,
+        "title": share.title,
+        "description": share.description,
+        "tags": share.tags,
+        "published_at": share.published_at.isoformat() if share.published_at else None,
+    }
+
+
+@router.post("/{share_id}/unpublish")
+@limiter.limit("10/minute")
+async def unpublish_share(
+    request: Request,
+    share_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Remove a share from the community discovery page."""
+    from services.community_service import CommunityService
+
+    user_id = get_user_id(token)
+    if not user_id:
+        raise BadRequestError(message="Authentication required")
+
+    service = CommunityService(db)
+    share = await service.unpublish_share(share_id=share_id, user_id=user_id)
+
+    return {"status": "unpublished", "share_id": share.id, "is_published": False}
 
 
 # =============================================================================
@@ -329,9 +660,12 @@ async def view_shared_item(
     share_token: str,
     path: str | None = Query(None, description="Subfolder or file ID within shared folder"),
     db: AsyncSession = Depends(get_db),
+    token: TokenData | None = Depends(optional_auth),
 ):
-    """View a shared item - document or folder (public, no authentication required).
+    """View a shared item - document or folder.
 
+    Public shares are accessible without authentication.
+    Private shares require authentication and an invite.
     For folder shares, use the `path` query parameter to navigate into subfolders
     or view individual files within the shared tree.
     """
@@ -352,6 +686,22 @@ async def view_shared_item(
     if not share:
         raise NotFoundError(resource="Share", message="Share not found or expired")
 
+    # Access control for private shares
+    if share.visibility == "private":
+        if not token:
+            raise UnauthorizedError(message="Authentication required")
+        viewer_id = token.sub
+        # Owner can always access
+        if viewer_id != share.user_id:
+            invite_result = await db.execute(
+                select(ShareInvite.id).where(
+                    ShareInvite.share_id == share.id,
+                    ShareInvite.user_id == viewer_id,
+                )
+            )
+            if not invite_result.scalar_one_or_none():
+                raise ForbiddenError(message="You do not have access to this share")
+
     # Update view analytics
     share.view_count += 1
     share.last_viewed_at = now
@@ -364,11 +714,17 @@ async def view_shared_item(
     if not root_file:
         raise DocumentNotFoundError(file_id=share.file_id)
 
-    # Look up owner display name
+    # Look up owner display name and avatar
     owner_name = None
+    owner_avatar_url = None
     if share.user_id:
-        result = await db.execute(select(User.username).where(User.id == share.user_id))
-        owner_name = result.scalar_one_or_none()
+        result = await db.execute(
+            select(User.username, User.avatar_url).where(User.id == share.user_id)
+        )
+        row = result.one_or_none()
+        if row:
+            owner_name = row.username
+            owner_avatar_url = row.avatar_url
 
     # Determine the target item (root or navigated-to child)
     target_file = root_file
@@ -426,7 +782,9 @@ async def view_shared_item(
             created_at=target_file.created_at.isoformat(),
             updated_at=target_file.updated_at.isoformat(),
             is_snapshot=False,
+            visibility=share.visibility,
             owner_name=owner_name,
+            owner_avatar_url=owner_avatar_url,
             items=items,
             breadcrumbs=breadcrumbs,
             root_folder_name=root_file.name if target_file.id != root_file.id else None,
@@ -445,7 +803,172 @@ async def view_shared_item(
             created_at=target_file.created_at.isoformat(),
             updated_at=target_file.updated_at.isoformat(),
             is_snapshot=False,
+            visibility=share.visibility,
             owner_name=owner_name,
+            owner_avatar_url=owner_avatar_url,
             breadcrumbs=breadcrumbs if breadcrumbs else None,
             root_folder_name=root_file.name if path and root_file.is_folder else None,
         )
+
+
+# =============================================================================
+# Invite Management (Phase 2B)
+# =============================================================================
+
+
+class InviteRequest(BaseModel):
+    """Request to invite users to a private share."""
+
+    user_ids: list[str] | None = None
+    emails: list[str] | None = None
+
+
+class InviteResponse(BaseModel):
+    """Single invite entry."""
+
+    id: str
+    user_id: str
+    username: str | None = None
+    email: str | None = None
+    avatar_url: str | None = None
+    created_at: str
+
+
+@router.post("/{share_id}/invite")
+@limiter.limit("20/minute")
+async def invite_users(
+    request: Request,
+    share_id: str,
+    body: InviteRequest,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Invite users to a private share (owner only)."""
+    user_id = get_user_id(token)
+
+    # Verify ownership
+    result = await db.execute(
+        select(DocumentShare).where(DocumentShare.id == share_id, DocumentShare.user_id == user_id)
+    )
+    share = result.scalar_one_or_none()
+    if not share:
+        raise NotFoundError(resource="Share", resource_id=share_id)
+
+    if share.visibility != "private":
+        raise BadRequestError(message="Invites are only supported for private shares")
+
+    invited_ids = set(body.user_ids or [])
+
+    # Resolve emails to user IDs
+    if body.emails:
+        email_result = await db.execute(
+            select(User.id).where(
+                User.email.in_(body.emails),
+                User.is_active == True,  # noqa: E712
+            )
+        )
+        for row in email_result:
+            invited_ids.add(row.id)
+
+    # Get existing invites to avoid duplicates
+    existing_result = await db.execute(
+        select(ShareInvite.user_id).where(ShareInvite.share_id == share_id)
+    )
+    existing_ids = {row.user_id for row in existing_result}
+
+    added = 0
+    for uid in invited_ids:
+        if uid == user_id or uid in existing_ids:
+            continue
+        invite = ShareInvite(
+            share_id=share_id,
+            user_id=uid,
+            invited_by=user_id,
+        )
+        db.add(invite)
+        added += 1
+
+    await db.commit()
+    return {"status": "ok", "added": added}
+
+
+@router.delete("/{share_id}/invite/{invite_user_id}")
+async def remove_invite(
+    share_id: str,
+    invite_user_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Remove a user's access from a private share (owner only)."""
+    user_id = get_user_id(token)
+
+    # Verify ownership
+    result = await db.execute(
+        select(DocumentShare).where(DocumentShare.id == share_id, DocumentShare.user_id == user_id)
+    )
+    if not result.scalar_one_or_none():
+        raise NotFoundError(resource="Share", resource_id=share_id)
+
+    # Delete invite
+    invite_result = await db.execute(
+        select(ShareInvite).where(
+            ShareInvite.share_id == share_id,
+            ShareInvite.user_id == invite_user_id,
+        )
+    )
+    invite = invite_result.scalar_one_or_none()
+    if not invite:
+        raise NotFoundError(resource="Invite", message="Invite not found")
+
+    await db.delete(invite)
+    await db.commit()
+    return {"status": "removed"}
+
+
+@router.get("/{share_id}/invites")
+async def list_invites(
+    share_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """List invited users for a share (owner only)."""
+    user_id = get_user_id(token)
+
+    # Verify ownership
+    result = await db.execute(
+        select(DocumentShare).where(DocumentShare.id == share_id, DocumentShare.user_id == user_id)
+    )
+    if not result.scalar_one_or_none():
+        raise NotFoundError(resource="Share", resource_id=share_id)
+
+    # Get invites with user info
+    query = (
+        select(
+            ShareInvite.id,
+            ShareInvite.user_id,
+            ShareInvite.created_at,
+            User.username,
+            User.email,
+            User.avatar_url,
+        )
+        .join(User, ShareInvite.user_id == User.id)
+        .where(ShareInvite.share_id == share_id)
+        .order_by(ShareInvite.created_at.desc())
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    invites = [
+        InviteResponse(
+            id=row.id,
+            user_id=row.user_id,
+            username=row.username,
+            email=row.email,
+            avatar_url=row.avatar_url,
+            created_at=row.created_at.isoformat() if row.created_at else "",
+        )
+        for row in rows
+    ]
+
+    return {"invites": invites, "count": len(invites)}

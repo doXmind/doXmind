@@ -39,18 +39,18 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
       if (exists) {
         if (currentFileId !== fileIdFromUrl) {
           setCurrentFile(fileIdFromUrl);
-          // Keep lastSyncedId matching this render's currentFileId so the
-          // Store→URL effect (which runs later in this same commit) won't
-          // see a stale mismatch and redirect before setCurrentFile takes effect.
-          lastSyncedId.current = currentFileId;
-        } else {
-          lastSyncedId.current = fileIdFromUrl;
         }
+        // Always sync lastSyncedId to the URL file ID.
+        // This prevents the Store→URL effect (which fires later in this commit
+        // with the stale render-captured currentFileId) from redirecting away.
+        lastSyncedId.current = fileIdFromUrl;
       } else if (files.length > 0) {
-        // File doesn't exist — show welcome
+        // File not in current list — might be newly created (e.g., fork).
+        // Clear currentFileId to avoid briefly showing the wrong file, but
+        // DON'T redirect. The guard effect will sync to the correct file
+        // after loadFiles completes with fresh data from the server.
         setCurrentFile(null);
-        lastSyncedId.current = currentFileId;
-        router.replace("/editor");
+        lastSyncedId.current = null;
       }
     } else if (currentFileId) {
       // /editor with no fileId, but store has one from localStorage → redirect
@@ -92,33 +92,48 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
   // === Store → URL: file deletion or programmatic store change ===
   useEffect(() => {
     if (!hasInitialized.current) return;
-    // Only react when store changed independently of URL sync
-    if (currentFileId === lastSyncedId.current) return;
 
-    lastSyncedId.current = currentFileId;
+    // Use live store value instead of stale render-captured value.
+    // During the first render cycle, the init effect may call setCurrentFile()
+    // but the Store→URL effect still sees the old render value. Reading from
+    // getState() ensures we act on the latest value.
+    const liveCurrentFileId = useFileStore.getState().currentFileId;
+
+    // Only react when store changed independently of URL sync
+    if (liveCurrentFileId === lastSyncedId.current) return;
+
+    lastSyncedId.current = liveCurrentFileId;
 
     // Skip navigation if the URL already shows the correct file.
     // This prevents unnecessary RSC fetches when the init effect calls
     // setCurrentFile to match the URL (e.g., syncing localStorage → URL).
     const urlAlreadyMatches =
-      (currentFileId && fileIdFromUrl === currentFileId) || (!currentFileId && !fileIdFromUrl);
+      (liveCurrentFileId && fileIdFromUrl === liveCurrentFileId) ||
+      (!liveCurrentFileId && !fileIdFromUrl);
     if (urlAlreadyMatches) return;
 
-    const newPath = currentFileId ? `/editor/${currentFileId}` : "/editor";
+    const newPath = liveCurrentFileId ? `/editor/${liveCurrentFileId}` : "/editor";
     router.replace(newPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to store changes
   }, [currentFileId]);
 
   // === Guard: redirect when URL points to a deleted/non-existent file ===
   // This handles cases where the Store→URL effect doesn't fire (e.g., component
-  // unmount race conditions, lastSyncedId ref getting out of sync).
+  // unmount race conditions, lastSyncedId ref getting out of sync), AND handles
+  // newly-created files (e.g., fork) that weren't in the file list during init.
   useEffect(() => {
     if (!hasInitialized.current) return;
     if (!fileIdFromUrl) return;
     if (isLoading) return;
 
     const exists = files.some((f) => f.id === fileIdFromUrl);
-    if (!exists) {
+    if (exists) {
+      // File now exists (e.g., loadFiles completed after fork) — sync store
+      if (currentFileId !== fileIdFromUrl) {
+        setCurrentFile(fileIdFromUrl);
+        lastSyncedId.current = fileIdFromUrl;
+      }
+    } else {
       const nextFile = files.find((f) => !f.isFolder);
       const nextId = nextFile?.id ?? null;
       setCurrentFile(nextId);

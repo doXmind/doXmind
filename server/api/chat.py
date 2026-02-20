@@ -198,9 +198,7 @@ async def chat_stream(
 
                 async def _read_data_file(data_file):
                     if data_file.storage_path and os.path.exists(data_file.storage_path):
-                        content = await asyncio.to_thread(
-                            _read_file_sync, data_file.storage_path
-                        )
+                        content = await asyncio.to_thread(_read_file_sync, data_file.storage_path)
                         return {
                             "id": data_file.id,
                             "filename": data_file.original_filename,
@@ -208,15 +206,12 @@ async def chat_stream(
                             "content": content,
                             # Claude Files API info for optimized upload
                             "claude_file_id": data_file.claude_file_id,
-                            "claude_upload_status": data_file.claude_upload_status
-                            or "pending",
+                            "claude_upload_status": data_file.claude_upload_status or "pending",
                             "file_size": data_file.file_size,
                         }
                     return None
 
-                results = await asyncio.gather(
-                    *[_read_data_file(df) for df in all_data_files]
-                )
+                results = await asyncio.gather(*[_read_data_file(df) for df in all_data_files])
                 data_files_content = [r for r in results if r is not None]
 
                 if data_files_content:

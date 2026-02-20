@@ -274,7 +274,7 @@ class TestAutocompleteRequest:
         assert req.file_id == ""
         assert req.file_name == ""
         assert req.cursor_position == 0
-        assert req.max_tokens == 30
+        assert req.max_tokens == 60
 
     def test_creates_with_all_fields(self):
         """Should create request with all fields."""
@@ -384,11 +384,11 @@ class TestCleanSuggestionShort:
         assert "\n" not in result
         assert result == "first line"
 
-    def test_limits_to_100_chars(self):
-        """Should limit to 100 characters."""
-        long_text = "a" * 200
+    def test_limits_to_200_chars(self):
+        """Should limit to 200 characters."""
+        long_text = "a" * 300
         result = clean_suggestion_short(long_text, "text")
-        assert len(result) <= 100
+        assert len(result) <= 200
 
     def test_handles_whitespace_only(self):
         """Should return empty for whitespace only."""

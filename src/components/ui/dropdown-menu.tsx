@@ -275,7 +275,7 @@ export function DropdownMenuContent({
       className={cn(
         "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         "animate-in fade-in-0 zoom-in-95",
-        "max-h-[300px] overflow-y-auto",
+        "max-h-[80vh] overflow-y-auto",
         className
       )}
       style={{
@@ -609,28 +609,65 @@ export function DropdownMenuSubContent({
     ]
   );
 
-  // Calculate position from trigger element
+  const contentRef = React.useRef<HTMLDivElement>(null);
+
+  // Calculate position from trigger element, then adjust after render
   React.useEffect(() => {
     if (!open || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const subMenuWidth = 200; // approximate width for viewport check
 
-    let left = rect.right + 4;
-    let top = rect.top;
+    // Find the parent dropdown portal to position relative to it
+    const parentPortal = triggerRef.current.closest?.("[data-dropdown-portal]");
+    const parentRect = parentPortal?.getBoundingClientRect();
 
-    // If sub-menu would overflow right edge, show on left side
-    if (left + subMenuWidth > window.innerWidth) {
-      left = rect.left - subMenuWidth - 4;
-    }
+    let left: number;
+    const top = rect.top;
 
-    // If sub-menu would overflow bottom edge, shift up
-    const maxHeight = 300;
-    if (top + maxHeight > window.innerHeight) {
-      top = Math.max(8, window.innerHeight - maxHeight - 8);
+    if (parentRect) {
+      // Position to the left of the parent dropdown by default
+      left = parentRect.left - 4;
+    } else {
+      left = rect.right + 4;
     }
 
     setPos({ top, left });
   }, [open, triggerRef]);
+
+  // Adjust position after render using actual dimensions
+  React.useEffect(() => {
+    if (!pos || !contentRef.current || !triggerRef.current) return;
+    const el = contentRef.current;
+    const elRect = el.getBoundingClientRect();
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const parentPortal = triggerRef.current.closest?.("[data-dropdown-portal]");
+    const parentRect = parentPortal?.getBoundingClientRect();
+
+    let left = pos.left;
+    let top = pos.top;
+
+    if (parentRect) {
+      // Place to the left of parent menu
+      left = parentRect.left - elRect.width - 4;
+      // If overflows left edge, place to the right instead
+      if (left < 8) {
+        left = parentRect.right + 4;
+      }
+    } else {
+      // If overflows right edge, place to left of trigger
+      if (left + elRect.width > window.innerWidth - 8) {
+        left = triggerRect.left - elRect.width - 4;
+      }
+    }
+
+    // Vertical: if overflows bottom, shift up
+    if (top + elRect.height > window.innerHeight - 8) {
+      top = Math.max(8, window.innerHeight - elRect.height - 8);
+    }
+
+    if (top !== pos.top || left !== pos.left) {
+      setPos({ top, left });
+    }
+  }, [pos, triggerRef]);
 
   // Handle Escape key to close submenu
   React.useEffect(() => {
@@ -656,6 +693,7 @@ export function DropdownMenuSubContent({
   return createPortal(
     <DropdownMenuContext.Provider value={subCtxValue}>
       <div
+        ref={contentRef}
         data-dropdown-sub-content
         data-dropdown-portal=""
         role="menu"
@@ -666,7 +704,7 @@ export function DropdownMenuSubContent({
         className={cn(
           "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
           "animate-in fade-in-0 zoom-in-95",
-          "max-h-[300px] overflow-y-auto",
+          "max-h-[80vh] overflow-y-auto",
           className
         )}
         style={{ top: pos.top, left: pos.left }}

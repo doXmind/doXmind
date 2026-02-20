@@ -1,6 +1,8 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { Header } from "./header";
+import { BottomTabBar } from "./bottom-tab-bar";
 import { InteractiveTour } from "@/components/onboarding/interactive-tour";
 
 interface AppShellProps {
@@ -17,7 +19,15 @@ export function AppShell({ children, hideHeader = false }: AppShellProps) {
       }}
     >
       {!hideHeader && <Header />}
-      <div className="relative flex flex-1 flex-col overflow-hidden">{children}</div>
+      <div
+        className={cn(
+          "relative flex flex-1 flex-col overflow-hidden",
+          !hideHeader && "pb-14 md:pb-0"
+        )}
+      >
+        {children}
+      </div>
+      {!hideHeader && <BottomTabBar />}
       <InteractiveTour />
     </div>
   );

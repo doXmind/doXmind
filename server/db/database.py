@@ -49,6 +49,9 @@ class User(Base):
 
     # Profile
     avatar_url = Column(String(500), nullable=True)
+    bio = Column(Text, nullable=True)
+    website = Column(String(500), nullable=True)
+    social_links = Column(JSON, nullable=True)  # {"github": "...", "twitter": "..."}
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow)
@@ -197,9 +200,7 @@ class Message(Base):
     """
 
     __tablename__ = "messages"
-    __table_args__ = (
-        Index("idx_messages_conversation_deleted", "conversation_id", "deleted_at"),
-    )
+    __table_args__ = (Index("idx_messages_conversation_deleted", "conversation_id", "deleted_at"),)
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conversation_id = Column(String(36), ForeignKey("conversations.id"))
@@ -413,6 +414,19 @@ class DocumentShare(Base):
     # Future: "snapshot" freezes content at share creation time
     content_mode = Column(String(20), default="live", nullable=False)
 
+    # Visibility: "public" = discoverable/community, "private" = invite-only
+    visibility = Column(String(20), default="public", nullable=False, index=True)
+
+    # Community publishing
+    is_published = Column(Boolean, default=False, nullable=False, index=True)
+    title = Column(String(255), nullable=True)  # Display title for community
+    description = Column(Text, nullable=True)  # Short description for discovery
+    tags = Column(JSON, nullable=True)  # ["writing", "tech", "tutorial"]
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    fork_count = Column(Integer, default=0, nullable=False)
+    bookmark_count = Column(Integer, default=0, nullable=False)
+    comment_count = Column(Integer, default=0, nullable=False)
+
     # Analytics
     view_count = Column(Integer, default=0, nullable=False)
     last_viewed_at = Column(DateTime(timezone=True), nullable=True)
@@ -428,7 +442,162 @@ class DocumentShare(Base):
     __table_args__ = (
         Index("idx_shares_active_expires", "is_active", "expires_at"),
         Index("idx_shares_file_active", "file_id", "is_active"),
+        Index("idx_shares_published", "is_published", "published_at"),
+        Index("idx_shares_published_popular", "is_published", "fork_count", "bookmark_count"),
     )
+
+
+# =============================================================================
+# Community Models
+# =============================================================================
+
+
+class Fork(Base):
+    """Fork (转存) tracks when a user copies a shared document to their own space."""
+
+    __tablename__ = "forks"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_share_id = Column(
+        String(36),
+        ForeignKey("document_shares.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    source_file_id = Column(
+        String(36), ForeignKey("files.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    forked_file_id = Column(
+        String(36), ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    source_content_hash = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    source_share = relationship("DocumentShare", backref="forks")
+    source_file = relationship("File", foreign_keys=[source_file_id])
+    owner = relationship("User", backref="forks")
+    forked_file = relationship("File", foreign_keys=[forked_file_id])
+
+    __table_args__ = (Index("idx_forks_user_source", "user_id", "source_share_id", unique=True),)
+
+
+class Bookmark(Base):
+    """Bookmark allows users to save shared documents for later access."""
+
+    __tablename__ = "bookmarks"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    share_id = Column(
+        String(36),
+        ForeignKey("document_shares.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    owner = relationship("User", backref="bookmarks")
+    share = relationship("DocumentShare", backref="bookmarks_rel")
+
+    __table_args__ = (Index("idx_bookmarks_user_share", "user_id", "share_id", unique=True),)
+
+
+class Comment(Base):
+    """Comment on a published/shared document."""
+
+    __tablename__ = "comments"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    share_id = Column(
+        String(36),
+        ForeignKey("document_shares.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    parent_id = Column(
+        String(36), ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    content = Column(Text, nullable=False)
+    mentions = Column(JSON, nullable=True)  # ["user_id_1", "user_id_2"]
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationships
+    share = relationship("DocumentShare", backref="comments")
+    author = relationship("User", backref="comments")
+    parent = relationship("Comment", remote_side=[id], backref="replies")
+
+    __table_args__ = (Index("idx_comments_share_created", "share_id", "created_at"),)
+
+
+class CommentReaction(Base):
+    """Emoji reaction on a comment."""
+
+    __tablename__ = "comment_reactions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    comment_id = Column(
+        String(36), ForeignKey("comments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    emoji = Column(String(10), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    comment = relationship("Comment", backref="reactions")
+    owner = relationship("User")
+
+    __table_args__ = (
+        Index("idx_reactions_comment_user_emoji", "comment_id", "user_id", "emoji", unique=True),
+    )
+
+
+class ShareInvite(Base):
+    """Invite granting a specific user access to a private share."""
+
+    __tablename__ = "share_invites"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    share_id = Column(
+        String(36),
+        ForeignKey("document_shares.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    invited_by = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    share = relationship("DocumentShare", backref="invites")
+    user = relationship("User", foreign_keys=[user_id])
+    inviter = relationship("User", foreign_keys=[invited_by])
+
+    __table_args__ = (Index("idx_share_invites_share_user", "share_id", "user_id", unique=True),)
 
 
 # Engine and session setup

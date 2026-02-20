@@ -58,6 +58,7 @@ export function UnifiedHeader() {
   const {
     autocompleteEnabled,
     setAutocompleteEnabled,
+    autocompleteTriggerMode,
     setAutocompleteTriggerMode,
     autocompleteMode,
     setAutocompleteMode,
@@ -115,6 +116,11 @@ export function UnifiedHeader() {
     setAutocompleteEnabled(true);
     setAutocompleteTriggerMode("auto");
     setAutocompleteMode(mode);
+  };
+
+  const setAutocompleteManual = () => {
+    setAutocompleteEnabled(true);
+    setAutocompleteTriggerMode("manual");
   };
 
   return (
@@ -217,18 +223,23 @@ export function UnifiedHeader() {
                     <span className="ml-auto text-xs text-muted-foreground">
                       {!autocompleteEnabled
                         ? "Off"
-                        : autocompleteMode === "short"
-                          ? "Short"
-                          : autocompleteMode === "long"
-                            ? "Long"
-                            : "Adaptive"}
+                        : autocompleteTriggerMode === "manual"
+                          ? "Manual"
+                          : autocompleteMode === "short"
+                            ? "Short"
+                            : autocompleteMode === "long"
+                              ? "Long"
+                              : "Adaptive"}
                     </span>
                   </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
+                  <DropdownMenuSubContent className="w-56">
                     <DropdownMenuItem
                       onClick={() => setAutocomplete("short")}
                       className={cn(
-                        autocompleteEnabled && autocompleteMode === "short" && "bg-accent"
+                        autocompleteEnabled &&
+                          autocompleteTriggerMode !== "manual" &&
+                          autocompleteMode === "short" &&
+                          "bg-accent"
                       )}
                     >
                       <Zap className="mr-2 h-4 w-4" />
@@ -238,7 +249,10 @@ export function UnifiedHeader() {
                     <DropdownMenuItem
                       onClick={() => setAutocomplete("long")}
                       className={cn(
-                        autocompleteEnabled && autocompleteMode === "long" && "bg-accent"
+                        autocompleteEnabled &&
+                          autocompleteTriggerMode !== "manual" &&
+                          autocompleteMode === "long" &&
+                          "bg-accent"
                       )}
                     >
                       <FileText className="mr-2 h-4 w-4" />
@@ -248,12 +262,25 @@ export function UnifiedHeader() {
                     <DropdownMenuItem
                       onClick={() => setAutocomplete("adaptive")}
                       className={cn(
-                        autocompleteEnabled && autocompleteMode === "adaptive" && "bg-accent"
+                        autocompleteEnabled &&
+                          autocompleteTriggerMode !== "manual" &&
+                          autocompleteMode === "adaptive" &&
+                          "bg-accent"
                       )}
                     >
                       <Target className="mr-2 h-4 w-4" />
                       Adaptive
                       <span className="ml-auto text-xs text-muted-foreground">Auto-switch</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={setAutocompleteManual}
+                      className={cn(
+                        autocompleteEnabled && autocompleteTriggerMode === "manual" && "bg-accent"
+                      )}
+                    >
+                      <Keyboard className="mr-2 h-4 w-4" />
+                      Manual
+                      <span className="ml-auto text-xs text-muted-foreground">Alt+/</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => setAutocompleteEnabled(false)}

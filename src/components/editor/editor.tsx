@@ -194,6 +194,30 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on file.id change, not content
   }, [file.id, editor]);
 
+  // Sync editor when file content arrives late (e.g., after fork redirect).
+  // The list endpoint returns content="" for optimization; real content loads
+  // asynchronously via loadFileContent. This effect catches that transition.
+  useEffect(() => {
+    if (!editor || !file.content) return;
+    // Only sync if the editor is currently empty but the store has real content
+    const editorHTML = editor.getHTML();
+    const isEmpty =
+      editorHTML === "" ||
+      editorHTML === "<p></p>" ||
+      editorHTML === "<p><br></p>" ||
+      editorHTML === '<p><br class="ProseMirror-trailingBreak"></p>';
+    if (!isEmpty) return;
+
+    queueMicrotask(() => {
+      isFileSwitchingRef.current = true;
+      editor.commands.setContent(file.content, false);
+      editor.commands.focus("start");
+      lastContentRef.current = editor.getHTML();
+      editor.emit("update", { editor, transaction: editor.state.tr });
+      isFileSwitchingRef.current = false;
+    });
+  }, [file.content, editor]);
+
   // Apply pending edits from AI through the editor's transaction system
   useEffect(() => {
     if (!editor) return;

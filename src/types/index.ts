@@ -13,6 +13,14 @@ export interface FileItem {
   icon: string | null;
   createdAt: string;
   updatedAt: string;
+  // Lightweight preview fields from list endpoint (avoids loading full content)
+  wordCount: number;
+  preview: string;
+  // Fork info (populated when this file was forked from a community item)
+  fork_id?: string;
+  forked_from_share_id?: string;
+  forked_from_title?: string;
+  forked_from_author?: string;
 }
 
 // =============================================================================

@@ -19,7 +19,14 @@ interface AuthState {
   logout: () => void;
   loginWithGoogle: () => Promise<void>;
   handleOAuthCallback: (token: string) => Promise<void>;
-  updateProfile: (updates: { username?: string; avatar_url?: string }) => Promise<void>;
+  setUser: (user: User) => void;
+  updateProfile: (updates: {
+    username?: string;
+    avatar_url?: string;
+    bio?: string;
+    website?: string;
+    social_links?: Record<string, string>;
+  }) => Promise<void>;
   refreshUser: () => Promise<void>;
   deleteAccount: () => Promise<void>;
 }
@@ -118,6 +125,8 @@ export const useAuthStore = create<AuthState>()(
           set({ isLoading: false });
         }
       },
+
+      setUser: (user) => set({ user }),
 
       updateProfile: async (updates) => {
         set({ isLoading: true });

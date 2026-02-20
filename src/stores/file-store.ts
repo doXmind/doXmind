@@ -150,13 +150,23 @@ export const useFileStore = create<FileState>()(
             icon: f.icon || null,
             createdAt: f.created_at,
             updatedAt: f.updated_at,
+            wordCount: f.word_count || 0,
+            preview: f.preview || "",
+            fork_id: f.fork_id || undefined,
+            forked_from_share_id: f.forked_from_share_id || undefined,
+            forked_from_title: f.forked_from_title || undefined,
+            forked_from_author: f.forked_from_author || undefined,
           }));
 
-          // Clear currentFileId if it no longer exists in the loaded files
-          const { currentFileId, selectedFileIds } = get();
+          // Clear currentFileId / currentFolderId if they no longer exist in loaded files
+          const { currentFileId, currentFolderId, selectedFileIds } = get();
           const fileIds = new Set(files.map((f) => f.id));
           const validCurrentFileId =
             currentFileId && fileIds.has(currentFileId) ? currentFileId : null;
+          const validCurrentFolderId =
+            currentFolderId && files.some((f) => f.id === currentFolderId && f.isFolder)
+              ? currentFolderId
+              : null;
 
           // Clear selection of files that no longer exist
           const validSelectedFileIds = new Set(
@@ -166,7 +176,11 @@ export const useFileStore = create<FileState>()(
           set({
             files,
             currentFileId: validCurrentFileId,
+            currentFolderId: validCurrentFolderId,
             selectedFileIds: validSelectedFileIds,
+            // Clear loadedContentIds because file objects now have content=""
+            // (list endpoint optimization). Content must be re-loaded on demand.
+            loadedContentIds: new Set<string>(),
             isSynced: true,
             isLoading: false,
           });
@@ -181,12 +195,29 @@ export const useFileStore = create<FileState>()(
         if (get().loadedContentIds.has(fileId)) return;
         try {
           const fullFile = await api.getFile(fileId);
-          set((state) => ({
-            files: state.files.map((f) =>
-              f.id === fileId ? { ...f, content: fullFile.content } : f
-            ),
-            loadedContentIds: new Set([...state.loadedContentIds, fileId]),
-          }));
+          set((state) => {
+            // Only update if the file exists in the files array.
+            // If loadFiles() hasn't completed yet, files may be empty — in that case
+            // skip the update and don't mark as loaded so it retries after loadFiles.
+            const fileExists = state.files.some((f) => f.id === fileId);
+            if (!fileExists) return {};
+
+            return {
+              files: state.files.map((f) =>
+                f.id === fileId
+                  ? {
+                      ...f,
+                      content: fullFile.content,
+                      fork_id: fullFile.fork_id || undefined,
+                      forked_from_share_id: fullFile.forked_from_share_id || undefined,
+                      forked_from_title: fullFile.forked_from_title || undefined,
+                      forked_from_author: fullFile.forked_from_author || undefined,
+                    }
+                  : f
+              ),
+              loadedContentIds: new Set([...state.loadedContentIds, fileId]),
+            };
+          });
         } catch (error) {
           log.error("Failed to load file content", error);
         }
@@ -211,6 +242,8 @@ export const useFileStore = create<FileState>()(
             icon: serverFile.icon || null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
+            wordCount: 0,
+            preview: "",
           };
 
           set((state) => ({
@@ -242,6 +275,8 @@ export const useFileStore = create<FileState>()(
             icon: serverFile.icon || null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
+            wordCount: 0,
+            preview: "",
           };
 
           set((state) => ({
@@ -405,6 +440,8 @@ export const useFileStore = create<FileState>()(
             icon: serverFolder.icon || null,
             createdAt: serverFolder.created_at,
             updatedAt: serverFolder.updated_at,
+            wordCount: 0,
+            preview: "",
           };
 
           set((state) => ({

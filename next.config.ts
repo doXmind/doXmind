@@ -155,6 +155,26 @@ const nextConfig: NextConfig = {
         source: "/api/images/:path*",
         destination: `${backendUrl}/api/images/:path*`,
       },
+      // Shares routes
+      {
+        source: "/api/shares/:path*",
+        destination: `${backendUrl}/api/shares/:path*`,
+      },
+      // Community routes
+      {
+        source: "/api/community/:path*",
+        destination: `${backendUrl}/api/community/:path*`,
+      },
+      // Comments routes
+      {
+        source: "/api/comments/:path*",
+        destination: `${backendUrl}/api/comments/:path*`,
+      },
+      // Speech routes (voice transcription)
+      {
+        source: "/api/speech/:path*",
+        destination: `${backendUrl}/api/speech/:path*`,
+      },
       // Health check
       {
         source: "/health",

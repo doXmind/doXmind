@@ -93,13 +93,6 @@ function usePageSize(isGrid: boolean) {
   return pageSize;
 }
 
-// Paper shadow for list container
-const LIST_SHADOW = [
-  "0 1px 1px rgba(0,0,0,0.03)",
-  "0 2px 4px rgba(0,0,0,0.025)",
-  "0 4px 8px rgba(0,0,0,0.02)",
-].join(",");
-
 export function FileGrid({
   files,
   isLoading,
@@ -341,7 +334,7 @@ export function FileGrid({
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton
               key={i}
-              className="h-[230px] rounded-[3px] bg-stone-100/50 dark:bg-neutral-800/30"
+              className="h-[200px] rounded-2xl bg-muted/60 dark:bg-neutral-800/30"
             />
           ))}
         </div>
@@ -602,12 +595,7 @@ export function FileGrid({
                 )}
 
                 <motion.div
-                  className={cn(
-                    "rounded-[3px]",
-                    "border border-stone-200/40 dark:border-neutral-700/25",
-                    "bg-[#fdfcfa]/40 dark:bg-[#1e1e20]/30"
-                  )}
-                  style={{ boxShadow: LIST_SHADOW }}
+                  className={cn("rounded-xl", "border border-border/50", "bg-card/40")}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   key={listKey}
@@ -625,9 +613,7 @@ export function FileGrid({
                           ease: [0.16, 1, 0.3, 1] as const,
                         },
                       }}
-                      className={cn(
-                        i > 0 && "border-t border-stone-200/25 dark:border-neutral-700/15"
-                      )}
+                      className={cn(i > 0 && "border-t border-border/30")}
                     >
                       <FileRow file={file} index={i} />
                     </motion.div>
@@ -858,11 +844,10 @@ function MobileDocumentList({
     <motion.div className="pb-24 sm:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div
         className={cn(
-          "overflow-hidden rounded-lg will-change-transform",
-          "border border-stone-200/40 dark:border-neutral-700/25",
-          "bg-[#fdfcfa]/60 dark:bg-[#1e1e20]/40"
+          "overflow-hidden rounded-xl will-change-transform",
+          "border border-border/50",
+          "bg-card/60"
         )}
-        style={{ boxShadow: LIST_SHADOW }}
       >
         {files.map((file, i) => (
           <motion.div
@@ -877,7 +862,7 @@ function MobileDocumentList({
                 ease: [0.16, 1, 0.3, 1] as const,
               },
             }}
-            className={cn(i > 0 && "border-t border-stone-200/20 dark:border-neutral-700/15")}
+            className={cn(i > 0 && "border-t border-border/30")}
           >
             <MobileDocumentRow
               file={file}

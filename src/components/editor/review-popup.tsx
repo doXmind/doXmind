@@ -17,7 +17,9 @@ interface ReviewPopupProps {
 export function ReviewPopup({ editor }: ReviewPopupProps) {
   const [activeSuggestion, setActiveSuggestion] = useState<ReviewSuggestion | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [flipped, setFlipped] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
+  const suggestionRectRef = useRef<DOMRect | null>(null);
 
   // Handle click on review suggestion
   useEffect(() => {
@@ -55,6 +57,7 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
 
         // Position popup below the suggestion
         const rect = suggestionEl.getBoundingClientRect();
+        suggestionRectRef.current = rect;
         const viewportWidth = window.innerWidth;
         const popupWidth = 340; // Approximate popup width
 
@@ -67,6 +70,8 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
           x = 16;
         }
 
+        // Default: position below. Will be adjusted in useEffect if it overflows.
+        setFlipped(false);
         setPosition({ x, y: rect.bottom + 6 });
       }
     };
@@ -97,6 +102,20 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [editor]);
+
+  // Flip popup above if it overflows viewport bottom
+  useEffect(() => {
+    if (!position || !popupRef.current || !suggestionRectRef.current) return;
+    const popupHeight = popupRef.current.offsetHeight;
+    const viewportHeight = window.innerHeight;
+    const rect = suggestionRectRef.current;
+
+    if (position.y + popupHeight > viewportHeight - 8 && !flipped) {
+      // Not enough room below — flip above the suggestion
+      setFlipped(true);
+      setPosition({ x: position.x, y: rect.top - popupHeight - 6 });
+    }
+  }, [position, flipped]);
 
   // Handle accept
   const handleAccept = useCallback(() => {

@@ -18,9 +18,11 @@ vi.mock("@/lib/utils", async (importOriginal) => {
 
 // Mock the api module
 const mockGetAuthHeaders = vi.fn(() => ({ Authorization: "Bearer test-token" }));
+const mockGetConversation = vi.fn();
 vi.mock("@/lib/api", () => ({
   api: {
     getAuthorizationHeaders: () => mockGetAuthHeaders(),
+    getConversation: (...args: unknown[]) => mockGetConversation(...args),
   },
 }));
 
@@ -362,37 +364,30 @@ describe("useChatStore", () => {
   // ============================================================================
   describe("loadConversation", () => {
     it("fetches conversation from backend", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            id: "conv-uuid",
-            fileId: "file-123",
-            messages: [
-              {
-                id: "msg-1",
-                role: "user",
-                content: "Hello",
-                createdAt: "2024-01-01T00:00:00Z",
-              },
-              {
-                id: "msg-2",
-                role: "assistant",
-                content: "Hi!",
-                createdAt: "2024-01-01T00:00:01Z",
-              },
-            ],
+      mockGetConversation.mockResolvedValueOnce({
+        id: "conv-uuid",
+        fileId: "file-123",
+        messages: [
+          {
+            id: "msg-1",
+            role: "user",
+            content: "Hello",
             createdAt: "2024-01-01T00:00:00Z",
-          }),
+          },
+          {
+            id: "msg-2",
+            role: "assistant",
+            content: "Hi!",
+            createdAt: "2024-01-01T00:00:01Z",
+          },
+        ],
+        createdAt: "2024-01-01T00:00:00Z",
       });
 
       await useChatStore.getState().loadConversation("file-123");
 
-      // Verify fetch was called with the correct URL
-      expect(mockFetch).toHaveBeenCalledWith(
-        "/api/chat/conversations/file-123",
-        expect.any(Object)
-      );
+      // Verify api.getConversation was called with the correct fileId
+      expect(mockGetConversation).toHaveBeenCalledWith("file-123");
 
       // Verify state was updated correctly
       const state = useChatStore.getState();
@@ -403,15 +398,11 @@ describe("useChatStore", () => {
     });
 
     it("marks conversation as loaded", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            id: "conv-uuid",
-            fileId: "file-123",
-            messages: [],
-            createdAt: "2024-01-01T00:00:00Z",
-          }),
+      mockGetConversation.mockResolvedValueOnce({
+        id: "conv-uuid",
+        fileId: "file-123",
+        messages: [],
+        createdAt: "2024-01-01T00:00:00Z",
       });
 
       await useChatStore.getState().loadConversation("file-123");
@@ -421,32 +412,25 @@ describe("useChatStore", () => {
 
     it("skips if already loaded", async () => {
       // First load
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            id: "conv-uuid",
-            fileId: "file-123",
-            messages: [],
-            createdAt: "2024-01-01T00:00:00Z",
-          }),
+      mockGetConversation.mockResolvedValueOnce({
+        id: "conv-uuid",
+        fileId: "file-123",
+        messages: [],
+        createdAt: "2024-01-01T00:00:00Z",
       });
       await useChatStore.getState().loadConversation("file-123");
 
       // Reset mock
-      mockFetch.mockClear();
+      mockGetConversation.mockClear();
 
       // Try to load again
       await useChatStore.getState().loadConversation("file-123");
 
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockGetConversation).not.toHaveBeenCalled();
     });
 
     it("handles API errors gracefully", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
+      mockGetConversation.mockRejectedValueOnce(new Error("API error"));
 
       // Should not throw
       await useChatStore.getState().loadConversation("file-123");
@@ -457,22 +441,18 @@ describe("useChatStore", () => {
     it("does nothing with empty fileId", async () => {
       await useChatStore.getState().loadConversation("");
 
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockGetConversation).not.toHaveBeenCalled();
     });
 
     it("sets isLoadingHistory during load", async () => {
       let loadingDuringFetch = false;
-      mockFetch.mockImplementationOnce(() => {
+      mockGetConversation.mockImplementationOnce(() => {
         loadingDuringFetch = useChatStore.getState().isLoadingHistory;
         return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              id: "conv-uuid",
-              fileId: "file-123",
-              messages: [],
-              createdAt: "2024-01-01T00:00:00Z",
-            }),
+          id: "conv-uuid",
+          fileId: "file-123",
+          messages: [],
+          createdAt: "2024-01-01T00:00:00Z",
         });
       });
 

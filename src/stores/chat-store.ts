@@ -68,14 +68,10 @@ export const useChatStore = create<ChatState>()(
       set({ isLoadingHistory: true });
 
       try {
-        const response = await fetch(`/api/chat/conversations/${fileId}`, {
-          headers: api.getAuthorizationHeaders(),
-        });
-        if (!response.ok) {
-          throw new Error("Failed to load conversation");
-        }
-
-        const data = await response.json();
+        // Use api client directly (goes to NEXT_PUBLIC_API_URL) instead of
+        // relative fetch which goes through Next.js rewrite and can hang
+        // if the BACKEND_URL env var is misconfigured on the hosting server.
+        const data = await api.getConversation(fileId);
 
         // Transform backend messages to frontend format
         const messages: ChatMessage[] = data.messages.map(

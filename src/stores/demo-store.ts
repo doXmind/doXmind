@@ -27,6 +27,8 @@ export const useDemoStore = create<DemoState>((set) => ({
         icon: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        wordCount: 0,
+        preview: "",
       },
     }),
 

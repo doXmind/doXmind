@@ -93,8 +93,8 @@
     --secondary-foreground: 0 0% 88%;
     --muted: 0 0% 16%;
     --muted-foreground: 0 0% 61%; /* #9b9b9b — Notion's exact muted text */
-    --accent: 0 0% 16%;
-    --accent-foreground: 0 0% 88%;
+    --accent: 0 0% 22%; /* #383838 — visible hover on dark popover */
+    --accent-foreground: 0 0% 95%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 90%;
     --border: 0 0% 18%; /* #2f2f2f — Notion's exact border */
@@ -702,6 +702,32 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Autocomplete loading indicator - spinning ring at cursor */
+.autocomplete-loading {
+  @apply text-muted-foreground/50;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  pointer-events: none;
+  user-select: none;
+  margin-left: 4px;
+}
+
+.autocomplete-loading-spinner {
+  width: 14px;
+  height: 14px;
+  animation: autocompleteSpinnerRotate 0.8s linear infinite;
+}
+
+@keyframes autocompleteSpinnerRotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -2395,6 +2421,17 @@ html {
   transition: color 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
+/* Editable slide: subtle focus indicator */
+.presentation-content .ProseMirror:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+
+.presentation-light .presentation-content .ProseMirror:focus {
+  box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.08);
+}
+
 /* Presentation Typography — respect user settings */
 .presentation-content.pres-font-serif {
   font-family: Georgia, "Times New Roman", Times, serif;
@@ -2970,4 +3007,92 @@ html {
 html[data-onboarding-interactive] [data-radix-popper-content-wrapper],
 html[data-onboarding-interactive] [data-dropdown-portal] {
   z-index: 61 !important;
+}
+
+/* Comment markdown prose — lightweight subset of editor prose */
+.comment-prose p {
+  margin-bottom: 0.5em;
+}
+.comment-prose p:last-child {
+  margin-bottom: 0;
+}
+.comment-prose strong,
+.comment-prose b {
+  font-weight: 600;
+}
+.comment-prose a {
+  color: hsl(var(--foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: hsl(var(--border));
+}
+.comment-prose a:hover {
+  text-decoration-color: hsl(var(--foreground));
+}
+.comment-prose code {
+  font-size: 0.85em;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+.comment-prose pre {
+  margin: 0.75em 0;
+  padding: 0.75em 1em;
+  border-radius: 8px;
+  background: hsl(var(--muted));
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+.comment-prose pre code {
+  padding: 0;
+  background: transparent;
+}
+.comment-prose blockquote {
+  margin: 0.5em 0;
+  padding-left: 1em;
+  border-left: 3px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+.comment-prose ul,
+.comment-prose ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+.comment-prose ul {
+  list-style-type: disc;
+}
+.comment-prose ol {
+  list-style-type: decimal;
+}
+.comment-prose li {
+  margin: 0.15em 0;
+}
+.comment-prose h1,
+.comment-prose h2,
+.comment-prose h3,
+.comment-prose h4,
+.comment-prose h5,
+.comment-prose h6 {
+  font-weight: 600;
+  margin-top: 0.75em;
+  margin-bottom: 0.25em;
+}
+.comment-prose h1 {
+  font-size: 1.2em;
+}
+.comment-prose h2 {
+  font-size: 1.1em;
+}
+.comment-prose h3 {
+  font-size: 1em;
+}
+.comment-prose hr {
+  margin: 0.75em 0;
+  border-color: hsl(var(--border));
+}
+.comment-prose del,
+.comment-prose s {
+  text-decoration: line-through;
+  opacity: 0.7;
 }

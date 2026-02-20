@@ -44,7 +44,7 @@ class AutocompleteRequest(BaseModel):
     file_id: str = ""
     file_name: str = ""
     cursor_position: int = 0
-    max_tokens: int = 30  # Default for short mode (increased from 15)
+    max_tokens: int = 60  # Default for short mode
     mode: Literal["short", "long"] = "short"  # NEW: autocomplete mode
     open_file_ids: list[str] = []  # NEW: for multi-file context
     include_rag: bool = True  # NEW: can disable for testing
@@ -87,7 +87,7 @@ def clean_suggestion_short(suggestion: str, text_before: str) -> str:
         text_before: Text before cursor for context
 
     Returns:
-        Cleaned suggestion string (max 1 line or 100 chars)
+        Cleaned suggestion string (max 1 line or 200 chars)
     """
     if not suggestion:
         return ""
@@ -105,11 +105,15 @@ def clean_suggestion_short(suggestion: str, text_before: str) -> str:
     lines = suggestion.split("\n")
     suggestion = lines[0].strip()
 
-    # Also limit max chars to 100 for safety
-    if len(suggestion) > 100:
-        # Try to cut at word boundary
-        cut_point = suggestion[:100].rfind(" ")
-        suggestion = suggestion[:cut_point] if cut_point > 20 else suggestion[:100]
+    # Also limit max chars to 200 for safety
+    if len(suggestion) > 200:
+        # Try to cut at sentence boundary first, then word boundary
+        cut_point = suggestion[:200].rfind("。")
+        if cut_point < 40:
+            cut_point = suggestion[:200].rfind(".")
+        if cut_point < 40:
+            cut_point = suggestion[:200].rfind(" ")
+        suggestion = suggestion[: cut_point + 1] if cut_point > 40 else suggestion[:200]
 
     return suggestion
 
@@ -212,7 +216,7 @@ async def suggest(
                 params=params,
                 user_id=token.sub,
             )
-            max_output_tokens = 30  # ~5 words or 1 line
+            max_output_tokens = 60  # ~1-2 sentences
             model = settings.fast_model  # Haiku for speed
             temperature = 0.5
 
@@ -229,7 +233,7 @@ async def suggest(
                 params=params,
                 user_id=token.sub,
             )
-            max_output_tokens = 150  # Multi-line (reduced from 200 for faster response)
+            max_output_tokens = 200  # Multi-line paragraphs
             model = settings.fast_model  # Use Haiku for speed (both modes)
             temperature = 0.6  # Slightly higher for more creative multi-line suggestions
 

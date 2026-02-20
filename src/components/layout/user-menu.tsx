@@ -120,7 +120,10 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>
+        <DropdownMenuItem
+          onClick={() => user?.id && router.push(`/profile/${user.id}`)}
+          disabled={!user?.id}
+        >
           <User className="mr-2 h-4 w-4" />
           Profile
         </DropdownMenuItem>

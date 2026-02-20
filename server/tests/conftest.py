@@ -101,6 +101,44 @@ TestingSessionLocal = async_sessionmaker(
 )
 
 
+def _setup_schema():
+    """Drop and recreate all tables to ensure schema matches current models.
+
+    Called once at import time. Uses drop_all + create_all because
+    create_all alone won't add new columns to existing tables.
+    """
+
+    async def _run():
+        async with test_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+            # Create vectors table if it doesn't exist (normally created by init_pgvector)
+            await conn.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS vectors (
+                    id VARCHAR(255) PRIMARY KEY,
+                    content TEXT NOT NULL,
+                    embedding TEXT,
+                    chunk_type VARCHAR(50) NOT NULL,
+                    file_id VARCHAR(36),
+                    conversation_id VARCHAR(36),
+                    attachment_id VARCHAR(36),
+                    filename VARCHAR(255),
+                    chunk_index INTEGER,
+                    total_chunks INTEGER,
+                    metadata JSONB,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            )
+
+    asyncio.get_event_loop_policy().new_event_loop().run_until_complete(_run())
+
+
+_setup_schema()
+
+
 @pytest.fixture(scope="session")
 def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     """Create an event loop for the test session."""
@@ -113,44 +151,27 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create a database session for each test.
 
-    Creates all tables, runs the test, then truncates tables to clean up.
+    Tables are created once at import time (see _setup_schema below).
+    Truncates all tables after each test for clean state.
     """
-    # Ensure tables exist (idempotent)
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-        # Create vectors table if it doesn't exist (normally created by init_pgvector)
-        await conn.execute(
-            text("""
-            CREATE TABLE IF NOT EXISTS vectors (
-                id VARCHAR(255) PRIMARY KEY,
-                content TEXT NOT NULL,
-                embedding TEXT,
-                chunk_type VARCHAR(50) NOT NULL,
-                file_id VARCHAR(36),
-                conversation_id VARCHAR(36),
-                attachment_id VARCHAR(36),
-                filename VARCHAR(255),
-                chunk_index INTEGER,
-                total_chunks INTEGER,
-                metadata JSONB,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        """)
-        )
-
     async with TestingSessionLocal() as session:
         yield session
 
-    # Clean up test data by truncating tables
+    # Clean up test data by truncating all tables
     async with test_engine.begin() as conn:
-        # Truncate all tables (PostgreSQL specific)
         await conn.execute(
             text("""
-            TRUNCATE TABLE messages, conversation_attachments, conversations,
-                          file_versions, files, password_resets,
-                          email_verifications, users, vectors
-            RESTART IDENTITY CASCADE
+            DO $$
+            DECLARE
+                tbl TEXT;
+            BEGIN
+                FOR tbl IN
+                    SELECT tablename FROM pg_tables
+                    WHERE schemaname = 'public'
+                LOOP
+                    EXECUTE format('TRUNCATE TABLE %I RESTART IDENTITY CASCADE', tbl);
+                END LOOP;
+            END $$;
         """)
         )
 

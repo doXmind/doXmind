@@ -2,9 +2,18 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Pencil, Share2, FileDown, Trash2, Folder, Star } from "lucide-react";
+import {
+  MoreHorizontal,
+  Pencil,
+  Share2,
+  FileDown,
+  Trash2,
+  Folder,
+  Star,
+  FileText,
+} from "lucide-react";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import { stripHtml, getWordCount, getNameWithoutExtension } from "@/lib/file-utils";
+import { getNameWithoutExtension } from "@/lib/file-utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -44,8 +53,8 @@ export function FileRow({ file }: FileRowProps) {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
-  const preview = stripHtml(file.content).slice(0, 80);
-  const wordCount = getWordCount(file.content);
+  const preview = file.preview;
+  const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
 
   const handleOpen = () => {
@@ -135,8 +144,7 @@ export function FileRow({ file }: FileRowProps) {
       <div
         className={cn(
           "group flex cursor-pointer items-center gap-4 px-5 py-4 transition-colors duration-150",
-          "bg-[#fdfcfa]/60 dark:bg-[#1e1e20]/40",
-          "hover:bg-[#f8f6f2] dark:hover:bg-[#242426]",
+          "hover:bg-accent/50",
           "active:scale-[0.998]",
           isDragOver &&
             "bg-amber-50/80 ring-1 ring-amber-300/50 dark:bg-amber-900/20 dark:ring-amber-500/30"
@@ -155,19 +163,7 @@ export function FileRow({ file }: FileRowProps) {
             strokeWidth={1.5}
           />
         ) : (
-          <div className="relative h-6 w-5 flex-shrink-0">
-            <div className="absolute inset-0 translate-x-[1.5px] translate-y-[1.5px] rounded-[1px] border border-stone-200/40 bg-stone-100/50 dark:border-neutral-700/20 dark:bg-neutral-700/15" />
-            <div className="absolute inset-0 rounded-[1px] border border-stone-200/50 bg-[#fdfcfa] dark:border-neutral-700/30 dark:bg-[#1e1e20]" />
-            {/* Tiny ruled lines on the mini page */}
-            <div
-              className="pointer-events-none absolute inset-0 rounded-[1px] opacity-[0.08] dark:opacity-[0.06]"
-              style={{
-                backgroundImage: "linear-gradient(to bottom, transparent 95%, currentColor 95%)",
-                backgroundSize: "100% 5px",
-                backgroundPosition: "0 2px",
-              }}
-            />
-          </div>
+          <FileText className="h-5 w-5 flex-shrink-0 text-muted-foreground/50" />
         )}
 
         {/* File name */}
@@ -176,7 +172,7 @@ export function FileRow({ file }: FileRowProps) {
           <Star className="h-3 w-3 flex-shrink-0 fill-amber-400 text-amber-400" />
         )}
 
-        <span className="min-w-0 flex-shrink-0 font-serif text-sm font-semibold text-foreground/85">
+        <span className="min-w-0 flex-shrink-0 text-sm font-semibold text-foreground/85">
           {displayName}
         </span>
 

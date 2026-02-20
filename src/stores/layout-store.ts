@@ -35,6 +35,7 @@ interface LayoutState {
 
   // Home page
   homeViewMode: "grid" | "list";
+  homeActiveTab: "documents" | "shares" | "forks" | "bookmarks";
 
   // Version history panel
   isVersionHistoryOpen: boolean;
@@ -102,6 +103,7 @@ interface LayoutState {
 
   // Home page actions
   setHomeViewMode: (mode: "grid" | "list") => void;
+  setHomeActiveTab: (tab: "documents" | "shares" | "forks" | "bookmarks") => void;
 
   // Focus mode actions
   setFocusMode: (enabled: boolean) => void;
@@ -190,6 +192,7 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Home page
       homeViewMode: "grid" as const,
+      homeActiveTab: "documents" as const,
 
       // Focus mode
       isFocusMode: false,
@@ -344,6 +347,10 @@ export const useLayoutStore = create<LayoutState>()(
       // Home page actions
       setHomeViewMode: (mode: "grid" | "list") => {
         set({ homeViewMode: mode });
+      },
+
+      setHomeActiveTab: (tab: "documents" | "shares" | "forks" | "bookmarks") => {
+        set({ homeActiveTab: tab });
       },
 
       // Focus mode actions
@@ -506,6 +513,7 @@ export const useLayoutStore = create<LayoutState>()(
         theme: state.theme,
         isHighContrast: state.isHighContrast,
         homeViewMode: state.homeViewMode,
+        homeActiveTab: state.homeActiveTab,
         editorWidth: state.editorWidth,
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,
