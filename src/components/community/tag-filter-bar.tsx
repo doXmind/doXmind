@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 
 interface TagFilterBarProps {
@@ -27,30 +28,44 @@ export function TagFilterBar({ activeTag, onTagSelect }: TagFilterBarProps) {
   if (tags.length === 0) return null;
 
   return (
-    <div className="scrollbar-none mb-6 flex items-center gap-2 overflow-x-auto pb-1">
-      {activeTag && (
-        <button
-          onClick={() => onTagSelect("")}
-          className="flex shrink-0 items-center gap-1 rounded-full border border-foreground/20 bg-foreground/5 px-3 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-foreground/10"
-        >
-          <X className="h-3 w-3" />
-          Clear
-        </button>
-      )}
-      {tags.map(({ tag, count }) => (
-        <button
-          key={tag}
-          onClick={() => onTagSelect(activeTag === tag ? "" : tag)}
-          className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-medium transition-all ${
-            activeTag === tag
-              ? "border-foreground/20 bg-foreground/5 text-foreground"
-              : "border-border/60 bg-transparent text-muted-foreground hover:border-foreground/20 hover:text-foreground"
-          }`}
-        >
-          {tag}
-          <span className="ml-1.5 text-muted-foreground/50">{count}</span>
-        </button>
-      ))}
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-[13px] font-semibold text-foreground">Popular Tags</h2>
+        {activeTag && (
+          <button
+            onClick={() => onTagSelect("")}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+            Clear
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {tags.map(({ tag, count }) => (
+          <button
+            key={tag}
+            onClick={() => onTagSelect(activeTag === tag ? "" : tag)}
+            className={cn(
+              "rounded-full px-2.5 py-1 text-[12px] transition-colors",
+              activeTag === tag
+                ? "bg-foreground text-background"
+                : "bg-muted/80 text-muted-foreground hover:bg-accent hover:text-foreground"
+            )}
+          >
+            {tag}
+            <span
+              className={cn(
+                "ml-1",
+                activeTag === tag ? "text-background/60" : "text-muted-foreground/40"
+              )}
+            >
+              {count}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { motion } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { Eye, GitFork, Bookmark, MessageSquare, Pencil } from "lucide-react";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
@@ -11,6 +12,11 @@ interface CommunityCardProps {
   item: CommunityItem;
   onTagClick?: (tag: string) => void;
   onEditItem?: (item: CommunityItem) => void;
+}
+
+function formatCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
 }
 
 export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardProps) {
@@ -36,8 +42,12 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
 
   return (
     <Link href={`/community/${item.share_token}`} className="group block">
-      <div className="relative flex h-full flex-col rounded-2xl border border-border/50 bg-card p-6 transition-all duration-300 hover:border-border hover:shadow-lg hover:shadow-black/[0.04] dark:hover:shadow-black/[0.15]">
-        {/* Edit button (own posts) */}
+      <motion.div
+        className="relative flex h-full flex-col rounded-xl border border-border bg-card p-5 transition-colors duration-200 hover:bg-accent/50"
+        whileHover={{ y: -2 }}
+        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+      >
+        {/* Top-right actions */}
         {onEditItem && (
           <button
             onClick={(e) => {
@@ -45,41 +55,69 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
               e.stopPropagation();
               onEditItem(item);
             }}
-            className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground/60 opacity-0 transition-all duration-200 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+            className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground/50 opacity-0 transition-all duration-150 hover:bg-muted hover:text-foreground group-hover:opacity-100"
             aria-label="Edit post"
           >
-            <Pencil className="h-4 w-4" />
+            <Pencil className="h-3.5 w-3.5" />
           </button>
         )}
 
-        {/* Bookmark button */}
         {user && !onEditItem && (
           <button
             onClick={handleBookmarkClick}
-            className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground/60 opacity-0 transition-all duration-200 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+            className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground/50 opacity-0 transition-all duration-150 hover:bg-muted hover:text-foreground group-hover:opacity-100"
             aria-label={isBookmarked ? "Remove bookmark" : "Bookmark"}
           >
             <Bookmark
-              className={`h-4 w-4 ${isBookmarked ? "fill-current text-foreground opacity-100" : ""}`}
+              className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
             />
           </button>
         )}
 
+        {/* Author row */}
+        <div className="mb-2.5 flex items-center gap-2">
+          {owner.avatar_url ? (
+            <Image
+              src={owner.avatar_url}
+              alt=""
+              width={18}
+              height={18}
+              className="h-[18px] w-[18px] rounded-full"
+              unoptimized
+            />
+          ) : (
+            <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-muted text-[8px] font-semibold text-muted-foreground">
+              {(owner.username || "?")[0].toUpperCase()}
+            </div>
+          )}
+          <span className="text-[12px] text-muted-foreground">{owner.username || "Anonymous"}</span>
+          {publishedDate && (
+            <>
+              <span className="text-[12px] text-muted-foreground/40">·</span>
+              <span className="text-[12px] text-muted-foreground/50">{publishedDate}</span>
+            </>
+          )}
+        </div>
+
         {/* Title */}
-        <h3 className="line-clamp-2 pr-8 text-[15px] font-semibold leading-snug tracking-tight text-foreground">
+        <h3 className="line-clamp-2 pr-6 text-[15px] font-semibold leading-snug text-foreground">
           {item.title}
         </h3>
 
         {/* Description */}
         {item.description && (
-          <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
             {item.description}
           </p>
         )}
 
-        {/* Tags */}
-        {item.tags.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Bottom row: tags + metrics */}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          {/* Tags */}
+          <div className="flex min-w-0 flex-wrap gap-1.5">
             {item.tags.slice(0, 3).map((tag) => (
               <button
                 key={tag}
@@ -88,67 +126,37 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
                   e.stopPropagation();
                   onTagClick?.(tag);
                 }}
-                className="rounded-full border border-border/60 bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
+                className="truncate rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 {tag}
               </button>
             ))}
             {item.tags.length > 3 && (
-              <span className="px-1 py-0.5 text-[11px] text-muted-foreground/60">
+              <span className="py-0.5 text-[11px] text-muted-foreground/40">
                 +{item.tags.length - 3}
               </span>
             )}
           </div>
-        )}
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Footer */}
-        <div className="mt-5 flex items-center justify-between border-t border-border/40 pt-4">
-          <div className="flex items-center gap-2.5">
-            {owner.avatar_url ? (
-              <Image
-                src={owner.avatar_url}
-                alt=""
-                width={24}
-                height={24}
-                className="h-6 w-6 rounded-full ring-1 ring-border/50"
-                unoptimized
-              />
-            ) : (
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-1 ring-border/50">
-                {(owner.username || "?")[0].toUpperCase()}
-              </div>
-            )}
-            <div className="flex flex-col">
-              <span className="text-[12px] font-medium leading-tight text-foreground/80">
-                {owner.username || "Anonymous"}
-              </span>
-              {publishedDate && (
-                <span className="text-[11px] leading-tight text-muted-foreground/60">
-                  {publishedDate}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 text-muted-foreground/60">
+          {/* Metrics */}
+          <div className="flex shrink-0 items-center gap-3 text-muted-foreground/50">
             <span className="flex items-center gap-1 text-[11px]" title="Views">
               <Eye className="h-3 w-3" />
-              {item.view_count}
+              {formatCount(item.view_count)}
             </span>
             <span className="flex items-center gap-1 text-[11px]" title="Forks">
               <GitFork className="h-3 w-3" />
-              {item.fork_count}
+              {formatCount(item.fork_count)}
             </span>
-            <span className="flex items-center gap-1 text-[11px]" title="Comments">
-              <MessageSquare className="h-3 w-3" />
-              {item.comment_count}
-            </span>
+            {item.comment_count > 0 && (
+              <span className="flex items-center gap-1 text-[11px]" title="Comments">
+                <MessageSquare className="h-3 w-3" />
+                {formatCount(item.comment_count)}
+              </span>
+            )}
           </div>
         </div>
-      </div>
+      </motion.div>
     </Link>
   );
 }

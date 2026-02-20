@@ -2,9 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import { AppShell } from "@/components/layout/app-shell";
 import { CommunityHeader } from "@/components/community/community-header";
-import { CommunityGrid } from "@/components/community/community-grid";
+import { CommunityFeed } from "@/components/community/community-feed";
 import { TagFilterBar } from "@/components/community/tag-filter-bar";
 import { useCommunityStore } from "@/stores/community-store";
 import { AlertCircle, Loader2 } from "lucide-react";
@@ -17,6 +18,7 @@ function CommunityContent() {
     items,
     isLoading,
     hasMore,
+    total,
     sortBy,
     searchQuery,
     tagFilter,
@@ -117,7 +119,6 @@ function CommunityContent() {
   }, [setSearchQuery, setTagFilter, loadItems, router]);
 
   // Infinite scroll via IntersectionObserver
-  // Use refs to avoid recreating observer on every isLoading toggle
   const hasMoreRef = useRef(hasMore);
   const isLoadingRef = useRef(isLoading);
   const sentinelVisibleRef = useRef(false);
@@ -145,7 +146,6 @@ function CommunityContent() {
     };
   }, [loadMore]);
 
-  // When loading finishes, check if sentinel is still visible and load more
   useEffect(() => {
     if (!isLoading && hasMore && sentinelVisibleRef.current) {
       loadMore();
@@ -157,59 +157,100 @@ function CommunityContent() {
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        {/* Hero */}
-        <div className="border-b border-border/40">
-          <div className="mx-auto max-w-6xl px-6 py-14 sm:px-8 lg:px-10">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-              Community
-            </h1>
-            <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-              Discover and fork documents shared by the community.
-            </p>
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          {/* Feed + Sidebar layout */}
+          <div className="flex gap-8 py-6">
+            {/* ── Main feed column ────────────────────────── */}
+            <div className="min-w-0 flex-1">
+              {/* Header: sort tabs + search */}
+              <CommunityHeader
+                sortBy={sortBy}
+                searchQuery={searchQuery}
+                onSortChange={handleSortChange}
+                onSearchChange={handleSearchChange}
+              />
+
+              {/* Active tag filter indicator */}
+              {tagFilter && (
+                <div className="mb-4 flex items-center gap-2 text-[13px]">
+                  <span className="text-muted-foreground">Filtered by</span>
+                  <span className="rounded-full bg-foreground/10 px-2.5 py-0.5 text-[12px] font-medium text-foreground">
+                    {tagFilter}
+                  </span>
+                  <button
+                    onClick={() => handleTagSelect("")}
+                    className="text-muted-foreground/60 transition-colors hover:text-foreground"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              {error && (
+                <div className="mb-4 flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                  <button
+                    onClick={() => loadItems()}
+                    className="ml-auto shrink-0 text-xs font-medium underline underline-offset-2"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Feed */}
+              <CommunityFeed
+                items={items}
+                isLoading={isLoading}
+                hasActiveFilters={hasActiveFilters}
+                searchQuery={searchQuery}
+                onClearFilters={handleClearFilters}
+                onTagClick={handleTagSelect}
+              />
+
+              {/* Infinite scroll sentinel */}
+              <div ref={sentinelRef} className="h-1" />
+
+              {isLoading && items.length > 0 && (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/40" />
+                </div>
+              )}
+            </div>
+
+            {/* ── Right sidebar (lg+) ─────────────────────── */}
+            <motion.aside
+              className="hidden w-72 shrink-0 lg:block"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+            >
+              <div className="sticky top-6 space-y-6">
+                {/* About */}
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <h2 className="text-[13px] font-semibold text-foreground">Community</h2>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                    Discover, fork, and build on documents shared by writers.
+                  </p>
+                  {total > 0 && (
+                    <div className="mt-3 border-t border-border pt-3 text-[12px] text-muted-foreground">
+                      <span className="font-medium text-foreground">{total}</span> documents
+                      published
+                    </div>
+                  )}
+                </div>
+
+                {/* Tags */}
+                <TagFilterBar activeTag={tagFilter} onTagSelect={handleTagSelect} />
+              </div>
+            </motion.aside>
           </div>
-        </div>
 
-        {/* Controls + Grid */}
-        <div className="mx-auto max-w-6xl px-6 py-10 sm:px-8 lg:px-10">
-          <CommunityHeader
-            sortBy={sortBy}
-            searchQuery={searchQuery}
-            onSortChange={handleSortChange}
-            onSearchChange={handleSearchChange}
-          />
-
-          <TagFilterBar activeTag={tagFilter} onTagSelect={handleTagSelect} />
-
-          {error && (
-            <div className="mb-8 flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{error}</span>
-              <button
-                onClick={() => loadItems()}
-                className="ml-auto shrink-0 text-xs font-medium underline underline-offset-2"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-
-          <CommunityGrid
-            items={items}
-            isLoading={isLoading}
-            hasActiveFilters={hasActiveFilters}
-            searchQuery={searchQuery}
-            onClearFilters={handleClearFilters}
-            onTagClick={handleTagSelect}
-          />
-
-          {/* Infinite scroll sentinel */}
-          <div ref={sentinelRef} className="h-1" />
-
-          {isLoading && items.length > 0 && (
-            <div className="mt-12 flex justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/50" />
-            </div>
-          )}
+          {/* Mobile tags (below lg) */}
+          <div className="lg:hidden">
+            <TagFilterBar activeTag={tagFilter} onTagSelect={handleTagSelect} />
+          </div>
         </div>
       </div>
     </AppShell>

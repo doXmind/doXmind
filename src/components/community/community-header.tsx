@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef } from "react";
+import { motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,69 +24,56 @@ export function CommunityHeader({
   onSortChange,
   onSearchChange,
 }: CommunityHeaderProps) {
-  const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      {/* Search with glow */}
-      <div className="relative flex-1 sm:max-w-xs">
-        {/* Animated glow */}
-        <div
-          className={cn(
-            "absolute -inset-0.5 rounded-xl opacity-0 blur-md transition-opacity duration-500",
-            isFocused && "opacity-100"
-          )}
-          style={{
-            background: "linear-gradient(135deg, #00f2ea20, #ff005020, #00f2ea20)",
-          }}
+    <div className="mb-4 space-y-3">
+      {/* Search bar */}
+      <div className="flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 transition-colors focus-within:border-foreground/20">
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+        <input
+          ref={inputRef}
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search"
+          className="flex-1 bg-transparent text-[14px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
         />
-
-        <div
-          className={cn(
-            "relative flex h-10 items-center gap-2 rounded-xl border px-3 transition-all duration-300",
-            isFocused
-              ? "border-foreground/15 bg-card shadow-lg"
-              : "border-border/60 bg-card/80 shadow-sm hover:border-foreground/10 hover:bg-card hover:shadow-md"
-          )}
-        >
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-          <input
-            ref={inputRef}
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            placeholder="Search..."
-            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => {
-                onSearchChange("");
-                inputRef.current?.focus();
-              }}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
+        {searchQuery && (
+          <button
+            onClick={() => {
+              onSearchChange("");
+              inputRef.current?.focus();
+            }}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-foreground transition-colors hover:bg-foreground/20"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
       </div>
 
-      {/* Sort pills */}
-      <div className="flex gap-1 rounded-lg border border-border/50 bg-muted/30 p-1">
+      {/* Tab bar — like X.com's "For you / Following" tabs */}
+      <div className="flex border-b border-border">
         {SORT_OPTIONS.map((option) => (
           <button
             key={option.value}
             onClick={() => onSortChange(option.value)}
-            className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-all duration-200 ${
+            className={cn(
+              "relative flex-1 py-3 text-center text-[14px] font-medium transition-colors",
               sortBy === option.value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            )}
           >
-            {option.label}
+            <span className="relative inline-block">
+              {option.label}
+              {sortBy === option.value && (
+                <motion.div
+                  className="absolute -bottom-3 left-0 right-0 h-[3px] rounded-full bg-foreground"
+                  layoutId="tab-indicator"
+                  transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+                />
+              )}
+            </span>
           </button>
         ))}
       </div>
