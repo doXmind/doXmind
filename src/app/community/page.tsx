@@ -45,8 +45,10 @@ function CommunityContent() {
     const urlSearch = searchParams.get("q");
     const urlTag = searchParams.get("tag");
 
-    if (urlSort && ["newest", "popular", "most_viewed"].includes(urlSort)) {
-      useCommunityStore.setState({ sortBy: urlSort as "newest" | "popular" | "most_viewed" });
+    if (urlSort && ["newest", "popular", "most_viewed", "for_you"].includes(urlSort)) {
+      useCommunityStore.setState({
+        sortBy: urlSort as "newest" | "popular" | "most_viewed" | "for_you",
+      });
     }
     if (urlSearch) {
       useCommunityStore.setState({ searchQuery: urlSearch });
@@ -96,7 +98,7 @@ function CommunityContent() {
   );
 
   const handleSortChange = useCallback(
-    (sort: "newest" | "popular" | "most_viewed") => {
+    (sort: "newest" | "popular" | "most_viewed" | "for_you") => {
       setSortBy(sort);
       updateUrl({ sort });
     },

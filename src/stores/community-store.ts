@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 import { api, CommunityItem } from "@/lib/api";
 
-type SortOption = "newest" | "popular" | "most_viewed";
+type SortOption = "newest" | "popular" | "most_viewed" | "for_you";
 
 interface CommunityState {
   items: CommunityItem[];
@@ -48,13 +48,19 @@ export const useCommunityStore = create<CommunityState>()(
         }
 
         try {
-          const result = await api.getCommunityItems({
-            sort: sortBy,
-            search: searchQuery || undefined,
-            tag: tagFilter || undefined,
-            limit: PAGE_SIZE,
-            offset: 0,
-          });
+          const result =
+            sortBy === "for_you"
+              ? await api.getCommunityRecommendations({
+                  limit: PAGE_SIZE,
+                  offset: 0,
+                })
+              : await api.getCommunityItems({
+                  sort: sortBy,
+                  search: searchQuery || undefined,
+                  tag: tagFilter || undefined,
+                  limit: PAGE_SIZE,
+                  offset: 0,
+                });
 
           set({
             items: result.items,
@@ -78,13 +84,19 @@ export const useCommunityStore = create<CommunityState>()(
         set({ isLoading: true });
 
         try {
-          const result = await api.getCommunityItems({
-            sort: sortBy,
-            search: searchQuery || undefined,
-            tag: tagFilter || undefined,
-            limit: PAGE_SIZE,
-            offset,
-          });
+          const result =
+            sortBy === "for_you"
+              ? await api.getCommunityRecommendations({
+                  limit: PAGE_SIZE,
+                  offset,
+                })
+              : await api.getCommunityItems({
+                  sort: sortBy,
+                  search: searchQuery || undefined,
+                  tag: tagFilter || undefined,
+                  limit: PAGE_SIZE,
+                  offset,
+                });
 
           set((state) => ({
             items: [...state.items, ...result.items],

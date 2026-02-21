@@ -1,18 +1,19 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
 
 interface CommunityHeaderProps {
   sortBy: string;
   searchQuery: string;
-  onSortChange: (sort: "newest" | "popular" | "most_viewed") => void;
+  onSortChange: (sort: "newest" | "popular" | "most_viewed" | "for_you") => void;
   onSearchChange: (query: string) => void;
 }
 
-const SORT_OPTIONS = [
+const BASE_SORT_OPTIONS = [
   { value: "newest", label: "Latest" },
   { value: "popular", label: "Popular" },
   { value: "most_viewed", label: "Most Viewed" },
@@ -25,6 +26,15 @@ export function CommunityHeader({
   onSearchChange,
 }: CommunityHeaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const user = useAuthStore((s) => s.user);
+
+  const sortOptions = useMemo(
+    () =>
+      user
+        ? [{ value: "for_you" as const, label: "For You" }, ...BASE_SORT_OPTIONS]
+        : BASE_SORT_OPTIONS,
+    [user]
+  );
 
   return (
     <div className="sticky top-0 z-10 -mx-1 mb-4 space-y-3 bg-background/95 px-1 pb-1 pt-2 backdrop-blur-sm sm:-mx-3 sm:px-3">
@@ -53,7 +63,7 @@ export function CommunityHeader({
 
       {/* Tab bar — like X.com's "For you / Following" tabs */}
       <div className="flex border-b border-border">
-        {SORT_OPTIONS.map((option) => (
+        {sortOptions.map((option) => (
           <button
             key={option.value}
             onClick={() => onSortChange(option.value)}

@@ -68,6 +68,39 @@ async def get_popular_tags(
 
 
 # =============================================================================
+# Recommendations
+# =============================================================================
+
+
+@router.get("/recommendations")
+@limiter.limit("30/minute")
+async def get_recommendations(
+    request: Request,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Get personalized recommendations for the current user."""
+    user_id = get_user_id(token)
+    if not user_id:
+        return {"items": [], "total": 0, "has_more": False}
+
+    service = CommunityService(db)
+    items, total = await service.get_recommendations(
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return {
+        "items": items,
+        "total": total,
+        "has_more": offset + limit < total,
+    }
+
+
+# =============================================================================
 # Discovery Endpoints
 # =============================================================================
 

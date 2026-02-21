@@ -1,14 +1,17 @@
-"""Community service for discovery, publishing, forks, and bookmarks."""
+"""Community service for discovery, publishing, forks, bookmarks, and recommendations."""
 
 import hashlib
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, cast, func, or_, select, update
+import numpy as np
+from sqlalchemy import and_, cast, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import Text
 
+from config import get_settings
 from db.database import Bookmark, DocumentShare, File, Fork, User, utcnow
 from exceptions import BadRequestError, NotFoundError
 
@@ -334,6 +337,10 @@ class CommunityService:
 
         await self.db.commit()
         await self.db.refresh(share)
+
+        # Index embedding for recommendations (non-blocking)
+        await self.index_share_embedding(share)
+
         return share
 
     async def unpublish_share(self, share_id: str, user_id: str) -> DocumentShare:
@@ -351,6 +358,10 @@ class CommunityService:
         share.visibility = "private"
         await self.db.commit()
         await self.db.refresh(share)
+
+        # Remove embedding
+        await self.delete_share_embedding(share_id)
+
         return share
 
     async def update_share_metadata(
@@ -387,6 +398,10 @@ class CommunityService:
 
         await self.db.commit()
         await self.db.refresh(share)
+
+        # Re-index embedding with updated metadata
+        await self.index_share_embedding(share)
+
         return share
 
     # =========================================================================
@@ -836,6 +851,412 @@ class CommunityService:
         ]
 
         return items, total
+
+    # =========================================================================
+    # Recommendations
+    # =========================================================================
+
+    async def get_user_interest_tags(self, user_id: str) -> dict[str, int]:
+        """Collect interest tags from user's bookmarks, forks, and published shares."""
+        tag_counts: dict[str, int] = {}
+
+        # From bookmarks
+        bm_result = await self.db.execute(
+            select(DocumentShare.tags)
+            .join(Bookmark, Bookmark.share_id == DocumentShare.id)
+            .where(Bookmark.user_id == user_id, DocumentShare.tags.isnot(None))
+        )
+        # From forks
+        fk_result = await self.db.execute(
+            select(DocumentShare.tags)
+            .join(Fork, Fork.source_share_id == DocumentShare.id)
+            .where(Fork.user_id == user_id, DocumentShare.tags.isnot(None))
+        )
+        # From own published shares
+        own_result = await self.db.execute(
+            select(DocumentShare.tags).where(
+                DocumentShare.user_id == user_id,
+                DocumentShare.is_published == True,  # noqa: E712
+                DocumentShare.tags.isnot(None),
+            )
+        )
+
+        for result in [bm_result, fk_result, own_result]:
+            for (tags,) in result.all():
+                if isinstance(tags, list):
+                    for tag in tags:
+                        if tag:
+                            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+        return tag_counts
+
+    async def _recommend_by_tags(
+        self, user_id: str, interest_tags: dict[str, int], limit: int = 50
+    ) -> list[tuple[str, float]]:
+        """Find shares matching user's interest tags, scored by overlap count.
+
+        Returns list of (share_id, score) sorted by score descending.
+        """
+        if not interest_tags:
+            return []
+
+        now = datetime.now(UTC)
+        base_filter = and_(
+            DocumentShare.is_published == True,  # noqa: E712
+            DocumentShare.is_active == True,  # noqa: E712
+            DocumentShare.visibility == "public",
+            DocumentShare.user_id != user_id,
+            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+            DocumentShare.tags.isnot(None),
+        )
+
+        result = await self.db.execute(
+            select(DocumentShare.id, DocumentShare.tags).where(base_filter)
+        )
+        rows = result.all()
+
+        scored: list[tuple[str, float]] = []
+        for share_id, tags in rows:
+            if not isinstance(tags, list):
+                continue
+            score = sum(interest_tags.get(tag, 0) for tag in tags)
+            if score > 0:
+                scored.append((share_id, float(score)))
+
+        scored.sort(key=lambda x: -x[1])
+        return scored[:limit]
+
+    async def _recommend_by_embedding(
+        self, user_id: str, limit: int = 30
+    ) -> list[tuple[str, float]]:
+        """Find semantically similar community shares based on user's recent files.
+
+        Computes a user profile vector from the user's 5 most recent file embeddings,
+        then does ANN search against community share embeddings.
+        Returns list of (share_id, similarity_score).
+        """
+        settings = get_settings()
+        if not settings.pgvector_enabled:
+            return []
+
+        try:
+            # Get user's 5 most recent file embeddings (chunk_index=0 for first chunk)
+            user_vectors_result = await self.db.execute(
+                text("""
+                    SELECT v.embedding
+                    FROM vectors v
+                    JOIN files f ON v.file_id = f.id
+                    WHERE v.chunk_type = 'document'
+                      AND f.user_id = :user_id
+                      AND v.chunk_index = 0
+                      AND f.deleted_at IS NULL
+                    ORDER BY f.updated_at DESC
+                    LIMIT 5
+                """),
+                {"user_id": user_id},
+            )
+            user_rows = user_vectors_result.fetchall()
+
+            if not user_rows:
+                return []
+
+            # Compute average embedding (user profile vector)
+            embeddings = [np.array(json.loads(row.embedding)) for row in user_rows]
+            profile_vector = np.mean(embeddings, axis=0).tolist()
+
+            # ANN search against community share embeddings
+            result = await self.db.execute(
+                text("""
+                    SELECT metadata->>'share_id' as share_id,
+                           1 - (embedding <=> :embedding) as similarity
+                    FROM vectors
+                    WHERE chunk_type = 'community'
+                      AND (metadata->>'user_id') != :user_id
+                    ORDER BY embedding <=> :embedding
+                    LIMIT :limit
+                """),
+                {
+                    "embedding": str(profile_vector),
+                    "user_id": user_id,
+                    "limit": limit,
+                },
+            )
+            rows = result.fetchall()
+
+            return [(row.share_id, float(row.similarity)) for row in rows if row.share_id]
+
+        except Exception as e:
+            logger.warning("Embedding recommendation failed: %s", e)
+            return []
+
+    async def _recommend_by_trending(self, limit: int = 30) -> list[tuple[str, float]]:
+        """Get trending items with time decay.
+
+        score = (view_count + fork_count*5 + bookmark_count*3 + comment_count*2)
+                / (1 + days_since_published / 30)
+        """
+        now = datetime.now(UTC)
+        base_filter = and_(
+            DocumentShare.is_published == True,  # noqa: E712
+            DocumentShare.is_active == True,  # noqa: E712
+            DocumentShare.visibility == "public",
+            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+        )
+
+        result = await self.db.execute(
+            select(
+                DocumentShare.id,
+                DocumentShare.view_count,
+                DocumentShare.fork_count,
+                DocumentShare.bookmark_count,
+                DocumentShare.comment_count,
+                DocumentShare.published_at,
+            ).where(base_filter)
+        )
+        rows = result.all()
+
+        scored: list[tuple[str, float]] = []
+        for row in rows:
+            raw_score = (
+                row.view_count + row.fork_count * 5 + row.bookmark_count * 3 + row.comment_count * 2
+            )
+            days_since = (now - row.published_at).total_seconds() / 86400 if row.published_at else 0
+            decay = 1.0 / (1.0 + days_since / 30.0)
+            scored.append((row.id, raw_score * decay))
+
+        scored.sort(key=lambda x: -x[1])
+        return scored[:limit]
+
+    @staticmethod
+    def _merge_recommendations(
+        tag_results: list[tuple[str, float]],
+        embedding_results: list[tuple[str, float]],
+        trending_results: list[tuple[str, float]],
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[str]:
+        """Merge results from 3 channels using weighted normalized scoring.
+
+        Returns ordered list of share_ids after deduplication and pagination.
+        """
+
+        def normalize(results: list[tuple[str, float]]) -> dict[str, float]:
+            if not results:
+                return {}
+            max_score = max(s for _, s in results) or 1.0
+            return {sid: s / max_score for sid, s in results}
+
+        tag_scores = normalize(tag_results)
+        emb_scores = normalize(embedding_results)
+        trend_scores = normalize(trending_results)
+
+        # Collect all share IDs
+        all_ids = set(tag_scores) | set(emb_scores) | set(trend_scores)
+
+        final_scores: list[tuple[str, float]] = []
+        for sid in all_ids:
+            score = (
+                0.5 * tag_scores.get(sid, 0.0)
+                + 0.3 * emb_scores.get(sid, 0.0)
+                + 0.2 * trend_scores.get(sid, 0.0)
+            )
+            final_scores.append((sid, score))
+
+        final_scores.sort(key=lambda x: -x[1])
+        return [sid for sid, _ in final_scores[offset : offset + limit]]
+
+    async def get_recommendations(
+        self,
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Get personalized recommendations for a user.
+
+        Strategy: tag matching (50%) + embedding similarity (30%) + trending (20%).
+        Falls back to trending if user has no interaction history.
+        """
+        interest_tags = await self.get_user_interest_tags(user_id)
+
+        # Run 3 recall channels
+        tag_results = await self._recommend_by_tags(user_id, interest_tags)
+        embedding_results = await self._recommend_by_embedding(user_id)
+        trending_results = await self._recommend_by_trending()
+
+        # If user has no personalization signals, fallback to trending only
+        if not tag_results and not embedding_results:
+            ordered_ids = [sid for sid, _ in trending_results[offset : offset + limit]]
+            total = len(trending_results)
+        else:
+            # Merge and paginate
+            all_ids_count = len(
+                {s for s, _ in tag_results}
+                | {s for s, _ in embedding_results}
+                | {s for s, _ in trending_results}
+            )
+            ordered_ids = self._merge_recommendations(
+                tag_results, embedding_results, trending_results, limit, offset
+            )
+            total = all_ids_count
+
+        if not ordered_ids:
+            return [], 0
+
+        # Fetch full share details for the ordered IDs
+        now = datetime.now(UTC)
+        base_filter = and_(
+            DocumentShare.id.in_(ordered_ids),
+            DocumentShare.is_published == True,  # noqa: E712
+            DocumentShare.is_active == True,  # noqa: E712
+            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+        )
+
+        query = (
+            select(
+                DocumentShare.id,
+                DocumentShare.share_token,
+                DocumentShare.title,
+                DocumentShare.description,
+                DocumentShare.tags,
+                DocumentShare.published_at,
+                DocumentShare.updated_at,
+                DocumentShare.view_count,
+                DocumentShare.fork_count,
+                DocumentShare.bookmark_count,
+                DocumentShare.comment_count,
+                DocumentShare.user_id,
+                File.name.label("file_name"),
+                File.is_folder,
+                User.username.label("owner_name"),
+                User.avatar_url.label("owner_avatar_url"),
+            )
+            .join(File, DocumentShare.file_id == File.id)
+            .join(User, DocumentShare.user_id == User.id)
+            .where(base_filter)
+        )
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        # Build items dict keyed by share_id for ordering
+        items_by_id: dict[str, dict] = {}
+        for row in rows:
+            items_by_id[row.id] = {
+                "share_id": row.id,
+                "share_token": row.share_token,
+                "title": row.title or row.file_name,
+                "description": row.description,
+                "tags": row.tags or [],
+                "owner": {
+                    "id": row.user_id,
+                    "username": row.owner_name,
+                    "avatar_url": row.owner_avatar_url,
+                },
+                "is_folder": row.is_folder,
+                "view_count": row.view_count,
+                "fork_count": row.fork_count,
+                "bookmark_count": row.bookmark_count,
+                "comment_count": row.comment_count,
+                "published_at": row.published_at.isoformat() if row.published_at else "",
+                "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+                "is_bookmarked": False,
+                "is_forked": False,
+            }
+
+        # Preserve recommendation order
+        items = [items_by_id[sid] for sid in ordered_ids if sid in items_by_id]
+
+        # Annotate bookmark/fork status
+        if items:
+            share_ids = [item["share_id"] for item in items]
+            bm_result = await self.db.execute(
+                select(Bookmark.share_id).where(
+                    Bookmark.user_id == user_id,
+                    Bookmark.share_id.in_(share_ids),
+                )
+            )
+            bookmarked_ids = {row[0] for row in bm_result.all()}
+
+            fk_result = await self.db.execute(
+                select(Fork.source_share_id).where(
+                    Fork.user_id == user_id,
+                    Fork.source_share_id.in_(share_ids),
+                )
+            )
+            forked_ids = {row[0] for row in fk_result.all()}
+
+            for item in items:
+                item["is_bookmarked"] = item["share_id"] in bookmarked_ids
+                item["is_forked"] = item["share_id"] in forked_ids
+
+        return items, total
+
+    # =========================================================================
+    # Share Embedding Indexing
+    # =========================================================================
+
+    async def index_share_embedding(self, share: DocumentShare) -> None:
+        """Index a published share's metadata for recommendation similarity search."""
+        settings = get_settings()
+        if not settings.pgvector_enabled:
+            return
+
+        try:
+            from services.rag.embedding import get_embedding
+
+            text_parts = []
+            if share.title:
+                text_parts.append(share.title)
+            if share.description:
+                text_parts.append(share.description)
+            if share.tags and isinstance(share.tags, list):
+                text_parts.append(" ".join(share.tags))
+
+            combined_text = " ".join(text_parts)
+            if len(combined_text) < 5:
+                return
+
+            embedding = await get_embedding(combined_text)
+            vector_id = f"community_{share.id}"
+
+            await self.db.execute(
+                text("""
+                    INSERT INTO vectors (id, content, embedding, chunk_type, file_id, metadata)
+                    VALUES (:id, :content, :embedding, 'community', :file_id, CAST(:meta AS jsonb))
+                    ON CONFLICT (id) DO UPDATE SET
+                        content = EXCLUDED.content,
+                        embedding = EXCLUDED.embedding,
+                        metadata = EXCLUDED.metadata
+                """),
+                {
+                    "id": vector_id,
+                    "content": combined_text,
+                    "embedding": str(embedding),
+                    "file_id": share.file_id,
+                    "meta": json.dumps({"share_id": share.id, "user_id": share.user_id}),
+                },
+            )
+            await self.db.commit()
+            logger.info("Indexed community embedding for share %s", share.id)
+
+        except Exception as e:
+            logger.warning("Failed to index share embedding for %s: %s", share.id, e)
+
+    async def delete_share_embedding(self, share_id: str) -> None:
+        """Delete the community embedding for a share."""
+        settings = get_settings()
+        if not settings.pgvector_enabled:
+            return
+
+        try:
+            vector_id = f"community_{share_id}"
+            await self.db.execute(
+                text("DELETE FROM vectors WHERE id = :id"),
+                {"id": vector_id},
+            )
+            await self.db.commit()
+        except Exception as e:
+            logger.warning("Failed to delete share embedding for %s: %s", share_id, e)
 
     # =========================================================================
     # Internal Helpers

@@ -1286,6 +1286,17 @@ export class ApiClient {
     return this.request<CommunityDetailResponse>(`/api/community/discover/${shareToken}`);
   }
 
+  async getCommunityRecommendations(
+    params: { limit?: number; offset?: number } = {}
+  ): Promise<CommunityListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.limit) searchParams.set("limit", params.limit.toString());
+    if (params.offset) searchParams.set("offset", params.offset.toString());
+
+    const url = `/api/community/recommendations?${searchParams.toString()}`;
+    return this.request<CommunityListResponse>(url);
+  }
+
   // ==========================================================================
   // Invite API
   // ==========================================================================
