@@ -72,6 +72,13 @@ All content uses Markdown:
 - Code: triple backticks
 </content_format>
 
+<title_handling>
+The document title is managed separately — it appears as "File: {name}" above the content.
+- Do NOT include the document title as a "# heading" at the start of content
+- When using replace_document, start directly with body text or section headings (##), NOT the title
+- The content field contains ONLY the body, never the title
+</title_handling>
+
 <workflow>
 1. Check if skills are available (list_skills) for the task type
 2. If a matching skill exists: read_skill_instructions FIRST

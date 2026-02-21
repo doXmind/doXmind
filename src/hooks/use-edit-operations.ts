@@ -70,6 +70,12 @@ export function useEditOperations() {
           }
         }
 
+        // Rename file if backend returned a different file_name (e.g. title extracted from H1)
+        const newFileName = fileEdits[0]?.file_name;
+        if (newFileName && newFileName !== file.name) {
+          useFileStore.getState().renameFile(fileId, newFileName);
+        }
+
         if (allHunks.length === 0) continue;
 
         // Check if we're already in review mode for this file
