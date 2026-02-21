@@ -1076,6 +1076,18 @@ class CommunityService:
         Strategy: tag matching (50%) + embedding similarity (30%) + trending (20%).
         Falls back to trending if user has no interaction history.
         """
+        # Get actual total published count (for sidebar display)
+        now = datetime.now(UTC)
+        total_result = await self.db.execute(
+            select(func.count(DocumentShare.id)).where(
+                DocumentShare.is_published == True,  # noqa: E712
+                DocumentShare.is_active == True,  # noqa: E712
+                DocumentShare.visibility == "public",
+                or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+            )
+        )
+        total = total_result.scalar() or 0
+
         interest_tags = await self.get_user_interest_tags(user_id)
 
         # Run 3 recall channels
@@ -1086,18 +1098,11 @@ class CommunityService:
         # If user has no personalization signals, fallback to trending only
         if not tag_results and not embedding_results:
             ordered_ids = [sid for sid, _ in trending_results[offset : offset + limit]]
-            total = len(trending_results)
         else:
             # Merge and paginate
-            all_ids_count = len(
-                {s for s, _ in tag_results}
-                | {s for s, _ in embedding_results}
-                | {s for s, _ in trending_results}
-            )
             ordered_ids = self._merge_recommendations(
                 tag_results, embedding_results, trending_results, limit, offset
             )
-            total = all_ids_count
 
         if not ordered_ids:
             return [], 0

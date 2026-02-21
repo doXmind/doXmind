@@ -8,6 +8,7 @@ import { CommunityHeader } from "@/components/community/community-header";
 import { CommunityFeed } from "@/components/community/community-feed";
 import { TagFilterBar } from "@/components/community/tag-filter-bar";
 import { useCommunityStore } from "@/stores/community-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { AlertCircle, Loader2 } from "lucide-react";
 
 function CommunityContent() {
@@ -49,6 +50,8 @@ function CommunityContent() {
       useCommunityStore.setState({
         sortBy: urlSort as "newest" | "popular" | "most_viewed" | "for_you",
       });
+    } else if (useAuthStore.getState().user) {
+      useCommunityStore.setState({ sortBy: "for_you" });
     }
     if (urlSearch) {
       useCommunityStore.setState({ searchQuery: urlSearch });
