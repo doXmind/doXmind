@@ -1,7 +1,7 @@
 """User Settings API endpoints.
 
 Manages user API keys and model preferences.
-Allows users to use their own Anthropic API key for custom model selection.
+Allows users to use their own OpenRouter API key for custom model selection.
 """
 
 import logging
@@ -35,8 +35,8 @@ class APIKeyRequest(BaseModel):
     @classmethod
     def validate_format(cls, v: str) -> str:
         v = v.strip()
-        if not v.startswith("sk-ant-"):
-            raise ValueError("Invalid API key format. Key should start with 'sk-ant-'")
+        if not v.startswith("sk-or-"):
+            raise ValueError("Invalid API key format. Key should start with 'sk-or-'")
         if len(v) < 20 or len(v) > 300:
             raise ValueError("Invalid API key length")
         return v
@@ -92,7 +92,7 @@ async def save_api_key(
     db: AsyncSession = Depends(get_db),
     auth: TokenData = Depends(require_auth),
 ):
-    """Save user's Anthropic API key (encrypted).
+    """Save user's OpenRouter API key (encrypted).
 
     The API key is validated before saving.
     """

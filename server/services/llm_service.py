@@ -1,9 +1,9 @@
-"""LLM Service for interacting with Claude API."""
+"""LLM Service for interacting with LLM API via OpenRouter."""
 
 import logging
 from collections.abc import AsyncIterator
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from config import get_settings
 
@@ -11,14 +11,17 @@ logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Service for LLM interactions."""
+    """Service for LLM interactions via OpenRouter (OpenAI-compatible)."""
 
-    def __init__(self, model: str | None = None):
+    def __init__(self, model: str | None = None, api_key: str | None = None):
         settings = get_settings()
-        api_key = settings.anthropic_api_key
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY is not set in environment or .env file")
-        self.client = AsyncAnthropic(api_key=api_key)
+        effective_api_key = api_key or settings.openrouter_api_key
+        if not effective_api_key:
+            raise ValueError("OPENROUTER_API_KEY is not set in environment or .env file")
+        self.client = AsyncOpenAI(
+            api_key=effective_api_key,
+            base_url=settings.openrouter_base_url,
+        )
         self.model = model or settings.default_model
         self.max_tokens = settings.max_output_tokens
 
@@ -29,18 +32,31 @@ class LLMService:
         max_tokens: int | None = None,
         temperature: float = 0.7,
         stop: list[str] | None = None,
+        extra_body: dict | None = None,
     ) -> str:
         """Generate a completion."""
         try:
-            message = await self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens or self.max_tokens,
-                temperature=temperature,
-                system=system or "You are a helpful AI writing assistant.",
-                messages=[{"role": "user", "content": prompt}],
-                stop_sequences=stop,
-            )
-            return message.content[0].text
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            else:
+                messages.append(
+                    {"role": "system", "content": "You are a helpful AI writing assistant."}
+                )
+            messages.append({"role": "user", "content": prompt})
+
+            kwargs = {
+                "model": self.model,
+                "max_tokens": max_tokens or self.max_tokens,
+                "temperature": temperature,
+                "messages": messages,
+                "stop": stop,
+            }
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+
+            response = await self.client.chat.completions.create(**kwargs)
+            return response.choices[0].message.content or ""
         except Exception as e:
             logger.error(f"LLM completion error: {e}")
             raise
@@ -54,15 +70,25 @@ class LLMService:
     ) -> AsyncIterator[str]:
         """Stream a completion."""
         try:
-            async with self.client.messages.stream(
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            else:
+                messages.append(
+                    {"role": "system", "content": "You are a helpful AI writing assistant."}
+                )
+            messages.append({"role": "user", "content": user})
+
+            stream = await self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature,
-                system=system or "You are a helpful AI writing assistant.",
-                messages=[{"role": "user", "content": user}],
-            ) as stream:
-                async for text in stream.text_stream:
-                    yield text
+                messages=messages,
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
         except Exception as e:
             logger.error(f"LLM streaming error: {e}")
             raise
@@ -76,20 +102,26 @@ class LLMService:
     ) -> AsyncIterator[str]:
         """Stream a chat completion with message history."""
         try:
-            # Convert messages to Anthropic format
-            anthropic_messages = []
+            openai_messages = []
+            if system:
+                openai_messages.append({"role": "system", "content": system})
+            else:
+                openai_messages.append(
+                    {"role": "system", "content": "You are a helpful AI writing assistant."}
+                )
             for msg in messages:
-                anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
+                openai_messages.append({"role": msg["role"], "content": msg["content"]})
 
-            async with self.client.messages.stream(
+            stream = await self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature,
-                system=system or "You are a helpful AI writing assistant.",
-                messages=anthropic_messages,
-            ) as stream:
-                async for text in stream.text_stream:
-                    yield text
+                messages=openai_messages,
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
         except Exception as e:
             logger.error(f"LLM chat error: {e}")
             raise
@@ -102,20 +134,46 @@ class LLMService:
         max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> dict:
-        """Generate a structured JSON completion using Claude's JSON mode."""
+        """Generate a structured JSON completion.
+
+        Uses prompt-based JSON enforcement since structured outputs
+        may not be available through all OpenRouter providers.
+        """
+        import json
+
+        # Build a system prompt that enforces JSON output
+        json_system = (system or "You are a helpful AI writing assistant.") + (
+            "\n\nIMPORTANT: You MUST respond with valid JSON only. "
+            "No markdown, no explanations, no code fences. Just raw JSON."
+        )
+
+        # Include the schema in the user prompt for guidance
+        enhanced_prompt = (
+            f"{prompt}\n\n"
+            f"Respond with JSON matching this schema:\n{json.dumps(json_schema, indent=2)}"
+        )
+
         try:
-            message = await self.client.beta.messages.create(
+            messages = [
+                {"role": "system", "content": json_system},
+                {"role": "user", "content": enhanced_prompt},
+            ]
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature,
-                system=system or "You are a helpful AI writing assistant.",
-                messages=[{"role": "user", "content": prompt}],
-                betas=["structured-outputs-2025-11-13"],
-                output_format={"type": "json_schema", "schema": json_schema},
+                messages=messages,
             )
-            import json
-
-            return json.loads(message.content[0].text)
+            text = (response.choices[0].message.content or "").strip()
+            # Strip markdown code fences if present
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+                if text.endswith("```"):
+                    text = text[:-3].strip()
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            logger.error(f"LLM JSON parse error: {e}")
+            raise
         except Exception as e:
             logger.error(f"LLM JSON completion error: {e}")
             raise

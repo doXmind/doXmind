@@ -25,10 +25,13 @@ class Settings(BaseSettings):
     # =========================================================================
     # API Keys
     # =========================================================================
-    anthropic_api_key: str = ""
-    openai_api_key: str = ""  # Required for pgvector embeddings
-    google_api_key: str = ""  # For Gemini file conversion (PDF, DOCX, PPTX to markdown)
+    openrouter_api_key: str = ""  # OpenRouter API key for LLM access
+    openrouter_base_url: str = (
+        "https://openrouter.ai/api/v1"  # OpenRouter OpenAI-compatible endpoint
+    )
+    openai_api_key: str = ""  # Required for Whisper speech-to-text only
     courtlistener_api_key: str = ""  # For legal case search
+    brave_search_api_key: str = ""  # For Brave web search
 
     # =========================================================================
     # Security / JWT
@@ -82,7 +85,6 @@ class Settings(BaseSettings):
     # =========================================================================
     # Format: postgresql+asyncpg://user:password@host:port/dbname
     # Local Docker uses port 5433 to avoid conflict with local PostgreSQL
-    # Heroku provides postgres://, which is auto-converted
     database_url: str = "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind"
 
     # Connection pool tuning (per-worker settings)
@@ -93,16 +95,10 @@ class Settings(BaseSettings):
 
     @property
     def async_database_url(self) -> str:
-        """Get database URL with async driver.
-
-        Handles Heroku's postgres:// format by converting to postgresql+asyncpg://
-        """
+        """Get database URL with async driver."""
         url = self.database_url
 
-        # Heroku uses postgres:// but SQLAlchemy needs postgresql://
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-        elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        if url.startswith("postgresql://") and "+asyncpg" not in url:
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
         return url
@@ -128,13 +124,13 @@ class Settings(BaseSettings):
     debug: bool = False  # IMPORTANT: Default to False for security
 
     # =========================================================================
-    # AI Models
+    # AI Models (OpenRouter format)
     # =========================================================================
-    default_model: str = "claude-haiku-4-5-20251001"
-    fast_model: str = (
-        "claude-haiku-4-5-20251001"  # For quick operations (autocomplete, quick edits)
-    )
-    smart_model: str = "claude-sonnet-4-5-20250929"  # For complex operations (chat, analysis)
+    default_model: str = "z-ai/glm-5"
+    fast_model: str = "z-ai/glm-4.7-flash"  # For quick operations (autocomplete, quick edits)
+    smart_model: str = "z-ai/glm-5"  # For complex operations (chat, analysis)
+    embedding_model: str = "openai/text-embedding-3-small"  # For vector search embeddings
+    file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
 
     # =========================================================================
     # User API Key Settings
@@ -145,23 +141,22 @@ class Settings(BaseSettings):
 
     # Models available when user has their own API key
     available_models: list[str] = [
-        "claude-sonnet-4-5-20250929",
-        "claude-opus-4-6",
-        "claude-haiku-4-5-20251001",
+        "z-ai/glm-5",
+        "z-ai/glm-4.7-flash",
     ]
 
     # =========================================================================
-    # Web Tools Settings (Anthropic server-side tools)
+    # Web Tools Settings (client-side tools via Brave Search)
     # =========================================================================
     web_search_enabled: bool = False  # Default off, user can enable
-    web_search_max_uses: int = 5  # Max searches per request
-    # Web fetch is always enabled (free, only costs tokens)
-    web_fetch_max_uses: int = 10  # Max fetches per request
+    web_fetch_enabled: bool = True  # Web fetch is always available
 
     # =========================================================================
-    # Code Execution Settings (Anthropic server-side tool)
+    # Code Execution Settings (client-side Python subprocess)
     # =========================================================================
     code_execution_enabled: bool = False  # Default off, user can enable
+    code_execution_timeout: int = 30  # Max execution time in seconds
+    code_execution_max_output: int = 51200  # Max output size in bytes (50KB)
 
     # =========================================================================
     # Limits - Centralized configuration values
@@ -177,7 +172,7 @@ class Settings(BaseSettings):
     # Agent limits
     max_agent_iterations: int = 10  # Maximum tool use iterations
     streaming_timeout_seconds: int = 300  # 5 minutes max for streaming responses
-    streaming_heartbeat_interval: int = 25  # Seconds between heartbeats (Heroku closes at 55s)
+    streaming_heartbeat_interval: int = 25  # Seconds between heartbeats
 
     # Content limits
     max_document_context_chars: int = 50000  # Max chars for document context in chat
@@ -228,7 +223,7 @@ class Settings(BaseSettings):
     # Reranking settings (GPT-based with structured outputs)
     reranking_enabled: bool = False  # Disabled by default (adds latency/cost)
     reranking_candidates: int = 20  # Number of candidates to fetch before reranking
-    reranking_model: str = "gpt-5-nano"  # Fast & cheap model for reranking
+    reranking_model: str = "openai/gpt-5-nano"  # Fast & cheap model for reranking (via OpenRouter)
 
     class Config:
         env_file = str(_BASE_DIR / ".env")
@@ -267,10 +262,10 @@ class Settings(BaseSettings):
                 "Generate one with: openssl rand -hex 32"
             )
 
-        if not self.anthropic_api_key:
+        if not self.openrouter_api_key:
             # Only warn — BYOK mode may not need a server key
             logger.warning(
-                "ANTHROPIC_API_KEY not configured. "
+                "OPENROUTER_API_KEY not configured. "
                 "Server-side AI features will be unavailable unless users provide their own key."
             )
 
@@ -299,7 +294,6 @@ CORS_ORIGINS = [
     "https://beta.doxmind.com",
     "https://doxmind.com",
     "https://www.doxmind.com",
-    "https://doxmind-mini-frontend-2fac03803995.herokuapp.com",
 ]
 
 

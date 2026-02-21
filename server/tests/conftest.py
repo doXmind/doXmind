@@ -33,7 +33,7 @@ TEST_DATABASE_URL = os.environ.get(
 os.environ["DEBUG"] = "true"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
-os.environ.setdefault("ANTHROPIC_API_KEY", "test-api-key")
+os.environ.setdefault("OPENROUTER_API_KEY", "test-api-key")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("PGVECTOR_ENABLED", "false")  # Disable vector operations in tests
 
@@ -242,74 +242,71 @@ def mock_rag_service():
 
 
 # =============================================================================
-# AI Service Mock Fixtures
+# AI Service Mock Fixtures (OpenAI SDK via OpenRouter)
 # =============================================================================
 
 
-class MockContentBlock:
-    """Mock Anthropic ContentBlock."""
+class MockOpenAIChoice:
+    """Mock OpenAI Choice object."""
 
     def __init__(self, text: str = "Hello from AI"):
-        self.text = text
-        self.type = "text"
+        self.message = MagicMock(content=text)
+        self.finish_reason = "stop"
 
 
-class MockMessage:
-    """Mock Anthropic Message response."""
+class MockOpenAIChatCompletion:
+    """Mock OpenAI ChatCompletion response."""
 
     def __init__(self, text: str = "Hello from AI"):
-        self.content = [MockContentBlock(text)]
-        self.model = "claude-3-5-sonnet-20241022"
-        self.stop_reason = "end_turn"
-        self.usage = MagicMock(input_tokens=100, output_tokens=50)
+        self.choices = [MockOpenAIChoice(text)]
+        self.model = "z-ai/glm-5"
+        self.usage = MagicMock(prompt_tokens=100, completion_tokens=50)
 
 
-class MockStreamManager:
-    """Mock Anthropic stream context manager."""
+class MockOpenAIStreamChunk:
+    """Mock OpenAI streaming chunk."""
 
-    def __init__(self, texts: list[str]):
-        self.texts = texts
+    def __init__(self, content: str | None = None, finish_reason: str | None = None):
+        delta = MagicMock()
+        delta.content = content
+        delta.tool_calls = None
+        choice = MagicMock()
+        choice.delta = delta
+        choice.finish_reason = finish_reason
+        self.choices = [choice]
+        self.usage = None
 
-    async def __aenter__(self):
+
+class MockOpenAIAsyncStream:
+    """Mock async iterator for OpenAI streaming."""
+
+    def __init__(self, chunks: list):
+        self.chunks = chunks
+
+    def __aiter__(self):
         return self
 
-    async def __aexit__(self, *args):
-        pass
-
-    @property
-    def text_stream(self):
-        """Async generator for streaming text."""
-        return self._text_stream()
-
-    async def _text_stream(self):
-        for item in self.texts:
-            yield item
+    async def __anext__(self):
+        if not self.chunks:
+            raise StopAsyncIteration
+        return self.chunks.pop(0)
 
 
 @pytest.fixture
-def mock_anthropic_client():
-    """Mock Anthropic AsyncAnthropic client."""
+def mock_openai_client():
+    """Mock OpenAI AsyncOpenAI client."""
     mock = MagicMock()
 
-    # Mock messages.create for non-streaming
-    mock.messages.create = AsyncMock(return_value=MockMessage("Test AI response"))
-
-    # Mock messages.stream for streaming
-    def create_stream(*args, **kwargs):
-        return MockStreamManager(["Hello ", "from ", "AI!"])
-
-    mock.messages.stream = create_stream
-
-    # Mock beta.messages.create for JSON mode
-    mock.beta.messages.create = AsyncMock(
-        return_value=MockMessage('{"result": "structured response"}')
+    # Mock chat.completions.create for non-streaming
+    mock.chat.completions.create = AsyncMock(
+        return_value=MockOpenAIChatCompletion("Test AI response")
     )
 
     return mock
 
 
 @pytest.fixture
-def mock_anthropic_stream_events():
+def mock_stream_events():
     """Sample SSE events for testing streaming responses."""
     return [
         {"type": "text", "content": "Hello "},

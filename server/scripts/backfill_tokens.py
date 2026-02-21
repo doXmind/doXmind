@@ -1,7 +1,7 @@
 """
 Backfill missing token counts for existing messages.
 
-This script uses Anthropic's count_tokens API to calculate token counts
+This script estimates token counts using a simple heuristic (chars / 4)
 for messages that don't have input_tokens or output_tokens set.
 
 Usage:
@@ -24,27 +24,16 @@ import sys
 # Add server directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import anthropic
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from config import get_settings
 
-
-def count_tokens_for_text(client: anthropic.Anthropic, text: str, model: str) -> int:
-    """Count tokens for a given text using Anthropic's API."""
-    if not text or not text.strip():
+def count_tokens_for_text(content: str) -> int:
+    """Estimate token count for a given text using chars/4 heuristic."""
+    if not content or not content.strip():
         return 0
-
-    try:
-        result = client.messages.count_tokens(
-            model=model, messages=[{"role": "user", "content": text}]
-        )
-        return result.input_tokens
-    except Exception as e:
-        print(f"  Warning: Failed to count tokens: {e}")
-        return 0
+    return max(1, len(content) // 4)
 
 
 async def get_session(database_url: str | None = None):
@@ -105,10 +94,6 @@ async def backfill_tokens(
     database_url: str | None = None, dry_run: bool = False, batch_size: int = 50
 ):
     """Backfill token counts for messages with missing data."""
-    settings = get_settings()
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    model = "claude-sonnet-4-20250514"
-
     db = await get_session(database_url)
 
     try:
@@ -175,7 +160,7 @@ async def backfill_tokens(
                     output_text = content or ""
                     if thinking:
                         output_text = f"{thinking}\n\n{output_text}"
-                    calculated_output = count_tokens_for_text(client, output_text, model)
+                    calculated_output = count_tokens_for_text(output_text)
                     updates.append(f"output_tokens={calculated_output}")
                     update_values["output_tokens"] = str(calculated_output)
                     batch_updated += 1
@@ -188,7 +173,7 @@ async def backfill_tokens(
                 # Calculate input tokens for user messages
                 if role == "user" and input_tokens is None:
                     input_text = content or ""
-                    calculated_input = count_tokens_for_text(client, input_text, model)
+                    calculated_input = count_tokens_for_text(input_text)
                     updates.append(f"input_tokens={calculated_input}")
                     update_values["input_tokens"] = str(calculated_input)
                     batch_updated += 1

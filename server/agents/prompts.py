@@ -12,7 +12,9 @@ from prompts.domains.edit import get_edit_instruction
 from prompts.domains.writing import build_kb_context, build_writing_prompt
 
 
-def get_writing_system_prompt(mode: str, files: list[dict]) -> str:
+def get_writing_system_prompt(
+    mode: str, files: list[dict], data_files_metadata: list[dict] | None = None
+) -> str:
     """Generate system prompt for the writing agent with document editing capabilities.
 
     This prompt instructs the agent to act like "Cursor for Writing" - directly
@@ -21,11 +23,12 @@ def get_writing_system_prompt(mode: str, files: list[dict]) -> str:
     Args:
         mode: Agent mode ("edit" or "analyze")
         files: List of file contexts
+        data_files_metadata: Optional list of data files metadata for code execution
 
     Returns:
         System prompt string
     """
-    return build_writing_prompt(mode, files)
+    return build_writing_prompt(mode, files, data_files_metadata=data_files_metadata)
 
 
 # Keep the old function for backward compatibility

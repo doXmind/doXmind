@@ -1,8 +1,8 @@
-"""API Key service for managing user Anthropic API keys and model preferences."""
+"""API Key service for managing user OpenRouter API keys and model preferences."""
 
 import logging
 
-from anthropic import AsyncAnthropic
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,28 +109,27 @@ class APIKeyService:
         )
 
     async def validate_api_key(self, api_key: str) -> tuple[bool, str | None]:
-        """Validate an API key by calling the List Models endpoint (zero token cost).
+        """Validate an OpenRouter API key using the /auth/key endpoint.
 
         Returns:
             Tuple of (is_valid, error_message).
             If valid, error_message is None.
         """
         try:
-            client = AsyncAnthropic(api_key=api_key)
-            # Use List Models endpoint - authenticates the key without consuming tokens
-            await client.models.list(limit=1)
-            return True, None
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    "https://openrouter.ai/api/v1/auth/key",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if response.status_code == 200:
+                    return True, None
+                elif response.status_code == 401:
+                    return False, "Invalid API key"
+                else:
+                    return False, f"Validation failed (HTTP {response.status_code})"
         except Exception as e:
-            error_msg = str(e)
-            if "authentication" in error_msg.lower() or "invalid" in error_msg.lower():
-                return False, "Invalid API key"
-            elif "rate" in error_msg.lower():
-                return False, "API key rate limited"
-            elif "permission" in error_msg.lower():
-                return False, "API key lacks required permissions"
-            else:
-                logger.warning(f"API key validation failed: {error_msg}")
-                return False, "Failed to validate API key"
+            logger.warning(f"API key validation failed: {e}")
+            return False, "Failed to validate API key"
 
     def has_api_key(self, settings: UserAPISettings | None) -> bool:
         """Check if user has configured an API key."""

@@ -102,14 +102,15 @@ export function FilesSidebar() {
     e.target.value = "";
 
     setIsImporting(true);
+    const toastId = toast.loading(`Importing "${file.name}"...`);
     try {
       const newId = await importFile(file, currentFolderId);
       router.push(`/editor/${newId}`);
-      toast.success(`Imported "${file.name}" successfully`);
+      toast.success(`Imported "${file.name}" successfully`, { id: toastId });
     } catch (error) {
       log.error("Failed to import file", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      toast.error(title, { id: toastId, description });
     } finally {
       setIsImporting(false);
     }

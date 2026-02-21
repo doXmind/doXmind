@@ -62,13 +62,13 @@ export function TodoProgress({ todos, className }: TodoProgressProps) {
       {/* Todo items */}
       <ul className="space-y-1">
         <AnimatePresence mode="popLayout">
-          {todos.map((todo) => {
+          {todos.map((todo, index) => {
             const config = statusConfig[todo.status];
             const Icon = config.icon;
 
             return (
               <motion.li
-                key={todo.id}
+                key={todo.id || `todo-${index}`}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}

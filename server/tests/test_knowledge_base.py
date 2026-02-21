@@ -899,12 +899,12 @@ class TestExtractTextContent:
     """Tests for extract_text_content function."""
 
     @pytest.mark.asyncio
-    async def test_extract_calls_gemini_converter(self):
-        """Should call Gemini converter for extraction."""
+    async def test_extract_calls_converter(self):
+        """Should call file converter for extraction."""
         from api.knowledge_base import extract_text_content
 
         with (
-            patch("api.knowledge_base.is_gemini_configured", return_value=True),
+            patch("api.knowledge_base.is_converter_configured", return_value=True),
             patch("api.knowledge_base.convert_file_to_markdown") as mock_convert,
         ):
             mock_convert.return_value = "Extracted text"
@@ -915,12 +915,12 @@ class TestExtractTextContent:
             mock_convert.assert_called_once_with(b"content", "test.pdf", ".pdf")
 
     @pytest.mark.asyncio
-    async def test_extract_raises_when_gemini_not_configured(self):
-        """Should raise ValueError when Gemini API key is not configured."""
+    async def test_extract_raises_when_converter_not_configured(self):
+        """Should raise ValueError when OPENROUTER_API_KEY is not configured."""
         from api.knowledge_base import extract_text_content
 
         with (
-            patch("api.knowledge_base.is_gemini_configured", return_value=False),
-            pytest.raises(ValueError, match="GEMINI_API_KEY"),
+            patch("api.knowledge_base.is_converter_configured", return_value=False),
+            pytest.raises(ValueError, match="OPENROUTER_API_KEY"),
         ):
             await extract_text_content(b"content", "test.pdf", ".pdf")

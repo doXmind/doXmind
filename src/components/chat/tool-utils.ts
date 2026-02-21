@@ -38,6 +38,11 @@ export function getToolIcon(toolName: string) {
     case "list_kb_documents":
     case "read_skill_knowledge":
       return BookOpen;
+    // KB Agent tools (home page)
+    case "search_files":
+      return Search;
+    case "read_file_sections":
+      return BookOpen;
     // Web tools
     case "web_search":
     case "Web Search":
@@ -93,6 +98,11 @@ export function getToolDisplayName(toolName: string) {
       return "Reading KB document";
     case "list_kb_documents":
       return "Listing KB documents";
+    // KB Agent tools (home page)
+    case "search_files":
+      return "Searching documents";
+    case "read_file_sections":
+      return "Reading document";
     // Web tools
     case "web_search":
     case "Web Search":

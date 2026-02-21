@@ -171,7 +171,7 @@ async def chat_stream(
             )
             all_data_files = data_files_result.scalars().all()
 
-            # Data files metadata (for system prompt - tells AI what files are available)
+            # Data files metadata (for system prompt and code execution file access)
             data_files_metadata = [
                 {
                     "id": df.id,
@@ -179,6 +179,7 @@ async def chat_stream(
                     "file_type": df.file_type,
                     "row_count": df.row_count,
                     "column_names": df.column_names,
+                    "storage_path": df.storage_path,
                 }
                 for df in all_data_files
             ]
@@ -204,9 +205,6 @@ async def chat_stream(
                             "filename": data_file.original_filename,
                             "mime_type": data_file.mime_type,
                             "content": content,
-                            # Claude Files API info for optimized upload
-                            "claude_file_id": data_file.claude_file_id,
-                            "claude_upload_status": data_file.claude_upload_status or "pending",
                             "file_size": data_file.file_size,
                         }
                     return None
@@ -244,15 +242,12 @@ async def chat_stream(
         try:
             # Create agent with KB attachments, data files metadata, and web tools
             # Skills are auto-detected by the agent based on context
-            # Code execution is auto-enabled when data files are present
+            # Code execution is always enabled (useful for calculations even without data files)
             agent = WritingAgent(
                 mode=request.mode,
                 kb_attachments=kb_attachments if kb_attachments else None,
                 data_files_metadata=data_files_metadata if data_files_metadata else None,
                 web_search_enabled=request.webSearchEnabled,
-                code_execution_enabled=bool(
-                    data_files_content
-                ),  # Auto-enable when data files present
                 db=db,
                 api_key=user_api_key,
                 model=user_model,

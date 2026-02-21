@@ -3,9 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { cn } from "@/lib/utils";
+import { renderMermaidSvg } from "@/lib/mermaid-renderer";
 import { MermaidEditorPanel } from "./mermaid-editor-panel";
-
-let renderCounter = 0;
 
 /**
  * Mermaid Node View Component
@@ -39,16 +38,7 @@ export function MermaidNodeView({
     }
 
     try {
-      const { default: mermaid } = await import("mermaid");
-      const isDark = document.documentElement.classList.contains("dark");
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: isDark ? "dark" : "default",
-        securityLevel: "loose",
-      });
-
-      const id = `mermaid-${Date.now()}-${renderCounter++}`;
-      const { svg } = await mermaid.render(id, mermaidCode);
+      const svg = await renderMermaidSvg(mermaidCode);
       targetEl.innerHTML = svg;
 
       // Make SVG responsive
@@ -69,13 +59,6 @@ export function MermaidNodeView({
         .replace(/>/g, "&gt;");
       targetEl.innerHTML = `<div class="text-destructive text-sm p-2"><p class="font-medium mb-1">Syntax error</p><pre class="text-xs opacity-70 whitespace-pre-wrap">${safeCode}</pre></div>`;
     }
-
-    // Clean up any zombie elements mermaid.js may have left in the DOM
-    document.querySelectorAll('svg[id^="mermaid-"]').forEach((el) => {
-      if (el.parentElement && !targetEl.contains(el)) {
-        el.remove();
-      }
-    });
   }, []);
 
   // Render final diagram when not editing

@@ -20,7 +20,7 @@ from exceptions import (
     UnsupportedFileTypeError,
 )
 from services.auth_service import TokenData, require_auth
-from services.gemini_converter import convert_file_to_markdown, is_gemini_configured
+from services.gemini_converter import convert_file_to_markdown, is_converter_configured
 from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -100,12 +100,12 @@ async def import_file(
             # Already markdown, just decode
             md_content = content.decode("utf-8")
         else:
-            # Check if Gemini is configured
-            if not is_gemini_configured():
+            # Check if file conversion is configured
+            if not is_converter_configured():
                 raise InternalError(
-                    message="File conversion requires GEMINI_API_KEY to be configured"
+                    message="File conversion requires OPENROUTER_API_KEY to be configured"
                 )
-            # Use Gemini API for PDF and DOCX conversion
+            # Use LLM API for PDF and DOCX conversion
             md_content = await convert_file_to_markdown(content, file.filename, ext)
     except AppException:
         raise

@@ -7,9 +7,8 @@ pydantic-settings==2.7.0
 
 # AI / LLM
 anthropic==0.76.0
-google-genai==1.52.0
 openai==1.97.1
-tiktoken==0.8.0  # Token counting for OpenAI embeddings
+tiktoken==0.8.0  # Token counting for embeddings
 
 # Database (PostgreSQL with pgvector)
 sqlalchemy==2.0.36
@@ -47,7 +46,7 @@ fpdf2==2.8.5
 python-docx==1.1.2
 beautifulsoup4==4.12.3
 
-# Import (file conversion uses Gemini API)
+# Import (file conversion via OpenRouter)
 
 # Testing
 pytest==8.3.4

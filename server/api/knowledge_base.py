@@ -20,7 +20,7 @@ from exceptions import (
     InternalError,
     UnsupportedFileTypeError,
 )
-from services.gemini_converter import convert_file_to_markdown, is_gemini_configured
+from services.gemini_converter import convert_file_to_markdown, is_converter_configured
 from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -77,9 +77,9 @@ def get_file_extension(filename: str) -> str:
 
 
 async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
-    """Extract text content from uploaded file using Gemini API."""
-    if not is_gemini_configured():
-        raise ValueError("File conversion requires GEMINI_API_KEY to be configured")
+    """Extract text content from uploaded file via OpenRouter API."""
+    if not is_converter_configured():
+        raise ValueError("File conversion requires OPENROUTER_API_KEY to be configured")
     return await convert_file_to_markdown(content, filename, ext)
 
 

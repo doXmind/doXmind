@@ -11,10 +11,11 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agents.tools.definitions import to_openai_tools
 from config import get_settings
 from services.rag.html_utils import strip_html_tags
 from services.rag.search import RAGService
@@ -128,7 +129,7 @@ KB_TOOLS = [SEARCH_FILES_TOOL, READ_FILE_SECTIONS_TOOL]
 class KBAgent:
     """Simple agentic RAG agent for answering questions from user's documents."""
 
-    MAX_ITERATIONS = 8
+    MAX_ITERATIONS = 20
 
     def __init__(
         self,
@@ -141,8 +142,11 @@ class KBAgent:
         self.rag = RAGService(db)
         self.user_id = user_id
         settings = get_settings()
-        self.client = AsyncAnthropic(api_key=api_key or settings.anthropic_api_key)
-        self.model = model or settings.default_model or "claude-sonnet-4-5-20250929"
+        self.client = AsyncOpenAI(
+            api_key=api_key or settings.openrouter_api_key,
+            base_url=settings.openrouter_base_url,
+        )
+        self.model = model or settings.fast_model
         self.tools = KB_TOOLS
 
     async def stream(
@@ -164,73 +168,122 @@ class KBAgent:
 
         sources: list[dict[str, Any]] = []
 
-        for _iteration in range(self.MAX_ITERATIONS):
-            # Stream the Claude response
-            tool_uses: list[dict[str, Any]] = []
-            full_response_content: list[dict[str, Any]] = []
-            current_tool: dict[str, Any] | None = None
-            current_text: str = ""
+        openai_tools = to_openai_tools(self.tools)
 
-            async with self.client.messages.stream(
+        for _iteration in range(self.MAX_ITERATIONS):
+            # Stream the OpenAI-compatible response
+            tool_uses: list[dict[str, Any]] = []
+            current_text: str = ""
+            tool_call_buffers: dict[int, dict] = {}
+            in_reasoning = False
+
+            openai_messages = [{"role": "system", "content": KB_SYSTEM_PROMPT}] + messages
+
+            stream = await self.client.chat.completions.create(
                 model=self.model,
-                system=KB_SYSTEM_PROMPT,
-                messages=messages,
-                tools=self.tools,
+                messages=openai_messages,
+                tools=openai_tools,
                 max_tokens=4096,
-            ) as stream:
-                async for event in stream:
-                    if event.type == "content_block_start":
-                        block = event.content_block
-                        if block.type == "text":
-                            current_text = ""
-                        elif block.type == "tool_use":
-                            current_tool = {
-                                "id": block.id,
-                                "name": block.name,
-                                "partial_json": "",
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+
+                choice = chunk.choices[0]
+                delta = choice.delta
+
+                # Handle GLM reasoning tokens
+                reasoning_text = getattr(delta, "reasoning", None) if delta else None
+                if reasoning_text:
+                    if not in_reasoning:
+                        in_reasoning = True
+                    yield {"type": "thinking", "content": reasoning_text}
+
+                # Handle text content
+                if delta and delta.content:
+                    if in_reasoning:
+                        in_reasoning = False
+                        yield {"type": "thinking_end"}
+                    current_text += delta.content
+                    yield {"type": "text", "content": delta.content}
+
+                # Handle tool calls (streamed incrementally)
+                if delta and delta.tool_calls:
+                    if in_reasoning:
+                        in_reasoning = False
+                        yield {"type": "thinking_end"}
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+
+                        # New tool call starting
+                        if idx not in tool_call_buffers:
+                            tool_id = tc_delta.id or f"call_{idx}"
+                            tool_name = tc_delta.function.name if tc_delta.function else ""
+                            tool_call_buffers[idx] = {
+                                "id": tool_id,
+                                "name": tool_name,
+                                "arguments": "",
                             }
+                            if tool_name:
+                                yield {
+                                    "type": "tool_start",
+                                    "tool": tool_name,
+                                    "tool_id": tool_id,
+                                }
+
+                        buf = tool_call_buffers[idx]
+
+                        # Update tool name if provided later
+                        if tc_delta.function and tc_delta.function.name and not buf["name"]:
+                            buf["name"] = tc_delta.function.name
                             yield {
                                 "type": "tool_start",
-                                "tool": block.name,
-                                "tool_id": block.id,
+                                "tool": buf["name"],
+                                "tool_id": buf["id"],
                             }
 
-                    elif event.type == "content_block_delta":
-                        delta = event.delta
-                        if delta.type == "text_delta":
-                            current_text += delta.text
-                            yield {"type": "text", "content": delta.text}
-                        elif delta.type == "input_json_delta" and current_tool:
-                            current_tool["partial_json"] += delta.partial_json
+                        # Accumulate arguments
+                        if tc_delta.function and tc_delta.function.arguments:
+                            buf["arguments"] += tc_delta.function.arguments
 
-                    elif event.type == "content_block_stop":
-                        if current_tool:
-                            try:
-                                tool_input = json.loads(current_tool["partial_json"])
-                            except json.JSONDecodeError:
-                                tool_input = {}
-                            tool_use = {
-                                "type": "tool_use",
-                                "id": current_tool["id"],
-                                "name": current_tool["name"],
-                                "input": tool_input,
-                            }
-                            tool_uses.append(tool_use)
-                            full_response_content.append(tool_use)
-                            current_tool = None
-                        elif current_text:
-                            full_response_content.append({"type": "text", "text": current_text})
-                            current_text = ""
+            # Build tool_uses from buffers
+            for idx in sorted(tool_call_buffers.keys()):
+                buf = tool_call_buffers[idx]
+                try:
+                    tool_input = json.loads(buf["arguments"]) if buf["arguments"] else {}
+                except json.JSONDecodeError:
+                    tool_input = {}
+                tool_uses.append(
+                    {
+                        "type": "tool_use",
+                        "id": buf["id"],
+                        "name": buf["name"],
+                        "input": tool_input,
+                    }
+                )
 
             # If no tool uses, we're done
             if not tool_uses:
                 break
 
-            # Add assistant message to history
-            messages.append({"role": "assistant", "content": full_response_content})
+            # Add assistant message to history (OpenAI format)
+            full_response: dict[str, Any] = {"role": "assistant", "content": current_text or None}
+            full_response["tool_calls"] = [
+                {
+                    "id": tu["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tu["name"],
+                        "arguments": json.dumps(tu.get("input", {})),
+                    },
+                }
+                for tu in tool_uses
+            ]
+            messages.append(full_response)
 
             # Execute tools and collect results
-            tool_results = []
             for tool_use in tool_uses:
                 result, tool_sources = await self._execute_tool(tool_use)
                 sources.extend(tool_sources)
@@ -243,15 +296,14 @@ class KBAgent:
                     "success": True,
                 }
 
-                tool_results.append(
+                # OpenAI format: each tool result is a separate message
+                messages.append(
                     {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use["id"],
+                        "role": "tool",
+                        "tool_call_id": tool_use["id"],
                         "content": result,
                     }
                 )
-
-            messages.append({"role": "user", "content": tool_results})
 
         # Emit deduplicated sources
         if sources:
@@ -334,8 +386,8 @@ class KBAgent:
     ) -> tuple[str, list[dict[str, Any]]]:
         """Execute read_file_sections by reading chunks from the vectors table."""
         file_id = inp.get("file_id", "")
-        start = inp.get("start_section", 0)
-        num = min(inp.get("num_sections", 3), 10)
+        start = int(inp.get("start_section", 0))
+        num = min(int(inp.get("num_sections", 3)), 10)
 
         if not file_id:
             return "Error: file_id is required.", []

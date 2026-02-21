@@ -285,15 +285,18 @@ class TestGeminiConverter:
 
     @pytest.mark.asyncio
     async def test_converts_pdf_successfully(self):
-        """Should convert PDF content using Gemini."""
+        """Should convert PDF content via OpenRouter."""
         from services.gemini_converter import convert_file_to_markdown
 
         content = b"PDF content"
 
-        with patch("services.gemini_converter.get_gemini_client") as mock_client:
+        with patch("services.gemini_converter._get_client") as mock_get_client:
+            mock_client = AsyncMock()
             mock_response = MagicMock()
-            mock_response.text = "# Converted PDF Content"
-            mock_client.return_value.models.generate_content.return_value = mock_response
+            mock_response.choices = [MagicMock()]
+            mock_response.choices[0].message.content = "# Converted PDF Content"
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_get_client.return_value = mock_client
 
             result = await convert_file_to_markdown(content, "test.pdf", ".pdf")
 
@@ -306,10 +309,10 @@ class TestGeminiConverter:
 
         content = b"invalid content"
 
-        with patch("services.gemini_converter.get_gemini_client") as mock_client:
-            mock_client.return_value.models.generate_content.side_effect = Exception(
-                "Conversion failed"
-            )
+        with patch("services.gemini_converter._get_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.chat.completions.create.side_effect = Exception("Conversion failed")
+            mock_get_client.return_value = mock_client
 
             with pytest.raises(Exception, match="Conversion failed"):
                 await convert_file_to_markdown(content, "test.pdf", ".pdf")
@@ -324,27 +327,23 @@ class TestGeminiConverter:
         with pytest.raises(ValueError, match="Unsupported file type"):
             await convert_file_to_markdown(content, "test.txt", ".txt")
 
-    def test_is_gemini_configured_returns_false_when_no_key(self):
+    def test_is_converter_configured_returns_false_when_no_key(self):
         """Should return False when no API key configured."""
-        from services.gemini_converter import is_gemini_configured
+        from services.gemini_converter import is_converter_configured
 
         with patch("services.gemini_converter.get_settings") as mock_settings:
-            mock_settings.return_value.google_api_key = ""
-            # Clear the lru_cache to ensure fresh settings
-            from services.gemini_converter import get_gemini_client
+            mock_settings.return_value.openrouter_api_key = ""
 
-            get_gemini_client.cache_clear()
+            assert is_converter_configured() is False
 
-            assert is_gemini_configured() is False
-
-    def test_is_gemini_configured_returns_true_when_key_set(self):
+    def test_is_converter_configured_returns_true_when_key_set(self):
         """Should return True when API key is configured."""
-        from services.gemini_converter import is_gemini_configured
+        from services.gemini_converter import is_converter_configured
 
         with patch("services.gemini_converter.get_settings") as mock_settings:
-            mock_settings.return_value.google_api_key = "test-api-key"
+            mock_settings.return_value.openrouter_api_key = "test-api-key"
 
-            assert is_gemini_configured() is True
+            assert is_converter_configured() is True
 
 
 # ============================================================================

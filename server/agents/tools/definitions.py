@@ -1,7 +1,11 @@
 """Tool definitions for the writing agent.
 
-This module contains all tool schemas used by Claude API for document editing
+This module contains all tool schemas used by the API for document editing
 and knowledge base operations.
+
+Internal format uses Anthropic-style definitions (name, description, input_schema).
+The to_openai_tools() helper converts them to OpenAI function-calling format
+before sending to the API.
 """
 
 
@@ -371,7 +375,7 @@ Use after search_court_opinions to read the complete opinion text for citation o
 
 SKILL_EXTERNAL_TOOLS: dict[str, list[dict]] = {
     "legal": LEGAL_TOOLS,
-    "data-analysis": DATA_FILES_TOOLS,
+    # data-analysis tools (CODE_EXECUTION_TOOL, DATA_FILES_TOOLS) are always loaded
 }
 
 
@@ -392,9 +396,6 @@ def get_tools_for_mode(
     has_kb_attachments: bool = False,
     has_skills: bool = False,
     web_search_enabled: bool = False,
-    web_search_max_uses: int = 5,
-    web_fetch_max_uses: int = 10,
-    code_execution_enabled: bool = False,
 ) -> list[dict]:
     """Get the appropriate tools based on mode and feature flags.
 
@@ -402,16 +403,13 @@ def get_tools_for_mode(
         mode: "edit" for full editing tools, "analyze" for read-only
         has_kb_attachments: Whether KB attachments exist for this conversation
         has_skills: Whether skills are available
-        web_search_enabled: Whether web search tool is enabled
-        web_search_max_uses: Max number of web searches per request
-        web_fetch_max_uses: Max number of web fetches per request (always enabled)
-        code_execution_enabled: Whether code execution tool is enabled
+        web_search_enabled: Whether Brave web search tool is enabled
 
     Returns:
-        List of tool definitions for Claude API
+        List of tool definitions for the API
 
     Note:
-        External tools (like LEGAL_TOOLS, DATA_FILES_TOOLS) are loaded dynamically
+        External tools (like LEGAL_TOOLS) are loaded dynamically
         when their associated skill is read via SKILL_EXTERNAL_TOOLS mapping.
     """
     base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
@@ -423,23 +421,17 @@ def get_tools_for_mode(
     if has_kb_attachments:
         tools = tools + KB_TOOLS
 
-    # Note: DATA_FILES_TOOLS are loaded via data-analysis skill activation
-    # See SKILL_EXTERNAL_TOOLS mapping
-
     if has_skills:
         tools = tools + SKILL_TOOLS
 
-    # Add web tools (Anthropic server-side tools)
-    # Web search is optional (costs $0.01 per search)
+    # Add web tools (client-side tools via Brave Search / httpx)
     if web_search_enabled:
-        tools.append(get_web_search_tool(web_search_max_uses))
-    # Web fetch is always enabled (free, only costs tokens)
-    tools.append(get_web_fetch_tool(web_fetch_max_uses))
+        tools.append(WEB_SEARCH_TOOL)
+    tools.append(WEB_FETCH_TOOL)
 
-    # Add code execution tool (Anthropic server-side tool)
-    # Enables running Python/Bash code for data analysis
-    if code_execution_enabled:
-        tools.append(get_code_execution_tool())
+    # Always add code execution and data files tools
+    tools.append(CODE_EXECUTION_TOOL)
+    tools.extend(DATA_FILES_TOOLS)
 
     return tools
 
@@ -509,57 +501,84 @@ Fields:
 
 
 # ============================================================================
-# Web Tools Definition (Anthropic server-side tools)
+# Web Tools Definition (client-side tools via Brave Search / httpx)
+# ============================================================================
+
+WEB_SEARCH_TOOL = {
+    "name": "web_search",
+    "description": "Search the web for information using Brave Search. Returns titles, URLs, and snippets.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query to look up on the web",
+            }
+        },
+        "required": ["query"],
+    },
+}
+
+WEB_FETCH_TOOL = {
+    "name": "web_fetch",
+    "description": "Fetch and read the content of a web page. Returns the text content extracted from the URL.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "The URL of the web page to fetch",
+            }
+        },
+        "required": ["url"],
+    },
+}
+
+# ============================================================================
+# Code Execution Tool Definition (client-side Python subprocess)
+# ============================================================================
+
+CODE_EXECUTION_TOOL = {
+    "name": "code_execution",
+    "description": "Execute Python code to analyze data, perform calculations, or generate visualizations. "
+    "The code runs in a sandboxed subprocess with a 30-second timeout. "
+    "All uploaded data files (CSV, Excel, JSON, etc.) are available in the working directory "
+    "and can be read directly by filename (e.g., pd.read_csv('order_items.csv')). "
+    "Use list_data_files first to see what files are available.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "code": {
+                "type": "string",
+                "description": "Python code to execute",
+            }
+        },
+        "required": ["code"],
+    },
+}
+
+
+# ============================================================================
+# Format Conversion: Anthropic → OpenAI function-calling
 # ============================================================================
 
 
-def get_web_search_tool(max_uses: int = 5) -> dict:
-    """Get web search tool definition for Anthropic API.
+def to_openai_tool(tool: dict) -> dict:
+    """Convert a single Anthropic-style tool definition to OpenAI function-calling format.
 
-    This is a server-side tool - Claude decides when to search,
-    and the API executes the search automatically.
-
-    Pricing: $10 per 1,000 searches + standard token costs.
-    """
-    return {"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}
-
-
-def get_web_fetch_tool(max_uses: int = 10) -> dict:
-    """Get web fetch tool definition for Anthropic API.
-
-    This is a server-side tool - Claude decides when to fetch URLs,
-    and the API retrieves the content automatically.
-
-    Requires beta header: anthropic-beta: web-fetch-2025-09-10
-    No additional cost beyond standard token costs.
+    Anthropic format: {"name": ..., "description": ..., "input_schema": {...}}
+    OpenAI format:    {"type": "function", "function": {"name": ..., "description": ..., "parameters": {...}}}
     """
     return {
-        "type": "web_fetch_20250910",
-        "name": "web_fetch",
-        "max_uses": max_uses,
-        "citations": {"enabled": True},
+        "type": "function",
+        "function": {
+            "name": tool["name"],
+            "description": tool["description"],
+            "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+        },
     }
 
 
-# ============================================================================
-# Code Execution Tool Definition (Anthropic server-side tool)
-# ============================================================================
-
-
-def get_code_execution_tool() -> dict:
-    """Get code execution tool definition for Anthropic API.
-
-    This is a server-side tool that enables Claude to run Bash commands
-    and manipulate files in a secure sandboxed environment.
-
-    Requires beta header: anthropic-beta: code-execution-2025-08-25
-
-    Sandbox environment:
-    - Ubuntu 24.04, Python 3.12, Node.js 18.19
-    - 9GB RAM, 5GB disk
-    - 30 second execution timeout
-    - No network access
-
-    Pricing: First 1,550 hours/month free, then $0.05/hour.
-    """
-    return {"type": "code_execution_20250825", "name": "code_execution"}
+def to_openai_tools(tools: list[dict]) -> list[dict]:
+    """Convert a list of Anthropic-style tools to OpenAI function-calling format."""
+    return [to_openai_tool(t) for t in tools]

@@ -1,13 +1,13 @@
 """Writing Agent for AI-assisted document editing.
 
-This agent uses Claude's API directly for real-time streaming,
+This agent uses OpenRouter API for real-time streaming,
 with document editing tools similar to Cursor for code editing.
 
 Supports:
 - Real-time text streaming (token by token)
-- Extended thinking (streaming thinking content)
 - Tool use with proper event handling
 - Skill tools for accessing templates and knowledge
+- Web search (Brave Search) and code execution (Python subprocess)
 """
 
 import json
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from agents.prompts import (
     get_kb_context_prompt,
@@ -25,14 +25,18 @@ from agents.prompts import (
     get_writing_system_prompt,
 )
 from agents.tools.data_files_tools import execute_data_files_tool, is_data_files_tool
-from agents.tools.definitions import get_external_tools_for_skill, get_tools_for_mode
+from agents.tools.definitions import (
+    get_external_tools_for_skill,
+    get_tools_for_mode,
+    to_openai_tools,
+)
 from agents.tools.document_tools import execute_document_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
 from agents.tools.legal_tools import execute_legal_tool, is_legal_tool
 from agents.tools.skill_tools import execute_skill_tool, is_skill_tool
 from agents.tools.todo_tools import execute_todo_tool, is_todo_tool
+from agents.tools.web_tools import execute_web_tool, is_web_tool
 from config import get_settings
-from services.anthropic_files_service import AnthropicFilesService
 from services.skills_service import get_skills_service
 
 logger = logging.getLogger(__name__)
@@ -46,10 +50,7 @@ class StreamState:
     """Mutable state tracked during a single streaming API response."""
 
     current_text: str = ""
-    current_thinking: str = ""
     current_tool_use: dict | None = None
-    current_server_tool: dict | None = None
-    in_thinking_block: bool = False
     stop_reason: str | None = None
     event_count: int = 0
     tool_uses_started: list = field(default_factory=list)
@@ -65,11 +66,9 @@ class WritingAgent:
     def __init__(
         self,
         mode: str = "edit",
-        enable_thinking: bool = False,
         kb_attachments: list[dict[str, Any]] = None,
         data_files_metadata: list[dict[str, Any]] = None,
         web_search_enabled: bool = False,
-        code_execution_enabled: bool = False,
         db=None,
         api_key: str | None = None,
         model: str | None = None,
@@ -78,21 +77,18 @@ class WritingAgent:
 
         Args:
             mode: "edit" for full editing tools, "analyze" for read-only
-            enable_thinking: Enable extended thinking for complex reasoning
             kb_attachments: List of KB attachments for this conversation
             data_files_metadata: List of data files metadata (for system prompt)
-            web_search_enabled: Enable Anthropic web search tool
-            code_execution_enabled: Enable Anthropic code execution tool
+            web_search_enabled: Enable web search tool (Brave Search)
             db: Database session for RAG operations
-            api_key: User's Anthropic API key (uses server key if not provided)
+            api_key: User's OpenRouter API key (uses server key if not provided)
             model: User's preferred model (uses default if not provided)
         """
         self.mode = mode
-        self.enable_thinking = enable_thinking
         self.kb_attachments = kb_attachments or []
         self.data_files_metadata = data_files_metadata or []
         self.web_search_enabled = web_search_enabled
-        self.code_execution_enabled = code_execution_enabled
+        self.code_execution_enabled = True  # Always enabled
         self.db = db
 
         # Check if skills are available
@@ -101,7 +97,7 @@ class WritingAgent:
         settings = get_settings()
 
         # Use user's API key if provided, otherwise fall back to server key
-        effective_api_key = api_key or settings.anthropic_api_key
+        effective_api_key = api_key or settings.openrouter_api_key
         if not effective_api_key:
             raise ValueError("No API key available")
 
@@ -109,32 +105,23 @@ class WritingAgent:
         effective_model = model or settings.default_model
 
         # Configure longer timeout for streaming responses
-        # Default httpx timeout is 5 minutes, but streaming large content may need more
-        timeout = httpx.Timeout(
-            connect=30.0,  # Connection timeout
-            read=300.0,  # Read timeout (5 minutes for streaming)
-            write=30.0,  # Write timeout
-            pool=30.0,  # Pool timeout
+        self.client = AsyncOpenAI(
+            api_key=effective_api_key,
+            base_url=settings.openrouter_base_url,
+            timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0),
         )
-        self.client = AsyncAnthropic(api_key=effective_api_key, timeout=timeout)
         self.model = effective_model
         self.max_tokens = settings.max_output_tokens
         self.settings = settings
         self.using_user_key = bool(api_key)
 
-        # Files service for uploading data files to Anthropic (for code execution)
-        self.files_service = AnthropicFilesService(self.client)
-
-        # Get tools (external tools like LEGAL_TOOLS, DATA_FILES_TOOLS are added dynamically
+        # Get tools (external tools like LEGAL_TOOLS are added dynamically
         # when their associated skill is read via SKILL_EXTERNAL_TOOLS mapping)
         self.tools = get_tools_for_mode(
             mode,
             has_kb_attachments=bool(self.kb_attachments),
             has_skills=self.has_skills,
             web_search_enabled=web_search_enabled,
-            web_search_max_uses=settings.web_search_max_uses,
-            web_fetch_max_uses=settings.web_fetch_max_uses,
-            code_execution_enabled=code_execution_enabled,
         )
 
         # Track which skills have been activated (for dynamic tool loading)
@@ -174,8 +161,12 @@ class WritingAgent:
         if files:
             files[0]["is_current"] = True
 
-        # Build system prompt
-        system_prompt = get_writing_system_prompt(mode=self.mode, files=files)
+        # Build system prompt (includes data files metadata for agent awareness)
+        system_prompt = get_writing_system_prompt(
+            mode=self.mode,
+            files=files,
+            data_files_metadata=self.data_files_metadata if self.data_files_metadata else None,
+        )
         if self.kb_attachments:
             system_prompt += get_kb_context_prompt(self.kb_attachments)
 
@@ -191,7 +182,7 @@ class WritingAgent:
         collected_edits = []
         current_file_id = files[0]["id"] if files else None
         kb_context = self._build_kb_context(conversation_id)
-        data_files_context = self._build_data_files_context()
+        data_files_context = self._build_data_files_context(data_files)
 
         try:
             # Main agent loop
@@ -248,14 +239,17 @@ class WritingAgent:
         images: list[dict[str, Any]] = None,
         data_files: list[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
-        """Build multimodal content with images, data files, and text."""
+        """Build multimodal content with images, data files, and text.
+
+        Uses OpenAI vision format: [{type: "text", text: ...}, {type: "image_url", image_url: {url: "data:..."}}]
+        """
         import base64
 
         content = []
         images = images or []
         data_files = data_files or []
 
-        # Add images first (Claude recommends images before text)
+        # Add images first
         for i, img in enumerate(images):
             base64_data = img.get("base64")
             media_type = img.get("mediaType")
@@ -263,8 +257,8 @@ class WritingAgent:
             if base64_data and media_type:
                 content.append(
                     {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": media_type, "data": base64_data},
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{media_type};base64,{base64_data}"},
                     }
                 )
                 # Add label for multiple images
@@ -273,18 +267,14 @@ class WritingAgent:
                     label = f"Image {i + 1}" + (f" ({alt})" if alt else "") + ":"
                     content.append({"type": "text", "text": label})
 
-        # Add data files for code execution
-        # Files are either: pre-uploaded to Claude (use file_id), or sent inline (base64)
+        # Add data files
         for data_file in data_files:
             file_content = data_file.get("content")
             mime_type = data_file.get("mime_type", "application/octet-stream")
             filename = data_file.get("filename", "data")
-            claude_file_id = data_file.get("claude_file_id")
-            claude_upload_status = data_file.get("claude_upload_status", "pending")
-            file_size = data_file.get("file_size", 0)
 
             if file_content:
-                # For images in data_files, use image type directly
+                # For images in data_files, use image_url type
                 if mime_type.startswith("image/"):
                     if isinstance(file_content, bytes):
                         encoded = base64.b64encode(file_content).decode("utf-8")
@@ -292,65 +282,50 @@ class WritingAgent:
                         encoded = file_content
                     content.append(
                         {
-                            "type": "image",
-                            "source": {"type": "base64", "media_type": mime_type, "data": encoded},
-                        }
-                    )
-                    content.append({"type": "text", "text": f"File: {filename}"})
-                elif mime_type == "application/pdf":
-                    # PDFs can use document type
-                    if isinstance(file_content, bytes):
-                        encoded = base64.b64encode(file_content).decode("utf-8")
-                    else:
-                        encoded = file_content
-                    content.append(
-                        {
-                            "type": "document",
-                            "source": {"type": "base64", "media_type": mime_type, "data": encoded},
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
                         }
                     )
                     content.append({"type": "text", "text": f"File: {filename}"})
                 else:
-                    # For other files (CSV, Excel, JSON, etc.), use Files API + container_upload
-                    # This is required for code execution to access the files
-                    #
-                    # Optimized upload strategy:
-                    # 1. If claude_file_id exists and ready -> use it directly (no upload)
-                    # 2. If status is "skipped" (small file) -> upload now (fast, <500KB)
-                    # 3. If status is "uploading" -> wait briefly then check, fallback to upload
-                    # 4. If status is "pending/error" -> upload now
-
-                    if claude_file_id and claude_upload_status == "ready":
-                        # Pre-uploaded file - use directly (fastest path)
-                        logger.info(f"Using pre-uploaded file {filename}: {claude_file_id}")
-                        file_id = claude_file_id
-                    elif claude_upload_status == "uploading":
-                        # Background upload in progress - wait briefly then check
-                        # This is a race condition edge case
-                        import asyncio
-
-                        await asyncio.sleep(0.5)  # Brief wait
-                        # If still uploading after wait, just upload again
-                        # The files service has caching by content hash
-                        logger.info(f"File {filename} still uploading, uploading again...")
-                        file_id = await self.files_service.upload_file(
-                            content=file_content, filename=filename, mime_type=mime_type
-                        )
+                    # For other files (CSV, Excel, JSON, etc.), include content as text
+                    if isinstance(file_content, bytes):
+                        try:
+                            text_content = file_content.decode("utf-8")
+                        except UnicodeDecodeError:
+                            text_content = f"[Binary file: {filename}, {len(file_content)} bytes]"
                     else:
-                        # Need to upload: skipped (small), pending, or error
-                        logger.info(
-                            f"Uploading file {filename} ({file_size} bytes, status={claude_upload_status})"
-                        )
-                        file_id = await self.files_service.upload_file(
-                            content=file_content, filename=filename, mime_type=mime_type
-                        )
+                        text_content = file_content
 
-                    if file_id:
-                        content.append({"type": "container_upload", "file_id": file_id})
+                    if self.code_execution_enabled:
+                        # When code execution is available, include only a small preview
+                        # to avoid the agent trying to analyze data mentally.
+                        # The full file is available in the code execution sandbox.
+                        lines = text_content.split("\n")
+                        preview_lines = lines[:21]  # Header + 20 data rows
+                        preview = "\n".join(preview_lines)
+                        total_lines = len(lines)
                         content.append(
                             {
                                 "type": "text",
-                                "text": f"Data file uploaded: {filename} (available at /mnt/user/{filename})",
+                                "text": (
+                                    f"--- Data file: {filename} (preview, {total_lines} lines total) ---\n"
+                                    f"{preview}\n"
+                                    f"... ({total_lines - len(preview_lines)} more rows)\n\n"
+                                    f"⚠️ Use code_execution tool to analyze the full dataset. "
+                                    f"Do NOT calculate from this preview."
+                                ),
+                            }
+                        )
+                    else:
+                        # No code execution — include full content for inline analysis
+                        max_chars = 50000
+                        if len(text_content) > max_chars:
+                            text_content = text_content[:max_chars] + "\n... (truncated)"
+                        content.append(
+                            {
+                                "type": "text",
+                                "text": f"--- Data file: {filename} ---\n{text_content}",
                             }
                         )
 
@@ -369,12 +344,44 @@ class WritingAgent:
             "db": self.db,
         }
 
-    def _build_data_files_context(self) -> dict[str, Any] | None:
-        """Build data files context for tool execution."""
+    def _build_data_files_context(
+        self, data_files_with_content: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        """Build data files context for tool execution.
+
+        Merges metadata (storage_path, column info) with file content bytes
+        so code execution can write files directly to the sandbox without
+        relying on temp files still being on disk.
+
+        Args:
+            data_files_with_content: List of data files with 'content' bytes
+                (from chat.py's data_files_content)
+
+        Returns:
+            Context dict with enriched data files, or None
+        """
         if not self.data_files_metadata:
             return None
 
-        return {"data_files": self.data_files_metadata}
+        # Build a lookup of file content bytes by ID
+        content_by_id: dict[str, bytes] = {}
+        if data_files_with_content:
+            for df in data_files_with_content:
+                file_id = df.get("id")
+                content = df.get("content")
+                if file_id and content:
+                    content_by_id[file_id] = content
+
+        # Merge metadata with content bytes
+        enriched_files = []
+        for meta in self.data_files_metadata:
+            entry = dict(meta)
+            file_id = meta.get("id")
+            if file_id and file_id in content_by_id:
+                entry["content"] = content_by_id[file_id]
+            enriched_files.append(entry)
+
+        return {"data_files": enriched_files}
 
     async def _agent_loop(
         self,
@@ -400,8 +407,9 @@ class WritingAgent:
             iteration += 1
 
             # Stream response and yield events in real-time
-            full_response = {"role": "assistant", "content": []}
-            tool_uses = []
+            # OpenAI format: assistant message has content + tool_calls
+            assistant_text = ""
+            tool_uses = []  # Internal format: [{type, id, name, input}, ...]
 
             output_truncated = False
 
@@ -424,9 +432,9 @@ class WritingAgent:
                 if event:
                     yield event
 
-                # Collect response content
-                if response_update:
-                    full_response["content"].append(response_update)
+                # Collect text content
+                if response_update and response_update.get("type") == "text":
+                    assistant_text += response_update.get("text", "")
 
                 # Collect tool uses
                 if tool_use:
@@ -453,6 +461,21 @@ class WritingAgent:
                             "success": False,
                         }
                 tool_uses = valid_tool_uses
+
+            # Build the assistant message in OpenAI format
+            full_response: dict[str, Any] = {"role": "assistant", "content": assistant_text or None}
+            if tool_uses:
+                full_response["tool_calls"] = [
+                    {
+                        "id": tu["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tu["name"],
+                            "arguments": json.dumps(tu.get("input", {})),
+                        },
+                    }
+                    for tu in tool_uses
+                ]
 
             # If no tool uses, check for incomplete todos before exiting
             if not tool_uses:
@@ -491,7 +514,7 @@ class WritingAgent:
             messages.append(full_response)
 
             # Execute tools and collect results
-            tool_results = []
+            tool_result_messages = []
             for tool_use in tool_uses:
                 async for event in self._execute_tool(
                     tool_use,
@@ -503,12 +526,19 @@ class WritingAgent:
                     current_todos,
                 ):
                     if event.get("type") == "tool_result":
-                        tool_results.append(event["result"])
+                        # OpenAI format: each tool result is a separate message
+                        tool_result_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": event["result"]["tool_use_id"],
+                                "content": event["result"]["content"],
+                            }
+                        )
                     else:
                         yield event
 
-            # Add tool results to messages
-            messages.append({"role": "user", "content": tool_results})
+            # Add tool results to messages (each as separate message in OpenAI format)
+            messages.extend(tool_result_messages)
 
         # Yield accumulated usage after all iterations
         yield {
@@ -523,420 +553,202 @@ class WritingAgent:
         """Stream API response in real-time, yielding events immediately.
 
         Yields tuples of (event, response_update, tool_use):
-        - event: Event to send to client (text, thinking, tool_start, etc.)
+        - event: Event to send to client (text, tool_start, etc.)
         - response_update: Content block to add to full response
         - tool_use: Tool use to execute (only for client-side tools)
         """
-        api_params = {
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "system": system_prompt,
-            "messages": messages,
-            "tools": self.tools,
-        }
+        # Build OpenAI-format messages with system prompt as first message
+        openai_messages = [{"role": "system", "content": system_prompt}] + messages
 
-        # Add thinking if enabled
-        if self.enable_thinking and "claude-3" in self.model:
-            api_params["thinking"] = {"type": "enabled", "budget_tokens": 8000}
+        # Convert Anthropic-style tool defs to OpenAI function-calling format
+        openai_tools = to_openai_tools(self.tools) if self.tools else None
 
-        # Add beta headers for server-side tools
-        beta_headers = ["web-fetch-2025-09-10"]  # Web fetch is always enabled (free)
-        if self.web_search_enabled:
-            beta_headers.append("web-search-2025-03-05")
-        if self.code_execution_enabled:
-            beta_headers.append("code-execution-2025-08-25")
-            beta_headers.append("files-api-2025-04-14")  # Required for container_upload
-        api_params["extra_headers"] = {"anthropic-beta": ",".join(beta_headers)}
+        logger.info(f"Starting API stream: model={self.model}, max_tokens={self.max_tokens}")
 
-        # Track stream state for debugging
-        stop_reason = None
-        tool_uses_started = []
+        # Track state
+        state = StreamState()
+        # For OpenAI streaming, tool calls are tracked by index
+        tool_call_buffers: dict[int, dict] = {}  # index -> {id, name, arguments}
+        finish_reason = None
+        usage_data = None
+        in_reasoning = False  # Track GLM reasoning phase
 
-        logger.info(f"Starting Claude API stream: model={self.model}, max_tokens={self.max_tokens}")
-
-        async with self.client.messages.stream(**api_params) as stream:
-            state = StreamState()
-
-            async for event in stream:
-                state.event_count += 1
-
-                if event.type == "content_block_start":
-                    block = event.content_block
-                    logger.debug(
-                        f"content_block_start: type={block.type}, id={getattr(block, 'id', None)}"
-                    )
-                    for ev in self._handle_block_start(block, state):
-                        yield ev
-
-                elif event.type == "content_block_delta":
-                    for ev in self._handle_block_delta(event.delta, state):
-                        yield ev
-
-                elif event.type == "content_block_stop":
-                    for ev in self._handle_block_stop(state):
-                        yield ev
-
-                elif event.type == "message_delta":
-                    if hasattr(event, "delta") and hasattr(event.delta, "stop_reason"):
-                        state.stop_reason = event.delta.stop_reason
-                        logger.info(f"Message stop_reason: {state.stop_reason}")
-
-            stop_reason = state.stop_reason
-            tool_uses_started = state.tool_uses_started
-
-            # Log stream completion details
-            logger.info(
-                f"Claude API stream completed: events={state.event_count}, "
-                f"tools_started={tool_uses_started}, stop_reason={stop_reason}"
-            )
-
-            # Check for abnormal stream termination
-            if stop_reason is None:
-                logger.error(
-                    f"Stream ended without message_delta event! "
-                    f"Tools started: {tool_uses_started}. This may indicate a network issue or API timeout."
-                )
-                # Yield warning for incomplete stream
-                yield (
-                    {
-                        "type": "warning",
-                        "content": "API 响应异常中断，请重试",
-                        "truncated_tools": tool_uses_started,
-                    },
-                    None,
-                    None,
-                )
-
-            # Check for truncation due to max_tokens
-            elif stop_reason == "max_tokens":
-                logger.warning(
-                    f"Output truncated due to max_tokens limit. "
-                    f"Tools started but may be incomplete: {tool_uses_started}"
-                )
-                # Notify about truncation - this helps debugging
-                yield (
-                    {
-                        "type": "warning",
-                        "content": "输出因 token 限制被截断，工具调用可能不完整",
-                        "truncated_tools": tool_uses_started,
-                    },
-                    None,
-                    None,
-                )
-
-            # After stream iteration, get usage from final message
-            final_message = await stream.get_final_message()
-            yield (
-                {
-                    "type": "usage",
-                    "input_tokens": final_message.usage.input_tokens,
-                    "output_tokens": final_message.usage.output_tokens,
-                },
-                None,
-                None,
-            )
-
-    # -------------------------------------------------------------------------
-    # Stream Event Handlers
-    # -------------------------------------------------------------------------
-
-    def _handle_block_start(self, block: Any, state: StreamState) -> list[StreamEvent]:
-        """Handle content_block_start events, dispatching by block type."""
-        if block.type == "thinking":
-            state.in_thinking_block = True
-            state.current_thinking = ""
-            return [({"type": "thinking_start"}, None, None)]
-
-        elif block.type == "text":
-            state.current_text = ""
-            return []
-
-        elif block.type == "tool_use":
-            state.current_tool_use = {
-                "type": "tool_use",
-                "id": block.id,
-                "name": block.name,
-                "input": {},
-            }
-            state.tool_uses_started.append(block.name)
-            logger.info(f"Tool started: {block.name}")
-            return [
-                (
-                    {
-                        "type": "tool_start",
-                        "tool": block.name,
-                        "tool_id": block.id,
-                        "input": {},
-                    },
-                    None,
-                    None,
-                )
-            ]
-
-        elif block.type == "server_tool_use":
-            state.current_server_tool = {
-                "type": "server_tool_use",
-                "id": block.id,
-                "name": block.name,
-                "input": {},
-            }
-            return [
-                (
-                    {
-                        "type": "server_tool_start",
-                        "tool": block.name,
-                        "tool_id": block.id,
-                    },
-                    None,
-                    None,
-                )
-            ]
-
-        elif block.type == "web_search_tool_result":
-            return self._handle_web_search_result(block)
-
-        elif block.type == "web_fetch_tool_result":
-            return self._handle_web_fetch_result(block)
-
-        elif block.type in ("code_execution_tool_result", "bash_code_execution_tool_result"):
-            return self._handle_code_execution_result(block)
-
-        else:
-            logger.warning(f"Unknown content_block type: {block.type}, attrs: {dir(block)}")
-            return []
-
-    def _handle_web_search_result(self, block: Any) -> list[StreamEvent]:
-        """Handle web_search_tool_result blocks."""
-        results = []
-        serialized_content = []
-        if hasattr(block, "content") and block.content:
-            for r in block.content:
-                if hasattr(r, "type") and r.type == "web_search_result":
-                    results.append({"url": getattr(r, "url", ""), "title": getattr(r, "title", "")})
-                    serialized_content.append(
-                        {
-                            "type": "web_search_result",
-                            "url": getattr(r, "url", ""),
-                            "title": getattr(r, "title", ""),
-                            "encrypted_content": getattr(r, "encrypted_content", ""),
-                            "page_age": getattr(r, "page_age", None),
-                        }
-                    )
-        return [
-            (
-                {
-                    "type": "server_tool_end",
-                    "tool": "web_search",
-                    "tool_id": block.tool_use_id,
-                    "output": f"Found {len(results)} results",
-                    "success": True,
-                },
-                None,
-                None,
-            ),
-            (
-                {
-                    "type": "web_search_result",
-                    "tool_id": block.tool_use_id,
-                    "results": results,
-                },
-                {
-                    "type": "web_search_tool_result",
-                    "tool_use_id": block.tool_use_id,
-                    "content": serialized_content,
-                },
-                None,
-            ),
-        ]
-
-    def _handle_web_fetch_result(self, block: Any) -> list[StreamEvent]:
-        """Handle web_fetch_tool_result blocks."""
-        url = ""
-        serialized_content = {}
-        if hasattr(block, "content"):
-            content = block.content
-            url = getattr(content, "url", "")
-            serialized_content = {
-                "url": url,
-                "content": getattr(content, "content", ""),
-                "title": getattr(content, "title", ""),
-            }
-        domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
-        return [
-            (
-                {
-                    "type": "server_tool_end",
-                    "tool": "web_fetch",
-                    "tool_id": block.tool_use_id,
-                    "output": f"Fetched {domain}",
-                    "success": True,
-                },
-                None,
-                None,
-            ),
-            (
-                {"type": "web_fetch_result", "tool_id": block.tool_use_id, "url": url},
-                {
-                    "type": "web_fetch_tool_result",
-                    "tool_use_id": block.tool_use_id,
-                    "content": serialized_content,
-                },
-                None,
-            ),
-        ]
-
-    def _handle_code_execution_result(self, block: Any) -> list[StreamEvent]:
-        """Handle code_execution_tool_result / bash_code_execution_tool_result blocks."""
-        result_content = {}
-        generated_files = []
-        logger.info(
-            f"Code execution result received: type={block.type}, "
-            f"tool_use_id={getattr(block, 'tool_use_id', None)}"
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=openai_messages,
+            tools=openai_tools,
+            stream=True,
+            stream_options={"include_usage": True},
         )
 
-        if hasattr(block, "content"):
-            content = block.content
-            if isinstance(content, list):
-                for item in content:
-                    item_type = getattr(item, "type", None)
-                    if item_type in ("bash_code_execution_result", "code_execution_result"):
-                        result_content = {
-                            "stdout": getattr(item, "stdout", ""),
-                            "stderr": getattr(item, "stderr", ""),
-                            "return_code": getattr(item, "return_code", 0),
-                        }
-                        if hasattr(item, "files") and item.files:
-                            for f in item.files:
-                                generated_files.append(
-                                    {
-                                        "file_id": getattr(f, "file_id", ""),
-                                        "filename": getattr(f, "filename", ""),
-                                        "media_type": getattr(f, "media_type", ""),
-                                    }
-                                )
-            else:
-                result_content = {
-                    "stdout": getattr(content, "stdout", ""),
-                    "stderr": getattr(content, "stderr", ""),
-                    "return_code": getattr(content, "return_code", 0),
+        async for chunk in stream:
+            state.event_count += 1
+
+            # Handle usage chunk (comes at the end with stream_options)
+            if chunk.usage:
+                usage_data = {
+                    "input_tokens": chunk.usage.prompt_tokens or 0,
+                    "output_tokens": chunk.usage.completion_tokens or 0,
                 }
-                if hasattr(content, "files") and content.files:
-                    for f in content.files:
-                        generated_files.append(
+
+            if not chunk.choices:
+                continue
+
+            choice = chunk.choices[0]
+            delta = choice.delta
+
+            # Track finish reason
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+
+            # Handle GLM reasoning tokens (streamed in delta.reasoning)
+            reasoning_text = getattr(delta, "reasoning", None) if delta else None
+            if reasoning_text:
+                if not in_reasoning:
+                    in_reasoning = True
+                    logger.debug("Reasoning phase started")
+                yield ({"type": "thinking", "content": reasoning_text}, None, None)
+
+            # Handle text content
+            if delta and delta.content:
+                # End reasoning phase when first content arrives
+                if in_reasoning:
+                    in_reasoning = False
+                    yield ({"type": "thinking_end"}, None, None)
+                state.current_text += delta.content
+                yield ({"type": "text", "content": delta.content}, None, None)
+
+            # Handle tool calls (streamed incrementally)
+            if delta and delta.tool_calls:
+                # End reasoning phase when tool calls start
+                if in_reasoning:
+                    in_reasoning = False
+                    yield ({"type": "thinking_end"}, None, None)
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+
+                    # New tool call starting
+                    if idx not in tool_call_buffers:
+                        tool_id = tc_delta.id or f"call_{idx}"
+                        tool_name = tc_delta.function.name if tc_delta.function else ""
+                        tool_call_buffers[idx] = {
+                            "id": tool_id,
+                            "name": tool_name,
+                            "arguments": "",
+                        }
+                        if tool_name:
+                            state.tool_uses_started.append(tool_name)
+                            logger.info(f"Tool started: {tool_name}")
+                            yield (
+                                {
+                                    "type": "tool_start",
+                                    "tool": tool_name,
+                                    "tool_id": tool_id,
+                                    "input": {},
+                                },
+                                None,
+                                None,
+                            )
+
+                    buf = tool_call_buffers[idx]
+
+                    # Update tool name if provided (may come in later chunks)
+                    if tc_delta.function and tc_delta.function.name and not buf["name"]:
+                        buf["name"] = tc_delta.function.name
+                        state.tool_uses_started.append(buf["name"])
+                        logger.info(f"Tool started: {buf['name']}")
+                        yield (
                             {
-                                "file_id": getattr(f, "file_id", ""),
-                                "filename": getattr(f, "filename", ""),
-                                "media_type": getattr(f, "media_type", ""),
-                            }
+                                "type": "tool_start",
+                                "tool": buf["name"],
+                                "tool_id": buf["id"],
+                                "input": {},
+                            },
+                            None,
+                            None,
                         )
 
-        return_code = result_content.get("return_code", 0)
-        success = return_code == 0
-        if generated_files:
-            output_summary = f"Generated {len(generated_files)} file(s)"
-        elif result_content.get("stderr"):
-            output_summary = "Execution completed with errors"
-        else:
-            output_summary = "Execution completed"
+                    # Accumulate arguments
+                    if tc_delta.function and tc_delta.function.arguments:
+                        buf["arguments"] += tc_delta.function.arguments
+                        yield (
+                            {
+                                "type": "tool_input_delta",
+                                "tool": buf["name"],
+                                "delta": tc_delta.function.arguments,
+                            },
+                            None,
+                            None,
+                        )
 
-        return [
-            (
-                {
-                    "type": "server_tool_end",
-                    "tool": "code_execution",
-                    "tool_id": block.tool_use_id,
-                    "output": output_summary,
-                    "success": success,
-                },
-                None,
-                None,
-            ),
-            (
-                {
-                    "type": "code_execution_result",
-                    "tool_id": block.tool_use_id,
-                    "stdout": result_content.get("stdout", ""),
-                    "stderr": result_content.get("stderr", ""),
-                    "return_code": return_code,
-                    "files": generated_files,
-                },
-                None,
-                None,
-            ),
-        ]
+        # Stream finished — flush accumulated state
 
-    def _handle_block_delta(self, delta: Any, state: StreamState) -> list[StreamEvent]:
-        """Handle content_block_delta events."""
-        if delta.type == "thinking_delta":
-            state.current_thinking += delta.thinking
-            return [({"type": "thinking", "content": delta.thinking}, None, None)]
+        # End reasoning phase if still active
+        if in_reasoning:
+            in_reasoning = False
+            yield ({"type": "thinking_end"}, None, None)
 
-        elif delta.type == "text_delta":
-            state.current_text += delta.text
-            return [({"type": "text", "content": delta.text}, None, None)]
-
-        elif delta.type == "input_json_delta":
-            if state.current_tool_use:
-                if "partial_json" not in state.current_tool_use:
-                    state.current_tool_use["partial_json"] = ""
-                state.current_tool_use["partial_json"] += delta.partial_json
-                return [
-                    (
-                        {
-                            "type": "tool_input_delta",
-                            "tool": state.current_tool_use["name"],
-                            "delta": delta.partial_json,
-                        },
-                        None,
-                        None,
-                    )
-                ]
-
-        return []
-
-    def _handle_block_stop(self, state: StreamState) -> list[StreamEvent]:
-        """Handle content_block_stop events."""
-        if state.in_thinking_block:
-            state.in_thinking_block = False
-            response_update = None
-            if state.current_thinking:
-                response_update = {"type": "thinking", "thinking": state.current_thinking}
-            result = [({"type": "thinking_end"}, response_update, None)]
-            state.current_thinking = ""
-            return result
-
-        elif state.current_text:
-            result = [(None, {"type": "text", "text": state.current_text}, None)]
+        # Flush text content
+        if state.current_text:
+            yield (None, {"type": "text", "text": state.current_text}, None)
             state.current_text = ""
-            return result
 
-        elif state.current_tool_use:
-            if "partial_json" in state.current_tool_use:
-                try:
-                    state.current_tool_use["input"] = json.loads(
-                        state.current_tool_use["partial_json"]
-                    )
-                except json.JSONDecodeError:
-                    state.current_tool_use["input"] = {}
-                del state.current_tool_use["partial_json"]
-            result = [(None, state.current_tool_use, state.current_tool_use)]
-            state.current_tool_use = None
-            return result
+        # Flush tool calls
+        for idx in sorted(tool_call_buffers.keys()):
+            buf = tool_call_buffers[idx]
+            try:
+                tool_input = json.loads(buf["arguments"]) if buf["arguments"] else {}
+            except json.JSONDecodeError:
+                tool_input = {}
+            tool_use = {
+                "type": "tool_use",
+                "id": buf["id"],
+                "name": buf["name"],
+                "input": tool_input,
+            }
+            yield (None, tool_use, tool_use)
 
-        elif state.current_server_tool:
-            if "partial_json" in state.current_server_tool:
-                try:
-                    state.current_server_tool["input"] = json.loads(
-                        state.current_server_tool["partial_json"]
-                    )
-                except json.JSONDecodeError:
-                    state.current_server_tool["input"] = {}
-                del state.current_server_tool["partial_json"]
-            result = [(None, state.current_server_tool, None)]
-            state.current_server_tool = None
-            return result
+        # Log stream completion
+        logger.info(
+            f"API stream completed: events={state.event_count}, "
+            f"tools_started={state.tool_uses_started}, finish_reason={finish_reason}"
+        )
 
-        return []
+        # Check for abnormal stream termination
+        if finish_reason is None:
+            logger.error(
+                f"Stream ended without finish_reason! Tools started: {state.tool_uses_started}."
+            )
+            yield (
+                {
+                    "type": "warning",
+                    "content": "API 响应异常中断，请重试",
+                    "truncated_tools": state.tool_uses_started,
+                },
+                None,
+                None,
+            )
+        elif finish_reason == "length":
+            logger.warning(
+                f"Output truncated due to max_tokens limit. "
+                f"Tools started but may be incomplete: {state.tool_uses_started}"
+            )
+            yield (
+                {
+                    "type": "warning",
+                    "content": "输出因 token 限制被截断，工具调用可能不完整",
+                    "truncated_tools": state.tool_uses_started,
+                },
+                None,
+                None,
+            )
+
+        # Yield usage
+        if usage_data:
+            yield (usage_data | {"type": "usage"}, None, None)
+        else:
+            yield ({"type": "usage", "input_tokens": 0, "output_tokens": 0}, None, None)
 
     async def _execute_tool(
         self,
@@ -981,6 +793,8 @@ class WritingAgent:
                     self._activate_skill_external_tools(tool_input.get("skill_name", ""))
             elif is_legal_tool(tool_name):
                 result = await execute_legal_tool(tool_name, tool_input)
+            elif is_web_tool(tool_name):
+                result = await execute_web_tool(tool_name, tool_input, data_files_context)
             else:
                 result = execute_document_tool(tool_name, tool_input, files, current_file_id)
         except Exception as e:
@@ -1120,9 +934,15 @@ class WritingAgent:
 
         if tool_name == "web_fetch":
             url = tool_input.get("url", "")
-            # Extract domain from URL
             domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
             return f"Fetched {domain}"
+
+        if tool_name == "code_execution":
+            if isinstance(result_content, str):
+                if "Error" in result_content or "error" in result_content:
+                    return "Execution completed with errors"
+                return "Execution completed"
+            return "Executed Python code"
 
         # Document tools
         if tool_name == "get_document_outline":
@@ -1189,10 +1009,6 @@ class WritingAgent:
         if skill_name == "legal" and not self.settings.has_legal_tools:
             return  # API key not configured
 
-        # For data-analysis skill, check code execution is enabled
-        if skill_name == "data-analysis" and not self.code_execution_enabled:
-            return  # Code execution not enabled
-
         # Add tools to the agent's tool list
         for tool in external_tools:
             if tool not in self.tools:
@@ -1236,6 +1052,12 @@ class WritingAgent:
             reminder = "\n\n<reminder>Apply this guidance. Use editing tools to write content directly into the document.</reminder>"
         elif tool_name == "search_court_opinions":
             reminder = "\n\n<reminder>Use these case citations to support legal arguments. Cite the most relevant and authoritative cases.</reminder>"
+        elif tool_name == "web_search":
+            reminder = "\n\n<reminder>Use web_fetch to read specific pages if you need more details.</reminder>"
+        elif tool_name == "web_fetch":
+            reminder = "\n\n<reminder>Synthesize the fetched content to help the user.</reminder>"
+        elif tool_name == "code_execution":
+            reminder = "\n\n<reminder>Review the output and present the key findings to the user.</reminder>"
         else:
             # Generic reminder for other tools
             reminder = "\n\n<reminder>Continue with the task. Prefer using tools over long chat responses.</reminder>"

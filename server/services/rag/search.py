@@ -4,7 +4,6 @@ Provides methods for indexing and searching documents using
 vector similarity search in PostgreSQL.
 """
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -442,24 +441,25 @@ class RAGService:
         # Fetch more candidates for fusion
         expanded_k = top_k * settings.search_expanded_k_multiplier
 
-        # Run semantic, keyword, and filename searches in parallel
-        semantic_task = self.search(query, file_ids, expanded_k, user_id)
-        keyword_task = self._keyword_search(query, "document", file_ids, user_id, expanded_k)
-        filename_task = self._filename_search(query, file_ids, user_id, expanded_k)
-
-        semantic_results, keyword_results, filename_results = await asyncio.gather(
-            semantic_task, keyword_task, filename_task, return_exceptions=True
-        )
-
-        # Handle partial failures gracefully
-        if isinstance(semantic_results, Exception):
-            logger.error(f"Semantic search failed in hybrid_search: {semantic_results}")
+        # Run searches sequentially (AsyncSession doesn't support concurrent operations)
+        try:
+            semantic_results = await self.search(query, file_ids, expanded_k, user_id)
+        except Exception as e:
+            logger.error(f"Semantic search failed in hybrid_search: {e}")
             semantic_results = []
-        if isinstance(keyword_results, Exception):
-            logger.error(f"Keyword search failed in hybrid_search: {keyword_results}")
+
+        try:
+            keyword_results = await self._keyword_search(
+                query, "document", file_ids, user_id, expanded_k
+            )
+        except Exception as e:
+            logger.error(f"Keyword search failed in hybrid_search: {e}")
             keyword_results = []
-        if isinstance(filename_results, Exception):
-            logger.error(f"Filename search failed in hybrid_search: {filename_results}")
+
+        try:
+            filename_results = await self._filename_search(query, file_ids, user_id, expanded_k)
+        except Exception as e:
+            logger.error(f"Filename search failed in hybrid_search: {e}")
             filename_results = []
 
         # If no keyword or filename results, fall back to semantic only
@@ -736,20 +736,19 @@ class RAGService:
         # Fetch more candidates for fusion
         expanded_k = top_k * settings.search_expanded_k_multiplier
 
-        # Run semantic and keyword searches in parallel with graceful degradation
-        semantic_task = self._semantic_search_sentences(query, file_id, expanded_k, min_score)
-        keyword_task = self._keyword_search_sentences(query, file_id, expanded_k)
-
-        semantic_results, keyword_results = await asyncio.gather(
-            semantic_task, keyword_task, return_exceptions=True
-        )
-
-        # Handle partial failures gracefully
-        if isinstance(semantic_results, Exception):
-            logger.error(f"Semantic search failed in hybrid_search_sentences: {semantic_results}")
+        # Run searches sequentially (AsyncSession doesn't support concurrent operations)
+        try:
+            semantic_results = await self._semantic_search_sentences(
+                query, file_id, expanded_k, min_score
+            )
+        except Exception as e:
+            logger.error(f"Semantic search failed in hybrid_search_sentences: {e}")
             semantic_results = []
-        if isinstance(keyword_results, Exception):
-            logger.error(f"Keyword search failed in hybrid_search_sentences: {keyword_results}")
+
+        try:
+            keyword_results = await self._keyword_search_sentences(query, file_id, expanded_k)
+        except Exception as e:
+            logger.error(f"Keyword search failed in hybrid_search_sentences: {e}")
             keyword_results = []
 
         # If no keyword results, fall back to semantic only
@@ -1013,20 +1012,17 @@ class RAGService:
         # Fetch more candidates for fusion
         expanded_k = top_k * settings.search_expanded_k_multiplier
 
-        # Run semantic and keyword searches in parallel with graceful degradation
-        semantic_task = self._semantic_search_kb(conversation_id, query, expanded_k)
-        keyword_task = self._keyword_search_kb(conversation_id, query, expanded_k)
-
-        semantic_results, keyword_results = await asyncio.gather(
-            semantic_task, keyword_task, return_exceptions=True
-        )
-
-        # Handle partial failures gracefully
-        if isinstance(semantic_results, Exception):
-            logger.error(f"Semantic search failed in hybrid_search_kb: {semantic_results}")
+        # Run searches sequentially (AsyncSession doesn't support concurrent operations)
+        try:
+            semantic_results = await self._semantic_search_kb(conversation_id, query, expanded_k)
+        except Exception as e:
+            logger.error(f"Semantic search failed in hybrid_search_kb: {e}")
             semantic_results = []
-        if isinstance(keyword_results, Exception):
-            logger.error(f"Keyword search failed in hybrid_search_kb: {keyword_results}")
+
+        try:
+            keyword_results = await self._keyword_search_kb(conversation_id, query, expanded_k)
+        except Exception as e:
+            logger.error(f"Keyword search failed in hybrid_search_kb: {e}")
             keyword_results = []
 
         # If no keyword results, fall back to semantic only

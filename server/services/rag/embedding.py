@@ -1,7 +1,7 @@
 """Embedding functions for the RAG system.
 
-Provides text-to-vector embedding using OpenAI's API with
-batch processing, retry logic, and concurrency control.
+Provides text-to-vector embedding via OpenRouter (OpenAI-compatible API)
+with batch processing, retry logic, and concurrency control.
 """
 
 import asyncio
@@ -21,14 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 async def get_embedding(text_content: str) -> list[float]:
-    """Generate embedding vector for text using OpenAI.
+    """Generate embedding vector for text via OpenRouter.
 
     Validates token count before sending to API and truncates if needed.
     """
     settings = get_settings()
 
-    if not settings.openai_api_key:
-        raise RuntimeError("OpenAI API key required for pgvector embeddings")
+    if not settings.openrouter_api_key:
+        raise RuntimeError("OPENROUTER_API_KEY required for embeddings")
 
     # Validate token count before sending to API
     token_count = count_tokens(text_content)
@@ -36,8 +36,10 @@ async def get_embedding(text_content: str) -> list[float]:
         logger.warning(f"Text exceeds token limit ({token_count} > {SAFE_TOKEN_LIMIT}), truncating")
         text_content = truncate_to_token_limit(text_content)
 
-    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-    response = await client.embeddings.create(model="text-embedding-3-small", input=text_content)
+    client = openai.AsyncOpenAI(
+        api_key=settings.openrouter_api_key, base_url=settings.openrouter_base_url
+    )
+    response = await client.embeddings.create(model=settings.embedding_model, input=text_content)
     return response.data[0].embedding
 
 
@@ -71,7 +73,7 @@ async def _embed_single_batch_with_retry(
         for attempt in range(max_retries):
             try:
                 response = await client.embeddings.create(
-                    model="text-embedding-3-small", input=texts
+                    model=get_settings().embedding_model, input=texts
                 )
                 return (batch_index, [item.embedding for item in response.data])
 
@@ -211,8 +213,8 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
 
     settings = get_settings()
 
-    if not settings.openai_api_key:
-        raise RuntimeError("OpenAI API key required for pgvector embeddings")
+    if not settings.openrouter_api_key:
+        raise RuntimeError("OPENROUTER_API_KEY required for embeddings")
 
     # Validate and fix oversized chunks before sending to API
     validated_texts, split_indices = validate_chunks_tokens(texts)
@@ -223,7 +225,9 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
             f"Original: {len(texts)}, After validation: {len(validated_texts)}"
         )
 
-    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    client = openai.AsyncOpenAI(
+        api_key=settings.openrouter_api_key, base_url=settings.openrouter_base_url
+    )
 
     return await _batch_embeddings_parallel(
         client=client,

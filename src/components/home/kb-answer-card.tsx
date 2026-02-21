@@ -1,13 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Bot, Search, BookOpen, X, Square, Send, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
+import { Bot, X, Square, Send, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { telemetry } from "@/lib/telemetry";
-import { ChatMessage, ChatFeedbackToolbar, ChatSources } from "@/components/chat";
+import {
+  ChatMessage,
+  ChatFeedbackToolbar,
+  ChatSources,
+  ChatThinking,
+  ChatToolSteps,
+} from "@/components/chat";
 import type { KBSource, KBTurn } from "@/hooks/use-kb-agent";
+import type { ToolStatus, ThinkingStatus } from "@/stores/streaming-store";
 
 interface KBAnswerCardProps {
   question: string;
@@ -21,13 +28,15 @@ interface KBAnswerCardProps {
   onAsk: (question: string) => void;
   history?: KBTurn[];
   conversationId?: string | null;
+  thinking?: ThinkingStatus;
+  toolHistory?: ToolStatus[];
 }
 
 export function KBAnswerCard({
   question,
   answer,
   sources,
-  activeTool,
+  activeTool: _activeTool,
   isAnswering,
   error,
   onClose,
@@ -35,6 +44,8 @@ export function KBAnswerCard({
   onAsk,
   history = [],
   conversationId,
+  thinking = { isThinking: false, content: "" },
+  toolHistory = [],
 }: KBAnswerCardProps) {
   const router = useRouter();
   const [followUp, setFollowUp] = useState("");
@@ -83,13 +94,12 @@ export function KBAnswerCard({
   const displayedQuestion = isViewingCurrent ? question : history[activeTurnIndex]?.question || "";
   const displayedAnswer = isViewingCurrent ? answer : history[activeTurnIndex]?.answer || "";
   const displayedSources = isViewingCurrent ? sources : history[activeTurnIndex]?.sources || [];
-
-  const toolLabel = useMemo(() => {
-    if (!activeTool) return null;
-    if (activeTool === "search_files") return "Searching documents...";
-    if (activeTool === "read_file_sections") return "Reading document...";
-    return "Working...";
-  }, [activeTool]);
+  const displayedThinking = isViewingCurrent
+    ? thinking
+    : history[activeTurnIndex]?.thinking || { isThinking: false, content: "" };
+  const displayedToolHistory = isViewingCurrent
+    ? toolHistory
+    : history[activeTurnIndex]?.toolHistory || [];
 
   const displayedTurnIndex = isViewingCurrent ? totalTurns - 1 : activeTurnIndex;
 
@@ -242,24 +252,19 @@ export function KBAnswerCard({
           <ChatMessage role="user" content={displayedQuestion} className="py-2" />
         </div>
 
-        {/* Tool activity indicator */}
-        <AnimatePresence>
-          {isViewingCurrent && toolLabel && (
-            <motion.div
-              className="flex items-center gap-2 border-b border-border/30 px-4 py-1.5"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-            >
-              {activeTool === "search_files" ? (
-                <Search className="h-3 w-3 animate-pulse text-muted-foreground" />
-              ) : (
-                <BookOpen className="h-3 w-3 animate-pulse text-muted-foreground" />
-              )}
-              <span className="text-xs text-muted-foreground">{toolLabel}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Thinking indicator */}
+        {(displayedThinking.isThinking || displayedThinking.content) && (
+          <div className="border-b border-border/30 px-4 py-1.5">
+            <ChatThinking thinking={displayedThinking} />
+          </div>
+        )}
+
+        {/* Tool steps */}
+        {displayedToolHistory.length > 0 && (
+          <div className="border-b border-border/30 px-4 py-1.5">
+            <ChatToolSteps tools={displayedToolHistory} collapseThreshold={2} />
+          </div>
+        )}
 
         {/* Answer — shared ChatMessage */}
         <div ref={contentRef} className="overflow-y-auto px-2 py-1">
@@ -287,7 +292,10 @@ export function KBAnswerCard({
                 />
               )}
             </ChatMessage>
-          ) : isViewingCurrent && isAnswering ? (
+          ) : isViewingCurrent &&
+            isAnswering &&
+            !displayedThinking.isThinking &&
+            displayedToolHistory.length === 0 ? (
             <div className="flex items-center gap-2 px-4 py-3">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Thinking...</span>

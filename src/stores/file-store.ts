@@ -294,6 +294,7 @@ export const useFileStore = create<FileState>()(
         try {
           // Import file via API (converts PDF/DOCX/MD to markdown)
           const serverFile = await api.importFile(file, parentId);
+          const plainText = serverFile.content.replace(/<[^>]*>/g, "").trim();
           const newFile: FileItem = {
             id: serverFile.id,
             name: serverFile.name,
@@ -305,8 +306,8 @@ export const useFileStore = create<FileState>()(
             icon: serverFile.icon || null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
-            wordCount: 0,
-            preview: "",
+            wordCount: plainText.split(/\s+/).filter(Boolean).length,
+            preview: plainText.slice(0, 200),
           };
 
           set((state) => ({

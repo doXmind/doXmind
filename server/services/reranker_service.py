@@ -1,15 +1,16 @@
-"""GPT-based reranking service using structured outputs.
+"""LLM-based reranking service via OpenRouter.
 
-This module provides document reranking using OpenAI GPT models with
-structured JSON outputs. The reranker scores each document by relevance
+This module provides document reranking using LLM models with
+JSON mode outputs. The reranker scores each document by relevance
 to the query and returns a reordered list.
 
-Benefits of GPT reranking:
+Benefits of LLM reranking:
 - Semantic understanding beyond keyword matching
-- Structured outputs ensure reliable JSON format
-- Uses existing OpenAI API key (no new dependencies)
+- JSON mode ensures reliable format
+- Uses OpenRouter API key (unified with other services)
 """
 
+import json
 import logging
 from typing import Any
 
@@ -45,10 +46,10 @@ class RerankResponse(BaseModel):
 
 
 class GPTReranker:
-    """Rerank documents using GPT with structured outputs.
+    """Rerank documents using LLM with JSON mode via OpenRouter.
 
-    Uses OpenAI's chat completions API with Pydantic models for
-    guaranteed JSON schema adherence.
+    Uses OpenAI-compatible chat completions API with JSON mode
+    for reliable structured output.
 
     Example:
         >>> reranker = GPTReranker()
@@ -65,11 +66,14 @@ class GPTReranker:
 
     @property
     def client(self):
-        """Lazy initialization of OpenAI client."""
+        """Lazy initialization of OpenRouter client."""
         if self._client is None:
             from openai import AsyncOpenAI
 
-            self._client = AsyncOpenAI(api_key=self.settings.openai_api_key)
+            self._client = AsyncOpenAI(
+                api_key=self.settings.openrouter_api_key,
+                base_url=self.settings.openrouter_base_url,
+            )
         return self._client
 
     async def rerank(
@@ -111,7 +115,11 @@ For each document:
 - reasoning: A brief (1 sentence) explanation of why this score was given
 
 Consider semantic meaning, context, and informativeness - not just keyword matching.
-A document that directly answers the query should score higher than one that merely mentions related terms."""
+A document that directly answers the query should score higher than one that merely mentions related terms.
+
+IMPORTANT: You MUST respond with valid JSON only. No markdown, no explanations, no code fences.
+The JSON must have this structure:
+{"ranked_documents": [{"index": 0, "relevance_score": 0.95, "reasoning": "..."}, ...]}"""
 
         user_prompt = f"""Query: {query}
 
@@ -121,24 +129,31 @@ Documents:
 Rank all {len(documents)} documents by relevance."""
 
         try:
-            # Get reranking model from settings (default: gpt-5-nano)
-            model = getattr(self.settings, "reranking_model", "gpt-5-nano")
+            model = self.settings.reranking_model
 
-            response = await self.client.beta.chat.completions.parse(
+            response = await self.client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                response_format=RerankResponse,
+                response_format={"type": "json_object"},
                 max_tokens=1500,
                 temperature=0.0,  # Deterministic for consistent rankings
             )
 
-            # Parse the structured response
-            parsed = response.choices[0].message.parsed
+            # Parse the JSON response
+            text = (response.choices[0].message.content or "").strip()
+            # Strip markdown code fences if present
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+                if text.endswith("```"):
+                    text = text[:-3].strip()
 
-            if not parsed or not parsed.ranked_documents:
+            raw = json.loads(text)
+            parsed = RerankResponse(**raw)
+
+            if not parsed.ranked_documents:
                 logger.warning("GPT reranker returned empty rankings")
                 return documents[:top_n]
 

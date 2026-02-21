@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { processSSEStream, createStreamController, isAbortError } from "@/lib/streaming";
 import { telemetry } from "@/lib/telemetry";
+import type { ToolStatus, ThinkingStatus } from "@/stores/streaming-store";
 
 export interface KBSource {
   file_id: string;
@@ -15,6 +16,8 @@ export interface KBTurn {
   question: string;
   answer: string;
   sources: KBSource[];
+  thinking?: ThinkingStatus;
+  toolHistory?: ToolStatus[];
 }
 
 interface KBAgentEvent {
@@ -37,11 +40,15 @@ export function useKBAgent() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<KBTurn[]>([]);
+  const [thinking, setThinking] = useState<ThinkingStatus>({ isThinking: false, content: "" });
+  const [toolHistory, setToolHistory] = useState<ToolStatus[]>([]);
 
   // Refs to track current values for saving to history
   const questionRef = useRef("");
   const answerRef = useRef("");
   const sourcesRef = useRef<KBSource[]>([]);
+  const thinkingRef = useRef<ThinkingStatus>({ isThinking: false, content: "" });
+  const toolHistoryRef = useRef<ToolStatus[]>([]);
   const turnIndexRef = useRef(0);
 
   // Telemetry refs
@@ -64,7 +71,13 @@ export function useKBAgent() {
       if (questionRef.current && answerRef.current) {
         setHistory((prev) => [
           ...prev,
-          { question: questionRef.current, answer: answerRef.current, sources: sourcesRef.current },
+          {
+            question: questionRef.current,
+            answer: answerRef.current,
+            sources: sourcesRef.current,
+            thinking: thinkingRef.current,
+            toolHistory: toolHistoryRef.current,
+          },
         ]);
         turnIndexRef.current++;
       }
@@ -73,6 +86,8 @@ export function useKBAgent() {
       questionRef.current = q;
       answerRef.current = "";
       sourcesRef.current = [];
+      thinkingRef.current = { isThinking: false, content: "" };
+      toolHistoryRef.current = [];
       firstTokenTimeRef.current = null;
       searchFilesCountRef.current = 0;
       readFileSectionsCountRef.current = 0;
@@ -84,6 +99,8 @@ export function useKBAgent() {
       setAnswer("");
       setSources([]);
       setActiveTool(null);
+      setThinking({ isThinking: false, content: "" });
+      setToolHistory([]);
       setError(null);
       setIsAnswering(true);
 
@@ -111,14 +128,49 @@ export function useKBAgent() {
                 setAnswer((prev) => prev + chunk);
                 break;
               }
-              case "tool_start":
+              case "thinking": {
+                const thinkingChunk = event.content || "";
+                const updated: ThinkingStatus = {
+                  isThinking: true,
+                  content: thinkingRef.current.content + thinkingChunk,
+                };
+                thinkingRef.current = updated;
+                setThinking(updated);
+                break;
+              }
+              case "thinking_end": {
+                const ended: ThinkingStatus = { ...thinkingRef.current, isThinking: false };
+                thinkingRef.current = ended;
+                setThinking(ended);
+                break;
+              }
+              case "tool_start": {
                 if (event.tool === "search_files") searchFilesCountRef.current++;
                 if (event.tool === "read_file_sections") readFileSectionsCountRef.current++;
                 setActiveTool(event.tool || null);
+                const toolStatus: ToolStatus = {
+                  name: event.tool || "",
+                  status: "running",
+                  toolId: event.tool_id,
+                };
+                toolHistoryRef.current = [...toolHistoryRef.current, toolStatus];
+                setToolHistory([...toolHistoryRef.current]);
                 break;
-              case "tool_end":
+              }
+              case "tool_end": {
                 setActiveTool(null);
+                toolHistoryRef.current = toolHistoryRef.current.map((t) =>
+                  t.toolId === event.tool_id
+                    ? {
+                        ...t,
+                        status:
+                          event.success === false ? ("error" as const) : ("completed" as const),
+                      }
+                    : t
+                );
+                setToolHistory([...toolHistoryRef.current]);
                 break;
+              }
               case "sources":
                 if (event.sources) {
                   sourcesRef.current = event.sources;
@@ -186,6 +238,7 @@ export function useKBAgent() {
     streamController.current.abort();
     setIsAnswering(false);
     setActiveTool(null);
+    setThinking((prev) => ({ ...prev, isThinking: false }));
   }, []);
 
   const clear = useCallback(() => {
@@ -207,12 +260,16 @@ export function useKBAgent() {
     setAnswer("");
     setSources([]);
     setActiveTool(null);
+    setThinking({ isThinking: false, content: "" });
+    setToolHistory([]);
     setError(null);
     setConversationId(null);
     setHistory([]);
     questionRef.current = "";
     answerRef.current = "";
     sourcesRef.current = [];
+    thinkingRef.current = { isThinking: false, content: "" };
+    toolHistoryRef.current = [];
     turnIndexRef.current = 0;
     conversationStartTimeRef.current = null;
   }, []);
@@ -229,6 +286,8 @@ export function useKBAgent() {
     conversationId,
     error,
     history,
+    thinking,
+    toolHistory,
     lastAnswerCompletedAt: answerCompleteTimeRef.current,
   };
 }

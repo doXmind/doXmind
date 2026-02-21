@@ -217,7 +217,7 @@ async def suggest(
                 user_id=token.sub,
             )
             max_output_tokens = 60  # ~1-2 sentences
-            model = settings.fast_model  # Haiku for speed
+            model = settings.fast_model
             temperature = 0.5
 
         elif request.include_rag and request.mode == "long":
@@ -234,7 +234,7 @@ async def suggest(
                 user_id=token.sub,
             )
             max_output_tokens = 200  # Multi-line paragraphs
-            model = settings.fast_model  # Use Haiku for speed (both modes)
+            model = settings.fast_model
             temperature = 0.6  # Slightly higher for more creative multi-line suggestions
 
         else:
@@ -254,14 +254,15 @@ async def suggest(
             f"User prompt: {len(user_prompt)} chars"
         )
 
-        # Get LLM completion
+        # Get LLM completion (disable reasoning for speed — autocomplete doesn't need it)
         llm = LLMService(model=model)
         raw_suggestion = await llm.complete(
             prompt=user_prompt,
             system=system_prompt,
             max_tokens=max_output_tokens,
             temperature=temperature,
-            stop=None,  # No stop sequences - rely on max_tokens
+            stop=None,
+            extra_body={"reasoning": {"enabled": False}},
         )
 
         logger.info(

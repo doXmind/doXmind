@@ -155,7 +155,7 @@ jobs:
       DATABASE_URL: "postgresql+asyncpg://doxmind:doxmind123@localhost:5432/doxmind_test"
       PGVECTOR_ENABLED: "false"
       JWT_SECRET_KEY: "test-secret-key-for-ci"
-      ANTHROPIC_API_KEY: "test-key"
+      OPENROUTER_API_KEY: "test-key"
       OPENAI_API_KEY: "test-openai-key"
     steps:
       - name: Checkout code

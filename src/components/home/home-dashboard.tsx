@@ -393,6 +393,8 @@ export function HomeDashboard() {
               onAsk={handleAskAgent}
               history={kbAgent.history}
               conversationId={kbAgent.conversationId}
+              thinking={kbAgent.thinking}
+              toolHistory={kbAgent.toolHistory}
             />
           </div>
         ) : isSearchActive || isDocumentsTab ? (

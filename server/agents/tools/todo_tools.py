@@ -23,6 +23,11 @@ def execute_todo_tool(tool_input: dict[str, Any]) -> dict[str, Any]:
     """
     todos = tool_input.get("todos", [])
 
+    # Ensure every todo has a unique id (LLM may omit it)
+    for i, todo in enumerate(todos):
+        if not todo.get("id"):
+            todo["id"] = str(i + 1)
+
     return {
         "success": True,
         "count": len(todos),

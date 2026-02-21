@@ -3,6 +3,7 @@
 Tests the RRF algorithm, hybrid search methods, and GPT reranker.
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,8 +12,6 @@ from services.rag_service import reciprocal_rank_fusion
 from services.reranker_service import (
     GPTReranker,
     NoOpReranker,
-    RankedDocument,
-    RerankResponse,
     get_reranker,
 )
 
@@ -160,18 +159,20 @@ class TestGPTReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_with_mock(self):
-        """Should rerank documents based on GPT response."""
+        """Should rerank documents based on LLM response."""
         reranker = GPTReranker()
 
-        # Mock the OpenAI response
+        # Mock the OpenRouter response with JSON content
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.parsed = RerankResponse(
-            ranked_documents=[
-                RankedDocument(index=1, relevance_score=0.95, reasoning="Most relevant"),
-                RankedDocument(index=0, relevance_score=0.6, reasoning="Somewhat relevant"),
-                RankedDocument(index=2, relevance_score=0.3, reasoning="Less relevant"),
-            ]
+        mock_response.choices[0].message.content = json.dumps(
+            {
+                "ranked_documents": [
+                    {"index": 1, "relevance_score": 0.95, "reasoning": "Most relevant"},
+                    {"index": 0, "relevance_score": 0.6, "reasoning": "Somewhat relevant"},
+                    {"index": 2, "relevance_score": 0.3, "reasoning": "Less relevant"},
+                ]
+            }
         )
 
         docs = [
@@ -182,7 +183,7 @@ class TestGPTReranker:
 
         # Mock the internal _client attribute
         mock_client = MagicMock()
-        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
         reranker._client = mock_client
 
         result = await reranker.rerank("query", docs, top_n=3)
@@ -206,7 +207,7 @@ class TestGPTReranker:
 
         # Mock the internal _client attribute to raise an error
         mock_client = MagicMock()
-        mock_client.beta.chat.completions.parse = AsyncMock(side_effect=Exception("API error"))
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
         reranker._client = mock_client
 
         result = await reranker.rerank("query", docs, top_n=2)
@@ -222,12 +223,14 @@ class TestGPTReranker:
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.parsed = RerankResponse(
-            ranked_documents=[
-                RankedDocument(index=0, relevance_score=0.9, reasoning="r1"),
-                RankedDocument(index=1, relevance_score=0.8, reasoning="r2"),
-                RankedDocument(index=2, relevance_score=0.7, reasoning="r3"),
-            ]
+        mock_response.choices[0].message.content = json.dumps(
+            {
+                "ranked_documents": [
+                    {"index": 0, "relevance_score": 0.9, "reasoning": "r1"},
+                    {"index": 1, "relevance_score": 0.8, "reasoning": "r2"},
+                    {"index": 2, "relevance_score": 0.7, "reasoning": "r3"},
+                ]
+            }
         )
 
         docs = [
@@ -238,7 +241,7 @@ class TestGPTReranker:
 
         # Mock the internal _client attribute
         mock_client = MagicMock()
-        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
         reranker._client = mock_client
 
         result = await reranker.rerank("query", docs, top_n=2)

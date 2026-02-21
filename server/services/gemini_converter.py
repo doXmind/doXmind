@@ -1,27 +1,27 @@
-"""Gemini-based file converter service.
+"""File converter service via OpenRouter (OpenAI-compatible API).
 
-Uses Google's Gemini API to convert PDF, DOCX, PPTX files to Markdown.
+Converts PDF, DOCX, PPTX files to Markdown using multimodal LLM models.
 """
 
 import asyncio
+import base64
 import io
 import logging
 from functools import lru_cache
+
+from openai import AsyncOpenAI
 
 from config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# MIME types for formats Gemini supports natively
+# MIME types for formats supported natively via multimodal input
 NATIVE_MIME_TYPES = {
     ".pdf": "application/pdf",
 }
 
-# File types that need pre-processing before Gemini
+# File types that need pre-processing before LLM formatting
 PREPROCESSED_TYPES = {".docx", ".pptx"}
-
-# Default model for conversion
-DEFAULT_MODEL = "gemini-2.5-flash-lite"
 
 # Conversion prompt for native file uploads (PDF, images)
 CONVERSION_PROMPT = """Convert this document to well-formatted Markdown.
@@ -56,14 +56,15 @@ Document content:
 
 
 @lru_cache
-def get_gemini_client():
-    """Get cached Gemini client instance."""
-    from google import genai
-
+def _get_client() -> AsyncOpenAI:
+    """Get cached OpenRouter client instance."""
     settings = get_settings()
-    if not settings.google_api_key:
-        raise ValueError("GOOGLE_API_KEY is not configured")
-    return genai.Client(api_key=settings.google_api_key)
+    if not settings.openrouter_api_key:
+        raise ValueError("OPENROUTER_API_KEY is not configured")
+    return AsyncOpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+    )
 
 
 def extract_docx_content(content: bytes) -> str:
@@ -117,15 +118,15 @@ def extract_docx_content(content: bytes) -> str:
 
 
 async def convert_file_to_markdown(
-    content: bytes, filename: str, extension: str, model: str = DEFAULT_MODEL
+    content: bytes, filename: str, extension: str, model: str | None = None
 ) -> str:
-    """Convert file content to Markdown using Gemini API.
+    """Convert file content to Markdown via OpenRouter API.
 
     Args:
         content: Raw file bytes
         filename: Original filename (for logging)
         extension: File extension (e.g., '.pdf', '.docx')
-        model: Gemini model to use for conversion
+        model: Model to use for conversion (defaults to settings.file_conversion_model)
 
     Returns:
         Converted Markdown content
@@ -140,62 +141,69 @@ async def convert_file_to_markdown(
     if ext_lower not in supported_types:
         raise ValueError(f"Unsupported file type: {extension}")
 
-    # Handle DOCX files: extract text first, then format with Gemini
+    settings = get_settings()
+    effective_model = model or settings.file_conversion_model
+
+    # Handle DOCX files: extract text first, then format with LLM
     if ext_lower == ".docx":
-        return await _convert_docx_to_markdown(content, filename, model)
+        return await _convert_docx_to_markdown(content, filename, effective_model)
 
     # Handle PPTX files (not yet implemented)
     if ext_lower == ".pptx":
         raise ValueError("PPTX conversion not yet implemented. Please convert to PDF first.")
 
-    # Handle native formats (PDF) - send directly to Gemini
+    # Handle native formats (PDF) - send as base64 via multimodal message
     mime_type = NATIVE_MIME_TYPES[ext_lower]
 
-    def _sync_generate() -> str:
-        """Synchronous Gemini API call to run in thread pool."""
-        from google.genai import types
-
-        client = get_gemini_client()
-        response = client.models.generate_content(
-            model=model,
-            contents=[
-                types.Part.from_bytes(
-                    data=content,
-                    mime_type=mime_type,
-                ),
-                CONVERSION_PROMPT,
-            ],
-        )
-        return response.text
-
     try:
-        markdown_content = await asyncio.to_thread(_sync_generate)
+        client = _get_client()
+        b64_data = base64.b64encode(content).decode("utf-8")
+        data_url = f"data:{mime_type};base64,{b64_data}"
+
+        response = await client.chat.completions.create(
+            model=effective_model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": data_url},
+                        },
+                        {
+                            "type": "text",
+                            "text": CONVERSION_PROMPT,
+                        },
+                    ],
+                }
+            ],
+            max_tokens=16384,
+        )
+        markdown_content = response.choices[0].message.content
 
         if not markdown_content:
-            raise ValueError("Gemini returned empty response")
+            raise ValueError("LLM returned empty response")
 
-        logger.info(f"Successfully converted {filename} to Markdown using Gemini")
+        logger.info(f"Successfully converted {filename} to Markdown")
         return markdown_content
 
     except Exception as e:
-        logger.error(f"Gemini conversion failed for {filename}: {e}")
+        logger.error(f"File conversion failed for {filename}: {e}")
         raise
 
 
-async def _convert_docx_to_markdown(
-    content: bytes, filename: str, model: str = DEFAULT_MODEL
-) -> str:
-    """Convert DOCX file to Markdown by extracting text and formatting with Gemini.
+async def _convert_docx_to_markdown(content: bytes, filename: str, model: str) -> str:
+    """Convert DOCX file to Markdown by extracting text and formatting with LLM.
 
     Args:
         content: Raw DOCX file bytes
         filename: Original filename (for logging)
-        model: Gemini model to use for formatting
+        model: Model to use for formatting
 
     Returns:
         Formatted Markdown content
     """
-    # Extract text content from DOCX
+    # Extract text content from DOCX (sync I/O, run in thread)
     try:
         extracted_text = await asyncio.to_thread(extract_docx_content, content)
     except Exception as e:
@@ -205,29 +213,28 @@ async def _convert_docx_to_markdown(
     if not extracted_text.strip():
         raise ValueError("DOCX file appears to be empty")
 
-    # Use Gemini to format the extracted text as proper Markdown
-    def _sync_format() -> str:
-        client = get_gemini_client()
-        response = client.models.generate_content(
-            model=model, contents=[TEXT_CONVERSION_PROMPT + extracted_text]
-        )
-        return response.text
-
+    # Use LLM to format the extracted text as proper Markdown
     try:
-        markdown_content = await asyncio.to_thread(_sync_format)
+        client = _get_client()
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": TEXT_CONVERSION_PROMPT + extracted_text}],
+            max_tokens=16384,
+        )
+        markdown_content = response.choices[0].message.content
 
         if not markdown_content:
-            raise ValueError("Gemini returned empty response")
+            raise ValueError("LLM returned empty response")
 
-        logger.info(f"Successfully converted {filename} to Markdown using Gemini")
+        logger.info(f"Successfully converted {filename} to Markdown")
         return markdown_content
 
     except Exception as e:
-        logger.error(f"Gemini formatting failed for {filename}: {e}")
+        logger.error(f"File conversion formatting failed for {filename}: {e}")
         raise
 
 
-def is_gemini_configured() -> bool:
-    """Check if Gemini API is properly configured."""
+def is_converter_configured() -> bool:
+    """Check if file conversion API is properly configured."""
     settings = get_settings()
-    return bool(settings.google_api_key)
+    return bool(settings.openrouter_api_key)

@@ -160,13 +160,13 @@ export function EmptyState() {
     e.target.value = "";
 
     setIsImporting(true);
+    const toastId = toast.loading(`Importing "${file.name}"...`);
     try {
-      const newId = await importFile(file);
-      router.push(`/editor/${newId}`);
-      toast.success(`Imported "${file.name}" successfully`);
+      await importFile(file);
+      toast.success(`Imported "${file.name}" successfully`, { id: toastId });
     } catch (error) {
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      toast.error(title, { id: toastId, description });
     } finally {
       setIsImporting(false);
     }

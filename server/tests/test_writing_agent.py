@@ -1,100 +1,106 @@
 """Tests for Writing Agent.
 
-These tests use mocks to avoid actual API calls to Anthropic.
+These tests use mocks to avoid actual API calls to OpenRouter.
 """
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from agents.writing_agent import WritingAgent
 
 # ============================================================================
-# Mock Helpers
+# Mock Helpers (OpenAI streaming format)
 # ============================================================================
 
 
-class MockContentBlock:
-    """Mock content block for streaming."""
+class MockToolCallDelta:
+    """Mock OpenAI tool call delta."""
 
-    def __init__(self, block_type: str, **kwargs):
-        self.type = block_type
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+    def __init__(self, index: int, tool_id: str = None, name: str = None, arguments: str = None):
+        self.index = index
+        self.id = tool_id
+        self.function = MagicMock()
+        self.function.name = name
+        self.function.arguments = arguments
 
 
 class MockDelta:
-    """Mock delta for streaming."""
+    """Mock OpenAI delta object."""
 
-    def __init__(self, delta_type: str, **kwargs):
-        self.type = delta_type
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-
-class MockStreamEvent:
-    """Mock stream event."""
-
-    def __init__(self, event_type: str, **kwargs):
-        self.type = event_type
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+    def __init__(self, content: str | None = None, tool_calls: list | None = None):
+        self.content = content
+        self.tool_calls = tool_calls
 
 
-class MockStreamContext:
-    """Mock async stream context manager."""
+class MockChoice:
+    """Mock OpenAI streaming choice."""
 
-    def __init__(self, events: list):
-        self.events = events
+    def __init__(self, delta: MockDelta, finish_reason: str | None = None):
+        self.delta = delta
+        self.finish_reason = finish_reason
 
-    async def __aenter__(self):
-        return self
 
-    async def __aexit__(self, *args):
-        pass
+class MockStreamChunk:
+    """Mock OpenAI streaming chunk."""
+
+    def __init__(self, choices: list | None = None, usage=None):
+        self.choices = choices or []
+        self.usage = usage
+
+
+class MockAsyncStream:
+    """Mock async iterator for OpenAI streaming."""
+
+    def __init__(self, chunks: list):
+        self.chunks = chunks
 
     def __aiter__(self):
         return self
 
     async def __anext__(self):
-        if not self.events:
+        if not self.chunks:
             raise StopAsyncIteration
-        return self.events.pop(0)
+        return self.chunks.pop(0)
 
 
-def create_text_stream_events(text: str) -> list:
-    """Create stream events for a simple text response."""
+def create_text_stream_chunks(text: str) -> list:
+    """Create OpenAI stream chunks for a simple text response."""
     return [
-        MockStreamEvent("content_block_start", content_block=MockContentBlock("text")),
-        MockStreamEvent("content_block_delta", delta=MockDelta("text_delta", text=text)),
-        MockStreamEvent("content_block_stop"),
+        MockStreamChunk(choices=[MockChoice(delta=MockDelta(content=text))]),
+        MockStreamChunk(choices=[MockChoice(delta=MockDelta(), finish_reason="stop")]),
     ]
 
 
-def create_tool_use_events(tool_name: str, tool_id: str, tool_input: dict) -> list:
-    """Create stream events for a tool use."""
+def create_tool_use_chunks(tool_name: str, tool_id: str, tool_input: dict) -> list:
+    """Create OpenAI stream chunks for a tool use."""
     input_json = json.dumps(tool_input)
     return [
-        MockStreamEvent(
-            "content_block_start",
-            content_block=MockContentBlock("tool_use", id=tool_id, name=tool_name),
+        # First chunk: tool call start with id and name
+        MockStreamChunk(
+            choices=[
+                MockChoice(
+                    delta=MockDelta(
+                        tool_calls=[
+                            MockToolCallDelta(
+                                index=0, tool_id=tool_id, name=tool_name, arguments=""
+                            )
+                        ]
+                    )
+                )
+            ]
         ),
-        MockStreamEvent(
-            "content_block_delta", delta=MockDelta("input_json_delta", partial_json=input_json)
+        # Second chunk: arguments
+        MockStreamChunk(
+            choices=[
+                MockChoice(
+                    delta=MockDelta(tool_calls=[MockToolCallDelta(index=0, arguments=input_json)])
+                )
+            ]
         ),
-        MockStreamEvent("content_block_stop"),
-    ]
-
-
-def create_thinking_events(thinking_text: str) -> list:
-    """Create stream events for thinking content."""
-    return [
-        MockStreamEvent("content_block_start", content_block=MockContentBlock("thinking")),
-        MockStreamEvent(
-            "content_block_delta", delta=MockDelta("thinking_delta", thinking=thinking_text)
-        ),
-        MockStreamEvent("content_block_stop"),
+        # Finish
+        MockStreamChunk(choices=[MockChoice(delta=MockDelta(), finish_reason="stop")]),
     ]
 
 
@@ -107,28 +113,29 @@ class TestWritingAgentInit:
     """Tests for WritingAgent initialization."""
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    def test_init_with_default_mode(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    def test_init_with_default_mode(self, mock_openai, mock_settings):
         """Should initialize with default edit mode."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
 
         agent = WritingAgent()
 
         assert agent.mode == "edit"
-        assert agent.enable_thinking is False
         assert agent.kb_attachments == []
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    def test_init_with_analyze_mode(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    def test_init_with_analyze_mode(self, mock_openai, mock_settings):
         """Should initialize with analyze mode."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
 
@@ -137,26 +144,13 @@ class TestWritingAgentInit:
         assert agent.mode == "analyze"
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    def test_init_with_thinking_enabled(self, mock_anthropic, mock_settings):
-        """Should enable thinking when specified."""
-        mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096,
-        )
-
-        agent = WritingAgent(enable_thinking=True)
-
-        assert agent.enable_thinking is True
-
-    @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    def test_init_with_kb_attachments(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    def test_init_with_kb_attachments(self, mock_openai, mock_settings):
         """Should store KB attachments."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
@@ -168,7 +162,7 @@ class TestWritingAgentInit:
     @patch("agents.writing_agent.get_settings")
     def test_init_without_api_key_raises(self, mock_settings):
         """Should raise error when API key is missing."""
-        mock_settings.return_value = MagicMock(anthropic_api_key=None)
+        mock_settings.return_value = MagicMock(openrouter_api_key=None)
 
         with pytest.raises(ValueError, match="No API key available"):
             WritingAgent()
@@ -184,12 +178,13 @@ class TestMessageBuilding:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_build_messages_simple(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_build_messages_simple(self, mock_openai, mock_settings):
         """Should build simple text messages."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -202,12 +197,13 @@ class TestMessageBuilding:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_build_messages_with_history(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_build_messages_with_history(self, mock_openai, mock_settings):
         """Should include history in messages."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -225,12 +221,13 @@ class TestMessageBuilding:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_build_messages_with_images(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_build_messages_with_images(self, mock_openai, mock_settings):
         """Should build multimodal messages with images."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -240,18 +237,19 @@ class TestMessageBuilding:
 
         assert len(messages) == 1
         assert isinstance(messages[0]["content"], list)
-        # First should be image, last should be text
-        assert messages[0]["content"][0]["type"] == "image"
+        # First should be image_url, last should be text
+        assert messages[0]["content"][0]["type"] == "image_url"
         assert messages[0]["content"][-1]["type"] == "text"
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_build_multimodal_content_multiple_images(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_build_multimodal_content_multiple_images(self, mock_openai, mock_settings):
         """Should add labels for multiple images."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -279,12 +277,13 @@ class TestKBContext:
     """Tests for KB context building."""
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    def test_build_kb_context_returns_none_without_attachments(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    def test_build_kb_context_returns_none_without_attachments(self, mock_openai, mock_settings):
         """Should return None when no attachments."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -294,14 +293,15 @@ class TestKBContext:
         assert context is None
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
+    @patch("agents.writing_agent.AsyncOpenAI")
     def test_build_kb_context_returns_none_without_conversation_id(
-        self, mock_anthropic, mock_settings
+        self, mock_openai, mock_settings
     ):
         """Should return None when no conversation ID."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         agent = WritingAgent(kb_attachments=[{"id": "att-1"}])
@@ -311,12 +311,13 @@ class TestKBContext:
         assert context is None
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    def test_build_kb_context_returns_context(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    def test_build_kb_context_returns_context(self, mock_openai, mock_settings):
         """Should return context when both attachments and conversation ID present."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
@@ -339,21 +340,22 @@ class TestStreaming:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_stream_yields_text_events(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_stream_yields_text_events(self, mock_openai, mock_settings):
         """Should yield text events from stream."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
 
-        # Create mock stream
-        events = create_text_stream_events("Hello, world!")
-        mock_stream = MockStreamContext(events)
+        # Create mock stream with OpenAI format
+        chunks = create_text_stream_chunks("Hello, world!")
+        mock_stream = MockAsyncStream(chunks)
         mock_client = MagicMock()
-        mock_client.messages.stream.return_value = mock_stream
-        mock_anthropic.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_stream)
+        mock_openai.return_value = mock_client
 
         agent = WritingAgent()
         files = [{"id": "file-1", "name": "doc.md", "content": "Test content"}]
@@ -369,47 +371,19 @@ class TestStreaming:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_stream_yields_thinking_events(self, mock_anthropic, mock_settings):
-        """Should yield thinking events when enabled."""
-        mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
-            max_output_tokens=4096,
-        )
-
-        # Create thinking + text events
-        events = create_thinking_events("Let me think...") + create_text_stream_events("Answer")
-        mock_stream = MockStreamContext(events)
-        mock_client = MagicMock()
-        mock_client.messages.stream.return_value = mock_stream
-        mock_anthropic.return_value = mock_client
-
-        agent = WritingAgent(enable_thinking=True)
-        files = [{"id": "file-1", "name": "doc.md", "content": "Test"}]
-
-        collected_events = []
-        async for event in agent.stream("Test", files):
-            collected_events.append(event)
-
-        # Should have thinking events
-        thinking_events = [e for e in collected_events if e.get("type") == "thinking"]
-        assert len(thinking_events) > 0
-
-    @pytest.mark.asyncio
-    @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_stream_handles_error(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_stream_handles_error(self, mock_openai, mock_settings):
         """Should yield error event on exception."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
 
         mock_client = MagicMock()
-        mock_client.messages.stream.side_effect = Exception("API error")
-        mock_anthropic.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
+        mock_openai.return_value = mock_client
 
         agent = WritingAgent()
         files = [{"id": "file-1", "name": "doc.md", "content": "Test"}]
@@ -425,20 +399,21 @@ class TestStreaming:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_stream_marks_first_file_as_current(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_stream_marks_first_file_as_current(self, mock_openai, mock_settings):
         """Should mark first file as current."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
 
-        events = create_text_stream_events("Done")
-        mock_stream = MockStreamContext(events)
+        chunks = create_text_stream_chunks("Done")
+        mock_stream = MockAsyncStream(chunks)
         mock_client = MagicMock()
-        mock_client.messages.stream.return_value = mock_stream
-        mock_anthropic.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_stream)
+        mock_openai.return_value = mock_client
 
         agent = WritingAgent()
         files = [
@@ -463,21 +438,22 @@ class TestRunMethod:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncAnthropic")
-    async def test_run_collects_response_and_edits(self, mock_anthropic, mock_settings):
+    @patch("agents.writing_agent.AsyncOpenAI")
+    async def test_run_collects_response_and_edits(self, mock_openai, mock_settings):
         """Should collect full response and edits."""
         mock_settings.return_value = MagicMock(
-            anthropic_api_key="test-key",
-            default_model="claude-3-5-sonnet-20241022",
+            openrouter_api_key="test-key",
+            openrouter_base_url="https://openrouter.ai/api/v1",
+            default_model="z-ai/glm-5",
             max_output_tokens=4096,
         )
 
         # Mock stream to yield text events
-        events = create_text_stream_events("Hello ") + create_text_stream_events("world!")
-        mock_stream = MockStreamContext(events)
+        chunks = create_text_stream_chunks("Hello world!")
+        mock_stream = MockAsyncStream(chunks)
         mock_client = MagicMock()
-        mock_client.messages.stream.return_value = mock_stream
-        mock_anthropic.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_stream)
+        mock_openai.return_value = mock_client
 
         agent = WritingAgent()
         files = [{"id": "file-1", "name": "doc.md", "content": "Test"}]

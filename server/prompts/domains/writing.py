@@ -145,13 +145,16 @@ Always: Keep chat responses brief, let the document changes speak for themselves
 
 {{kb_context}}
 
-{{web_tools_context}}"""
+{{web_tools_context}}
+
+{{data_files_context}}"""
 
 
 def build_writing_prompt(
     mode: str,
     files: list[dict[str, Any]],
     kb_attachments: list[dict[str, Any]] | None = None,
+    data_files_metadata: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build the complete Writing Agent system prompt.
 
@@ -159,6 +162,7 @@ def build_writing_prompt(
         mode: "edit" for full editing or "analyze" for read-only
         files: List of file contexts with id, name, content
         kb_attachments: Optional list of KB attachments
+        data_files_metadata: Optional list of data files metadata for code execution
 
     Returns:
         Complete system prompt string
@@ -199,6 +203,12 @@ ANALYZE MODE - Read-only
     # Web tools context
     web_tools_context = build_web_tools_context()
     prompt = prompt.replace("{{web_tools_context}}", web_tools_context)
+
+    # Data files context
+    data_files_context = (
+        build_data_files_context(data_files_metadata) if data_files_metadata else ""
+    )
+    prompt = prompt.replace("{{data_files_context}}", data_files_context)
 
     return prompt
 
@@ -298,6 +308,62 @@ Tools:
 IMPORTANT: ALWAYS search KB first before providing general knowledge.
 Cite your sources when using KB information.
 </knowledge_base>"""
+
+
+def build_data_files_context(data_files_metadata: list[dict[str, Any]] | None) -> str:
+    """Build data files context section for system prompt.
+
+    Informs the agent about uploaded data files so it can use code_execution
+    to analyze them without needing to call list_data_files first.
+
+    Args:
+        data_files_metadata: List of data file metadata dicts
+
+    Returns:
+        Data files context XML block or empty string
+    """
+    if not data_files_metadata:
+        return ""
+
+    file_entries = []
+    for df in data_files_metadata:
+        filename = df.get("filename", "unknown")
+        file_type = df.get("file_type", "").upper()
+        row_count = df.get("row_count", 0)
+        column_names = df.get("column_names", [])
+
+        info = f"- **{filename}** ({file_type})"
+        if row_count and row_count > 0:
+            info += f" — {row_count:,} rows"
+        if column_names:
+            cols = ", ".join(str(c) for c in column_names[:10])
+            if len(column_names) > 10:
+                cols += f"... +{len(column_names) - 10} more"
+            info += f"\n  Columns: [{cols}]"
+
+        file_entries.append(info)
+
+    files_list = "\n".join(file_entries)
+
+    return f"""<data_files>
+Uploaded data files available for analysis:
+{files_list}
+
+**CRITICAL**: You MUST use the `code_execution` tool to analyze these files.
+- NEVER attempt to calculate, aggregate, or analyze data mentally or in your thinking
+- NEVER guess numbers from preview data — always run code on the full dataset
+- The message only contains a small preview; the FULL files are in the execution sandbox
+
+How to use:
+```python
+import pandas as pd
+df = pd.read_csv('filename.csv')  # CSV
+df = pd.read_excel('filename.xlsx')  # Excel
+import json; data = json.load(open('filename.json'))  # JSON
+```
+
+Workflow: code_execution → get results → present findings → write to document
+</data_files>"""
 
 
 def build_web_tools_context() -> str:

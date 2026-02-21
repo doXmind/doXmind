@@ -1,5 +1,5 @@
 """
-Tests for LLM Service.
+Tests for LLM Service (OpenAI SDK via OpenRouter).
 """
 
 import json
@@ -14,59 +14,64 @@ from services.llm_service import LLMService
 # =============================================================================
 
 
-class MockContentBlock:
-    """Mock Anthropic ContentBlock."""
+class MockChoice:
+    """Mock OpenAI Choice object."""
 
     def __init__(self, text: str):
-        self.text = text
-        self.type = "text"
+        self.message = MagicMock(content=text)
+        self.finish_reason = "stop"
 
 
-class MockMessage:
-    """Mock Anthropic Message response."""
+class MockChatCompletion:
+    """Mock OpenAI ChatCompletion response."""
 
     def __init__(self, text: str):
-        self.content = [MockContentBlock(text)]
-        self.model = "claude-3-5-sonnet-20241022"
-        self.stop_reason = "end_turn"
+        self.choices = [MockChoice(text)]
+        self.model = "z-ai/glm-5"
+        self.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
 
 
-class MockStreamManager:
-    """Mock Anthropic stream context manager."""
+class MockStreamChunk:
+    """Mock OpenAI streaming chunk."""
 
-    def __init__(self, texts: list[str]):
-        self.texts = texts
+    def __init__(self, content: str | None = None, finish_reason: str | None = None):
+        delta = MagicMock()
+        delta.content = content
+        choice = MagicMock()
+        choice.delta = delta
+        choice.finish_reason = finish_reason
+        self.choices = [choice]
+        self.usage = None
 
-    async def __aenter__(self):
+
+class MockAsyncStream:
+    """Mock async iterator for streaming."""
+
+    def __init__(self, chunks: list):
+        self.chunks = chunks
+
+    def __aiter__(self):
         return self
 
-    async def __aexit__(self, *args):
-        pass
-
-    @property
-    def text_stream(self):
-        return self._text_stream()
-
-    async def _text_stream(self):
-        for text in self.texts:
-            yield text
+    async def __anext__(self):
+        if not self.chunks:
+            raise StopAsyncIteration
+        return self.chunks.pop(0)
 
 
 @pytest.fixture
 def mock_client():
-    """Create a mock Anthropic client."""
+    """Create a mock OpenAI client."""
     mock = MagicMock()
-    mock.messages.create = AsyncMock(return_value=MockMessage("Test response"))
-    mock.messages.stream = MagicMock(return_value=MockStreamManager(["Hello ", "World!"]))
-    mock.beta.messages.create = AsyncMock(return_value=MockMessage('{"key": "value"}'))
+    mock.chat.completions.create = AsyncMock(return_value=MockChatCompletion("Test response"))
     return mock
 
 
 @pytest.fixture
 def llm_service(mock_client):
     """Create LLMService with mocked client."""
-    with patch("services.llm_service.AsyncAnthropic", return_value=mock_client):
-        service = LLMService()
+    with patch("services.llm_service.AsyncOpenAI", return_value=mock_client):
+        service = LLMService(api_key="test-key")
         service.client = mock_client
         return service
 
@@ -82,22 +87,22 @@ class TestLLMServiceInit:
 
     def test_init_with_api_key(self):
         """Test service initializes with API key from environment."""
-        with patch("services.llm_service.AsyncAnthropic") as mock_anthropic:
-            service = LLMService()
-            mock_anthropic.assert_called_once()
+        with patch("services.llm_service.AsyncOpenAI") as mock_openai:
+            service = LLMService(api_key="test-key")
+            mock_openai.assert_called_once()
             assert service.model is not None
 
     def test_init_with_custom_model(self):
         """Test service can use custom model."""
-        with patch("services.llm_service.AsyncAnthropic"):
-            service = LLMService(model="claude-3-opus-20240229")
-            assert service.model == "claude-3-opus-20240229"
+        with patch("services.llm_service.AsyncOpenAI"):
+            service = LLMService(model="z-ai/glm-5", api_key="test-key")
+            assert service.model == "z-ai/glm-5"
 
     def test_init_without_api_key_raises(self):
         """Test service raises error when API key is missing."""
         with patch("services.llm_service.get_settings") as mock_settings:
-            mock_settings.return_value.anthropic_api_key = None
-            with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+            mock_settings.return_value.openrouter_api_key = None
+            with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
                 LLMService()
 
 
@@ -111,22 +116,24 @@ class TestLLMServiceComplete:
         result = await llm_service.complete("Hello, AI!")
 
         assert result == "Test response"
-        mock_client.messages.create.assert_called_once()
+        mock_client.chat.completions.create.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_complete_with_system_prompt(self, llm_service, mock_client):
-        """Test complete passes system prompt."""
+        """Test complete passes system prompt as first message."""
         await llm_service.complete("Hello", system="You are a poet.")
 
-        call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["system"] == "You are a poet."
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        messages = call_kwargs["messages"]
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a poet."
 
     @pytest.mark.asyncio
     async def test_complete_with_custom_temperature(self, llm_service, mock_client):
         """Test complete uses custom temperature."""
         await llm_service.complete("Hello", temperature=0.3)
 
-        call_kwargs = mock_client.messages.create.call_args.kwargs
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["temperature"] == 0.3
 
     @pytest.mark.asyncio
@@ -134,7 +141,7 @@ class TestLLMServiceComplete:
         """Test complete uses custom max_tokens."""
         await llm_service.complete("Hello", max_tokens=500)
 
-        call_kwargs = mock_client.messages.create.call_args.kwargs
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["max_tokens"] == 500
 
     @pytest.mark.asyncio
@@ -142,21 +149,23 @@ class TestLLMServiceComplete:
         """Test complete passes stop sequences."""
         await llm_service.complete("Hello", stop=["STOP", "END"])
 
-        call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["stop_sequences"] == ["STOP", "END"]
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["stop"] == ["STOP", "END"]
 
     @pytest.mark.asyncio
     async def test_complete_uses_default_system(self, llm_service, mock_client):
         """Test complete uses default system prompt when none provided."""
         await llm_service.complete("Hello")
 
-        call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert "writing assistant" in call_kwargs["system"].lower()
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        messages = call_kwargs["messages"]
+        assert messages[0]["role"] == "system"
+        assert "writing assistant" in messages[0]["content"].lower()
 
     @pytest.mark.asyncio
     async def test_complete_handles_api_error(self, llm_service, mock_client):
         """Test complete raises on API error."""
-        mock_client.messages.create.side_effect = Exception("API Error")
+        mock_client.chat.completions.create.side_effect = Exception("API Error")
 
         with pytest.raises(Exception, match="API Error"):
             await llm_service.complete("Hello")
@@ -169,42 +178,49 @@ class TestLLMServiceStream:
     @pytest.mark.asyncio
     async def test_stream_yields_text_chunks(self, llm_service, mock_client):
         """Test stream yields text chunks."""
-        chunks = []
-        async for chunk in llm_service.stream("Hello"):
-            chunks.append(chunk)
+        chunks = [
+            MockStreamChunk(content="Hello "),
+            MockStreamChunk(content="World!"),
+            MockStreamChunk(content=None, finish_reason="stop"),
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=MockAsyncStream(chunks))
 
-        assert chunks == ["Hello ", "World!"]
+        collected = []
+        async for chunk in llm_service.stream("Hello"):
+            collected.append(chunk)
+
+        assert collected == ["Hello ", "World!"]
 
     @pytest.mark.asyncio
     async def test_stream_with_system_prompt(self, llm_service, mock_client):
-        """Test stream passes system prompt."""
+        """Test stream passes system prompt as first message."""
+        chunks = [MockStreamChunk(content="Hi", finish_reason="stop")]
+        mock_client.chat.completions.create = AsyncMock(return_value=MockAsyncStream(chunks))
+
         async for _ in llm_service.stream("Hello", system="Be brief"):
             pass
 
-        call_kwargs = mock_client.messages.stream.call_args.kwargs
-        assert call_kwargs["system"] == "Be brief"
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        messages = call_kwargs["messages"]
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "Be brief"
 
     @pytest.mark.asyncio
     async def test_stream_with_custom_temperature(self, llm_service, mock_client):
         """Test stream uses custom temperature."""
+        chunks = [MockStreamChunk(content="Hi", finish_reason="stop")]
+        mock_client.chat.completions.create = AsyncMock(return_value=MockAsyncStream(chunks))
+
         async for _ in llm_service.stream("Hello", temperature=0.9):
             pass
 
-        call_kwargs = mock_client.messages.stream.call_args.kwargs
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["temperature"] == 0.9
 
     @pytest.mark.asyncio
     async def test_stream_handles_error(self, llm_service, mock_client):
         """Test stream raises on error."""
-
-        class ErrorStream:
-            async def __aenter__(self):
-                raise Exception("Stream error")
-
-            async def __aexit__(self, *args):
-                pass
-
-        mock_client.messages.stream.return_value = ErrorStream()
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("Stream error"))
 
         with pytest.raises(Exception, match="Stream error"):
             async for _ in llm_service.stream("Hello"):
@@ -218,21 +234,31 @@ class TestLLMServiceChat:
     @pytest.mark.asyncio
     async def test_chat_yields_text_chunks(self, llm_service, mock_client):
         """Test chat yields text chunks."""
+        chunks = [
+            MockStreamChunk(content="Hello "),
+            MockStreamChunk(content="World!"),
+            MockStreamChunk(content=None, finish_reason="stop"),
+        ]
+        mock_client.chat.completions.create = AsyncMock(return_value=MockAsyncStream(chunks))
+
         messages = [
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},
             {"role": "user", "content": "How are you?"},
         ]
 
-        chunks = []
+        collected = []
         async for chunk in llm_service.chat(messages):
-            chunks.append(chunk)
+            collected.append(chunk)
 
-        assert chunks == ["Hello ", "World!"]
+        assert collected == ["Hello ", "World!"]
 
     @pytest.mark.asyncio
     async def test_chat_passes_messages(self, llm_service, mock_client):
         """Test chat passes messages in correct format."""
+        chunks = [MockStreamChunk(content="Hi", finish_reason="stop")]
+        mock_client.chat.completions.create = AsyncMock(return_value=MockAsyncStream(chunks))
+
         messages = [
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi!"},
@@ -241,19 +267,28 @@ class TestLLMServiceChat:
         async for _ in llm_service.chat(messages):
             pass
 
-        call_kwargs = mock_client.messages.stream.call_args.kwargs
-        assert call_kwargs["messages"] == messages
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        api_messages = call_kwargs["messages"]
+        # First message should be system, then the user messages
+        assert api_messages[0]["role"] == "system"
+        assert api_messages[1] == {"role": "user", "content": "Hello"}
+        assert api_messages[2] == {"role": "assistant", "content": "Hi!"}
 
     @pytest.mark.asyncio
     async def test_chat_with_system_prompt(self, llm_service, mock_client):
         """Test chat passes system prompt."""
+        chunks = [MockStreamChunk(content="Hi", finish_reason="stop")]
+        mock_client.chat.completions.create = AsyncMock(return_value=MockAsyncStream(chunks))
+
         messages = [{"role": "user", "content": "Hello"}]
 
         async for _ in llm_service.chat(messages, system="Be helpful"):
             pass
 
-        call_kwargs = mock_client.messages.stream.call_args.kwargs
-        assert call_kwargs["system"] == "Be helpful"
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        api_messages = call_kwargs["messages"]
+        assert api_messages[0]["role"] == "system"
+        assert api_messages[0]["content"] == "Be helpful"
 
 
 @pytest.mark.unit
@@ -263,6 +298,9 @@ class TestLLMServiceJSONComplete:
     @pytest.mark.asyncio
     async def test_json_complete_returns_dict(self, llm_service, mock_client):
         """Test json_complete returns parsed JSON."""
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=MockChatCompletion('{"key": "value"}')
+        )
         schema = {
             "type": "object",
             "properties": {"key": {"type": "string"}},
@@ -273,43 +311,23 @@ class TestLLMServiceJSONComplete:
         assert result == {"key": "value"}
 
     @pytest.mark.asyncio
-    async def test_json_complete_passes_schema(self, llm_service, mock_client):
-        """Test json_complete passes JSON schema."""
-        schema = {
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-        }
-
-        await llm_service.json_complete("Get JSON", json_schema=schema)
-
-        call_kwargs = mock_client.beta.messages.create.call_args.kwargs
-        assert call_kwargs["output_format"]["type"] == "json_schema"
-        assert call_kwargs["output_format"]["schema"] == schema
-
-    @pytest.mark.asyncio
-    async def test_json_complete_uses_beta_api(self, llm_service, mock_client):
-        """Test json_complete uses beta structured outputs."""
+    async def test_json_complete_uses_standard_api(self, llm_service, mock_client):
+        """Test json_complete uses standard chat completions API."""
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=MockChatCompletion('{"key": "value"}')
+        )
         schema = {"type": "object"}
 
         await llm_service.json_complete("Get JSON", json_schema=schema)
 
-        call_kwargs = mock_client.beta.messages.create.call_args.kwargs
-        assert "structured-outputs" in call_kwargs["betas"][0]
-
-    @pytest.mark.asyncio
-    async def test_json_complete_with_system_prompt(self, llm_service, mock_client):
-        """Test json_complete passes system prompt."""
-        schema = {"type": "object"}
-
-        await llm_service.json_complete("Get JSON", json_schema=schema, system="Return valid JSON")
-
-        call_kwargs = mock_client.beta.messages.create.call_args.kwargs
-        assert call_kwargs["system"] == "Return valid JSON"
+        mock_client.chat.completions.create.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_json_complete_handles_invalid_json(self, llm_service, mock_client):
         """Test json_complete raises on invalid JSON response."""
-        mock_client.beta.messages.create.return_value = MockMessage("not valid json")
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=MockChatCompletion("not valid json")
+        )
 
         with pytest.raises((json.JSONDecodeError, ValueError)):
             await llm_service.json_complete("Get JSON", json_schema={"type": "object"})
@@ -317,7 +335,7 @@ class TestLLMServiceJSONComplete:
     @pytest.mark.asyncio
     async def test_json_complete_handles_api_error(self, llm_service, mock_client):
         """Test json_complete raises on API error."""
-        mock_client.beta.messages.create.side_effect = Exception("API Error")
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API Error"))
 
         with pytest.raises(Exception, match="API Error"):
             await llm_service.json_complete("Get JSON", json_schema={"type": "object"})
