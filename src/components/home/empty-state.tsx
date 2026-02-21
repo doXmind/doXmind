@@ -162,7 +162,7 @@ export function EmptyState() {
     setIsImporting(true);
     const toastId = toast.loading(`Importing "${file.name}"...`);
     try {
-      await importFile(file);
+      await importFile(file, currentFolderId);
       toast.success(`Imported "${file.name}" successfully`, { id: toastId });
     } catch (error) {
       const { title, description } = getErrorMessage(error);

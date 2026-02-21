@@ -48,14 +48,15 @@ export const useCommunityStore = create<CommunityState>()(
         }
 
         try {
+          const hasFilters = !!(searchQuery || tagFilter);
           const result =
-            sortBy === "for_you"
+            sortBy === "for_you" && !hasFilters
               ? await api.getCommunityRecommendations({
                   limit: PAGE_SIZE,
                   offset: 0,
                 })
               : await api.getCommunityItems({
-                  sort: sortBy,
+                  sort: sortBy === "for_you" ? "newest" : sortBy,
                   search: searchQuery || undefined,
                   tag: tagFilter || undefined,
                   limit: PAGE_SIZE,
@@ -84,14 +85,15 @@ export const useCommunityStore = create<CommunityState>()(
         set({ isLoading: true });
 
         try {
+          const hasFilters = !!(searchQuery || tagFilter);
           const result =
-            sortBy === "for_you"
+            sortBy === "for_you" && !hasFilters
               ? await api.getCommunityRecommendations({
                   limit: PAGE_SIZE,
                   offset,
                 })
               : await api.getCommunityItems({
-                  sort: sortBy,
+                  sort: sortBy === "for_you" ? "newest" : sortBy,
                   search: searchQuery || undefined,
                   tag: tagFilter || undefined,
                   limit: PAGE_SIZE,
