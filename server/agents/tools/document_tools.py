@@ -9,7 +9,6 @@ This module contains the execution logic for document editing tools:
 - search_in_document
 """
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -196,37 +195,13 @@ def execute_str_replace(
     }
 
 
-def _is_untitled(file_name: str) -> bool:
-    """Check if a file name is the default untitled name."""
-    return file_name.replace(".md", "").strip().lower() == "untitled"
-
-
-def _extract_leading_h1(content: str) -> tuple[str, str | None]:
-    """Extract a leading H1 heading from content.
-
-    Only matches single ``#`` (H1), not ``##`` or deeper headings.
-
-    Returns:
-        (content_without_h1, extracted_title) — title is None if no H1 found.
-    """
-    match = re.match(r"^#\s+(.+?)[ \t]*\n(.*)", content, re.DOTALL)
-    if match:
-        title = match.group(1).strip()
-        rest = match.group(2).lstrip("\n")
-        return rest, title
-    return content, None
-
-
 def execute_replace_document(
     tool_input: dict[str, Any], files: list[dict[str, Any]], current_file_id: str | None
 ) -> dict[str, Any]:
     """Execute replace_document tool.
 
     Replaces the entire document content.
-
-    For untitled files (``Untitled.md``), if the content starts with an H1 heading,
-    it is stripped from content and used as the new ``file_name``. The frontend
-    detects the name change and renames the file accordingly.
+    Returns an edit operation dict on success.
     """
     target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
 
@@ -234,19 +209,11 @@ def execute_replace_document(
         return {"error": "No document is currently open."}
 
     new_content = tool_input.get("new_content", "")
-    file_name = target_file["name"]
-
-    # For untitled files, extract leading H1 as the document name
-    if _is_untitled(file_name):
-        content_without_h1, extracted_title = _extract_leading_h1(new_content)
-        if extracted_title:
-            new_content = content_without_h1
-            file_name = f"{extracted_title}.md"
 
     return {
         "type": "replace_all",
         "file_id": target_file["id"],
-        "file_name": file_name,
+        "file_name": target_file["name"],
         "new_content": new_content,
         "success": True,
     }
