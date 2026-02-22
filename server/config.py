@@ -129,6 +129,7 @@ class Settings(BaseSettings):
     default_model: str = "z-ai/glm-5"
     fast_model: str = "z-ai/glm-4.7-flash"  # For quick operations (autocomplete, quick edits)
     smart_model: str = "z-ai/glm-5"  # For complex operations (chat, analysis)
+    review_model: str = "google/gemini-3-flash-preview"  # For text review (needs JSON mode support)
     embedding_model: str = "openai/text-embedding-3-small"  # For vector search embeddings
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
 

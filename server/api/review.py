@@ -38,7 +38,7 @@ async def review_text(request: TextReviewRequest, http_request: Request):
     async def generate():
         try:
             settings = get_settings()
-            llm = LLMService(model=settings.default_model)
+            llm = LLMService(model=settings.review_model)
 
             content = request.content
 

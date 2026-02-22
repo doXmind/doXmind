@@ -66,48 +66,56 @@ jobs:
           rsync -avz ./nginx/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/nginx/
           rsync -avz ./scripts/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/scripts/
 
+      - name: Upload deploy script
+        run: |
+          cat > /tmp/deploy.sh << 'SCRIPT'
+          #!/bin/bash
+          set -euo pipefail
+          cd /opt/doxmind
+
+          echo "=== Tagging current image as rollback ==="
+          docker tag doxmind-backend:latest doxmind-backend:previous 2>/dev/null || true
+
+          echo "=== Building new backend image ==="
+          docker compose --env-file .env.production -f docker-compose.prod.yml build backend
+
+          echo "=== Running database migrations ==="
+          docker compose --env-file .env.production -f docker-compose.prod.yml run --rm backend alembic upgrade head
+
+          echo "=== Restarting backend ==="
+          docker compose --env-file .env.production -f docker-compose.prod.yml up -d --force-recreate backend
+
+          echo "=== Waiting for health check ==="
+          for i in $(seq 1 30); do
+            if docker exec doxmind-backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Backend is healthy!"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Health check failed after 30 attempts!"
+              echo "=== Backend logs ==="
+              docker logs doxmind-backend --tail 50
+              exit 1
+            fi
+            echo "Waiting for backend... ($i/30)"
+            sleep 2
+          done
+
+          echo "=== Reloading nginx ==="
+          docker exec doxmind-nginx nginx -s reload 2>/dev/null || true
+
+          echo "=== Cleaning up old Docker images ==="
+          docker image prune -f
+
+          echo "=== Deployment complete ==="
+          SCRIPT
+          scp /tmp/deploy.sh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/deploy.sh
+
       - name: Build, migrate, and deploy
         run: |
-          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOY'
-            set -euo pipefail
-            cd /opt/doxmind
-
-            echo "=== Tagging current image as rollback ==="
-            docker tag doxmind-backend:latest doxmind-backend:previous 2>/dev/null || true
-
-            echo "=== Building new backend image ==="
-            docker compose --env-file .env.production -f docker-compose.prod.yml build backend
-
-            echo "=== Running database migrations ==="
-            docker compose --env-file .env.production -f docker-compose.prod.yml run --rm backend alembic upgrade head
-
-            echo "=== Restarting backend ==="
-            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --force-recreate backend
-
-            echo "=== Waiting for health check ==="
-            for i in $(seq 1 30); do
-              if docker exec doxmind-backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-                echo "Backend is healthy!"
-                break
-              fi
-              if [ "$i" -eq 30 ]; then
-                echo "Health check failed after 30 attempts!"
-                echo "=== Backend logs ==="
-                docker logs doxmind-backend --tail 50
-                exit 1
-              fi
-              echo "Waiting for backend... ($i/30)"
-              sleep 2
-            done
-
-            echo "=== Reloading nginx ==="
-            docker exec doxmind-nginx nginx -s reload 2>/dev/null || true
-
-            echo "=== Cleaning up old Docker images ==="
-            docker image prune -f
-
-            echo "=== Deployment complete ==="
-          DEPLOY
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "chmod +x /opt/doxmind/deploy.sh && bash /opt/doxmind/deploy.sh"
 
   # ============================================================================
   # Notify on Completion

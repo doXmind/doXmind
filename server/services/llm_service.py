@@ -163,9 +163,15 @@ class LLMService:
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature,
                 messages=messages,
+                response_format={"type": "json_object"},
+                extra_body={
+                    "provider": {
+                        "require_parameters": True,
+                    },
+                },
             )
             text = (response.choices[0].message.content or "").strip()
-            # Strip markdown code fences if present
+            # Strip markdown code fences if present (some models still add them)
             if text.startswith("```"):
                 text = text.split("\n", 1)[1] if "\n" in text else text[3:]
                 if text.endswith("```"):
