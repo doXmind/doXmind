@@ -7,6 +7,8 @@ Client-side tools that replace Anthropic's server-side tools:
 """
 
 import logging
+import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -20,6 +22,53 @@ from services.brave_search_service import brave_search
 logger = logging.getLogger(__name__)
 
 WEB_TOOL_NAMES = {"web_search", "web_fetch", "code_execution"}
+
+# Allowed base directory for data file storage
+_DATA_FILES_BASE_DIR = os.path.join(tempfile.gettempdir(), "doxmind_data_files")
+
+# Dangerous modules that should not be imported in sandboxed code execution
+_BLOCKED_IMPORTS = {
+    "subprocess",
+    "shutil",
+    "socket",
+    "http.server",
+    "xmlrpc",
+    "ctypes",
+    "multiprocessing",
+    "signal",
+    "importlib",
+    "code",
+    "codeop",
+    "compileall",
+    "py_compile",
+}
+
+_IMPORT_PATTERN = re.compile(r"^\s*(?:import|from)\s+([\w.]+)", re.MULTILINE)
+
+
+def _validate_storage_path(src: str) -> bool:
+    """Validate that storage_path is within the expected data files directory."""
+    try:
+        real_src = os.path.realpath(src)
+        real_base = os.path.realpath(_DATA_FILES_BASE_DIR)
+        return real_src.startswith(real_base + os.sep)
+    except (ValueError, OSError):
+        return False
+
+
+def _safe_filename(filename: str) -> str:
+    """Strip directory components from filename to prevent path traversal."""
+    return os.path.basename(filename)
+
+
+def _check_blocked_imports(code: str) -> str | None:
+    """Check code for blocked imports. Returns error message or None if safe."""
+    imports = _IMPORT_PATTERN.findall(code)
+    for imp in imports:
+        for blocked in _BLOCKED_IMPORTS:
+            if imp == blocked or imp.startswith(blocked + "."):
+                return f"Import '{imp}' is not allowed in sandboxed execution"
+    return None
 
 
 def is_web_tool(tool_name: str) -> bool:
@@ -174,6 +223,11 @@ async def _execute_code(
     if not code:
         return {"error": "Python code is required"}
 
+    # Check for blocked imports before execution
+    import_error = _check_blocked_imports(code)
+    if import_error:
+        return {"error": import_error}
+
     settings = get_settings()
     timeout = settings.code_execution_timeout
     max_output = settings.code_execution_max_output
@@ -188,7 +242,9 @@ async def _execute_code(
                     if not filename:
                         continue
 
-                    dst = Path(tmpdir) / filename
+                    # Sanitize filename to prevent path traversal
+                    safe_name = _safe_filename(filename)
+                    dst = Path(tmpdir) / safe_name
 
                     # Prefer writing content bytes directly (always available in memory)
                     content = df.get("content")
@@ -197,17 +253,19 @@ async def _execute_code(
                             dst.write_bytes(content)
                         else:
                             dst.write_text(content, encoding="utf-8")
-                        logger.info(f"Wrote data file to execution dir: {filename}")
+                        logger.info(f"Wrote data file to execution dir: {safe_name}")
                         continue
 
-                    # Fallback: copy from disk if content bytes not available
+                    # Fallback: copy from disk — validate source path first
                     src = df.get("storage_path")
-                    if src and Path(src).exists():
+                    if src and _validate_storage_path(src) and Path(src).exists():
                         shutil.copy2(src, dst)
-                        logger.info(f"Copied data file to execution dir: {filename}")
+                        logger.info(f"Copied data file to execution dir: {safe_name}")
+                    elif src and not _validate_storage_path(src):
+                        logger.warning(f"Rejected storage_path outside allowed directory: {src}")
                     else:
                         logger.warning(
-                            f"Data file not available for execution: {filename} "
+                            f"Data file not available for execution: {safe_name} "
                             f"(no content bytes, storage_path missing or not found)"
                         )
 
@@ -215,13 +273,17 @@ async def _execute_code(
             code_file = Path(tmpdir) / "script.py"
             code_file.write_text(code, encoding="utf-8")
 
-            # Run the code
+            # Run the code with restricted environment
+            env = os.environ.copy()
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+
             proc = subprocess.run(
                 ["python", str(code_file)],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
                 cwd=tmpdir,
+                env=env,
             )
 
             stdout = proc.stdout[:max_output] if proc.stdout else ""

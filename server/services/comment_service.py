@@ -90,17 +90,57 @@ class CommentService:
         result = await self.db.execute(query)
         rows = result.all()
 
+        if not rows:
+            return [], total
+
+        comment_ids = [row.id for row in rows]
+
+        # Batch query: reply counts for all comments
+        reply_counts_result = await self.db.execute(
+            select(
+                Comment.parent_id,
+                func.count(Comment.id).label("reply_count"),
+            )
+            .where(Comment.parent_id.in_(comment_ids))
+            .group_by(Comment.parent_id)
+        )
+        reply_counts = {row.parent_id: row.reply_count for row in reply_counts_result.all()}
+
+        # Batch query: reaction counts grouped by comment + emoji
+        reactions_result = await self.db.execute(
+            select(
+                CommentReaction.comment_id,
+                CommentReaction.emoji,
+                func.count(CommentReaction.id).label("count"),
+            )
+            .where(CommentReaction.comment_id.in_(comment_ids))
+            .group_by(CommentReaction.comment_id, CommentReaction.emoji)
+        )
+        reactions_by_comment: dict[str, list[dict]] = {}
+        for r in reactions_result.all():
+            reactions_by_comment.setdefault(r.comment_id, []).append(
+                {"emoji": r.emoji, "count": r.count, "has_reacted": False}
+            )
+
+        # Batch query: current user's reactions
+        if current_user_id:
+            user_reactions_result = await self.db.execute(
+                select(CommentReaction.comment_id, CommentReaction.emoji).where(
+                    CommentReaction.comment_id.in_(comment_ids),
+                    CommentReaction.user_id == current_user_id,
+                )
+            )
+            user_reacted: set[tuple[str, str]] = {
+                (row.comment_id, row.emoji) for row in user_reactions_result.all()
+            }
+            for cid, reaction_list in reactions_by_comment.items():
+                for reaction in reaction_list:
+                    if (cid, reaction["emoji"]) in user_reacted:
+                        reaction["has_reacted"] = True
+
+        # Build response
         comments = []
         for row in rows:
-            # Count replies
-            reply_count_result = await self.db.execute(
-                select(func.count(Comment.id)).where(Comment.parent_id == row.id)
-            )
-            reply_count = reply_count_result.scalar() or 0
-
-            # Get reactions
-            reactions = await self._get_reactions_for_comment(row.id, current_user_id)
-
             comment = {
                 "id": row.id,
                 "content": "[deleted]" if row.is_deleted else row.content,
@@ -111,8 +151,8 @@ class CommentService:
                 },
                 "parent_id": row.parent_id,
                 "mentions": row.mentions if not row.is_deleted else None,
-                "reactions": reactions,
-                "reply_count": reply_count,
+                "reactions": reactions_by_comment.get(row.id, []),
+                "reply_count": reply_counts.get(row.id, 0),
                 "is_deleted": row.is_deleted,
                 "is_edited": (
                     row.updated_at > row.created_at if row.updated_at and row.created_at else False

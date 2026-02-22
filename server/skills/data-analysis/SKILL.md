@@ -25,22 +25,17 @@ When users want to analyze data, follow this workflow:
 ## Code Execution Environment
 
 Your sandbox environment includes:
-- **Python 3.12** with pandas, numpy, scipy, matplotlib, plotly, seaborn
-- **9GB RAM**, 5GB disk space
+- **Python 3.12** with pandas, numpy, scipy, openpyxl
 - **30 second** execution timeout per code block
 - **No network access** - all data must be in uploaded files
 
 ## File Locations
 
-Data files uploaded by users are available at:
-```
-/mnt/user/<filename>
-```
+Data files uploaded by users are copied into the working directory. Access them directly by filename:
 
-Example: If user uploads `sales.csv`, load it with:
 ```python
 import pandas as pd
-df = pd.read_csv('/mnt/user/sales.csv')
+df = pd.read_csv('sales.csv')
 ```
 
 ## Best Practices
@@ -48,13 +43,13 @@ df = pd.read_csv('/mnt/user/sales.csv')
 ### Data Loading
 ```python
 # CSV files
-df = pd.read_csv('/mnt/user/data.csv')
+df = pd.read_csv('data.csv')
 
 # Excel files
-df = pd.read_excel('/mnt/user/data.xlsx')
+df = pd.read_excel('data.xlsx')
 
 # JSON files
-df = pd.read_json('/mnt/user/data.json')
+df = pd.read_json('data.json')
 ```
 
 ### Quick Exploration
@@ -71,18 +66,6 @@ print(df.describe())
 
 # First few rows
 print(df.head())
-```
-
-### Visualizations
-```python
-import matplotlib.pyplot as plt
-
-# Save plots (required in sandbox)
-plt.figure(figsize=(10, 6))
-plt.plot(df['x'], df['y'])
-plt.title('My Chart')
-plt.savefig('/mnt/user/chart.png')
-plt.close()
 ```
 
 ## Common Analysis Patterns
@@ -112,7 +95,6 @@ correlation_matrix = df.corr()
 - Always call `list_data_files()` first to discover available files
 - Show your code and explain what you're doing
 - Handle errors gracefully (missing columns, wrong data types)
-- Save visualizations to `/mnt/user/` for the user to see
 - Provide clear summaries of findings
 
 ## Available Resources

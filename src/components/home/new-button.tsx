@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { FilePlus, FolderPlus, LayoutTemplate, Loader2, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,7 @@ interface NewButtonProps {
   disableFolder?: boolean;
 }
 
-export function NewButton({
+export const NewButton = memo(function NewButton({
   onCreateFile,
   onCreateFolder,
   onOpenTemplatePicker,
@@ -65,4 +66,4 @@ export function NewButton({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { useKBStore, formatFileSize } from "@/stores/kb-store";
+import { useKBPollingCleanup } from "@/hooks/use-kb-polling-cleanup";
 import { KBAttachmentItem } from "./kb-attachment-item";
 import { KBUploadZone } from "./kb-upload-zone";
 
@@ -21,6 +22,9 @@ export function KnowledgeBasePanel({ conversationId }: KnowledgeBasePanelProps) 
 
   const { isLoading, loadAttachments, uploadAttachments, deleteAttachment, getAttachments } =
     useKBStore();
+
+  // Clean up polling intervals when this component unmounts
+  useKBPollingCleanup(conversationId);
 
   const attachments = conversationId ? getAttachments(conversationId) : [];
   const attachmentCount = attachments.filter((a) => a.status !== "error").length;

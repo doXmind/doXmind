@@ -1,0 +1,297 @@
+/* ====================================
+   Diff Review Styles — Apple-inspired
+   Clean inline diff with frosted glass controls
+   ==================================== */
+
+/* Deleted content — soft red strikethrough */
+.ProseMirror .diff-deleted {
+  background-color: var(--diff-deleted-bg);
+  text-decoration: line-through;
+  text-decoration-color: var(--diff-deleted-text);
+  text-decoration-thickness: 1.5px;
+  color: hsl(var(--muted-foreground));
+  border-radius: 3px;
+  padding: 1px 3px;
+  display: inline;
+  transition: background-color 0.2s ease;
+}
+
+.ProseMirror .diff-deleted:hover {
+  background-color: var(--diff-deleted-bg-hover);
+}
+
+/* Inserted content wrapper — left accent border (Apple Pages style) */
+.ProseMirror .diff-inserted-wrapper {
+  display: block;
+  margin-top: 6px;
+  margin-bottom: 2px;
+  border: 1px solid var(--diff-inserted-border);
+  border-left: 3px solid var(--diff-inserted-accent);
+  border-radius: 8px;
+  overflow: hidden;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.ProseMirror .diff-inserted-wrapper:hover {
+  border-color: var(--diff-inserted-accent);
+}
+
+/* Inserted content — subtle green ghost text */
+.ProseMirror .diff-inserted {
+  background-color: var(--diff-inserted-bg);
+  color: hsl(var(--foreground));
+  border-radius: 0;
+  padding: 10px 14px;
+  display: block;
+  font-size: 1rem;
+  font-style: normal;
+  font-weight: normal;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  line-height: 1.6;
+  transition: background-color 0.2s ease;
+}
+
+.ProseMirror .diff-inserted:hover {
+  background-color: var(--diff-inserted-bg-hover);
+}
+
+/* Markdown content styling inside diff blocks */
+.ProseMirror .diff-markdown-content {
+  white-space: normal;
+}
+
+.ProseMirror .diff-markdown-content p {
+  margin: 0 0 0.5em 0;
+}
+
+.ProseMirror .diff-markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.ProseMirror .diff-markdown-content h1,
+.ProseMirror .diff-markdown-content h2,
+.ProseMirror .diff-markdown-content h3,
+.ProseMirror .diff-markdown-content h4,
+.ProseMirror .diff-markdown-content h5,
+.ProseMirror .diff-markdown-content h6 {
+  margin: 0.5em 0 0.3em 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.ProseMirror .diff-markdown-content h1 {
+  font-size: 1.5em;
+}
+.ProseMirror .diff-markdown-content h2 {
+  font-size: 1.3em;
+}
+.ProseMirror .diff-markdown-content h3 {
+  font-size: 1.1em;
+}
+
+.ProseMirror .diff-markdown-content strong {
+  font-weight: 700;
+}
+
+.ProseMirror .diff-markdown-content em {
+  font-style: italic;
+}
+
+.ProseMirror .diff-markdown-content code {
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 0.15em 0.3em;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.dark .ProseMirror .diff-markdown-content code {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.ProseMirror .diff-markdown-content pre {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 0.75em 1em;
+  border-radius: 8px;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+
+.dark .ProseMirror .diff-markdown-content pre {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+.ProseMirror .diff-markdown-content pre code {
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.85em;
+  white-space: pre;
+}
+
+.ProseMirror .diff-markdown-content ul,
+.ProseMirror .diff-markdown-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.ProseMirror .diff-markdown-content li {
+  margin: 0.25em 0;
+}
+
+.ProseMirror .diff-markdown-content blockquote {
+  border-left: 3px solid var(--diff-inserted-accent);
+  margin: 0.5em 0;
+  padding-left: 1em;
+  color: hsl(var(--muted-foreground));
+}
+
+.ProseMirror .diff-markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--diff-inserted-border);
+  margin: 0.75em 0;
+}
+
+.ProseMirror .diff-markdown-content a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+/* KaTeX math in diff blocks */
+.ProseMirror .diff-markdown-content .katex {
+  font-size: 1.1em;
+}
+
+.ProseMirror .diff-markdown-content .katex-display {
+  margin: 0.5em 0;
+  text-align: center;
+}
+
+/* Action buttons row */
+.ProseMirror .diff-actions-row {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+  vertical-align: middle;
+  user-select: none;
+}
+
+/* Action buttons container — frosted glass pill */
+.ProseMirror .diff-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background-color: var(--diff-toolbar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 3px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--diff-toolbar-border);
+  box-shadow: var(--diff-toolbar-shadow);
+}
+
+/* Diff type label */
+.ProseMirror .diff-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground) / 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+
+/* Action button base style — larger touch targets */
+.ProseMirror .diff-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  line-height: 1;
+  padding: 0;
+}
+
+/* Accept button — tinted green */
+.ProseMirror .diff-accept {
+  background-color: var(--diff-btn-accept-bg);
+  color: var(--diff-btn-accept-fg);
+}
+
+.ProseMirror .diff-accept:hover {
+  background-color: var(--diff-btn-accept-hover);
+  transform: scale(1.05);
+}
+
+.ProseMirror .diff-accept:active {
+  transform: scale(0.95);
+}
+
+/* Reject button — tinted red */
+.ProseMirror .diff-reject {
+  background-color: var(--diff-btn-reject-bg);
+  color: var(--diff-btn-reject-fg);
+}
+
+.ProseMirror .diff-reject:hover {
+  background-color: var(--diff-btn-reject-hover);
+  transform: scale(1.05);
+}
+
+.ProseMirror .diff-reject:active {
+  transform: scale(0.95);
+}
+
+/* Focused hunk highlight — blue ring for current navigation target */
+.ProseMirror .diff-deleted.diff-hunk-focused {
+  outline: 2px solid var(--diff-focus-border);
+  outline-offset: 1px;
+}
+
+.ProseMirror .diff-inserted-wrapper.diff-hunk-focused {
+  border-color: var(--diff-focus-border);
+  box-shadow: 0 0 0 3px var(--diff-focus-ring);
+}
+
+.ProseMirror .diff-actions-row.diff-hunk-focused .diff-actions {
+  border-color: var(--diff-focus-border);
+  box-shadow:
+    0 0 0 3px var(--diff-focus-ring),
+    var(--diff-toolbar-shadow);
+}
+
+/* Animation for new diff hunks */
+@keyframes diffSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ProseMirror .diff-deleted,
+.ProseMirror .diff-inserted-wrapper {
+  animation: diffSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Focus ring for accessibility */
+.ProseMirror .diff-action-btn:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}

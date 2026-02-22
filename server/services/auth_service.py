@@ -94,7 +94,13 @@ def create_access_token(
     else:
         expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
 
-    to_encode: dict = {"sub": subject, "exp": expire, "type": "access", "iat": datetime.now(UTC)}
+    to_encode: dict = {
+        "sub": subject,
+        "exp": expire,
+        "type": "access",
+        "iat": datetime.now(UTC),
+        "iss": "doxmind",
+    }
 
     # Include OAuth user info for auto-recreation
     if email:
@@ -130,8 +136,13 @@ def verify_token(token: str) -> TokenData | None:
         sub: str = payload.get("sub")
         exp: int = payload.get("exp")
         token_type: str = payload.get("type", "access")
+        issuer: str | None = payload.get("iss")
 
         if sub is None or exp is None:
+            return None
+
+        # Validate issuer if present (backward compat with old tokens)
+        if issuer is not None and issuer != "doxmind":
             return None
 
         return TokenData(
@@ -266,7 +277,10 @@ async def require_auth(
 
     # In debug mode, allow unauthenticated access for development
     if settings.debug:
-        # Return a dummy token for development only when no real auth provided
+        logger.warning(
+            "DEBUG AUTH BYPASS: Returning dev-user token for unauthenticated request. "
+            "This MUST NOT be active in production."
+        )
         return TokenData(
             sub="dev-user", exp=datetime.now(UTC) + timedelta(days=1), token_type="dev"
         )

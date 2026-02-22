@@ -1,0 +1,14 @@
+export { LayoutIllustration } from "./layout-illustration";
+export { ToolbarIllustration } from "./toolbar-illustration";
+export { QuickEditIllustration } from "./quick-edit-illustration";
+export { AutocompleteIllustration } from "./autocomplete-illustration";
+export { ChatIllustration } from "./chat-illustration";
+export { DiffReviewIllustration } from "./diff-review-illustration";
+export { KnowledgeBaseIllustration } from "./knowledge-base-illustration";
+export { CommandPaletteIllustration } from "./command-palette-illustration";
+export { FileTreeIllustration } from "./file-tree-illustration";
+export { PresentationIllustration } from "./presentation-illustration";
+export { OutlineIllustration } from "./outline-illustration";
+export { CustomizationIllustration } from "./customization-illustration";
+export { HomeDashboardIllustration } from "./home-dashboard-illustration";
+export { SharingIllustration } from "./sharing-illustration";

@@ -32,6 +32,7 @@ import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
 import { useOnboardingStepDetector } from "@/hooks/use-onboarding-step-detector";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { PanelLeftOpen } from "lucide-react";
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
@@ -216,21 +217,23 @@ export default function EditorPage() {
           <MobileEditorLayout>
             {/* Editor Content - no overflow-hidden to allow parent scrolling */}
             <div id="main-content">
-              {currentFile ? (
-                loadedContentIds.has(currentFile.id) ? (
-                  <Editor file={currentFile} />
-                ) : (
+              <ErrorBoundary>
+                {currentFile ? (
+                  loadedContentIds.has(currentFile.id) ? (
+                    <Editor file={currentFile} />
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center">
+                      <div className="animate-pulse text-muted-foreground">Loading...</div>
+                    </div>
+                  )
+                ) : !isSynced && currentFileId ? (
                   <div className="flex flex-1 items-center justify-center">
                     <div className="animate-pulse text-muted-foreground">Loading...</div>
                   </div>
-                )
-              ) : !isSynced && currentFileId ? (
-                <div className="flex flex-1 items-center justify-center">
-                  <div className="animate-pulse text-muted-foreground">Loading...</div>
-                </div>
-              ) : (
-                <WelcomeScreen />
-              )}
+                ) : (
+                  <WelcomeScreen />
+                )}
+              </ErrorBoundary>
             </div>
           </MobileEditorLayout>
 
@@ -360,21 +363,23 @@ export default function EditorPage() {
 
               {/* Editor content */}
               <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-                {currentFile ? (
-                  loadedContentIds.has(currentFile.id) ? (
-                    <Editor file={currentFile} />
-                  ) : (
+                <ErrorBoundary>
+                  {currentFile ? (
+                    loadedContentIds.has(currentFile.id) ? (
+                      <Editor file={currentFile} />
+                    ) : (
+                      <div className="flex flex-1 items-center justify-center">
+                        <div className="animate-pulse text-muted-foreground">Loading...</div>
+                      </div>
+                    )
+                  ) : !isSynced && currentFileId ? (
                     <div className="flex flex-1 items-center justify-center">
                       <div className="animate-pulse text-muted-foreground">Loading...</div>
                     </div>
-                  )
-                ) : !isSynced && currentFileId ? (
-                  <div className="flex flex-1 items-center justify-center">
-                    <div className="animate-pulse text-muted-foreground">Loading...</div>
-                  </div>
-                ) : (
-                  <WelcomeScreen />
-                )}
+                  ) : (
+                    <WelcomeScreen />
+                  )}
+                </ErrorBoundary>
                 {/* Floating chat window — overlays editor when in floating mode */}
                 {!isFocusMode && currentFile && chatMode === "floating" && <FloatingChatWindow />}
                 {/* Floating AI button — visible when chat is closed */}
@@ -403,7 +408,9 @@ export default function EditorPage() {
                   )}
                 >
                   <div style={{ minWidth: chatPanelWidth }} className="h-full">
-                    <ChatPanel />
+                    <ErrorBoundary>
+                      <ChatPanel />
+                    </ErrorBoundary>
                   </div>
                 </aside>
               </>

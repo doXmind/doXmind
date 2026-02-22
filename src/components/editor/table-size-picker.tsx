@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo } from "react";
 import { cn } from "@/lib/utils";
 
 interface TableSizePickerProps {
@@ -9,7 +9,11 @@ interface TableSizePickerProps {
   maxCols?: number;
 }
 
-export function TableSizePicker({ onSelect, maxRows = 8, maxCols = 8 }: TableSizePickerProps) {
+export const TableSizePicker = memo(function TableSizePicker({
+  onSelect,
+  maxRows = 8,
+  maxCols = 8,
+}: TableSizePickerProps) {
   const [hoverRow, setHoverRow] = useState(0);
   const [hoverCol, setHoverCol] = useState(0);
 
@@ -56,4 +60,4 @@ export function TableSizePicker({ onSelect, maxRows = 8, maxCols = 8 }: TableSiz
       </p>
     </div>
   );
-}
+});

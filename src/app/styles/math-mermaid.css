@@ -1,0 +1,169 @@
+/* ====================================
+   Math Node Styles (LaTeX/KaTeX)
+   Notion-style click-to-edit math
+   ==================================== */
+
+/* Inline math wrapper */
+.ProseMirror .inline-math-wrapper {
+  @apply inline;
+}
+
+/* Block math wrapper */
+.ProseMirror .block-math-wrapper {
+  @apply my-4 block;
+}
+
+/* Rendered math base styles */
+.ProseMirror .math-rendered {
+  @apply cursor-pointer;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+/* Inline math hover */
+.ProseMirror .inline-math-wrapper .math-rendered:hover {
+  @apply rounded bg-accent/50;
+}
+
+/* Block math hover */
+.ProseMirror .block-math-wrapper .math-rendered:hover {
+  @apply bg-accent/30;
+}
+
+/* Selected state */
+.ProseMirror .math-rendered.selected,
+.ProseMirror .math-node-wrapper.ProseMirror-selectednode .math-rendered {
+  @apply rounded ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+
+/* Math editor panel */
+.math-editor-panel {
+  animation: mathPanelFadeIn 0.15s ease-out;
+}
+
+/* Symbol picker */
+.symbol-picker {
+  animation: symbolPickerSlideIn 0.15s ease-out;
+}
+
+@keyframes mathPanelFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes symbolPickerSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scrollbar for symbol picker */
+.symbol-picker::-webkit-scrollbar {
+  @apply w-1.5;
+}
+
+.symbol-picker::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-border/50;
+}
+
+/* KaTeX adjustments for editor */
+.ProseMirror .katex {
+  font-size: 1.1em;
+}
+
+.ProseMirror .block-math-wrapper .katex {
+  font-size: 1.25em;
+}
+
+/* KaTeX display mode centering */
+.ProseMirror .katex-display {
+  @apply my-0;
+  text-align: center;
+}
+
+/* Error state for invalid LaTeX */
+.ProseMirror .math-rendered.math-error {
+  @apply rounded border border-destructive/30 px-2 py-1 text-destructive;
+}
+
+/* Empty equation placeholder */
+.ProseMirror .math-rendered .math-empty-placeholder {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+/* ============================================
+   Mermaid Chart Styles
+   ============================================ */
+
+/* Mermaid chart wrapper */
+.ProseMirror .mermaid-chart-wrapper {
+  @apply my-4 block;
+}
+
+/* Empty chart placeholder */
+.ProseMirror .mermaid-chart-wrapper .mermaid-empty-placeholder {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+/* Mermaid editor panel animation */
+.mermaid-editor-panel {
+  animation: mathPanelFadeIn 0.15s ease-out;
+}
+
+/* Ensure mermaid SVGs are responsive */
+.ProseMirror .mermaid-chart-wrapper .mermaid-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/*
+ * Force high-contrast text in dark mode.
+ * AI-generated mermaid code sometimes includes inline `style` directives
+ * with light-mode colors (e.g. fill:#D4EDDA, color:#333) that become
+ * unreadable on dark backgrounds. These overrides ensure text is always
+ * legible regardless of inline styles.
+ */
+.dark .mermaid-rendered .nodeLabel,
+.dark .mermaid-rendered .edgeLabel,
+.dark .mermaid-rendered .label,
+.dark .mermaid-rendered .cluster-label,
+.dark .mermaid-rendered text,
+.dark .mermaid-rendered tspan,
+.dark .mermaid-rendered .messageText,
+.dark .mermaid-rendered .loopText,
+.dark .mermaid-rendered .noteText,
+.dark .mermaid-rendered .labelText,
+.dark .mermaid-rendered .sectionTitle,
+.dark .mermaid-rendered .taskText {
+  color: #f5f5f7 !important;
+  fill: #f5f5f7 !important;
+}
+
+/* Edge/arrow lines in dark mode */
+.dark .mermaid-rendered .flowchart-link,
+.dark .mermaid-rendered .edgePath path,
+.dark .mermaid-rendered .arrowMarkerPath {
+  stroke: #636366 !important;
+}
+
+/* Arrow marker heads in dark mode */
+.dark .mermaid-rendered marker path {
+  fill: #636366 !important;
+  stroke: #636366 !important;
+}

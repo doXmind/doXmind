@@ -269,6 +269,13 @@ class Settings(BaseSettings):
                 "Server-side AI features will be unavailable unless users provide their own key."
             )
 
+        # Warn if debug mode is on with a production-grade JWT secret
+        if self.debug and self.jwt_secret_key and len(self.jwt_secret_key) >= 32:
+            logger.warning(
+                "SECURITY WARNING: DEBUG=true with production JWT secret. "
+                "Auth bypass is active. Set DEBUG=false for production."
+            )
+
         if self.debug:
             for issue in issues:
                 logger.warning(f"Config validation (debug mode): {issue}")

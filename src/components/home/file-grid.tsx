@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUpDown,
-  Check,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
@@ -16,22 +14,10 @@ import {
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { cn, getErrorMessage, formatShortcut } from "@/lib/utils";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  useFileStore,
-  sortFilesByOption,
-  type FileItem,
-  type SortOption,
-} from "@/stores/file-store";
+import { useFileStore, sortFilesByOption, type FileItem } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { type SearchResultItem } from "@/lib/api";
 import { markdownToHtml } from "@/lib/markdown";
@@ -40,9 +26,11 @@ import { TemplatePicker, type FileTemplate } from "@/components/sidebar/template
 import { TrashPanel } from "@/components/sidebar/trash-panel";
 import { FileCard } from "./file-card";
 import { FileRow } from "./file-row";
-import { MobileDocumentRow } from "./mobile-document-row";
 import { EmptyState } from "./empty-state";
 import { NewButton } from "./new-button";
+import { HomeSortDropdown } from "./home-sort-dropdown";
+import { MobileDocumentList } from "./mobile-document-list";
+import { WritingTip } from "./writing-tip";
 
 interface FileGridProps {
   files: FileItem[];
@@ -700,76 +688,6 @@ export function FileGrid({
 }
 
 // ---------------------------------------------------------------------------
-// Sort dropdown for the home page (mirrors sidebar sort-dropdown design)
-// ---------------------------------------------------------------------------
-
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: "name-asc", label: "Name (A-Z)" },
-  { value: "name-desc", label: "Name (Z-A)" },
-  { value: "modified-newest", label: "Modified (Newest)" },
-  { value: "modified-oldest", label: "Modified (Oldest)" },
-  { value: "created-newest", label: "Created (Newest)" },
-  { value: "created-oldest", label: "Created (Oldest)" },
-];
-
-function HomeSortDropdown({
-  sortBy,
-  setSortBy,
-}: {
-  sortBy: SortOption;
-  setSortBy: (v: SortOption) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <Tooltip content="Sort files" side="bottom">
-        <DropdownMenuTrigger asChild>
-          <button
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground"
-            aria-label="Sort files"
-          >
-            <ArrowUpDown className="h-4 w-4" />
-          </button>
-        </DropdownMenuTrigger>
-      </Tooltip>
-      <DropdownMenuContent align="end" className="w-48">
-        {SORT_OPTIONS.slice(0, 2).map((opt) => (
-          <DropdownMenuItem
-            key={opt.value}
-            onClick={() => setSortBy(opt.value)}
-            className="flex items-center justify-between"
-          >
-            <span>{opt.label}</span>
-            {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        {SORT_OPTIONS.slice(2, 4).map((opt) => (
-          <DropdownMenuItem
-            key={opt.value}
-            onClick={() => setSortBy(opt.value)}
-            className="flex items-center justify-between"
-          >
-            <span>{opt.label}</span>
-            {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        {SORT_OPTIONS.slice(4).map((opt) => (
-          <DropdownMenuItem
-            key={opt.value}
-            onClick={() => setSortBy(opt.value)}
-            className="flex items-center justify-between"
-          >
-            <span>{opt.label}</span>
-            {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Edge indicator shown during cross-page drag (iOS-style page transition hint)
 // ---------------------------------------------------------------------------
 
@@ -820,112 +738,5 @@ function DragEdgeIndicator({ side, progress }: { side: "left" | "right"; progres
         )}
       </motion.div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Mobile vertical document list (replaces horizontal carousel)
-// ---------------------------------------------------------------------------
-
-function MobileDocumentList({
-  files,
-  isSearchActive,
-  searchMatchMap,
-  searchQuery,
-  onResultClick: _onResultClick,
-}: {
-  files: FileItem[];
-  isSearchActive: boolean;
-  searchMatchMap: Map<string, { snippet: string; score: number }>;
-  searchQuery: string;
-  onResultClick?: (fileId: string, position: number, score: number) => void;
-}) {
-  return (
-    <motion.div className="pb-24 sm:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div
-        className={cn(
-          "overflow-hidden rounded-xl will-change-transform",
-          "border border-border/50",
-          "bg-card/60"
-        )}
-      >
-        {files.map((file, i) => (
-          <motion.div
-            key={file.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{
-              opacity: 1,
-              y: 0,
-              transition: {
-                duration: 0.35,
-                delay: Math.min(i * 0.04, 0.3),
-                ease: [0.16, 1, 0.3, 1] as const,
-              },
-            }}
-            className={cn(i > 0 && "border-t border-border/30")}
-          >
-            <MobileDocumentRow
-              file={file}
-              searchMatch={
-                isSearchActive && searchMatchMap.has(file.id)
-                  ? {
-                      ...searchMatchMap.get(file.id)!,
-                      query: searchQuery,
-                    }
-                  : undefined
-              }
-            />
-          </motion.div>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Random writing tip — shown when few documents exist
-// ---------------------------------------------------------------------------
-
-const Kbd = ({ children }: { children: React.ReactNode }) => (
-  <kbd className="rounded border border-border/50 px-1 py-0.5 font-mono text-[10px]">
-    {children}
-  </kbd>
-);
-
-const WRITING_TIPS: React.ReactNode[] = [
-  <>
-    Press <Kbd>Tab</Kbd> in the editor for AI autocomplete
-  </>,
-  <>
-    Press <Kbd>{formatShortcut("Ctrl+K")}</Kbd> to open the command palette
-  </>,
-  <>Select text to see AI quick edit options</>,
-  <>
-    Press <Kbd>{formatShortcut("Ctrl+F")}</Kbd> to find &amp; replace in your document
-  </>,
-  <>Drag and drop files into folders to stay organized</>,
-  <>
-    Use <Kbd>{formatShortcut("Alt+/")}</Kbd> to trigger AI autocomplete anywhere
-  </>,
-  <>Try &quot;Ask AI&quot; in the search bar to chat about your documents</>,
-  <>
-    Press <Kbd>{formatShortcut("Ctrl+Shift+O")}</Kbd> to toggle the document outline
-  </>,
-  <>Star your important documents to pin them in Favorites</>,
-  <>Export your writing to Markdown, PDF, or Word from the file menu</>,
-];
-
-function WritingTip() {
-  const tip = useMemo(() => WRITING_TIPS[Math.floor(Math.random() * WRITING_TIPS.length)], []);
-
-  return (
-    <motion.div
-      className="mx-auto mt-14 max-w-md text-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ delay: 0.8, duration: 0.5 }}
-    >
-      <p className="text-xs text-muted-foreground/45 dark:text-muted-foreground/55">Tip: {tip}</p>
-    </motion.div>
   );
 }

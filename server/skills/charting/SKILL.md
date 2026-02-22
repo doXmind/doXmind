@@ -100,6 +100,11 @@ The editor automatically renders mermaid code fences as interactive diagram bloc
 - Decision diamonds should have Yes/No or True/False on their branches
 - Use descriptive arrow labels for non-obvious connections
 
+### Styling — IMPORTANT
+- **NEVER use inline `style` or `classDef` to set colors** (e.g. `style A fill:#D4EDDA,stroke:#28A745`). The editor applies a custom theme automatically — inline colors break dark mode and cause unreadable text.
+- Let the theme handle all colors. Focus only on structure, labels, and layout.
+- If you need to visually distinguish nodes, use different **node shapes** (rectangle, diamond, stadium, hexagon, etc.) instead of colors.
+
 ## Available Resources
 
 ### Templates

@@ -7,6 +7,7 @@ Conversation CRUD operations are in api/conversations.py.
 import asyncio
 import json
 import logging
+import os
 import uuid
 
 from fastapi import APIRouter, Depends, Request
@@ -66,6 +67,158 @@ class ChatRequest(BaseModel):
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+async def _resolve_user_api_settings(
+    auth: TokenData | None, db: AsyncSession
+) -> tuple[str | None, str | None]:
+    """Resolve user's API key and model preference.
+
+    Returns:
+        (api_key, model) tuple, both None if not configured.
+    """
+    if not auth or not auth.sub or auth.sub == "anonymous":
+        return None, None
+
+    api_key_service = APIKeyService(db)
+    user_api_settings = await api_key_service.get_user_settings(auth.sub)
+
+    if not api_key_service.has_api_key(user_api_settings):
+        return None, None
+
+    api_key = await api_key_service.get_decrypted_key(auth.sub, settings=user_api_settings)
+    logger.info(f"Using user's API key with model: {user_api_settings.preferred_model}")
+    return api_key, user_api_settings.preferred_model
+
+
+async def _load_conversation_context(
+    conversation_id: str | None, db: AsyncSession
+) -> tuple[Conversation | None, list, list[dict], list[dict], list[dict]]:
+    """Load conversation, history, KB attachments, and data files.
+
+    Returns:
+        (conversation, history, kb_attachments, data_files_metadata, data_files_content)
+    """
+    if not conversation_id:
+        return None, [], [], [], []
+
+    # Find conversation by file_id
+    normalized_file_id = normalize_file_id(conversation_id)
+    if normalized_file_id is None:
+        conv_result = await db.execute(
+            select(Conversation)
+            .where(Conversation.file_id.is_(None))
+            .order_by(desc(Conversation.created_at))
+            .limit(1)
+        )
+    else:
+        conv_result = await db.execute(
+            select(Conversation)
+            .where(Conversation.file_id == normalized_file_id)
+            .order_by(desc(Conversation.created_at))
+            .limit(1)
+        )
+    conversation = conv_result.scalar_one_or_none()
+
+    if not conversation:
+        return None, [], [], [], []
+
+    # Run independent queries in parallel
+    async def _load_messages():
+        messages_result = await db.execute(
+            select(Message.role, Message.content, Message.tool_calls)
+            .where(Message.conversation_id == conversation.id)
+            .where(Message.deleted_at.is_(None))
+            .order_by(desc(Message.created_at))
+            .limit(50)
+        )
+        return list(reversed(messages_result.all()))
+
+    async def _load_kb_attachments():
+        kb_result = await db.execute(
+            select(ConversationAttachment)
+            .where(ConversationAttachment.conversation_id == conversation.id)
+            .where(ConversationAttachment.status == "indexed")
+        )
+        return kb_result.scalars().all()
+
+    async def _load_data_files():
+        data_files_result = await db.execute(
+            select(ConversationDataFile)
+            .where(ConversationDataFile.conversation_id == conversation.id)
+            .where(ConversationDataFile.status == "ready")
+        )
+        return data_files_result.scalars().all()
+
+    messages_raw, attachments_raw, all_data_files = await asyncio.gather(
+        _load_messages(),
+        _load_kb_attachments(),
+        _load_data_files(),
+    )
+
+    # Compress history using 3-1-3 rule
+    compressor = HistoryCompressor()
+    history = compressor.compress(messages_raw)
+
+    # Format KB attachments
+    kb_attachments = [
+        {
+            "id": att.id,
+            "filename": att.original_filename,
+            "file_type": att.file_type,
+            "chunk_count": att.chunk_count,
+        }
+        for att in attachments_raw
+    ]
+    if kb_attachments:
+        logger.info(f"Loaded {len(kb_attachments)} KB attachment(s) for conversation")
+
+    # Format data files metadata
+    data_files_metadata = [
+        {
+            "id": df.id,
+            "filename": df.original_filename,
+            "file_type": df.file_type,
+            "row_count": df.row_count,
+            "column_names": df.column_names,
+            "storage_path": df.storage_path,
+        }
+        for df in all_data_files
+    ]
+    if data_files_metadata:
+        logger.info(f"Found {len(data_files_metadata)} data file(s) in conversation")
+
+    # Load data files content for code execution (parallel file reads)
+    data_files_content = []
+    if all_data_files:
+
+        def _read_file_sync(path: str) -> bytes:
+            with open(path, "rb") as f:
+                return f.read()
+
+        async def _read_data_file(data_file):
+            if data_file.storage_path and os.path.exists(data_file.storage_path):
+                content = await asyncio.to_thread(_read_file_sync, data_file.storage_path)
+                return {
+                    "id": data_file.id,
+                    "filename": data_file.original_filename,
+                    "mime_type": data_file.mime_type,
+                    "content": content,
+                    "file_size": data_file.file_size,
+                }
+            return None
+
+        results = await asyncio.gather(*[_read_data_file(df) for df in all_data_files])
+        data_files_content = [r for r in results if r is not None]
+        if data_files_content:
+            logger.info(f"Loaded {len(data_files_content)} data file(s) content for analysis")
+
+    return conversation, history, kb_attachments, data_files_metadata, data_files_content
+
+
+# ============================================================================
 # Streaming Chat Endpoint
 # ============================================================================
 
@@ -85,137 +238,15 @@ async def chat_stream(
     settings = get_settings()
     origin = http_request.headers.get("origin")
 
-    # Resolve user's API key and model preference
-    user_api_key = None
-    user_model = None
+    user_api_key, user_model = await _resolve_user_api_settings(auth, db)
 
-    if auth and auth.sub and auth.sub != "anonymous":
-        api_key_service = APIKeyService(db)
-        user_api_settings = await api_key_service.get_user_settings(auth.sub)
-
-        if api_key_service.has_api_key(user_api_settings):
-            user_api_key = await api_key_service.get_decrypted_key(
-                auth.sub, settings=user_api_settings
-            )
-            user_model = user_api_settings.preferred_model
-            logger.info(f"Using user's API key with model: {user_model}")
-
-    # Load conversation history with 3-1-3 compression
-    history = []
-    conversation = None
-    kb_attachments = []
-    data_files_metadata = []
-    data_files_content = []
-
-    if request.conversationId:
-        # Find conversation by file_id (conversationId from frontend is actually file_id)
-        normalized_file_id = normalize_file_id(request.conversationId)
-        if normalized_file_id is None:
-            conv_result = await db.execute(
-                select(Conversation)
-                .where(Conversation.file_id.is_(None))
-                .order_by(desc(Conversation.created_at))
-                .limit(1)
-            )
-        else:
-            conv_result = await db.execute(
-                select(Conversation)
-                .where(Conversation.file_id == normalized_file_id)
-                .order_by(desc(Conversation.created_at))
-                .limit(1)
-            )
-        conversation = conv_result.scalar_one_or_none()
-
-        if conversation:
-            # Load up to 50 messages for 3-1-3 compression (exclude soft-deleted)
-            # Only select fields needed by HistoryCompressor: role, content, tool_calls
-            messages_result = await db.execute(
-                select(Message.role, Message.content, Message.tool_calls)
-                .where(Message.conversation_id == conversation.id)
-                .where(Message.deleted_at.is_(None))
-                .order_by(desc(Message.created_at))
-                .limit(50)
-            )
-            messages = list(reversed(messages_result.all()))
-
-            # Compress history using 3-1-3 rule
-            compressor = HistoryCompressor()
-            history = compressor.compress(messages)
-
-            # Load KB attachments for this conversation
-            kb_result = await db.execute(
-                select(ConversationAttachment)
-                .where(ConversationAttachment.conversation_id == conversation.id)
-                .where(ConversationAttachment.status == "indexed")
-            )
-            attachments = kb_result.scalars().all()
-
-            kb_attachments = [
-                {
-                    "id": att.id,
-                    "filename": att.original_filename,
-                    "file_type": att.file_type,
-                    "chunk_count": att.chunk_count,
-                }
-                for att in attachments
-            ]
-
-            if kb_attachments:
-                logger.info(f"Loaded {len(kb_attachments)} KB attachment(s) for conversation")
-
-            # Load ALL data files metadata for this conversation (so AI knows what's available)
-            data_files_result = await db.execute(
-                select(ConversationDataFile)
-                .where(ConversationDataFile.conversation_id == conversation.id)
-                .where(ConversationDataFile.status == "ready")
-            )
-            all_data_files = data_files_result.scalars().all()
-
-            # Data files metadata (for system prompt and code execution file access)
-            data_files_metadata = [
-                {
-                    "id": df.id,
-                    "filename": df.original_filename,
-                    "file_type": df.file_type,
-                    "row_count": df.row_count,
-                    "column_names": df.column_names,
-                    "storage_path": df.storage_path,
-                }
-                for df in all_data_files
-            ]
-
-            if data_files_metadata:
-                logger.info(f"Found {len(data_files_metadata)} data file(s) in conversation")
-
-            # Load data files CONTENT for code execution (all ready files)
-            # Uses asyncio.to_thread for non-blocking I/O + asyncio.gather for parallel reads
-            data_files_content = []
-            if all_data_files:
-                import os
-
-                def _read_file_sync(path: str) -> bytes:
-                    with open(path, "rb") as f:
-                        return f.read()
-
-                async def _read_data_file(data_file):
-                    if data_file.storage_path and os.path.exists(data_file.storage_path):
-                        content = await asyncio.to_thread(_read_file_sync, data_file.storage_path)
-                        return {
-                            "id": data_file.id,
-                            "filename": data_file.original_filename,
-                            "mime_type": data_file.mime_type,
-                            "content": content,
-                            "file_size": data_file.file_size,
-                        }
-                    return None
-
-                results = await asyncio.gather(*[_read_data_file(df) for df in all_data_files])
-                data_files_content = [r for r in results if r is not None]
-
-                if data_files_content:
-                    logger.info(
-                        f"Loaded {len(data_files_content)} data file(s) content for analysis"
-                    )
+    (
+        conversation,
+        history,
+        kb_attachments,
+        data_files_metadata,
+        data_files_content,
+    ) = await _load_conversation_context(request.conversationId, db)
 
     # Collector for building the complete response
     collected_text = []

@@ -73,9 +73,13 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     setReviewState,
   } = useEditorStore();
 
-  // Layout state
-  const { isSearchBarOpen, isFocusMode, editorWidth, fontFamily, fontSize, lineHeight } =
-    useLayoutStore();
+  // Layout state — use individual selectors to avoid re-renders on unrelated layout changes
+  const isSearchBarOpen = useLayoutStore((s) => s.isSearchBarOpen);
+  const isFocusMode = useLayoutStore((s) => s.isFocusMode);
+  const editorWidth = useLayoutStore((s) => s.editorWidth);
+  const fontFamily = useLayoutStore((s) => s.fontFamily);
+  const fontSize = useLayoutStore((s) => s.fontSize);
+  const lineHeight = useLayoutStore((s) => s.lineHeight);
 
   const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
@@ -157,7 +161,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
 
   // Sync block selection enabled state with isMobile and edit mode
   // Block selection is active on mobile UNLESS edit mode is toggled on
-  const { isMobileEditMode } = useLayoutStore();
+  const isMobileEditMode = useLayoutStore((s) => s.isMobileEditMode);
   useEffect(() => {
     if (editor && editor.commands.setBlockSelectionEnabled) {
       editor.commands.setBlockSelectionEnabled(isMobile && !isMobileEditMode);

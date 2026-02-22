@@ -1,0 +1,356 @@
+/* ====================================
+   Mobile V2 Utility Styles
+   ==================================== */
+
+/* Processing animations for AI input */
+@keyframes border-wave {
+  0% {
+    box-shadow: 0 0 0 0px hsl(var(--primary) / 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 6px hsl(var(--primary) / 0.3);
+  }
+  100% {
+    box-shadow: 0 0 0 12px hsl(var(--primary) / 0);
+  }
+}
+
+@keyframes gradient-xy {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-border-wave {
+  animation: border-wave 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.animate-gradient-xy {
+  background-size: 200% 200%;
+  animation: gradient-xy 3s ease infinite;
+}
+
+@keyframes text-wave {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-text-wave {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--foreground)) 0%,
+    hsl(var(--foreground) / 0.45) 50%,
+    hsl(var(--foreground)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-wave 6s ease-in-out infinite;
+}
+
+/* TikTok/Douyin-style RGB glitch flash */
+@keyframes text-glitch {
+  0%,
+  100% {
+    text-shadow: none;
+    opacity: 1;
+  }
+  5% {
+    text-shadow:
+      -2px 0 hsl(var(--primary)),
+      2px 0 hsl(var(--primary) / 0.6);
+    opacity: 1;
+  }
+  6% {
+    text-shadow:
+      2px 0 hsl(var(--primary) / 0.8),
+      -1px 0 hsl(var(--primary) / 0.4);
+  }
+  7% {
+    text-shadow: none;
+  }
+  30% {
+    text-shadow: none;
+    opacity: 1;
+  }
+  31% {
+    text-shadow:
+      -1px 1px hsl(var(--primary)),
+      1px -1px hsl(var(--primary) / 0.5);
+    opacity: 0.9;
+  }
+  32% {
+    text-shadow:
+      1px 0 hsl(var(--primary) / 0.7),
+      -2px 0 hsl(var(--primary) / 0.3);
+  }
+  33% {
+    text-shadow: none;
+    opacity: 1;
+  }
+  60% {
+    text-shadow: none;
+  }
+  61% {
+    text-shadow:
+      -1px 0 hsl(var(--primary) / 0.9),
+      2px 0 hsl(var(--primary) / 0.4);
+  }
+  62% {
+    text-shadow: none;
+  }
+}
+
+.animate-text-glitch {
+  animation: text-glitch 4s ease-in-out infinite;
+}
+
+/* Hide scrollbar for horizontal scroll containers */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ====================================
+   Collapsed Outline Styles
+   Minimal line indicators for document structure
+   ==================================== */
+
+/* Line indicator for collapsed outline */
+.outline-line-indicator {
+  width: 12px;
+  height: 2px;
+  background-color: hsl(var(--muted-foreground) / 0.4);
+  border-radius: 1px;
+  transition:
+    background-color 0.15s ease,
+    width 0.15s ease;
+}
+
+.outline-line-indicator:hover {
+  background-color: hsl(var(--primary) / 0.6);
+  width: 16px;
+}
+
+.outline-line-indicator.active {
+  background-color: hsl(var(--primary));
+  width: 16px;
+}
+
+/* ====================================
+   Block Handle & Drag-and-Drop Styles
+   Desktop Notion-style block interactions
+   ==================================== */
+
+/* Notion-style drop indicator — blue line between blocks during drag */
+.ProseMirror .block-drop-before,
+.ProseMirror .block-drop-after {
+  position: relative;
+}
+
+/* Line ABOVE the target block (cursor in top half) */
+.ProseMirror .block-drop-before::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1.5px;
+  height: 3px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Circle on the left end of the "before" line */
+.ProseMirror .block-drop-before::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -4.5px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid hsl(var(--primary));
+  border-radius: 50%;
+  background: hsl(var(--background));
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Line BELOW the target block (cursor in bottom half) */
+.ProseMirror .block-drop-after::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1.5px;
+  height: 3px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Circle on the left end of the "after" line */
+.ProseMirror .block-drop-after::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  bottom: -4.5px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid hsl(var(--primary));
+  border-radius: 50%;
+  background: hsl(var(--background));
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Active block highlight when action menu is open (like Notion's blue selection) */
+.ProseMirror > .block-handle-active,
+.ProseMirror .block-handle-active {
+  position: relative;
+  background-color: rgba(35, 131, 226, 0.08) !important;
+  border-radius: 4px;
+  outline: 2px solid rgba(35, 131, 226, 0.25);
+  outline-offset: -1px;
+  transition:
+    background-color 0.15s ease,
+    outline-color 0.15s ease;
+}
+
+.dark .ProseMirror > .block-handle-active,
+.dark .ProseMirror .block-handle-active {
+  background-color: rgba(35, 131, 226, 0.15) !important;
+  outline-color: rgba(35, 131, 226, 0.35);
+}
+
+/* Dragging state - fade source block */
+.ProseMirror.is-block-dragging {
+  cursor: grabbing;
+}
+
+/* Highlight flash after block is moved */
+@keyframes blockMovedFlash {
+  0% {
+    background-color: hsl(var(--primary) / 0.15);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.ProseMirror .block-just-moved {
+  animation: blockMovedFlash 0.5s ease-out;
+}
+
+/* Onboarding tour: lift dropdowns above the z-60 overlay
+   when the current step allows user interaction */
+html[data-onboarding-interactive] [data-radix-popper-content-wrapper],
+html[data-onboarding-interactive] [data-dropdown-portal] {
+  z-index: 61 !important;
+}
+
+/* Comment markdown prose — lightweight subset of editor prose */
+.comment-prose p {
+  margin-bottom: 0.5em;
+}
+.comment-prose p:last-child {
+  margin-bottom: 0;
+}
+.comment-prose strong,
+.comment-prose b {
+  font-weight: 600;
+}
+.comment-prose a {
+  color: hsl(var(--foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: hsl(var(--border));
+}
+.comment-prose a:hover {
+  text-decoration-color: hsl(var(--foreground));
+}
+.comment-prose code {
+  font-size: 0.85em;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+.comment-prose pre {
+  margin: 0.75em 0;
+  padding: 0.75em 1em;
+  border-radius: 8px;
+  background: hsl(var(--muted));
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+.comment-prose pre code {
+  padding: 0;
+  background: transparent;
+}
+.comment-prose blockquote {
+  margin: 0.5em 0;
+  padding-left: 1em;
+  border-left: 3px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+.comment-prose ul,
+.comment-prose ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+.comment-prose ul {
+  list-style-type: disc;
+}
+.comment-prose ol {
+  list-style-type: decimal;
+}
+.comment-prose li {
+  margin: 0.15em 0;
+}
+.comment-prose h1,
+.comment-prose h2,
+.comment-prose h3,
+.comment-prose h4,
+.comment-prose h5,
+.comment-prose h6 {
+  font-weight: 600;
+  margin-top: 0.75em;
+  margin-bottom: 0.25em;
+}
+.comment-prose h1 {
+  font-size: 1.2em;
+}
+.comment-prose h2 {
+  font-size: 1.1em;
+}
+.comment-prose h3 {
+  font-size: 1em;
+}
+.comment-prose hr {
+  margin: 0.75em 0;
+  border-color: hsl(var(--border));
+}
+.comment-prose del,
+.comment-prose s {
+  text-decoration: line-through;
+  opacity: 0.7;
+}

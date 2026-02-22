@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   useChatStore,
   type ChatMessage,
@@ -41,6 +41,14 @@ export function useChat() {
 
   const streamControllerRef = useRef(createStreamController());
   const toolInputRef = useRef<string>("");
+
+  // Abort in-flight stream on unmount to prevent memory leaks
+  useEffect(() => {
+    const controller = streamControllerRef.current;
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   const {
     ensureConversation,
@@ -187,11 +195,11 @@ export function useChat() {
         // Support demo mode by checking demoFile for "demo-file" id
         const files = fileIds
           .map((id) => (id === "demo-file" ? demoFile : getFile(id)))
-          .filter(Boolean)
+          .filter((f): f is NonNullable<typeof f> => f != null)
           .map((f) => ({
-            id: f!.id,
-            name: f!.name,
-            content: isHtml(f!.content) ? htmlToMarkdown(f!.content) : f!.content,
+            id: f.id,
+            name: f.name,
+            content: isHtml(f.content) ? htmlToMarkdown(f.content) : f.content,
           }));
 
         // Get web tools settings

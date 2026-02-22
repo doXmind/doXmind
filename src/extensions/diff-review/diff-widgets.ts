@@ -8,6 +8,7 @@ import { marked } from "marked";
 import katex from "katex";
 import type { DiffHunk } from "@/types/diff";
 import { isHtml } from "@/lib/markdown";
+import { renderMermaidSvg } from "@/lib/mermaid-renderer";
 
 /**
  * Render LaTeX math expressions within text using KaTeX.
@@ -146,6 +147,33 @@ export function createInsertWidget(hunk: DiffHunk): HTMLElement {
   // Render markdown to HTML
   const renderedHtml = renderMarkdownToHtml(newContent);
   content.innerHTML = renderedHtml;
+
+  // Render any mermaid chart placeholders into actual SVG diagrams
+  const mermaidDivs = content.querySelectorAll<HTMLElement>('[data-type="mermaid-chart"]');
+  mermaidDivs.forEach((div) => {
+    const code = div.getAttribute("data-code");
+    if (!code) return;
+    // Unescape the HTML-encoded code
+    const decoded = code
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+    div.classList.add("mermaid-rendered");
+    div.textContent = "Rendering diagram…";
+    renderMermaidSvg(decoded)
+      .then((svg) => {
+        div.innerHTML = svg;
+        const svgEl = div.querySelector("svg");
+        if (svgEl) {
+          svgEl.style.maxWidth = "100%";
+          svgEl.style.height = "auto";
+        }
+      })
+      .catch(() => {
+        div.textContent = "[Diagram]";
+      });
+  });
 
   wrapper.appendChild(content);
   return wrapper;

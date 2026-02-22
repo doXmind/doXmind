@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { textColorOptions, bgColorOptions, type BlockColorOption } from "@/lib/block-actions";
 
@@ -14,7 +15,7 @@ interface ColorPickerProps {
  * Notion-style color picker with text and background color grids.
  * Reusable across bubble menu and block action menu.
  */
-export function ColorPicker({
+export const ColorPicker = memo(function ColorPicker({
   activeTextColor,
   activeBackgroundColor,
   onTextColorChange,
@@ -55,7 +56,7 @@ export function ColorPicker({
       </div>
     </div>
   );
-}
+});
 
 /** Text color swatch — shows an "A" in the given color */
 function TextColorSwatch({

@@ -48,6 +48,12 @@ beautifulsoup4==4.12.3
 
 # Import (file conversion via OpenRouter)
 
+# Data Analysis (code execution sandbox)
+pandas==2.2.3
+numpy==2.2.1
+scipy==1.15.1
+openpyxl==3.1.5
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2

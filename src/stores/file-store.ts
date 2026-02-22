@@ -725,13 +725,20 @@ export const useFileStore = create<FileState>()(
         sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Zustand persist merge receives raw deserialized state
-      merge: (persistedState: any, currentState: FileState) => ({
-        ...currentState,
-        ...persistedState,
-        files: currentState.files, // Always use runtime files, never from localStorage
-        expandedFolderIds: new Set(persistedState.expandedFolderIds || []),
-      }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<{
+          currentFileId: string | null;
+          currentFolderId: string | null;
+          sortBy: SortOption;
+          expandedFolderIds: string[];
+        }>;
+        return {
+          ...currentState,
+          ...persisted,
+          files: currentState.files, // Always use runtime files, never from localStorage
+          expandedFolderIds: new Set(persisted.expandedFolderIds || []),
+        };
+      },
     }
   )
 );

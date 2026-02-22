@@ -43,6 +43,8 @@ import { useChatContextStore } from "@/stores/chat-context-store";
 import { useDataFilesStore, isDataFile, isKBFile } from "@/stores/data-files-store";
 import { useKBStore } from "@/stores/kb-store";
 import { useChat } from "@/hooks/use-chat";
+import { useKBPollingCleanup } from "@/hooks/use-kb-polling-cleanup";
+import { useDataFilePollingCleanup } from "@/hooks/use-data-file-polling-cleanup";
 import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { haptics } from "@/lib/haptics";
@@ -148,6 +150,10 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
 
   const { sendMessage, isStreaming, stopStreaming, currentTool, toolHistory, thinking, todos } =
     useChat();
+
+  // Clean up polling intervals when chat panel unmounts
+  useKBPollingCleanup(conversation.id || null);
+  useDataFilePollingCleanup(conversation.id || null);
 
   // Load conversation history from backend when file changes
   useEffect(() => {

@@ -1,19 +1,6 @@
 "use client";
 
-import {
-  FileText,
-  Trash2,
-  MoreHorizontal,
-  FileDown,
-  Pencil,
-  Share2,
-  Check,
-  X,
-  Home,
-  CheckSquare,
-  Square,
-  Star,
-} from "lucide-react";
+import { FileText, MoreHorizontal, Check, X, CheckSquare, Square, Star } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -26,15 +13,13 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { api } from "@/lib/api";
 import { storeLogger } from "@/lib/logger";
+import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
 
 const log = storeLogger.child("FileItem");
 
@@ -88,7 +73,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const itemCount = file.parentId ? 7 : 6; // rename, share, [move to root], 3 exports, delete
+      const itemCount = getMenuItemCount(!!file.parentId);
       const exportOffset = file.parentId ? 1 : 0; // Shift export items if "Move to Root" is present
       switch (e.key) {
         case "Escape":
@@ -108,6 +93,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         case " ":
           e.preventDefault();
           // Execute the action based on focused index
+          // Indices: 0=Rename, 1=Share, 2=Favorite, [3=MoveToRoot], 3+offset..5+offset=Export, 6+offset=Delete
           if (contextMenuFocusIndex === 0) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -117,7 +103,11 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             setShowShareDialog(true);
-          } else if (contextMenuFocusIndex === 2 && file.parentId) {
+          } else if (contextMenuFocusIndex === 2) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            toggleFavorite(file.id);
+          } else if (contextMenuFocusIndex === 3 && file.parentId) {
             // Move to Root (only when file is in a folder)
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -129,19 +119,19 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
                 log.error("Failed to move file to root", error);
                 toast.error("Failed to move file");
               });
-          } else if (contextMenuFocusIndex === 2 + exportOffset) {
-            setContextMenu(null);
-            setContextMenuFocusIndex(-1);
-            handleExport("markdown");
           } else if (contextMenuFocusIndex === 3 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            handleExport("pdf");
+            handleExport("markdown");
           } else if (contextMenuFocusIndex === 4 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            handleExport("docx");
+            handleExport("pdf");
           } else if (contextMenuFocusIndex === 5 + exportOffset) {
+            setContextMenu(null);
+            setContextMenuFocusIndex(-1);
+            handleExport("docx");
+          } else if (contextMenuFocusIndex === 6 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleDelete();
@@ -328,7 +318,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     );
   };
 
-  // Context menu action handlers
+  // Context menu action handlers (close menu, then execute)
   const handleContextMenuRename = () => {
     setContextMenu(null);
     setNewName(getNameWithoutExtension(file.name));
@@ -338,6 +328,22 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const handleContextMenuShare = () => {
     setContextMenu(null);
     setShowShareDialog(true);
+  };
+
+  const handleContextMenuToggleFavorite = () => {
+    setContextMenu(null);
+    toggleFavorite(file.id);
+  };
+
+  const handleContextMenuMoveToRoot = async () => {
+    setContextMenu(null);
+    try {
+      await moveFileToFolder(file.id, null);
+      toast.success("File moved to root");
+    } catch (error) {
+      log.error("Failed to move file to root", error);
+      toast.error("Failed to move file");
+    }
   };
 
   const handleContextMenuDelete = () => {
@@ -463,98 +469,28 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             </DropdownMenuTrigger>
           </Tooltip>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
+            <FileActionsMenuItems
+              variant="dropdown"
+              isFavorite={!!file.isFavorite}
+              hasParent={!!file.parentId}
+              onRename={() => {
                 setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
               }}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowShareDialog(true);
+              onShare={() => setShowShareDialog(true)}
+              onToggleFavorite={() => toggleFavorite(file.id)}
+              onMoveToRoot={async () => {
+                try {
+                  await moveFileToFolder(file.id, null);
+                  toast.success("File moved to root");
+                } catch (error) {
+                  log.error("Failed to move file to root", error);
+                  toast.error("Failed to move file");
+                }
               }}
-            >
-              <Share2 className="mr-2 h-4 w-4" />
-              Share
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFavorite(file.id);
-              }}
-            >
-              <Star
-                className={cn("mr-2 h-4 w-4", file.isFavorite && "fill-amber-500 text-amber-500")}
-              />
-              {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
-            </DropdownMenuItem>
-            {file.parentId && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    try {
-                      await moveFileToFolder(file.id, null);
-                      toast.success("File moved to root");
-                    } catch (error) {
-                      log.error("Failed to move file to root", error);
-                      toast.error("Failed to move file");
-                    }
-                  }}
-                >
-                  <Home className="mr-2 h-4 w-4" />
-                  Move to Root
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              Export as
-            </DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExport("markdown");
-              }}
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              Markdown
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExport("pdf");
-              }}
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              PDF
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExport("docx");
-              }}
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              Word
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete();
-              }}
-              className="text-destructive"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Move to Trash
-            </DropdownMenuItem>
+              onExport={handleExport}
+              onDelete={handleDelete}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -573,143 +509,20 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             }}
             className="animate-in fade-in-0 zoom-in-95 z-50 min-w-[180px] overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg"
           >
-            {/* Rename */}
-            <button
-              role="menuitem"
-              onClick={handleContextMenuRename}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(0)}
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 0 && "bg-accent text-accent-foreground"
-              )}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Rename
-            </button>
-
-            {/* Share */}
-            <button
-              role="menuitem"
-              onClick={handleContextMenuShare}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 1 && "bg-accent text-accent-foreground"
-              )}
-            >
-              <Share2 className="mr-2 h-4 w-4" />
-              Share
-            </button>
-
-            {file.parentId && (
-              <>
-                <div className="my-1 h-px bg-border" />
-
-                {/* Move to Root */}
-                <button
-                  role="menuitem"
-                  onClick={async () => {
-                    setContextMenu(null);
-                    try {
-                      await moveFileToFolder(file.id, null);
-                      toast.success("File moved to root");
-                    } catch (error) {
-                      log.error("Failed to move file to root", error);
-                      toast.error("Failed to move file");
-                    }
-                  }}
-                  onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(2)}
-                  className={cn(
-                    "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                    contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                    contextMenuFocusIndex === 2 && "bg-accent text-accent-foreground"
-                  )}
-                >
-                  <Home className="mr-2 h-4 w-4" />
-                  Move to Root
-                </button>
-              </>
-            )}
-
-            <div className="my-1 h-px bg-border" />
-
-            {/* Export submenu label */}
-            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Export as</div>
-
-            {/* Export Markdown */}
-            <button
-              role="menuitem"
-              onClick={() => handleContextMenuExport("markdown")}
-              onMouseEnter={() =>
-                contextMenuReady && setContextMenuFocusIndex(2 + (file.parentId ? 1 : 0))
-              }
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 2 + (file.parentId ? 1 : 0) &&
-                  "bg-accent text-accent-foreground"
-              )}
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              Markdown
-            </button>
-
-            {/* Export PDF */}
-            <button
-              role="menuitem"
-              onClick={() => handleContextMenuExport("pdf")}
-              onMouseEnter={() =>
-                contextMenuReady && setContextMenuFocusIndex(3 + (file.parentId ? 1 : 0))
-              }
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 3 + (file.parentId ? 1 : 0) &&
-                  "bg-accent text-accent-foreground"
-              )}
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              PDF
-            </button>
-
-            {/* Export Word */}
-            <button
-              role="menuitem"
-              onClick={() => handleContextMenuExport("docx")}
-              onMouseEnter={() =>
-                contextMenuReady && setContextMenuFocusIndex(4 + (file.parentId ? 1 : 0))
-              }
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 4 + (file.parentId ? 1 : 0) &&
-                  "bg-accent text-accent-foreground"
-              )}
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              Word
-            </button>
-
-            <div className="my-1 h-px bg-border" />
-
-            {/* Move to Trash */}
-            <button
-              role="menuitem"
-              onClick={handleContextMenuDelete}
-              onMouseEnter={() =>
-                contextMenuReady && setContextMenuFocusIndex(5 + (file.parentId ? 1 : 0))
-              }
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm text-destructive outline-none",
-                contextMenuReady && "hover:bg-destructive/10",
-                contextMenuFocusIndex === 5 + (file.parentId ? 1 : 0) && "bg-destructive/10"
-              )}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Move to Trash
-            </button>
+            <FileActionsMenuItems
+              variant="context"
+              isFavorite={!!file.isFavorite}
+              hasParent={!!file.parentId}
+              focusIndex={contextMenuFocusIndex}
+              onFocusIndex={setContextMenuFocusIndex}
+              contextMenuReady={contextMenuReady}
+              onRename={handleContextMenuRename}
+              onShare={handleContextMenuShare}
+              onToggleFavorite={handleContextMenuToggleFavorite}
+              onMoveToRoot={handleContextMenuMoveToRoot}
+              onExport={handleContextMenuExport}
+              onDelete={handleContextMenuDelete}
+            />
           </div>,
           document.body
         )}

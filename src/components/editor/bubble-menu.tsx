@@ -124,7 +124,8 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
     const isImage = editor.isActive("image");
     const isInlineMath = editor.isActive("inlineMath");
     const isBlockMath = editor.isActive("blockMath");
-    return hasSelection && !isImage && !isInlineMath && !isBlockMath;
+    const isMermaidChart = editor.isActive("mermaidChart");
+    return hasSelection && !isImage && !isInlineMath && !isBlockMath && !isMermaidChart;
   }, [editor]);
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { ChevronDown, ChevronRight, X, FileText, ImageIcon, Copy, Trash2 } from "lucide-react";
 import type { ChatContextItem } from "@/stores/chat-context-store";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,7 @@ interface ContextPillProps {
  * Context Pill component - shows selected text or image as a collapsible pill.
  * Cursor-style UI for displaying attached content in chat input.
  */
-export function ContextPill({
+export const ContextPill = memo(function ContextPill({
   context,
   onRemove,
   onCopy,
@@ -113,4 +113,4 @@ export function ContextPill({
       )}
     </div>
   );
-}
+});

@@ -92,7 +92,7 @@ Workflow: Search → Pick relevant cases → Get full text for citation.
 **Workflow:**
 1. Call `list_data_files()` to discover available files
 2. Use code execution to load and analyze with pandas
-3. Files are at: `/mnt/user/<filename>`
+3. Files are in the working directory, access by filename directly (e.g., `pd.read_csv('data.csv')`)
 ---
 
 """

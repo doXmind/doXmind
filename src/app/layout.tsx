@@ -1,6 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import "./styles/editor.css";
+import "./styles/diff-review.css";
+import "./styles/text-review.css";
+import "./styles/code-block.css";
+import "./styles/math-mermaid.css";
+import "./styles/presentation.css";
+import "./styles/mobile.css";
+import "./styles/components.css";
 import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
 

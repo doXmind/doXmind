@@ -1,0 +1,151 @@
+/* ====================================
+   Code Block - Notion Style
+   Minimalist design with integrated header
+   ==================================== */
+
+/* Code block wrapper */
+.ProseMirror .code-block-wrapper {
+  @apply relative my-4;
+}
+
+/* Container with subtle border */
+.ProseMirror .code-block-container {
+  @apply overflow-hidden rounded-lg;
+  @apply border border-border/60;
+  @apply bg-muted/30;
+  transition: border-color 0.15s ease;
+}
+
+.ProseMirror .code-block-container:hover,
+.ProseMirror .code-block-container:focus-within {
+  @apply border-border;
+}
+
+/* Header bar */
+.ProseMirror .code-block-header {
+  @apply px-4 py-2;
+  @apply border-b border-border/40;
+  @apply bg-muted/40;
+}
+
+/* Code body area */
+.ProseMirror .code-block-body {
+  @apply flex;
+  @apply overflow-x-auto;
+}
+
+/* Line numbers styling */
+.ProseMirror .line-numbers {
+  @apply sticky left-0;
+  @apply min-w-[3rem];
+  @apply bg-muted/20;
+}
+
+/* Code content */
+.ProseMirror .code-block-content {
+  @apply font-mono text-sm;
+  @apply leading-relaxed;
+  @apply p-4;
+  @apply min-w-0 flex-1;
+  @apply bg-transparent;
+  white-space: pre;
+}
+
+.ProseMirror .code-block-content code {
+  @apply bg-transparent p-0;
+  font-family: inherit;
+}
+
+/* Override default pre styles when using custom code block */
+.ProseMirror pre.code-block-content {
+  @apply m-0 rounded-none border-none;
+  @apply bg-transparent;
+}
+
+/* Syntax highlighting colors - Light mode */
+.ProseMirror .code-block-content .hljs-keyword,
+.ProseMirror .code-block-content .hljs-selector-tag {
+  @apply text-purple-600;
+}
+
+.ProseMirror .code-block-content .hljs-string,
+.ProseMirror .code-block-content .hljs-attr {
+  @apply text-green-600;
+}
+
+.ProseMirror .code-block-content .hljs-number,
+.ProseMirror .code-block-content .hljs-literal {
+  @apply text-orange-600;
+}
+
+.ProseMirror .code-block-content .hljs-comment {
+  @apply italic text-gray-400;
+}
+
+.ProseMirror .code-block-content .hljs-function,
+.ProseMirror .code-block-content .hljs-title {
+  @apply text-blue-600;
+}
+
+.ProseMirror .code-block-content .hljs-type,
+.ProseMirror .code-block-content .hljs-built_in {
+  @apply text-cyan-600;
+}
+
+.ProseMirror .code-block-content .hljs-variable,
+.ProseMirror .code-block-content .hljs-template-variable {
+  @apply text-red-600;
+}
+
+.ProseMirror .code-block-content .hljs-params {
+  @apply text-orange-500;
+}
+
+/* Dark mode syntax colors */
+.dark .ProseMirror .code-block-content .hljs-keyword,
+.dark .ProseMirror .code-block-content .hljs-selector-tag {
+  @apply text-purple-400;
+}
+
+.dark .ProseMirror .code-block-content .hljs-string,
+.dark .ProseMirror .code-block-content .hljs-attr {
+  @apply text-green-400;
+}
+
+.dark .ProseMirror .code-block-content .hljs-number,
+.dark .ProseMirror .code-block-content .hljs-literal {
+  @apply text-orange-400;
+}
+
+.dark .ProseMirror .code-block-content .hljs-comment {
+  @apply text-gray-500;
+}
+
+.dark .ProseMirror .code-block-content .hljs-function,
+.dark .ProseMirror .code-block-content .hljs-title {
+  @apply text-blue-400;
+}
+
+.dark .ProseMirror .code-block-content .hljs-type,
+.dark .ProseMirror .code-block-content .hljs-built_in {
+  @apply text-cyan-400;
+}
+
+.dark .ProseMirror .code-block-content .hljs-variable,
+.dark .ProseMirror .code-block-content .hljs-template-variable {
+  @apply text-red-400;
+}
+
+.dark .ProseMirror .code-block-content .hljs-params {
+  @apply text-orange-300;
+}
+
+/* Selection within code block */
+.ProseMirror .code-block-content ::selection {
+  background-color: hsl(var(--foreground) / 0.2);
+}
+
+/* Line height for code lines - must match line-numbers */
+.ProseMirror .code-block-content {
+  line-height: 1.625rem;
+}

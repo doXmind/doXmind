@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, Circle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,7 +32,7 @@ const statusConfig = {
   },
 };
 
-export function TodoProgress({ todos, className }: TodoProgressProps) {
+export const TodoProgress = memo(function TodoProgress({ todos, className }: TodoProgressProps) {
   if (todos.length === 0) return null;
 
   const completedCount = todos.filter((t) => t.status === "completed").length;
@@ -92,4 +93,4 @@ export function TodoProgress({ todos, className }: TodoProgressProps) {
       </ul>
     </motion.div>
   );
-}
+});

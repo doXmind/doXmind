@@ -102,6 +102,23 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
   const showTurnInto = TURN_INTO_TYPES.has(blockType);
   const showColor = COLOR_TYPES.has(blockType);
 
+  // Move editor selection into the target block on mount so that
+  // editor.isActive() checks (used by Turn Into options) reference
+  // the correct block type instead of wherever the cursor happened to be.
+  useEffect(() => {
+    if (block) {
+      try {
+        const $pos = editor.state.doc.resolve(block.from + 1);
+        const sel = TextSelection.near($pos);
+        editor.view.dispatch(editor.state.tr.setSelection(sel));
+      } catch {
+        // Position may be invalid for some block types; ignore silently
+      }
+    }
+    // Only run on mount when the menu opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Close on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {

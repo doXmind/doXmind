@@ -1,0 +1,400 @@
+/* ====================================
+   Mobile Auto-Zoom Prevention
+   Ensure inputs have 16px+ font size to prevent iOS/Chrome auto-zoom
+   ==================================== */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+    /* Also disable touch manipulation zoom on inputs */
+    touch-action: manipulation;
+  }
+
+  /* Ensure TipTap editor doesn't trigger zoom */
+  .ProseMirror[contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
+
+/* ====================================
+   Mobile Viewport Height Fix
+   Use dynamic viewport height for better mobile browser UI handling
+   ==================================== */
+@media (max-width: 767px) {
+  /* Prevent body scroll - only main content should scroll */
+  html,
+  body {
+    overflow: hidden;
+    width: 100%;
+    height: 100vh; /* Fallback for browsers without dvh */
+  }
+
+  /* Support for dvh */
+  @supports (height: 100dvh) {
+    html,
+    body {
+      height: 100dvh;
+    }
+  }
+
+  /* Ensure Next.js root takes full height */
+  #__next {
+    height: 100%;
+  }
+}
+
+/* Touch feedback for mobile buttons */
+.touch-feedback {
+  transition: transform 0.1s ease;
+}
+
+.touch-feedback:active {
+  transform: scale(0.97);
+}
+
+/* ====================================
+   Mobile Block Selection Styles
+   Block-level selection for mobile reading mode
+   ==================================== */
+
+/* Selected block - subtle highlight without obstructing reading */
+.ProseMirror .block-selected {
+  position: relative;
+  background-color: hsl(var(--primary) / 0.08);
+  border-radius: 4px;
+  outline: 2px solid hsl(var(--primary) / 0.3);
+  outline-offset: 2px;
+  transition: all 0.15s ease;
+}
+
+/* Left border indicator for selected blocks */
+.ProseMirror .block-selected::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+}
+
+/* Mobile block selection mode */
+@media (max-width: 767px) {
+  /* Common mobile styles (always applied) */
+  .ProseMirror {
+    /* Small top padding so content doesn't touch the header */
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    min-height: auto;
+    /* Prevent text overflow on mobile */
+    overflow-wrap: break-word;
+    word-break: break-word;
+    overflow-x: hidden;
+  }
+
+  /* Block selection mode styles (disabled in edit mode) */
+  :not(.mobile-edit-mode) .ProseMirror {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    cursor: default;
+    caret-color: transparent;
+  }
+
+  /* Edit mode: restore normal editing behavior */
+  .mobile-edit-mode .ProseMirror {
+    -webkit-user-select: auto;
+    user-select: auto;
+    cursor: text;
+    caret-color: auto;
+  }
+
+  /* Remove top margin from first element on mobile to save space */
+  .ProseMirror > *:first-child {
+    margin-top: 0 !important;
+  }
+
+  /* Make all top-level blocks tappable with visual feedback (only in selection mode) */
+  :not(.mobile-edit-mode) .ProseMirror > * {
+    transition:
+      background-color 0.1s ease,
+      transform 0.1s ease;
+    border-radius: 4px;
+    margin-left: -4px;
+    margin-right: -4px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  /* Tap feedback - brief highlight on touch (only in selection mode) */
+  :not(.mobile-edit-mode) .ProseMirror > *:active:not(.block-selected) {
+    background-color: hsl(var(--accent) / 0.3);
+    transform: scale(0.995);
+  }
+
+  /* Ensure code blocks and blockquotes have proper styling */
+  .ProseMirror > pre,
+  .ProseMirror > blockquote {
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 12px;
+  }
+}
+
+/* Mobile code block optimizations */
+@media (max-width: 767px) {
+  /* Enable code wrapping on mobile instead of horizontal scroll */
+  .ProseMirror .code-block-body {
+    overflow-x: visible;
+  }
+
+  .ProseMirror .code-block-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .ProseMirror .code-block-content code {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Reduce line number padding on mobile */
+  .ProseMirror .line-numbers {
+    min-width: 2.5rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  /* Hide line numbers on very small screens */
+  @media (max-width: 374px) {
+    .ProseMirror .line-numbers {
+      display: none;
+    }
+
+    .ProseMirror .code-block-content {
+      padding-left: 1rem;
+    }
+  }
+
+  /* Reduce code block padding on mobile */
+  .ProseMirror .code-block-content {
+    padding: 0.75rem;
+  }
+
+  /* Ensure code block container doesn't overflow */
+  .ProseMirror .code-block-container {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  /* Make fallback pre blocks wrap too */
+  .ProseMirror pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: visible;
+  }
+}
+
+/* Dark mode adjustments */
+.dark .ProseMirror .block-selected {
+  background-color: hsl(var(--primary) / 0.12);
+  outline-color: hsl(var(--primary) / 0.4);
+}
+
+/* Animation for block selection */
+@keyframes blockSelectPulse {
+  0% {
+    outline-width: 2px;
+    outline-color: hsl(var(--primary) / 0.5);
+  }
+  50% {
+    outline-width: 3px;
+    outline-color: hsl(var(--primary) / 0.3);
+  }
+  100% {
+    outline-width: 2px;
+    outline-color: hsl(var(--primary) / 0.3);
+  }
+}
+
+.ProseMirror .block-selected {
+  animation: blockSelectPulse 0.3s ease-out;
+}
+
+/* ====================================
+   Voice Recording Overlay Styles
+   WeChat-style voice recording UI
+   ==================================== */
+
+/* Voice recording waveform bars */
+.voice-waveform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 48px;
+}
+
+.voice-waveform-bar {
+  width: 4px;
+  min-height: 8px;
+  background-color: hsl(var(--primary));
+  border-radius: 2px;
+  transition: height 0.05s ease;
+}
+
+/* Recording indicator pulse */
+@keyframes recordingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.recording-indicator {
+  animation: recordingPulse 1s ease-in-out infinite;
+}
+
+/* Voice recording overlay gradient */
+.voice-recording-gradient {
+  background: linear-gradient(
+    to top,
+    hsl(var(--background) / 0.98) 0%,
+    hsl(var(--background) / 0.95) 30%,
+    hsl(var(--background) / 0.8) 60%,
+    transparent 100%
+  );
+}
+
+/* ====================================
+   Mobile Action Bar Styles
+   Fixed bottom action bar for block selection
+   ==================================== */
+
+/* Action bar slide-up animation */
+@keyframes actionBarSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.action-bar-enter {
+  animation: actionBarSlideUp 0.2s ease-out;
+}
+
+/* Action button styles */
+.action-button {
+  @apply flex flex-col items-center gap-1 rounded-xl p-2;
+  @apply min-w-[60px] transition-colors;
+}
+
+.action-button:active {
+  @apply bg-accent;
+}
+
+.action-button-primary {
+  @apply bg-primary/10 text-primary;
+}
+
+.action-button:disabled {
+  @apply pointer-events-none opacity-40;
+}
+
+/* ====================================
+   AI Edit Preview Styles
+   Full-screen diff preview for mobile
+   ==================================== */
+
+/* Original content (to be replaced) */
+.preview-original {
+  @apply rounded-lg p-3;
+  @apply border border-destructive/20 bg-destructive/10;
+}
+
+.preview-original-text {
+  @apply line-through opacity-70;
+}
+
+/* Proposed content (new) */
+.preview-proposed {
+  @apply rounded-lg p-3;
+  @apply border border-primary/20 bg-primary/10;
+}
+
+/* Preview slide-up animation */
+@keyframes previewSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.preview-enter {
+  animation: previewSlideUp 0.3s ease-out;
+}
+
+/* ====================================
+   Mobile Outline (Notion Style)
+   Full-screen overlay outline
+   ==================================== */
+
+/* Notion-style heading item */
+.notion-heading-item {
+  @apply w-full px-4 py-3 text-left;
+  @apply transition-colors;
+  @apply active:bg-accent/50;
+  min-height: 48px;
+}
+
+.notion-heading-item.active {
+  @apply bg-primary/5 font-medium text-primary;
+}
+
+/* Heading level indentation */
+.notion-heading-h1 {
+  @apply font-semibold;
+  padding-left: 16px;
+}
+
+.notion-heading-h2 {
+  @apply font-medium;
+  padding-left: 32px;
+}
+
+.notion-heading-h3 {
+  @apply text-sm text-muted-foreground;
+  padding-left: 48px;
+}
+
+/* ====================================
+   Reduced Motion Support for Mobile Styles
+   ==================================== */
+@media (prefers-reduced-motion: reduce) {
+  .ProseMirror .block-selected {
+    animation: none !important;
+  }
+
+  .recording-indicator {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  .action-bar-enter,
+  .preview-enter {
+    animation: none !important;
+  }
+}
