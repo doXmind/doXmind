@@ -47,9 +47,9 @@ class LongContextParams:
 class AutocompleteContextService:
     """Service for assembling autocomplete context from multiple sources."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, api_key: str | None = None):
         self.db = db
-        self.rag = RAGService(db)
+        self.rag = RAGService(db, api_key=api_key)
         self.settings = get_settings()
 
     async def get_rag_chunks(

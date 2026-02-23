@@ -72,6 +72,20 @@ Analyze the entire document and return your suggestions. Remember to:
                 max_tokens=4096,
             )
 
+            # Track usage
+            if llm.last_usage:
+                import asyncio
+
+                from services.usage_tracker import track_usage
+
+                asyncio.create_task(
+                    track_usage(
+                        service="review",
+                        model=llm.model,
+                        **llm.last_usage,
+                    )
+                )
+
             # Validate and clean suggestions
             validated_suggestions = []
             for s in parsed.get("suggestions", []):

@@ -1,7 +1,7 @@
 /**
  * API Settings Store
  *
- * Manages user's Anthropic API key and model preferences.
+ * Manages user's OpenRouter API key and model preferences.
  * Syncs with backend and persists locally.
  */
 
@@ -9,11 +9,19 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
 
+export interface ModelInfo {
+  id: string;
+  name: string;
+  context_length: number;
+  prompt_price: number;
+  completion_price: number;
+}
+
 interface APISettingsState {
   // Settings
   hasAPIKey: boolean;
   preferredModel: string;
-  availableModels: string[];
+  availableModels: ModelInfo[];
 
   // Loading state
   isLoading: boolean;
@@ -31,7 +39,7 @@ export const useAPISettingsStore = create<APISettingsState>()(
     (set, get) => ({
       // Default settings
       hasAPIKey: false,
-      preferredModel: "claude-sonnet-4-5-20250929",
+      preferredModel: "z-ai/glm-5",
       availableModels: [],
 
       isLoading: false,
@@ -40,18 +48,32 @@ export const useAPISettingsStore = create<APISettingsState>()(
       loadFromBackend: async () => {
         set({ isLoading: true });
         try {
-          const response = await fetch("/api/user-settings/", {
-            headers: api.getAuthorizationHeaders(),
-          });
+          // Fetch user settings and models in parallel
+          const [settingsRes, modelsRes] = await Promise.all([
+            fetch(
+              `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-settings/`,
+              { headers: api.getAuthorizationHeaders() }
+            ),
+            fetch(
+              `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-settings/models`,
+              { headers: api.getAuthorizationHeaders() }
+            ),
+          ]);
 
-          if (response.ok) {
-            const data = await response.json();
-            set({
-              hasAPIKey: data.has_api_key,
-              preferredModel: data.preferred_model,
-              availableModels: data.available_models,
+          if (settingsRes.ok) {
+            const settings = await settingsRes.json();
+            const updates: Partial<APISettingsState> = {
+              hasAPIKey: settings.has_api_key,
+              preferredModel: settings.preferred_model,
               isSynced: true,
-            });
+            };
+
+            if (modelsRes.ok) {
+              const modelsData = await modelsRes.json();
+              updates.availableModels = modelsData.models || [];
+            }
+
+            set(updates);
           }
         } catch (error) {
           console.warn("[APISettingsStore] Failed to load settings from backend:", error);
@@ -62,17 +84,22 @@ export const useAPISettingsStore = create<APISettingsState>()(
 
       saveAPIKey: async (apiKey: string) => {
         try {
-          const response = await fetch("/api/user-settings/api-key", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...api.getAuthorizationHeaders(),
-            },
-            body: JSON.stringify({ api_key: apiKey }),
-          });
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-settings/api-key`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...api.getAuthorizationHeaders(),
+              },
+              body: JSON.stringify({ api_key: apiKey }),
+            }
+          );
 
           if (response.ok) {
             set({ hasAPIKey: true });
+            // Re-fetch to sync available models
+            get().loadFromBackend();
             return { success: true };
           } else {
             const error = await response.json();
@@ -89,10 +116,13 @@ export const useAPISettingsStore = create<APISettingsState>()(
 
       deleteAPIKey: async () => {
         try {
-          const response = await fetch("/api/user-settings/api-key", {
-            method: "DELETE",
-            headers: api.getAuthorizationHeaders(),
-          });
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-settings/api-key`,
+            {
+              method: "DELETE",
+              headers: api.getAuthorizationHeaders(),
+            }
+          );
           if (response.ok) {
             set({ hasAPIKey: false });
           } else {
@@ -107,14 +137,17 @@ export const useAPISettingsStore = create<APISettingsState>()(
         const previousModel = get().preferredModel;
         set({ preferredModel: model }); // Optimistic update
         try {
-          const response = await fetch("/api/user-settings/model", {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              ...api.getAuthorizationHeaders(),
-            },
-            body: JSON.stringify({ model }),
-          });
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-settings/model`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                ...api.getAuthorizationHeaders(),
+              },
+              body: JSON.stringify({ model }),
+            }
+          );
 
           if (!response.ok) {
             set({ preferredModel: previousModel }); // Rollback on failure

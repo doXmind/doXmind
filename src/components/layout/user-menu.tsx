@@ -11,6 +11,7 @@ import {
   Key,
   Type,
   Shield,
+  BarChart3,
   GraduationCap,
   HelpCircle,
 } from "lucide-react";
@@ -29,13 +30,15 @@ import { useAuthStore } from "@/stores/auth-store";
 import { APISettings } from "@/components/settings/api-settings";
 import { TypographySettings } from "@/components/settings/typography-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
+import { UsageSettings } from "@/components/settings/usage-settings";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "api" | "typography" | "privacy";
+type SettingsTab = "api" | "usage" | "typography" | "privacy";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: "api", label: "API", icon: <Key className="h-4 w-4" /> },
+  { id: "usage", label: "Usage", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "typography", label: "Typography", icon: <Type className="h-4 w-4" /> },
   { id: "privacy", label: "Privacy", icon: <Shield className="h-4 w-4" /> },
 ];
@@ -227,6 +230,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         {/* Tab content */}
         <div className="min-h-[280px]">
           {settingsTab === "api" && <APISettings />}
+          {settingsTab === "usage" && <UsageSettings />}
           {settingsTab === "typography" && <TypographySettings />}
           {settingsTab === "privacy" && <TelemetrySettings />}
         </div>

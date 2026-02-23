@@ -15,6 +15,9 @@ from config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Last conversion usage data (read by API callers for tracking)
+_last_conversion_usage: dict = {}
+
 # MIME types for formats supported natively via multimodal input
 NATIVE_MIME_TYPES = {
     ".pdf": "application/pdf",
@@ -56,8 +59,8 @@ Document content:
 
 
 @lru_cache
-def _get_client() -> AsyncOpenAI:
-    """Get cached OpenRouter client instance."""
+def _get_server_client() -> AsyncOpenAI:
+    """Get cached OpenRouter client using server API key."""
     settings = get_settings()
     if not settings.openrouter_api_key:
         raise ValueError("OPENROUTER_API_KEY is not configured")
@@ -65,6 +68,14 @@ def _get_client() -> AsyncOpenAI:
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
     )
+
+
+def _get_client(api_key: str | None = None) -> AsyncOpenAI:
+    """Get OpenRouter client, using user key if provided."""
+    if api_key:
+        settings = get_settings()
+        return AsyncOpenAI(api_key=api_key, base_url=settings.openrouter_base_url)
+    return _get_server_client()
 
 
 def extract_docx_content(content: bytes) -> str:
@@ -118,7 +129,11 @@ def extract_docx_content(content: bytes) -> str:
 
 
 async def convert_file_to_markdown(
-    content: bytes, filename: str, extension: str, model: str | None = None
+    content: bytes,
+    filename: str,
+    extension: str,
+    model: str | None = None,
+    api_key: str | None = None,
 ) -> str:
     """Convert file content to Markdown via OpenRouter API.
 
@@ -127,6 +142,7 @@ async def convert_file_to_markdown(
         filename: Original filename (for logging)
         extension: File extension (e.g., '.pdf', '.docx')
         model: Model to use for conversion (defaults to settings.file_conversion_model)
+        api_key: Optional user API key (falls back to server key)
 
     Returns:
         Converted Markdown content
@@ -146,7 +162,7 @@ async def convert_file_to_markdown(
 
     # Handle DOCX files: extract text first, then format with LLM
     if ext_lower == ".docx":
-        return await _convert_docx_to_markdown(content, filename, effective_model)
+        return await _convert_docx_to_markdown(content, filename, effective_model, api_key)
 
     # Handle PPTX files (not yet implemented)
     if ext_lower == ".pptx":
@@ -156,7 +172,7 @@ async def convert_file_to_markdown(
     mime_type = NATIVE_MIME_TYPES[ext_lower]
 
     try:
-        client = _get_client()
+        client = _get_client(api_key)
         b64_data = base64.b64encode(content).decode("utf-8")
         data_url = f"data:{mime_type};base64,{b64_data}"
 
@@ -179,6 +195,13 @@ async def convert_file_to_markdown(
             ],
             max_tokens=16384,
         )
+
+        from services.usage_tracker import extract_usage
+
+        _last_conversion_usage.update(extract_usage(response))
+        _last_conversion_usage["model"] = effective_model
+        _last_conversion_usage["is_byok"] = bool(api_key)
+
         markdown_content = response.choices[0].message.content
 
         if not markdown_content:
@@ -192,13 +215,16 @@ async def convert_file_to_markdown(
         raise
 
 
-async def _convert_docx_to_markdown(content: bytes, filename: str, model: str) -> str:
+async def _convert_docx_to_markdown(
+    content: bytes, filename: str, model: str, api_key: str | None = None
+) -> str:
     """Convert DOCX file to Markdown by extracting text and formatting with LLM.
 
     Args:
         content: Raw DOCX file bytes
         filename: Original filename (for logging)
         model: Model to use for formatting
+        api_key: Optional user API key
 
     Returns:
         Formatted Markdown content
@@ -215,12 +241,19 @@ async def _convert_docx_to_markdown(content: bytes, filename: str, model: str) -
 
     # Use LLM to format the extracted text as proper Markdown
     try:
-        client = _get_client()
+        client = _get_client(api_key)
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": TEXT_CONVERSION_PROMPT + extracted_text}],
             max_tokens=16384,
         )
+
+        from services.usage_tracker import extract_usage
+
+        _last_conversion_usage.update(extract_usage(response))
+        _last_conversion_usage["model"] = model
+        _last_conversion_usage["is_byok"] = bool(api_key)
+
         markdown_content = response.choices[0].message.content
 
         if not markdown_content:

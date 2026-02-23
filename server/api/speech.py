@@ -1,18 +1,22 @@
-"""Speech-to-Text API endpoints using OpenAI Whisper."""
+"""Speech-to-Text API endpoints using Whisper via OpenRouter."""
 
 import logging
 from io import BytesIO
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
+from db.database import get_db
+from dependencies import resolve_user_api_key
 from exceptions import (
     BadRequestError,
     ExternalServiceError,
     FileTooLargeError,
     UnsupportedFileTypeError,
 )
+from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,9 +44,11 @@ MAX_FILE_SIZE = 25 * 1024 * 1024
 async def transcribe_audio(
     audio: UploadFile = File(..., description="Audio file to transcribe"),
     language: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """
-    Transcribe audio to text using OpenAI Whisper API.
+    Transcribe audio to text using Whisper via OpenRouter.
 
     Args:
         audio: Audio file (webm, mp3, wav, m4a, etc.)
@@ -78,8 +84,14 @@ async def transcribe_audio(
         raise BadRequestError(message="Audio file is empty")
 
     try:
-        # Initialize OpenAI client
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        # Resolve user API key, fall back to server key
+        user_api_key = await resolve_user_api_key(auth.sub, db)
+        effective_key = user_api_key or settings.openrouter_api_key
+
+        client = AsyncOpenAI(
+            api_key=effective_key,
+            base_url=settings.openrouter_base_url,
+        )
 
         # Determine file extension from content type
         # Strip codecs parameter (e.g., "audio/webm;codecs=opus" -> "audio/webm")
@@ -100,16 +112,17 @@ async def transcribe_audio(
         file_ext = ext_map.get(base_content_type, "webm")
 
         logger.info(
-            f"Processing audio: content_type={content_type}, base={base_content_type}, ext={file_ext}, size={len(content)}"
+            f"Processing audio: content_type={content_type}, base={base_content_type}, "
+            f"ext={file_ext}, size={len(content)}"
         )
 
         # Create a file-like object for the API
         audio_file = BytesIO(content)
         audio_file.name = f"audio.{file_ext}"
 
-        # Call Whisper API
+        # Call Whisper API via OpenRouter
         transcription_args = {
-            "model": "whisper-1",
+            "model": settings.stt_model,
             "file": audio_file,
             "response_format": "verbose_json",  # Get language detection info
         }
@@ -123,6 +136,20 @@ async def transcribe_audio(
         # Extract text and detected language
         text = transcription.text if hasattr(transcription, "text") else str(transcription)
         detected_language = getattr(transcription, "language", language or "unknown")
+
+        # Track STT usage (Whisper doesn't return token counts)
+        import asyncio
+
+        from services.usage_tracker import track_usage
+
+        asyncio.create_task(
+            track_usage(
+                service="stt",
+                model=settings.stt_model,
+                user_id=auth.sub,
+                is_byok=bool(user_api_key),
+            )
+        )
 
         logger.info(f"Transcription successful: {len(text)} chars, language={detected_language}")
 

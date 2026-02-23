@@ -60,8 +60,9 @@ class GPTReranker:
         ... )
     """
 
-    def __init__(self):
+    def __init__(self, api_key: str | None = None):
         self.settings = get_settings()
+        self._api_key = api_key
         self._client = None
 
     @property
@@ -70,8 +71,9 @@ class GPTReranker:
         if self._client is None:
             from openai import AsyncOpenAI
 
+            effective_key = self._api_key or self.settings.openrouter_api_key
             self._client = AsyncOpenAI(
-                api_key=self.settings.openrouter_api_key,
+                api_key=effective_key,
                 base_url=self.settings.openrouter_base_url,
             )
         return self._client
@@ -142,6 +144,21 @@ Rank all {len(documents)} documents by relevance."""
                 temperature=0.0,  # Deterministic for consistent rankings
             )
 
+            # Track usage
+            import asyncio
+
+            from services.usage_tracker import extract_usage, track_usage
+
+            usage = extract_usage(response)
+            asyncio.create_task(
+                track_usage(
+                    service="reranking",
+                    model=model,
+                    is_byok=bool(self._api_key),
+                    **usage,
+                )
+            )
+
             # Parse the JSON response
             text = (response.choices[0].message.content or "").strip()
             # Strip markdown code fences if present
@@ -208,7 +225,7 @@ class NoOpReranker:
         return documents[:top_n]
 
 
-def get_reranker():
+def get_reranker(api_key: str | None = None):
     """Factory function to get the appropriate reranker.
 
     Returns GPTReranker if reranking is enabled, NoOpReranker otherwise.
@@ -216,6 +233,6 @@ def get_reranker():
     settings = get_settings()
 
     if getattr(settings, "reranking_enabled", False):
-        return GPTReranker()
+        return GPTReranker(api_key=api_key)
 
     return NoOpReranker()

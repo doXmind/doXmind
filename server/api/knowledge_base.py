@@ -124,6 +124,24 @@ async def upload_attachment(
     # Process file
     try:
         extracted_text = await extract_text_content(content, file.filename or "", ext)
+
+        # Track file conversion usage
+        import asyncio
+
+        from services.gemini_converter import _last_conversion_usage
+        from services.usage_tracker import track_usage
+
+        if _last_conversion_usage:
+            asyncio.create_task(
+                track_usage(
+                    service="file_conversion",
+                    model=_last_conversion_usage.get("model"),
+                    input_tokens=_last_conversion_usage.get("input_tokens"),
+                    output_tokens=_last_conversion_usage.get("output_tokens"),
+                    cost=_last_conversion_usage.get("cost"),
+                )
+            )
+
         attachment.extracted_text = extracted_text
 
         rag = RAGService(db)

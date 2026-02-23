@@ -72,6 +72,9 @@ class WritingAgent:
 
         settings = get_settings()
 
+        # Store user API key for passing to sub-services (RAG, etc.)
+        self._user_api_key = api_key
+
         # Use user's API key if provided, otherwise fall back to server key
         effective_api_key = api_key or settings.openrouter_api_key
         if not effective_api_key:
@@ -324,6 +327,7 @@ class WritingAgent:
             "conversation_id": conversation_id,
             "attachments": self.kb_attachments,
             "db": self.db,
+            "api_key": self._user_api_key,
         }
 
     def _build_data_files_context(
@@ -375,6 +379,7 @@ class WritingAgent:
         iteration = 0
         total_input_tokens = 0
         total_output_tokens = 0
+        total_cost = 0.0
 
         # Track todo state for completion guard
         current_todos: list[dict] = []
@@ -402,6 +407,7 @@ class WritingAgent:
                 if event and event.get("type") == "usage":
                     total_input_tokens += event.get("input_tokens", 0)
                     total_output_tokens += event.get("output_tokens", 0)
+                    total_cost += event.get("cost", 0) or 0
                     continue
 
                 # Check for truncation warning (max_tokens reached)
@@ -524,6 +530,7 @@ class WritingAgent:
             "type": "usage",
             "input_tokens": total_input_tokens,
             "output_tokens": total_output_tokens,
+            "cost": total_cost if total_cost > 0 else None,
         }
 
     async def run(self, message: str, files: list[dict[str, Any]]) -> dict[str, Any]:

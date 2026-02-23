@@ -13,6 +13,7 @@ from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import DocumentShare, File, Fork, User, get_db, utcnow
+from dependencies import resolve_user_api_key
 from exceptions import (
     AppException,
     BadRequestError,
@@ -40,6 +41,14 @@ def get_user_id(token: TokenData) -> str | None:
         return None
 
     return token.sub
+
+
+async def _get_rag(db: AsyncSession, user_id: str | None = None) -> RAGService:
+    """Create RAGService with user's API key if available."""
+    api_key = None
+    if user_id:
+        api_key = await resolve_user_api_key(user_id, db)
+    return RAGService(db, api_key=api_key)
 
 
 def compute_content_hash(content: str) -> str:
@@ -381,7 +390,7 @@ async def create_file(
 
         # Index in vector store with auto-selected chunking strategy
         try:
-            rag = RAGService(db)
+            rag = await _get_rag(db, user_id)
             # Auto-select chunking strategy based on document type
             strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file.content, file.name)
             await rag.index_file(
@@ -544,7 +553,7 @@ async def update_file(
     # Re-index in vector store only when content or name actually changed
     if need_reindex:
         try:
-            rag = RAGService(db)
+            rag = await _get_rag(db, user_id)
             # Auto-select chunking strategy based on document type
             strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file_content, file_name)
             await rag.index_file(
@@ -626,7 +635,7 @@ async def delete_file(
 
     # Remove from vector store (trashed files shouldn't appear in search)
     try:
-        rag = RAGService(db)
+        rag = await _get_rag(db, user_id)
         await rag.delete_file(file_id)
         for desc_id in descendant_ids:
             with contextlib.suppress(Exception):
@@ -860,7 +869,7 @@ async def search_files(
     user_id = get_user_id(token)
 
     try:
-        rag = RAGService(db)
+        rag = await _get_rag(db, user_id)
 
         if request.use_reranking:
             # Full pipeline: hybrid search + GPT reranking
@@ -924,7 +933,7 @@ async def search_in_document(
         if not file:
             raise DocumentNotFoundError(file_id=request.file_id)
 
-        rag = RAGService(db)
+        rag = await _get_rag(db, user_id)
 
         # Use sentence-level search for precise in-document matching
         results = await rag.search_sentences(
@@ -1105,7 +1114,7 @@ async def restore_file(
 
     # Re-index in vector store
     try:
-        rag = RAGService(db)
+        rag = await _get_rag(db, user_id)
         if not file.is_folder:
             strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file.content, file.name)
             await rag.index_file(
@@ -1150,7 +1159,7 @@ async def permanent_delete_file(
 
     # Remove from vector store (may already be removed)
     try:
-        rag = RAGService(db)
+        rag = await _get_rag(db, user_id)
         await rag.delete_file(file_id)
     except Exception as e:
         logger.warning(f"Failed to delete file from vector store: {e}")
@@ -1196,7 +1205,7 @@ async def empty_trash(
             all_image_keys.extend(extract_image_keys_from_content(f.content))
 
     # Remove all from vector store
-    rag = RAGService(db)
+    rag = await _get_rag(db, user_id)
     for f in trash_files:
         try:
             await rag.delete_file(f.id)

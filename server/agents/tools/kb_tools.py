@@ -65,7 +65,7 @@ async def execute_search_knowledge_base(
         return {"error": "Database session not available."}
 
     try:
-        rag = RAGService(db)
+        rag = RAGService(db, api_key=kb_context.get("api_key"))
         results = await rag.search_kb(conversation_id, query, top_k)
 
         if not results:
@@ -121,7 +121,7 @@ async def execute_read_kb_document(
         return {"error": "Database session not available."}
 
     try:
-        rag = RAGService(db)
+        rag = RAGService(db, api_key=kb_context.get("api_key"))
         result = await rag.get_kb_document_content(
             attachment["id"], start_section, start_section + num_sections
         )

@@ -24,6 +24,7 @@ class LLMService:
         )
         self.model = model or settings.default_model
         self.max_tokens = settings.max_output_tokens
+        self.last_usage: dict | None = None
 
     async def complete(
         self,
@@ -56,6 +57,9 @@ class LLMService:
                 kwargs["extra_body"] = extra_body
 
             response = await self.client.chat.completions.create(**kwargs)
+            from services.usage_tracker import extract_usage
+
+            self.last_usage = extract_usage(response)
             return response.choices[0].message.content or ""
         except Exception as e:
             logger.error(f"LLM completion error: {e}")
@@ -79,14 +83,27 @@ class LLMService:
                 )
             messages.append({"role": "user", "content": user})
 
+            self.last_usage = None
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature,
                 messages=messages,
                 stream=True,
+                stream_options={"include_usage": True},
             )
             async for chunk in stream:
+                if chunk.usage:
+                    cost = None
+                    if hasattr(chunk.usage, "cost"):
+                        cost = chunk.usage.cost
+                    elif hasattr(chunk.usage, "model_extra") and chunk.usage.model_extra:
+                        cost = chunk.usage.model_extra.get("cost")
+                    self.last_usage = {
+                        "input_tokens": chunk.usage.prompt_tokens or 0,
+                        "output_tokens": chunk.usage.completion_tokens or 0,
+                        "cost": cost,
+                    }
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         except Exception as e:
@@ -112,14 +129,27 @@ class LLMService:
             for msg in messages:
                 openai_messages.append({"role": msg["role"], "content": msg["content"]})
 
+            self.last_usage = None
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature,
                 messages=openai_messages,
                 stream=True,
+                stream_options={"include_usage": True},
             )
             async for chunk in stream:
+                if chunk.usage:
+                    cost = None
+                    if hasattr(chunk.usage, "cost"):
+                        cost = chunk.usage.cost
+                    elif hasattr(chunk.usage, "model_extra") and chunk.usage.model_extra:
+                        cost = chunk.usage.model_extra.get("cost")
+                    self.last_usage = {
+                        "input_tokens": chunk.usage.prompt_tokens or 0,
+                        "output_tokens": chunk.usage.completion_tokens or 0,
+                        "cost": cost,
+                    }
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         except Exception as e:
@@ -170,6 +200,9 @@ class LLMService:
                     },
                 },
             )
+            from services.usage_tracker import extract_usage
+
+            self.last_usage = extract_usage(response)
             text = (response.choices[0].message.content or "").strip()
             # Strip markdown code fences if present (some models still add them)
             if text.startswith("```"):

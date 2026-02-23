@@ -32,8 +32,9 @@ class RAGService:
     vector similarity search in PostgreSQL.
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, api_key: str | None = None):
         self.db = db
+        self.api_key = api_key
 
     # -------------------------------------------------------------------------
     # Document Indexing (Chunk-level)
@@ -71,7 +72,7 @@ class RAGService:
 
             # Get embeddings BEFORE touching the database — if this fails,
             # existing vectors remain intact
-            embeddings = await get_embeddings_batch(chunks)
+            embeddings = await get_embeddings_batch(chunks, api_key=self.api_key)
 
             # Delete old vectors and insert new ones in a single transaction
             await self.db.execute(
@@ -171,7 +172,7 @@ class RAGService:
             user_id: Optional user ID to filter results (only return user's files)
         """
         try:
-            query_embedding = await get_embedding(query)
+            query_embedding = await get_embedding(query, api_key=self.api_key)
 
             # Build query with optional file and user filters
             params: dict[str, Any] = {"embedding": str(query_embedding), "limit": top_k}
@@ -521,7 +522,7 @@ class RAGService:
             try:
                 from services.reranker_service import GPTReranker
 
-                reranker = GPTReranker()
+                reranker = GPTReranker(api_key=self.api_key)
                 candidates = await reranker.rerank(query, candidates, top_k)
                 logger.info(f"Reranked {len(candidates)} candidates")
             except Exception as e:
@@ -560,7 +561,7 @@ class RAGService:
                 return
 
             # Get embeddings BEFORE touching the database
-            embeddings = await get_embeddings_batch(sentences)
+            embeddings = await get_embeddings_batch(sentences, api_key=self.api_key)
 
             # Delete old sentence chunks and insert new ones in a single transaction
             await self.db.execute(
@@ -636,7 +637,7 @@ class RAGService:
     ) -> list[dict[str, Any]]:
         """Pure semantic (vector) search for sentences."""
         try:
-            query_embedding = await get_embedding(query)
+            query_embedding = await get_embedding(query, api_key=self.api_key)
 
             result = await self.db.execute(
                 text("""
@@ -822,7 +823,7 @@ class RAGService:
                 return 0
 
             # Get embeddings BEFORE touching the database
-            embeddings = await get_embeddings_batch(chunks)
+            embeddings = await get_embeddings_batch(chunks, api_key=self.api_key)
             total_chunks = len(chunks)
 
             # Delete old KB chunks and insert new ones in a single transaction
@@ -907,7 +908,7 @@ class RAGService:
     ) -> list[dict[str, Any]]:
         """Pure semantic (vector) search within KB."""
         try:
-            query_embedding = await get_embedding(query)
+            query_embedding = await get_embedding(query, api_key=self.api_key)
 
             result = await self.db.execute(
                 text("""
@@ -1075,7 +1076,7 @@ class RAGService:
             try:
                 from services.reranker_service import GPTReranker
 
-                reranker = GPTReranker()
+                reranker = GPTReranker(api_key=self.api_key)
                 candidates = await reranker.rerank(query, candidates, top_k)
                 logger.info(f"KB reranked {len(candidates)} candidates")
             except Exception as e:

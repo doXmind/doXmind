@@ -162,12 +162,12 @@ async def backfill_tokens(
                         output_text = f"{thinking}\n\n{output_text}"
                     calculated_output = count_tokens_for_text(output_text)
                     updates.append(f"output_tokens={calculated_output}")
-                    update_values["output_tokens"] = str(calculated_output)
+                    update_values["output_tokens"] = calculated_output
                     batch_updated += 1
 
                 elif role == "user" and output_tokens is None:
                     updates.append("output_tokens=0")
-                    update_values["output_tokens"] = "0"
+                    update_values["output_tokens"] = 0
                     batch_updated += 1
 
                 # Calculate input tokens for user messages
@@ -175,7 +175,7 @@ async def backfill_tokens(
                     input_text = content or ""
                     calculated_input = count_tokens_for_text(input_text)
                     updates.append(f"input_tokens={calculated_input}")
-                    update_values["input_tokens"] = str(calculated_input)
+                    update_values["input_tokens"] = calculated_input
                     batch_updated += 1
 
                 elif role == "assistant" and input_tokens is None:

@@ -3,7 +3,18 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -217,13 +228,35 @@ class Message(Base):
 
     # Metadata
     model = Column(String(100), nullable=True)  # Model used for generation
-    input_tokens = Column(String(20), nullable=True)  # Token count
-    output_tokens = Column(String(20), nullable=True)
+    input_tokens = Column(Integer, nullable=True)  # Input (prompt) token count
+    output_tokens = Column(Integer, nullable=True)  # Output (completion) token count
+    cost = Column(Float, nullable=True)  # Cost in USD from OpenRouter
+    is_byok = Column(Boolean, default=False)  # True if user's own API key was used
 
     created_at = Column(DateTime(timezone=True), default=utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete for statistics
 
     conversation = relationship("Conversation", back_populates="messages")
+
+
+class ApiUsage(Base):
+    """API usage tracking for non-chat OpenRouter calls.
+
+    Tracks token usage for: embeddings, file conversion, reranking,
+    autocomplete, quick edit, custom edit, review, KB chat, STT.
+    """
+
+    __tablename__ = "api_usage"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), nullable=True, index=True)
+    service = Column(String(50), nullable=False, index=True)
+    model = Column(String(100), nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    cost = Column(Float, nullable=True)
+    is_byok = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class ConversationAttachment(Base):

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.files import get_user_id
 from db.database import File as FileModel
 from db.database import get_db
+from dependencies import resolve_user_api_key
 from exceptions import (
     AppException,
     BadRequestError,
@@ -64,6 +65,9 @@ async def import_file(
     """
     user_id = get_user_id(token)
 
+    # Resolve user's API key for file conversion and indexing
+    user_api_key = await resolve_user_api_key(user_id, db)
+
     # Validate parent folder if provided
     if parent_id:
         result = await db.execute(
@@ -106,7 +110,28 @@ async def import_file(
                     message="File conversion requires OPENROUTER_API_KEY to be configured"
                 )
             # Use LLM API for PDF and DOCX conversion
-            md_content = await convert_file_to_markdown(content, file.filename, ext)
+            md_content = await convert_file_to_markdown(
+                content, file.filename, ext, api_key=user_api_key
+            )
+
+            # Track file conversion usage
+            import asyncio
+
+            from services.gemini_converter import _last_conversion_usage
+            from services.usage_tracker import track_usage
+
+            if _last_conversion_usage:
+                asyncio.create_task(
+                    track_usage(
+                        service="file_conversion",
+                        model=_last_conversion_usage.get("model"),
+                        input_tokens=_last_conversion_usage.get("input_tokens"),
+                        output_tokens=_last_conversion_usage.get("output_tokens"),
+                        cost=_last_conversion_usage.get("cost"),
+                        user_id=user_id,
+                        is_byok=_last_conversion_usage.get("is_byok", False),
+                    )
+                )
     except AppException:
         raise
     except Exception as e:
@@ -134,7 +159,7 @@ async def import_file(
 
         # Index in vector store
         try:
-            rag = RAGService(db)
+            rag = RAGService(db, api_key=user_api_key)
             await rag.index_file(
                 file_id=new_file.id,
                 content=html_content,

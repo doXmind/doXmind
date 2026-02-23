@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import get_db
+from dependencies import resolve_user_api_key
 from prompts.domains.autocomplete import build_autocomplete_prompt
 from services.auth_service import TokenData, require_auth
 from services.autocomplete_cache import AutocompleteCache
@@ -201,7 +202,8 @@ async def suggest(
 
     try:
         settings = get_settings()
-        context_service = AutocompleteContextService(db)
+        user_api_key = await resolve_user_api_key(token.sub, db)
+        context_service = AutocompleteContextService(db, api_key=user_api_key)
 
         # Assemble context based on mode
         if request.include_rag and request.mode == "short":
@@ -264,6 +266,22 @@ async def suggest(
             stop=None,
             extra_body={"reasoning": {"enabled": False}},
         )
+
+        # Track usage
+        if llm.last_usage:
+            import asyncio
+
+            from services.usage_tracker import track_usage
+
+            asyncio.create_task(
+                track_usage(
+                    service="autocomplete",
+                    model=llm.model,
+                    user_id=token.sub,
+                    is_byok=bool(user_api_key),
+                    **llm.last_usage,
+                )
+            )
 
         logger.info(
             f"[Autocomplete] {request.mode} mode | Raw LLM response: "

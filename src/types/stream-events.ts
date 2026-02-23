@@ -78,6 +78,13 @@ export interface EditsBatchEvent {
   edits: EditOperation[];
 }
 
+/** Token usage data from OpenRouter */
+export interface UsageData {
+  input_tokens: number;
+  output_tokens: number;
+  cost?: number | null;
+}
+
 /** Stream summary (sent at end) */
 export interface SummaryEvent {
   type: "summary";
@@ -87,6 +94,7 @@ export interface SummaryEvent {
   edits?: EditOperation[] | null;
   todos?: TodoItem[] | null;
   model: string;
+  usage?: UsageData | null;
 }
 
 /** Error event */

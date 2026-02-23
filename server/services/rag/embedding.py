@@ -20,14 +20,16 @@ from services.token_utils import (
 logger = logging.getLogger(__name__)
 
 
-async def get_embedding(text_content: str) -> list[float]:
+async def get_embedding(text_content: str, api_key: str | None = None) -> list[float]:
     """Generate embedding vector for text via OpenRouter.
 
     Validates token count before sending to API and truncates if needed.
+    Uses provided api_key if given, otherwise falls back to server key.
     """
     settings = get_settings()
+    effective_key = api_key or settings.openrouter_api_key
 
-    if not settings.openrouter_api_key:
+    if not effective_key:
         raise RuntimeError("OPENROUTER_API_KEY required for embeddings")
 
     # Validate token count before sending to API
@@ -36,9 +38,7 @@ async def get_embedding(text_content: str) -> list[float]:
         logger.warning(f"Text exceeds token limit ({token_count} > {SAFE_TOKEN_LIMIT}), truncating")
         text_content = truncate_to_token_limit(text_content)
 
-    client = openai.AsyncOpenAI(
-        api_key=settings.openrouter_api_key, base_url=settings.openrouter_base_url
-    )
+    client = openai.AsyncOpenAI(api_key=effective_key, base_url=settings.openrouter_base_url)
     response = await client.embeddings.create(model=settings.embedding_model, input=text_content)
     return response.data[0].embedding
 
@@ -190,7 +190,7 @@ async def _batch_embeddings_parallel(
     return all_embeddings
 
 
-async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
+async def get_embeddings_batch(texts: list[str], api_key: str | None = None) -> list[list[float]]:
     """Generate embeddings for multiple texts in parallel batches.
 
     Splits large text lists into smaller batches and processes them
@@ -200,6 +200,7 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
 
     Args:
         texts: List of texts to embed
+        api_key: Optional user API key (falls back to server key)
 
     Returns:
         List of embeddings in same order as input texts
@@ -212,8 +213,9 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
         return []
 
     settings = get_settings()
+    effective_key = api_key or settings.openrouter_api_key
 
-    if not settings.openrouter_api_key:
+    if not effective_key:
         raise RuntimeError("OPENROUTER_API_KEY required for embeddings")
 
     # Validate and fix oversized chunks before sending to API
@@ -225,9 +227,7 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
             f"Original: {len(texts)}, After validation: {len(validated_texts)}"
         )
 
-    client = openai.AsyncOpenAI(
-        api_key=settings.openrouter_api_key, base_url=settings.openrouter_base_url
-    )
+    client = openai.AsyncOpenAI(api_key=effective_key, base_url=settings.openrouter_base_url)
 
     return await _batch_embeddings_parallel(
         client=client,

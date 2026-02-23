@@ -33,6 +33,7 @@ from api import (
     skills,
     speech,
     telemetry,
+    usage,
     user_settings,
     versions,
 )
@@ -294,6 +295,7 @@ app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])
 app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
+app.include_router(usage.router, prefix="/api/usage", tags=["usage"])
 
 
 # ============================================================================

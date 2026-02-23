@@ -254,7 +254,7 @@ async def chat_stream(
     collected_tool_calls = []
     collected_edits = []
     collected_todos = []  # Latest todo state from TodoWrite
-    collected_usage = {"input_tokens": 0, "output_tokens": 0}
+    collected_usage = {"input_tokens": 0, "output_tokens": 0, "cost": None}
 
     async def generate():
         nonlocal \
@@ -406,33 +406,45 @@ async def chat_stream(
                 elif event_type == "usage":
                     collected_usage["input_tokens"] = event.get("input_tokens", 0)
                     collected_usage["output_tokens"] = event.get("output_tokens", 0)
-                    continue  # Don't send usage event to frontend
+                    collected_usage["cost"] = event.get("cost")
+                    continue  # Usage data is included in summary event
 
                 # Yield SSE formatted data with immediate flush
                 data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 yield data.encode("utf-8")
 
             # Save assistant message to database with token usage
+            # Use the actual model from the agent (respects user's model preference)
+            actual_model = agent.model
             message_id = None
             if conversation:
-                assistant_message = Message(
-                    id=str(uuid.uuid4()),
-                    conversation_id=conversation.id,
-                    role="assistant",
-                    content="".join(collected_text),
-                    thinking="".join(collected_thinking) if collected_thinking else None,
-                    tool_calls=collected_tool_calls if collected_tool_calls else None,
-                    edits=collected_edits if collected_edits else None,
-                    model=settings.default_model,
-                    input_tokens=str(collected_usage["input_tokens"])
-                    if collected_usage["input_tokens"]
-                    else None,
-                    output_tokens=str(collected_usage["output_tokens"])
-                    if collected_usage["output_tokens"]
-                    else None,
-                )
-                db.add(assistant_message)
-                await db.commit()
+                msg_kwargs = {
+                    "id": str(uuid.uuid4()),
+                    "conversation_id": conversation.id,
+                    "role": "assistant",
+                    "content": "".join(collected_text),
+                    "thinking": "".join(collected_thinking) if collected_thinking else None,
+                    "tool_calls": collected_tool_calls if collected_tool_calls else None,
+                    "edits": collected_edits if collected_edits else None,
+                    "model": actual_model,
+                    "input_tokens": collected_usage["input_tokens"] or None,
+                    "output_tokens": collected_usage["output_tokens"] or None,
+                    "is_byok": user_api_key is not None,
+                }
+                cost_value = collected_usage.get("cost")
+                if cost_value is not None:
+                    msg_kwargs["cost"] = cost_value
+                assistant_message = Message(**msg_kwargs)
+                try:
+                    db.add(assistant_message)
+                    await db.commit()
+                except Exception:
+                    # cost column may not exist yet — retry without it
+                    await db.rollback()
+                    msg_kwargs.pop("cost", None)
+                    assistant_message = Message(**msg_kwargs)
+                    db.add(assistant_message)
+                    await db.commit()
                 message_id = assistant_message.id
 
             # Send summary event with collected data
@@ -444,7 +456,12 @@ async def chat_stream(
                 "toolCalls": collected_tool_calls if collected_tool_calls else None,
                 "edits": collected_edits if collected_edits else None,
                 "todos": collected_todos if collected_todos else None,
-                "model": settings.default_model,
+                "model": actual_model,
+                "usage": {
+                    "input_tokens": collected_usage["input_tokens"],
+                    "output_tokens": collected_usage["output_tokens"],
+                    "cost": collected_usage.get("cost"),
+                },
             }
             yield f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode()
 
@@ -497,6 +514,21 @@ async def simple_chat(request: SimpleChatRequest):
     try:
         llm = LLMService()
         response = await llm.complete(prompt=request.message, system=request.system)
+
+        # Track usage
+        if llm.last_usage:
+            import asyncio
+
+            from services.usage_tracker import track_usage
+
+            asyncio.create_task(
+                track_usage(
+                    service="simple_chat",
+                    model=llm.model,
+                    **llm.last_usage,
+                )
+            )
+
         return {"response": response}
     except Exception as e:
         logger.error(f"Simple chat error: {e}")

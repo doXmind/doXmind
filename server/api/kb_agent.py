@@ -126,9 +126,10 @@ async def kb_agent_stream(
     collected_text: list[str] = []
     collected_tool_calls: list[dict] = []
     collected_sources: list[dict] = []
+    collected_usage: dict = {"input_tokens": 0, "output_tokens": 0, "cost": None}
 
     async def generate():
-        nonlocal collected_text, collected_tool_calls, collected_sources
+        nonlocal collected_text, collected_tool_calls, collected_sources, collected_usage
 
         heartbeat_interval = 25
         start_time = asyncio.get_event_loop().time()
@@ -200,20 +201,32 @@ async def kb_agent_stream(
                         collected_tool_calls[-1]["success"] = event.get("success")
                 elif event_type == "sources":
                     collected_sources = event.get("sources", [])
+                elif event_type == "usage":
+                    collected_usage["input_tokens"] = event.get("input_tokens", 0)
+                    collected_usage["output_tokens"] = event.get("output_tokens", 0)
+                    collected_usage["cost"] = event.get("cost")
+                    continue  # Don't send usage event to client
 
                 # Send event to client
                 data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 yield data.encode("utf-8")
 
-            # Save assistant message
-            assistant_message = Message(
-                id=str(uuid.uuid4()),
-                conversation_id=conversation.id,
-                role="assistant",
-                content="".join(collected_text),
-                tool_calls=collected_tool_calls if collected_tool_calls else None,
-                model=agent.model,
-            )
+            # Save assistant message with usage data
+            msg_kwargs = {
+                "id": str(uuid.uuid4()),
+                "conversation_id": conversation.id,
+                "role": "assistant",
+                "content": "".join(collected_text),
+                "tool_calls": collected_tool_calls if collected_tool_calls else None,
+                "model": agent.model,
+                "input_tokens": collected_usage["input_tokens"] or None,
+                "output_tokens": collected_usage["output_tokens"] or None,
+                "is_byok": user_api_key is not None,
+            }
+            cost_value = collected_usage.get("cost")
+            if cost_value is not None:
+                msg_kwargs["cost"] = cost_value
+            assistant_message = Message(**msg_kwargs)
             db.add(assistant_message)
             await db.commit()
 

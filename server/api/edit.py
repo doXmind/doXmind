@@ -50,6 +50,21 @@ async def quick_edit(
             ):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
 
+            # Track usage
+            if llm.last_usage:
+                import asyncio
+
+                from services.usage_tracker import track_usage
+
+                asyncio.create_task(
+                    track_usage(
+                        service="quick_edit",
+                        model=llm.model,
+                        user_id=token.sub,
+                        **llm.last_usage,
+                    )
+                )
+
             yield "data: [DONE]\n\n"
 
         except Exception as e:
@@ -95,6 +110,21 @@ async def custom_edit(
                 user=user_prompt, system=QUICK_EDIT_SYSTEM, temperature=0.5
             ):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
+
+            # Track usage
+            if llm.last_usage:
+                import asyncio
+
+                from services.usage_tracker import track_usage
+
+                asyncio.create_task(
+                    track_usage(
+                        service="custom_edit",
+                        model=llm.model,
+                        user_id=token.sub,
+                        **llm.last_usage,
+                    )
+                )
 
             yield "data: [DONE]\n\n"
 

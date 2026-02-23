@@ -139,7 +139,7 @@ class KBAgent:
         model: str | None = None,
     ):
         self.db = db
-        self.rag = RAGService(db)
+        self.rag = RAGService(db, api_key=api_key)
         self.user_id = user_id
         settings = get_settings()
         self.client = AsyncOpenAI(
@@ -170,6 +170,8 @@ class KBAgent:
 
         openai_tools = to_openai_tools(self.tools)
 
+        total_usage = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
+
         for _iteration in range(self.MAX_ITERATIONS):
             # Stream the OpenAI-compatible response
             tool_uses: list[dict[str, Any]] = []
@@ -185,9 +187,21 @@ class KBAgent:
                 tools=openai_tools,
                 max_tokens=4096,
                 stream=True,
+                stream_options={"include_usage": True},
             )
 
             async for chunk in stream:
+                # Capture usage from the final chunk
+                if chunk.usage:
+                    cost = None
+                    if hasattr(chunk.usage, "cost"):
+                        cost = chunk.usage.cost
+                    elif hasattr(chunk.usage, "model_extra") and chunk.usage.model_extra:
+                        cost = chunk.usage.model_extra.get("cost")
+                    total_usage["input_tokens"] += chunk.usage.prompt_tokens or 0
+                    total_usage["output_tokens"] += chunk.usage.completion_tokens or 0
+                    total_usage["cost"] += cost or 0
+
                 if not chunk.choices:
                     continue
 
@@ -315,6 +329,14 @@ class KBAgent:
                     seen.add(key)
                     unique_sources.append(s)
             yield {"type": "sources", "sources": unique_sources}
+
+        # Yield accumulated usage
+        yield {
+            "type": "usage",
+            "input_tokens": total_usage["input_tokens"],
+            "output_tokens": total_usage["output_tokens"],
+            "cost": total_usage["cost"] if total_usage["cost"] > 0 else None,
+        }
 
         yield {"type": "done"}
 

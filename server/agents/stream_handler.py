@@ -76,9 +76,16 @@ async def stream_response(
 
         # Handle usage chunk (comes at the end with stream_options)
         if chunk.usage:
+            # OpenRouter returns cost as an extra field beyond the OpenAI spec
+            cost = None
+            if hasattr(chunk.usage, "cost"):
+                cost = chunk.usage.cost
+            elif hasattr(chunk.usage, "model_extra") and chunk.usage.model_extra:
+                cost = chunk.usage.model_extra.get("cost")
             usage_data = {
                 "input_tokens": chunk.usage.prompt_tokens or 0,
                 "output_tokens": chunk.usage.completion_tokens or 0,
+                "cost": cost,
             }
 
         if not chunk.choices:

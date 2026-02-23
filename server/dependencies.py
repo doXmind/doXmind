@@ -4,6 +4,7 @@ This module provides dependency injection for services used across the API.
 Using DI ensures consistent service usage and easier testing.
 """
 
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Annotated
@@ -14,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import Conversation, async_session
 from services.rag_service import RAGService
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Database Dependencies
@@ -54,6 +57,24 @@ async def get_rag_service(db: AsyncSession = Depends(get_db)) -> RAGService:
             ...
     """
     return RAGService(db)
+
+
+async def resolve_user_api_key(user_id: str, db: AsyncSession) -> str | None:
+    """Resolve user's decrypted API key, or None if not configured.
+
+    This is a shared helper used by multiple endpoints to pass the user's
+    OpenRouter API key to services (embedding, file conversion, reranking).
+    """
+    try:
+        from services.api_key_service import APIKeyService
+
+        service = APIKeyService(db)
+        user_settings = await service.get_user_settings(user_id)
+        if service.has_api_key(user_settings):
+            return await service.get_decrypted_key(user_id, settings=user_settings)
+    except Exception as e:
+        logger.debug(f"Could not resolve user API key: {e}")
+    return None
 
 
 # ============================================================================

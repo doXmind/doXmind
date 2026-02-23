@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     openrouter_base_url: str = (
         "https://openrouter.ai/api/v1"  # OpenRouter OpenAI-compatible endpoint
     )
-    openai_api_key: str = ""  # Required for Whisper speech-to-text only
     courtlistener_api_key: str = ""  # For legal case search
     brave_search_api_key: str = ""  # For Brave web search
 
@@ -132,6 +131,7 @@ class Settings(BaseSettings):
     review_model: str = "google/gemini-3-flash-preview"  # For text review (needs JSON mode support)
     embedding_model: str = "openai/text-embedding-3-small"  # For vector search embeddings
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
+    stt_model: str = "openai/whisper-1"  # For speech-to-text via OpenRouter
 
     # =========================================================================
     # User API Key Settings
