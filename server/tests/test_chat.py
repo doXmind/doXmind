@@ -272,6 +272,7 @@ class TestChatStream:
         """Should include summary event at end of stream."""
         with patch("api.chat.WritingAgent") as MockAgent:
             mock_agent = AsyncMock()
+            mock_agent.model = "test-model"
 
             async def mock_stream(*args, **kwargs):
                 yield {"type": "text", "content": "Test response"}
