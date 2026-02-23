@@ -477,10 +477,14 @@ const darkThemeVars = {
 /**
  * Ensure mermaid is imported and initialized.
  * Re-initializes only if the theme has changed.
+ * Reads the data-theme attribute to detect the active editor theme,
+ * falling back to the .dark class check for base mode detection.
  */
 async function ensureInitialized(): Promise<typeof import("mermaid").default> {
   const isDark = document.documentElement.classList.contains("dark");
-  const currentTheme = isDark ? "dark" : "default";
+  const themeId =
+    document.documentElement.getAttribute("data-theme") || (isDark ? "dark" : "notion");
+  const currentTheme = `${themeId}-${isDark ? "dark" : "light"}`;
 
   if (!mermaidInstance) {
     const { default: mermaid } = await import("mermaid");

@@ -13,7 +13,7 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useThemeManager } from "@/hooks/use-theme-manager";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent, Extensions } from "@tiptap/core";
 
@@ -268,7 +268,8 @@ export function PresentationMode({
   const editor = useEditorRefStore((s) => s.editor);
   const { currentFileId, files } = useFileStore();
   const user = useAuthStore((s) => s.user);
-  const { resolvedTheme } = useTheme();
+  const { currentTheme } = useThemeManager();
+  const resolvedTheme = currentTheme.baseMode;
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [direction, setDirection] = useState(0);

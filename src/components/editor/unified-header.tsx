@@ -20,7 +20,7 @@ import {
   SpellCheck,
   Play,
 } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useThemeManager } from "@/hooks/use-theme-manager";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -70,13 +70,9 @@ export function UnifiedHeader() {
     spellcheckEnabled,
     setSpellcheckEnabled,
   } = useEditorStore();
-  const { theme, setTheme } = useTheme();
+  const { currentTheme, toggleBaseMode } = useThemeManager();
 
   const currentFile = files.find((f) => f.id === currentFileId);
-
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  };
 
   const handleReviewClick = () => {
     if (isReviewActive) {
@@ -309,13 +305,13 @@ export function UnifiedHeader() {
                 <DropdownMenuSeparator />
 
                 {/* Theme */}
-                <DropdownMenuItem onClick={toggleTheme}>
-                  {theme === "dark" ? (
+                <DropdownMenuItem onClick={toggleBaseMode}>
+                  {currentTheme.baseMode === "dark" ? (
                     <Sun className="mr-2 h-4 w-4" />
                   ) : (
                     <Moon className="mr-2 h-4 w-4" />
                   )}
-                  {theme === "dark" ? "Light Mode" : "Dark Mode"}
+                  {currentTheme.baseMode === "dark" ? "Light Mode" : "Dark Mode"}
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />

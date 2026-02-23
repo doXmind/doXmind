@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderOpen, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useThemeManager } from "@/hooks/use-theme-manager";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -25,14 +25,14 @@ interface MoreMenuProps {
 }
 
 function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
-  const { theme, setTheme } = useTheme();
+  const { currentTheme, toggleBaseMode } = useThemeManager();
   const { toggleMobileOutline, setSearchBarOpen } = useLayoutStore();
 
   if (!isOpen) return null;
 
   const handleThemeToggle = () => {
     haptics.light();
-    setTheme(theme === "dark" ? "light" : "dark");
+    toggleBaseMode();
     onClose();
   };
 
@@ -70,9 +70,13 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
           onClick={handleThemeToggle}
           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
         >
-          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          {currentTheme.baseMode === "dark" ? (
+            <Sun className="h-5 w-5" />
+          ) : (
+            <Moon className="h-5 w-5" />
+          )}
           <span className="text-sm font-medium">
-            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+            {currentTheme.baseMode === "dark" ? "Light Mode" : "Dark Mode"}
           </span>
         </button>
 

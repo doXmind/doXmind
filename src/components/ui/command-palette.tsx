@@ -27,7 +27,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { findTextInDoc } from "@/lib/position-mapper";
-import { useTheme } from "next-themes";
+import { useThemeManager } from "@/hooks/use-theme-manager";
 import { api, SearchResultItem } from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 
@@ -84,7 +84,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     editorWidth,
     cycleEditorWidth,
   } = useLayoutStore();
-  const { theme, setTheme } = useTheme();
+  const { currentTheme, toggleBaseMode } = useThemeManager();
   const { editor } = useEditorRefStore();
 
   // Perform semantic search with debounce
@@ -179,11 +179,16 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       },
       {
         id: "toggle-theme",
-        label: theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode",
-        icon: theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />,
+        label: currentTheme.baseMode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode",
+        icon:
+          currentTheme.baseMode === "dark" ? (
+            <Sun className="h-4 w-4" />
+          ) : (
+            <Moon className="h-4 w-4" />
+          ),
         category: "view",
         action: () => {
-          setTheme(theme === "dark" ? "light" : "dark");
+          toggleBaseMode();
           onClose();
         },
         keywords: ["theme", "dark", "light", "mode", "appearance"],
@@ -267,8 +272,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     toggleHighContrast,
     editorWidth,
     cycleEditorWidth,
-    theme,
-    setTheme,
+    currentTheme,
+    toggleBaseMode,
     onClose,
   ]);
 

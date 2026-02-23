@@ -12,6 +12,7 @@ import {
   Type,
   Shield,
   BarChart3,
+  Palette,
   GraduationCap,
   HelpCircle,
 } from "lucide-react";
@@ -29,16 +30,18 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
 import { APISettings } from "@/components/settings/api-settings";
 import { TypographySettings } from "@/components/settings/typography-settings";
+import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "api" | "usage" | "typography" | "privacy";
+type SettingsTab = "api" | "usage" | "appearance" | "typography" | "privacy";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: "api", label: "API", icon: <Key className="h-4 w-4" /> },
   { id: "usage", label: "Usage", icon: <BarChart3 className="h-4 w-4" /> },
+  { id: "appearance", label: "Appearance", icon: <Palette className="h-4 w-4" /> },
   { id: "typography", label: "Typography", icon: <Type className="h-4 w-4" /> },
   { id: "privacy", label: "Privacy", icon: <Shield className="h-4 w-4" /> },
 ];
@@ -199,7 +202,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       <Modal
         open={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        className="max-w-lg"
+        className="max-w-2xl"
       >
         <ModalHeader onClose={() => setShowSettingsModal(false)}>
           <span className="flex items-center gap-2">
@@ -231,6 +234,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         <div className="min-h-[280px]">
           {settingsTab === "api" && <APISettings />}
           {settingsTab === "usage" && <UsageSettings />}
+          {settingsTab === "appearance" && <AppearanceSettings />}
           {settingsTab === "typography" && <TypographySettings />}
           {settingsTab === "privacy" && <TelemetrySettings />}
         </div>

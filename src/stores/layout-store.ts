@@ -8,7 +8,10 @@ interface LayoutState {
   isChatOpen: boolean;
   isMindlinesOpen: boolean;
   isMindlinesCollapsed: boolean; // Collapsed = minimal line indicators, Expanded = full outline
-  theme: "light" | "dark" | "system";
+  themeId: string;
+  preferredLightTheme: string;
+  preferredDarkTheme: string;
+  systemThemeEnabled: boolean;
   isHighContrast: boolean;
 
   // Mobile-specific state (sheet/overlay approach - editor always visible)
@@ -83,7 +86,10 @@ interface LayoutState {
   setChatOpen: (open: boolean) => void;
   setMindlinesOpen: (open: boolean) => void;
   setMindlinesCollapsed: (collapsed: boolean) => void;
-  setTheme: (theme: "light" | "dark" | "system") => void;
+  setThemeId: (id: string) => void;
+  setPreferredLightTheme: (id: string) => void;
+  setPreferredDarkTheme: (id: string) => void;
+  setSystemThemeEnabled: (enabled: boolean) => void;
   setHighContrast: (enabled: boolean) => void;
   toggleHighContrast: () => void;
 
@@ -172,7 +178,10 @@ export const useLayoutStore = create<LayoutState>()(
       isChatOpen: true,
       isMindlinesOpen: true,
       isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
-      theme: "system",
+      themeId: "notion",
+      preferredLightTheme: "notion",
+      preferredDarkTheme: "dark",
+      systemThemeEnabled: true,
       isHighContrast: false,
 
       // Mobile-specific state (sheet/overlay approach)
@@ -277,8 +286,20 @@ export const useLayoutStore = create<LayoutState>()(
         set({ isMindlinesCollapsed: collapsed });
       },
 
-      setTheme: (theme) => {
-        set({ theme });
+      setThemeId: (id: string) => {
+        set({ themeId: id });
+      },
+
+      setPreferredLightTheme: (id: string) => {
+        set({ preferredLightTheme: id });
+      },
+
+      setPreferredDarkTheme: (id: string) => {
+        set({ preferredDarkTheme: id });
+      },
+
+      setSystemThemeEnabled: (enabled: boolean) => {
+        set({ systemThemeEnabled: enabled });
       },
 
       setHighContrast: (enabled: boolean) => {
@@ -521,6 +542,25 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: "doxmind-layout",
+      version: 2,
+      migrate: (persistedState: unknown, version: number) => {
+        const state = persistedState as Record<string, unknown>;
+        if (version < 2) {
+          // Migrate from old theme field to new themeId system
+          const oldTheme = state.theme as string | undefined;
+          const themeId = oldTheme === "dark" ? "dark" : "notion";
+          const systemThemeEnabled = oldTheme === "system";
+          return {
+            ...state,
+            themeId,
+            preferredLightTheme: "notion",
+            preferredDarkTheme: "dark",
+            systemThemeEnabled,
+            theme: undefined,
+          };
+        }
+        return state;
+      },
       partialize: (state) => ({
         // Only persist these fields (not modals state)
         isSidebarOpen: state.isSidebarOpen,
@@ -528,7 +568,10 @@ export const useLayoutStore = create<LayoutState>()(
         isChatOpen: state.isChatOpen,
         isMindlinesOpen: state.isMindlinesOpen,
         isMindlinesCollapsed: state.isMindlinesCollapsed,
-        theme: state.theme,
+        themeId: state.themeId,
+        preferredLightTheme: state.preferredLightTheme,
+        preferredDarkTheme: state.preferredDarkTheme,
+        systemThemeEnabled: state.systemThemeEnabled,
         isHighContrast: state.isHighContrast,
         homeViewMode: state.homeViewMode,
         homeActiveTab: state.homeActiveTab,
