@@ -47,7 +47,9 @@ export function useHeadings(editor: Editor | null) {
   useEffect(() => {
     if (!editor || headings.length === 0) return;
 
-    const scrollParent = getScrollParent(editor.view.dom as HTMLElement);
+    // On mobile, prefer data-mobile-scroll container (getScrollParent is unreliable there)
+    const mobileScroll = document.querySelector<HTMLElement>("[data-mobile-scroll]");
+    const scrollParent = mobileScroll || getScrollParent(editor.view.dom as HTMLElement);
     let rafId: number | null = null;
 
     const findTopHeading = () => {
@@ -94,11 +96,16 @@ export function useHeadings(editor: Editor | null) {
   // Uses manual scroll calculation instead of scrollIntoView for reliable
   // positioning across different layouts (editor, shared pages, community pages)
   const navigateTo = useCallback(
-    (heading: Heading) => {
+    (heading: Heading, options?: { skipFocus?: boolean }) => {
       if (!editor) return;
 
       if (editor.isEditable) {
-        editor.chain().focus().setTextSelection(heading.pos).run();
+        if (options?.skipFocus) {
+          // Set selection without focus to avoid triggering mobile keyboard
+          editor.commands.setTextSelection(heading.pos);
+        } else {
+          editor.chain().focus().setTextSelection(heading.pos).run();
+        }
       }
 
       try {
@@ -106,7 +113,9 @@ export function useHeadings(editor: Editor | null) {
         const element = dom instanceof HTMLElement ? dom : null;
         if (!element) return;
 
-        const scrollParent = getScrollParent(editor.view.dom as HTMLElement);
+        // On mobile, prefer the data-mobile-scroll container (more reliable)
+        const mobileScroll = document.querySelector<HTMLElement>("[data-mobile-scroll]");
+        const scrollParent = mobileScroll || getScrollParent(editor.view.dom as HTMLElement);
         const elementRect = element.getBoundingClientRect();
         const containerRect = scrollParent.getBoundingClientRect();
         const relativeTop = elementRect.top - containerRect.top;

@@ -10,7 +10,7 @@
  * - Large touch targets (48px minimum)
  */
 
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import { ChevronLeft, FileText } from "lucide-react";
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -62,6 +62,12 @@ export function MobileOutlineSheet() {
   const { headings, activeId, navigateTo } = useHeadings(editor);
   const dragControls = useDragControls();
   const containerRef = useRef<HTMLDivElement>(null);
+  const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Cleanup navigation timeout on unmount
+  useEffect(() => {
+    return () => clearTimeout(navTimeoutRef.current);
+  }, []);
 
   const currentFile = files.find((f) => f.id === currentFileId);
   const documentTitle = currentFile?.name || "Untitled";
@@ -73,9 +79,12 @@ export function MobileOutlineSheet() {
 
   const handleHeadingClick = useCallback(
     (heading: Heading) => {
-      // Navigate to heading and close sheet
-      navigateTo(heading);
+      // Close sheet first, then navigate after close animation completes
       handleClose();
+      clearTimeout(navTimeoutRef.current);
+      navTimeoutRef.current = setTimeout(() => {
+        navigateTo(heading, { skipFocus: true });
+      }, 400);
     },
     [navigateTo, handleClose]
   );

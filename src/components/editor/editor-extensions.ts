@@ -137,7 +137,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Block selection (mobile: tap/longpress, desktop: keyboard/handle)
     BlockSelectionExtension.configure({
       enabled: true,
-      selectionMode: isMobile ? "tap" : "desktop",
+      selectionMode: "desktop", // Block selection is desktop-only; mobile uses native editing
     }),
 
     // AutocompleteKeymap MUST be last to ensure Tab handler has highest priority

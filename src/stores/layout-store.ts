@@ -147,6 +147,7 @@ interface LayoutState {
   resetPanelWidths: () => void;
 
   // Mobile selection actions
+  setPendingSelectionForAI: (text: string) => void;
   clearPendingSelectionForAI: () => void;
 
   // Mobile V3 actions (new design)
@@ -465,6 +466,9 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       // Mobile selection actions
+      setPendingSelectionForAI: (text: string) => {
+        set({ pendingSelectionForAI: text });
+      },
       clearPendingSelectionForAI: () => {
         set({ pendingSelectionForAI: null });
       },

@@ -36,7 +36,6 @@ const EDIT_TOOLS = ["str_replace", "insert", "replace_all", "apply_edits"];
 export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   const {
     isMobileSidebarOpen,
-    isMobileOutlineOpen,
     isMobileChatOverlayOpen,
     setMobileChatOverlayOpen,
     isMobileAnswerBubbleVisible,
@@ -194,7 +193,8 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
 
       {/* Main scroll container - SINGLE source of scrolling */}
       <main
-        className="relative flex-1 overflow-y-auto overflow-x-hidden"
+        data-mobile-scroll
+        className="hide-scrollbar relative flex-1 overflow-y-auto overflow-x-hidden"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         {children}
@@ -238,8 +238,8 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
       {/* File Sidebar */}
       {isMobileSidebarOpen && <MobileSidebar />}
 
-      {/* Outline Sheet */}
-      {isMobileOutlineOpen && <MobileOutlineSheet />}
+      {/* Outline Sheet — always mounted so AnimatePresence exit animation plays */}
+      <MobileOutlineSheet />
 
       {/* Floating outline indicator (scroll-triggered) */}
       {currentFileId && <FloatingOutline />}

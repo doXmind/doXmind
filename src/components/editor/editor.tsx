@@ -159,14 +159,12 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [debouncedSave]);
 
-  // Sync block selection enabled state with isMobile and edit mode
-  // Block selection is active on mobile UNLESS edit mode is toggled on
-  const isMobileEditMode = useLayoutStore((s) => s.isMobileEditMode);
+  // Block selection is desktop-only; mobile always uses direct editing (Notion-style)
   useEffect(() => {
     if (editor && editor.commands.setBlockSelectionEnabled) {
-      editor.commands.setBlockSelectionEnabled(isMobile && !isMobileEditMode);
+      editor.commands.setBlockSelectionEnabled(!isMobile);
     }
-  }, [editor, isMobile, isMobileEditMode]);
+  }, [editor, isMobile]);
 
   // Sync editable state with isDemoMode
   // Demo mode: read-only to ensure mock scenarios work correctly
@@ -503,8 +501,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
           {isMobile ? (
             <div
               className={cn(
-                "mx-auto w-full max-w-full px-4 pb-2 pt-0 sm:max-w-4xl",
-                isMobileEditMode && "mobile-edit-mode",
+                "mx-auto w-full max-w-full px-4 pb-24 pt-0 sm:max-w-4xl",
+                "mobile-edit-mode", // Always edit mode on mobile (Notion-style)
                 // Typography settings
                 fontFamily === "serif" && "editor-font-serif",
                 fontFamily === "mono" && "editor-font-mono",
@@ -565,7 +563,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
 
       {/* Bubble Menus & Popups */}
       {/* Mobile shows simplified BubbleMenu; desktop shows full menus */}
-      <BubbleMenuComponent editor={editor} isMobile={isMobile} />
+      {/* Mobile uses MobileFormattingToolbar instead — BubbleMenu conflicts with native selection handles */}
+      {!isMobile && <BubbleMenuComponent editor={editor} />}
       {!isMobile && (
         <>
           <LinkBubbleMenu editor={editor} />

@@ -7,7 +7,7 @@
  * Provides quick access to text formatting, block insertion, and undo/redo.
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -32,6 +32,8 @@ import {
   MessageSquareQuote,
   ChevronRight,
   ChevronDown,
+  Sparkles,
+  KeyboardOff,
 } from "lucide-react";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -103,7 +105,7 @@ function ToolbarButton({
       aria-label={label}
       disabled={isDisabled}
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+        "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
         "transition-colors active:scale-95",
         isActive && "bg-accent text-primary",
         isDisabled && "opacity-30",
@@ -151,21 +153,18 @@ export function MobileFormattingToolbar() {
   }, [isKeyboardVisible]);
 
   // Check if we're in a list context for indent/outdent
-  const isInList = useMemo(() => {
-    if (!editor) return false;
-    return (
-      editor.isActive("bulletList") || editor.isActive("orderedList") || editor.isActive("taskList")
-    );
-  }, [editor]);
+  // Note: no useMemo — component re-renders on every transaction via forceUpdate
+  const isInList = editor
+    ? editor.isActive("bulletList") || editor.isActive("orderedList") || editor.isActive("taskList")
+    : false;
 
   // Get color state
-  const colorState = useMemo(() => {
-    if (!editor) return { textColor: null, backgroundColor: null };
-    const textColor = editor.getAttributes("textStyle").color || null;
-    const highlightAttrs = editor.getAttributes("highlight");
-    const backgroundColor = highlightAttrs.color || null;
-    return { textColor, backgroundColor };
-  }, [editor]);
+  const colorState = editor
+    ? {
+        textColor: editor.getAttributes("textStyle").color || null,
+        backgroundColor: editor.getAttributes("highlight").color || null,
+      }
+    : { textColor: null, backgroundColor: null };
 
   const handleColorChange = useCallback(
     (colorValue: string, type: "text" | "background") => {
@@ -200,6 +199,35 @@ export function MobileFormattingToolbar() {
     setMobileBlockInsertOpen(true);
   }, [setMobileBlockInsertOpen]);
 
+  // Dismiss keyboard (Notion-style)
+  const handleDismissKeyboard = useCallback(() => {
+    if (!editor) return;
+    editor.commands.blur();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }, [editor]);
+
+  // AI Edit: bridge selected text to bottom bar quick actions
+  const handleAIEdit = useCallback(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, " ");
+    if (selectedText) {
+      useLayoutStore.getState().setPendingSelectionForAI(selectedText);
+      // Dismiss keyboard to reveal bottom bar with quick actions
+      editor.commands.blur();
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    }
+  }, [editor]);
+
+  // Check if there's a text selection (for showing AI Edit button)
+  const hasTextSelection = editor
+    ? editor.state.selection.to - editor.state.selection.from > 0
+    : false;
+
   if (!editor) return null;
 
   const shouldShow = isKeyboardVisible;
@@ -224,7 +252,6 @@ export function MobileFormattingToolbar() {
             style={{
               bottom: keyboardHeight,
               zIndex: Z_INDEX.BUBBLE_MENU,
-              transition: "bottom 0.1s ease-out",
             }}
           >
             <div
@@ -304,124 +331,156 @@ export function MobileFormattingToolbar() {
               </AnimatePresence>
 
               {/* Main toolbar buttons */}
-              <div className="hide-scrollbar flex items-center gap-0.5 overflow-x-auto px-1.5 py-1.5">
-                {/* Block insert */}
-                <ToolbarButton
-                  icon={<Plus className="h-5 w-5" />}
-                  onPress={handleBlockInsert}
-                  label="Insert block"
-                />
-
-                <Divider />
-
-                {/* Turn into */}
-                <ToolbarButton
-                  onPress={() => {
-                    setShowColorPicker(false);
-                    setShowTurnInto(!showTurnInto);
+              <div className="flex items-center">
+                {/* Scrollable formatting buttons with right fade to hint more items */}
+                <div
+                  className="hide-scrollbar flex flex-1 items-center gap-0.5 overflow-x-auto px-1.5 py-1.5"
+                  style={{
+                    maskImage: "linear-gradient(to right, black calc(100% - 24px), transparent)",
+                    WebkitMaskImage:
+                      "linear-gradient(to right, black calc(100% - 24px), transparent)",
                   }}
-                  isActive={showTurnInto}
-                  label="Turn into"
-                  className="w-auto min-w-[40px] gap-0.5 px-1.5"
                 >
-                  <span className="text-xs font-semibold">{getCurrentBlockLabel(editor)}</span>
-                  <ChevronDown className="h-3 w-3 opacity-60" />
-                </ToolbarButton>
+                  {/* Block insert */}
+                  <ToolbarButton
+                    icon={<Plus className="h-5 w-5" />}
+                    onPress={handleBlockInsert}
+                    label="Insert block"
+                  />
 
-                {/* Text formatting */}
-                <ToolbarButton
-                  icon={<Bold className="h-4.5 w-4.5" />}
-                  isActive={editor.isActive("bold")}
-                  onPress={() => editor.chain().focus().toggleBold().run()}
-                  label="Bold"
-                />
-                <ToolbarButton
-                  icon={<Italic className="h-4.5 w-4.5" />}
-                  isActive={editor.isActive("italic")}
-                  onPress={() => editor.chain().focus().toggleItalic().run()}
-                  label="Italic"
-                />
-                <ToolbarButton
-                  icon={<Underline className="h-4.5 w-4.5" />}
-                  isActive={editor.isActive("underline")}
-                  onPress={() => editor.chain().focus().toggleUnderline().run()}
-                  label="Underline"
-                />
-                <ToolbarButton
-                  icon={<Strikethrough className="h-4.5 w-4.5" />}
-                  isActive={editor.isActive("strike")}
-                  onPress={() => editor.chain().focus().toggleStrike().run()}
-                  label="Strikethrough"
-                />
+                  <Divider />
 
-                <Divider />
+                  {/* Turn into */}
+                  <ToolbarButton
+                    onPress={() => {
+                      setShowColorPicker(false);
+                      setShowTurnInto(!showTurnInto);
+                    }}
+                    isActive={showTurnInto}
+                    label="Turn into"
+                    className="w-auto min-w-[40px] gap-0.5 px-1.5"
+                  >
+                    <span className="text-xs font-semibold">{getCurrentBlockLabel(editor)}</span>
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                  </ToolbarButton>
 
-                {/* Link */}
-                <ToolbarButton
-                  icon={<LinkIcon className="h-4.5 w-4.5" />}
-                  isActive={editor.isActive("link")}
-                  onPress={() => setShowLinkModal(true)}
-                  label="Link"
-                />
+                  {/* Text formatting */}
+                  <ToolbarButton
+                    icon={<Bold className="h-4.5 w-4.5" />}
+                    isActive={editor.isActive("bold")}
+                    onPress={() => editor.chain().focus().toggleBold().run()}
+                    label="Bold"
+                  />
+                  <ToolbarButton
+                    icon={<Italic className="h-4.5 w-4.5" />}
+                    isActive={editor.isActive("italic")}
+                    onPress={() => editor.chain().focus().toggleItalic().run()}
+                    label="Italic"
+                  />
+                  <ToolbarButton
+                    icon={<Underline className="h-4.5 w-4.5" />}
+                    isActive={editor.isActive("underline")}
+                    onPress={() => editor.chain().focus().toggleUnderline().run()}
+                    label="Underline"
+                  />
+                  <ToolbarButton
+                    icon={<Strikethrough className="h-4.5 w-4.5" />}
+                    isActive={editor.isActive("strike")}
+                    onPress={() => editor.chain().focus().toggleStrike().run()}
+                    label="Strikethrough"
+                  />
 
-                {/* Color */}
-                <ToolbarButton
-                  onPress={() => {
-                    setShowTurnInto(false);
-                    setShowColorPicker(!showColorPicker);
-                  }}
-                  isActive={showColorPicker}
-                  label="Color"
-                >
-                  <div className="flex flex-col items-center">
-                    <span
-                      className="text-sm font-bold leading-none"
-                      style={colorState.textColor ? { color: colorState.textColor } : undefined}
-                    >
-                      A
-                    </span>
-                    <span
-                      className="mt-0.5 h-[3px] w-3.5 rounded-full"
-                      style={{
-                        backgroundColor:
-                          colorState.textColor || colorState.backgroundColor || "currentColor",
-                        opacity: colorState.textColor || colorState.backgroundColor ? 1 : 0.4,
-                      }}
-                    />
-                  </div>
-                </ToolbarButton>
+                  <Divider />
 
-                <Divider />
+                  {/* Link */}
+                  <ToolbarButton
+                    icon={<LinkIcon className="h-4.5 w-4.5" />}
+                    isActive={editor.isActive("link")}
+                    onPress={() => setShowLinkModal(true)}
+                    label="Link"
+                  />
 
-                {/* Indent / Outdent */}
-                <ToolbarButton
-                  icon={<Outdent className="h-4.5 w-4.5" />}
-                  isDisabled={!isInList}
-                  onPress={() => editor.chain().focus().liftListItem("listItem").run()}
-                  label="Outdent"
-                />
-                <ToolbarButton
-                  icon={<Indent className="h-4.5 w-4.5" />}
-                  isDisabled={!isInList}
-                  onPress={() => editor.chain().focus().sinkListItem("listItem").run()}
-                  label="Indent"
-                />
+                  {/* Color */}
+                  <ToolbarButton
+                    onPress={() => {
+                      setShowTurnInto(false);
+                      setShowColorPicker(!showColorPicker);
+                    }}
+                    isActive={showColorPicker}
+                    label="Color"
+                  >
+                    <div className="flex flex-col items-center">
+                      <span
+                        className="text-sm font-bold leading-none"
+                        style={colorState.textColor ? { color: colorState.textColor } : undefined}
+                      >
+                        A
+                      </span>
+                      <span
+                        className="mt-0.5 h-[3px] w-3.5 rounded-full"
+                        style={{
+                          backgroundColor:
+                            colorState.textColor || colorState.backgroundColor || "currentColor",
+                          opacity: colorState.textColor || colorState.backgroundColor ? 1 : 0.4,
+                        }}
+                      />
+                    </div>
+                  </ToolbarButton>
 
-                <Divider />
+                  <Divider />
 
-                {/* Undo / Redo */}
-                <ToolbarButton
-                  icon={<Undo2 className="h-4.5 w-4.5" />}
-                  isDisabled={!editor.can().undo()}
-                  onPress={() => editor.chain().focus().undo().run()}
-                  label="Undo"
-                />
-                <ToolbarButton
-                  icon={<Redo2 className="h-4.5 w-4.5" />}
-                  isDisabled={!editor.can().redo()}
-                  onPress={() => editor.chain().focus().redo().run()}
-                  label="Redo"
-                />
+                  {/* Indent / Outdent */}
+                  <ToolbarButton
+                    icon={<Outdent className="h-4.5 w-4.5" />}
+                    isDisabled={!isInList}
+                    onPress={() => editor.chain().focus().liftListItem("listItem").run()}
+                    label="Outdent"
+                  />
+                  <ToolbarButton
+                    icon={<Indent className="h-4.5 w-4.5" />}
+                    isDisabled={!isInList}
+                    onPress={() => editor.chain().focus().sinkListItem("listItem").run()}
+                    label="Indent"
+                  />
+
+                  <Divider />
+
+                  {/* Undo / Redo */}
+                  <ToolbarButton
+                    icon={<Undo2 className="h-4.5 w-4.5" />}
+                    isDisabled={!editor.can().undo()}
+                    onPress={() => editor.chain().focus().undo().run()}
+                    label="Undo"
+                  />
+                  <ToolbarButton
+                    icon={<Redo2 className="h-4.5 w-4.5" />}
+                    isDisabled={!editor.can().redo()}
+                    onPress={() => editor.chain().focus().redo().run()}
+                    label="Redo"
+                  />
+
+                  {/* AI Edit - shown when text is selected */}
+                  {hasTextSelection && (
+                    <>
+                      <Divider />
+                      <ToolbarButton
+                        icon={<Sparkles className="h-4.5 w-4.5" />}
+                        onPress={handleAIEdit}
+                        label="AI Edit"
+                        className="text-primary"
+                      />
+                    </>
+                  )}
+                </div>
+
+                {/* Fixed keyboard dismiss button - pinned right */}
+                <div className="flex-shrink-0 border-l border-border/30 py-1.5 pl-0.5 pr-1.5">
+                  <ToolbarButton
+                    icon={<KeyboardOff className="h-4.5 w-4.5" />}
+                    onPress={handleDismissKeyboard}
+                    label="Dismiss keyboard"
+                  />
+                </div>
               </div>
             </div>
           </motion.div>

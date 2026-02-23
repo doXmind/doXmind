@@ -81,9 +81,8 @@
   border-radius: 2px;
 }
 
-/* Mobile block selection mode */
+/* Mobile editor styles — always in edit mode (Notion-style, no block selection toggle) */
 @media (max-width: 767px) {
-  /* Common mobile styles (always applied) */
   .ProseMirror {
     /* Small top padding so content doesn't touch the header */
     padding-top: 0.5rem;
@@ -93,19 +92,7 @@
     overflow-wrap: break-word;
     word-break: break-word;
     overflow-x: hidden;
-  }
-
-  /* Block selection mode styles (disabled in edit mode) */
-  :not(.mobile-edit-mode) .ProseMirror {
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-    cursor: default;
-    caret-color: transparent;
-  }
-
-  /* Edit mode: restore normal editing behavior */
-  .mobile-edit-mode .ProseMirror {
+    /* Native text editing */
     -webkit-user-select: auto;
     user-select: auto;
     cursor: text;
@@ -115,24 +102,6 @@
   /* Remove top margin from first element on mobile to save space */
   .ProseMirror > *:first-child {
     margin-top: 0 !important;
-  }
-
-  /* Make all top-level blocks tappable with visual feedback (only in selection mode) */
-  :not(.mobile-edit-mode) .ProseMirror > * {
-    transition:
-      background-color 0.1s ease,
-      transform 0.1s ease;
-    border-radius: 4px;
-    margin-left: -4px;
-    margin-right: -4px;
-    padding-left: 4px;
-    padding-right: 4px;
-  }
-
-  /* Tap feedback - brief highlight on touch (only in selection mode) */
-  :not(.mobile-edit-mode) .ProseMirror > *:active:not(.block-selected) {
-    background-color: hsl(var(--accent) / 0.3);
-    transform: scale(0.995);
   }
 
   /* Ensure code blocks and blockquotes have proper styling */
