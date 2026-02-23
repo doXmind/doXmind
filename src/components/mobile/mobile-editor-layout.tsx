@@ -10,6 +10,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { MobileHeader } from "./mobile-header";
 import { MobileBottomBar } from "./mobile-bottom-bar";
+import { MobileFormattingToolbar } from "./mobile-formatting-toolbar";
+import { MobileBlockInsertSheet } from "./mobile-block-insert-sheet";
 import { AIAnswerBubble } from "./ai-answer-bubble";
 import { EditSuccessIndicator } from "./edit-success-indicator";
 import { MobileChatOverlay } from "./mobile-chat-overlay";
@@ -20,6 +22,8 @@ import { useChatStore } from "@/stores/chat-store";
 import { useFileStore } from "@/stores/file-store";
 import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { useKeyboardState } from "@/hooks/use-mobile-gestures";
+import { FloatingOutline } from "./floating-outline";
 import { MobileGestureHints } from "@/components/onboarding/mobile-gesture-hints";
 
 interface MobileEditorLayoutProps {
@@ -49,6 +53,7 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
   const { conversations } = useChatStore();
   const { isStreaming, toolHistory } = useStreamingStore();
   const { isReviewMode } = useDiffReviewStore();
+  const { isVisible: isKeyboardVisible } = useKeyboardState();
 
   // Track the last response to detect when AI finishes
   const conversationKey = currentFileId || "global";
@@ -195,12 +200,18 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
         {children}
       </main>
 
-      {/* Bottom bar - only show when a file is open */}
-      {currentFileId && (
+      {/* Bottom bar - only show when a file is open AND keyboard is hidden */}
+      {currentFileId && !isKeyboardVisible && (
         <div className="flex-shrink-0">
           <MobileBottomBar onViewChat={handleOpenChatOverlay} />
         </div>
       )}
+
+      {/* Formatting toolbar - appears above keyboard when editing */}
+      {currentFileId && <MobileFormattingToolbar />}
+
+      {/* Block insert sheet */}
+      <MobileBlockInsertSheet />
 
       {/* AI Answer Bubble */}
       <AIAnswerBubble
@@ -229,6 +240,9 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
 
       {/* Outline Sheet */}
       {isMobileOutlineOpen && <MobileOutlineSheet />}
+
+      {/* Floating outline indicator (scroll-triggered) */}
+      {currentFileId && <FloatingOutline />}
 
       {/* Mobile Gesture Hints (first visit) */}
       <MobileGestureHints />

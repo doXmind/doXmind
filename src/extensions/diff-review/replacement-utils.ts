@@ -28,3 +28,29 @@ export function normalizeTableHtml(element: HTMLElement): void {
     bodyRows.forEach((row) => table.appendChild(row));
   });
 }
+
+/**
+ * Normalize mermaid chart HTML for TipTap compatibility.
+ *
+ * Ensures data-code attributes contain clean, decoded mermaid code.
+ * Handles cases where the attribute value may contain HTML entities
+ * from double-encoding or round-trip encoding.
+ */
+export function normalizeMermaidHtml(element: HTMLElement): void {
+  const mermaidDivs = element.querySelectorAll<HTMLElement>('[data-type="mermaid-chart"]');
+
+  mermaidDivs.forEach((div) => {
+    const code = div.getAttribute("data-code");
+    if (!code) return;
+
+    const decoded = code
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+
+    if (decoded !== code) {
+      div.setAttribute("data-code", decoded);
+    }
+  });
+}

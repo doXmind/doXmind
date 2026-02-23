@@ -36,6 +36,7 @@ declare module "./client" {
       position: number;
       is_favorite: boolean;
       icon: string | null;
+      presentation_simplified: string | null;
       created_at: string;
       updated_at: string;
       fork_id: string | null;
@@ -61,7 +62,13 @@ declare module "./client" {
     }>;
     updateFile(
       id: string,
-      updates: { name?: string; content?: string; is_favorite?: boolean; icon?: string }
+      updates: {
+        name?: string;
+        content?: string;
+        is_favorite?: boolean;
+        icon?: string;
+        presentation_simplified?: string;
+      }
     ): Promise<{
       id: string;
       name: string;
@@ -218,6 +225,7 @@ ApiClient.prototype.getFile = async function (this: ApiClient, id: string) {
     position: number;
     is_favorite: boolean;
     icon: string | null;
+    presentation_simplified: string | null;
     created_at: string;
     updated_at: string;
     fork_id: string | null;
@@ -253,7 +261,13 @@ ApiClient.prototype.createFile = async function (
 ApiClient.prototype.updateFile = async function (
   this: ApiClient,
   id: string,
-  updates: { name?: string; content?: string; is_favorite?: boolean; icon?: string }
+  updates: {
+    name?: string;
+    content?: string;
+    is_favorite?: boolean;
+    icon?: string;
+    presentation_simplified?: string;
+  }
 ) {
   return this.request<{
     id: string;

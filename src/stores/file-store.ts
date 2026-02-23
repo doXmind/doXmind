@@ -67,7 +67,10 @@ interface FileState {
   loadFileContent: (fileId: string) => Promise<void>;
   createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
   importFile: (file: File, parentId?: string | null) => Promise<string>;
-  updateFile: (id: string, updates: Partial<Pick<FileItem, "name" | "content">>) => Promise<void>;
+  updateFile: (
+    id: string,
+    updates: Partial<Pick<FileItem, "name" | "content" | "presentationSimplified">>
+  ) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   setCurrentFile: (id: string | null) => void;
   renameFile: (id: string, name: string) => Promise<void>;
@@ -163,6 +166,14 @@ export const useFileStore = create<FileState>()(
               }
             }
 
+            // Build a map of previously loaded presentation_simplified data
+            const prevSimplifiedMap = new Map<string, string | null>();
+            for (const f of state.files) {
+              if (preservedContentIds.has(f.id) && f.presentationSimplified) {
+                prevSimplifiedMap.set(f.id, f.presentationSimplified);
+              }
+            }
+
             const files: FileItem[] = serverFiles.map((f) => ({
               id: f.id,
               name: f.name,
@@ -173,6 +184,7 @@ export const useFileStore = create<FileState>()(
               position: f.position || 0,
               isFavorite: f.is_favorite || false,
               icon: f.icon || null,
+              presentationSimplified: prevSimplifiedMap.get(f.id) ?? null,
               createdAt: f.created_at,
               updatedAt: f.updated_at,
               wordCount: f.word_count || 0,
@@ -236,6 +248,7 @@ export const useFileStore = create<FileState>()(
                   ? {
                       ...f,
                       content: fullFile.content,
+                      presentationSimplified: fullFile.presentation_simplified ?? null,
                       fork_id: fullFile.fork_id || undefined,
                       forked_from_share_id: fullFile.forked_from_share_id || undefined,
                       forked_from_title: fullFile.forked_from_title || undefined,
@@ -270,6 +283,7 @@ export const useFileStore = create<FileState>()(
             position: serverFile.position || 0,
             isFavorite: serverFile.is_favorite || false,
             icon: serverFile.icon || null,
+            presentationSimplified: null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
             wordCount: 0,
@@ -304,6 +318,7 @@ export const useFileStore = create<FileState>()(
             position: serverFile.position || 0,
             isFavorite: serverFile.is_favorite || false,
             icon: serverFile.icon || null,
+            presentationSimplified: null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
             wordCount: plainText.split(/\s+/).filter(Boolean).length,
@@ -323,7 +338,10 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      updateFile: async (id: string, updates: Partial<Pick<FileItem, "name" | "content">>) => {
+      updateFile: async (
+        id: string,
+        updates: Partial<Pick<FileItem, "name" | "content" | "presentationSimplified">>
+      ) => {
         // Optimistic update
         set((state) => ({
           files: state.files.map((file) =>
@@ -336,8 +354,15 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
+          // Map camelCase to snake_case for API
+          const apiUpdates: { name?: string; content?: string; presentation_simplified?: string } =
+            {};
+          if (updates.name !== undefined) apiUpdates.name = updates.name;
+          if (updates.content !== undefined) apiUpdates.content = updates.content;
+          if (updates.presentationSimplified !== undefined)
+            apiUpdates.presentation_simplified = updates.presentationSimplified ?? "";
           // Sync to server
-          await api.updateFile(id, updates);
+          await api.updateFile(id, apiUpdates);
         } catch (error) {
           log.error("Failed to update file on server", error);
           // Revert optimistic update on error
@@ -469,6 +494,7 @@ export const useFileStore = create<FileState>()(
             position: serverFolder.position || 0,
             isFavorite: serverFolder.is_favorite || false,
             icon: serverFolder.icon || null,
+            presentationSimplified: null,
             createdAt: serverFolder.created_at,
             updatedAt: serverFolder.updated_at,
             wordCount: 0,

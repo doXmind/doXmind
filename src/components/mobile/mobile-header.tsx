@@ -9,15 +9,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  FolderOpen,
-  MoreHorizontal,
-  Moon,
-  Sun,
-  ListTree,
-  PenLine,
-  MousePointerClick,
-} from "lucide-react";
+import { FolderOpen, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -34,15 +26,9 @@ interface MoreMenuProps {
 
 function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
   const { theme, setTheme } = useTheme();
-  const { toggleMobileOutline, isMobileEditMode, toggleMobileEditMode } = useLayoutStore();
+  const { toggleMobileOutline, setSearchBarOpen } = useLayoutStore();
 
   if (!isOpen) return null;
-
-  const handleEditModeToggle = () => {
-    haptics.light();
-    toggleMobileEditMode();
-    onClose();
-  };
 
   const handleThemeToggle = () => {
     haptics.light();
@@ -53,6 +39,12 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
   const handleOutlineToggle = () => {
     haptics.light();
     toggleMobileOutline();
+    onClose();
+  };
+
+  const handleFindReplace = () => {
+    haptics.light();
+    setSearchBarOpen(true);
     onClose();
   };
 
@@ -75,26 +67,6 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
       >
         <button
           type="button"
-          onClick={handleEditModeToggle}
-          className={cn(
-            "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent",
-            isMobileEditMode && "bg-primary/10 text-primary"
-          )}
-        >
-          {isMobileEditMode ? (
-            <MousePointerClick className="h-5 w-5" />
-          ) : (
-            <PenLine className="h-5 w-5" />
-          )}
-          <span className="text-sm font-medium">
-            {isMobileEditMode ? "Selection Mode" : "Edit Mode"}
-          </span>
-        </button>
-
-        <div className="h-px bg-border" />
-
-        <button
-          type="button"
           onClick={handleThemeToggle}
           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
         >
@@ -113,6 +85,29 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
         >
           <ListTree className="h-5 w-5" />
           <span className="text-sm font-medium">Document Outline</span>
+        </button>
+
+        <div className="h-px bg-border" />
+
+        <button
+          type="button"
+          onClick={handleFindReplace}
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
+        >
+          <svg
+            className="h-5 w-5"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <span className="text-sm font-medium">Find & Replace</span>
         </button>
       </div>
     </>

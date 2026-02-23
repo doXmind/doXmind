@@ -388,7 +388,7 @@ export function MermaidEditorPanel({
       <div
         ref={previewRef}
         className={cn(
-          "mb-3 min-h-[4rem] overflow-x-auto border-b border-border py-4 text-center",
+          "mb-3 max-h-[480px] min-h-[4rem] overflow-auto border-b border-border py-4 text-center [&_svg]:mx-auto [&_svg]:max-h-[460px] [&_svg]:w-auto",
           renderError && "border-destructive/50"
         )}
       />

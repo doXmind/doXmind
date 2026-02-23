@@ -3,7 +3,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Sun,
+  Moon,
+  Sparkles,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent, Extensions } from "@tiptap/core";
@@ -28,6 +37,7 @@ import { InlineMath, BlockMath } from "@/extensions/math";
 import { Callout } from "@/extensions/callout";
 import { Toggle } from "@/extensions/toggle";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
+import { MermaidChart } from "@/extensions/mermaid/mermaid-chart";
 
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -35,6 +45,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { Z_INDEX } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { useSlideSummary } from "@/hooks/use-slide-summary";
 
 /* ─── Presentation-only extensions (content rendering, no editing) ── */
 
@@ -70,6 +81,7 @@ const presentationExtensions: Extensions = [
   Callout,
   Toggle,
   BlockColorExtension,
+  MermaidChart,
 ];
 
 /* ─── Utility helpers ─────────────────────────────────── */
@@ -265,6 +277,15 @@ export function PresentationMode({
   const [mounted, setMounted] = useState(false);
   const [showNavigator, setShowNavigator] = useState(false);
   const [jumpInput, setJumpInput] = useState("");
+  const [showSummaries, setShowSummaries] = useState(false);
+  const [showAiMenu, setShowAiMenu] = useState(false);
+
+  const {
+    simplifiedDoc,
+    isGenerating,
+    generate: generateSimplified,
+    cancel: cancelSummary,
+  } = useSlideSummary(currentFileId);
 
   const currentFile = files.find((f) => f.id === currentFileId);
 
@@ -274,10 +295,12 @@ export function PresentationMode({
   }, []);
 
   // Build slides: title slide + content slides
+  // When AI summary is active, use the simplified doc instead of the original
   const slides = useMemo<Slide[]>(() => {
     if (!editor || !isPresentationMode) return [];
 
-    const contentSlides = splitJsonIntoSlides(editor.getJSON());
+    const sourceDoc = showSummaries && simplifiedDoc ? simplifiedDoc : editor.getJSON();
+    const contentSlides = splitJsonIntoSlides(sourceDoc);
     if (contentSlides.length === 0) return [];
 
     const title = titleProp || currentFile?.name?.replace(/\.md$/i, "") || "Untitled";
@@ -295,16 +318,29 @@ export function PresentationMode({
       meta: metaParts.length > 0 ? metaParts.join(" \u00B7 ") : undefined,
     };
 
-    return [
-      titleSlide,
-      ...contentSlides.map((s) => ({
-        type: "content" as const,
+    const result: Slide[] = [titleSlide];
+
+    for (const s of contentSlides) {
+      result.push({
+        type: "content",
         json: s.json,
-        sourceNodeIndex: s.startNodeIndex,
-        nodeCount: s.nodeCount,
-      })),
-    ];
-  }, [editor, isPresentationMode, currentFile, user, titleProp, authorProp, dateProp]);
+        sourceNodeIndex: showSummaries ? undefined : s.startNodeIndex,
+        nodeCount: showSummaries ? undefined : s.nodeCount,
+      });
+    }
+
+    return result;
+  }, [
+    editor,
+    isPresentationMode,
+    currentFile,
+    user,
+    titleProp,
+    authorProp,
+    dateProp,
+    showSummaries,
+    simplifiedDoc,
+  ]);
 
   // Reset state when entering presentation
   useEffect(() => {
@@ -315,6 +351,8 @@ export function PresentationMode({
       setIsDark(resolvedTheme !== "light");
       setShowNavigator(false);
       setJumpInput("");
+      setShowSummaries(false);
+      setShowAiMenu(false);
     }
   }, [isPresentationMode, resolvedTheme]);
 
@@ -331,11 +369,13 @@ export function PresentationMode({
   const goNext = useCallback(() => {
     setDirection(1);
     setCurrentSlide((prev) => Math.min(prev + 1, slides.length - 1));
+    setShowAiMenu(false);
   }, [slides.length]);
 
   const goPrev = useCallback(() => {
     setDirection(-1);
     setCurrentSlide((prev) => Math.max(prev - 1, 0));
+    setShowAiMenu(false);
   }, []);
 
   const canEdit = editor?.isEditable ?? false;
@@ -375,9 +415,11 @@ export function PresentationMode({
   }, [editor, slides]);
 
   const exit = useCallback(() => {
+    cancelSummary();
+    setShowAiMenu(false);
     syncEditsToEditor();
     setPresentationMode(false);
-  }, [syncEditsToEditor, setPresentationMode]);
+  }, [cancelSummary, syncEditsToEditor, setPresentationMode]);
 
   const goToSlide = useCallback(
     (index: number) => {
@@ -510,10 +552,18 @@ export function PresentationMode({
     };
   }, [isPresentationMode, showNavigator]);
 
+  // Clamp currentSlide when slide count changes (e.g. switching original ↔ simplified)
+  useEffect(() => {
+    if (slides.length > 0 && currentSlide >= slides.length) {
+      setCurrentSlide(slides.length - 1);
+    }
+  }, [slides.length, currentSlide]);
+
   if (!mounted || !isPresentationMode || slides.length === 0) return null;
 
-  const progress = ((currentSlide + 1) / slides.length) * 100;
-  const slide = slides[currentSlide];
+  const safeIndex = Math.min(currentSlide, slides.length - 1);
+  const progress = ((safeIndex + 1) / slides.length) * 100;
+  const slide = slides[safeIndex];
 
   const contentClassName = cn(
     "presentation-content",
@@ -539,6 +589,92 @@ export function PresentationMode({
 
       {/* Top-right controls */}
       <div className={cn("presentation-top-controls", isIdle && "presentation-idle")}>
+        <div className="relative">
+          <button
+            onClick={() => setShowAiMenu((v) => !v)}
+            className={cn(
+              "presentation-control-btn",
+              (showSummaries || isGenerating) && "presentation-control-btn-active"
+            )}
+            aria-label="AI presentation options"
+            title="AI presentation options"
+          >
+            <Sparkles className={cn("h-4 w-4", isGenerating && "animate-pulse")} />
+          </button>
+          {showAiMenu && (
+            <div className="presentation-ai-menu" onClick={(e) => e.stopPropagation()}>
+              {/* Original */}
+              <button
+                onClick={() => {
+                  if (showSummaries) setCurrentSlide(0);
+                  setShowSummaries(false);
+                  setShowAiMenu(false);
+                }}
+                className={cn(
+                  "presentation-ai-menu-item",
+                  !showSummaries && !isGenerating && "presentation-ai-menu-item-active"
+                )}
+              >
+                Original
+              </button>
+
+              {/* Simplified — use cached or generate */}
+              <button
+                onClick={async () => {
+                  if (isGenerating) {
+                    cancelSummary();
+                    setShowAiMenu(false);
+                    return;
+                  }
+                  if (simplifiedDoc) {
+                    setCurrentSlide(0);
+                    setShowSummaries(true);
+                  } else if (editor) {
+                    setShowAiMenu(false);
+                    await generateSimplified(editor.getJSON());
+                    setCurrentSlide(0);
+                    setShowSummaries(true);
+                    return;
+                  }
+                  setShowAiMenu(false);
+                }}
+                className={cn(
+                  "presentation-ai-menu-item",
+                  showSummaries && "presentation-ai-menu-item-active"
+                )}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="mr-1.5 inline h-3 w-3 animate-spin" />
+                    Cancel
+                  </>
+                ) : simplifiedDoc ? (
+                  "Simplified"
+                ) : (
+                  "Generate simplified"
+                )}
+              </button>
+
+              {/* Regenerate — only when cached */}
+              {simplifiedDoc && !isGenerating && (
+                <button
+                  onClick={async () => {
+                    if (editor) {
+                      setShowAiMenu(false);
+                      await generateSimplified(editor.getJSON());
+                      setCurrentSlide(0);
+                      setShowSummaries(true);
+                    }
+                  }}
+                  className="presentation-ai-menu-item"
+                >
+                  <RefreshCw className="mr-1.5 inline h-3 w-3" />
+                  Regenerate
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <button
           onClick={() => setIsDark((d) => !d)}
           className="presentation-control-btn"
@@ -554,9 +690,15 @@ export function PresentationMode({
 
       {/* Slide content */}
       <div className="presentation-stage">
+        {isGenerating && (
+          <div className="presentation-generating-overlay">
+            <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--pres-text-muted)" }} />
+            <p className="presentation-generating-text">Generating simplified presentation...</p>
+          </div>
+        )}
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
-            key={currentSlide}
+            key={`${safeIndex}-${showSummaries ? "s" : "o"}`}
             custom={direction}
             variants={slideVariants}
             initial="enter"
@@ -577,11 +719,11 @@ export function PresentationMode({
               </div>
             ) : (
               <SlideContent
-                json={editedContentsRef.current[currentSlide] ?? slide.json!}
+                json={editedContentsRef.current[safeIndex] ?? slide.json!}
                 className={contentClassName}
-                editable={canEdit}
+                editable={canEdit && !showSummaries}
                 onContentChange={(json) => {
-                  editedContentsRef.current[currentSlide] = json;
+                  editedContentsRef.current[safeIndex] = json;
                 }}
               />
             )}
@@ -590,7 +732,7 @@ export function PresentationMode({
       </div>
 
       {/* Navigation arrows */}
-      {currentSlide > 0 && (
+      {safeIndex > 0 && (
         <button
           onClick={goPrev}
           className={cn(
@@ -602,7 +744,7 @@ export function PresentationMode({
           <ChevronLeft className="h-6 w-6" />
         </button>
       )}
-      {currentSlide < slides.length - 1 && (
+      {safeIndex < slides.length - 1 && (
         <button
           onClick={goNext}
           className={cn(
@@ -651,7 +793,7 @@ export function PresentationMode({
                   onClick={() => goToSlide(i)}
                   className={cn(
                     "presentation-navigator-item",
-                    i === currentSlide && "presentation-navigator-item-active"
+                    i === safeIndex && "presentation-navigator-item-active"
                   )}
                 >
                   <span className="presentation-navigator-number">{i + 1}</span>
@@ -675,7 +817,7 @@ export function PresentationMode({
           className="presentation-counter presentation-counter-btn"
           title="Press G to open slide navigator"
         >
-          {currentSlide + 1} / {slides.length}
+          {safeIndex + 1} / {slides.length}
         </button>
       </div>
 

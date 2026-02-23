@@ -306,31 +306,57 @@ export function useMobileGestures(options: UseMobileGesturesOptions = {}) {
 }
 
 /**
- * Hook to detect if user is currently editing (keyboard visible)
+ * Keyboard state with height information for precise toolbar positioning
  */
-export function useKeyboardVisible() {
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+export interface KeyboardState {
+  isVisible: boolean;
+  keyboardHeight: number; // pixels, 0 when hidden
+}
+
+/**
+ * Hook to detect keyboard visibility and height using visualViewport API.
+ * Returns both visibility and keyboard height for toolbar positioning.
+ */
+export function useKeyboardState(): KeyboardState {
+  const [state, setState] = useState<KeyboardState>({
+    isVisible: false,
+    keyboardHeight: 0,
+  });
 
   useEffect(() => {
-    // Use visualViewport API for better keyboard detection
     const viewport = window.visualViewport;
     if (!viewport) return;
 
     const handleResize = () => {
-      // When keyboard is visible, viewport height is smaller than window height
       const keyboardVisible = viewport.height < window.innerHeight * 0.75;
-      setIsKeyboardVisible(keyboardVisible);
+      const keyboardHeight = keyboardVisible ? window.innerHeight - viewport.height : 0;
+
+      setState({
+        isVisible: keyboardVisible,
+        keyboardHeight,
+      });
     };
 
     viewport.addEventListener("resize", handleResize);
-    handleResize(); // Initial check
+    viewport.addEventListener("scroll", handleResize);
+    handleResize();
 
     return () => {
       viewport.removeEventListener("resize", handleResize);
+      viewport.removeEventListener("scroll", handleResize);
     };
   }, []);
 
-  return isKeyboardVisible;
+  return state;
+}
+
+/**
+ * Hook to detect if user is currently editing (keyboard visible).
+ * Simple wrapper around useKeyboardState for backwards compatibility.
+ */
+export function useKeyboardVisible() {
+  const { isVisible } = useKeyboardState();
+  return isVisible;
 }
 
 /**

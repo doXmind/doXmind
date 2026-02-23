@@ -55,7 +55,15 @@ marked.use({
   renderer: {
     code({ text, lang }: { text: string; lang?: string }): string | false {
       if (lang === "mermaid") {
-        const escaped = text
+        // Decode any existing HTML entities first (idempotent encoding)
+        // marked may pass pre-escaped text depending on version/config
+        const raw = text
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"');
+        // Then encode once for safe HTML attribute embedding
+        const escaped = raw
           .replace(/&/g, "&amp;")
           .replace(/"/g, "&quot;")
           .replace(/</g, "&lt;")

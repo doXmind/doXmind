@@ -109,9 +109,12 @@
    Mermaid Chart Styles
    ============================================ */
 
-/* Mermaid chart wrapper */
+/* Mermaid chart wrapper — reset font-size so foreignObject labels
+   match what mermaid measured when calculating node dimensions */
 .ProseMirror .mermaid-chart-wrapper {
   @apply my-4 block;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 /* Empty chart placeholder */
@@ -126,10 +129,21 @@
   animation: mathPanelFadeIn 0.15s ease-out;
 }
 
+/* Constrain mermaid chart size in editor */
+.ProseMirror .mermaid-chart-wrapper .mermaid-rendered {
+  max-height: 480px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Ensure mermaid SVGs are responsive */
 .ProseMirror .mermaid-chart-wrapper .mermaid-rendered svg {
   max-width: 100%;
+  max-height: 460px;
   height: auto;
+  width: auto;
 }
 
 /*

@@ -23,7 +23,7 @@ declare module "./client" {
       }[];
       createdAt: string;
     }>;
-    simpleChat(message: string, system?: string): Promise<{ response: string }>;
+    simpleChat(message: string, system?: string, model?: string): Promise<{ response: string }>;
     healthCheck(): Promise<{ status: string }>;
   }
 }
@@ -55,11 +55,12 @@ ApiClient.prototype.getConversation = async function (
 ApiClient.prototype.simpleChat = async function (
   this: ApiClient,
   message: string,
-  system?: string
+  system?: string,
+  model?: string
 ) {
   return this.request<{ response: string }>("/api/chat/simple", {
     method: "POST",
-    body: JSON.stringify({ message, system }),
+    body: JSON.stringify({ message, system, model }),
   });
 };
 

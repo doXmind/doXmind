@@ -173,6 +173,7 @@ class FileUpdate(BaseModel):
     content: str | None = None
     is_favorite: bool | None = None
     icon: str | None = None
+    presentation_simplified: str | None = None
 
 
 class FolderCreate(BaseModel):
@@ -200,6 +201,7 @@ class FileResponse(BaseModel):
     summary: str | None = None
     is_favorite: bool = False
     icon: str | None = None
+    presentation_simplified: str | None = None
     created_at: str
     updated_at: str
     # Lightweight preview fields (populated in list, avoids sending full content)
@@ -486,6 +488,7 @@ async def get_file(
         summary=file.summary,
         is_favorite=file.is_favorite or False,
         icon=file.icon,
+        presentation_simplified=file.presentation_simplified,
         created_at=file.created_at.isoformat(),
         updated_at=file.updated_at.isoformat(),
         fork_id=fork_id,
@@ -534,6 +537,11 @@ async def update_file(
     if update.icon is not None:
         file.icon = update.icon if update.icon != "" else None
 
+    if update.presentation_simplified is not None:
+        file.presentation_simplified = (
+            update.presentation_simplified if update.presentation_simplified != "" else None
+        )
+
     await db.commit()
     await db.refresh(file)
 
@@ -544,6 +552,7 @@ async def update_file(
     file_summary = file.summary
     file_is_favorite = file.is_favorite or False
     file_icon = file.icon
+    file_presentation_simplified = file.presentation_simplified
     file_created_at = file.created_at.isoformat()
     file_updated_at = file.updated_at.isoformat()
     file_is_folder = file.is_folder
@@ -581,6 +590,7 @@ async def update_file(
         summary=file_summary,
         is_favorite=file_is_favorite,
         icon=file_icon,
+        presentation_simplified=file_presentation_simplified,
         created_at=file_created_at,
         updated_at=file_updated_at,
     )

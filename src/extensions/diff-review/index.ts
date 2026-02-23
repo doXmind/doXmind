@@ -15,7 +15,7 @@ import { markdownToHtml, isHtml } from "@/lib/markdown";
 import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
 import { findTextInDocument } from "./position-mapping";
 import { createInsertWidget, createActionWidget } from "./diff-widgets";
-import { normalizeTableHtml } from "./replacement-utils";
+import { normalizeTableHtml, normalizeMermaidHtml } from "./replacement-utils";
 
 // Re-export types for external use
 export * from "./diff-types";
@@ -128,6 +128,7 @@ export const DiffReviewExtension = Extension.create({
                   const el = document.createElement("div");
                   el.innerHTML = html;
                   normalizeTableHtml(el);
+                  normalizeMermaidHtml(el);
                   const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
 
                   // Extract expected block type for disambiguation (e.g., "heading" vs "listItem")
@@ -304,6 +305,7 @@ export const DiffReviewExtension = Extension.create({
                 const el = document.createElement("div");
                 el.innerHTML = html;
                 normalizeTableHtml(el);
+                normalizeMermaidHtml(el);
                 const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
 
                 let blockType: string | null = null;
@@ -350,6 +352,7 @@ export const DiffReviewExtension = Extension.create({
               const el = document.createElement("div");
               el.innerHTML = html;
               normalizeTableHtml(el);
+              normalizeMermaidHtml(el);
               const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
               if (parsed.content.size > 0) {
                 tr.replaceWith(0, state.doc.content.size, parsed.content);
@@ -368,6 +371,7 @@ export const DiffReviewExtension = Extension.create({
                 const el = document.createElement("div");
                 el.innerHTML = html;
                 normalizeTableHtml(el);
+                normalizeMermaidHtml(el);
                 const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
 
                 if (parsed.content.size > 0) {

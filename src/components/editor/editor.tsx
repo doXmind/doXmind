@@ -563,11 +563,11 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       {/* Table Handles - Desktop only (column/row grips and edge + buttons) */}
       {!isMobile && editor && <TableHandles editor={editor} />}
 
-      {/* Bubble Menus & Popups - Desktop only */}
-      {/* Mobile uses block-based selection with long-press, no text selection menus */}
+      {/* Bubble Menus & Popups */}
+      {/* Mobile shows simplified BubbleMenu; desktop shows full menus */}
+      <BubbleMenuComponent editor={editor} isMobile={isMobile} />
       {!isMobile && (
         <>
-          <BubbleMenuComponent editor={editor} />
           <LinkBubbleMenu editor={editor} />
           <ImageBubbleMenu editor={editor} />
           <SpellcheckPopup editor={editor} />

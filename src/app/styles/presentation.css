@@ -617,6 +617,179 @@
   border-radius: 0 1px 1px 0;
 }
 
+/* ---- Mermaid charts in presentation ---- */
+
+.presentation-content .mermaid-chart-wrapper {
+  margin: 1.5rem 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.presentation-content .mermaid-rendered {
+  background: transparent;
+  border-color: var(--pres-border-subtle);
+  cursor: default;
+  max-height: 65vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.presentation-content .mermaid-rendered svg {
+  max-height: 60vh;
+  width: auto;
+}
+
+.presentation-content .mermaid-rendered:hover {
+  border-color: var(--pres-border-subtle);
+  background: transparent;
+}
+
+/* Dark presentation: force light text on mermaid SVGs */
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .nodeLabel,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .edgeLabel,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .label,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .cluster-label,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered text,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered tspan,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .messageText,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .loopText,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .noteText,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .labelText,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .sectionTitle,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .taskText {
+  color: #f5f5f7 !important;
+  fill: #f5f5f7 !important;
+}
+
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .flowchart-link,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .edgePath path,
+.presentation-overlay:not(.presentation-light) .mermaid-rendered .arrowMarkerPath {
+  stroke: #636366 !important;
+}
+
+.presentation-overlay:not(.presentation-light) .mermaid-rendered marker path {
+  fill: #636366 !important;
+  stroke: #636366 !important;
+}
+
+/* Light presentation: force dark text on mermaid SVGs */
+.presentation-overlay.presentation-light .mermaid-rendered .nodeLabel,
+.presentation-overlay.presentation-light .mermaid-rendered .edgeLabel,
+.presentation-overlay.presentation-light .mermaid-rendered .label,
+.presentation-overlay.presentation-light .mermaid-rendered .cluster-label,
+.presentation-overlay.presentation-light .mermaid-rendered text,
+.presentation-overlay.presentation-light .mermaid-rendered tspan,
+.presentation-overlay.presentation-light .mermaid-rendered .messageText,
+.presentation-overlay.presentation-light .mermaid-rendered .loopText,
+.presentation-overlay.presentation-light .mermaid-rendered .noteText,
+.presentation-overlay.presentation-light .mermaid-rendered .labelText,
+.presentation-overlay.presentation-light .mermaid-rendered .sectionTitle,
+.presentation-overlay.presentation-light .mermaid-rendered .taskText {
+  color: #1c1c1e !important;
+  fill: #1c1c1e !important;
+}
+
+.presentation-overlay.presentation-light .mermaid-rendered .flowchart-link,
+.presentation-overlay.presentation-light .mermaid-rendered .edgePath path,
+.presentation-overlay.presentation-light .mermaid-rendered .arrowMarkerPath {
+  stroke: #86868b !important;
+}
+
+.presentation-overlay.presentation-light .mermaid-rendered marker path {
+  fill: #86868b !important;
+  stroke: #86868b !important;
+}
+
+/* Active state for AI simplified view button */
+.presentation-control-btn-active {
+  background: var(--pres-control-bg-hover);
+  color: var(--pres-control-color-hover);
+}
+
+/* AI presentation menu dropdown */
+.presentation-ai-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 10rem;
+  border-radius: 8px;
+  border: 1px solid var(--pres-border-subtle);
+  background: var(--pres-control-bg);
+  backdrop-filter: blur(20px);
+  padding: 4px;
+  z-index: 10;
+  animation: presMenuFadeIn 0.12s ease-out;
+}
+
+@keyframes presMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.presentation-ai-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 0.8125rem;
+  color: var(--pres-control-color);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.presentation-ai-menu-item:hover {
+  background: var(--pres-control-bg-hover);
+  color: var(--pres-control-color-hover);
+}
+
+.presentation-ai-menu-item-active {
+  color: var(--pres-control-color-hover);
+  font-weight: 600;
+}
+
+.presentation-ai-menu-item-active::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+/* Loading overlay while generating simplified presentation */
+.presentation-generating-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: color-mix(in srgb, var(--pres-bg) 85%, transparent);
+}
+
+.presentation-generating-text {
+  font-size: 0.875rem;
+  color: var(--pres-text-muted);
+  font-weight: 500;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .presentation-overlay,
   .presentation-slide,

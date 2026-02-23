@@ -20,6 +20,7 @@ import {
   MessageSquareQuote,
   ChevronRight,
   TableOfContents,
+  GitBranch,
 } from "lucide-react";
 import { cn, formatShortcut } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
@@ -329,6 +330,19 @@ const insertItems: InsertItem[] = [
           type: "paragraph",
           content: [{ type: "inlineMath", attrs: { latex: "" } }],
         })
+        .run();
+    },
+  },
+  {
+    title: "Mermaid Chart",
+    description: "Diagram or chart",
+    icon: <GitBranch className="h-4 w-4" />,
+    category: "advanced",
+    insert: (editor, pos) => {
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(pos, { type: "mermaidChart", attrs: { code: "" } })
         .run();
     },
   },

@@ -129,6 +129,9 @@ class File(Base):
     summary = Column(Text, nullable=True)  # AI-generated document summary
     is_favorite = Column(Boolean, default=False)  # Pinned/favorite status
     icon = Column(String(10), nullable=True)  # Document emoji icon
+    presentation_simplified = Column(
+        Text, nullable=True
+    )  # AI-simplified presentation content (JSON)
 
     # Folder hierarchy support (single-level only)
     is_folder = Column(Boolean, default=False, nullable=False, index=True)

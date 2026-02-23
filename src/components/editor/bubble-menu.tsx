@@ -57,6 +57,7 @@ const turnIntoIconMap: Record<string, React.ReactNode> = {
 interface BubbleMenuComponentProps {
   editor: Editor;
   disabled?: boolean;
+  isMobile?: boolean;
 }
 
 /** Get the current selection's inline text and background color marks */
@@ -82,7 +83,7 @@ function getCurrentBlockLabel(editor: Editor): string {
   return "Aa";
 }
 
-export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
+export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentProps) {
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const { openQuickEdit } = useEditorStore();
 
@@ -155,42 +156,46 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
           }}
           className="flex items-center gap-0.5"
         >
-          {/* Turn Into dropdown */}
-          <DropdownMenu>
-            <Tooltip content="Turn into" side="top">
-              <DropdownMenuTrigger asChild>
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                  className="inline-flex h-11 items-center gap-0.5 rounded-md px-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground md:h-8 md:px-1.5"
-                >
-                  <span className="text-xs">{getCurrentBlockLabel(editor)}</span>
-                  <ChevronDown className="h-3 w-3 opacity-60" />
-                </motion.button>
-              </DropdownMenuTrigger>
-            </Tooltip>
-            <DropdownMenuContent align="start" className="min-w-[160px]">
-              {turnIntoOptions.map((option, index) => {
-                if (isTurnIntoSeparator(option)) {
-                  return <DropdownMenuSeparator key={`sep-${index}`} />;
-                }
-                return (
-                  <DropdownMenuItem
-                    key={option.label}
-                    onClick={() => option.action(editor)}
-                    className={cn(option.isActive(editor) && "bg-accent")}
-                  >
-                    {turnIntoIconMap[option.iconName] || <Type className="h-4 w-4" />}
-                    <span className="ml-2">{option.label}</span>
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Turn Into dropdown - desktop only */}
+          {!isMobile && (
+            <>
+              <DropdownMenu>
+                <Tooltip content="Turn into" side="top">
+                  <DropdownMenuTrigger asChild>
+                    <motion.button
+                      type="button"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                      className="inline-flex h-11 items-center gap-0.5 rounded-md px-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground md:h-8 md:px-1.5"
+                    >
+                      <span className="text-xs">{getCurrentBlockLabel(editor)}</span>
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </motion.button>
+                  </DropdownMenuTrigger>
+                </Tooltip>
+                <DropdownMenuContent align="start" className="min-w-[160px]">
+                  {turnIntoOptions.map((option, index) => {
+                    if (isTurnIntoSeparator(option)) {
+                      return <DropdownMenuSeparator key={`sep-${index}`} />;
+                    }
+                    return (
+                      <DropdownMenuItem
+                        key={option.label}
+                        onClick={() => option.action(editor)}
+                        className={cn(option.isActive(editor) && "bg-accent")}
+                      >
+                        {turnIntoIconMap[option.iconName] || <Type className="h-4 w-4" />}
+                        <span className="ml-2">{option.label}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-          <div className="mx-0.5 h-5 w-px bg-border" />
+              <div className="mx-0.5 h-5 w-px bg-border" />
+            </>
+          )}
 
           <BubbleButton
             icon={<Bold className="h-4 w-4" />}
@@ -210,20 +215,27 @@ export function BubbleMenuComponent({ editor }: BubbleMenuComponentProps) {
             isActive={editor.isActive("underline")}
             tooltip="Underline (Ctrl+U)"
           />
-          <BubbleButton
-            icon={<Strikethrough className="h-4 w-4" />}
-            onClick={() => editor.chain().focus().toggleStrike().run()}
-            isActive={editor.isActive("strike")}
-            tooltip="Strikethrough"
-          />
-          <BubbleButton
-            icon={<Code className="h-4 w-4" />}
-            onClick={() => editor.chain().focus().toggleCode().run()}
-            isActive={editor.isActive("code")}
-            tooltip="Inline Code (Ctrl+E)"
-          />
-          {/* Color dropdown (replaces standalone Highlight button) */}
-          <ColorDropdown editor={editor} onColorChange={handleColorChange} />
+
+          {/* Strikethrough, Code, Color - desktop only */}
+          {!isMobile && (
+            <>
+              <BubbleButton
+                icon={<Strikethrough className="h-4 w-4" />}
+                onClick={() => editor.chain().focus().toggleStrike().run()}
+                isActive={editor.isActive("strike")}
+                tooltip="Strikethrough"
+              />
+              <BubbleButton
+                icon={<Code className="h-4 w-4" />}
+                onClick={() => editor.chain().focus().toggleCode().run()}
+                isActive={editor.isActive("code")}
+                tooltip="Inline Code (Ctrl+E)"
+              />
+              {/* Color dropdown (replaces standalone Highlight button) */}
+              <ColorDropdown editor={editor} onColorChange={handleColorChange} />
+            </>
+          )}
+
           <BubbleButton
             icon={<LinkIcon className="h-4 w-4" />}
             onClick={() => setLinkModalOpen(true)}

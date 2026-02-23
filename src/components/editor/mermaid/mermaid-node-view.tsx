@@ -41,11 +41,13 @@ export function MermaidNodeView({
       const svg = await renderMermaidSvg(mermaidCode);
       targetEl.innerHTML = svg;
 
-      // Make SVG responsive
+      // Make SVG responsive and constrained
       const svgEl = targetEl.querySelector("svg");
       if (svgEl) {
         svgEl.style.maxWidth = "100%";
+        svgEl.style.maxHeight = "inherit";
         svgEl.style.height = "auto";
+        svgEl.style.width = "auto";
       }
 
       setRenderError(null);
@@ -67,9 +69,27 @@ export function MermaidNodeView({
     renderMermaid(renderedRef.current, code);
   }, [code, isEditing, renderMermaid]);
 
-  // Live debounced preview while editing
+  // Render preview immediately when entering edit mode
+  const initialRenderDone = useRef(false);
+  useEffect(() => {
+    if (!isEditing) {
+      initialRenderDone.current = false;
+      return;
+    }
+    if (!initialRenderDone.current && previewRef.current && localCode) {
+      initialRenderDone.current = true;
+      renderMermaid(previewRef.current, localCode);
+    }
+  }, [isEditing, localCode, renderMermaid]);
+
+  // Live debounced preview for subsequent edits
+  const prevCodeRef = useRef(localCode);
   useEffect(() => {
     if (!isEditing || !previewRef.current) return;
+    // Skip the initial render (already handled above)
+    if (localCode === prevCodeRef.current && initialRenderDone.current) return;
+    prevCodeRef.current = localCode;
+    if (!initialRenderDone.current) return;
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);

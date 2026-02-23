@@ -504,6 +504,7 @@ class SimpleChatRequest(BaseModel):
 
     message: str
     system: str | None = None
+    model: str | None = None
 
 
 @router.post("/simple")
@@ -512,7 +513,7 @@ async def simple_chat(request: SimpleChatRequest):
     from services.llm_service import LLMService
 
     try:
-        llm = LLMService()
+        llm = LLMService(model=request.model)
         response = await llm.complete(prompt=request.message, system=request.system)
 
         # Track usage

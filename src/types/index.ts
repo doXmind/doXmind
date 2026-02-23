@@ -11,6 +11,7 @@ export interface FileItem {
   position: number;
   isFavorite: boolean;
   icon: string | null;
+  presentationSimplified?: string | null;
   createdAt: string;
   updatedAt: string;
   // Lightweight preview fields from list endpoint (avoids loading full content)

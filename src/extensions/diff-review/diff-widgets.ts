@@ -151,14 +151,8 @@ export function createInsertWidget(hunk: DiffHunk): HTMLElement {
   // Render any mermaid chart placeholders into actual SVG diagrams
   const mermaidDivs = content.querySelectorAll<HTMLElement>('[data-type="mermaid-chart"]');
   mermaidDivs.forEach((div) => {
-    const code = div.getAttribute("data-code");
-    if (!code) return;
-    // Unescape the HTML-encoded code
-    const decoded = code
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">");
+    const decoded = div.getAttribute("data-code");
+    if (!decoded) return;
     div.classList.add("mermaid-rendered");
     div.textContent = "Rendering diagram…";
     renderMermaidSvg(decoded)
@@ -167,7 +161,9 @@ export function createInsertWidget(hunk: DiffHunk): HTMLElement {
         const svgEl = div.querySelector("svg");
         if (svgEl) {
           svgEl.style.maxWidth = "100%";
+          svgEl.style.maxHeight = "460px";
           svgEl.style.height = "auto";
+          svgEl.style.width = "auto";
         }
       })
       .catch(() => {
