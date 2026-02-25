@@ -172,6 +172,7 @@ describe("useChat", () => {
         content: "Hello",
         fileIds: ["file-1"],
         contexts: undefined,
+        quickEdit: null,
       });
     });
 
