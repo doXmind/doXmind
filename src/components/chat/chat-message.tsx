@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { User, Bot, ChevronDown, ChevronRight, ImageIcon, FileText } from "lucide-react";
+import { User, ChevronDown, ChevronRight, ImageIcon, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { marked } from "marked";
 import katex from "katex";
 
@@ -96,10 +97,10 @@ function ContextReference({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-1.5 rounded-md px-2 py-0.5 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
       >
         <Icon className="h-3 w-3 flex-shrink-0" />
-        <span className="truncate">{label}</span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
         {isExpanded ? (
           <ChevronDown className="h-3 w-3 flex-shrink-0" />
         ) : (
@@ -173,7 +174,7 @@ export function ChatMessage({
           {isUser ? (
             <User className="h-3 w-3 text-muted-foreground" />
           ) : (
-            <Bot className="h-3 w-3 text-muted-foreground" />
+            <AiLogoIcon size={12} className="text-muted-foreground" />
           )}
         </div>
         <span className="text-xs font-semibold text-foreground">{isUser ? "You" : "doXmind"}</span>

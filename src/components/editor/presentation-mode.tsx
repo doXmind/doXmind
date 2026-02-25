@@ -3,16 +3,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Sun,
-  Moon,
-  Sparkles,
-  Loader2,
-  RefreshCw,
-} from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Sun, Moon, Loader2, RefreshCw } from "lucide-react";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent, Extensions } from "@tiptap/core";
@@ -594,13 +586,14 @@ export function PresentationMode({
           <button
             onClick={() => setShowAiMenu((v) => !v)}
             className={cn(
-              "presentation-control-btn",
+              "presentation-control-btn flex items-center gap-1.5",
               (showSummaries || isGenerating) && "presentation-control-btn-active"
             )}
             aria-label="AI presentation options"
             title="AI presentation options"
           >
-            <Sparkles className={cn("h-4 w-4", isGenerating && "animate-pulse")} />
+            <AiLogoIcon size={16} className={cn(isGenerating && "animate-pulse")} />
+            <span className="text-xs font-medium">AI</span>
           </button>
           {showAiMenu && (
             <div className="presentation-ai-menu" onClick={(e) => e.stopPropagation()}>

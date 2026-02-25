@@ -23,47 +23,51 @@ QUICK_EDIT_SYSTEM = """You are doXmind Quick Editor, a professional text editing
 - NEVER wrap output in quotes or formatting
 - ALWAYS preserve original meaning unless instructed otherwise
 - NEVER start with phrases like "Here is..." or "The edited text is..."
+- CRITICAL: ALWAYS use the SAME LANGUAGE as the original text (unless explicitly asked to translate)
+  - If the input is in Chinese, output in Chinese
+  - If the input is in English, output in English
+  - If the input is in Spanish, output in Spanish, etc.
 </constraints>"""
 
 # Edit action configurations with instructions and temperature
 EDIT_ACTIONS: dict[str, dict[str, str | float]] = {
     # Grammar and style
     "fix-grammar": {
-        "instruction": "Fix all grammar and spelling errors. Keep the original meaning and style intact.",
+        "instruction": "Fix all grammar and spelling errors. Keep the original meaning, style, and language intact.",
         "temperature": 0.2,
     },
     "improve": {
-        "instruction": "Improve the writing quality. Make it clearer, more engaging, and better structured while preserving the meaning.",
+        "instruction": "Improve the writing quality. Make it clearer, more engaging, and better structured while preserving the meaning and language.",
         "temperature": 0.4,
     },
     # Length adjustments
     "simplify": {
-        "instruction": "Rewrite using simpler language. Make it easier to understand for a general audience.",
+        "instruction": "Rewrite using simpler language. Make it easier to understand for a general audience. Keep the same language as the original.",
         "temperature": 0.3,
     },
     "expand": {
-        "instruction": "Expand with more details, examples, and explanations. Make it more comprehensive.",
+        "instruction": "Expand with more details, examples, and explanations. Make it more comprehensive. Keep the same language as the original.",
         "temperature": 0.5,
     },
     "shorten": {
-        "instruction": "Condense while keeping key information. Remove redundancy and make it more concise.",
+        "instruction": "Condense while keeping key information. Remove redundancy and make it more concise. Keep the same language as the original.",
         "temperature": 0.3,
     },
     # Tone adjustments
     "professional": {
-        "instruction": "Rewrite in a professional, formal tone suitable for business communication.",
+        "instruction": "Rewrite in a professional, formal tone suitable for business communication. Keep the same language as the original.",
         "temperature": 0.3,
     },
     "casual": {
-        "instruction": "Rewrite in a casual, friendly tone while maintaining clarity.",
+        "instruction": "Rewrite in a casual, friendly tone while maintaining clarity. Keep the same language as the original.",
         "temperature": 0.4,
     },
     "friendly": {
-        "instruction": "Rewrite in a warm, friendly tone that feels personable and approachable.",
+        "instruction": "Rewrite in a warm, friendly tone that feels personable and approachable. Keep the same language as the original.",
         "temperature": 0.4,
     },
     "confident": {
-        "instruction": "Rewrite in a confident and assertive tone without being aggressive.",
+        "instruction": "Rewrite in a confident and assertive tone without being aggressive. Keep the same language as the original.",
         "temperature": 0.3,
     },
     # Translations

@@ -76,8 +76,13 @@ async def _resolve_user_api_settings(
 ) -> tuple[str | None, str | None]:
     """Resolve user's API key and model preference.
 
+    IMPORTANT: User's preferred model is ONLY used when they have provided their own API key.
+    If the user has no API key (or removed it), returns (None, None) to use server defaults.
+
     Returns:
-        (api_key, model) tuple, both None if not configured.
+        (api_key, model) tuple:
+        - If user has API key: (decrypted_key, preferred_model)
+        - Otherwise: (None, None) -> will use config.default_model
     """
     if not auth or not auth.sub or auth.sub == "anonymous":
         return None, None
@@ -85,6 +90,7 @@ async def _resolve_user_api_settings(
     api_key_service = APIKeyService(db)
     user_api_settings = await api_key_service.get_user_settings(auth.sub)
 
+    # Only use user's preferred model if they have provided their own API key
     if not api_key_service.has_api_key(user_api_settings):
         return None, None
 
@@ -509,11 +515,17 @@ class SimpleChatRequest(BaseModel):
 
 @router.post("/simple")
 async def simple_chat(request: SimpleChatRequest):
-    """Simple non-streaming chat for quick responses."""
+    """Simple non-streaming chat for quick responses.
+
+    Uses fast_model by default for speed-critical operations like slides generation.
+    """
     from services.llm_service import LLMService
 
     try:
-        llm = LLMService(model=request.model)
+        settings = get_settings()
+        # Use fast_model as default for simple chat (quick operations)
+        model = request.model or settings.fast_model
+        llm = LLMService(model=model)
         response = await llm.complete(prompt=request.message, system=request.system)
 
         # Track usage

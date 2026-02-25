@@ -24,7 +24,7 @@ export const ContextPill = memo(function ContextPill({
   onDelete,
   showActions,
 }: ContextPillProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const isImage = context.type === "image";
   const isSelection = context.type === "selection";
@@ -107,7 +107,9 @@ export const ContextPill = memo(function ContextPill({
               className="h-auto max-w-full rounded"
             />
           ) : (
-            <div className="whitespace-pre-wrap">{context.text}</div>
+            <div className="whitespace-pre-wrap">
+              {context.text.length > 100 ? `${context.text.slice(0, 100)}...` : context.text}
+            </div>
           )}
         </div>
       )}

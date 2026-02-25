@@ -259,7 +259,7 @@ class MockOpenAIChatCompletion:
 
     def __init__(self, text: str = "Hello from AI"):
         self.choices = [MockOpenAIChoice(text)]
-        self.model = "z-ai/glm-5"
+        self.model = "minimax/minimax-m2.5"
         self.usage = MagicMock(prompt_tokens=100, completion_tokens=50)
 
 

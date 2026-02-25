@@ -185,14 +185,24 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Global text selection */
+  /* Global text selection - Notion-style blue highlight */
   ::selection {
-    background-color: hsl(var(--foreground) / 0.15);
+    background-color: rgba(46, 170, 220, 0.25); /* Light blue background */
   }
 
   /* Firefox compatibility */
   ::-moz-selection {
-    background-color: hsl(var(--foreground) / 0.15);
+    background-color: rgba(46, 170, 220, 0.25);
+    color: hsl(var(--foreground));
+  }
+
+  /* Dark mode selection */
+  .dark ::selection {
+    background-color: rgba(46, 170, 220, 0.3);
+  }
+
+  .dark ::-moz-selection {
+    background-color: rgba(46, 170, 220, 0.3);
     color: hsl(var(--foreground));
   }
 }

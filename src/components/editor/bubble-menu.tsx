@@ -10,7 +10,6 @@ import {
   Strikethrough,
   Code,
   Link as LinkIcon,
-  Sparkles,
   Type,
   Heading1,
   Heading2,
@@ -22,7 +21,9 @@ import {
   MessageSquareQuote,
   ChevronRight as ChevronRightIcon,
   ChevronDown,
+  Wand2,
 } from "lucide-react";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -38,6 +39,8 @@ import { CellSelection } from "@tiptap/pm/tables";
 import { LinkModal } from "./link-modal";
 import { ColorPicker } from "./color-picker";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
+import { useChatContextStore } from "@/stores/chat-context-store";
+import { useLayoutStore } from "@/stores/layout-store";
 
 /** Map icon names to components for the Turn Into dropdown */
 const turnIntoIconMap: Record<string, React.ReactNode> = {
@@ -85,12 +88,24 @@ function getCurrentBlockLabel(editor: Editor): string {
 
 export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentProps) {
   const [linkModalOpen, setLinkModalOpen] = useState(false);
-  const { openQuickEdit } = useEditorStore();
+  const { openQuickEdit, selection } = useEditorStore();
+  const { addChatContext } = useChatContextStore();
 
-  const handleAIEdit = (event: React.MouseEvent) => {
+  const handleImproveWritingClick = (event: React.MouseEvent) => {
     const button = event.currentTarget as HTMLElement;
     const rect = button.getBoundingClientRect();
     openQuickEdit({ x: rect.left, y: rect.bottom + 5 });
+  };
+
+  const handleAskAI = () => {
+    if (!selection) return;
+    addChatContext({
+      type: "selection",
+      text: selection.text,
+      from: selection.from,
+      to: selection.to,
+    });
+    useLayoutStore.getState().setChatOpen(true);
   };
 
   const handleLinkConfirm = (url: string) => {
@@ -141,6 +156,7 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
         tippyOptions={{
           duration: 0,
           animation: false,
+          maxWidth: "none",
         }}
         shouldShow={shouldShow}
         className="bubble-menu rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
@@ -154,9 +170,38 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
             damping: 30,
             mass: 0.8,
           }}
-          className="flex items-center gap-0.5"
+          className="flex flex-nowrap items-center gap-0.5"
         >
-          {/* Turn Into dropdown - desktop only */}
+          {/* Left side: AI actions with text labels (Notion-style) */}
+
+          {/* Improve Writing - opens quick edit menu */}
+          <motion.button
+            type="button"
+            onClick={handleImproveWritingClick}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
+          >
+            <Wand2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+            <span className="hidden text-sm font-medium md:inline">inline improve</span>
+          </motion.button>
+
+          {/* Ask AI button */}
+          <motion.button
+            type="button"
+            onClick={handleAskAI}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
+          >
+            <AiLogoIcon className="h-4 w-4" />
+            <span className="hidden text-sm font-medium md:inline">ask ai in chat</span>
+          </motion.button>
+
+          {/* Divider */}
+          <div className="mx-1 h-5 w-px bg-border" />
+
+          {/* Right side: Formatting tools */}
           {!isMobile && (
             <>
               <DropdownMenu>
@@ -167,7 +212,7 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                      className="inline-flex h-11 items-center gap-0.5 rounded-md px-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground md:h-8 md:px-1.5"
+                      className="inline-flex h-8 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
                     >
                       <span className="text-xs">{getCurrentBlockLabel(editor)}</span>
                       <ChevronDown className="h-3 w-3 opacity-60" />
@@ -192,8 +237,6 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              <div className="mx-0.5 h-5 w-px bg-border" />
             </>
           )}
 
@@ -241,15 +284,6 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
             onClick={() => setLinkModalOpen(true)}
             isActive={editor.isActive("link")}
             tooltip="Add Link (Ctrl+K)"
-          />
-
-          <div className="mx-1 h-5 w-px bg-border" />
-
-          <BubbleButton
-            icon={<Sparkles className="h-4 w-4" />}
-            onClick={handleAIEdit}
-            className="text-primary"
-            tooltip="AI Edit"
           />
         </motion.div>
       </BubbleMenu>

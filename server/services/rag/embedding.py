@@ -39,7 +39,9 @@ async def get_embedding(text_content: str, api_key: str | None = None) -> list[f
         text_content = truncate_to_token_limit(text_content)
 
     client = openai.AsyncOpenAI(api_key=effective_key, base_url=settings.openrouter_base_url)
-    response = await client.embeddings.create(model=settings.embedding_model, input=text_content)
+    response = await client.embeddings.create(
+        model=settings.embedding_model, input=text_content, dimensions=settings.embedding_dimension
+    )
     return response.data[0].embedding
 
 
@@ -72,8 +74,11 @@ async def _embed_single_batch_with_retry(
     async with semaphore:
         for attempt in range(max_retries):
             try:
+                settings = get_settings()
                 response = await client.embeddings.create(
-                    model=get_settings().embedding_model, input=texts
+                    model=settings.embedding_model,
+                    input=texts,
+                    dimensions=settings.embedding_dimension,
                 )
                 return (batch_index, [item.embedding for item in response.data])
 

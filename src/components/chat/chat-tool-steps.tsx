@@ -27,8 +27,9 @@ export function ChatToolSteps({ tools, collapseThreshold = 2, className }: ChatT
 
     for (const tool of tools) {
       if (tool.status === "running") running.push(tool);
-      // Fold error tools into completed (hidden by collapse) to avoid cluttering the UI
-      else completed.push(tool);
+      // Filter out error tools completely - don't show failed tool calls to users
+      else if (tool.status === "completed") completed.push(tool);
+      // tool.status === "error" is silently ignored
     }
 
     return { runningTools: running, completedTools: completed };

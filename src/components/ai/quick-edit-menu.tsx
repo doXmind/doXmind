@@ -2,15 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wand2, MessageCircle, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
-import { useChatContextStore } from "@/stores/chat-context-store";
-import { useLayoutStore } from "@/stores/layout-store";
 import { useQuickEdit } from "@/hooks/use-quick-edit";
 import { useMockQuickEdit } from "@/hooks/use-mock-quick-edit";
 import { useMenuPosition, getSubmenuPosition } from "@/hooks/use-menu-position";
 import { useMenuKeyboard } from "@/hooks/use-menu-keyboard";
-import { QUICK_EDIT_OPTIONS, TOTAL_MENU_ITEMS } from "./quick-edit-options";
+import { QUICK_EDIT_OPTIONS } from "./quick-edit-options";
 import { cn } from "@/lib/utils";
 
 /** Spring animation config for menu transitions */
@@ -24,7 +22,6 @@ interface QuickEditMenuProps {
 
 export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProps) {
   const { quickEditOpen, quickEditPosition, selection, closeQuickEdit } = useEditorStore();
-  const { addChatContext } = useChatContextStore();
   // Use mock quick edit in demo mode, real API otherwise
   const realQuickEdit = useQuickEdit();
   const mockQuickEdit = useMockQuickEdit();
@@ -103,19 +100,6 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
     [selection, edit]
   );
 
-  const handleAskInChat = useCallback(() => {
-    if (!selection) return;
-    addChatContext({
-      type: "selection",
-      text: selection.text,
-      from: selection.from,
-      to: selection.to,
-    });
-    useLayoutStore.getState().setChatOpen(true);
-    closeQuickEdit();
-    setActiveSubmenu(null);
-  }, [selection, addChatContext, closeQuickEdit]);
-
   // Handle main menu item selection
   const handleMainItemSelect = useCallback(
     (index: number) => {
@@ -127,11 +111,9 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
         } else {
           handleSelect(option.id);
         }
-      } else if (index === QUICK_EDIT_OPTIONS.length) {
-        handleAskInChat();
       }
     },
-    [handleSelect, handleAskInChat]
+    [handleSelect]
   );
 
   // Handle submenu item selection
@@ -154,7 +136,7 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
     isProcessing: isEditing,
     focusedIndex,
     setFocusedIndex,
-    totalItems: TOTAL_MENU_ITEMS,
+    totalItems: QUICK_EDIT_OPTIONS.length,
     activeSubmenu,
     setActiveSubmenu,
     submenuFocusedIndex,
@@ -196,15 +178,7 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
           visibility: adjustedPosition ? "visible" : "hidden",
         }}
       >
-        {/* Header */}
-        <div className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-muted-foreground">
-          <Wand2 className="h-3 w-3" />
-          AI Quick Edit
-        </div>
-
-        <div className="my-1 h-px bg-border" />
-
-        {/* Options */}
+        {/* Quick Edit Options */}
         {QUICK_EDIT_OPTIONS.map((option, index) => (
           <MenuOption
             key={option.id}
@@ -220,31 +194,6 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
             }}
           />
         ))}
-
-        <div className="my-1 h-px bg-border" />
-
-        {/* Ask in Chat */}
-        <motion.button
-          onClick={handleAskInChat}
-          onMouseEnter={() => {
-            setActiveSubmenu(null);
-            setFocusedIndex(QUICK_EDIT_OPTIONS.length);
-          }}
-          disabled={isEditing}
-          whileHover={{ scale: 1.02, x: 2 }}
-          whileTap={{ scale: 0.98 }}
-          transition={{ type: "spring", ...ITEM_SPRING }}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
-            "hover:bg-accent hover:text-accent-foreground",
-            "disabled:pointer-events-none disabled:opacity-50",
-            "text-primary",
-            focusedIndex === QUICK_EDIT_OPTIONS.length && "bg-accent"
-          )}
-        >
-          <MessageCircle className="h-4 w-4" />
-          Ask in Chat
-        </motion.button>
 
         {/* Processing indicator */}
         <AnimatePresence>

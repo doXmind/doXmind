@@ -76,6 +76,3 @@ export const QUICK_EDIT_OPTIONS: QuickEditOption[] = [
     ],
   },
 ];
-
-/** Total menu items count: options + "Ask in Chat" */
-export const TOTAL_MENU_ITEMS = QUICK_EDIT_OPTIONS.length + 1;

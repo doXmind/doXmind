@@ -4,6 +4,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ImageNodeView } from "@/components/editor/image-node-view";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { parseUploadError } from "@/lib/utils/image-upload-errors";
 
 export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -15,29 +16,47 @@ async function uploadAndInsertImage(file: File, view: any, pos?: number) {
   if (!file.type.startsWith("image/")) return false;
 
   const altText = file.name.replace(/\.[^.]+$/, "");
+  const { state } = view;
 
-  const insertImageNode = (src: string) => {
-    const node = view.state.schema.nodes.image.create({ src, alt: altText });
-    const tr = view.state.tr;
-    if (pos !== undefined) {
-      tr.insert(pos, node);
-    } else {
-      tr.replaceSelectionWith(node);
-    }
-    view.dispatch(tr);
-  };
+  // Insert loading placeholder immediately
+  const placeholderText = "🔄 Uploading image...";
+  const placeholder = state.schema.text(placeholderText);
+  const insertPos = pos !== undefined ? pos : state.selection.from;
+
+  let tr = state.tr.insert(insertPos, placeholder);
+  view.dispatch(tr);
+
+  // Calculate the range where placeholder was inserted
+  const placeholderFrom = insertPos;
+  const placeholderTo = insertPos + placeholderText.length;
 
   try {
     const result = await api.uploadImage(file);
-    insertImageNode(result.url);
+
+    // Remove placeholder and insert actual image
+    const currentState = view.state;
+    const imageNode = currentState.schema.nodes.image.create({
+      src: result.url,
+      alt: altText,
+    });
+
+    tr = currentState.tr.delete(placeholderFrom, placeholderTo).insert(placeholderFrom, imageNode);
+
+    view.dispatch(tr);
+    toast.success("Image uploaded successfully");
     return true;
-  } catch {
-    // Fallback to data URL if upload fails
-    toast.error("Server upload failed, using embedded image instead");
-    const reader = new FileReader();
-    reader.onload = () => insertImageNode(reader.result as string);
-    reader.readAsDataURL(file);
-    return true;
+  } catch (error) {
+    // Remove placeholder on error
+    const currentState = view.state;
+    tr = currentState.tr.delete(placeholderFrom, placeholderTo);
+    view.dispatch(tr);
+
+    // Show error message
+    const errorMessage = parseUploadError(error);
+    toast.error(errorMessage);
+
+    // Do NOT insert image - enforce S3-only storage
+    return false;
   }
 }
 

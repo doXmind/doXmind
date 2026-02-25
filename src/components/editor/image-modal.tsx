@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Image as ImageIcon, Upload, Link, Loader2 } from "lucide-react";
+import { Image as ImageIcon, Upload, Link, Loader2, AlertCircle } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { parseUploadError } from "@/lib/utils/image-upload-errors";
 
 interface ImageModalProps {
   open: boolean;
@@ -17,15 +18,6 @@ interface ImageModalProps {
 
 type Tab = "upload" | "url";
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
   const [tab, setTab] = React.useState<Tab>("upload");
   const [url, setUrl] = React.useState("");
@@ -33,6 +25,8 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
   const [isUploading, setIsUploading] = React.useState(false);
   const [isDragging, setIsDragging] = React.useState(false);
   const [preview, setPreview] = React.useState<string | null>(null);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const [currentFile, setCurrentFile] = React.useState<File | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -43,6 +37,8 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
       setPreview(null);
       setIsUploading(false);
       setIsDragging(false);
+      setUploadError(null);
+      setCurrentFile(null);
       setTab("upload");
       if (window.innerWidth >= 768) {
         setTimeout(() => inputRef.current?.focus(), 0);
@@ -55,6 +51,10 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
       return;
     }
 
+    // Save file for potential retry
+    setCurrentFile(file);
+    setUploadError(null);
+
     // Show preview
     const reader = new FileReader();
     reader.onload = (e) => setPreview(e.target?.result as string);
@@ -66,14 +66,20 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
       const result = await api.uploadImage(file);
       onConfirm(result.url, alt.trim() || file.name.replace(/\.[^.]+$/, ""));
       onClose();
-    } catch {
-      // Fallback: if server upload fails, use data URL
-      toast.error("Server upload failed, using embedded image instead");
-      const dataUrl = await fileToDataUrl(file);
-      onConfirm(dataUrl, alt.trim() || file.name.replace(/\.[^.]+$/, ""));
-      onClose();
+    } catch (error) {
+      // Show error and keep modal open for retry
+      const errorMessage = parseUploadError(error);
+      setUploadError(errorMessage);
+      toast.error(errorMessage);
+      // Modal stays open, user can retry or cancel
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (currentFile) {
+      handleFileUpload(currentFile);
     }
   };
 
@@ -200,6 +206,26 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
             onChange={handleFileSelect}
             className="hidden"
           />
+
+          {/* Error display with retry */}
+          {uploadError && (
+            <div className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+              <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm text-destructive">{uploadError}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRetry}
+                  disabled={isUploading}
+                  className="h-8"
+                >
+                  Retry Upload
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <label htmlFor="upload-alt" className="text-sm font-medium">

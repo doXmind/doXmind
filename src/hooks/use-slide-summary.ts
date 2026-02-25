@@ -5,7 +5,8 @@ import type { JSONContent } from "@tiptap/core";
 import { api } from "@/lib/api";
 import { useFileStore } from "@/stores/file-store";
 
-const SUMMARY_MODEL = "z-ai/glm-4.7-flash";
+// Model is now determined by backend (uses fast_model)
+// No need to hardcode here - backend will use the configured fast_model
 
 const SYSTEM_PROMPT = `You are a presentation assistant. Given a full document, produce a simplified, concise version suitable for presentation slides.
 
@@ -17,7 +18,8 @@ Rules:
 5. Keep each section to 3-6 bullet points maximum.
 6. Use markdown formatting (bold, lists, etc.) as needed.
 7. Do NOT add any preamble or explanation — output ONLY the simplified document.
-8. Respond in the same language as the input document.`;
+8. Respond in the same language as the input document.
+9. Preserve tables that contain important data (numbers, statistics, comparisons). Keep table structure using markdown table format (| Header | Header |).`;
 
 /** Convert a simple markdown string into TipTap JSONContent */
 function markdownToJson(md: string): JSONContent {
@@ -216,8 +218,8 @@ export function useSlideSummary(fileId: string | null) {
 
         const { response } = await api.simpleChat(
           `Simplify this document for a presentation:\n\n${docText}`,
-          SYSTEM_PROMPT,
-          SUMMARY_MODEL
+          SYSTEM_PROMPT
+          // No model parameter - backend will use fast_model
         );
 
         if (controller.signal.aborted) return;

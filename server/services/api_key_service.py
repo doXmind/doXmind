@@ -51,10 +51,17 @@ class APIKeyService:
         )
 
     async def delete_api_key(self, user_id: str) -> None:
-        """Delete user's API key."""
+        """Delete user's API key and reset model preference to default.
+
+        When a user removes their API key, they should use the server's default model.
+        """
+        from config import get_settings
+
         settings = await self.get_user_settings(user_id)
         if settings:
             settings.encrypted_anthropic_key = None
+            # Reset to server default model when removing API key
+            settings.preferred_model = get_settings().default_model
             await self.db.commit()
             audit_logger.info("api_key_deleted", extra={"user_id": user_id, "action": "delete"})
 

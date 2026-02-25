@@ -410,165 +410,168 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
             : {}),
 
           handleDOMEvents: {
-            // TAP MODE: Handle click/tap for immediate block selection
-            ...(isTapMode
-              ? {
-                  touchstart(view, event) {
-                    const pluginState = BlockSelectionPluginKey.getState(view.state);
-                    if (!pluginState?.isEnabled) return false;
+            // Desktop mode: keyboard-only, no DOM event handlers
+            // Tap mode: touch handlers for mobile tap selection
+            // Longpress mode: touch/mouse handlers for long-press selection
+            ...(isDesktopMode
+              ? {}
+              : isTapMode
+                ? {
+                    touchstart(view, event) {
+                      const pluginState = BlockSelectionPluginKey.getState(view.state);
+                      if (!pluginState?.isEnabled) return false;
 
-                    const touch = event.touches[0];
-                    if (!touch) return false;
+                      const touch = event.touches[0];
+                      if (!touch) return false;
 
-                    // Record start position to detect tap vs scroll
-                    touchStartX = touch.clientX;
-                    touchStartY = touch.clientY;
+                      // Record start position to detect tap vs scroll
+                      touchStartX = touch.clientX;
+                      touchStartY = touch.clientY;
 
-                    const pos = view.posAtCoords({ left: touch.clientX, top: touch.clientY });
-                    if (pos) {
-                      pressStartPos = pos.pos;
-                    }
+                      const pos = view.posAtCoords({ left: touch.clientX, top: touch.clientY });
+                      if (pos) {
+                        pressStartPos = pos.pos;
+                      }
 
-                    // Blur editor immediately on touch to prevent keyboard from appearing
-                    // This is safe because we're in block selection mode (not editing mode)
-                    view.dom.blur();
+                      // Blur editor immediately on touch to prevent keyboard from appearing
+                      // This is safe because we're in block selection mode (not editing mode)
+                      view.dom.blur();
 
-                    // Prevent default to stop text selection and focus
-                    // but allow scrolling by not returning true
-                    return false;
-                  },
+                      // Prevent default to stop text selection and focus
+                      // but allow scrolling by not returning true
+                      return false;
+                    },
 
-                  touchend(view, event) {
-                    const pluginState = BlockSelectionPluginKey.getState(view.state);
-                    if (!pluginState?.isEnabled) return false;
+                    touchend(view, event) {
+                      const pluginState = BlockSelectionPluginKey.getState(view.state);
+                      if (!pluginState?.isEnabled) return false;
 
-                    const touch = event.changedTouches[0];
-                    if (!touch || touchStartX === null || touchStartY === null) {
+                      const touch = event.changedTouches[0];
+                      if (!touch || touchStartX === null || touchStartY === null) {
+                        touchStartX = null;
+                        touchStartY = null;
+                        pressStartPos = null;
+                        return false;
+                      }
+
+                      // Check if this was a tap (minimal movement)
+                      const dx = Math.abs(touch.clientX - touchStartX);
+                      const dy = Math.abs(touch.clientY - touchStartY);
+                      const wasTap = dx < TAP_THRESHOLD && dy < TAP_THRESHOLD;
+
+                      if (wasTap && pressStartPos !== null) {
+                        // Prevent the editor from gaining focus (which would show keyboard)
+                        event.preventDefault();
+                        // Blur the editor to ensure keyboard doesn't appear
+                        view.dom.blur();
+                        selectBlockAtPosition(view.state.doc, pressStartPos, event);
+                      }
+
+                      // Reset tracking
+                      touchStartX = null;
+                      touchStartY = null;
+                      pressStartPos = null;
+
+                      return false;
+                    },
+
+                    touchmove() {
+                      // If moved too far, cancel the tap
+                      // (actual check happens in touchend)
+                      return false;
+                    },
+
+                    touchcancel() {
                       touchStartX = null;
                       touchStartY = null;
                       pressStartPos = null;
                       return false;
-                    }
+                    },
+                  }
+                : {
+                    mousedown(view, event) {
+                      const pluginState = BlockSelectionPluginKey.getState(view.state);
+                      if (!pluginState?.isEnabled) return false;
 
-                    // Check if this was a tap (minimal movement)
-                    const dx = Math.abs(touch.clientX - touchStartX);
-                    const dy = Math.abs(touch.clientY - touchStartY);
-                    const wasTap = dx < TAP_THRESHOLD && dy < TAP_THRESHOLD;
+                      const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+                      if (!pos) return false;
 
-                    if (wasTap && pressStartPos !== null) {
-                      // Prevent the editor from gaining focus (which would show keyboard)
-                      event.preventDefault();
-                      // Blur the editor to ensure keyboard doesn't appear
-                      view.dom.blur();
-                      selectBlockAtPosition(view.state.doc, pressStartPos, event);
-                    }
+                      pressStartPos = pos.pos;
+                      pressStartEvent = event;
 
-                    // Reset tracking
-                    touchStartX = null;
-                    touchStartY = null;
-                    pressStartPos = null;
+                      // Clear any existing text selection immediately
+                      window.getSelection()?.removeAllRanges();
 
-                    return false;
-                  },
-
-                  touchmove() {
-                    // If moved too far, cancel the tap
-                    // (actual check happens in touchend)
-                    return false;
-                  },
-
-                  touchcancel() {
-                    touchStartX = null;
-                    touchStartY = null;
-                    pressStartPos = null;
-                    return false;
-                  },
-                }
-              : // LONGPRESS MODE: Original behavior
-                {
-                  mousedown(view, event) {
-                    const pluginState = BlockSelectionPluginKey.getState(view.state);
-                    if (!pluginState?.isEnabled) return false;
-
-                    const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
-                    if (!pos) return false;
-
-                    pressStartPos = pos.pos;
-                    pressStartEvent = event;
-
-                    // Clear any existing text selection immediately
-                    window.getSelection()?.removeAllRanges();
-
-                    const currentDoc = view.state.doc;
-                    longPressTimer = setTimeout(() => {
-                      if (pressStartPos !== null && pressStartEvent) {
-                        selectBlockAtPosition(currentDoc, pressStartPos, pressStartEvent);
-                      }
-                      clearLongPress();
-                    }, extension.options.longPressDuration);
-
-                    return false;
-                  },
-
-                  mouseup() {
-                    clearLongPress();
-                    return false;
-                  },
-
-                  mouseleave() {
-                    clearLongPress();
-                    return false;
-                  },
-
-                  touchstart(view, event) {
-                    const pluginState = BlockSelectionPluginKey.getState(view.state);
-                    if (!pluginState?.isEnabled) return false;
-
-                    const touch = event.touches[0];
-                    if (!touch) return false;
-
-                    const pos = view.posAtCoords({ left: touch.clientX, top: touch.clientY });
-                    if (!pos) return false;
-
-                    pressStartPos = pos.pos;
-                    pressStartEvent = event;
-
-                    // Clear any existing text selection immediately
-                    window.getSelection()?.removeAllRanges();
-
-                    const currentDoc = view.state.doc;
-                    longPressTimer = setTimeout(() => {
-                      if (pressStartPos !== null && pressStartEvent) {
-                        selectBlockAtPosition(currentDoc, pressStartPos, pressStartEvent);
-                      }
-                      clearLongPress();
-                    }, extension.options.longPressDuration);
-
-                    return false;
-                  },
-
-                  touchend() {
-                    clearLongPress();
-                    return false;
-                  },
-
-                  touchmove(view, event) {
-                    // Cancel long-press if user moves finger
-                    if (pressStartPos !== null && event.touches[0]) {
-                      const touch = event.touches[0];
-                      const pos = view.posAtCoords({ left: touch.clientX, top: touch.clientY });
-                      if (!pos || Math.abs(pos.pos - pressStartPos) > 50) {
+                      const currentDoc = view.state.doc;
+                      longPressTimer = setTimeout(() => {
+                        if (pressStartPos !== null && pressStartEvent) {
+                          selectBlockAtPosition(currentDoc, pressStartPos, pressStartEvent);
+                        }
                         clearLongPress();
-                      }
-                    }
-                    return false;
-                  },
+                      }, extension.options.longPressDuration);
 
-                  touchcancel() {
-                    clearLongPress();
-                    return false;
-                  },
-                }),
+                      return false;
+                    },
+
+                    mouseup() {
+                      clearLongPress();
+                      return false;
+                    },
+
+                    mouseleave() {
+                      clearLongPress();
+                      return false;
+                    },
+
+                    touchstart(view, event) {
+                      const pluginState = BlockSelectionPluginKey.getState(view.state);
+                      if (!pluginState?.isEnabled) return false;
+
+                      const touch = event.touches[0];
+                      if (!touch) return false;
+
+                      const pos = view.posAtCoords({ left: touch.clientX, top: touch.clientY });
+                      if (!pos) return false;
+
+                      pressStartPos = pos.pos;
+                      pressStartEvent = event;
+
+                      // Clear any existing text selection immediately
+                      window.getSelection()?.removeAllRanges();
+
+                      const currentDoc = view.state.doc;
+                      longPressTimer = setTimeout(() => {
+                        if (pressStartPos !== null && pressStartEvent) {
+                          selectBlockAtPosition(currentDoc, pressStartPos, pressStartEvent);
+                        }
+                        clearLongPress();
+                      }, extension.options.longPressDuration);
+
+                      return false;
+                    },
+
+                    touchend() {
+                      clearLongPress();
+                      return false;
+                    },
+
+                    touchmove(view, event) {
+                      // Cancel long-press if user moves finger
+                      if (pressStartPos !== null && event.touches[0]) {
+                        const touch = event.touches[0];
+                        const pos = view.posAtCoords({ left: touch.clientX, top: touch.clientY });
+                        if (!pos || Math.abs(pos.pos - pressStartPos) > 50) {
+                          clearLongPress();
+                        }
+                      }
+                      return false;
+                    },
+
+                    touchcancel() {
+                      clearLongPress();
+                      return false;
+                    },
+                  }),
           },
 
           // Create decorations for selected blocks

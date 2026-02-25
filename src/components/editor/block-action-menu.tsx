@@ -23,8 +23,8 @@ import {
   ChevronRight,
   Palette,
   ArrowRightLeft,
-  Sparkles,
 } from "lucide-react";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { cn } from "@/lib/utils";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -587,7 +587,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       {/* Ask AI */}
       <div className="my-1.5 h-px bg-border" />
       <MenuButton
-        icon={<Sparkles className="h-3.5 w-3.5 text-primary" />}
+        icon={<AiLogoIcon className="h-3.5 w-3.5 text-primary" />}
         label="Ask AI"
         focused={currentItemId === "askAI" && !activeSubmenu}
         onClick={handleAskAI}

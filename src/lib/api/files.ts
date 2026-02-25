@@ -379,18 +379,54 @@ ApiClient.prototype.uploadImage = async function (
 
   const authHeaders = this.getAuthHeaders();
 
-  const response = await fetch(`${this.baseUrl}/api/images/upload`, {
-    method: "POST",
-    headers: authHeaders,
-    body: formData,
-  });
+  // Add timeout controller (30 seconds)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Upload failed" }));
-    throw new Error(error.detail || "Failed to upload image");
+  try {
+    const response = await fetch(`${this.baseUrl}/api/images/upload`, {
+      method: "POST",
+      headers: authHeaders,
+      body: formData,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      // Handle specific HTTP status codes
+      if (response.status === 413) {
+        throw new Error("Image too large (max 10MB)");
+      }
+      if (response.status === 400) {
+        const error = await response.json().catch(() => ({ detail: "Invalid image format" }));
+        throw new Error(error.detail || "Invalid image format");
+      }
+      if (response.status >= 500) {
+        throw new Error("Server error - please try again later");
+      }
+
+      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(error.detail || "Failed to upload image");
+    }
+
+    return response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    // Handle abort/timeout errors
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Upload timed out - check your connection");
+    }
+
+    // Handle network errors
+    if (error instanceof TypeError) {
+      throw new Error("Network error - check your connection");
+    }
+
+    // Re-throw other errors
+    throw error;
   }
-
-  return response.json();
 };
 
 ApiClient.prototype.deleteImage = async function (

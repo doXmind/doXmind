@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Search, X, Loader2, Sparkles, Send } from "lucide-react";
+import { Search, X, Loader2, Send } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { telemetry } from "@/lib/telemetry";
 
 type SearchMode = "search" | "ask";
@@ -130,7 +131,7 @@ export function HomeSearch({
             )}
             aria-label="Ask AI mode"
           >
-            <Sparkles className="h-3 w-3" />
+            <AiLogoIcon size={12} />
             <span className="hidden sm:inline">Ask AI</span>
           </button>
           <button

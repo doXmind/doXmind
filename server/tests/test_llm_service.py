@@ -27,7 +27,7 @@ class MockChatCompletion:
 
     def __init__(self, text: str):
         self.choices = [MockChoice(text)]
-        self.model = "z-ai/glm-5"
+        self.model = "minimax/minimax-m2.5"
         self.usage = MagicMock(prompt_tokens=10, completion_tokens=20)
 
 
@@ -95,8 +95,8 @@ class TestLLMServiceInit:
     def test_init_with_custom_model(self):
         """Test service can use custom model."""
         with patch("services.llm_service.AsyncOpenAI"):
-            service = LLMService(model="z-ai/glm-5", api_key="test-key")
-            assert service.model == "z-ai/glm-5"
+            service = LLMService(model="minimax/minimax-m2.5", api_key="test-key")
+            assert service.model == "minimax/minimax-m2.5"
 
     def test_init_without_api_key_raises(self):
         """Test service raises error when API key is missing."""

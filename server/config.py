@@ -125,11 +125,14 @@ class Settings(BaseSettings):
     # =========================================================================
     # AI Models (OpenRouter format)
     # =========================================================================
-    default_model: str = "z-ai/glm-5"
+    default_model: str = "minimax/minimax-m2.5"
     fast_model: str = "z-ai/glm-4.7-flash"  # For quick operations (autocomplete, quick edits)
-    smart_model: str = "z-ai/glm-5"  # For complex operations (chat, analysis)
+    smart_model: str = "minimax/minimax-m2.5"  # For complex operations (chat, analysis)
     review_model: str = "google/gemini-3-flash-preview"  # For text review (needs JSON mode support)
     embedding_model: str = "openai/text-embedding-3-small"  # For vector search embeddings
+    embedding_dimension: int = (
+        256  # Embedding dimensions (text-embedding-3-small supports 256-1536)
+    )
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
     stt_model: str = "openai/whisper-1"  # For speech-to-text via OpenRouter
 
@@ -142,6 +145,7 @@ class Settings(BaseSettings):
 
     # Models available when user has their own API key
     available_models: list[str] = [
+        "minimax/minimax-m2.5",
         "z-ai/glm-5",
         "z-ai/glm-4.7-flash",
     ]

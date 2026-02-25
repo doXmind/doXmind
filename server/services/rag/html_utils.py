@@ -3,8 +3,10 @@
 import html as html_module
 import re
 
-# Embedding dimension for OpenAI text-embedding-3-small
-EMBEDDING_DIMENSION = 1536
+from config import get_settings
+
+# Get embedding dimension from config (supports 256-1536 for text-embedding-3-small)
+EMBEDDING_DIMENSION = get_settings().embedding_dimension
 
 
 def strip_html_tags(html: str) -> str:

@@ -119,7 +119,7 @@ class TestWritingAgentInit:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
 
@@ -135,7 +135,7 @@ class TestWritingAgentInit:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
 
@@ -150,7 +150,7 @@ class TestWritingAgentInit:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
@@ -184,7 +184,7 @@ class TestMessageBuilding:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -203,7 +203,7 @@ class TestMessageBuilding:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -227,7 +227,7 @@ class TestMessageBuilding:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -249,7 +249,7 @@ class TestMessageBuilding:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -283,7 +283,7 @@ class TestKBContext:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         agent = WritingAgent()
@@ -301,7 +301,7 @@ class TestKBContext:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         agent = WritingAgent(kb_attachments=[{"id": "att-1"}])
@@ -317,7 +317,7 @@ class TestKBContext:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
@@ -346,7 +346,7 @@ class TestStreaming:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
 
@@ -377,7 +377,7 @@ class TestStreaming:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
 
@@ -405,7 +405,7 @@ class TestStreaming:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
 
@@ -444,7 +444,7 @@ class TestRunMethod:
         mock_settings.return_value = MagicMock(
             openrouter_api_key="test-key",
             openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="z-ai/glm-5",
+            default_model="minimax/minimax-m2.5",
             max_output_tokens=4096,
         )
 

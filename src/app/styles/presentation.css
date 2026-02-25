@@ -161,6 +161,46 @@
   transition: color 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
+/* Center all text content in presentation mode */
+.presentation-content .ProseMirror > * {
+  text-align: center;
+}
+
+/* Ensure lists are centered and display inline-block for proper centering */
+.presentation-content .ProseMirror ul,
+.presentation-content .ProseMirror ol {
+  display: inline-block;
+  text-align: left; /* Keep list items left-aligned within the list */
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* Center headings explicitly */
+.presentation-content .ProseMirror h1,
+.presentation-content .ProseMirror h2,
+.presentation-content .ProseMirror h3,
+.presentation-content .ProseMirror h4,
+.presentation-content .ProseMirror h5,
+.presentation-content .ProseMirror h6 {
+  text-align: center;
+}
+
+/* Center paragraphs */
+.presentation-content .ProseMirror p {
+  text-align: center;
+}
+
+/* Keep code blocks left-aligned for readability */
+.presentation-content .ProseMirror pre,
+.presentation-content .ProseMirror code {
+  text-align: left;
+}
+
+/* Center blockquotes */
+.presentation-content .ProseMirror blockquote {
+  text-align: center;
+}
+
 /* Editable slide: subtle focus indicator */
 .presentation-content .ProseMirror:focus {
   outline: none;

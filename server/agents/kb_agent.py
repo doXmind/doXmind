@@ -146,7 +146,7 @@ class KBAgent:
             api_key=api_key or settings.openrouter_api_key,
             base_url=settings.openrouter_base_url,
         )
-        self.model = model or settings.fast_model
+        self.model = model or settings.default_model
         self.tools = KB_TOOLS
 
     async def stream(
