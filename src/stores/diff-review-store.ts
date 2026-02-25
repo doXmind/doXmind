@@ -20,6 +20,8 @@ interface DiffReviewState {
   isReviewMode: boolean;
   pendingFeedback: EditFeedbackItem[];
   currentHunkIndex: number;
+  /** Tracks whether currentHunkIndex changed from user navigation or auto-advance */
+  navigationSource: "user" | "auto" | null;
 
   // Actions
   startDiffReview: (fileId: string, hunks: DiffHunk[], originalContent: string) => void;
@@ -71,6 +73,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
   isReviewMode: false,
   pendingFeedback: [],
   currentHunkIndex: -1,
+  navigationSource: null,
 
   startDiffReview: (fileId, hunks, originalContent) => {
     const now = Date.now();
@@ -86,6 +89,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
       },
       isReviewMode: true,
       currentHunkIndex: 0,
+      navigationSource: null,
     });
   },
 
@@ -94,6 +98,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
       diffSession: null,
       isReviewMode: false,
       currentHunkIndex: -1,
+      navigationSource: null,
     }),
 
   acceptHunk: (hunkId) =>
@@ -138,6 +143,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
           hunks: updatedHunks,
         },
         currentHunkIndex: findNextPendingIndex(updatedHunks, state.currentHunkIndex),
+        navigationSource: "auto" as const,
       };
     }),
 
@@ -176,6 +182,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
           hunks: updatedHunks,
         },
         currentHunkIndex: findNextPendingIndex(updatedHunks, state.currentHunkIndex),
+        navigationSource: "auto" as const,
       };
     }),
 
@@ -264,14 +271,14 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
     set((state) => {
       if (!state.diffSession) return state;
       const nextIndex = findNextPendingIndex(state.diffSession.hunks, state.currentHunkIndex);
-      return { currentHunkIndex: nextIndex };
+      return { currentHunkIndex: nextIndex, navigationSource: "user" as const };
     }),
 
   goToPreviousHunk: () =>
     set((state) => {
       if (!state.diffSession) return state;
       const prevIndex = findPrevPendingIndex(state.diffSession.hunks, state.currentHunkIndex);
-      return { currentHunkIndex: prevIndex };
+      return { currentHunkIndex: prevIndex, navigationSource: "user" as const };
     }),
 
   setCurrentHunkIndex: (index: number) => set({ currentHunkIndex: index }),

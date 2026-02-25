@@ -89,6 +89,12 @@ export type MessageContextItem =
       mediaType?: string; // MIME type (image/jpeg, image/png, etc.)
     };
 
+/** Metadata for quick edit operations routed through chat */
+export interface QuickEditMetadata {
+  action: string;
+  originalText: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -98,6 +104,7 @@ export interface ChatMessage {
   isStreaming?: boolean;
   // User message specific fields
   contexts?: MessageContextItem[] | null;
+  quickEdit?: QuickEditMetadata | null;
   // AI response specific fields
   thinking?: string | null;
   toolCalls?: ToolCall[] | null;
@@ -152,27 +159,6 @@ export interface StreamEvent {
   tool?: string;
   input?: string;
   output?: string;
-}
-
-// =============================================================================
-// Quick Edit Types
-// =============================================================================
-
-export type QuickEditAction =
-  | "fix-grammar"
-  | "improve"
-  | "simplify"
-  | "expand"
-  | "shorten"
-  | "professional"
-  | "casual"
-  | "translate-en"
-  | "translate-zh";
-
-export interface QuickEditOption {
-  id: QuickEditAction;
-  label: string;
-  icon: React.ReactNode;
 }
 
 // =============================================================================

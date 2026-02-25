@@ -106,6 +106,8 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
       to: selection.to,
     });
     useLayoutStore.getState().setChatOpen(true);
+    // Collapse selection to dismiss bubble menu — text already captured as context
+    editor.commands.setTextSelection(selection.to);
   };
 
   const handleLinkConfirm = (url: string) => {

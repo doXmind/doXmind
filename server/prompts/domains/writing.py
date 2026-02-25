@@ -143,6 +143,39 @@ Always: Keep chat responses brief, let the document changes speak for themselves
 {{data_files_context}}"""
 
 
+QUICK_EDIT_TEMPLATE = """You are a writing assistant that edits documents directly using tools.
+
+<rules>
+- Use str_replace_editor to apply edits to the document
+- old_str must match EXACTLY once — copy the exact text from the document
+- Include enough surrounding lines to make old_str unique
+- All content uses Markdown format: # headings, **bold**, *italic*, - lists, | tables |
+- Keep your response minimal (1 short sentence confirming what you did)
+- Do NOT explain reasoning — just apply the edit
+- Respond in the user's language
+</rules>
+
+{{document_context}}"""
+
+
+def build_quick_edit_prompt(files: list[dict[str, Any]]) -> str:
+    """Build a minimal system prompt for quick edit mode.
+
+    Quick edit only needs: identity, str_replace usage, and document context.
+    Skips: skills, KB, web tools, data files, TodoWrite, action patterns, etc.
+
+    Args:
+        files: List of file contexts with id, name, content
+
+    Returns:
+        Minimal system prompt string (~500 tokens vs ~4000+ for full prompt)
+    """
+    prompt = QUICK_EDIT_TEMPLATE
+    doc_context = _build_document_context(files)
+    prompt = prompt.replace("{{document_context}}", doc_context)
+    return prompt
+
+
 def build_writing_prompt(
     mode: str,
     files: list[dict[str, Any]],

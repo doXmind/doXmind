@@ -428,6 +428,7 @@ export function VoiceEditPreview({
                           content={message.content}
                           isStreaming={message.isStreaming}
                           contexts={message.contexts ?? undefined}
+                          quickEdit={message.quickEdit ?? undefined}
                         >
                           {message.role === "assistant" &&
                             !message.isStreaming &&

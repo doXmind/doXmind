@@ -9,7 +9,19 @@ format following Cursor/Claude Code conventions.
 """
 
 from prompts.domains.edit import get_edit_instruction
-from prompts.domains.writing import build_kb_context, build_writing_prompt
+from prompts.domains.writing import build_kb_context, build_quick_edit_prompt, build_writing_prompt
+
+
+def get_quick_edit_system_prompt(files: list[dict]) -> str:
+    """Generate minimal system prompt for quick edit mode.
+
+    Args:
+        files: List of file contexts
+
+    Returns:
+        Minimal system prompt string
+    """
+    return build_quick_edit_prompt(files)
 
 
 def get_writing_system_prompt(

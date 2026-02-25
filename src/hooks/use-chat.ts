@@ -16,6 +16,7 @@ import { processSSEStream, isAbortError, createStreamController } from "@/lib/st
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { api } from "@/lib/api";
+import { QUICK_EDIT_PROMPTS } from "@/lib/quick-edit-prompts";
 import type { ChatStreamEvent } from "@/types/stream-events";
 
 // Re-export types for convenience
@@ -67,7 +68,8 @@ export function useChat() {
       message: string,
       fileIds: string[],
       contexts?: MessageContextItem[] | null,
-      dataFileIds?: string[]
+      dataFileIds?: string[],
+      quickEdit?: { action: string; originalText: string } | null
     ) => {
       const conversationId = ensureConversation(fileIds[0] || null);
 
@@ -126,6 +128,7 @@ export function useChat() {
         content: message,
         fileIds,
         contexts,
+        quickEdit: quickEdit || null,
       });
 
       // Track onboarding step
@@ -153,6 +156,7 @@ export function useChat() {
         content: message,
         fileIds,
         contexts: contextsForStorage,
+        quickEdit: quickEdit || null,
         createdAt: new Date().toISOString(),
       };
       saveMessageToBackend(conversationId, userMessage);
@@ -220,6 +224,8 @@ export function useChat() {
             webSearchEnabled: webToolsSettings.webSearchEnabled,
             // Data files for code execution sandbox
             dataFileIds: dataFileIds || [],
+            // Quick edit mode flag for backend optimization
+            isQuickEdit: !!quickEdit,
           }),
           signal,
         });
@@ -570,8 +576,23 @@ export function useChat() {
     streamControllerRef.current.abort();
   }, []);
 
+  /** Send a quick edit action as a chat message with selection context */
+  const sendQuickEditMessage = useCallback(
+    async (action: string, selectedText: string, fileIds: string[]) => {
+      const prompt = QUICK_EDIT_PROMPTS[action];
+      if (!prompt) return;
+
+      const contexts: MessageContextItem[] = [{ type: "selection", text: selectedText }];
+      const quickEdit = { action, originalText: selectedText };
+
+      await sendMessage(prompt, fileIds, contexts, [], quickEdit);
+    },
+    [sendMessage]
+  );
+
   return {
     sendMessage,
+    sendQuickEditMessage,
     isStreaming,
     stopStreaming,
     currentTool,

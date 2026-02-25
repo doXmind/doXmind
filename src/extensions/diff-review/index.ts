@@ -6,20 +6,20 @@
  */
 
 import { Extension } from "@tiptap/core";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { DOMParser as ProseMirrorDOMParser, Slice } from "@tiptap/pm/model";
 import type { DiffHunk } from "@/types/diff";
 import { markdownToHtml, isHtml } from "@/lib/markdown";
 
 import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
-import { findTextInDocument } from "./position-mapping";
+import { findTextInDocument, findTextNormalized } from "./position-mapping";
 import { createInsertWidget, createActionWidget } from "./diff-widgets";
 import { normalizeTableHtml, normalizeMermaidHtml } from "./replacement-utils";
 
 // Re-export types for external use
 export * from "./diff-types";
-export { findTextInDocument, findAllTextInDocument } from "./position-mapping";
+export { findTextInDocument, findAllTextInDocument, findTextNormalized } from "./position-mapping";
 export { createInsertWidget, createActionWidget } from "./diff-widgets";
 
 /**
@@ -145,34 +145,67 @@ export const DiffReviewExtension = Extension.create({
                   pmTextCache.set(hunk.oldContent, cached);
                 }
 
-                // Use block type hint to disambiguate when same text appears in TOC and heading
-                const found = findTextInDocument(
+                // Strategy 1: Exact match using ProseMirror-parsed textContent
+                let found = findTextInDocument(
                   state.doc,
                   cached.textContent,
                   usedPositions,
                   cached.blockType
                 );
 
+                // Strategy 2: Try searchText from markdownToPlainText (different conversion path)
+                if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
+                  found = findTextInDocument(
+                    state.doc,
+                    hunk.searchText,
+                    usedPositions,
+                    cached.blockType
+                  );
+                  if (found) {
+                    console.debug(
+                      `[DiffReview] Matched via searchText fallback for hunk ${hunk.id}`
+                    );
+                  }
+                }
+
+                // Strategy 3: Normalized whitespace match
+                if (!found) {
+                  found = findTextNormalized(
+                    state.doc,
+                    cached.textContent,
+                    usedPositions,
+                    cached.blockType
+                  );
+                  if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
+                    found = findTextNormalized(
+                      state.doc,
+                      hunk.searchText,
+                      usedPositions,
+                      cached.blockType
+                    );
+                  }
+                  if (found) {
+                    console.debug(
+                      `[DiffReview] Matched via normalized fallback for hunk ${hunk.id}`
+                    );
+                  }
+                }
+
                 if (found) {
                   from = found.from;
                   to = found.to;
-                  // Place buttons at the start of the containing block (paragraph)
-                  // +1 to get inside the block node
                   buttonPos = found.blockStart + 1;
-                  // Mark this position as used
                   usedPositions.add(from);
-                  // Store resolved position directly on the hunk for use by accept command
                   hunk.resolvedFrom = from;
                   hunk.resolvedTo = to;
                 } else {
-                  // Fallback to stored positions (may be inaccurate)
-                  const docSize = state.doc.content.size;
-                  from = Math.max(0, Math.min(hunk.from, docSize));
-                  to = Math.max(from, Math.min(hunk.to, docSize));
-                  buttonPos = from;
-                  console.warn(`[DiffReview] Position resolution failed for hunk ${hunk.id}`, {
-                    searchText: cached.textContent?.slice(0, 80),
+                  // Skip rendering this hunk — don't place at wrong position
+                  console.error(`[DiffReview] All matching strategies failed for hunk ${hunk.id}`, {
+                    pmTextContent: cached.textContent?.slice(0, 100),
+                    searchText: hunk.searchText?.slice(0, 100),
+                    docTextLength: state.doc.textContent.length,
                   });
+                  continue;
                 }
               } else {
                 // Insert mode (oldContent is empty): use stored position
@@ -320,19 +353,40 @@ export const DiffReviewExtension = Extension.create({
                 cached = { textContent: parsed.textContent, blockType };
                 pmTextCache.set(hunk.oldContent, cached);
               }
-              const found = findTextInDocument(
+              // Same 3-strategy fallback as decoration rendering
+              let found = findTextInDocument(
                 state.doc,
                 cached.textContent,
                 undefined,
                 cached.blockType
               );
+              if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
+                found = findTextInDocument(state.doc, hunk.searchText, undefined, cached.blockType);
+              }
+              if (!found) {
+                found = findTextNormalized(
+                  state.doc,
+                  cached.textContent,
+                  undefined,
+                  cached.blockType
+                );
+                if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
+                  found = findTextNormalized(
+                    state.doc,
+                    hunk.searchText,
+                    undefined,
+                    cached.blockType
+                  );
+                }
+              }
               if (found) {
                 from = found.from;
                 to = found.to;
               } else {
-                const docSize = state.doc.content.size;
-                from = Math.max(0, Math.min(hunk.from, docSize));
-                to = Math.max(from, Math.min(hunk.to, docSize));
+                console.error(
+                  `[DiffReview] Accept: all matching strategies failed for hunk ${hunk.id}`
+                );
+                return false;
               }
             }
           } else {
@@ -386,6 +440,14 @@ export const DiffReviewExtension = Extension.create({
             if (from < to) {
               tr.delete(from, to);
             }
+          }
+
+          // Collapse cursor to avoid selecting the next block
+          try {
+            const cursorPos = Math.min(tr.mapping.map(from), tr.doc.content.size);
+            tr.setSelection(TextSelection.create(tr.doc, cursorPos));
+          } catch {
+            // Position may be invalid after complex replacements — leave default
           }
 
           // Update hunk status

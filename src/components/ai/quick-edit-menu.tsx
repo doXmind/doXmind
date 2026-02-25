@@ -4,8 +4,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
-import { useQuickEdit } from "@/hooks/use-quick-edit";
-import { useMockQuickEdit } from "@/hooks/use-mock-quick-edit";
 import { useMenuPosition, getSubmenuPosition } from "@/hooks/use-menu-position";
 import { useMenuKeyboard } from "@/hooks/use-menu-keyboard";
 import { QUICK_EDIT_OPTIONS } from "./quick-edit-options";
@@ -16,16 +14,12 @@ const MENU_SPRING = { stiffness: 500, damping: 30, mass: 0.8 };
 const ITEM_SPRING = { stiffness: 400, damping: 25 };
 
 interface QuickEditMenuProps {
-  onApply: (newText: string, selection: { from: number; to: number }) => void;
-  isDemoMode?: boolean;
+  /** Called when user selects a quick edit action. Routes through chat system. */
+  onQuickEdit: (action: string, selectedText: string) => void;
 }
 
-export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProps) {
+export function QuickEditMenu({ onQuickEdit }: QuickEditMenuProps) {
   const { quickEditOpen, quickEditPosition, selection, closeQuickEdit } = useEditorStore();
-  // Use mock quick edit in demo mode, real API otherwise
-  const realQuickEdit = useQuickEdit();
-  const mockQuickEdit = useMockQuickEdit();
-  const { edit, isEditing, result } = isDemoMode ? mockQuickEdit : realQuickEdit;
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
@@ -54,7 +48,7 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
       const isInsideMenu = menuRef.current?.contains(target);
       const isInsideSubmenu = submenuRef.current?.contains(target);
 
-      if (isInsideMenu || isInsideSubmenu || isEditing) return;
+      if (isInsideMenu || isInsideSubmenu) return;
 
       closeQuickEdit();
       setActiveSubmenu(null);
@@ -64,22 +58,7 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [quickEditOpen, closeQuickEdit, isEditing]);
-
-  // Apply result when editing completes
-  useEffect(() => {
-    if (result && savedSelectionRef.current) {
-      onApply(result, savedSelectionRef.current);
-      closeQuickEdit();
-      setActiveSubmenu(null);
-      // Track onboarding step
-      import("@/stores/onboarding-store")
-        .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeStep("quick-edit");
-        })
-        .catch(() => {});
-    }
-  }, [result, onApply, closeQuickEdit]);
+  }, [quickEditOpen, closeQuickEdit]);
 
   // Reset state when menu closes
   useEffect(() => {
@@ -91,13 +70,23 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
   }, [quickEditOpen]);
 
   const handleSelect = useCallback(
-    async (action: string) => {
+    (action: string) => {
       const textToEdit = savedSelectionRef.current?.text || selection?.text;
       if (!textToEdit) return;
+
+      // Route through chat system - close menu immediately
+      onQuickEdit(action, textToEdit);
+      closeQuickEdit();
       setActiveSubmenu(null);
-      await edit(textToEdit, action);
+
+      // Track onboarding step
+      import("@/stores/onboarding-store")
+        .then(({ useOnboardingStore }) => {
+          useOnboardingStore.getState().completeStep("quick-edit");
+        })
+        .catch(() => {});
     },
-    [selection, edit]
+    [selection, onQuickEdit, closeQuickEdit]
   );
 
   // Handle main menu item selection
@@ -133,7 +122,7 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
   // Use keyboard navigation hook
   useMenuKeyboard({
     isOpen: quickEditOpen,
-    isProcessing: isEditing,
+    isProcessing: false,
     focusedIndex,
     setFocusedIndex,
     totalItems: QUICK_EDIT_OPTIONS.length,
@@ -184,7 +173,6 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
             key={option.id}
             option={option}
             index={index}
-            isEditing={isEditing}
             isFocused={focusedIndex === index}
             isSubmenuActive={activeSubmenu === option.id}
             onSelect={handleSelect}
@@ -194,28 +182,6 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
             }}
           />
         ))}
-
-        {/* Processing indicator */}
-        <AnimatePresence>
-          {isEditing && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div className="my-1 h-px bg-border" />
-              <div className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground">
-                <motion.div
-                  className="h-3 w-3 rounded-full border-2 border-primary border-t-transparent"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                />
-                Processing...
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </motion.div>
 
       {/* Submenu */}
@@ -232,7 +198,7 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
             className="fixed z-[60] min-w-[140px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-1 shadow-lg"
             style={{ top: submenuPos.top, left: submenuPos.left }}
             onMouseEnter={() => setActiveSubmenu(activeSubmenu)}
-            onMouseLeave={() => !isEditing && setActiveSubmenu(null)}
+            onMouseLeave={() => setActiveSubmenu(null)}
           >
             {activeOption.submenu.map((subItem, subIndex) => (
               <motion.button
@@ -243,14 +209,12 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
                   handleSelect(subItem.id);
                 }}
                 onMouseEnter={() => setSubmenuFocusedIndex(subIndex)}
-                disabled={isEditing}
                 whileHover={{ scale: 1.02, x: 2 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", ...ITEM_SPRING }}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
                   "hover:bg-accent hover:text-accent-foreground",
-                  "disabled:pointer-events-none disabled:opacity-50",
                   submenuFocusedIndex === subIndex && "bg-accent text-accent-foreground"
                 )}
               >
@@ -268,7 +232,6 @@ export function QuickEditMenu({ onApply, isDemoMode = false }: QuickEditMenuProp
 interface MenuOptionProps {
   option: (typeof QUICK_EDIT_OPTIONS)[number];
   index: number;
-  isEditing: boolean;
   isFocused: boolean;
   isSubmenuActive: boolean;
   onSelect: (id: string) => void;
@@ -278,7 +241,6 @@ interface MenuOptionProps {
 function MenuOption({
   option,
   index,
-  isEditing,
   isFocused,
   isSubmenuActive,
   onSelect,
@@ -290,14 +252,12 @@ function MenuOption({
     <div data-submenu-trigger={option.id} onMouseEnter={() => onHover(index)}>
       <motion.button
         onClick={hasSubmenu ? undefined : () => onSelect(option.id)}
-        disabled={isEditing}
         whileHover={{ scale: 1.02, x: 2 }}
         whileTap={{ scale: 0.98 }}
         transition={{ type: "spring", ...ITEM_SPRING }}
         className={cn(
           "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
           "hover:bg-accent hover:text-accent-foreground",
-          "disabled:pointer-events-none disabled:opacity-50",
           (isSubmenuActive || isFocused) && "bg-accent text-accent-foreground"
         )}
       >

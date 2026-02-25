@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { User, ChevronDown, ChevronRight, ImageIcon, FileText } from "lucide-react";
+import { User, ChevronDown, ChevronRight, ImageIcon, FileText, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
+import { QUICK_EDIT_LABELS } from "@/lib/quick-edit-prompts";
 import { marked } from "marked";
 import katex from "katex";
 
@@ -69,6 +70,8 @@ interface ChatMessageProps {
   content: string;
   isStreaming?: boolean;
   contexts?: MessageContextItem[];
+  /** Quick edit metadata for messages originated from quick edit menu */
+  quickEdit?: { action: string; originalText: string } | null;
   /** Slot for feedback toolbar, sources, etc. below the message */
   children?: React.ReactNode;
   className?: string;
@@ -134,6 +137,7 @@ export function ChatMessage({
   content,
   isStreaming,
   contexts,
+  quickEdit,
   children,
   className,
 }: ChatMessageProps) {
@@ -182,6 +186,16 @@ export function ChatMessage({
 
       {/* Content area — indented past avatar */}
       <div className="pl-7">
+        {/* Quick edit badge */}
+        {isUser && quickEdit && (
+          <div className="mb-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              <Sparkles className="h-3 w-3" />
+              {QUICK_EDIT_LABELS[quickEdit.action] || "Quick Edit"}
+            </span>
+          </div>
+        )}
+
         {/* Contexts above user message */}
         {isUser && contexts && contexts.length > 0 && (
           <div className="mb-2 space-y-0.5">

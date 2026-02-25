@@ -462,6 +462,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
                   content={message.content}
                   isStreaming={message.isStreaming}
                   contexts={message.contexts ?? undefined}
+                  quickEdit={message.quickEdit ?? undefined}
                 >
                   {/* Feedback toolbar for completed AI messages */}
                   {message.role === "assistant" &&

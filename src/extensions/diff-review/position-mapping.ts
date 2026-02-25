@@ -2,7 +2,7 @@
  * Diff Review Extension - Position Mapping Utilities
  *
  * Functions for finding text positions in ProseMirror documents.
- * Uses exact match only (Claude Code-style).
+ * Supports exact match (primary) and normalized whitespace match (fallback).
  */
 
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -153,4 +153,97 @@ export function findTextInDocument(
   // Multiple candidates: prefer the one in the matching block type
   const preferred = candidates.find((c) => c.blockTypeName === preferredBlockType);
   return preferred || candidates[0];
+}
+
+/**
+ * Disambiguate among multiple candidates using preferredBlockType.
+ */
+function disambiguate(
+  candidates: TextPosition[],
+  preferredBlockType?: string | null
+): TextPosition | null {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1 || !preferredBlockType) return candidates[0];
+  const preferred = candidates.find((c) => c.blockTypeName === preferredBlockType);
+  return preferred || candidates[0];
+}
+
+/**
+ * Find text in document with normalized whitespace matching.
+ * Collapses consecutive whitespace to single spaces before comparing.
+ * Used as a fallback when exact match fails due to whitespace differences.
+ */
+export function findTextNormalized(
+  doc: PMNode,
+  searchText: string,
+  excludePositions?: Set<number>,
+  preferredBlockType?: string | null
+): TextPosition | null {
+  if (!searchText) return null;
+
+  const normalizedSearch = searchText.replace(/\s+/g, " ").trim();
+  if (!normalizedSearch) return null;
+
+  const entries = buildTextPositionMap(doc);
+  const fullText = doc.textContent;
+
+  // Build normalized version of doc text, tracking original char indices
+  const normalizedChars: { char: string; origIdx: number }[] = [];
+  let lastWasSpace = true; // treat start as space to trim leading
+  for (let i = 0; i < fullText.length; i++) {
+    const ch = fullText[i];
+    if (/\s/.test(ch)) {
+      if (!lastWasSpace) {
+        normalizedChars.push({ char: " ", origIdx: i });
+        lastWasSpace = true;
+      }
+    } else {
+      normalizedChars.push({ char: ch, origIdx: i });
+      lastWasSpace = false;
+    }
+  }
+  // Trim trailing space
+  if (normalizedChars.length > 0 && normalizedChars[normalizedChars.length - 1].char === " ") {
+    normalizedChars.pop();
+  }
+
+  const normalizedFullText = normalizedChars.map((c) => c.char).join("");
+  const results: TextPosition[] = [];
+  let start = 0;
+
+  while (start < normalizedFullText.length) {
+    const idx = normalizedFullText.indexOf(normalizedSearch, start);
+    if (idx === -1) break;
+
+    // Map back to original offsets
+    const origStart = normalizedChars[idx].origIdx;
+    const lastIdx = idx + normalizedSearch.length - 1;
+    const origEnd = normalizedChars[lastIdx].origIdx + 1;
+
+    const pos = mapOffsetsToPosition(origStart, origEnd, entries);
+    if (pos) {
+      try {
+        const $pos = doc.resolve(pos.from);
+        for (let d = $pos.depth; d > 0; d--) {
+          if ($pos.node(d).isBlock) {
+            pos.blockTypeName = $pos.node(d).type.name;
+            break;
+          }
+        }
+      } catch {
+        // Ignore resolution errors
+      }
+      results.push(pos);
+    }
+    start = idx + 1;
+  }
+
+  if (results.length === 0) return null;
+
+  const candidates =
+    excludePositions && excludePositions.size > 0
+      ? results.filter((occ) => !excludePositions.has(occ.from))
+      : results;
+
+  return disambiguate(candidates, preferredBlockType);
 }

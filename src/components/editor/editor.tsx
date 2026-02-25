@@ -28,6 +28,7 @@ import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useDemoStore } from "@/stores/demo-store";
 import { useEditorStore, type LastAIOperation } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useChat } from "@/hooks/use-chat";
 import { telemetry, type UndoAfterAIEvent } from "@/lib/telemetry";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
@@ -38,7 +39,6 @@ import { TableHandles } from "./table-handles";
 import { applyPendingEdit } from "./editor-edit-operations";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { useFeatureHints } from "@/components/onboarding/feature-hints";
-import { api } from "@/lib/api";
 
 interface EditorProps {
   file: FileItem;
@@ -430,23 +430,22 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     }
   }, [setReviewPanelOpen, isReviewActive, clearReview]);
 
-  // Handle Quick Edit apply
-  const handleQuickEditApply = useCallback(
-    (newText: string, savedSelection: { from: number; to: number }) => {
-      if (!editor) return;
-      editor
-        .chain()
-        .focus()
-        .setTextSelection({ from: savedSelection.from, to: savedSelection.to })
-        .insertContent(newText)
-        .run();
+  // Quick Edit via chat system
+  const { sendQuickEditMessage } = useChat();
+  const setChatOpen = useLayoutStore((s) => s.setChatOpen);
 
-      // Create version snapshot for quick edit
-      if (!isDemoMode) {
-        api.createVersion(file.id, editor.getHTML(), "ai_quick_edit", "Quick edit").catch(() => {});
+  const handleQuickEdit = useCallback(
+    (action: string, selectedText: string) => {
+      const effectiveFileId = isDemoMode ? "demo-file" : file.id;
+      sendQuickEditMessage(action, selectedText, [effectiveFileId]);
+      // Auto-open chat panel to show the result
+      setChatOpen(true);
+      // Collapse selection to dismiss bubble menu — text already captured
+      if (editor) {
+        editor.commands.setTextSelection(editor.state.selection.to);
       }
     },
-    [editor, file.id, isDemoMode]
+    [sendQuickEditMessage, file.id, isDemoMode, setChatOpen, editor]
   );
 
   // Handle Image Modal confirm
@@ -572,9 +571,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />
           <EditorContextMenu editor={editor} />
-          {!isReviewMode && (
-            <QuickEditMenu onApply={handleQuickEditApply} isDemoMode={isDemoMode} />
-          )}
+          {!isReviewMode && <QuickEditMenu onQuickEdit={handleQuickEdit} />}
         </>
       )}
 

@@ -132,6 +132,10 @@ TOOLS = DOCUMENT_TOOLS
 # get_document_outline, read_section, view_document, search_in_document
 READONLY_TOOLS = [DOCUMENT_TOOLS[i] for i in (0, 1, 2, 5)]
 
+# Minimal tools for quick edit mode
+# str_replace_editor (index 3) + view_document (index 2) for long doc fallback
+QUICK_EDIT_TOOLS = [DOCUMENT_TOOLS[i] for i in (3, 2)]
+
 
 # ============================================================================
 # Knowledge Base Tools Definition
@@ -396,6 +400,7 @@ def get_tools_for_mode(
     has_kb_attachments: bool = False,
     has_skills: bool = False,
     web_search_enabled: bool = False,
+    is_quick_edit: bool = False,
 ) -> list[dict]:
     """Get the appropriate tools based on mode and feature flags.
 
@@ -404,6 +409,7 @@ def get_tools_for_mode(
         has_kb_attachments: Whether KB attachments exist for this conversation
         has_skills: Whether skills are available
         web_search_enabled: Whether Brave web search tool is enabled
+        is_quick_edit: Quick edit mode - only str_replace_editor + view_document
 
     Returns:
         List of tool definitions for the API
@@ -412,6 +418,10 @@ def get_tools_for_mode(
         External tools (like LEGAL_TOOLS) are loaded dynamically
         when their associated skill is read via SKILL_EXTERNAL_TOOLS mapping.
     """
+    # Quick edit: minimal tool set for fast, focused edits
+    if is_quick_edit:
+        return list(QUICK_EDIT_TOOLS)
+
     base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
     tools = list(base_tools)  # Make a copy
 

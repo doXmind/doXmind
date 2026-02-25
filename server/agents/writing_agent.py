@@ -20,6 +20,7 @@ from openai import AsyncOpenAI
 
 from agents.prompts import (
     get_kb_context_prompt,
+    get_quick_edit_system_prompt,
     get_skills_metadata_prompt,
     get_writing_system_prompt,
 )
@@ -48,6 +49,7 @@ class WritingAgent:
         db=None,
         api_key: str | None = None,
         model: str | None = None,
+        is_quick_edit: bool = False,
     ):
         """Initialize the writing agent.
 
@@ -59,8 +61,10 @@ class WritingAgent:
             db: Database session for RAG operations
             api_key: User's OpenRouter API key (uses server key if not provided)
             model: User's preferred model (uses default if not provided)
+            is_quick_edit: Quick edit mode - optimizes for direct text editing
         """
         self.mode = mode
+        self.is_quick_edit = is_quick_edit
         self.kb_attachments = kb_attachments or []
         self.data_files_metadata = data_files_metadata or []
         self.web_search_enabled = web_search_enabled
@@ -100,6 +104,7 @@ class WritingAgent:
             has_kb_attachments=bool(self.kb_attachments),
             has_skills=self.has_skills,
             web_search_enabled=web_search_enabled,
+            is_quick_edit=self.is_quick_edit,
         )
 
         # Create tool executor
@@ -139,19 +144,23 @@ class WritingAgent:
         if files:
             files[0]["is_current"] = True
 
-        # Build system prompt (includes data files metadata for agent awareness)
-        system_prompt = get_writing_system_prompt(
-            mode=self.mode,
-            files=files,
-            data_files_metadata=self.data_files_metadata if self.data_files_metadata else None,
-        )
-        if self.kb_attachments:
-            system_prompt += get_kb_context_prompt(self.kb_attachments)
+        # Build system prompt
+        if self.is_quick_edit:
+            # Minimal prompt for quick edit: ~500 tokens vs ~4000+ for full prompt
+            system_prompt = get_quick_edit_system_prompt(files)
+        else:
+            system_prompt = get_writing_system_prompt(
+                mode=self.mode,
+                files=files,
+                data_files_metadata=self.data_files_metadata if self.data_files_metadata else None,
+            )
+            if self.kb_attachments:
+                system_prompt += get_kb_context_prompt(self.kb_attachments)
 
-        # Inject skills metadata if available (progressive disclosure pattern)
-        if self.has_skills:
-            skills_metadata = get_skills_service().list_skills()
-            system_prompt += get_skills_metadata_prompt(skills_metadata)
+            # Inject skills metadata if available (progressive disclosure pattern)
+            if self.has_skills:
+                skills_metadata = get_skills_service().list_skills()
+                system_prompt += get_skills_metadata_prompt(skills_metadata)
 
         # Build messages (async to support file uploads)
         messages = await self._build_messages(message, images, data_files, history)

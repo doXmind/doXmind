@@ -64,6 +64,8 @@ class ChatRequest(BaseModel):
     webSearchEnabled: bool = False
     # Data file IDs to pass to code execution sandbox
     dataFileIds: list[str] = []
+    # Quick edit flag - optimizes agent for direct text editing
+    isQuickEdit: bool = False
 
 
 # ============================================================================
@@ -288,6 +290,7 @@ async def chat_stream(
                 db=db,
                 api_key=user_api_key,
                 model=user_model,
+                is_quick_edit=request.isQuickEdit,
             )
 
             # Prepare file context

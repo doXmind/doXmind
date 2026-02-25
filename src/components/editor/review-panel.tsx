@@ -8,11 +8,12 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Sparkles,
   Loader2,
   ArrowRight,
   Trash2,
+  Sparkles,
 } from "lucide-react";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -143,12 +144,12 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="flex h-full w-80 flex-col border-l border-border bg-card">
+    <div className="bg-sidebar flex h-full w-80 flex-col border-l border-border">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold">Writing Review</span>
+          <AiLogoIcon className="h-4 w-4" />
+          <span className="text-xs font-medium text-muted-foreground">Writing Review</span>
           {pendingSuggestions.length > 0 && (
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
               {pendingSuggestions.length}

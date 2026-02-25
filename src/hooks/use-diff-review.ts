@@ -54,6 +54,7 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
     acceptAllHunks,
     rejectAllHunks,
     currentHunkIndex,
+    navigationSource,
     goToNextHunk,
     goToPreviousHunk,
   } = useDiffReviewStore();
@@ -94,9 +95,12 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
     return () => clearTimeout(timer);
   }, [editor, diffSession, isReviewMode]);
 
-  // Scroll + focus when currentHunkIndex changes (navigation)
+  // Scroll + focus when currentHunkIndex changes via explicit user navigation only
   useEffect(() => {
     if (!editor || !diffSession || currentHunkIndex < 0) return;
+    // Only focus/scroll on explicit user navigation (next/prev buttons),
+    // not on auto-advance after accept/reject
+    if (navigationSource !== "user") return;
 
     const hunk = diffSession.hunks[currentHunkIndex];
     if (!hunk || hunk.status !== "pending") return;
@@ -105,14 +109,18 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
     editor.commands.setFocusedHunk(hunk.id);
     // Scroll into view
     scrollToHunk(editor, hunk);
-  }, [editor, diffSession, currentHunkIndex]);
+  }, [editor, diffSession, currentHunkIndex, navigationSource]);
 
-  // Clear focus when review ends
+  // Clear focus when review ends or after accept/reject (auto-advance)
   useEffect(() => {
-    if (!isReviewMode && editor) {
+    if (!editor) return;
+    if (!isReviewMode) {
+      editor.commands.setFocusedHunk(null);
+    } else if (navigationSource === "auto") {
+      // After accept/reject, clear the focus so the next hunk isn't auto-highlighted
       editor.commands.setFocusedHunk(null);
     }
-  }, [isReviewMode, editor]);
+  }, [isReviewMode, editor, navigationSource]);
 
   // Handle diff accept/reject events from custom events
   useEffect(() => {

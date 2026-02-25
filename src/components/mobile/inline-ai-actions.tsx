@@ -1,20 +1,23 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { Editor } from "@tiptap/react";
-import { Wand2, Scissors, Maximize2, Check, Languages, Loader2 } from "lucide-react";
+import { Wand2, Scissors, Maximize2, Check, Languages } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
+import { useLayoutStore } from "@/stores/layout-store";
+import { useChat } from "@/hooks/use-chat";
 import { MOBILE_SPRINGS, Z_INDEX } from "@/lib/constants";
 import { haptics } from "@/lib/haptics";
-import { useQuickEdit } from "@/hooks/use-quick-edit";
+import { useFileStore } from "@/stores/file-store";
 
 interface QuickAIAction {
   id: string;
   label: string;
   icon: React.ReactNode;
-  prompt: string;
+  /** Backend action ID for quick edit prompt mapping */
+  backendAction: string;
 }
 
 const QUICK_ACTIONS: QuickAIAction[] = [
@@ -22,97 +25,70 @@ const QUICK_ACTIONS: QuickAIAction[] = [
     id: "improve",
     label: "Improve",
     icon: <Wand2 className="h-4 w-4" />,
-    prompt: "Improve the writing quality of this text while preserving its meaning:",
+    backendAction: "improve",
   },
   {
     id: "shorten",
     label: "Shorten",
     icon: <Scissors className="h-4 w-4" />,
-    prompt: "Make this text more concise while keeping the key points:",
+    backendAction: "shorten",
   },
   {
     id: "expand",
     label: "Expand",
     icon: <Maximize2 className="h-4 w-4" />,
-    prompt: "Expand this text with more detail and explanation:",
+    backendAction: "expand",
   },
   {
     id: "fix",
     label: "Fix",
     icon: <Check className="h-4 w-4" />,
-    prompt: "Fix any grammar, spelling, or punctuation errors in this text:",
+    backendAction: "fix-grammar",
   },
   {
     id: "translate",
     label: "Translate",
     icon: <Languages className="h-4 w-4" />,
-    prompt: "Translate this text to English (or the user's preferred language):",
+    backendAction: "translate-en",
   },
 ];
-
-// Map mobile action IDs to backend action IDs
-const ACTION_ID_MAP: Record<string, string> = {
-  improve: "improve",
-  shorten: "shorten",
-  expand: "expand",
-  fix: "fix-grammar",
-  translate: "translate-en",
-};
 
 interface InlineAIActionsProps {
   editor: Editor | null;
   position: { x: number; y: number } | null;
   visible: boolean;
-  onAction?: (action: string, result: string) => void;
+  onAction?: (action: string) => void;
 }
 
 export function InlineAIActions({ editor, position, visible, onAction }: InlineAIActionsProps) {
   const { selection } = useEditorStore();
-  const { edit, cancel, isEditing } = useQuickEdit();
-  const [activeActionId, setActiveActionId] = useState<string | null>(null);
-
-  // Cancel AI request when component becomes invisible
-  useEffect(() => {
-    if (!visible) {
-      cancel();
-      setActiveActionId(null);
-    }
-  }, [visible, cancel]);
+  const { sendQuickEditMessage, isStreaming } = useChat();
+  const { currentFileId } = useFileStore();
+  const setMobileChatOverlayOpen = useLayoutStore((s) => s.setMobileChatOverlayOpen);
 
   const handleAction = useCallback(
-    async (action: QuickAIAction) => {
-      if (!editor || !selection?.text) return;
+    (action: QuickAIAction) => {
+      if (!editor || !selection?.text || isStreaming) return;
 
       haptics.medium();
-      setActiveActionId(action.id);
 
-      try {
-        // Map action ID to backend action
-        const backendAction = ACTION_ID_MAP[action.id] || action.id;
+      const fileId = currentFileId || "demo-file";
+      sendQuickEditMessage(action.backendAction, selection.text, [fileId]);
 
-        // Call AI via hook
-        const result = await edit(selection.text, backendAction);
+      // Open mobile chat to show the result
+      setMobileChatOverlayOpen(true);
 
-        if (result) {
-          // Apply the result to the editor - replace selection with AI result
-          editor
-            .chain()
-            .focus()
-            .setTextSelection({ from: selection.from, to: selection.to })
-            .insertContent(result)
-            .run();
-
-          haptics.success();
-          onAction?.(action.id, result);
-        }
-      } catch (error) {
-        haptics.error();
-        console.error("AI action failed:", error);
-      } finally {
-        setActiveActionId(null);
-      }
+      onAction?.(action.id);
     },
-    [editor, selection, onAction, edit]
+    [
+      editor,
+      selection,
+      isStreaming,
+      currentFileId,
+      sendQuickEditMessage,
+      setMobileChatOverlayOpen,
+      onAction,
+    ]
   );
 
   if (!visible || !position || !selection?.text) return null;
@@ -141,22 +117,17 @@ export function InlineAIActions({ editor, position, visible, onAction }: InlineA
             key={action.id}
             type="button"
             onClick={() => handleAction(action)}
-            disabled={isEditing}
+            disabled={isStreaming}
             className={cn(
               "flex items-center gap-1.5 rounded-full px-3 py-2",
               "text-sm font-medium transition-colors",
               "active:scale-95",
-              isEditing && activeActionId === action.id
-                ? "bg-primary text-primary-foreground"
-                : "text-foreground hover:bg-accent"
+              "text-foreground hover:bg-accent",
+              "disabled:pointer-events-none disabled:opacity-50"
             )}
             whileTap={{ scale: 0.95 }}
           >
-            {isEditing && activeActionId === action.id ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              action.icon
-            )}
+            {action.icon}
             <span className="hidden sm:inline">{action.label}</span>
           </motion.button>
         ))}

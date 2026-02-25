@@ -32,7 +32,7 @@ export function ChatToolStep({ tool, defaultExpanded = false }: ChatToolStepProp
         type="button"
         onClick={() => hasDetail && setIsExpanded(!isExpanded)}
         className={cn(
-          "flex items-center gap-1.5 rounded-md py-1 text-xs transition-colors",
+          "flex max-w-full items-center gap-1.5 rounded-md py-1 text-xs transition-colors",
           hasDetail && "cursor-pointer hover:bg-muted/50",
           !hasDetail && "cursor-default",
           tool.status === "running" && "text-foreground",
@@ -53,7 +53,7 @@ export function ChatToolStep({ tool, defaultExpanded = false }: ChatToolStepProp
         <Icon className="h-3 w-3 flex-shrink-0" />
 
         {/* Tool name */}
-        <span className="truncate">
+        <span className="min-w-0 truncate">
           {tool.status === "running" ? `${displayName}...` : tool.message || displayName}
         </span>
 
