@@ -77,6 +77,12 @@
     --diff-btn-reject-bg: rgba(255, 59, 48, 0.1);
     --diff-btn-reject-fg: rgb(196, 43, 28);
     --diff-btn-reject-hover: rgba(255, 59, 48, 0.18);
+
+    /* Word-level diff (Notion-style inline) */
+    --diff-word-removed-bg: rgba(255, 59, 48, 0.12);
+    --diff-word-removed-fg: rgba(255, 59, 48, 0.8);
+    --diff-word-added-bg: rgba(52, 199, 89, 0.12);
+    --diff-word-added-fg: rgb(36, 138, 61);
   }
 
   .dark {
@@ -126,6 +132,12 @@
     --diff-btn-reject-bg: rgba(255, 69, 58, 0.12);
     --diff-btn-reject-fg: rgb(255, 69, 58);
     --diff-btn-reject-hover: rgba(255, 69, 58, 0.2);
+
+    /* Word-level diff (Notion-style inline) */
+    --diff-word-removed-bg: rgba(255, 69, 58, 0.15);
+    --diff-word-removed-fg: rgba(255, 69, 58, 0.75);
+    --diff-word-added-bg: rgba(48, 209, 88, 0.12);
+    --diff-word-added-fg: rgb(48, 209, 88);
   }
 
   /* High Contrast Mode - Light */

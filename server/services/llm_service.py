@@ -25,6 +25,20 @@ class LLMService:
         self.model = model or settings.default_model
         self.max_tokens = settings.max_output_tokens
         self.last_usage: dict | None = None
+        self._provider_sort = settings.openrouter_provider_sort
+
+    def _build_extra_body(self, extra_body: dict | None = None) -> dict | None:
+        """Merge provider sort config into extra_body."""
+        if not self._provider_sort:
+            return extra_body
+        provider = {"sort": self._provider_sort}
+        if extra_body and "provider" in extra_body:
+            extra_body["provider"] = {**provider, **extra_body["provider"]}
+            return extra_body
+        if extra_body:
+            extra_body["provider"] = provider
+            return extra_body
+        return {"provider": provider}
 
     async def complete(
         self,
@@ -53,8 +67,9 @@ class LLMService:
                 "messages": messages,
                 "stop": stop,
             }
-            if extra_body:
-                kwargs["extra_body"] = extra_body
+            merged_extra = self._build_extra_body(extra_body)
+            if merged_extra:
+                kwargs["extra_body"] = merged_extra
 
             response = await self.client.chat.completions.create(**kwargs)
             from services.usage_tracker import extract_usage
@@ -91,6 +106,7 @@ class LLMService:
                 messages=messages,
                 stream=True,
                 stream_options={"include_usage": True},
+                extra_body=self._build_extra_body(),
             )
             async for chunk in stream:
                 if chunk.usage:
@@ -137,6 +153,7 @@ class LLMService:
                 messages=openai_messages,
                 stream=True,
                 stream_options={"include_usage": True},
+                extra_body=self._build_extra_body(),
             )
             async for chunk in stream:
                 if chunk.usage:
@@ -194,11 +211,13 @@ class LLMService:
                 temperature=temperature,
                 messages=messages,
                 response_format={"type": "json_object"},
-                extra_body={
-                    "provider": {
-                        "require_parameters": True,
-                    },
-                },
+                extra_body=self._build_extra_body(
+                    {
+                        "provider": {
+                            "require_parameters": True,
+                        },
+                    }
+                ),
             )
             from services.usage_tracker import extract_usage
 

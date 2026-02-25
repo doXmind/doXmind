@@ -133,6 +133,10 @@ Rank all {len(documents)} documents by relevance."""
         try:
             model = self.settings.reranking_model
 
+            extra_body = {}
+            if self.settings.openrouter_provider_sort:
+                extra_body["provider"] = {"sort": self.settings.openrouter_provider_sort}
+
             response = await self.client.chat.completions.create(
                 model=model,
                 messages=[
@@ -142,6 +146,7 @@ Rank all {len(documents)} documents by relevance."""
                 response_format={"type": "json_object"},
                 max_tokens=1500,
                 temperature=0.0,  # Deterministic for consistent rankings
+                extra_body=extra_body or None,
             )
 
             # Track usage

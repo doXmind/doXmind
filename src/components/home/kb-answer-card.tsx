@@ -252,15 +252,17 @@ export function KBAnswerCard({
           <ChatMessage role="user" content={displayedQuestion} className="py-2" />
         </div>
 
-        {/* Thinking indicator */}
-        {(displayedThinking.isThinking || displayedThinking.content) && (
-          <div className="border-b border-border/30 px-4 py-1.5">
-            <ChatThinking thinking={displayedThinking} />
-          </div>
-        )}
+        {/* Thinking indicator — only visible during streaming */}
+        {isViewingCurrent &&
+          isAnswering &&
+          (displayedThinking.isThinking || displayedThinking.content) && (
+            <div className="border-b border-border/30 px-4 py-1.5">
+              <ChatThinking thinking={displayedThinking} />
+            </div>
+          )}
 
-        {/* Tool steps */}
-        {displayedToolHistory.length > 0 && (
+        {/* Tool steps — only visible during streaming */}
+        {isViewingCurrent && isAnswering && displayedToolHistory.length > 0 && (
           <div className="border-b border-border/30 px-4 py-1.5">
             <ChatToolSteps tools={displayedToolHistory} collapseThreshold={2} />
           </div>

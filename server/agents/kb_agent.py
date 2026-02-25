@@ -147,6 +147,7 @@ class KBAgent:
             base_url=settings.openrouter_base_url,
         )
         self.model = model or settings.default_model
+        self._provider_sort = settings.openrouter_provider_sort
         self.tools = KB_TOOLS
 
     async def stream(
@@ -181,6 +182,10 @@ class KBAgent:
 
             openai_messages = [{"role": "system", "content": KB_SYSTEM_PROMPT}] + messages
 
+            extra_body = {}
+            if self._provider_sort:
+                extra_body["provider"] = {"sort": self._provider_sort}
+
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=openai_messages,
@@ -188,6 +193,7 @@ class KBAgent:
                 max_tokens=4096,
                 stream=True,
                 stream_options={"include_usage": True},
+                extra_body=extra_body or None,
             )
 
             async for chunk in stream:

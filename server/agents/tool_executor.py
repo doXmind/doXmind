@@ -86,6 +86,20 @@ class ToolExecutor:
             # This is an edit operation
             collected_edits.append(result)
             yield {"type": "edit", "edit": result}
+
+            # Update the in-memory file content so subsequent reads see the change
+            target_file_id = result.get("file_id")
+            if target_file_id:
+                for f in files:
+                    if f["id"] == target_file_id:
+                        if result["type"] == "str_replace":
+                            f["content"] = f["content"].replace(
+                                result["old_str"], result["new_str"], 1
+                            )
+                        elif result["type"] == "replace_all":
+                            f["content"] = result.get("new_content", "")
+                        break
+
             result_content = (
                 f"Edit prepared: {result['type']} on {result.get('file_name', 'document')}"
             )

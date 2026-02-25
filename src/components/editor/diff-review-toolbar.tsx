@@ -5,6 +5,7 @@ import { Editor } from "@tiptap/react";
 import { Check, X, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-device-type";
+import { useStreamingStore } from "@/stores/streaming-store";
 
 interface DiffReviewToolbarProps {
   editor: Editor | null;
@@ -28,6 +29,7 @@ export function DiffReviewToolbar({
   onPreviousHunk,
 }: DiffReviewToolbarProps) {
   const isMobile = useIsMobile();
+  const isStreaming = useStreamingStore((s) => s.isStreaming);
 
   if (!isActive || !editor) return null;
 
@@ -105,40 +107,44 @@ export function DiffReviewToolbar({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Action buttons */}
-      <motion.button
-        type="button"
-        onClick={onRejectAll}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.97 }}
-        transition={{ type: "spring", stiffness: 400, damping: 20 }}
-        className={cn(
-          "inline-flex items-center rounded-lg font-medium transition-colors",
-          "bg-[var(--diff-btn-reject-bg)] text-[var(--diff-btn-reject-fg)]",
-          "hover:bg-[var(--diff-btn-reject-hover)]",
-          isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
-        )}
-      >
-        <X className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
-        {!isMobile && "Reject All"}
-      </motion.button>
+      {/* Action buttons — hidden during streaming to prevent position conflicts */}
+      {!isStreaming && (
+        <>
+          <motion.button
+            type="button"
+            onClick={onRejectAll}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 400, damping: 20 }}
+            className={cn(
+              "inline-flex items-center rounded-lg font-medium transition-colors",
+              "bg-[var(--diff-btn-reject-bg)] text-[var(--diff-btn-reject-fg)]",
+              "hover:bg-[var(--diff-btn-reject-hover)]",
+              isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
+            )}
+          >
+            <X className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
+            {!isMobile && "Reject All"}
+          </motion.button>
 
-      <motion.button
-        type="button"
-        onClick={onAcceptAll}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.97 }}
-        transition={{ type: "spring", stiffness: 400, damping: 20 }}
-        className={cn(
-          "inline-flex items-center rounded-lg font-medium transition-colors",
-          "bg-[var(--diff-btn-accept-bg)] text-[var(--diff-btn-accept-fg)]",
-          "hover:bg-[var(--diff-btn-accept-hover)]",
-          isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
-        )}
-      >
-        <Check className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
-        {!isMobile && "Accept All"}
-      </motion.button>
+          <motion.button
+            type="button"
+            onClick={onAcceptAll}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 400, damping: 20 }}
+            className={cn(
+              "inline-flex items-center rounded-lg font-medium transition-colors",
+              "bg-[var(--diff-btn-accept-bg)] text-[var(--diff-btn-accept-fg)]",
+              "hover:bg-[var(--diff-btn-accept-hover)]",
+              isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
+            )}
+          >
+            <Check className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
+            {!isMobile && "Accept All"}
+          </motion.button>
+        </>
+      )}
     </motion.div>
   );
 }

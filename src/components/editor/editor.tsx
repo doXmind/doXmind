@@ -10,6 +10,7 @@ import { SpellcheckPopup } from "./spellcheck-popup";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
 import { EditorContextMenu } from "./editor-context-menu";
 import { DiffReviewToolbar } from "./diff-review-toolbar";
+import { AIWorkingBar } from "./ai-working-bar";
 import { ReviewPopup } from "./review-popup";
 import { ReviewPanel } from "./review-panel";
 import { SearchBar } from "./search-bar";
@@ -39,6 +40,8 @@ import { TableHandles } from "./table-handles";
 import { applyPendingEdit } from "./editor-edit-operations";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { useFeatureHints } from "@/components/onboarding/feature-hints";
+import { useStreamingStore } from "@/stores/streaming-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 
 interface EditorProps {
   file: FileItem;
@@ -173,6 +176,21 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       editor.setEditable(!isDemoMode);
     }
   }, [editor, isDemoMode]);
+
+  // Lock editor to read-only during AI streaming to prevent position mismatches
+  const isStreaming = useStreamingStore((s) => s.isStreaming);
+  useEffect(() => {
+    if (!editor || isDemoMode) return;
+    if (isStreaming) {
+      editor.setEditable(false);
+    } else {
+      // Only restore editability if not in diff review mode
+      const isInDiffReview = useDiffReviewStore.getState().isReviewMode;
+      if (!isInDiffReview) {
+        editor.setEditable(true);
+      }
+    }
+  }, [editor, isStreaming, isDemoMode]);
 
   // Reset when file changes
   useEffect(() => {
@@ -468,7 +486,13 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   }
 
   return (
-    <div className={cn("flex flex-col", !isMobile && "h-full")}>
+    <div
+      className={cn("flex flex-col", !isMobile && "h-full")}
+      data-streaming={isStreaming || undefined}
+    >
+      {/* AI Working indicator - shown during streaming before diff review */}
+      <AIWorkingBar isActive={isStreaming && !isReviewMode} />
+
       {/* Diff Review Toolbar - shown on both desktop and mobile when active */}
       <DiffReviewToolbar
         editor={editor}
@@ -571,7 +595,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />
           <EditorContextMenu editor={editor} />
-          {!isReviewMode && <QuickEditMenu onQuickEdit={handleQuickEdit} />}
+          {!isReviewMode && !isStreaming && <QuickEditMenu onQuickEdit={handleQuickEdit} />}
         </>
       )}
 

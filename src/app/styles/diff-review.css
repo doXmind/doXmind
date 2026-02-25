@@ -1,9 +1,91 @@
 /* ====================================
-   Diff Review Styles — Apple-inspired
-   Clean inline diff with frosted glass controls
+   Diff Review Styles — Notion-inspired
+   Word-level inline diff with hover controls
    ==================================== */
 
-/* Deleted content — soft red strikethrough */
+/* ---- Hidden source text (replaced by inline diff widget) ---- */
+.ProseMirror .diff-source-hidden {
+  font-size: 0 !important;
+  line-height: 0 !important;
+  color: transparent !important;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+  display: inline;
+}
+
+/* ---- Notion-style inline word-level diff ---- */
+.ProseMirror .diff-inline-wrapper {
+  display: inline;
+  position: relative;
+  border-radius: 3px;
+  animation: diffFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ProseMirror .diff-inline-content {
+  display: inline;
+  line-height: inherit;
+  font-size: inherit;
+}
+
+/* Word-level segments */
+.ProseMirror .diff-word-equal {
+  color: inherit;
+}
+
+.ProseMirror .diff-word-removed {
+  background-color: var(--diff-word-removed-bg);
+  color: var(--diff-word-removed-fg);
+  text-decoration: line-through;
+  text-decoration-color: var(--diff-word-removed-fg);
+  text-decoration-thickness: 1.5px;
+  border-radius: 2px;
+  padding: 1px 2px;
+  margin: 0 1px;
+  transition: background-color 0.15s ease;
+}
+
+.ProseMirror .diff-word-added {
+  background-color: var(--diff-word-added-bg);
+  color: var(--diff-word-added-fg);
+  border-radius: 2px;
+  padding: 1px 2px;
+  margin: 0 1px;
+  font-weight: 500;
+  transition: background-color 0.15s ease;
+}
+
+/* ---- Hover action buttons (shared by inline diff and insert widgets) ---- */
+.ProseMirror .diff-hover-actions {
+  position: absolute;
+  top: -32px;
+  left: 0;
+  z-index: 50;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  pointer-events: none;
+}
+
+.ProseMirror .diff-inline-wrapper:hover .diff-hover-actions,
+.ProseMirror .diff-inserted-wrapper:hover .diff-hover-actions,
+.ProseMirror .diff-deleted:hover + .diff-hover-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Also show on focus within for keyboard navigation */
+.ProseMirror .diff-inline-wrapper.diff-hunk-focused .diff-hover-actions,
+.ProseMirror .diff-inserted-wrapper.diff-hunk-focused .diff-hover-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* ---- Deleted content — soft red strikethrough (for delete-only hunks) ---- */
 .ProseMirror .diff-deleted {
   background-color: var(--diff-deleted-bg);
   text-decoration: line-through;
@@ -20,15 +102,16 @@
   background-color: var(--diff-deleted-bg-hover);
 }
 
-/* Inserted content wrapper — left accent border (Apple Pages style) */
+/* ---- Inserted content wrapper (for insert-only hunks) ---- */
 .ProseMirror .diff-inserted-wrapper {
   display: block;
+  position: relative;
   margin-top: 6px;
   margin-bottom: 2px;
   border: 1px solid var(--diff-inserted-border);
   border-left: 3px solid var(--diff-inserted-accent);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease;
@@ -58,7 +141,7 @@
   background-color: var(--diff-inserted-bg-hover);
 }
 
-/* Markdown content styling inside diff blocks */
+/* ---- Markdown content styling inside diff blocks ---- */
 .ProseMirror .diff-markdown-content {
   white-space: normal;
 }
@@ -169,7 +252,9 @@
   text-align: center;
 }
 
-/* Action buttons row */
+/* ---- Action buttons ---- */
+
+/* Action buttons row (for delete-only hunks) */
 .ProseMirror .diff-actions-row {
   position: relative;
   display: inline-flex;
@@ -194,21 +279,7 @@
   box-shadow: var(--diff-toolbar-shadow);
 }
 
-/* Diff type label */
-.ProseMirror .diff-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: hsl(var(--muted-foreground) / 0.6);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-}
-
-/* Action button base style — larger touch targets */
+/* Action button base style */
 .ProseMirror .diff-action-btn {
   display: inline-flex;
   align-items: center;
@@ -255,10 +326,15 @@
   transform: scale(0.95);
 }
 
-/* Focused hunk highlight — blue ring for current navigation target */
+/* ---- Focused hunk highlight ---- */
 .ProseMirror .diff-deleted.diff-hunk-focused {
   outline: 2px solid var(--diff-focus-border);
   outline-offset: 1px;
+}
+
+.ProseMirror .diff-inline-wrapper.diff-hunk-focused {
+  background-color: var(--diff-focus-ring);
+  border-radius: 4px;
 }
 
 .ProseMirror .diff-inserted-wrapper.diff-hunk-focused {
@@ -273,8 +349,8 @@
     var(--diff-toolbar-shadow);
 }
 
-/* Animation for new diff hunks */
-@keyframes diffSlideIn {
+/* ---- Animations ---- */
+@keyframes diffFadeIn {
   from {
     opacity: 0;
     transform: translateY(2px);
@@ -286,12 +362,19 @@
 }
 
 .ProseMirror .diff-deleted,
-.ProseMirror .diff-inserted-wrapper {
-  animation: diffSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+.ProseMirror .diff-inserted-wrapper,
+.ProseMirror .diff-inline-wrapper {
+  animation: diffFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Focus ring for accessibility */
 .ProseMirror .diff-action-btn:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+/* Hide inline accept/reject buttons during AI streaming */
+[data-streaming] .diff-hover-actions,
+[data-streaming] .diff-actions {
+  display: none;
 }

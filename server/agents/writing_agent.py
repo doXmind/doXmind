@@ -411,6 +411,7 @@ class WritingAgent:
                 system_prompt,
                 messages,
                 self.tool_executor.tools,
+                provider_sort=self.settings.openrouter_provider_sort,
             ):
                 # Accumulate token usage from each API call
                 if event and event.get("type") == "usage":

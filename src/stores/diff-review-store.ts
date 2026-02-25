@@ -24,7 +24,12 @@ interface DiffReviewState {
   navigationSource: "user" | "auto" | null;
 
   // Actions
-  startDiffReview: (fileId: string, hunks: DiffHunk[], originalContent: string) => void;
+  startDiffReview: (
+    fileId: string,
+    hunks: DiffHunk[],
+    originalContent: string,
+    originalMarkdown?: string
+  ) => void;
   endDiffReview: () => void;
   acceptHunk: (hunkId: string) => void;
   rejectHunk: (hunkId: string) => void;
@@ -75,7 +80,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
   currentHunkIndex: -1,
   navigationSource: null,
 
-  startDiffReview: (fileId, hunks, originalContent) => {
+  startDiffReview: (fileId, hunks, originalContent, originalMarkdown?) => {
     const now = Date.now();
     set({
       diffSession: {
@@ -84,6 +89,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
         hunks: hunks.map((h) => ({ ...h, displayedAt: now })),
         isActive: true,
         originalContent,
+        originalMarkdown,
         createdAt: new Date().toISOString(),
         startedAt: now,
       },

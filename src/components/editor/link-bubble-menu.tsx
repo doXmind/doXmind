@@ -6,6 +6,7 @@ import { ExternalLink, Pencil, Trash2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isDiffReviewActive } from "@/extensions/diff-review";
+import { useStreamingStore } from "@/stores/streaming-store";
 
 interface LinkBubbleMenuProps {
   editor: Editor;
@@ -73,6 +74,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
   // Only show when cursor is on a link
   const shouldShow = useCallback(() => {
     if (isDiffReviewActive(editor)) return false;
+    if (useStreamingStore.getState().isStreaming) return false;
     return editor.isActive("link");
   }, [editor]);
 

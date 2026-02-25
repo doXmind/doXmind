@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useChatContextStore } from "@/stores/chat-context-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { isDiffReviewActive } from "@/extensions/diff-review";
+import { useStreamingStore } from "@/stores/streaming-store";
 
 interface ImageBubbleMenuProps {
   editor: Editor;
@@ -116,6 +117,7 @@ export function ImageBubbleMenu({ editor }: ImageBubbleMenuProps) {
   // Only show when an image is selected
   const shouldShow = useCallback(() => {
     if (isDiffReviewActive(editor)) return false;
+    if (useStreamingStore.getState().isStreaming) return false;
     return editor.isActive("image");
   }, [editor]);
 

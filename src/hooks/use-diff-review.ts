@@ -4,6 +4,7 @@ import { useEffect, useCallback, useRef } from "react";
 import type { Editor } from "@tiptap/react";
 import type { DiffHunk, DiffSession } from "@/types/diff";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { useStreamingStore } from "@/stores/streaming-store";
 import { api } from "@/lib/api";
 
 interface UseDiffReviewOptions {
@@ -15,8 +16,9 @@ interface UseDiffReviewOptions {
 
 /** Scroll the editor to bring a hunk into view via DOM (avoids creating a text selection) */
 function scrollToHunk(_editor: Editor, hunk: DiffHunk) {
-  // Find the hunk's DOM element by data attribute (action widget or insert widget)
+  // Find the hunk's DOM element by data attribute (inline diff widget, action widget, or insert widget)
   const el =
+    document.querySelector(`[data-hunk-id="${hunk.id}"].diff-inline-wrapper`) ||
     document.querySelector(`[data-hunk-id="${hunk.id}"].diff-actions-row`) ||
     document.querySelector(`[data-hunk-id="${hunk.id}"]`);
 
@@ -61,6 +63,24 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
 
   // Track previous review mode to detect transitions
   const prevReviewMode = useRef(false);
+
+  // Make editor read-only during diff review for clean inline diff rendering
+  useEffect(() => {
+    if (!editor) return;
+    if (isReviewMode) {
+      editor.setEditable(false);
+    }
+    return () => {
+      // Restore editability when review ends or component unmounts,
+      // but only if streaming is not active (streaming also sets read-only)
+      if (editor && !editor.isDestroyed) {
+        const isCurrentlyStreaming = useStreamingStore.getState().isStreaming;
+        if (!isCurrentlyStreaming) {
+          editor.setEditable(true);
+        }
+      }
+    };
+  }, [editor, isReviewMode]);
 
   // Sync diffSession to DiffReviewExtension
   useEffect(() => {
@@ -125,6 +145,10 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
   // Handle diff accept/reject events from custom events
   useEffect(() => {
     const handleAccept = (e: Event) => {
+      // Block accept during streaming — backend edits are based on the original
+      // document snapshot, so accepting mid-stream would cause position conflicts
+      if (useStreamingStore.getState().isStreaming) return;
+
       const customEvent = e as CustomEvent<{ hunkId: string }>;
       const hunkId = customEvent.detail.hunkId;
 
@@ -142,6 +166,8 @@ export function useDiffReview({ editor, fileId }: UseDiffReviewOptions) {
     };
 
     const handleReject = (e: Event) => {
+      if (useStreamingStore.getState().isStreaming) return;
+
       const customEvent = e as CustomEvent<{ hunkId: string }>;
       const hunkId = customEvent.detail.hunkId;
 

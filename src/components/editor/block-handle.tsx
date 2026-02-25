@@ -6,6 +6,7 @@ import type { Editor } from "@tiptap/react";
 import { GripVertical, Plus } from "lucide-react";
 import { TextSelection } from "@tiptap/pm/state";
 import { findBlockAtCoords } from "@/extensions/block-handle-extension";
+import { useStreamingStore } from "@/stores/streaming-store";
 import { BlockActionMenu } from "./block-action-menu";
 import { BlockInsertMenu } from "./block-insert-menu";
 
@@ -176,6 +177,8 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
 
     const handleMouseMove = (event: MouseEvent) => {
       if (isDragging) return;
+      // Hide block handle during AI streaming to prevent accidental edits
+      if (useStreamingStore.getState().isStreaming) return;
 
       const { clientX, clientY } = event;
       const lastPos = lastMousePosRef.current;

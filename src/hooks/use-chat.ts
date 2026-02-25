@@ -184,6 +184,7 @@ export function useChat() {
 
       const signal = streamControllerRef.current.start();
       const collectedEdits: EditOperation[] = [];
+      let editsAppliedIncrementally = false;
       const summaryRef: {
         data: {
           content: string;
@@ -328,6 +329,9 @@ export function useChat() {
             case "edit":
               if (parsed.edit) {
                 collectedEdits.push(parsed.edit);
+                // Apply edit immediately for real-time diff display
+                applyEdits([parsed.edit]);
+                editsAppliedIncrementally = true;
                 const editTool: ToolStatus = {
                   name: parsed.edit.type,
                   status: "completed",
@@ -339,15 +343,20 @@ export function useChat() {
               break;
 
             case "edits_batch":
+              // Edits already applied individually via "edit" events;
+              // only apply any extra edits not seen as individual events
               if (parsed.edits && parsed.edits.length > 0) {
-                const applied = applyEdits(parsed.edits);
-                const applyTool: ToolStatus = {
-                  name: "apply_edits",
-                  status: applied > 0 ? "completed" : "error",
-                  message: applied > 0 ? `Applied ${applied} edit(s)` : "No edits applied",
-                };
-                setCurrentTool(applyTool);
-                setToolHistory((prev) => [...prev, applyTool]);
+                const newEdits = parsed.edits.slice(collectedEdits.length);
+                if (newEdits.length > 0) {
+                  const applied = applyEdits(newEdits);
+                  const applyTool: ToolStatus = {
+                    name: "apply_edits",
+                    status: applied > 0 ? "completed" : "error",
+                    message: applied > 0 ? `Applied ${applied} edit(s)` : "No edits applied",
+                  };
+                  setCurrentTool(applyTool);
+                  setToolHistory((prev) => [...prev, applyTool]);
+                }
               }
               break;
 
@@ -499,8 +508,8 @@ export function useChat() {
           }
         });
 
-        // Apply any remaining collected edits
-        if (collectedEdits.length > 0) {
+        // Apply any remaining collected edits (only if not already applied incrementally)
+        if (collectedEdits.length > 0 && !editsAppliedIncrementally) {
           const applied = applyEdits(collectedEdits);
           if (applied > 0) {
             const finalTool: ToolStatus = {

@@ -13,14 +13,20 @@ import type { DiffHunk } from "@/types/diff";
 import { markdownToHtml, isHtml } from "@/lib/markdown";
 
 import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
-import { findTextInDocument, findTextNormalized } from "./position-mapping";
-import { createInsertWidget, createActionWidget } from "./diff-widgets";
+import { findTextInDocument, findTextNormalized, findTextViaMarkdown } from "./position-mapping";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { createInsertWidget, createActionWidget, createInlineDiffWidget } from "./diff-widgets";
 import { normalizeTableHtml, normalizeMermaidHtml } from "./replacement-utils";
 
 // Re-export types for external use
 export * from "./diff-types";
-export { findTextInDocument, findAllTextInDocument, findTextNormalized } from "./position-mapping";
-export { createInsertWidget, createActionWidget } from "./diff-widgets";
+export {
+  findTextInDocument,
+  findAllTextInDocument,
+  findTextNormalized,
+  findTextViaMarkdown,
+} from "./position-mapping";
+export { createInsertWidget, createActionWidget, createInlineDiffWidget } from "./diff-widgets";
 
 /**
  * Cache for ProseMirror-parsed textContent and block type.
@@ -34,6 +40,25 @@ interface ParsedContentCache {
   blockType: string | null;
 }
 const pmTextCache = new Map<string, ParsedContentCache>();
+
+/**
+ * Detect structured content that would lose meaning if flattened to plain text.
+ * These types fall back to block-level rendering (strikethrough + insert widget).
+ */
+function isStructuredContent(content: string): boolean {
+  if (!content) return false;
+  // Tables (markdown: |...|---| or HTML: <table>)
+  if (/\|.+\|/.test(content) && /\|[-: ]+\|/.test(content)) return true;
+  if (/<table[\s>]/i.test(content)) return true;
+  // Mermaid diagrams
+  if (/```mermaid/i.test(content)) return true;
+  if (/data-type="mermaid-chart"/i.test(content)) return true;
+  // Code blocks (fenced)
+  if (/```[\s\S]*?```/.test(content)) return true;
+  // HTML block elements (tables, divs, etc. — not just inline formatting)
+  if (isHtml(content)) return true;
+  return false;
+}
 
 export const DiffReviewExtension = Extension.create({
   name: "diffReview",
@@ -99,6 +124,9 @@ export const DiffReviewExtension = Extension.create({
             const decorations: Decoration[] = [];
             // Track positions that have been claimed by hunks to avoid duplicate matches
             const usedPositions = new Set<number>();
+            // Get the document's markdown for markdown-first matching strategy
+            const originalMarkdown =
+              useDiffReviewStore.getState().diffSession?.originalMarkdown || "";
 
             for (const hunk of pluginState.hunks) {
               // Skip non-pending hunks
@@ -145,13 +173,32 @@ export const DiffReviewExtension = Extension.create({
                   pmTextCache.set(hunk.oldContent, cached);
                 }
 
+                // Strategy 0: Markdown-first matching (mirrors backend logic)
+                // Find oldContent in the document's markdown, then locate in ProseMirror
+                let found = originalMarkdown
+                  ? findTextViaMarkdown(
+                      state.doc,
+                      hunk.oldContent,
+                      originalMarkdown,
+                      usedPositions,
+                      cached.blockType
+                    )
+                  : null;
+                if (found) {
+                  console.debug(
+                    `[DiffReview] Matched via markdown-first strategy for hunk ${hunk.id}`
+                  );
+                }
+
                 // Strategy 1: Exact match using ProseMirror-parsed textContent
-                let found = findTextInDocument(
-                  state.doc,
-                  cached.textContent,
-                  usedPositions,
-                  cached.blockType
-                );
+                if (!found) {
+                  found = findTextInDocument(
+                    state.doc,
+                    cached.textContent,
+                    usedPositions,
+                    cached.blockType
+                  );
+                }
 
                 // Strategy 2: Try searchText from markdownToPlainText (different conversion path)
                 if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
@@ -201,9 +248,11 @@ export const DiffReviewExtension = Extension.create({
                 } else {
                   // Skip rendering this hunk — don't place at wrong position
                   console.error(`[DiffReview] All matching strategies failed for hunk ${hunk.id}`, {
-                    pmTextContent: cached.textContent?.slice(0, 100),
-                    searchText: hunk.searchText?.slice(0, 100),
+                    oldContent: hunk.oldContent?.slice(0, 200),
+                    pmTextContent: cached.textContent?.slice(0, 200),
+                    searchText: hunk.searchText?.slice(0, 200),
                     docTextLength: state.doc.textContent.length,
+                    hasMarkdown: !!originalMarkdown,
                   });
                   continue;
                 }
@@ -217,38 +266,73 @@ export const DiffReviewExtension = Extension.create({
 
               const isFocused = pluginState.focusedHunkId === hunk.id;
 
-              // Add action buttons at the start of the block (before any text)
-              decorations.push(
-                Decoration.widget(
-                  buttonPos,
-                  () => {
-                    const widget = createActionWidget(hunk);
-                    if (isFocused) widget.classList.add("diff-hunk-focused");
-                    return widget;
-                  },
-                  {
-                    side: -1, // Place before any content at this position
-                    key: `actions-${hunk.id}`,
-                  }
-                )
-              );
+              // Determine rendering mode based on hunk content
+              const hasOldContent = !!hunk.oldContent && from < to;
+              const hasNewContent = !!hunk.newContent;
+              const isReplace = hasOldContent && hasNewContent;
+              // Structured content (tables, mermaid, code blocks, HTML) falls back to
+              // block-level rendering to preserve formatting
+              const useBlockFallback =
+                isStructuredContent(hunk.oldContent || "") ||
+                isStructuredContent(hunk.newContent || "");
 
-              // Mark old content with strikethrough (when there's old content to show)
-              if (hunk.oldContent && from < to) {
+              if (isReplace && !hunk.isFullDocumentReplace && !useBlockFallback) {
+                // --- Notion-style inline word-level diff (plain text only) ---
+                // 1. Hide original text via inline decoration
+                decorations.push(
+                  Decoration.inline(from, to, {
+                    class: isFocused
+                      ? "diff-source-hidden diff-hunk-focused"
+                      : "diff-source-hidden",
+                    "data-hunk-id": hunk.id,
+                  })
+                );
+
+                // 2. Show word-level diff widget at the start position
+                decorations.push(
+                  Decoration.widget(
+                    from,
+                    () => {
+                      const widget = createInlineDiffWidget(hunk);
+                      if (isFocused) widget.classList.add("diff-hunk-focused");
+                      return widget;
+                    },
+                    {
+                      side: -1,
+                      key: `inline-diff-${hunk.id}`,
+                    }
+                  )
+                );
+              } else if (isReplace && !hunk.isFullDocumentReplace && useBlockFallback) {
+                // --- Block fallback for structured content (tables, mermaid, code) ---
+                // Strikethrough old content + insert widget with full markdown rendering
+                // (createInsertWidget already has integrated hover accept/reject buttons)
                 decorations.push(
                   Decoration.inline(from, to, {
                     class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
                     "data-hunk-id": hunk.id,
                   })
                 );
-              }
 
-              // Show new content as ghost text (when there's new content to add)
-              if (hunk.newContent) {
-                const insertPos = hunk.oldContent === "" ? from : to;
+                // Compute position AFTER the containing structural block (table, codeBlock, etc.)
+                // so the insert widget renders below the block, not inside a cell
+                let insertAfterPos = to;
+                try {
+                  const $to = state.doc.resolve(to);
+                  for (let d = $to.depth; d >= 1; d--) {
+                    const nodeName = $to.node(d).type.name;
+                    if (nodeName === "table" || nodeName === "codeBlock") {
+                      insertAfterPos = $to.after(d);
+                      break;
+                    }
+                  }
+                } catch {
+                  /* keep default */
+                }
+
                 decorations.push(
                   Decoration.widget(
-                    insertPos,
+                    insertAfterPos,
                     () => {
                       const widget = createInsertWidget(hunk);
                       if (isFocused) widget.classList.add("diff-hunk-focused");
@@ -260,6 +344,78 @@ export const DiffReviewExtension = Extension.create({
                     }
                   )
                 );
+              } else if (hasOldContent && !hasNewContent) {
+                // --- Delete only: strikethrough with hover action buttons ---
+                decorations.push(
+                  Decoration.widget(
+                    buttonPos,
+                    () => {
+                      const widget = createActionWidget(hunk);
+                      if (isFocused) widget.classList.add("diff-hunk-focused");
+                      return widget;
+                    },
+                    {
+                      side: -1,
+                      key: `actions-${hunk.id}`,
+                    }
+                  )
+                );
+
+                decorations.push(
+                  Decoration.inline(from, to, {
+                    class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
+                    "data-hunk-id": hunk.id,
+                  })
+                );
+              } else if (!hasOldContent && hasNewContent) {
+                // --- Insert only: show insert widget with hover buttons ---
+                decorations.push(
+                  Decoration.widget(
+                    from,
+                    () => {
+                      const widget = createInsertWidget(hunk);
+                      if (isFocused) widget.classList.add("diff-hunk-focused");
+                      return widget;
+                    },
+                    {
+                      side: 1,
+                      key: `insert-${hunk.id}`,
+                    }
+                  )
+                );
+              } else if (hunk.isFullDocumentReplace) {
+                // --- Full document replace: use insert widget for preview ---
+                decorations.push(
+                  Decoration.widget(
+                    buttonPos,
+                    () => {
+                      const widget = createActionWidget(hunk);
+                      if (isFocused) widget.classList.add("diff-hunk-focused");
+                      return widget;
+                    },
+                    {
+                      side: -1,
+                      key: `actions-${hunk.id}`,
+                    }
+                  )
+                );
+
+                if (hasNewContent) {
+                  decorations.push(
+                    Decoration.widget(
+                      buttonPos,
+                      () => {
+                        const widget = createInsertWidget(hunk);
+                        if (isFocused) widget.classList.add("diff-hunk-focused");
+                        return widget;
+                      },
+                      {
+                        side: 1,
+                        key: `insert-${hunk.id}`,
+                      }
+                    )
+                  );
+                }
               }
             }
 

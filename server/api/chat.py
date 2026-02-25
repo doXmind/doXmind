@@ -274,9 +274,81 @@ async def chat_stream(
             collected_usage
 
         current_tool = None
+        agent = None
         timeout_seconds = settings.streaming_timeout_seconds
         start_time = asyncio.get_event_loop().time()
         heartbeat_interval = 25  # Send heartbeat every 25 seconds (Heroku timeout is 55s)
+
+        async def _save_and_summarize(is_timeout: bool = False) -> list[bytes]:
+            """Save partial/complete assistant message and build summary event.
+
+            Returns list of SSE-encoded bytes to yield to the client.
+            """
+            events_to_send = []
+            content_text = "".join(collected_text)
+
+            # Don't save empty messages
+            if not content_text and not collected_edits and not collected_tool_calls:
+                return events_to_send
+
+            if is_timeout:
+                content_text += "\n\n*[Response interrupted: streaming timeout]*"
+
+            actual_model = agent.model if agent else None
+            message_id = None
+
+            if conversation:
+                msg_kwargs = {
+                    "id": str(uuid.uuid4()),
+                    "conversation_id": conversation.id,
+                    "role": "assistant",
+                    "content": content_text,
+                    "thinking": "".join(collected_thinking) if collected_thinking else None,
+                    "tool_calls": collected_tool_calls if collected_tool_calls else None,
+                    "edits": collected_edits if collected_edits else None,
+                    "model": actual_model,
+                    "input_tokens": collected_usage["input_tokens"] or None,
+                    "output_tokens": collected_usage["output_tokens"] or None,
+                    "is_byok": user_api_key is not None,
+                }
+                cost_value = collected_usage.get("cost")
+                if cost_value is not None:
+                    msg_kwargs["cost"] = cost_value
+
+                try:
+                    assistant_message = Message(**msg_kwargs)
+                    db.add(assistant_message)
+                    await db.commit()
+                    message_id = assistant_message.id
+                except Exception:
+                    try:
+                        await db.rollback()
+                        msg_kwargs.pop("cost", None)
+                        assistant_message = Message(**msg_kwargs)
+                        db.add(assistant_message)
+                        await db.commit()
+                        message_id = assistant_message.id
+                    except Exception as save_err:
+                        logger.error(f"Failed to save message: {save_err}")
+
+            summary = {
+                "type": "summary",
+                "messageId": message_id,
+                "content": content_text,
+                "thinking": "".join(collected_thinking) if collected_thinking else None,
+                "toolCalls": collected_tool_calls if collected_tool_calls else None,
+                "edits": collected_edits if collected_edits else None,
+                "todos": collected_todos if collected_todos else None,
+                "model": actual_model,
+                "usage": {
+                    "input_tokens": collected_usage["input_tokens"],
+                    "output_tokens": collected_usage["output_tokens"],
+                    "cost": collected_usage.get("cost"),
+                },
+            }
+            events_to_send.append(f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode())
+
+            return events_to_send
 
         try:
             # Create agent with KB attachments, data files metadata, and web tools
@@ -361,6 +433,8 @@ async def chat_stream(
                         elapsed = asyncio.get_event_loop().time() - start_time
                         if elapsed > timeout_seconds:
                             logger.warning(f"Streaming timeout after {elapsed:.1f}s")
+                            for chunk in await _save_and_summarize(is_timeout=True):
+                                yield chunk
                             error_data = f"data: {json.dumps({'type': 'error', 'content': 'Streaming timeout exceeded'})}\n\n"
                             yield error_data.encode("utf-8")
                             yield b"data: [DONE]\n\n"
@@ -379,6 +453,8 @@ async def chat_stream(
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed > timeout_seconds:
                     logger.warning(f"Streaming timeout after {elapsed:.1f}s")
+                    for chunk in await _save_and_summarize(is_timeout=True):
+                        yield chunk
                     error_data = f"data: {json.dumps({'type': 'error', 'content': 'Streaming timeout exceeded'})}\n\n"
                     yield error_data.encode("utf-8")
                     yield b"data: [DONE]\n\n"
@@ -422,62 +498,19 @@ async def chat_stream(
                 data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 yield data.encode("utf-8")
 
-            # Save assistant message to database with token usage
-            # Use the actual model from the agent (respects user's model preference)
-            actual_model = agent.model
-            message_id = None
-            if conversation:
-                msg_kwargs = {
-                    "id": str(uuid.uuid4()),
-                    "conversation_id": conversation.id,
-                    "role": "assistant",
-                    "content": "".join(collected_text),
-                    "thinking": "".join(collected_thinking) if collected_thinking else None,
-                    "tool_calls": collected_tool_calls if collected_tool_calls else None,
-                    "edits": collected_edits if collected_edits else None,
-                    "model": actual_model,
-                    "input_tokens": collected_usage["input_tokens"] or None,
-                    "output_tokens": collected_usage["output_tokens"] or None,
-                    "is_byok": user_api_key is not None,
-                }
-                cost_value = collected_usage.get("cost")
-                if cost_value is not None:
-                    msg_kwargs["cost"] = cost_value
-                assistant_message = Message(**msg_kwargs)
-                try:
-                    db.add(assistant_message)
-                    await db.commit()
-                except Exception:
-                    # cost column may not exist yet — retry without it
-                    await db.rollback()
-                    msg_kwargs.pop("cost", None)
-                    assistant_message = Message(**msg_kwargs)
-                    db.add(assistant_message)
-                    await db.commit()
-                message_id = assistant_message.id
-
-            # Send summary event with collected data
-            summary = {
-                "type": "summary",
-                "messageId": message_id,
-                "content": "".join(collected_text),
-                "thinking": "".join(collected_thinking) if collected_thinking else None,
-                "toolCalls": collected_tool_calls if collected_tool_calls else None,
-                "edits": collected_edits if collected_edits else None,
-                "todos": collected_todos if collected_todos else None,
-                "model": actual_model,
-                "usage": {
-                    "input_tokens": collected_usage["input_tokens"],
-                    "output_tokens": collected_usage["output_tokens"],
-                    "cost": collected_usage.get("cost"),
-                },
-            }
-            yield f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode()
+            # Save assistant message and send summary
+            for chunk in await _save_and_summarize(is_timeout=False):
+                yield chunk
 
             yield b"data: [DONE]\n\n"
 
         except TimeoutError:
             logger.error("Chat streaming timeout")
+            try:
+                for chunk in await _save_and_summarize(is_timeout=True):
+                    yield chunk
+            except Exception as save_err:
+                logger.error(f"Failed to save on TimeoutError: {save_err}")
             error_data = f"data: {json.dumps({'type': 'error', 'content': 'Request timeout'})}\n\n"
             yield error_data.encode("utf-8")
             yield b"data: [DONE]\n\n"
@@ -486,6 +519,11 @@ async def chat_stream(
             import traceback
 
             traceback.print_exc()
+            try:
+                for chunk in await _save_and_summarize(is_timeout=True):
+                    yield chunk
+            except Exception as save_err:
+                logger.error(f"Failed to save on error: {save_err}")
             error_data = f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
             yield error_data.encode("utf-8")
             yield b"data: [DONE]\n\n"

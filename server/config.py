@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = (
         "https://openrouter.ai/api/v1"  # OpenRouter OpenAI-compatible endpoint
     )
+    openrouter_provider_sort: str = "throughput"  # Provider sort: "throughput", "price", or ""
     courtlistener_api_key: str = ""  # For legal case search
     brave_search_api_key: str = ""  # For Brave web search
 
@@ -176,7 +177,7 @@ class Settings(BaseSettings):
 
     # Agent limits
     max_agent_iterations: int = 10  # Maximum tool use iterations
-    streaming_timeout_seconds: int = 300  # 5 minutes max for streaming responses
+    streaming_timeout_seconds: int = 600  # 10 minutes max for streaming responses
     streaming_heartbeat_interval: int = 25  # Seconds between heartbeats
 
     # Content limits

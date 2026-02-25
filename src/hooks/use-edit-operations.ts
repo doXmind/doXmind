@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useFileStore } from "@/stores/file-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { computeDiffHunks } from "@/lib/diff-utils";
+import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { editorLogger } from "@/lib/logger";
 import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
 import type { EditOperation } from "@/types";
@@ -19,16 +20,24 @@ export type { EditOperation } from "@/types";
  */
 export function useEditOperations() {
   const { getFile } = useFileStore();
-  const { startDiffReview, isReviewMode, addHunksToDiffSession, diffSession } =
-    useDiffReviewStore();
 
   /**
    * Apply multiple edit operations at once to avoid async state issues
    * Collects all hunks first, then starts/updates diff review session once
+   *
+   * NOTE: Reads diff review state directly via getState() to avoid stale closures.
+   * During streaming, applyEdits is called per-edit from the SSE handler, but the
+   * useCallback closure would capture isReviewMode=false from the render when
+   * sendMessage was called. Reading fresh state ensures the second+ edit correctly
+   * appends to the existing diff session instead of replacing it.
    */
   const applyEdits = useCallback(
     (edits: EditOperation[]): number => {
       if (edits.length === 0) return 0;
+
+      // Read current diff review state to avoid stale closure during streaming
+      const { isReviewMode, diffSession, startDiffReview, addHunksToDiffSession } =
+        useDiffReviewStore.getState();
 
       // Group edits by file_id
       const editsByFile = new Map<string, EditOperation[]>();
@@ -77,14 +86,16 @@ export function useEditOperations() {
           // Add all hunks to existing session at once
           addHunksToDiffSession(allHunks);
         } else {
+          // Compute markdown (same format backend uses to validate old_str)
+          const markdown = isHtml(file.content) ? htmlToMarkdown(file.content) : file.content;
           // Start a new diff review session with all hunks
-          startDiffReview(fileId, allHunks, file.content);
+          startDiffReview(fileId, allHunks, file.content, markdown);
         }
       }
 
       return totalApplied;
     },
-    [getFile, isReviewMode, diffSession, startDiffReview, addHunksToDiffSession]
+    [getFile]
   );
 
   return {

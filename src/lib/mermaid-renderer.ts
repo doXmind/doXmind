@@ -497,6 +497,7 @@ async function ensureInitialized(): Promise<typeof import("mermaid").default> {
       theme: "base",
       themeVariables: isDark ? darkThemeVars : lightThemeVars,
       securityLevel: "loose",
+      suppressErrorRendering: true,
     });
     lastTheme = currentTheme;
   }

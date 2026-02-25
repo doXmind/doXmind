@@ -20,6 +20,8 @@ interface TextPosEntry {
 
 /**
  * Build mapping from doc.textContent character offsets to ProseMirror positions.
+ * Also accounts for non-text leaf nodes (e.g., hardBreak) that contribute to textContent
+ * via their schema's leafText spec.
  */
 function buildTextPositionMap(doc: PMNode): TextPosEntry[] {
   let textOffset = 0;
@@ -43,6 +45,10 @@ function buildTextPositionMap(doc: PMNode): TextPosEntry[] {
         blockPos,
       });
       textOffset += node.text.length;
+    } else if (node.isLeaf && node.type.spec.leafText) {
+      // Non-text leaf nodes like hardBreak contribute to doc.textContent
+      const leafText = node.type.spec.leafText(node);
+      if (leafText) textOffset += leafText.length;
     }
     return true;
   });
@@ -153,6 +159,96 @@ export function findTextInDocument(
   // Multiple candidates: prefer the one in the matching block type
   const preferred = candidates.find((c) => c.blockTypeName === preferredBlockType);
   return preferred || candidates[0];
+}
+
+/**
+ * Simple regex-based markdown stripping to get approximate plain text.
+ * Used to estimate character offset in doc.textContent from a markdown offset.
+ */
+function stripMarkdownSyntax(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "") // heading markers
+    .replace(/\*\*\*([\s\S]*?)\*\*\*/g, "$1") // bold+italic
+    .replace(/\*\*([\s\S]*?)\*\*/g, "$1") // bold
+    .replace(/\*([\s\S]*?)\*/g, "$1") // italic
+    .replace(/~~([\s\S]*?)~~/g, "$1") // strikethrough
+    .replace(/`([^`]+)`/g, "$1") // inline code
+    .replace(/^\s*[-*+]\s+/gm, "") // unordered list markers
+    .replace(/^\s*\d+\.\s+/gm, "") // ordered list markers
+    .replace(/^\s*>\s?/gm, "") // blockquote markers
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links → text only
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "") // images → remove
+    .replace(/\n+/g, "") // newlines → nothing
+    .trim();
+}
+
+/**
+ * Markdown-first matching: use the document's markdown to locate old_str,
+ * then find the corresponding position in the ProseMirror document.
+ *
+ * This mirrors the backend logic (simple indexOf on markdown) and uses
+ * the markdown position to narrow the search in doc.textContent.
+ */
+export function findTextViaMarkdown(
+  doc: PMNode,
+  oldContent: string,
+  markdown: string,
+  excludePositions?: Set<number>,
+  preferredBlockType?: string | null
+): TextPosition | null {
+  if (!oldContent || !markdown) return null;
+
+  // Step 1: Find oldContent in the markdown (same as backend's content.count(old_str))
+  const markdownIdx = markdown.indexOf(oldContent);
+  if (markdownIdx === -1) return null;
+
+  // Step 2: Get the plain text of oldContent by stripping markdown syntax
+  const searchPlainText = stripMarkdownSyntax(oldContent);
+  if (!searchPlainText) return null;
+
+  // Step 3: Estimate where in doc.textContent this text should appear
+  // by stripping markdown from the prefix
+  const markdownPrefix = markdown.slice(0, markdownIdx);
+  const prefixPlainLength = stripMarkdownSyntax(markdownPrefix).length;
+
+  // Step 4: Search for the plain text in doc.textContent near the estimated offset
+  const entries = buildTextPositionMap(doc);
+  const fullText = doc.textContent;
+
+  // Search within a generous window around the estimated position
+  const windowSize = 300;
+  const searchFrom = Math.max(0, prefixPlainLength - windowSize);
+  const searchTo = Math.min(
+    fullText.length,
+    prefixPlainLength + searchPlainText.length + windowSize
+  );
+  const searchRegion = fullText.slice(searchFrom, searchTo);
+
+  const localIdx = searchRegion.indexOf(searchPlainText);
+  if (localIdx === -1) return null;
+
+  const globalIdx = searchFrom + localIdx;
+  const pos = mapOffsetsToPosition(globalIdx, globalIdx + searchPlainText.length, entries);
+  if (!pos) return null;
+
+  // Check exclude positions
+  if (excludePositions?.has(pos.from)) return null;
+
+  // Resolve block type
+  try {
+    const $pos = doc.resolve(pos.from);
+    for (let d = $pos.depth; d > 0; d--) {
+      if ($pos.node(d).isBlock) {
+        pos.blockTypeName = $pos.node(d).type.name;
+        break;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  // If preferredBlockType specified and doesn't match, still return (better than nothing)
+  return pos;
 }
 
 /**

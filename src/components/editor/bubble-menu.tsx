@@ -35,6 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { isDiffReviewActive } from "@/extensions/diff-review";
+import { useStreamingStore } from "@/stores/streaming-store";
 import { CellSelection } from "@tiptap/pm/tables";
 import { LinkModal } from "./link-modal";
 import { ColorPicker } from "./color-picker";
@@ -135,6 +136,8 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
 
   const shouldShow = useCallback(() => {
     if (isDiffReviewActive(editor)) return false;
+    // Hide during AI streaming to prevent accidental edits
+    if (useStreamingStore.getState().isStreaming) return false;
     // Don't show text formatting menu for table cell selections
     if (editor.state.selection instanceof CellSelection) return false;
     const { from, to } = editor.state.selection;

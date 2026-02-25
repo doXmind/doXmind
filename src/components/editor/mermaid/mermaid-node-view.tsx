@@ -51,15 +51,13 @@ export function MermaidNodeView({
       }
 
       setRenderError(null);
-    } catch (err) {
-      const message = (err as Error).message || "Render error";
-      setRenderError(message);
-      // HTML-escape mermaid code to prevent <br/>, <, > from being interpreted as HTML
+    } catch {
+      setRenderError("render-failed");
       const safeCode = mermaidCode
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
-      targetEl.innerHTML = `<div class="text-destructive text-sm p-2"><p class="font-medium mb-1">Syntax error</p><pre class="text-xs opacity-70 whitespace-pre-wrap">${safeCode}</pre></div>`;
+      targetEl.innerHTML = `<pre class="text-xs text-muted-foreground whitespace-pre-wrap font-mono p-2"><span class="text-muted-foreground/70 select-none">mermaid</span>\n${safeCode}</pre>`;
     }
   }, []);
 

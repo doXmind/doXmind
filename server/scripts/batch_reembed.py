@@ -24,8 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File, async_session
-from services.rag.search import RAGService
 from services.rag.chunking import DEFAULT_STRATEGY_FACTORY
+from services.rag.search import RAGService
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -49,9 +49,7 @@ async def get_all_files(
     return list(result.scalars().all())
 
 
-async def reembed_file(
-    session: AsyncSession, file: File, dry_run: bool = False
-) -> bool:
+async def reembed_file(session: AsyncSession, file: File, dry_run: bool = False) -> bool:
     """Re-embed a single file using RAGService.
 
     Args:
@@ -74,9 +72,7 @@ async def reembed_file(
             )
             return False
 
-        logger.info(
-            f"Re-embedding file {file.id}: {file.name} ({len(file.content)} chars)"
-        )
+        logger.info(f"Re-embedding file {file.id}: {file.name} ({len(file.content)} chars)")
 
         if dry_run:
             logger.info(f"  [DRY RUN] Would re-embed file {file.id}")
@@ -116,9 +112,7 @@ async def reembed_file(
         return False
 
 
-async def main(
-    limit: int | None = None, skip: int = 0, dry_run: bool = False
-) -> None:
+async def main(limit: int | None = None, skip: int = 0, dry_run: bool = False) -> None:
     """Main batch re-embedding function."""
     logger.info("=" * 80)
     logger.info("BATCH RE-EMBEDDING SCRIPT")
@@ -139,7 +133,6 @@ async def main(
 
         # Process files
         success_count = 0
-        skip_count = 0
         fail_count = 0
 
         for i, file in enumerate(files, 1):
@@ -169,9 +162,7 @@ async def main(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Batch re-embed all files after dimension change"
-    )
+    parser = argparse.ArgumentParser(description="Batch re-embed all files after dimension change")
     parser.add_argument(
         "--limit", type=int, help="Only process N files (for testing)", default=None
     )

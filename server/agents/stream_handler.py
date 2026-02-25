@@ -38,6 +38,7 @@ async def stream_response(
     system_prompt: str,
     messages: list[dict[str, Any]],
     tools: list[dict] | None,
+    provider_sort: str = "",
 ) -> AsyncIterator[StreamEvent]:
     """Stream API response in real-time, yielding events immediately.
 
@@ -62,6 +63,10 @@ async def stream_response(
     usage_data = None
     in_reasoning = False  # Track GLM reasoning phase
 
+    extra_body = {}
+    if provider_sort:
+        extra_body["provider"] = {"sort": provider_sort}
+
     stream = await client.chat.completions.create(
         model=model,
         max_tokens=max_tokens,
@@ -69,6 +74,7 @@ async def stream_response(
         tools=openai_tools,
         stream=True,
         stream_options={"include_usage": True},
+        extra_body=extra_body or None,
     )
 
     async for chunk in stream:

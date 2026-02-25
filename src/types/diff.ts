@@ -77,6 +77,9 @@ export interface DiffSession {
   /** Original document content before any changes (for rollback) */
   originalContent: string;
 
+  /** Original document as markdown (same format backend uses for matching old_str) */
+  originalMarkdown?: string;
+
   /** Timestamp when this session was created */
   createdAt: string;
 
