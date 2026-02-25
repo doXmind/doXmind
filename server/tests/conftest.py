@@ -36,6 +36,9 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("OPENROUTER_API_KEY", "test-api-key")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("PGVECTOR_ENABLED", "false")  # Disable vector operations in tests
+os.environ.setdefault(
+    "API_KEY_ENCRYPTION_KEY", "N7rUzNKqpRGSOGKpcErTa4dn1jsdNsM8F0BO5ch2RJE="
+)  # Fernet key for encrypting user API keys
 
 from db.database import Base, get_db
 from dependencies import get_db as deps_get_db
