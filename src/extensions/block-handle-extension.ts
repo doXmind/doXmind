@@ -48,7 +48,11 @@ export function findBlockAtCoords(
     state: {
       doc: {
         content: { size: number };
-        resolve: (pos: number) => { depth: number; before: (depth: number) => number };
+        resolve: (pos: number) => {
+          depth: number;
+          before: (depth: number) => number;
+          nodeAfter: unknown;
+        };
       };
     };
   },
@@ -65,6 +69,12 @@ export function findBlockAtCoords(
     const $pos = view.state.doc.resolve(pos);
     if ($pos.depth >= 1) {
       return $pos.before(1);
+    }
+    // For atom/leaf nodes (blockMath, mermaidChart, image, etc.),
+    // posAtCoords resolves to depth 0 (doc level). Check if there's
+    // a node right after this position — that's our target block.
+    if ($pos.nodeAfter) {
+      return pos;
     }
   } catch {
     // Position out of range

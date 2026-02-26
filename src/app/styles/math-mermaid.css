@@ -31,11 +31,7 @@
   @apply bg-accent/30;
 }
 
-/* Selected state */
-.ProseMirror .math-rendered.selected,
-.ProseMirror .math-node-wrapper.ProseMirror-selectednode .math-rendered {
-  @apply rounded ring-2 ring-primary ring-offset-2 ring-offset-background;
-}
+/* Selected state uses shared .block-selected-ring class from editor.css */
 
 /* Math editor panel */
 .math-editor-panel {
@@ -98,6 +94,13 @@
   @apply rounded border border-destructive/30 px-2 py-1 text-destructive;
 }
 
+/* Inline math overlay toolbar — position above the equation instead of top-right */
+.math-inline-toolbar.image-overlay-toolbar {
+  top: auto;
+  right: 0;
+  bottom: calc(100% + 4px);
+}
+
 /* Empty equation placeholder */
 .ProseMirror .math-rendered .math-empty-placeholder {
   font-size: 0.875rem;
@@ -129,10 +132,8 @@
   animation: mathPanelFadeIn 0.15s ease-out;
 }
 
-/* Constrain mermaid chart size in editor */
+/* Mermaid rendered chart layout */
 .ProseMirror .mermaid-chart-wrapper .mermaid-rendered {
-  max-height: 480px;
-  overflow: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -141,7 +142,6 @@
 /* Ensure mermaid SVGs are responsive */
 .ProseMirror .mermaid-chart-wrapper .mermaid-rendered svg {
   max-width: 100%;
-  max-height: 460px;
   height: auto;
   width: auto;
 }

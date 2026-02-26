@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { isDiffReviewActive } from "@/extensions/diff-review";
 import { useStreamingStore } from "@/stores/streaming-store";
+import { NodeSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 import { LinkModal } from "./link-modal";
 import { ColorPicker } from "./color-picker";
@@ -140,13 +141,11 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
     if (useStreamingStore.getState().isStreaming) return false;
     // Don't show text formatting menu for table cell selections
     if (editor.state.selection instanceof CellSelection) return false;
+    // Don't show text formatting for node selections (images, math, charts, etc.)
+    if (editor.state.selection instanceof NodeSelection) return false;
     const { from, to } = editor.state.selection;
     const hasSelection = to - from > 0;
-    const isImage = editor.isActive("image");
-    const isInlineMath = editor.isActive("inlineMath");
-    const isBlockMath = editor.isActive("blockMath");
-    const isMermaidChart = editor.isActive("mermaidChart");
-    return hasSelection && !isImage && !isInlineMath && !isBlockMath && !isMermaidChart;
+    return hasSelection;
   }, [editor]);
 
   return (

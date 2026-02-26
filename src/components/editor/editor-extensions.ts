@@ -37,6 +37,7 @@ import { TextReviewExtension } from "@/extensions/text-review-extension";
 import { BlockSelectionExtension } from "@/extensions/block-selection-extension";
 import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
+import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
 import type { Extensions } from "@tiptap/react";
 
 export interface EditorExtensionsOptions {
@@ -107,6 +108,9 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
 
     // Mermaid diagram blocks
     MermaidChart,
+
+    // Auto-lift atom blocks (mermaid, math, image) out of list items
+    AtomBlockLiftPlugin,
 
     // Callout blocks (info, warning, error, tip)
     Callout,

@@ -171,6 +171,69 @@ export function deleteBlocks(editor: Editor, blocks: Array<{ from: number; to: n
 }
 
 /**
+ * Check if a node at the given position is inside a list item.
+ */
+export function isInsideList(doc: ProseMirrorNode, pos: number): boolean {
+  try {
+    const $pos = doc.resolve(pos);
+    for (let d = $pos.depth; d >= 1; d--) {
+      const name = $pos.node(d).type.name;
+      if (name === "listItem" || name === "taskItem") {
+        return true;
+      }
+    }
+  } catch {
+    // Position out of bounds
+  }
+  return false;
+}
+
+/**
+ * Lift an atom block out of a list item.
+ * Moves it to just after the outermost enclosing list as a top-level block.
+ */
+export function liftAtomBlock(editor: Editor, atomNodePos: number): boolean {
+  const { state } = editor;
+  const { doc } = state;
+
+  const atomNode = doc.nodeAt(atomNodePos);
+  if (!atomNode) return false;
+
+  const $pos = doc.resolve(atomNodePos);
+
+  // Find the outermost list ancestor (handles nested lists)
+  let listDepth: number | null = null;
+  for (let d = $pos.depth; d >= 1; d--) {
+    const name = $pos.node(d).type.name;
+    if (name === "bulletList" || name === "orderedList" || name === "taskList") {
+      listDepth = d;
+    } else if (name !== "listItem" && name !== "taskItem") {
+      break;
+    }
+  }
+
+  if (listDepth === null) return false;
+
+  const listPos = $pos.before(listDepth);
+  const listNode = doc.nodeAt(listPos);
+  if (!listNode) return false;
+
+  const afterListPos = listPos + listNode.nodeSize;
+
+  const tr = state.tr;
+
+  // 1. Delete the atom node from inside the list
+  tr.delete(atomNodePos, atomNodePos + atomNode.nodeSize);
+
+  // 2. Insert it after the list (position mapped through the delete)
+  const mappedAfterList = tr.mapping.map(afterListPos);
+  tr.insert(mappedAfterList, atomNode);
+
+  editor.view.dispatch(tr);
+  return true;
+}
+
+/**
  * Copy a block's HTML content to the clipboard
  */
 export async function copyBlockToClipboard(

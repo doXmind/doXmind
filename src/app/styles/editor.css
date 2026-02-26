@@ -126,10 +126,25 @@
   line-height: 0;
 }
 
-.ProseMirror .image-container.selected {
-  outline: 2px solid hsl(var(--primary));
-  outline-offset: 2px;
-  border-radius: 0.5rem;
+/* Unified selected ring for non-text blocks (image, math, chart) */
+.block-selected-ring {
+  @apply rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background;
+}
+
+/* Block toolbar entrance animation */
+.block-toolbar-enter {
+  animation: blockToolbarFadeIn 0.15s ease-out;
+}
+
+@keyframes blockToolbarFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ProseMirror .image-container img {
@@ -137,38 +152,120 @@
   display: block;
 }
 
-/* Resize handles */
-.ProseMirror .resize-handle {
-  @apply absolute bg-primary;
-  width: 10px;
-  height: 10px;
-  border: 2px solid hsl(var(--background));
-  border-radius: 50%;
-  z-index: 10;
+/* ===== Notion-style image overlay toolbar ===== */
+.image-overlay-toolbar {
+  @apply absolute flex items-center gap-0.5 rounded-lg;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  background: hsl(var(--popover) / 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid hsl(var(--border) / 0.5);
+  padding: 3px 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  animation: imageToolbarFadeIn 0.15s ease-out;
 }
 
-.ProseMirror .resize-handle.top-left {
-  top: -5px;
-  left: -5px;
-  cursor: nwse-resize;
+@keyframes imageToolbarFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.ProseMirror .resize-handle.top-right {
-  top: -5px;
-  right: -5px;
-  cursor: nesw-resize;
+.image-toolbar-btn {
+  @apply flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground;
+  @apply transition-colors duration-75;
+  @apply hover:bg-accent hover:text-accent-foreground;
+  font-size: 12px;
+  line-height: 1;
 }
 
-.ProseMirror .resize-handle.bottom-left {
-  bottom: -5px;
-  left: -5px;
-  cursor: nesw-resize;
+.image-toolbar-icon-btn {
+  @apply flex items-center justify-center rounded-md p-1.5 text-muted-foreground;
+  @apply transition-colors duration-75;
+  @apply hover:bg-accent hover:text-accent-foreground;
 }
 
-.ProseMirror .resize-handle.bottom-right {
-  bottom: -5px;
-  right: -5px;
-  cursor: nwse-resize;
+.image-toolbar-icon-btn.active {
+  @apply bg-accent text-accent-foreground;
+}
+
+.image-toolbar-sep {
+  @apply mx-0.5 h-4 w-px bg-border/60;
+}
+
+/* More dropdown menu */
+.image-more-menu {
+  @apply absolute right-0 top-full mt-1 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-lg;
+  z-index: 30;
+  animation: imageToolbarFadeIn 0.1s ease-out;
+}
+
+.image-more-menu-item {
+  @apply flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-foreground;
+  @apply transition-colors duration-75;
+  @apply hover:bg-accent hover:text-accent-foreground;
+}
+
+.image-more-menu-item.text-destructive {
+  color: hsl(var(--destructive));
+}
+.image-more-menu-item.text-destructive:hover {
+  color: hsl(var(--destructive));
+}
+
+/* Inline edit input overlay (for URL/alt text editing) */
+.image-edit-input-overlay {
+  @apply absolute left-3 right-3 top-3 flex items-center gap-1.5 rounded-lg border border-border bg-popover/95 p-1.5 shadow-lg;
+  backdrop-filter: blur(8px);
+  z-index: 25;
+  animation: imageToolbarFadeIn 0.1s ease-out;
+}
+
+/* ===== Notion-style edge resize handles ===== */
+.image-resize-handle-left,
+.image-resize-handle-right {
+  @apply absolute top-0 flex h-full cursor-col-resize items-center;
+  width: 20px;
+  z-index: 15;
+}
+
+.image-resize-handle-left {
+  left: -4px;
+  justify-content: flex-start;
+  padding-left: 4px;
+}
+
+.image-resize-handle-right {
+  right: -4px;
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.image-resize-bar {
+  @apply rounded-full bg-foreground/50;
+  width: 4px;
+  height: 36px;
+  max-height: 40%;
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.image-resize-handle-left:hover .image-resize-bar,
+.image-resize-handle-right:hover .image-resize-bar {
+  @apply bg-foreground/80;
+  transform: scaleY(1.15);
+}
+
+.image-resize-handle-left:active .image-resize-bar,
+.image-resize-handle-right:active .image-resize-bar {
+  @apply bg-primary;
 }
 
 /* Size label during resize */
@@ -179,13 +276,6 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
-}
-
-/* Image bubble menu animation */
-.image-bubble-menu {
-  animation:
-    fadeIn 0.2s ease-out,
-    zoomIn 0.2s ease-out;
 }
 
 /* Resizing state */

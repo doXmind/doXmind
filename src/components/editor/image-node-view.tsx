@@ -2,40 +2,89 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NodeViewWrapper, NodeViewProps } from "@tiptap/react";
+import {
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  ImageIcon,
+  Type,
+  Trash2,
+  Check,
+  Download,
+  MoreHorizontal,
+  ArrowUpFromLine,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
+import { useIsMobile } from "@/hooks/use-device-type";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useChatContextStore } from "@/stores/chat-context-store";
+import { useLayoutStore } from "@/stores/layout-store";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 
 interface ResizeState {
   isResizing: boolean;
   startX: number;
-  startY: number;
   startWidth: number;
-  startHeight: number;
   aspectRatio: number;
-  handle: string;
+  side: "left" | "right";
 }
 
-export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProps) {
+type EditMode = "none" | "url" | "alt";
+
+export function ImageNodeView({
+  node,
+  updateAttributes,
+  selected,
+  editor,
+  deleteNode,
+  getPos,
+}: NodeViewProps) {
   const { src, alt, title, width, height, align } = node.attrs;
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+
+  let nodePos: number | undefined;
+  try {
+    nodePos = typeof getPos === "function" ? getPos() : undefined;
+  } catch {
+    // getPos() can throw during unmount
+  }
+
+  const isNested = nodePos !== undefined && isInsideList(editor.state.doc, nodePos);
+
+  const handleLiftOut = useCallback(() => {
+    if (nodePos !== undefined) {
+      liftAtomBlock(editor, nodePos);
+    }
+  }, [editor, nodePos]);
 
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
-  const [currentSize, setCurrentSize] = useState<{ width: number; height: number } | null>(null);
-  const [_naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [currentWidth, setCurrentWidth] = useState<number | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // Inline edit mode for URL/alt text
+  const [editMode, setEditMode] = useState<EditMode>("none");
+  const [inputValue, setInputValue] = useState("");
+
+  // Show toolbar on hover or when selected
+  const showToolbar = (isHovered || selected) && !resizeState?.isResizing;
 
   // Get natural image dimensions when loaded
   const handleImageLoad = useCallback(() => {
-    if (imgRef.current) {
-      setNaturalSize({
-        width: imgRef.current.naturalWidth,
-        height: imgRef.current.naturalHeight,
-      });
-    }
+    // No-op: we only need the ref for resize calculations
   }, []);
 
-  // Start resize
+  // --- Notion-style edge resize (left/right vertical bars) ---
+
   const handleResizeStart = useCallback(
-    (e: React.MouseEvent, handle: string) => {
+    (e: React.MouseEvent, side: "left" | "right") => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -44,79 +93,44 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
 
       const rect = img.getBoundingClientRect();
       const startWidth = width || rect.width;
-      const startHeight = height || rect.height;
-      const aspectRatio = startWidth / startHeight;
+      const aspectRatio = rect.width / rect.height;
 
       setResizeState({
         isResizing: true,
         startX: e.clientX,
-        startY: e.clientY,
         startWidth,
-        startHeight,
         aspectRatio,
-        handle,
+        side,
       });
-      setCurrentSize({ width: startWidth, height: startHeight });
+      setCurrentWidth(startWidth);
     },
-    [width, height]
+    [width]
   );
 
-  // Handle resize move
   useEffect(() => {
     if (!resizeState?.isResizing) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - resizeState.startX;
-      const deltaY = e.clientY - resizeState.startY;
 
-      let newWidth = resizeState.startWidth;
-      let newHeight = resizeState.startHeight;
+      // Left handle: dragging left = larger, dragging right = smaller
+      // Right handle: dragging right = larger, dragging left = smaller
+      const direction = resizeState.side === "right" ? 1 : -1;
+      const newWidth = Math.max(80, resizeState.startWidth + deltaX * direction);
 
-      // Calculate new dimensions based on handle position
-      const handle = resizeState.handle;
-      const preserveAspectRatio = !e.shiftKey;
-
-      if (handle.includes("right")) {
-        newWidth = Math.max(50, resizeState.startWidth + deltaX);
-      } else if (handle.includes("left")) {
-        newWidth = Math.max(50, resizeState.startWidth - deltaX);
-      }
-
-      if (handle.includes("bottom")) {
-        newHeight = Math.max(50, resizeState.startHeight + deltaY);
-      } else if (handle.includes("top")) {
-        newHeight = Math.max(50, resizeState.startHeight - deltaY);
-      }
-
-      // Preserve aspect ratio unless Shift is pressed
-      if (preserveAspectRatio) {
-        // Determine which dimension changed more
-        const widthChange = Math.abs(newWidth - resizeState.startWidth);
-        const heightChange = Math.abs(newHeight - resizeState.startHeight);
-
-        if (widthChange >= heightChange) {
-          newHeight = newWidth / resizeState.aspectRatio;
-        } else {
-          newWidth = newHeight * resizeState.aspectRatio;
-        }
-      }
-
-      // Ensure minimum size
-      newWidth = Math.max(50, Math.round(newWidth));
-      newHeight = Math.max(50, Math.round(newHeight));
-
-      setCurrentSize({ width: newWidth, height: newHeight });
+      setCurrentWidth(Math.round(newWidth));
     };
 
     const handleMouseUp = () => {
-      if (currentSize) {
+      if (currentWidth) {
+        const newHeight = Math.round(currentWidth / resizeState.aspectRatio);
         updateAttributes({
-          width: currentSize.width,
-          height: currentSize.height,
+          width: currentWidth,
+          height: newHeight,
         });
       }
       setResizeState(null);
-      setCurrentSize(null);
+      setCurrentWidth(null);
     };
 
     document.addEventListener("mousemove", handleMouseMove);
@@ -126,61 +140,123 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [resizeState, currentSize, updateAttributes]);
+  }, [resizeState, currentWidth, updateAttributes]);
 
-  // Displayed dimensions
-  const displayWidth = currentSize?.width || width;
-  const displayHeight = currentSize?.height || height;
+  // Displayed width
+  const displayWidth = currentWidth || width;
+  const displayHeight =
+    displayWidth && height && width ? Math.round(displayWidth * (height / width)) : height;
 
-  // Keyboard resize handler for accessibility
-  const handleKeyboardResize = useCallback(
-    (e: React.KeyboardEvent, _handle: string) => {
-      const step = e.shiftKey ? 50 : 10; // Larger step with Shift
-      const img = imgRef.current;
-      if (!img) return;
+  // --- Toolbar actions ---
 
-      const currentWidth = width || img.getBoundingClientRect().width;
-      const currentHeight = height || img.getBoundingClientRect().height;
-      const aspectRatio = currentWidth / currentHeight;
-
-      let newWidth = currentWidth;
-      let newHeight = currentHeight;
-
-      switch (e.key) {
-        case "ArrowRight":
-        case "ArrowDown":
-          e.preventDefault();
-          newWidth = currentWidth + step;
-          newHeight = newWidth / aspectRatio;
-          break;
-        case "ArrowLeft":
-        case "ArrowUp":
-          e.preventDefault();
-          newWidth = Math.max(50, currentWidth - step);
-          newHeight = newWidth / aspectRatio;
-          break;
-        default:
-          return;
-      }
-
-      updateAttributes({
-        width: Math.round(newWidth),
-        height: Math.round(newHeight),
-      });
+  const handleSetAlign = useCallback(
+    (newAlign: "left" | "center" | "right") => {
+      updateAttributes({ align: newAlign });
     },
-    [width, height, updateAttributes]
+    [updateAttributes]
   );
+
+  const handleEditUrl = useCallback(() => {
+    setInputValue(src || "");
+    setEditMode("url");
+    setShowMoreMenu(false);
+  }, [src]);
+
+  const handleEditAlt = useCallback(() => {
+    setInputValue(alt || "");
+    setEditMode("alt");
+    setShowMoreMenu(false);
+  }, [alt]);
+
+  const handleSaveInput = useCallback(() => {
+    if (editMode === "url" && inputValue.trim()) {
+      updateAttributes({ src: inputValue.trim() });
+    } else if (editMode === "alt") {
+      updateAttributes({ alt: inputValue.trim() });
+    }
+    setEditMode("none");
+    setInputValue("");
+  }, [editMode, inputValue, updateAttributes]);
+
+  const handleDelete = useCallback(() => {
+    const imgSrc = src;
+    deleteNode();
+    if (imgSrc && imgSrc.startsWith("/api/images/")) {
+      api.deleteImage(imgSrc).catch((error) => {
+        console.warn("Failed to delete image from server:", error);
+      });
+    }
+  }, [src, deleteNode]);
+
+  const handleDownload = useCallback(() => {
+    if (!src) return;
+    const a = document.createElement("a");
+    a.href = src;
+    a.download = alt || "image";
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [src, alt]);
+
+  const handleAskInChat = useCallback(() => {
+    if (src) {
+      useChatContextStore.getState().addChatContext({
+        type: "image",
+        src,
+        alt: alt || undefined,
+      });
+      useLayoutStore.getState().setChatOpen(true);
+    }
+  }, [src, alt]);
+
+  const handleInputKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSaveInput();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setEditMode("none");
+        setInputValue("");
+      }
+    },
+    [handleSaveInput]
+  );
+
+  // Close more menu on outside click
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showMoreMenu]);
+
+  // Reset state when deselected
+  useEffect(() => {
+    if (!selected && !isHovered) {
+      setEditMode("none");
+      setInputValue("");
+      setShowMoreMenu(false);
+    }
+  }, [selected, isHovered]);
 
   return (
     <NodeViewWrapper className="image-node-wrapper" data-align={align}>
       <div
         ref={containerRef}
-        className={cn(
-          "image-container",
-          selected && "selected",
-          resizeState?.isResizing && "is-resizing"
-        )}
+        className={cn("image-container group", resizeState?.isResizing && "is-resizing")}
         data-align={align}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => {
+          setIsHovered(false);
+          if (!selected) setShowMoreMenu(false);
+        }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -189,7 +265,10 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
           alt={alt || ""}
           title={title || undefined}
           onLoad={handleImageLoad}
-          className="rounded-lg"
+          className={cn(
+            "rounded-lg",
+            selected && "ring-2 ring-primary/50 ring-offset-1 ring-offset-background"
+          )}
           style={{
             width: displayWidth ? `${displayWidth}px` : undefined,
             height: displayHeight ? `${displayHeight}px` : undefined,
@@ -198,52 +277,162 @@ export function ImageNodeView({ node, updateAttributes, selected }: NodeViewProp
           draggable={false}
         />
 
-        {/* Resize handles - only show when selected */}
-        {selected && (
+        {/* Notion-style overlay toolbar (top-right, inside the image) */}
+        {showToolbar && !isMobile && editor.isEditable && editMode === "none" && (
+          <div
+            className="image-overlay-toolbar"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Lift out of list (only when nested) */}
+            {isNested && (
+              <>
+                <Tooltip content="Lift out of list" side="top">
+                  <button type="button" className="image-toolbar-icon-btn" onClick={handleLiftOut}>
+                    <ArrowUpFromLine className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+                <div className="image-toolbar-sep" />
+              </>
+            )}
+
+            {/* Ask AI */}
+            <Tooltip content="Ask AI" side="top">
+              <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
+                <AiLogoIcon className="h-3.5 w-3.5" />
+                <span className="text-xs">Ask AI</span>
+              </button>
+            </Tooltip>
+
+            <div className="image-toolbar-sep" />
+
+            {/* Alignment buttons */}
+            <Tooltip content="Align left" side="top">
+              <button
+                type="button"
+                className={cn("image-toolbar-icon-btn", align === "left" && "active")}
+                onClick={() => handleSetAlign("left")}
+              >
+                <AlignLeft className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Align center" side="top">
+              <button
+                type="button"
+                className={cn("image-toolbar-icon-btn", (!align || align === "center") && "active")}
+                onClick={() => handleSetAlign("center")}
+              >
+                <AlignCenter className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Align right" side="top">
+              <button
+                type="button"
+                className={cn("image-toolbar-icon-btn", align === "right" && "active")}
+                onClick={() => handleSetAlign("right")}
+              >
+                <AlignRight className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+
+            <div className="image-toolbar-sep" />
+
+            {/* Download */}
+            <Tooltip content="Download" side="top">
+              <button type="button" className="image-toolbar-icon-btn" onClick={handleDownload}>
+                <Download className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+
+            {/* More menu */}
+            <div className="relative" ref={moreMenuRef}>
+              <Tooltip content="More" side="top">
+                <button
+                  type="button"
+                  className="image-toolbar-icon-btn"
+                  onClick={() => setShowMoreMenu(!showMoreMenu)}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+
+              {showMoreMenu && (
+                <div className="image-more-menu">
+                  <button type="button" className="image-more-menu-item" onClick={handleEditUrl}>
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    <span>Replace image</span>
+                  </button>
+                  <button type="button" className="image-more-menu-item" onClick={handleEditAlt}>
+                    <Type className="h-3.5 w-3.5" />
+                    <span>Alt text</span>
+                  </button>
+                  <div className="my-1 h-px bg-border" />
+                  <button
+                    type="button"
+                    className="image-more-menu-item text-destructive"
+                    onClick={handleDelete}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Inline input for URL/alt text editing (overlaid on image) */}
+        {editMode !== "none" && (
+          <div
+            className="image-edit-input-overlay"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Input
+              type={editMode === "url" ? "url" : "text"}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder={editMode === "url" ? "Paste image URL..." : "Describe this image..."}
+              className="h-8 flex-1 bg-background/90 text-sm"
+              autoFocus
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSaveInput();
+              }}
+              className="h-8 w-8 text-primary"
+            >
+              <Check className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
+        {/* Notion-style edge resize handles (left and right vertical bars) */}
+        {showToolbar && !isMobile && editor.isEditable && (
           <>
             <div
-              role="slider"
-              aria-label="Resize from top-left corner"
-              aria-valuenow={displayWidth || 0}
-              tabIndex={0}
-              className="resize-handle top-left"
-              onMouseDown={(e) => handleResizeStart(e, "top-left")}
-              onKeyDown={(e) => handleKeyboardResize(e, "top-left")}
-            />
+              className="image-resize-handle-left"
+              onMouseDown={(e) => handleResizeStart(e, "left")}
+            >
+              <div className="image-resize-bar" />
+            </div>
             <div
-              role="slider"
-              aria-label="Resize from top-right corner"
-              aria-valuenow={displayWidth || 0}
-              tabIndex={0}
-              className="resize-handle top-right"
-              onMouseDown={(e) => handleResizeStart(e, "top-right")}
-              onKeyDown={(e) => handleKeyboardResize(e, "top-right")}
-            />
-            <div
-              role="slider"
-              aria-label="Resize from bottom-left corner"
-              aria-valuenow={displayWidth || 0}
-              tabIndex={0}
-              className="resize-handle bottom-left"
-              onMouseDown={(e) => handleResizeStart(e, "bottom-left")}
-              onKeyDown={(e) => handleKeyboardResize(e, "bottom-left")}
-            />
-            <div
-              role="slider"
-              aria-label="Resize from bottom-right corner"
-              aria-valuenow={displayWidth || 0}
-              tabIndex={0}
-              className="resize-handle bottom-right"
-              onMouseDown={(e) => handleResizeStart(e, "bottom-right")}
-              onKeyDown={(e) => handleKeyboardResize(e, "bottom-right")}
-            />
+              className="image-resize-handle-right"
+              onMouseDown={(e) => handleResizeStart(e, "right")}
+            >
+              <div className="image-resize-bar" />
+            </div>
           </>
         )}
 
         {/* Size label during resize */}
-        {resizeState?.isResizing && currentSize && (
+        {resizeState?.isResizing && currentWidth && (
           <div className="size-label">
-            {Math.round(currentSize.width)} × {Math.round(currentSize.height)}
+            {currentWidth} × {displayHeight || "auto"}
           </div>
         )}
       </div>

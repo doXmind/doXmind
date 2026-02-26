@@ -2,14 +2,22 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
+import { Pencil, Copy, Trash2, ArrowUpFromLine } from "lucide-react";
 import katex from "katex";
 import { cn } from "@/lib/utils";
+import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
+import { useIsMobile } from "@/hooks/use-device-type";
+import { Tooltip } from "@/components/ui/tooltip";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
+import { useChatContextStore } from "@/stores/chat-context-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { MathEditorPanel } from "./math-editor-panel";
 
 /**
  * Math Node View Component
  *
- * Renders math expressions with click-to-edit functionality (Notion-style)
+ * Renders math expressions with hover overlay toolbar (matching image/chart pattern).
+ * Hover → toolbar at top-right (block) or above (inline). Double-click or Edit button → edit mode.
  */
 export function MathNodeView({
   node,
@@ -17,14 +25,56 @@ export function MathNodeView({
   selected,
   deleteNode,
   editor,
+  getPos,
 }: NodeViewProps) {
   const { latex } = node.attrs;
   const isBlock = node.type.name === "blockMath";
+  const isMobile = useIsMobile();
 
-  const [isEditing, setIsEditing] = useState(!latex);
   const [localLatex, setLocalLatex] = useState(latex || "");
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(!latex);
+  const [isHovered, setIsHovered] = useState(false);
   const renderedRef = useRef<HTMLSpanElement>(null);
+
+  let nodePos: number | undefined;
+  try {
+    nodePos = typeof getPos === "function" ? getPos() : undefined;
+  } catch {
+    // getPos() can throw during unmount
+  }
+
+  const isNested = isBlock && nodePos !== undefined && isInsideList(editor.state.doc, nodePos);
+
+  const handleLiftOut = useCallback(() => {
+    if (nodePos !== undefined) {
+      liftAtomBlock(editor, nodePos);
+    }
+  }, [editor, nodePos]);
+
+  // Show toolbar on hover or when selected (like image/chart blocks)
+  const showToolbar = (isHovered || selected) && !isEditing;
+
+  // Listen for block-enter-edit event (Enter key from block selection)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      let currentPos: number | undefined;
+      try {
+        currentPos = typeof getPos === "function" ? getPos() : undefined;
+      } catch {
+        // getPos() can throw during unmount
+      }
+      if (
+        detail?.pos === currentPos &&
+        (detail?.type === "blockMath" || detail?.type === "inlineMath")
+      ) {
+        setIsEditing(true);
+      }
+    };
+    document.addEventListener("block-enter-edit", handler);
+    return () => document.removeEventListener("block-enter-edit", handler);
+  }, [getPos]);
 
   // Render KaTeX when not editing
   useEffect(() => {
@@ -58,18 +108,11 @@ export function MathNodeView({
     }
   }, [latex, isEditing]);
 
-  // Click to edit
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!isEditing && editor.isEditable) {
-        setIsEditing(true);
-        setLocalLatex(latex || "");
-      }
-    },
-    [isEditing, latex, editor.isEditable]
-  );
+  // Enter edit mode
+  const handleEnterEdit = useCallback(() => {
+    if (!editor.isEditable) return;
+    setIsEditing(true);
+  }, [editor.isEditable]);
 
   // Save and close
   const handleSave = useCallback(() => {
@@ -78,7 +121,6 @@ export function MathNodeView({
       updateAttributes({ latex: trimmed });
       setIsEditing(false);
     } else {
-      // Delete empty math node
       deleteNode();
     }
   }, [localLatex, updateAttributes, deleteNode]);
@@ -86,11 +128,9 @@ export function MathNodeView({
   // Cancel editing
   const handleCancel = useCallback(() => {
     if (latex) {
-      // Has existing content, revert
       setLocalLatex(latex);
       setIsEditing(false);
     } else {
-      // New empty node, delete it
       deleteNode();
     }
   }, [latex, deleteNode]);
@@ -114,6 +154,74 @@ export function MathNodeView({
     [handleSave, handleCancel]
   );
 
+  // Copy LaTeX to clipboard
+  const handleCopyLatex = useCallback(() => {
+    if (latex) {
+      navigator.clipboard.writeText(latex);
+    }
+  }, [latex]);
+
+  // Ask AI about this equation
+  const handleAskInChat = useCallback(() => {
+    if (latex && nodePos !== undefined) {
+      useChatContextStore.getState().addChatContext({
+        type: "selection",
+        text: latex,
+        from: nodePos,
+        to: nodePos + node.nodeSize,
+      });
+      useLayoutStore.getState().setChatOpen(true);
+    }
+  }, [latex, nodePos, node.nodeSize]);
+
+  // Overlay toolbar content (shared between block and inline)
+  const renderToolbar = () => (
+    <div
+      className={cn("image-overlay-toolbar", !isBlock && "math-inline-toolbar")}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {isNested && (
+        <>
+          <Tooltip content="Lift out of list" side="top">
+            <button type="button" className="image-toolbar-icon-btn" onClick={handleLiftOut}>
+              <ArrowUpFromLine className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
+          <div className="image-toolbar-sep" />
+        </>
+      )}
+      <Tooltip content="Ask AI" side="top">
+        <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
+          <AiLogoIcon className="h-3.5 w-3.5" />
+          <span className="text-xs">Ask AI</span>
+        </button>
+      </Tooltip>
+      <div className="image-toolbar-sep" />
+      <Tooltip content="Edit equation" side="top">
+        <button type="button" className="image-toolbar-icon-btn" onClick={handleEnterEdit}>
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+      <Tooltip content="Copy LaTeX" side="top">
+        <button type="button" className="image-toolbar-icon-btn" onClick={handleCopyLatex}>
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+      <div className="image-toolbar-sep" />
+      <Tooltip content="Delete" side="top">
+        <button
+          type="button"
+          className="image-toolbar-icon-btn"
+          onClick={handleDelete}
+          style={{ color: "hsl(var(--destructive))" }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+    </div>
+  );
+
   // Editing mode
   if (isEditing) {
     return (
@@ -135,25 +243,32 @@ export function MathNodeView({
     );
   }
 
-  // Render mode
+  // Render mode with hover overlay toolbar
   return (
     <NodeViewWrapper
       as={isBlock ? "div" : "span"}
       className={cn("math-node-wrapper", isBlock && "my-4 block")}
     >
       <span
-        ref={renderedRef}
-        onClick={handleClick}
-        className={cn(
-          "math-rendered cursor-pointer transition-all duration-150",
-          isBlock
-            ? "block rounded-lg px-4 py-2 text-center hover:bg-accent/30"
-            : "inline-block rounded px-1 hover:bg-accent/50",
-          selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-          renderError && "text-destructive"
-        )}
-        title={editor.isEditable ? "Click to edit" : undefined}
-      />
+        className={cn("group relative", isBlock ? "block" : "inline-block")}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Overlay toolbar */}
+        {showToolbar && !isMobile && editor.isEditable && renderToolbar()}
+
+        <span
+          ref={renderedRef}
+          onDoubleClick={handleEnterEdit}
+          className={cn(
+            "math-rendered cursor-pointer transition-all duration-150",
+            isBlock
+              ? "block rounded-lg px-4 py-2 text-center hover:bg-accent/30"
+              : "inline-block rounded px-1 hover:bg-accent/50",
+            renderError && "text-destructive"
+          )}
+        />
+      </span>
     </NodeViewWrapper>
   );
 }

@@ -132,19 +132,34 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
         if (!dom) return null;
 
         const blockRect = dom.getBoundingClientRect();
+        const node = editor.state.doc.nodeAt(blockPos);
 
-        // Read the actual line-height of the block's first text element
-        // to center the handle precisely with the first line of text
-        const computedStyle = window.getComputedStyle(dom);
-        const lineHeight = parseFloat(computedStyle.lineHeight) || 24;
-        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-        // Center on the first line: block top + padding + half line height - half button height (14px)
-        const top = blockRect.top + paddingTop + lineHeight / 2 - 14;
+        // For non-text blocks (image, math, chart, hr), align handle
+        // with the top of the block rather than trying to match line-height
+        const isMediaBlock =
+          node &&
+          (node.isAtom ||
+            node.type.name === "image" ||
+            node.type.name === "table" ||
+            node.type.name === "codeBlock");
+
+        let top: number;
+        if (isMediaBlock) {
+          // Align with the top of the block, vertically centered on first ~28px
+          top = blockRect.top + 6;
+        } else {
+          // Read the actual line-height of the block's first text element
+          // to center the handle precisely with the first line of text
+          const computedStyle = window.getComputedStyle(dom);
+          const lineHeight = parseFloat(computedStyle.lineHeight) || 24;
+          const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+          // Center on the first line: block top + padding + half line height - half button height (14px)
+          top = blockRect.top + paddingTop + lineHeight / 2 - 14;
+        }
 
         // For list items, use the parent list element's left edge so the
         // handle aligns with other top-level blocks instead of being indented.
         let left = blockRect.left;
-        const node = editor.state.doc.nodeAt(blockPos);
         if (node && (node.type.name === "listItem" || node.type.name === "taskItem")) {
           try {
             const $pos = editor.state.doc.resolve(blockPos);

@@ -2,15 +2,22 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
+import { Pencil, Copy, Trash2, ArrowUpFromLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { renderMermaidSvg } from "@/lib/mermaid-renderer";
+import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
+import { useIsMobile } from "@/hooks/use-device-type";
+import { Tooltip } from "@/components/ui/tooltip";
+import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
+import { useChatContextStore } from "@/stores/chat-context-store";
+import { useLayoutStore } from "@/stores/layout-store";
 import { MermaidEditorPanel } from "./mermaid-editor-panel";
 
 /**
  * Mermaid Node View Component
  *
- * Renders mermaid diagrams with click-to-edit functionality (Notion-style).
- * Follows the same pattern as MathNodeView.
+ * Renders mermaid diagrams with hover overlay toolbar (matching image block pattern).
+ * Hover → toolbar at top-right. Double-click or Edit button → edit mode.
  */
 export function MermaidNodeView({
   node,
@@ -18,15 +25,54 @@ export function MermaidNodeView({
   selected,
   deleteNode,
   editor,
+  getPos,
 }: NodeViewProps) {
   const { code } = node.attrs;
+  const isMobile = useIsMobile();
 
-  const [isEditing, setIsEditing] = useState(!code);
   const [localCode, setLocalCode] = useState(code || "");
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(!code);
+  const [isHovered, setIsHovered] = useState(false);
   const renderedRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  let nodePos: number | undefined;
+  try {
+    nodePos = typeof getPos === "function" ? getPos() : undefined;
+  } catch {
+    // getPos() can throw during unmount
+  }
+
+  const isNested = nodePos !== undefined && isInsideList(editor.state.doc, nodePos);
+
+  const handleLiftOut = useCallback(() => {
+    if (nodePos !== undefined) {
+      liftAtomBlock(editor, nodePos);
+    }
+  }, [editor, nodePos]);
+
+  // Show toolbar on hover or when selected (like image block)
+  const showToolbar = (isHovered || selected) && !isEditing;
+
+  // Listen for block-enter-edit event (Enter key from block selection)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      let nodePos: number | undefined;
+      try {
+        nodePos = typeof getPos === "function" ? getPos() : undefined;
+      } catch {
+        // getPos() can throw during unmount
+      }
+      if (detail?.pos === nodePos && detail?.type === "mermaidChart") {
+        setIsEditing(true);
+      }
+    };
+    document.addEventListener("block-enter-edit", handler);
+    return () => document.removeEventListener("block-enter-edit", handler);
+  }, [getPos]);
 
   // Render mermaid diagram into a target element
   const renderMermaid = useCallback(async (targetEl: HTMLDivElement, mermaidCode: string) => {
@@ -84,7 +130,6 @@ export function MermaidNodeView({
   const prevCodeRef = useRef(localCode);
   useEffect(() => {
     if (!isEditing || !previewRef.current) return;
-    // Skip the initial render (already handled above)
     if (localCode === prevCodeRef.current && initialRenderDone.current) return;
     prevCodeRef.current = localCode;
     if (!initialRenderDone.current) return;
@@ -113,18 +158,11 @@ export function MermaidNodeView({
     }
   }, [code, isEditing]);
 
-  // Click to edit
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!isEditing && editor.isEditable) {
-        setIsEditing(true);
-        setLocalCode(code || "");
-      }
-    },
-    [isEditing, code, editor.isEditable]
-  );
+  // Enter edit mode
+  const handleEnterEdit = useCallback(() => {
+    if (!editor.isEditable) return;
+    setIsEditing(true);
+  }, [editor.isEditable]);
 
   // Save and close
   const handleSave = useCallback(() => {
@@ -166,6 +204,26 @@ export function MermaidNodeView({
     [handleSave, handleCancel]
   );
 
+  // Copy code to clipboard
+  const handleCopyCode = useCallback(() => {
+    if (code) {
+      navigator.clipboard.writeText(code);
+    }
+  }, [code]);
+
+  // Ask AI about this chart
+  const handleAskInChat = useCallback(() => {
+    if (code && nodePos !== undefined) {
+      useChatContextStore.getState().addChatContext({
+        type: "selection",
+        text: code,
+        from: nodePos,
+        to: nodePos + node.nodeSize,
+      });
+      useLayoutStore.getState().setChatOpen(true);
+    }
+  }, [code, nodePos, node.nodeSize]);
+
   // Editing mode
   if (isEditing) {
     return (
@@ -184,20 +242,73 @@ export function MermaidNodeView({
     );
   }
 
-  // Render mode
+  // Render mode with hover overlay toolbar
   return (
     <NodeViewWrapper as="div" className="mermaid-chart-wrapper my-4 block">
       <div
-        ref={renderedRef}
-        onClick={handleClick}
-        className={cn(
-          "mermaid-rendered cursor-pointer overflow-x-auto rounded-lg border border-border/40 bg-card p-4 text-center transition-all duration-150",
-          "hover:border-border hover:bg-accent/20",
-          selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-          renderError && "border-destructive/50"
+        className="group relative"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Overlay toolbar - top-right inside chart (matching image block) */}
+        {showToolbar && !isMobile && editor.isEditable && (
+          <div
+            className="image-overlay-toolbar"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {isNested && (
+              <>
+                <Tooltip content="Lift out of list" side="top">
+                  <button type="button" className="image-toolbar-icon-btn" onClick={handleLiftOut}>
+                    <ArrowUpFromLine className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+                <div className="image-toolbar-sep" />
+              </>
+            )}
+            <Tooltip content="Ask AI" side="top">
+              <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
+                <AiLogoIcon className="h-3.5 w-3.5" />
+                <span className="text-xs">Ask AI</span>
+              </button>
+            </Tooltip>
+            <div className="image-toolbar-sep" />
+            <Tooltip content="Edit code" side="top">
+              <button type="button" className="image-toolbar-icon-btn" onClick={handleEnterEdit}>
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Copy code" side="top">
+              <button type="button" className="image-toolbar-icon-btn" onClick={handleCopyCode}>
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+            <div className="image-toolbar-sep" />
+            <Tooltip content="Delete" side="top">
+              <button
+                type="button"
+                className="image-toolbar-icon-btn"
+                onClick={handleDelete}
+                style={{ color: "hsl(var(--destructive))" }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+          </div>
         )}
-        title={editor.isEditable ? "Click to edit" : undefined}
-      />
+
+        {/* Rendered chart */}
+        <div
+          ref={renderedRef}
+          onDoubleClick={handleEnterEdit}
+          className={cn(
+            "mermaid-rendered cursor-pointer overflow-x-auto rounded-lg border border-border/40 bg-card p-4 text-center transition-all duration-150",
+            "hover:border-border hover:bg-accent/20",
+            renderError && "border-destructive/50"
+          )}
+        />
+      </div>
     </NodeViewWrapper>
   );
 }

@@ -4,7 +4,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import { useCallback, useEffect, useRef } from "react";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
-import { ImageBubbleMenu } from "./image-bubble-menu";
+
 import { ImageModal } from "./image-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
 import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
@@ -591,7 +591,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       {!isMobile && (
         <>
           <LinkBubbleMenu editor={editor} />
-          <ImageBubbleMenu editor={editor} />
+
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />
           <EditorContextMenu editor={editor} />

@@ -194,7 +194,7 @@ export function findTextViaMarkdown(
   oldContent: string,
   markdown: string,
   excludePositions?: Set<number>,
-  preferredBlockType?: string | null
+  _preferredBlockType?: string | null
 ): TextPosition | null {
   if (!oldContent || !markdown) return null;
 

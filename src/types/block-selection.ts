@@ -42,6 +42,8 @@ export const SELECTABLE_BLOCK_TYPES = [
   "image",
   "table",
   "tableOfContents",
+  "blockMath",
+  "mermaidChart",
 ] as const;
 
 export type SelectableBlockType = (typeof SELECTABLE_BLOCK_TYPES)[number];

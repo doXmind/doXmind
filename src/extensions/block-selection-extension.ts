@@ -298,12 +298,30 @@ export const BlockSelectionExtension = Extension.create<BlockSelectionOptions>({
                     return true;
                   }
 
-                  // Enter: Return to text editing in the first selected block
+                  // Enter: Return to text editing or enter edit mode for atom blocks
                   if (event.key === "Enter" && hasSelection) {
                     const firstId = Array.from(pluginState.selectedBlockIds)[0];
                     const match = firstId?.match(/^block-(\d+)$/);
                     if (match) {
                       const pos = parseInt(match[1], 10);
+                      const node = view.state.doc.nodeAt(pos);
+
+                      // For atom nodes (math, mermaid, image), dispatch enter-edit event
+                      // instead of trying to focus text inside them
+                      if (node?.isAtom) {
+                        const tr = view.state.tr.setMeta(BlockSelectionPluginKey, {
+                          selectedBlockIds: new Set<string>(),
+                        });
+                        view.dispatch(tr);
+                        document.dispatchEvent(
+                          new CustomEvent("block-enter-edit", {
+                            detail: { pos, type: node.type.name },
+                          })
+                        );
+                        document.dispatchEvent(new CustomEvent("block-selection-clear"));
+                        return true;
+                      }
+
                       const tr = view.state.tr.setMeta(BlockSelectionPluginKey, {
                         selectedBlockIds: new Set<string>(),
                       });
