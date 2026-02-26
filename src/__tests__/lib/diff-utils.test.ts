@@ -154,8 +154,8 @@ describe("diff-utils", () => {
         const hunks = computeDiffHunks("Hello **World**", edit);
 
         expect(hunks).toHaveLength(1);
-        // searchText should be plain text version
-        expect(hunks[0].searchText).toBe("Hello World");
+        // searchText is raw markdown (matching now uses Apply-and-Diff on full document)
+        expect(hunks[0].searchText).toBe("Hello **World**");
       });
 
       it("generates unique IDs for each hunk", () => {

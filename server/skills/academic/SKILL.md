@@ -112,6 +112,15 @@ When helping with essays:
 - Remind about proper citations when outside sources are used
 - Help avoid plagiarism by encouraging paraphrasing and proper attribution
 
+### Figures and Diagrams
+
+When writing research papers or essays that involve data or processes, consider adding Mermaid diagrams:
+
+- **Research Papers**: Flowcharts for methodology, pie/XY charts for results
+- **Compare/Contrast Essays**: Quadrant charts or radar charts for multi-factor comparison
+
+To add charts, use `read_skill_instructions("charting")` for templates and syntax reference. Insert diagrams as mermaid code fences in the document.
+
 ## Common Mistakes to Avoid
 
 1. **Vague thesis statements** - Be specific and arguable

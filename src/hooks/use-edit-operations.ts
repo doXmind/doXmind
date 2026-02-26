@@ -81,15 +81,38 @@ export function useEditOperations() {
 
         if (allHunks.length === 0) continue;
 
+        // Compute markdown (same format backend uses to validate old_str)
+        const markdown = isHtml(file.content) ? htmlToMarkdown(file.content) : file.content;
+
+        // Compute workingMarkdown by applying all edits sequentially (replicating backend logic).
+        // This is used as the "final state" for full-doc-replace fallback when sequential
+        // edits create dependencies (edit N's old_str only exists after edits 1..N-1).
+        const existingWorkingMd =
+          isReviewMode && diffSession?.fileId === fileId
+            ? diffSession.workingMarkdown || diffSession.originalMarkdown || markdown
+            : markdown;
+        let workingMarkdown = existingWorkingMd;
+        for (const edit of fileEdits) {
+          if (edit.type === "str_replace" && edit.old_str && edit.new_str !== undefined) {
+            const idx = workingMarkdown.indexOf(edit.old_str);
+            if (idx !== -1) {
+              workingMarkdown =
+                workingMarkdown.slice(0, idx) +
+                edit.new_str +
+                workingMarkdown.slice(idx + edit.old_str.length);
+            }
+          } else if (edit.type === "replace_all" && edit.new_content !== undefined) {
+            workingMarkdown = edit.new_content;
+          }
+        }
+
         // Check if we're already in review mode for this file
         if (isReviewMode && diffSession?.fileId === fileId) {
           // Add all hunks to existing session at once
-          addHunksToDiffSession(allHunks);
+          addHunksToDiffSession(allHunks, workingMarkdown);
         } else {
-          // Compute markdown (same format backend uses to validate old_str)
-          const markdown = isHtml(file.content) ? htmlToMarkdown(file.content) : file.content;
           // Start a new diff review session with all hunks
-          startDiffReview(fileId, allHunks, file.content, markdown);
+          startDiffReview(fileId, allHunks, file.content, markdown, workingMarkdown);
         }
       }
 

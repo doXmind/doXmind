@@ -13,7 +13,12 @@ import type { DiffHunk } from "@/types/diff";
 import { markdownToHtml, isHtml } from "@/lib/markdown";
 
 import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
-import { findTextInDocument, findTextNormalized, findTextViaMarkdown } from "./position-mapping";
+import {
+  findTextInDocument,
+  findTextNormalized,
+  findTextViaMarkdown,
+  clearMarkdownCache,
+} from "./position-mapping";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { createInsertWidget, createActionWidget, createInlineDiffWidget } from "./diff-widgets";
 import { normalizeTableHtml, normalizeMermaidHtml } from "./replacement-utils";
@@ -25,6 +30,7 @@ export {
   findAllTextInDocument,
   findTextNormalized,
   findTextViaMarkdown,
+  clearMarkdownCache,
 } from "./position-mapping";
 export { createInsertWidget, createActionWidget, createInlineDiffWidget } from "./diff-widgets";
 
@@ -128,9 +134,26 @@ export const DiffReviewExtension = Extension.create({
             const originalMarkdown =
               useDiffReviewStore.getState().diffSession?.originalMarkdown || "";
 
+            // Track cumulative markdown state for sequential edits.
+            // Backend applies edits cumulatively: each edit N's old_str is validated
+            // against the content AFTER edits 1..N-1 were applied.
+            // We replicate this on the frontend so we can find old_str in the correct state.
+            let cumulativeMarkdown = originalMarkdown;
+
             for (const hunk of pluginState.hunks) {
-              // Skip non-pending hunks
-              if (hunk.status !== "pending") continue;
+              // Skip non-pending hunks but still advance cumulative markdown
+              if (hunk.status !== "pending") {
+                if (hunk.oldContent && cumulativeMarkdown) {
+                  const idx = cumulativeMarkdown.indexOf(hunk.oldContent);
+                  if (idx !== -1) {
+                    cumulativeMarkdown =
+                      cumulativeMarkdown.slice(0, idx) +
+                      (hunk.newContent || "") +
+                      cumulativeMarkdown.slice(idx + hunk.oldContent.length);
+                  }
+                }
+                continue;
+              }
 
               // For replace/delete: find the actual position of oldContent in the document
               // This is more accurate than using stored positions from markdown
@@ -146,94 +169,84 @@ export const DiffReviewExtension = Extension.create({
                 hunk.resolvedFrom = from;
                 hunk.resolvedTo = to;
               } else if (hunk.oldContent) {
-                // Convert oldContent to plain text using ProseMirror's own parser
-                // This guarantees textContent matches doc.textContent (same parser, same schema)
-                let cached = pmTextCache.get(hunk.oldContent);
-                if (!cached) {
-                  const html = isHtml(hunk.oldContent)
-                    ? hunk.oldContent
-                    : markdownToHtml(hunk.oldContent);
-                  const el = document.createElement("div");
-                  el.innerHTML = html;
-                  normalizeTableHtml(el);
-                  normalizeMermaidHtml(el);
-                  const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
-
-                  // Extract expected block type for disambiguation (e.g., "heading" vs "listItem")
-                  let blockType: string | null = null;
-                  for (let i = 0; i < parsed.content.childCount; i++) {
-                    const child = parsed.content.child(i);
-                    if (child.isBlock && child.textContent.trim()) {
-                      blockType = child.type.name;
-                      break;
-                    }
-                  }
-
-                  cached = { textContent: parsed.textContent, blockType };
-                  pmTextCache.set(hunk.oldContent, cached);
-                }
-
-                // Strategy 0: Markdown-first matching (mirrors backend logic)
-                // Find oldContent in the document's markdown, then locate in ProseMirror
+                // Primary strategy: "Apply and Diff" — replicate backend's markdown matching
+                // Parses full documents (not fragments), so tables, code blocks, etc. always work
                 let found = originalMarkdown
                   ? findTextViaMarkdown(
                       state.doc,
                       hunk.oldContent,
                       originalMarkdown,
                       usedPositions,
-                      cached.blockType
+                      null,
+                      state.schema
                     )
                   : null;
-                if (found) {
-                  console.debug(
-                    `[DiffReview] Matched via markdown-first strategy for hunk ${hunk.id}`
+
+                // Try cumulative markdown for sequential edits
+                // (backend applies edits sequentially, so edit N's old_str may only exist
+                // in the content after edits 1..N-1 were applied)
+                if (!found && cumulativeMarkdown && cumulativeMarkdown !== originalMarkdown) {
+                  found = findTextViaMarkdown(
+                    state.doc,
+                    hunk.oldContent,
+                    cumulativeMarkdown,
+                    usedPositions,
+                    null,
+                    state.schema
                   );
                 }
 
-                // Strategy 1: Exact match using ProseMirror-parsed textContent
+                // Fallback: fragment-based matching (when markdown strategies fail)
                 if (!found) {
-                  found = findTextInDocument(
-                    state.doc,
-                    cached.textContent,
-                    usedPositions,
-                    cached.blockType
-                  );
-                }
+                  let cached = pmTextCache.get(hunk.oldContent);
+                  if (!cached) {
+                    const html = isHtml(hunk.oldContent)
+                      ? hunk.oldContent
+                      : markdownToHtml(hunk.oldContent);
+                    const el = document.createElement("div");
+                    el.innerHTML = html;
+                    normalizeTableHtml(el);
+                    normalizeMermaidHtml(el);
+                    const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
 
-                // Strategy 2: Try searchText from markdownToPlainText (different conversion path)
-                if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
-                  found = findTextInDocument(
-                    state.doc,
-                    hunk.searchText,
-                    usedPositions,
-                    cached.blockType
-                  );
-                  if (found) {
-                    console.debug(
-                      `[DiffReview] Matched via searchText fallback for hunk ${hunk.id}`
-                    );
+                    let blockType: string | null = null;
+                    for (let i = 0; i < parsed.content.childCount; i++) {
+                      const child = parsed.content.child(i);
+                      if (child.isBlock && child.textContent.trim()) {
+                        blockType = child.type.name;
+                        break;
+                      }
+                    }
+
+                    cached = { textContent: parsed.textContent, blockType };
+                    pmTextCache.set(hunk.oldContent, cached);
                   }
-                }
 
-                // Strategy 3: Normalized whitespace match
-                if (!found) {
-                  found = findTextNormalized(
+                  // Fallback strategy 1: Exact textContent match
+                  found = findTextInDocument(
                     state.doc,
                     cached.textContent,
                     usedPositions,
                     cached.blockType
                   );
+
+                  // Fallback strategy 2: searchText from hunk
                   if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
-                    found = findTextNormalized(
+                    found = findTextInDocument(
                       state.doc,
                       hunk.searchText,
                       usedPositions,
                       cached.blockType
                     );
                   }
-                  if (found) {
-                    console.debug(
-                      `[DiffReview] Matched via normalized fallback for hunk ${hunk.id}`
+
+                  // Fallback strategy 3: Normalized whitespace
+                  if (!found) {
+                    found = findTextNormalized(
+                      state.doc,
+                      cached.textContent,
+                      usedPositions,
+                      cached.blockType
                     );
                   }
                 }
@@ -246,14 +259,22 @@ export const DiffReviewExtension = Extension.create({
                   hunk.resolvedFrom = from;
                   hunk.resolvedTo = to;
                 } else {
-                  // Skip rendering this hunk — don't place at wrong position
                   console.error(`[DiffReview] All matching strategies failed for hunk ${hunk.id}`, {
                     oldContent: hunk.oldContent?.slice(0, 200),
-                    pmTextContent: cached.textContent?.slice(0, 200),
-                    searchText: hunk.searchText?.slice(0, 200),
                     docTextLength: state.doc.textContent.length,
                     hasMarkdown: !!originalMarkdown,
+                    hasCumulativeMarkdown: cumulativeMarkdown !== originalMarkdown,
                   });
+                  // Advance cumulative markdown even for failed hunks
+                  if (hunk.oldContent && cumulativeMarkdown) {
+                    const idx = cumulativeMarkdown.indexOf(hunk.oldContent);
+                    if (idx !== -1) {
+                      cumulativeMarkdown =
+                        cumulativeMarkdown.slice(0, idx) +
+                        (hunk.newContent || "") +
+                        cumulativeMarkdown.slice(idx + hunk.oldContent.length);
+                    }
+                  }
                   continue;
                 }
               } else {
@@ -417,6 +438,17 @@ export const DiffReviewExtension = Extension.create({
                   );
                 }
               }
+
+              // Advance cumulative markdown for subsequent hunks
+              if (hunk.oldContent && cumulativeMarkdown) {
+                const idx = cumulativeMarkdown.indexOf(hunk.oldContent);
+                if (idx !== -1) {
+                  cumulativeMarkdown =
+                    cumulativeMarkdown.slice(0, idx) +
+                    (hunk.newContent || "") +
+                    cumulativeMarkdown.slice(idx + hunk.oldContent.length);
+                }
+              }
             }
 
             if (decorations.length === 0) {
@@ -454,6 +486,9 @@ export const DiffReviewExtension = Extension.create({
               isActive: false,
             });
             dispatch(tr);
+            // Clear caches when diff session ends
+            pmTextCache.clear();
+            clearMarkdownCache();
           }
           return true;
         },
@@ -485,51 +520,83 @@ export const DiffReviewExtension = Extension.create({
               from = hunk.resolvedFrom;
               to = hunk.resolvedTo;
             } else {
-              // Fallback: re-search via ProseMirror parser (should rarely happen)
-              let cached = pmTextCache.get(hunk.oldContent);
-              if (!cached) {
-                const html = isHtml(hunk.oldContent)
-                  ? hunk.oldContent
-                  : markdownToHtml(hunk.oldContent);
-                const el = document.createElement("div");
-                el.innerHTML = html;
-                normalizeTableHtml(el);
-                normalizeMermaidHtml(el);
-                const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
+              // Fallback: re-search (should rarely happen — resolvedFrom/To are usually set by decorations)
+              // Primary: markdown-first "Apply and Diff"
+              const diffSession = useDiffReviewStore.getState().diffSession;
+              const acceptOriginalMarkdown = diffSession?.originalMarkdown || "";
+              let found = acceptOriginalMarkdown
+                ? findTextViaMarkdown(
+                    state.doc,
+                    hunk.oldContent,
+                    acceptOriginalMarkdown,
+                    undefined,
+                    null,
+                    state.schema
+                  )
+                : null;
 
-                let blockType: string | null = null;
-                for (let i = 0; i < parsed.content.childCount; i++) {
-                  const child = parsed.content.child(i);
-                  if (child.isBlock && child.textContent.trim()) {
-                    blockType = child.type.name;
-                    break;
+              // Try cumulative markdown for sequential edits
+              if (!found && acceptOriginalMarkdown && diffSession) {
+                let cumMd = acceptOriginalMarkdown;
+                for (const h of pluginState.hunks) {
+                  if (h.id === hunk.id) break;
+                  if (h.oldContent && cumMd) {
+                    const idx = cumMd.indexOf(h.oldContent);
+                    if (idx !== -1) {
+                      cumMd =
+                        cumMd.slice(0, idx) +
+                        (h.newContent || "") +
+                        cumMd.slice(idx + h.oldContent.length);
+                    }
                   }
                 }
+                if (cumMd !== acceptOriginalMarkdown) {
+                  found = findTextViaMarkdown(
+                    state.doc,
+                    hunk.oldContent,
+                    cumMd,
+                    undefined,
+                    null,
+                    state.schema
+                  );
+                }
+              }
 
-                cached = { textContent: parsed.textContent, blockType };
-                pmTextCache.set(hunk.oldContent, cached);
-              }
-              // Same 3-strategy fallback as decoration rendering
-              let found = findTextInDocument(
-                state.doc,
-                cached.textContent,
-                undefined,
-                cached.blockType
-              );
-              if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
-                found = findTextInDocument(state.doc, hunk.searchText, undefined, cached.blockType);
-              }
+              // Fallback: fragment-based matching
               if (!found) {
-                found = findTextNormalized(
+                let cached = pmTextCache.get(hunk.oldContent);
+                if (!cached) {
+                  const html = isHtml(hunk.oldContent)
+                    ? hunk.oldContent
+                    : markdownToHtml(hunk.oldContent);
+                  const el = document.createElement("div");
+                  el.innerHTML = html;
+                  normalizeTableHtml(el);
+                  normalizeMermaidHtml(el);
+                  const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
+
+                  let blockType: string | null = null;
+                  for (let i = 0; i < parsed.content.childCount; i++) {
+                    const child = parsed.content.child(i);
+                    if (child.isBlock && child.textContent.trim()) {
+                      blockType = child.type.name;
+                      break;
+                    }
+                  }
+
+                  cached = { textContent: parsed.textContent, blockType };
+                  pmTextCache.set(hunk.oldContent, cached);
+                }
+                found = findTextInDocument(
                   state.doc,
                   cached.textContent,
                   undefined,
                   cached.blockType
                 );
-                if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
+                if (!found) {
                   found = findTextNormalized(
                     state.doc,
-                    hunk.searchText,
+                    cached.textContent,
                     undefined,
                     cached.blockType
                   );

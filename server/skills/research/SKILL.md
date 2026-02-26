@@ -157,6 +157,16 @@ A good research question is:
 - Narrative analysis
 - Grounded theory coding (open, axial, selective)
 
+### Data Visualization in Documents
+
+When presenting research findings, consider adding Mermaid diagrams to the document:
+
+- **Methodology**: Flowcharts for research design/process
+- **Results**: Pie charts for distributions, XY charts for trends, radar charts for multi-variable comparison
+- **Literature Review**: Mindmaps for topic mapping
+
+To add charts, use `read_skill_instructions("charting")` for templates and syntax reference. Insert diagrams as mermaid code fences in the document.
+
 ### 6. Writing Up Research (IMRAD)
 
 **Introduction**

@@ -191,6 +191,7 @@ def execute_str_replace(
         "file_name": target_file["name"],
         "old_str": old_str,
         "new_str": new_str,
+        "offset": content.index(old_str),
         "success": True,
     }
 

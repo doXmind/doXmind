@@ -97,6 +97,17 @@ correlation_matrix = df.corr()
 - Handle errors gracefully (missing columns, wrong data types)
 - Provide clear summaries of findings
 
+### Inserting Charts into Document
+
+After analyzing data, consider inserting Mermaid charts directly into the document to visualize key findings:
+
+- **Distributions**: Pie charts
+- **Trends**: XY charts (bar/line)
+- **Comparisons**: Radar charts, quadrant charts
+- **Flows**: Sankey diagrams for value flows
+
+To add charts, use `read_skill_instructions("charting")` for templates and syntax reference. Insert diagrams as mermaid code fences in the document.
+
 ## Available Resources
 
 - `templates/exploratory_analysis.md` - EDA report template

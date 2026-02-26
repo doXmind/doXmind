@@ -81,7 +81,11 @@ def _ensure_test_database():
             finally:
                 await conn.close()
 
-        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(_create())
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_create())
+        finally:
+            loop.close()
     except Exception as e:
         import warnings
 
@@ -136,18 +140,23 @@ def _setup_schema():
             """)
             )
 
-    asyncio.get_event_loop_policy().new_event_loop().run_until_complete(_run())
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_run())
+    finally:
+        loop.close()
 
 
 _setup_schema()
 
 
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create an event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def pytest_sessionfinish(session, exitstatus):
+    """Dispose the test database engine to properly close asyncpg connections."""
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(test_engine.dispose())
+    finally:
+        loop.close()
 
 
 @pytest.fixture(scope="function")

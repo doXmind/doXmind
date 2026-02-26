@@ -5,7 +5,7 @@
  */
 
 import type { DiffHunk, DiffChangeType, EditOperation } from "@/types/diff";
-import { htmlToMarkdown, isHtml, markdownToPlainText } from "./markdown";
+import { htmlToMarkdown, isHtml } from "./markdown";
 import { generateId } from "./utils";
 
 /**
@@ -36,10 +36,9 @@ export function computeDiffHunks(originalContent: string, edit: EditOperation): 
 
       const hunkType: DiffChangeType = edit.new_str === "" ? "delete" : "replace";
 
-      // Use a placeholder position - the actual position will be found
-      // by findTextInDocument in diff-review-extension.ts when rendering
-      // Convert markdown to plain text to match ProseMirror's doc.textContent
-      const searchText = markdownToPlainText(edit.old_str);
+      // Position will be resolved by findTextViaMarkdown (Apply-and-Diff) in diff-review-extension
+      // searchText kept for backward-compat fallback but primary matching uses raw markdown
+      const searchText = edit.old_str;
 
       const hunk: DiffHunk = {
         id: generateId(),

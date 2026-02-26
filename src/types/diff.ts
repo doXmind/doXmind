@@ -80,6 +80,9 @@ export interface DiffSession {
   /** Original document as markdown (same format backend uses for matching old_str) */
   originalMarkdown?: string;
 
+  /** Cumulative markdown after applying all edits sequentially (for full-doc-replace fallback) */
+  workingMarkdown?: string;
+
   /** Timestamp when this session was created */
   createdAt: string;
 

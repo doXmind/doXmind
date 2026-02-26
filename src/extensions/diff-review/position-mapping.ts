@@ -2,10 +2,18 @@
  * Diff Review Extension - Position Mapping Utilities
  *
  * Functions for finding text positions in ProseMirror documents.
- * Supports exact match (primary) and normalized whitespace match (fallback).
+ * Primary strategy: "Apply and Diff" — replicate the backend's markdown replace,
+ * parse both full markdowns through ProseMirror, diff textContent to find positions.
+ * Fallback: exact match and normalized whitespace match on doc.textContent.
  */
 
-import type { Node as PMNode } from "@tiptap/pm/model";
+import {
+  DOMParser as ProseMirrorDOMParser,
+  type Node as PMNode,
+  type Schema,
+} from "@tiptap/pm/model";
+import { markdownToHtml } from "@/lib/markdown";
+import { normalizeTableHtml, normalizeMermaidHtml } from "./replacement-utils";
 import type { TextPosition } from "./diff-types";
 
 /**
@@ -162,79 +170,43 @@ export function findTextInDocument(
 }
 
 /**
- * Simple regex-based markdown stripping to get approximate plain text.
- * Used to estimate character offset in doc.textContent from a markdown offset.
+ * Parse a full markdown string through ProseMirror.
+ * Uses the same pipeline as the editor: markdown → HTML → normalize → ProseMirror DOM parser.
  */
-function stripMarkdownSyntax(text: string): string {
-  return text
-    .replace(/^#{1,6}\s+/gm, "") // heading markers
-    .replace(/\*\*\*([\s\S]*?)\*\*\*/g, "$1") // bold+italic
-    .replace(/\*\*([\s\S]*?)\*\*/g, "$1") // bold
-    .replace(/\*([\s\S]*?)\*/g, "$1") // italic
-    .replace(/~~([\s\S]*?)~~/g, "$1") // strikethrough
-    .replace(/`([^`]+)`/g, "$1") // inline code
-    .replace(/^\s*[-*+]\s+/gm, "") // unordered list markers
-    .replace(/^\s*\d+\.\s+/gm, "") // ordered list markers
-    .replace(/^\s*>\s?/gm, "") // blockquote markers
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links → text only
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "") // images → remove
-    .replace(/\n+/g, "") // newlines → nothing
-    .trim();
+function parseFullMarkdown(markdown: string, schema: Schema): PMNode {
+  const html = markdownToHtml(markdown);
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  normalizeTableHtml(el);
+  normalizeMermaidHtml(el);
+  return ProseMirrorDOMParser.fromSchema(schema).parse(el);
 }
 
 /**
- * Markdown-first matching: use the document's markdown to locate old_str,
- * then find the corresponding position in the ProseMirror document.
- *
- * This mirrors the backend logic (simple indexOf on markdown) and uses
- * the markdown position to narrow the search in doc.textContent.
+ * Cache for the reference document's textContent (parsed from originalMarkdown).
+ * Map-based to support multiple markdown variants (original + cumulative for sequential edits).
+ * Avoids re-parsing the full document for every hunk.
  */
-export function findTextViaMarkdown(
-  doc: PMNode,
-  oldContent: string,
-  markdown: string,
-  excludePositions?: Set<number>,
-  _preferredBlockType?: string | null
-): TextPosition | null {
-  if (!oldContent || !markdown) return null;
+const referenceTextCache = new Map<string, string>();
 
-  // Step 1: Find oldContent in the markdown (same as backend's content.count(old_str))
-  const markdownIdx = markdown.indexOf(oldContent);
-  if (markdownIdx === -1) return null;
+function getOrBuildReferenceText(markdown: string, schema: Schema): string {
+  const cached = referenceTextCache.get(markdown);
+  if (cached !== undefined) return cached;
+  const doc = parseFullMarkdown(markdown, schema);
+  const textContent = doc.textContent;
+  referenceTextCache.set(markdown, textContent);
+  return textContent;
+}
 
-  // Step 2: Get the plain text of oldContent by stripping markdown syntax
-  const searchPlainText = stripMarkdownSyntax(oldContent);
-  if (!searchPlainText) return null;
+/** Clear the reference text cache (call when diff session ends). */
+export function clearMarkdownCache(): void {
+  referenceTextCache.clear();
+}
 
-  // Step 3: Estimate where in doc.textContent this text should appear
-  // by stripping markdown from the prefix
-  const markdownPrefix = markdown.slice(0, markdownIdx);
-  const prefixPlainLength = stripMarkdownSyntax(markdownPrefix).length;
-
-  // Step 4: Search for the plain text in doc.textContent near the estimated offset
-  const entries = buildTextPositionMap(doc);
-  const fullText = doc.textContent;
-
-  // Search within a generous window around the estimated position
-  const windowSize = 300;
-  const searchFrom = Math.max(0, prefixPlainLength - windowSize);
-  const searchTo = Math.min(
-    fullText.length,
-    prefixPlainLength + searchPlainText.length + windowSize
-  );
-  const searchRegion = fullText.slice(searchFrom, searchTo);
-
-  const localIdx = searchRegion.indexOf(searchPlainText);
-  if (localIdx === -1) return null;
-
-  const globalIdx = searchFrom + localIdx;
-  const pos = mapOffsetsToPosition(globalIdx, globalIdx + searchPlainText.length, entries);
-  if (!pos) return null;
-
-  // Check exclude positions
-  if (excludePositions?.has(pos.from)) return null;
-
-  // Resolve block type
+/**
+ * Resolve blockStart and blockTypeName on a TextPosition by inspecting the document.
+ */
+function resolveBlockInfo(doc: PMNode, pos: TextPosition): void {
   try {
     const $pos = doc.resolve(pos.from);
     for (let d = $pos.depth; d > 0; d--) {
@@ -244,11 +216,114 @@ export function findTextViaMarkdown(
       }
     }
   } catch {
-    // Ignore
+    // Ignore resolution errors
+  }
+}
+
+/**
+ * Markdown-first matching using the "Apply and Diff" approach.
+ *
+ * Replicates the backend's logic: find old_str in the document's markdown,
+ * apply the deletion, parse both full markdowns through ProseMirror,
+ * and diff textContent to find the exact position range.
+ *
+ * This avoids parsing markdown fragments (which fails for table rows, etc.)
+ * because both old and new are complete documents that always parse correctly.
+ *
+ * Two-tier strategy:
+ * - Fast path: direct offset mapping when parsed reference textContent matches
+ *   the actual editor document's textContent.
+ * - Fallback: "Extract and Search" — extracts the removed text from the clean
+ *   reference diff and searches for it in the actual document. This handles
+ *   textContent mismatches caused by lossy HTML→markdown→HTML roundtrip
+ *   (nbsp, entity encoding, extension-specific parsing, etc.).
+ */
+export function findTextViaMarkdown(
+  doc: PMNode,
+  oldContent: string,
+  markdown: string,
+  excludePositions?: Set<number>,
+  _preferredBlockType?: string | null,
+  schema?: Schema
+): TextPosition | null {
+  if (!oldContent || !markdown || !schema) return null;
+
+  const actualText = doc.textContent;
+
+  // Step 1: Replicate backend logic — find old_str in the full markdown
+  let searchFrom = 0;
+
+  while (searchFrom < markdown.length) {
+    const mdIdx = markdown.indexOf(oldContent, searchFrom);
+    if (mdIdx === -1) return null;
+
+    // Step 2: Delete old_str from markdown (to find what textContent it produced)
+    const newMarkdown = markdown.slice(0, mdIdx) + markdown.slice(mdIdx + oldContent.length);
+
+    // Step 3: Parse both full markdowns through ProseMirror and get textContent
+    const refOldText = getOrBuildReferenceText(markdown, schema);
+    const newDoc = parseFullMarkdown(newMarkdown, schema);
+    const refNewText = newDoc.textContent;
+
+    // Step 4: Diff reference textContent to find the removed range
+    let start = 0;
+    const minLen = Math.min(refOldText.length, refNewText.length);
+    while (start < minLen && refOldText[start] === refNewText[start]) {
+      start++;
+    }
+    let oldEnd = refOldText.length;
+    let newEnd = refNewText.length;
+    while (oldEnd > start && newEnd > start && refOldText[oldEnd - 1] === refNewText[newEnd - 1]) {
+      oldEnd--;
+      newEnd--;
+    }
+
+    if (start >= oldEnd) {
+      // No text difference found (old_str produces no visible text — e.g., image-only)
+      // Fall through to next occurrence
+      searchFrom = mdIdx + 1;
+      continue;
+    }
+
+    // Step 5: Map to ProseMirror positions in the actual document
+    const entries = buildTextPositionMap(doc);
+
+    // Fast path: direct offset mapping when reference text matches actual document
+    if (refOldText === actualText) {
+      const pos = mapOffsetsToPosition(start, oldEnd, entries);
+      if (pos && !excludePositions?.has(pos.from)) {
+        resolveBlockInfo(doc, pos);
+        return pos;
+      }
+      // Direct mapping failed (offset at node boundary) — try Extract and Search below
+    }
+
+    // Fallback: "Extract and Search"
+    // The parsed reference textContent may differ from the actual editor document
+    // (lossy HTML→markdown→HTML roundtrip: nbsp, entities, custom nodes, etc.)
+    // Extract the removed text from the clean reference diff and search in the actual doc.
+    const removedText = refOldText.slice(start, oldEnd);
+    if (removedText) {
+      const allOccurrences = findAllTextInDocument(doc, removedText);
+      const candidates =
+        excludePositions && excludePositions.size > 0
+          ? allOccurrences.filter((occ) => !excludePositions.has(occ.from))
+          : allOccurrences;
+
+      if (candidates.length > 0) {
+        // Single match or first match — findAllTextInDocument already resolves blockInfo
+        return candidates[0];
+      }
+
+      // Last resort: normalized whitespace search for the removed text
+      const normalizedResult = findTextNormalized(doc, removedText, excludePositions);
+      if (normalizedResult) return normalizedResult;
+    }
+
+    searchFrom = mdIdx + 1;
   }
 
-  // If preferredBlockType specified and doesn't match, still return (better than nothing)
-  return pos;
+  return null;
 }
 
 /**

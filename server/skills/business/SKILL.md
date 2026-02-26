@@ -191,6 +191,16 @@ Structure:
 5. **Blockers**: Issues needing resolution
 6. **Metrics**: Key numbers/KPIs
 
+### Visual Enhancement
+
+When writing reports, proposals, or executive summaries, consider adding Mermaid diagrams to make content more impactful:
+
+- **Status Reports**: Pie charts for budget/resource allocation, Gantt charts for timelines
+- **Proposals**: Flowcharts for process workflows, timeline diagrams for project phases
+- **Executive Summaries**: XY charts for KPI trends, pie charts for data breakdowns
+
+To add charts, use `read_skill_instructions("charting")` for templates and syntax reference. Insert diagrams as mermaid code fences in the document.
+
 ## Professional Tone Guide
 
 ### Instead of → Use

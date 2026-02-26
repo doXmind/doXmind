@@ -13,6 +13,7 @@ import { create } from "zustand";
 import type { DiffHunk, DiffSession, EditFeedbackItem } from "@/types/diff";
 import { telemetry } from "@/lib/telemetry";
 import { useEditorStore } from "./editor-store";
+import { generateId } from "@/lib/utils";
 
 interface DiffReviewState {
   // State
@@ -28,14 +29,15 @@ interface DiffReviewState {
     fileId: string,
     hunks: DiffHunk[],
     originalContent: string,
-    originalMarkdown?: string
+    originalMarkdown?: string,
+    workingMarkdown?: string
   ) => void;
   endDiffReview: () => void;
   acceptHunk: (hunkId: string) => void;
   rejectHunk: (hunkId: string) => void;
   acceptAllHunks: () => void;
   rejectAllHunks: () => void;
-  addHunksToDiffSession: (hunks: DiffHunk[]) => void;
+  addHunksToDiffSession: (hunks: DiffHunk[], workingMarkdown?: string) => void;
   consumePendingFeedback: () => EditFeedbackItem[];
   goToNextHunk: () => void;
   goToPreviousHunk: () => void;
@@ -80,7 +82,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
   currentHunkIndex: -1,
   navigationSource: null,
 
-  startDiffReview: (fileId, hunks, originalContent, originalMarkdown?) => {
+  startDiffReview: (fileId, hunks, originalContent, originalMarkdown?, workingMarkdown?) => {
     const now = Date.now();
     set({
       diffSession: {
@@ -90,6 +92,7 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
         isActive: true,
         originalContent,
         originalMarkdown,
+        workingMarkdown,
         createdAt: new Date().toISOString(),
         startedAt: now,
       },
@@ -262,13 +265,58 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
       };
     }),
 
-  addHunksToDiffSession: (hunks) =>
+  addHunksToDiffSession: (hunks, workingMarkdown?) =>
     set((state) => {
       if (!state.diffSession) return state;
+
+      const originalMarkdown = state.diffSession.originalMarkdown || "";
+      const updatedWorkingMarkdown = workingMarkdown || state.diffSession.workingMarkdown;
+
+      // Detect sequential edits: old_str doesn't exist in originalMarkdown
+      // This means the backend validated it against a cumulative state that
+      // the frontend document doesn't have (previous edits not yet accepted).
+      const hasSequentialDependency = hunks.some(
+        (h) => h.oldContent && !originalMarkdown.includes(h.oldContent)
+      );
+
+      if (hasSequentialDependency && updatedWorkingMarkdown && originalMarkdown) {
+        // Sequential edits detected — individual hunks can't be matched in the
+        // actual document. Convert ALL pending hunks to a single full-doc-replace
+        // that shows the overall change from original to final state.
+        const now = Date.now();
+        return {
+          diffSession: {
+            ...state.diffSession,
+            hunks: [
+              // Keep already accepted/rejected hunks
+              ...state.diffSession.hunks.filter((h) => h.status !== "pending"),
+              // Replace all pending + new hunks with one full-doc-replace
+              {
+                id: generateId(),
+                type: "replace" as const,
+                from: 0,
+                to: -1,
+                oldContent: originalMarkdown,
+                searchText: "",
+                newContent: updatedWorkingMarkdown,
+                status: "pending" as const,
+                createdAt: new Date().toISOString(),
+                displayedAt: now,
+                editId: "batch",
+                isFullDocumentReplace: true,
+              },
+            ],
+            workingMarkdown: updatedWorkingMarkdown,
+          },
+          currentHunkIndex: 0,
+        };
+      }
+
       return {
         diffSession: {
           ...state.diffSession,
           hunks: [...state.diffSession.hunks, ...hunks],
+          workingMarkdown: updatedWorkingMarkdown,
         },
       };
     }),
