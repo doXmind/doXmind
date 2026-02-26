@@ -184,7 +184,7 @@ export function UsageSettings() {
         <div className="grid grid-cols-3 gap-3">
           <StatCard label="Input" value={formatTokens(summaryData.total_input_tokens)} />
           <StatCard label="Output" value={formatTokens(summaryData.total_output_tokens)} />
-          <StatCard label="Cost" value={formatCost(summaryData.total_cost)} />
+          <StatCard label="You saved" value={formatCost(summaryData.total_cost)} />
         </div>
       )}
 
@@ -229,7 +229,7 @@ export function UsageSettings() {
                 <th className="px-3 py-2 font-medium">Service</th>
                 <th className="px-3 py-2 text-right font-medium">Input</th>
                 <th className="px-3 py-2 text-right font-medium">Output</th>
-                <th className="px-3 py-2 text-right font-medium">Cost</th>
+                <th className="px-3 py-2 text-right font-medium">Saved</th>
                 <th className="px-3 py-2 text-right font-medium">Reqs</th>
               </tr>
             </thead>

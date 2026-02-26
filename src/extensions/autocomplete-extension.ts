@@ -22,6 +22,7 @@ export interface AutocompletePluginState {
   suggestion: string | null;
   position: number | null;
   loading: boolean; // Whether autocomplete is fetching
+  loadingPosition: number | null; // Cursor position when loading started
   suggestionId?: string; // For telemetry tracking
   textBefore?: string; // Context for RLHF training
   shownAt?: number; // Timestamp when shown (for latency)
@@ -84,6 +85,7 @@ export const AutocompleteExtension = Extension.create({
             suggestion: null,
             position: null,
             loading: false,
+            loadingPosition: null,
             suggestionId: undefined,
             textBefore: undefined,
             shownAt: undefined,
@@ -114,6 +116,7 @@ export const AutocompleteExtension = Extension.create({
                 suggestion: null,
                 position: null,
                 loading: value.loading,
+                loadingPosition: value.loadingPosition,
                 suggestionId: undefined,
                 textBefore: undefined,
                 shownAt: undefined,
@@ -138,6 +141,7 @@ export const AutocompleteExtension = Extension.create({
                 suggestion: null,
                 position: null,
                 loading: value.loading,
+                loadingPosition: value.loadingPosition,
                 suggestionId: undefined,
                 textBefore: undefined,
                 shownAt: undefined,
@@ -168,6 +172,7 @@ export const AutocompleteExtension = Extension.create({
                   suggestion: null,
                   position: null,
                   loading: value.loading,
+                  loadingPosition: value.loadingPosition,
                   suggestionId: undefined,
                   textBefore: undefined,
                   shownAt: undefined,
@@ -237,9 +242,15 @@ export const AutocompleteExtension = Extension.create({
             }
 
             // Show loading indicator while fetching (only if no suggestion yet)
-            if (pluginState?.loading && !pluginState.suggestion) {
+            // Only show at the original loading position — don't follow cursor
+            if (
+              pluginState?.loading &&
+              !pluginState.suggestion &&
+              pluginState.loadingPosition !== null &&
+              pluginState.loadingPosition === state.selection.from
+            ) {
               const loadingWidget = Decoration.widget(
-                state.selection.from,
+                pluginState.loadingPosition,
                 () => {
                   const container = document.createElement("span");
                   container.className = "autocomplete-loading";
@@ -306,6 +317,7 @@ export const AutocompleteExtension = Extension.create({
               suggestion,
               position: suggestion ? pos : null,
               loading: false,
+              loadingPosition: null,
               suggestionId,
               textBefore: options?.textBefore,
               shownAt: suggestion ? Date.now() : undefined,
@@ -362,6 +374,7 @@ export const AutocompleteExtension = Extension.create({
             suggestion: null,
             position: null,
             loading: false,
+            loadingPosition: null,
             suggestionId: undefined,
             textBefore: undefined,
             shownAt: undefined,
@@ -413,6 +426,7 @@ export const AutocompleteExtension = Extension.create({
             suggestion: remaining || null,
             position: remaining ? insertPos + word.length : null,
             loading: false,
+            loadingPosition: null,
             suggestionId: remaining ? pluginState.suggestionId : undefined,
             textBefore: remaining ? (pluginState.textBefore || "") + word : undefined,
             shownAt: remaining ? pluginState.shownAt : undefined,
@@ -447,6 +461,7 @@ export const AutocompleteExtension = Extension.create({
               suggestion: null,
               position: null,
               loading: false,
+              loadingPosition: null,
               suggestionId: undefined,
               textBefore: undefined,
               shownAt: undefined,
@@ -467,8 +482,10 @@ export const AutocompleteExtension = Extension.create({
                 suggestion: null,
                 position: null,
                 loading: false,
+                loadingPosition: null,
               }),
               loading,
+              loadingPosition: loading ? state.selection.from : null,
             });
             dispatch(tr);
           }

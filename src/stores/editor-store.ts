@@ -120,7 +120,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   autocompleteSuggestion: null,
   autocompleteTriggerMode: "auto",
   autocompleteMode: "adaptive",
-  spellcheckEnabled: true,
+  spellcheckEnabled: false,
   pendingEdits: [],
   imageModalOpen: false,
   imageModalCallback: null,

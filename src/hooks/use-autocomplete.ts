@@ -208,6 +208,7 @@ export function useAutocomplete({
   const [isLoading, setIsLoading] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorMoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const fetchSuggestionRef = useRef<((forceMode?: "short" | "long") => Promise<void>) | null>(null);
 
   const { autocompleteEnabled, autocompleteTriggerMode, autocompleteMode } = useEditorStore();
@@ -234,6 +235,12 @@ export function useAutocomplete({
       editor.commands.clearSuggestion();
     }
 
+    // Abort in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     // Clear all timers
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -250,6 +257,12 @@ export function useAutocomplete({
   // this effect. The 150ms window covers the microtask + any cascading events.
   useEffect(() => {
     fileJustSwitchedRef.current = true;
+
+    // Abort in-flight request from previous file
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
 
     // Clear any pending timers from the previous file
     if (debounceTimerRef.current) {
@@ -292,6 +305,13 @@ export function useAutocomplete({
         return;
       }
 
+      // Cancel previous in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       setIsLoading(true);
       editor.commands.setLoading(true);
 
@@ -316,6 +336,7 @@ export function useAutocomplete({
             open_file_ids: openFileIds,
             include_rag: true,
           }),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -330,6 +351,12 @@ export function useAutocomplete({
           if (!shouldTrigger(editor)) {
             return;
           }
+          // Verify cursor is still at the same position as when we made the request
+          const currentPos = editor.state.selection.from;
+          if (currentPos !== pos) {
+            log.debug("Cursor moved during request, discarding suggestion");
+            return;
+          }
           log.debug(`Showing suggestion: "${data.suggestion.substring(0, 50)}..."`);
           editor.commands.setSuggestion(data.suggestion, {
             textBefore,
@@ -337,11 +364,20 @@ export function useAutocomplete({
           });
         }
       } catch (error) {
+        // Silently ignore aborted requests
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
         log.error("Autocomplete request failed", error);
       } finally {
-        setIsLoading(false);
-        if (editor && !editor.isDestroyed) {
-          editor.commands.setLoading(false);
+        // Only clear loading if this controller is still the active one
+        // (avoids clearing loading state for a newer request)
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+          setIsLoading(false);
+          if (editor && !editor.isDestroyed) {
+            editor.commands.setLoading(false);
+          }
         }
       }
     },
@@ -462,6 +498,13 @@ export function useAutocomplete({
         if (!editor) return;
         const { state } = editor;
 
+        // Abort in-flight request — cursor has moved, any pending result is stale
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+          editor.commands.setLoading(false);
+        }
+
         // Never trigger autocomplete when text is selected — also clear any pending timer
         if (!state.selection.empty) {
           if (debounceTimerRef.current) {
@@ -497,6 +540,12 @@ export function useAutocomplete({
 
     return () => {
       editor.off("transaction", handleTransaction);
+
+      // Abort in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
 
       // Cleanup timers on unmount
       if (debounceTimerRef.current) {
