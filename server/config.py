@@ -229,7 +229,9 @@ class Settings(BaseSettings):
     # Reranking settings (GPT-based with structured outputs)
     reranking_enabled: bool = False  # Disabled by default (adds latency/cost)
     reranking_candidates: int = 20  # Number of candidates to fetch before reranking
-    reranking_model: str = "google/gemini-2.5-flash-lite"  # Fast & cheap model for reranking (via OpenRouter)
+    reranking_model: str = (
+        "google/gemini-2.5-flash-lite"  # Fast & cheap model for reranking (via OpenRouter)
+    )
 
     class Config:
         env_file = str(_BASE_DIR / ".env")

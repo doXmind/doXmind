@@ -110,6 +110,10 @@ class WritingAgent:
         # Create tool executor
         self.tool_executor = ToolExecutor(settings, tools)
 
+    def _get_extra_system_prompt(self) -> str:
+        """Hook for subclasses to append extra sections to the system prompt."""
+        return ""
+
     async def stream(
         self,
         message: str,
@@ -118,6 +122,9 @@ class WritingAgent:
         data_files: list[dict[str, Any]] = None,
         history: list[dict[str, Any]] = None,
         conversation_id: str = None,
+        global_kb_context: dict[str, Any] | None = None,
+        file_mgmt_context: dict[str, Any] | None = None,
+        community_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream agent response with real-time token streaming.
 
@@ -162,6 +169,9 @@ class WritingAgent:
                 skills_metadata = get_skills_service().list_skills()
                 system_prompt += get_skills_metadata_prompt(skills_metadata)
 
+        # Hook for subclasses to append extra system prompt sections
+        system_prompt += self._get_extra_system_prompt()
+
         # Build messages (async to support file uploads)
         messages = await self._build_messages(message, images, data_files, history)
 
@@ -181,6 +191,9 @@ class WritingAgent:
                 kb_context=kb_context,
                 data_files_context=data_files_context,
                 collected_edits=collected_edits,
+                global_kb_context=global_kb_context,
+                file_mgmt_context=file_mgmt_context,
+                community_context=community_context,
             ):
                 yield event
 
@@ -383,6 +396,9 @@ class WritingAgent:
         kb_context: dict[str, Any] | None,
         data_files_context: dict[str, Any] | None,
         collected_edits: list[dict[str, Any]],
+        global_kb_context: dict[str, Any] | None = None,
+        file_mgmt_context: dict[str, Any] | None = None,
+        community_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Main agent loop handling streaming and tool execution."""
         iteration = 0
@@ -520,6 +536,9 @@ class WritingAgent:
                     data_files_context,
                     collected_edits,
                     current_todos,
+                    global_kb_context=global_kb_context,
+                    file_mgmt_context=file_mgmt_context,
+                    community_context=community_context,
                 ):
                     if event.get("type") == "tool_result":
                         tool_result_messages.append(

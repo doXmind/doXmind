@@ -23,6 +23,7 @@ from api import (
     data_files,
     export,
     files,
+    global_agent,
     images,
     import_file,
     kb_agent,
@@ -282,6 +283,7 @@ app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(kb_agent.router, prefix="/api/kb-agent", tags=["kb_agent"])
+app.include_router(global_agent.router, prefix="/api/global-agent", tags=["global_agent"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
 app.include_router(data_files.router, tags=["data_files"])
 app.include_router(shares.router, prefix="/api/shares", tags=["shares"])

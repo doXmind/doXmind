@@ -8,9 +8,12 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from agents.tools.community_tools import execute_community_tool, is_community_tool
 from agents.tools.data_files_tools import execute_data_files_tool, is_data_files_tool
 from agents.tools.definitions import get_external_tools_for_skill
 from agents.tools.document_tools import execute_document_tool
+from agents.tools.file_management_tools import execute_file_management_tool, is_file_management_tool
+from agents.tools.global_kb_tools import execute_global_kb_tool, is_global_kb_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
 from agents.tools.legal_tools import execute_legal_tool, is_legal_tool
 from agents.tools.skill_tools import execute_skill_tool, is_skill_tool
@@ -37,6 +40,9 @@ class ToolExecutor:
         data_files_context: dict[str, Any] | None,
         collected_edits: list[dict[str, Any]],
         current_todos: list[dict] | None = None,
+        global_kb_context: dict[str, Any] | None = None,
+        file_mgmt_context: dict[str, Any] | None = None,
+        community_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Execute a single tool and yield events."""
         tool_name = tool_use["name"]
@@ -69,6 +75,14 @@ class ToolExecutor:
                 # Dynamically add external tools when skill instructions are read
                 if tool_name == "read_skill_instructions":
                     self.activate_skill_external_tools(tool_input.get("skill_name", ""))
+            elif is_global_kb_tool(tool_name):
+                result = await execute_global_kb_tool(tool_name, tool_input, global_kb_context)
+            elif is_file_management_tool(tool_name):
+                result = await execute_file_management_tool(
+                    tool_name, tool_input, file_mgmt_context
+                )
+            elif is_community_tool(tool_name):
+                result = await execute_community_tool(tool_name, tool_input, community_context)
             elif is_legal_tool(tool_name):
                 result = await execute_legal_tool(tool_name, tool_input)
             elif is_web_tool(tool_name):
@@ -221,6 +235,57 @@ class ToolExecutor:
                 return "Execution completed"
             return "Executed Python code"
 
+        # Global KB tools
+        if tool_name == "search_files":
+            if isinstance(result_content, str):
+                if "No relevant results found" in result_content:
+                    return "Found 0 results"
+                result_count = result_content.count("**Result ")
+                return f"Found {result_count} result{'s' if result_count != 1 else ''}"
+            return "Searched all documents"
+
+        if tool_name == "read_file_sections":
+            return "Read file sections"
+
+        # File management tools
+        if tool_name == "create_file":
+            return "Created document"
+
+        if tool_name == "create_folder":
+            return "Created folder"
+
+        if tool_name == "rename_file":
+            new_name = tool_input.get("new_name", "")
+            return f"Renamed to '{new_name}'"
+
+        if tool_name == "move_file":
+            return "Moved file"
+
+        if tool_name == "delete_file":
+            return "Deleted file"
+
+        if tool_name == "list_files":
+            if isinstance(result_content, str):
+                if "No files" in result_content:
+                    return "No files found"
+                file_count = result_content.count("\n- ")
+                return f"Found {file_count} item{'s' if file_count != 1 else ''}"
+            return "Listed files"
+
+        # Community tools
+        if tool_name == "search_community":
+            if isinstance(result_content, str):
+                if "No community documents" in result_content:
+                    return "Found 0 community documents"
+                return "Found community documents"
+            return "Searched community"
+
+        if tool_name == "fork_community_document":
+            return "Forked community document"
+
+        if tool_name == "get_community_recommendations":
+            return "Got recommendations"
+
         # Document tools
         if tool_name == "get_document_outline":
             return "Read document outline"
@@ -322,6 +387,20 @@ class ToolExecutor:
         edit_tools = ("str_replace_editor", "replace_document")
         kb_tools = ("search_knowledge_base", "read_kb_document", "list_kb_documents")
         skill_tools = ("read_skill_instructions", "read_skill_template", "read_skill_knowledge")
+        global_kb_tools = ("search_files", "read_file_sections")
+        file_mgmt_tools = (
+            "create_file",
+            "create_folder",
+            "rename_file",
+            "move_file",
+            "delete_file",
+            "list_files",
+        )
+        community_tools = (
+            "search_community",
+            "fork_community_document",
+            "get_community_recommendations",
+        )
 
         if tool_name in reminders:
             return result_content + reminders[tool_name]
@@ -345,6 +424,21 @@ class ToolExecutor:
             return result_content + (
                 "\n\n<reminder>Apply this guidance. Use editing tools to write content "
                 "directly into the document.</reminder>"
+            )
+        elif tool_name in global_kb_tools:
+            return result_content + (
+                "\n\n<reminder>Use this information to help the user. "
+                "Use read_file_sections to get more context, or editing tools "
+                "to incorporate findings into the current document.</reminder>"
+            )
+        elif tool_name in file_mgmt_tools:
+            return result_content + (
+                "\n\n<reminder>File operation complete. Continue with the next task.</reminder>"
+            )
+        elif tool_name in community_tools:
+            return result_content + (
+                "\n\n<reminder>Present the community results to the user. "
+                "Use fork_community_document to copy interesting documents.</reminder>"
             )
         else:
             return result_content + (

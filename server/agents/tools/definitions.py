@@ -592,3 +592,266 @@ def to_openai_tool(tool: dict) -> dict:
 def to_openai_tools(tools: list[dict]) -> list[dict]:
     """Convert a list of Anthropic-style tools to OpenAI function-calling format."""
     return [to_openai_tool(t) for t in tools]
+
+
+# ============================================================================
+# Global Knowledge Base Tools (search across ALL user documents)
+# ============================================================================
+
+GLOBAL_KB_TOOLS = [
+    {
+        "name": "search_files",
+        "description": (
+            "Search across ALL of the user's documents using semantic and keyword search. "
+            "Returns the most relevant text passages from any document. "
+            "Use this to find information related to a query across the entire knowledge base. "
+            "You can search multiple times with different queries to find all relevant information. "
+            "Each result includes the source document name, chunk index, and relevance score."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "The search query. Use specific, descriptive phrases. "
+                        "For broad topics, search multiple times with different angles."
+                    ),
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "Number of results to return (1-10). Default: 5.",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 10,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "read_file_sections",
+        "description": (
+            "Read specific sections (chunks) from a document by file_id. "
+            "Use this after search_files to read more context around a relevant result, "
+            "or to read the beginning of a document to understand its structure. "
+            "Returns consecutive sections from the document."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "The file_id of the document (from search results metadata).",
+                },
+                "start_section": {
+                    "type": "integer",
+                    "description": "Starting section index (0-based). Default: 0.",
+                    "default": 0,
+                    "minimum": 0,
+                },
+                "num_sections": {
+                    "type": "integer",
+                    "description": "Number of sections to read (1-10). Default: 3.",
+                    "default": 3,
+                    "minimum": 1,
+                    "maximum": 10,
+                },
+            },
+            "required": ["file_id"],
+        },
+    },
+]
+
+GLOBAL_KB_TOOL_NAMES = {tool["name"] for tool in GLOBAL_KB_TOOLS}
+
+
+# ============================================================================
+# File Management Tools (CRUD for files and folders)
+# ============================================================================
+
+FILE_MANAGEMENT_TOOLS = [
+    {
+        "name": "create_file",
+        "description": "Create a new document in the user's workspace. Optionally specify initial content and a parent folder.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the new document",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Initial content for the document (Markdown format). Default: empty.",
+                    "default": "",
+                },
+                "parent_id": {
+                    "type": "string",
+                    "description": "ID of the parent folder. Omit to create at root level.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "create_folder",
+        "description": "Create a new folder in the user's workspace. Maximum folder depth is 3 levels.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the new folder",
+                },
+                "parent_id": {
+                    "type": "string",
+                    "description": "ID of the parent folder. Omit to create at root level.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "rename_file",
+        "description": "Rename a file or folder.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "ID of the file or folder to rename",
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "New name for the file or folder",
+                },
+            },
+            "required": ["file_id", "new_name"],
+        },
+    },
+    {
+        "name": "move_file",
+        "description": "Move a file or folder to a different parent folder. Set target_folder_id to null to move to root level.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "ID of the file or folder to move",
+                },
+                "target_folder_id": {
+                    "type": "string",
+                    "description": "ID of the destination folder. Omit or null to move to root level.",
+                },
+            },
+            "required": ["file_id"],
+        },
+    },
+    {
+        "name": "delete_file",
+        "description": "Delete a file or folder (moves to trash). If deleting a folder, all contents are also trashed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "ID of the file or folder to delete",
+                },
+            },
+            "required": ["file_id"],
+        },
+    },
+    {
+        "name": "list_files",
+        "description": "List files and folders in a directory. Returns name, type (file/folder), and metadata for each item.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "parent_id": {
+                    "type": "string",
+                    "description": "ID of the folder to list. Omit to list root-level items.",
+                },
+            },
+            "required": [],
+        },
+    },
+]
+
+FILE_MANAGEMENT_TOOL_NAMES = {tool["name"] for tool in FILE_MANAGEMENT_TOOLS}
+
+
+# ============================================================================
+# Community Tools (discover, fork, and explore shared documents)
+# ============================================================================
+
+COMMUNITY_TOOLS = [
+    {
+        "name": "search_community",
+        "description": "Search published documents in the community. Returns titles, descriptions, tags, and share tokens.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query for community documents",
+                },
+                "sort": {
+                    "type": "string",
+                    "enum": ["newest", "popular", "most_viewed"],
+                    "description": "Sort order. Default: popular.",
+                    "default": "popular",
+                },
+                "tag": {
+                    "type": "string",
+                    "description": "Filter by tag (optional)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (1-20). Default: 10.",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 20,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "fork_community_document",
+        "description": "Fork (copy) a community document to the user's workspace. Returns the new file ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "share_token": {
+                    "type": "string",
+                    "description": "The share token of the community document to fork",
+                },
+                "target_folder_id": {
+                    "type": "string",
+                    "description": "ID of the folder to fork into. Omit to fork to root level.",
+                },
+            },
+            "required": ["share_token"],
+        },
+    },
+    {
+        "name": "get_community_recommendations",
+        "description": "Get personalized community document recommendations based on the user's interests and activity.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max recommendations to return (1-20). Default: 10.",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 20,
+                },
+            },
+            "required": [],
+        },
+    },
+]
+
+COMMUNITY_TOOL_NAMES = {tool["name"] for tool in COMMUNITY_TOOLS}

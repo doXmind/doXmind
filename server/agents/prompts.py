@@ -144,5 +144,3 @@ Available Skills:
 
     prompt += "</available_skills>\n"
     return prompt
-
-
