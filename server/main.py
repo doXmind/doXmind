@@ -21,7 +21,6 @@ from api import (
     community,
     conversations,
     data_files,
-    edit,
     export,
     files,
     images,
@@ -126,7 +125,6 @@ Most endpoints require authentication via JWT Bearer token or API Key.
     openapi_tags=[
         {"name": "auth", "description": "Authentication and user management"},
         {"name": "chat", "description": "AI chat and conversation management"},
-        {"name": "edit", "description": "AI-powered document editing"},
         {"name": "files", "description": "File management (CRUD operations)"},
         {"name": "versions", "description": "Document version control"},
         {"name": "knowledge_base", "description": "Knowledge base and RAG search"},
@@ -277,7 +275,6 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 # Protected API routes
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(conversations.router, prefix="/api/chat", tags=["chat"])
-app.include_router(edit.router, prefix="/api/edit", tags=["edit"])
 app.include_router(autocomplete.router, prefix="/api/autocomplete", tags=["autocomplete"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(versions.router, prefix="/api/versions", tags=["versions"])

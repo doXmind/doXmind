@@ -8,7 +8,6 @@ The prompts have been restructured using industry-standard XML-tagged
 format following Cursor/Claude Code conventions.
 """
 
-from prompts.domains.edit import get_edit_instruction
 from prompts.domains.writing import build_kb_context, build_quick_edit_prompt, build_writing_prompt
 
 
@@ -147,13 +146,3 @@ Available Skills:
     return prompt
 
 
-def get_quick_edit_prompt(action: str) -> str:
-    """Get prompt for quick edit actions.
-
-    Args:
-        action: Edit action type
-
-    Returns:
-        Prompt string
-    """
-    return get_edit_instruction(action)

@@ -129,7 +129,7 @@ class Settings(BaseSettings):
     default_model: str = "minimax/minimax-m2.5"
     fast_model: str = "google/gemini-2.5-flash-lite"  # For quick operations (autocomplete, quick edits, simplified slides)
     smart_model: str = "minimax/minimax-m2.5"  # For complex operations (chat, analysis)
-    review_model: str = "google/gemini-3-flash-preview"  # For text review (needs JSON mode support)
+    review_model: str = "minimax/minimax-m2.5"  # For text review (needs JSON mode support)
     embedding_model: str = "openai/text-embedding-3-small"  # For vector search embeddings
     embedding_dimension: int = (
         256  # Embedding dimensions (text-embedding-3-small supports 256-1536)
@@ -229,7 +229,7 @@ class Settings(BaseSettings):
     # Reranking settings (GPT-based with structured outputs)
     reranking_enabled: bool = False  # Disabled by default (adds latency/cost)
     reranking_candidates: int = 20  # Number of candidates to fetch before reranking
-    reranking_model: str = "openai/gpt-5-nano"  # Fast & cheap model for reranking (via OpenRouter)
+    reranking_model: str = "google/gemini-2.5-flash-lite"  # Fast & cheap model for reranking (via OpenRouter)
 
     class Config:
         env_file = str(_BASE_DIR / ".env")
