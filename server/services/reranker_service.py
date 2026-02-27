@@ -75,6 +75,7 @@ class GPTReranker:
             self._client = AsyncOpenAI(
                 api_key=effective_key,
                 base_url=self.settings.openrouter_base_url,
+                default_headers=self.settings.openrouter_headers,
             )
         return self._client
 

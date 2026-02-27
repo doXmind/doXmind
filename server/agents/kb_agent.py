@@ -145,6 +145,7 @@ class KBAgent:
         self.client = AsyncOpenAI(
             api_key=api_key or settings.openrouter_api_key,
             base_url=settings.openrouter_base_url,
+            default_headers=settings.openrouter_headers,
         )
         self.model = model or settings.default_model
         self._provider_sort = settings.openrouter_provider_sort

@@ -91,6 +91,7 @@ class WritingAgent:
         self.client = AsyncOpenAI(
             api_key=effective_api_key,
             base_url=settings.openrouter_base_url,
+            default_headers=settings.openrouter_headers,
             timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0),
         )
         self.model = effective_model

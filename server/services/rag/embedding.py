@@ -38,7 +38,11 @@ async def get_embedding(text_content: str, api_key: str | None = None) -> list[f
         logger.warning(f"Text exceeds token limit ({token_count} > {SAFE_TOKEN_LIMIT}), truncating")
         text_content = truncate_to_token_limit(text_content)
 
-    client = openai.AsyncOpenAI(api_key=effective_key, base_url=settings.openrouter_base_url)
+    client = openai.AsyncOpenAI(
+        api_key=effective_key,
+        base_url=settings.openrouter_base_url,
+        default_headers=settings.openrouter_headers,
+    )
     response = await client.embeddings.create(
         model=settings.embedding_model, input=text_content, dimensions=settings.embedding_dimension
     )
@@ -232,7 +236,11 @@ async def get_embeddings_batch(texts: list[str], api_key: str | None = None) -> 
             f"Original: {len(texts)}, After validation: {len(validated_texts)}"
         )
 
-    client = openai.AsyncOpenAI(api_key=effective_key, base_url=settings.openrouter_base_url)
+    client = openai.AsyncOpenAI(
+        api_key=effective_key,
+        base_url=settings.openrouter_base_url,
+        default_headers=settings.openrouter_headers,
+    )
 
     return await _batch_embeddings_parallel(
         client=client,

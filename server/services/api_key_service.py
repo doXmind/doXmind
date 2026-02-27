@@ -123,10 +123,16 @@ class APIKeyService:
             If valid, error_message is None.
         """
         try:
+            from config import get_settings
+
+            settings = get_settings()
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
                     "https://openrouter.ai/api/v1/auth/key",
-                    headers={"Authorization": f"Bearer {api_key}"},
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        **settings.openrouter_headers,
+                    },
                 )
                 if response.status_code == 200:
                     return True, None

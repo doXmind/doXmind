@@ -21,6 +21,7 @@ class LLMService:
         self.client = AsyncOpenAI(
             api_key=effective_api_key,
             base_url=settings.openrouter_base_url,
+            default_headers=settings.openrouter_headers,
         )
         self.model = model or settings.default_model
         self.max_tokens = settings.max_output_tokens

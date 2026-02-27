@@ -125,7 +125,10 @@ async def _fetch_openrouter_models() -> list[ModelInfo]:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(
                 "https://openrouter.ai/api/v1/models",
-                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                headers={
+                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    **settings.openrouter_headers,
+                },
             )
         if response.status_code == 200:
             for m in response.json().get("data", []):

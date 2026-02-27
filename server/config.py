@@ -30,6 +30,16 @@ class Settings(BaseSettings):
         "https://openrouter.ai/api/v1"  # OpenRouter OpenAI-compatible endpoint
     )
     openrouter_provider_sort: str = "throughput"  # Provider sort: "throughput", "price", or ""
+    openrouter_app_url: str = "https://doxmind.com"  # App URL for OpenRouter identification
+    openrouter_app_name: str = "doXmind"  # App name for OpenRouter identification
+
+    @property
+    def openrouter_headers(self) -> dict[str, str]:
+        """Headers to identify this app to OpenRouter."""
+        return {
+            "HTTP-Referer": self.openrouter_app_url,
+            "X-Title": self.openrouter_app_name,
+        }
     courtlistener_api_key: str = ""  # For legal case search
     brave_search_api_key: str = ""  # For Brave web search
 
