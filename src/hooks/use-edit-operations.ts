@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useFileStore } from "@/stores/file-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
-import { computeDiffHunks } from "@/lib/diff-utils";
+import { computeDiffHunks, findInMarkdown } from "@/lib/diff-utils";
 import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { editorLogger } from "@/lib/logger";
 import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
@@ -94,7 +94,8 @@ export function useEditOperations() {
         let workingMarkdown = existingWorkingMd;
         for (const edit of fileEdits) {
           if (edit.type === "str_replace" && edit.old_str && edit.new_str !== undefined) {
-            const idx = workingMarkdown.indexOf(edit.old_str);
+            // Use backend offset when available (precise), fall back to indexOf
+            const idx = findInMarkdown(workingMarkdown, edit.old_str, edit.offset);
             if (idx !== -1) {
               workingMarkdown =
                 workingMarkdown.slice(0, idx) +

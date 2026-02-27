@@ -171,6 +171,11 @@ class HistoryCompressor:
         if not last_todos:
             return
 
+        # Filter to only dict items — stored data may contain raw strings
+        last_todos = [t for t in last_todos if isinstance(t, dict)]
+        if not last_todos:
+            return
+
         incomplete = [t for t in last_todos if t.get("status") in ("pending", "in_progress")]
         if not incomplete:
             return

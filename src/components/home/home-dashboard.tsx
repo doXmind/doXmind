@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { Search, ChevronRight, FileText, Link2, GitFork, Bookmark } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -16,6 +17,7 @@ import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { useKBAgent } from "@/hooks/use-kb-agent";
 import { telemetry } from "@/lib/telemetry";
 import { useIsMobile } from "@/hooks/use-device-type";
+import { cn } from "@/lib/utils";
 import { HomeSearch, type SearchMode } from "./home-search";
 import { FileGrid } from "./file-grid";
 import { KBAnswerCard } from "./kb-answer-card";
@@ -26,6 +28,7 @@ import { SharesSection } from "./shares-section";
 import { ForksSection } from "./forks-section";
 import { BookmarksSection } from "./bookmarks-section";
 import { MobileFAB } from "./mobile-fab";
+import { HomeSortDropdown } from "./home-sort-dropdown";
 
 function getGreeting(): { title: string; subtitle: string } {
   const hour = new Date().getHours();
@@ -104,11 +107,61 @@ function TypewriterText({
   );
 }
 
+function CollapsibleSection({
+  icon: Icon,
+  title,
+  count,
+  defaultExpanded = false,
+  children,
+}: {
+  icon: typeof FileText;
+  title: string;
+  count: number;
+  defaultExpanded?: boolean;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  return (
+    <div className="mt-4">
+      <button
+        onClick={() => setExpanded((prev) => !prev)}
+        className="flex w-full items-center gap-2 py-2 active:opacity-70"
+      >
+        <ChevronRight
+          className={cn(
+            "h-4 w-4 text-muted-foreground/50 transition-transform duration-200",
+            expanded && "rotate-90"
+          )}
+        />
+        <Icon className="h-4 w-4 text-muted-foreground/70" />
+        <span className="text-[14px] font-medium text-foreground/80">{title}</span>
+        <span className="text-[12px] tabular-nums text-muted-foreground/50">{count}</span>
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function HomeDashboard() {
-  const { files, loadFiles, isLoading, getRecentFiles, getFavorites } = useFileStore();
+  const { files, loadFiles, isLoading, getRecentFiles, getFavorites, sortBy, setSortBy } =
+    useFileStore();
   const { user } = useAuthStore();
   const homeActiveTab = useLayoutStore((s) => s.homeActiveTab);
   const isMobile = useIsMobile();
+  const [mobileSearchExpanded, setMobileSearchExpanded] = useState(false);
 
   // Management data (shares, forks, bookmarks)
   const [shares, setShares] = useState<Share[]>([]);
@@ -298,7 +351,7 @@ export function HomeDashboard() {
   const firstName = user?.username?.split(" ")[0];
 
   // Derived data for new sections
-  const recentFiles = getRecentFiles(3);
+  const recentFiles = getRecentFiles(isMobile ? 5 : 3);
   const favorites = getFavorites();
   const totalDocs = files.filter((f) => !f.isFolder).length;
   const isSearchActive = query.trim().length > 0;
@@ -324,9 +377,51 @@ export function HomeDashboard() {
         }}
       />
 
-      <main className="relative flex-1 px-6 pb-16 md:px-10">
-        {/* Hero section */}
-        <div className="mx-auto max-w-xl pt-8 md:pt-20">
+      {/* Mobile compact header — fixed greeting row + expandable search */}
+      <div className="relative z-10 flex-shrink-0 md:hidden">
+        <div className="flex items-center justify-between px-4 pb-1 pt-3">
+          <h1 className="text-[17px] font-semibold tracking-tight text-foreground/90">
+            {firstName ? `${greeting}, ${firstName}` : greeting}
+          </h1>
+          <div className="flex items-center gap-0.5">
+            {!showAnswerCard && <HomeSortDropdown sortBy={sortBy} setSortBy={setSortBy} />}
+            <button
+              onClick={() => setMobileSearchExpanded((prev) => !prev)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors active:bg-accent/50"
+              aria-label="Search"
+            >
+              <Search className="h-[18px] w-[18px]" />
+            </button>
+          </div>
+        </div>
+
+        {/* Expandable search bar */}
+        <AnimatePresence>
+          {mobileSearchExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden px-4 pb-2"
+            >
+              <HomeSearch
+                query={query}
+                onQueryChange={handleQueryChange}
+                isSearching={isSearching}
+                isAnswering={kbAgent.isAnswering}
+                onAskAgent={handleAskAgent}
+                onModeChange={handleModeChange}
+                onClose={() => setMobileSearchExpanded(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <main className="relative flex-1 px-4 pb-16 md:px-10">
+        {/* Desktop hero section (hidden on mobile) */}
+        <div className="mx-auto hidden max-w-xl pt-8 md:block md:pt-20">
           {/* Greeting */}
           <motion.div
             className="mb-6 text-center md:mb-10"
@@ -346,7 +441,7 @@ export function HomeDashboard() {
             </p>
           </motion.div>
 
-          {/* Search */}
+          {/* Desktop Search */}
           <HomeSearch
             query={query}
             onQueryChange={handleQueryChange}
@@ -357,23 +452,23 @@ export function HomeDashboard() {
           />
         </div>
 
-        {/* Continue writing — recent files */}
+        {/* Continue writing — recent files (with favorites merged on mobile) */}
         {showRecent && (
-          <div className="mx-auto mt-6 max-w-5xl md:mt-10">
-            <RecentFiles files={recentFiles} />
+          <div className="mx-auto mt-3 max-w-5xl md:mt-10">
+            <RecentFiles files={recentFiles} favorites={favorites} />
           </div>
         )}
 
-        {/* Favorites */}
+        {/* Favorites (desktop only — merged into carousel on mobile) */}
         {showFavorites && (
-          <div className="mx-auto mt-6 max-w-5xl md:mt-8">
+          <div className="mx-auto mt-6 hidden max-w-5xl md:mt-8 md:block">
             <FavoritesSection favorites={favorites} />
           </div>
         )}
 
-        {/* Tab navigation */}
+        {/* Desktop: Tab navigation */}
         {!showAnswerCard && !isSearchActive && (
-          <div className="mx-auto mt-6 max-w-5xl md:mt-10">
+          <div className="mx-auto mt-3 hidden max-w-5xl md:mt-10 md:block">
             <HomeTabs counts={tabCounts} />
           </div>
         )}
@@ -397,32 +492,98 @@ export function HomeDashboard() {
               toolHistory={kbAgent.toolHistory}
             />
           </div>
-        ) : isSearchActive || isDocumentsTab ? (
-          <FileGrid
-            files={files}
-            isLoading={isLoading}
-            searchQuery={isAskMode ? "" : query}
-            searchResults={searchResults}
-            isSearching={isAskMode ? false : isSearching}
-            onResultClick={handleSearchResultClick}
-          />
-        ) : homeActiveTab === "shares" ? (
-          <div className="mx-auto mt-6 max-w-5xl">
-            <SharesSection shares={shares} onSharesChange={setShares} />
-          </div>
-        ) : homeActiveTab === "forks" ? (
-          <div className="mx-auto mt-6 max-w-5xl">
-            <ForksSection forks={forks} onForksChange={setForks} />
-          </div>
-        ) : homeActiveTab === "bookmarks" ? (
-          <div className="mx-auto mt-6 max-w-5xl">
-            <BookmarksSection bookmarks={bookmarks} />
-          </div>
-        ) : null}
+        ) : (
+          <>
+            {/* Desktop: tab-based content switching */}
+            <div className="hidden md:block">
+              {isSearchActive || isDocumentsTab ? (
+                <FileGrid
+                  files={files}
+                  isLoading={isLoading}
+                  searchQuery={isAskMode ? "" : query}
+                  searchResults={searchResults}
+                  isSearching={isAskMode ? false : isSearching}
+                  onResultClick={handleSearchResultClick}
+                />
+              ) : homeActiveTab === "shares" ? (
+                <div className="mx-auto mt-6 max-w-5xl">
+                  <SharesSection shares={shares} onSharesChange={setShares} />
+                </div>
+              ) : homeActiveTab === "forks" ? (
+                <div className="mx-auto mt-6 max-w-5xl">
+                  <ForksSection forks={forks} onForksChange={setForks} />
+                </div>
+              ) : homeActiveTab === "bookmarks" ? (
+                <div className="mx-auto mt-6 max-w-5xl">
+                  <BookmarksSection bookmarks={bookmarks} />
+                </div>
+              ) : null}
+            </div>
+
+            {/* Mobile: Notion-style collapsible sections (all visible) */}
+            <div className="md:hidden">
+              {isSearchActive ? (
+                <FileGrid
+                  files={files}
+                  isLoading={isLoading}
+                  searchQuery={isAskMode ? "" : query}
+                  searchResults={searchResults}
+                  isSearching={isAskMode ? false : isSearching}
+                  onResultClick={handleSearchResultClick}
+                />
+              ) : (
+                <>
+                  {/* Documents section — expanded by default */}
+                  <CollapsibleSection
+                    icon={FileText}
+                    title="Documents"
+                    count={totalDocs}
+                    defaultExpanded
+                  >
+                    <FileGrid
+                      files={files}
+                      isLoading={isLoading}
+                      searchQuery=""
+                      searchResults={[]}
+                      isSearching={false}
+                    />
+                  </CollapsibleSection>
+
+                  {/* Shares section */}
+                  {shares.length > 0 && (
+                    <CollapsibleSection icon={Link2} title="Shares" count={shares.length}>
+                      <div className="mt-2">
+                        <SharesSection shares={shares} onSharesChange={setShares} />
+                      </div>
+                    </CollapsibleSection>
+                  )}
+
+                  {/* Forks section */}
+                  {forks.length > 0 && (
+                    <CollapsibleSection icon={GitFork} title="Forks" count={forks.length}>
+                      <div className="mt-2">
+                        <ForksSection forks={forks} onForksChange={setForks} />
+                      </div>
+                    </CollapsibleSection>
+                  )}
+
+                  {/* Bookmarks section */}
+                  {bookmarks.length > 0 && (
+                    <CollapsibleSection icon={Bookmark} title="Saved" count={bookmarks.length}>
+                      <div className="mt-2">
+                        <BookmarksSection bookmarks={bookmarks} />
+                      </div>
+                    </CollapsibleSection>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
       </main>
 
-      {/* Mobile floating action button — only on Documents tab */}
-      {isMobile && !showAnswerCard && isDocumentsTab && <MobileFAB />}
+      {/* Mobile floating action button */}
+      {isMobile && !showAnswerCard && <MobileFAB />}
     </div>
   );
 }

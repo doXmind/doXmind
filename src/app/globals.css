@@ -469,3 +469,12 @@ html {
     overflow: visible !important;
   }
 }
+
+/* Utility: hide scrollbar while keeping scroll functionality */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

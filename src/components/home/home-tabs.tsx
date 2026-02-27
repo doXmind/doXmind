@@ -28,7 +28,7 @@ export function HomeTabs({ counts }: HomeTabsProps) {
   const setActiveTab = useLayoutStore((s) => s.setHomeActiveTab);
 
   return (
-    <div className="border-b border-border/40">
+    <div className="sticky top-0 z-10 -mx-4 border-b border-border/40 bg-background/95 px-4 backdrop-blur-md md:static md:mx-0 md:bg-transparent md:px-0 md:backdrop-blur-none">
       {/* Desktop: horizontal tabs with underline */}
       <div className="hidden gap-1 md:flex">
         {TABS.map((tab) => {

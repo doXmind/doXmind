@@ -11,6 +11,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { DOMParser as ProseMirrorDOMParser, Slice } from "@tiptap/pm/model";
 import type { DiffHunk } from "@/types/diff";
 import { markdownToHtml, isHtml } from "@/lib/markdown";
+import { findInMarkdown } from "@/lib/diff-utils";
 
 import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
 import {
@@ -144,7 +145,11 @@ export const DiffReviewExtension = Extension.create({
               // Skip non-pending hunks but still advance cumulative markdown
               if (hunk.status !== "pending") {
                 if (hunk.oldContent && cumulativeMarkdown) {
-                  const idx = cumulativeMarkdown.indexOf(hunk.oldContent);
+                  const idx = findInMarkdown(
+                    cumulativeMarkdown,
+                    hunk.oldContent,
+                    hunk.markdownOffset
+                  );
                   if (idx !== -1) {
                     cumulativeMarkdown =
                       cumulativeMarkdown.slice(0, idx) +
@@ -178,7 +183,8 @@ export const DiffReviewExtension = Extension.create({
                       originalMarkdown,
                       usedPositions,
                       null,
-                      state.schema
+                      state.schema,
+                      hunk.markdownOffset
                     )
                   : null;
 
@@ -192,7 +198,8 @@ export const DiffReviewExtension = Extension.create({
                     cumulativeMarkdown,
                     usedPositions,
                     null,
-                    state.schema
+                    state.schema,
+                    hunk.markdownOffset
                   );
                 }
 
@@ -267,7 +274,11 @@ export const DiffReviewExtension = Extension.create({
                   });
                   // Advance cumulative markdown even for failed hunks
                   if (hunk.oldContent && cumulativeMarkdown) {
-                    const idx = cumulativeMarkdown.indexOf(hunk.oldContent);
+                    const idx = findInMarkdown(
+                      cumulativeMarkdown,
+                      hunk.oldContent,
+                      hunk.markdownOffset
+                    );
                     if (idx !== -1) {
                       cumulativeMarkdown =
                         cumulativeMarkdown.slice(0, idx) +
@@ -441,7 +452,11 @@ export const DiffReviewExtension = Extension.create({
 
               // Advance cumulative markdown for subsequent hunks
               if (hunk.oldContent && cumulativeMarkdown) {
-                const idx = cumulativeMarkdown.indexOf(hunk.oldContent);
+                const idx = findInMarkdown(
+                  cumulativeMarkdown,
+                  hunk.oldContent,
+                  hunk.markdownOffset
+                );
                 if (idx !== -1) {
                   cumulativeMarkdown =
                     cumulativeMarkdown.slice(0, idx) +
@@ -531,7 +546,8 @@ export const DiffReviewExtension = Extension.create({
                     acceptOriginalMarkdown,
                     undefined,
                     null,
-                    state.schema
+                    state.schema,
+                    hunk.markdownOffset
                   )
                 : null;
 
@@ -541,7 +557,7 @@ export const DiffReviewExtension = Extension.create({
                 for (const h of pluginState.hunks) {
                   if (h.id === hunk.id) break;
                   if (h.oldContent && cumMd) {
-                    const idx = cumMd.indexOf(h.oldContent);
+                    const idx = findInMarkdown(cumMd, h.oldContent, h.markdownOffset);
                     if (idx !== -1) {
                       cumMd =
                         cumMd.slice(0, idx) +
@@ -557,7 +573,8 @@ export const DiffReviewExtension = Extension.create({
                     cumMd,
                     undefined,
                     null,
-                    state.schema
+                    state.schema,
+                    hunk.markdownOffset
                   );
                 }
               }

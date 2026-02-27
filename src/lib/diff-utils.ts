@@ -51,6 +51,7 @@ export function computeDiffHunks(originalContent: string, edit: EditOperation): 
         status: "pending" as const,
         createdAt: new Date().toISOString(),
         editId: edit.file_id,
+        markdownOffset: edit.offset,
       };
       hunks.push(hunk);
       break;
@@ -81,6 +82,19 @@ export function computeDiffHunks(originalContent: string, edit: EditOperation): 
   }
 
   return hunks;
+}
+
+/**
+ * Find old_str in markdown, preferring backend offset when available.
+ * Falls back to indexOf if offset is undefined or invalid.
+ */
+export function findInMarkdown(markdown: string, oldStr: string, offset?: number): number {
+  if (offset !== undefined && offset >= 0 && offset + oldStr.length <= markdown.length) {
+    if (markdown.slice(offset, offset + oldStr.length) === oldStr) {
+      return offset;
+    }
+  }
+  return markdown.indexOf(oldStr);
 }
 
 /**

@@ -337,51 +337,73 @@ export function FileGrid({
 
   return (
     <motion.div
-      className="mx-auto mt-12 w-full max-w-5xl md:mt-14"
+      className="mx-auto mt-2 w-full max-w-5xl md:mt-14"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5, delay: 0.4 }}
     >
       {/* Breadcrumb navigation - only show when in a folder or searching */}
       {(currentFolderId || isSearchActive) && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
-          <button
-            onClick={() => setCurrentFolder(null)}
-            onDragOver={handleRootDragOver}
-            onDragLeave={handleRootDragLeave}
-            onDrop={handleRootDrop}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-2 py-1 transition-all",
-              isDraggingOverRoot
-                ? "scale-105 bg-blue-100 text-blue-700 ring-2 ring-blue-400/50 dark:bg-blue-900/30 dark:text-blue-300"
-                : "hover:bg-accent hover:text-foreground"
-            )}
-          >
-            <Home className="h-4 w-4" />
-            <span>All Files</span>
-          </button>
-          {currentFolder && !isSearchActive && (
-            <>
-              <ChevronRight className="h-4 w-4 text-muted-foreground/50 dark:text-muted-foreground/60" />
-              <div className="flex items-center gap-1.5 rounded-md bg-accent/50 px-2 py-1">
-                <FolderOpen className="h-4 w-4 text-amber-500" />
-                <span className="font-medium text-foreground">{currentFolder.name}</span>
-              </div>
-            </>
-          )}
-          {isSearchActive && (
-            <>
-              <ChevronRight className="h-4 w-4 text-muted-foreground/50 dark:text-muted-foreground/60" />
-              <span className="text-muted-foreground/70 dark:text-muted-foreground/80">
-                Search Results
+        <>
+          {/* Mobile: simple back-arrow + folder name */}
+          <div className="mb-3 flex items-center gap-2 md:hidden">
+            <button
+              onClick={() => setCurrentFolder(null)}
+              className="flex items-center gap-1 rounded-lg py-1.5 pr-2 text-[14px] text-muted-foreground active:opacity-70"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span>Back</span>
+            </button>
+            {currentFolder && !isSearchActive && (
+              <span className="text-[14px] font-medium text-foreground/80">
+                {currentFolder.name}
               </span>
-            </>
-          )}
-        </div>
+            )}
+            {isSearchActive && (
+              <span className="text-[14px] text-muted-foreground/70">Search Results</span>
+            )}
+          </div>
+
+          {/* Desktop: full breadcrumb */}
+          <div className="mb-4 hidden items-center gap-2 text-sm text-muted-foreground md:flex">
+            <button
+              onClick={() => setCurrentFolder(null)}
+              onDragOver={handleRootDragOver}
+              onDragLeave={handleRootDragLeave}
+              onDrop={handleRootDrop}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2 py-1 transition-all",
+                isDraggingOverRoot
+                  ? "scale-105 bg-blue-100 text-blue-700 ring-2 ring-blue-400/50 dark:bg-blue-900/30 dark:text-blue-300"
+                  : "hover:bg-accent hover:text-foreground"
+              )}
+            >
+              <Home className="h-4 w-4" />
+              <span>All Files</span>
+            </button>
+            {currentFolder && !isSearchActive && (
+              <>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/50 dark:text-muted-foreground/60" />
+                <div className="flex items-center gap-1.5 rounded-md bg-accent/50 px-2 py-1">
+                  <FolderOpen className="h-4 w-4 text-amber-500" />
+                  <span className="font-medium text-foreground">{currentFolder.name}</span>
+                </div>
+              </>
+            )}
+            {isSearchActive && (
+              <>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/50 dark:text-muted-foreground/60" />
+                <span className="text-muted-foreground/70 dark:text-muted-foreground/80">
+                  Search Results
+                </span>
+              </>
+            )}
+          </div>
+        </>
       )}
 
-      {/* Section header */}
-      <div className="mb-6 flex items-center justify-between gap-4">
+      {/* Section header (hidden on mobile — tabs + compact header provide this) */}
+      <div className="mb-6 hidden items-center justify-between gap-4 md:flex">
         <div className="flex items-center gap-3">
           <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 dark:text-muted-foreground/70">
             {isSearchActive ? "Results" : currentFolder ? currentFolder.name : "All Documents"}

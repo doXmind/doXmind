@@ -244,17 +244,36 @@ export function findTextViaMarkdown(
   markdown: string,
   excludePositions?: Set<number>,
   _preferredBlockType?: string | null,
-  schema?: Schema
+  schema?: Schema,
+  markdownOffset?: number
 ): TextPosition | null {
   if (!oldContent || !markdown || !schema) return null;
 
   const actualText = doc.textContent;
 
   // Step 1: Replicate backend logic — find old_str in the full markdown
+  // When backend offset is provided, use it directly (with verification) to avoid
+  // ambiguity with multiple similar blocks (e.g., consecutive mermaid charts).
   let searchFrom = 0;
+  let useOffsetOnFirstIter = false;
+  if (markdownOffset !== undefined && markdownOffset >= 0) {
+    if (
+      markdownOffset + oldContent.length <= markdown.length &&
+      markdown.slice(markdownOffset, markdownOffset + oldContent.length) === oldContent
+    ) {
+      searchFrom = markdownOffset;
+      useOffsetOnFirstIter = true;
+    }
+  }
 
   while (searchFrom < markdown.length) {
-    const mdIdx = markdown.indexOf(oldContent, searchFrom);
+    let mdIdx: number;
+    if (useOffsetOnFirstIter) {
+      mdIdx = markdownOffset!;
+      useOffsetOnFirstIter = false;
+    } else {
+      mdIdx = markdown.indexOf(oldContent, searchFrom);
+    }
     if (mdIdx === -1) return null;
 
     // Step 2: Delete old_str from markdown (to find what textContent it produced)
@@ -279,8 +298,29 @@ export function findTextViaMarkdown(
     }
 
     if (start >= oldEnd) {
-      // No text difference found (old_str produces no visible text — e.g., image-only)
-      // Fall through to next occurrence
+      // No textContent difference: old_str produces no visible text
+      // (e.g., mermaid charts, images, math blocks — atom nodes without leafText).
+      // Fall back to structural node-level diff between the two parsed documents.
+      const refDoc = parseFullMarkdown(markdown, schema);
+      const structuralPos = findStructuralDiff(refDoc, newDoc);
+      if (structuralPos) {
+        // Verify structural positions are usable in the actual editor document.
+        // When reference textContent matches actual, the documents have the same
+        // structure, so positions from refDoc map directly to the actual doc.
+        if (refOldText === actualText && !excludePositions?.has(structuralPos.from)) {
+          resolveBlockInfo(doc, structuralPos);
+          return structuralPos;
+        }
+        // Even when textContent differs, try if the position is valid in actual doc
+        if (
+          structuralPos.from < doc.content.size &&
+          structuralPos.to <= doc.content.size &&
+          !excludePositions?.has(structuralPos.from)
+        ) {
+          resolveBlockInfo(doc, structuralPos);
+          return structuralPos;
+        }
+      }
       searchFrom = mdIdx + 1;
       continue;
     }
@@ -324,6 +364,52 @@ export function findTextViaMarkdown(
   }
 
   return null;
+}
+
+/**
+ * Find the position range of diverging nodes between two ProseMirror documents.
+ * Used when textContent diff fails (e.g., mermaid charts, images produce no text).
+ * Compares top-level (block) children from front and back to find the diverging range.
+ */
+function findStructuralDiff(oldDoc: PMNode, newDoc: PMNode): TextPosition | null {
+  const oldCount = oldDoc.content.childCount;
+  const newCount = newDoc.content.childCount;
+
+  if (oldCount === newCount && oldCount === 0) return null;
+
+  // Find first diverging node from front
+  let frontMatch = 0;
+  while (frontMatch < Math.min(oldCount, newCount)) {
+    if (!oldDoc.content.child(frontMatch).eq(newDoc.content.child(frontMatch))) break;
+    frontMatch++;
+  }
+
+  // Find first diverging node from back
+  let backMatch = 0;
+  while (backMatch < Math.min(oldCount - frontMatch, newCount - frontMatch)) {
+    if (
+      !oldDoc.content
+        .child(oldCount - 1 - backMatch)
+        .eq(newDoc.content.child(newCount - 1 - backMatch))
+    )
+      break;
+    backMatch++;
+  }
+
+  // Calculate ProseMirror positions for the diverging range in oldDoc
+  // Position 0 = start of doc content (ProseMirror descendants use 0-based positions)
+  let from = 0;
+  for (let i = 0; i < frontMatch; i++) {
+    from += oldDoc.content.child(i).nodeSize;
+  }
+
+  let to = from;
+  for (let i = frontMatch; i < oldCount - backMatch; i++) {
+    to += oldDoc.content.child(i).nodeSize;
+  }
+
+  if (from >= to) return null;
+  return { from, to, blockStart: from };
 }
 
 /**

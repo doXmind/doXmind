@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
 import type { FileItem } from "@/stores/file-store";
 import { MobileDocumentRow } from "./mobile-document-row";
 
@@ -22,13 +21,7 @@ export function MobileDocumentList({
 }: MobileDocumentListProps) {
   return (
     <motion.div className="pb-24 sm:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div
-        className={cn(
-          "overflow-hidden rounded-xl will-change-transform",
-          "border border-border/50",
-          "bg-card/60"
-        )}
-      >
+      <div className="divide-y divide-border/30">
         {files.map((file, i) => (
           <motion.div
             key={file.id}
@@ -38,11 +31,10 @@ export function MobileDocumentList({
               y: 0,
               transition: {
                 duration: 0.35,
-                delay: Math.min(i * 0.04, 0.3),
+                delay: Math.min(i * 0.03, 0.2),
                 ease: [0.16, 1, 0.3, 1] as const,
               },
             }}
-            className={cn(i > 0 && "border-t border-border/30")}
           >
             <MobileDocumentRow
               file={file}

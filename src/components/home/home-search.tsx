@@ -16,6 +16,7 @@ interface HomeSearchProps {
   isAnswering?: boolean;
   onAskAgent?: (question: string) => void;
   onModeChange?: (mode: SearchMode) => void;
+  onClose?: () => void;
 }
 
 export type { SearchMode };
@@ -27,6 +28,7 @@ export function HomeSearch({
   isAnswering,
   onAskAgent,
   onModeChange,
+  onClose,
 }: HomeSearchProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [mode, setMode] = useState<SearchMode>("ask");
@@ -40,6 +42,7 @@ export function HomeSearch({
       e.preventDefault();
       onQueryChange("");
       inputRef.current?.blur();
+      onClose?.();
     }
     if (e.key === "Enter" && isAskMode && query.trim() && onAskAgent) {
       e.preventDefault();

@@ -3,7 +3,10 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { motion, AnimatePresence, useDragControls, type PanInfo } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-device-type";
+import { MOBILE_SPRINGS, Z_INDEX } from "@/lib/constants";
 import { Button } from "./button";
 
 interface ModalProps {
@@ -31,6 +34,8 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
   const [mounted, setMounted] = React.useState(false);
   const modalRef = React.useRef<HTMLDivElement>(null);
   const previousActiveElement = React.useRef<HTMLElement | null>(null);
+  const isMobile = useIsMobile();
+  const dragControls = useDragControls();
 
   React.useEffect(() => {
     setMounted(true);
@@ -118,7 +123,84 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
     };
   }, [open, onClose]);
 
-  if (!open || !mounted) return null;
+  const handleDragEnd = React.useCallback(
+    (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (info.offset.y > 100 || info.velocity.y > 300) {
+        onClose();
+      }
+    },
+    [onClose]
+  );
+
+  if (!mounted) return null;
+
+  // Mobile: iOS-style bottom sheet
+  if (isMobile) {
+    return createPortal(
+      <AnimatePresence>
+        {open && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              className="fixed inset-0"
+              style={{ zIndex: Z_INDEX.MODAL - 1 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={onClose}
+              aria-hidden="true"
+            >
+              <div className="h-full w-full bg-black/40 dark:bg-black/60" />
+            </motion.div>
+
+            {/* Bottom sheet panel */}
+            <motion.div
+              ref={modalRef}
+              role="dialog"
+              aria-modal="true"
+              tabIndex={-1}
+              className={cn(
+                "fixed inset-x-0 bottom-0",
+                "rounded-t-2xl border-t border-border bg-popover shadow-2xl",
+                "flex flex-col focus:outline-none",
+                className
+              )}
+              style={{
+                zIndex: Z_INDEX.MODAL,
+                maxHeight: "90vh",
+                paddingBottom: "env(safe-area-inset-bottom)",
+              }}
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", ...MOBILE_SPRINGS.SMOOTH }}
+              drag="y"
+              dragControls={dragControls}
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={{ top: 0.1, bottom: 0.3 }}
+              onDragEnd={handleDragEnd}
+            >
+              {/* Drag handle */}
+              <div
+                className="flex shrink-0 cursor-grab touch-none justify-center pb-2 pt-3 active:cursor-grabbing"
+                onPointerDown={(e) => dragControls.start(e)}
+              >
+                <div className="h-1 w-10 rounded-full bg-border" />
+              </div>
+
+              {/* Content */}
+              <div className="overflow-y-auto px-6 pb-6">{children}</div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>,
+      document.body
+    );
+  }
+
+  // Desktop: centered dialog (unchanged)
+  if (!open) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -137,8 +219,6 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
         className={cn(
           "animate-in fade-in-0 zoom-in-95 relative z-50 w-full max-w-md rounded-lg border border-border bg-popover p-6 shadow-lg",
           "focus:outline-none",
-          // Mobile: add horizontal margin to prevent edge-to-edge
-          "mx-4 md:mx-0",
           className
         )}
       >

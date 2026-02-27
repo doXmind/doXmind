@@ -55,6 +55,9 @@ export interface DiffHunk {
 
   /** Whether this hunk represents a full document replacement (from replace_all operation) */
   isFullDocumentReplace?: boolean;
+
+  /** Character offset in markdown where old_str was found (from backend, for precise positioning) */
+  markdownOffset?: number;
 }
 
 /**

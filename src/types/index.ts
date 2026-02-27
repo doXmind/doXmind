@@ -61,6 +61,8 @@ export interface EditOperation {
   new_str?: string;
   /** Complete new content (for replace_all) */
   new_content?: string;
+  /** Character offset in markdown where old_str was found (from backend) */
+  offset?: number;
 }
 
 // =============================================================================

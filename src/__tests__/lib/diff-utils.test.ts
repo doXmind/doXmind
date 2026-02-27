@@ -366,6 +366,77 @@ describe("diff-utils", () => {
   });
 
   // ============================================================================
+  // computeDiffHunks — markdownOffset propagation
+  // ============================================================================
+  describe("computeDiffHunks — markdownOffset propagation", () => {
+    it("propagates offset from edit to hunk", () => {
+      const edit: EditOperation = {
+        type: "str_replace",
+        old_str: "Hello World",
+        new_str: "Hello Universe",
+        file_id: "file-1",
+        file_name: "test.md",
+        success: true,
+        offset: 42,
+      };
+
+      const hunks = computeDiffHunks("prefix\nHello World\nsuffix", edit);
+
+      expect(hunks).toHaveLength(1);
+      expect(hunks[0].markdownOffset).toBe(42);
+    });
+
+    it("sets markdownOffset to undefined when edit has no offset", () => {
+      const edit: EditOperation = {
+        type: "str_replace",
+        old_str: "Hello World",
+        new_str: "Hello Universe",
+        file_id: "file-1",
+        file_name: "test.md",
+        success: true,
+      };
+
+      const hunks = computeDiffHunks("Hello World", edit);
+
+      expect(hunks).toHaveLength(1);
+      expect(hunks[0].markdownOffset).toBeUndefined();
+    });
+
+    it("propagates offset=0 correctly", () => {
+      const edit: EditOperation = {
+        type: "str_replace",
+        old_str: "Hello",
+        new_str: "Hi",
+        file_id: "file-1",
+        file_name: "test.md",
+        success: true,
+        offset: 0,
+      };
+
+      const hunks = computeDiffHunks("Hello World", edit);
+
+      expect(hunks).toHaveLength(1);
+      expect(hunks[0].markdownOffset).toBe(0);
+    });
+
+    it("does not set markdownOffset on replace_all hunks", () => {
+      const edit: EditOperation = {
+        type: "replace_all",
+        new_content: "New content",
+        file_id: "file-1",
+        file_name: "test.md",
+        success: true,
+        offset: 0,
+      };
+
+      const hunks = computeDiffHunks("Original", edit);
+
+      expect(hunks).toHaveLength(1);
+      expect(hunks[0].markdownOffset).toBeUndefined();
+    });
+  });
+
+  // ============================================================================
   // findTextInDoc tests (exact match only)
   // ============================================================================
   describe("findTextInDoc", () => {

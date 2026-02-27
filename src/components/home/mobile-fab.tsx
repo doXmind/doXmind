@@ -25,6 +25,7 @@ export function MobileFAB() {
     useFileStore();
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreateFile = async () => {
@@ -106,10 +107,10 @@ export function MobileFAB() {
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
         }}
       >
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <motion.button
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground text-background shadow-lg active:scale-95"
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground text-background shadow-xl ring-1 ring-foreground/10 active:scale-95"
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{
@@ -121,7 +122,12 @@ export function MobileFAB() {
               onClick={() => haptics.light()}
               aria-label="Create new"
             >
-              <Plus className="h-7 w-7" strokeWidth={2.5} />
+              <motion.div
+                animate={{ rotate: menuOpen ? 45 : 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <Plus className="h-7 w-7" strokeWidth={2.5} />
+              </motion.div>
             </motion.button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="top" className="mb-2 w-48">
