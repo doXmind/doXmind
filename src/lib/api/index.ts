@@ -14,6 +14,7 @@ import "./shares";
 import "./community";
 import "./comments";
 import "./data-files";
+import "./global-agent";
 
 // Re-export the client class and singleton
 export { ApiClient } from "./client";
@@ -46,6 +47,7 @@ export type {
   SearchUserResult,
   SharedWithMeItem,
 } from "./types";
+export type { GlobalConversationItem, GlobalConversationMessages } from "./global-agent";
 
 // Create and export the default client instance
 import { ApiClient } from "./client";

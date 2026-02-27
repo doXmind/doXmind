@@ -344,7 +344,11 @@ async def create_file(
 ):
     """Create a new file for the current user."""
     user_id = get_user_id(token)
-    content_hash = compute_content_hash(file.content) if file.content else None
+    # Sanitize before Core INSERT (bypasses ORM event listeners)
+    from services.content_sanitizer import sanitize_content
+
+    sanitized = sanitize_content(file.content)
+    content_hash = compute_content_hash(sanitized) if sanitized else None
 
     # Validate parent_id if provided (must not be in trash)
     if file.parent_id is not None:
@@ -369,7 +373,7 @@ async def create_file(
             insert(File)
             .values(
                 name=file.name,
-                content=file.content,
+                content=sanitized,
                 content_hash=content_hash,
                 user_id=user_id,
                 parent_id=file.parent_id,  # Use the validated parent_id

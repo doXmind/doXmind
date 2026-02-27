@@ -115,6 +115,9 @@ async def _exec_create_file(tool_input: dict[str, Any], ctx: dict[str, Any]) -> 
 
     import hashlib
 
+    from services.content_sanitizer import sanitize_content
+
+    content = sanitize_content(content) or ""
     content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     file_id = str(uuid.uuid4())

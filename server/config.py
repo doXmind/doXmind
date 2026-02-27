@@ -40,6 +40,7 @@ class Settings(BaseSettings):
             "HTTP-Referer": self.openrouter_app_url,
             "X-Title": self.openrouter_app_name,
         }
+
     courtlistener_api_key: str = ""  # For legal case search
     brave_search_api_key: str = ""  # For Brave web search
 

@@ -637,6 +637,27 @@ class ShareInvite(Base):
     __table_args__ = (Index("idx_share_invites_share_user", "share_id", "user_id", unique=True),)
 
 
+# ---------------------------------------------------------------------------
+# Auto-sanitize content on all ORM write paths (update_file, restore_version,
+# import, fork, community seed, etc.) so we never store problematic bytes.
+# Core INSERT paths (create_file) are handled explicitly in their call sites.
+# ---------------------------------------------------------------------------
+from sqlalchemy import event as _sa_event  # noqa: E402
+
+from services.content_sanitizer import sanitize_content as _sanitize  # noqa: E402
+
+
+def _sanitize_content_columns(mapper, connection, target):
+    """Sanitize all text content columns before INSERT/UPDATE."""
+    if hasattr(target, "content") and target.content is not None:
+        target.content = _sanitize(target.content)
+
+
+for _model in (File, FileVersion):
+    _sa_event.listen(_model, "before_insert", _sanitize_content_columns)
+    _sa_event.listen(_model, "before_update", _sanitize_content_columns)
+
+
 # Engine and session setup
 settings = get_settings()
 
