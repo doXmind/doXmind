@@ -140,6 +140,30 @@ def _setup_schema():
             """)
             )
 
+            # Create safe_substr function used by list_files query
+            await conn.execute(
+                text("""
+                CREATE OR REPLACE FUNCTION safe_substr(t text, start_pos int, len int)
+                RETURNS text AS $$
+                DECLARE
+                    old_timeout text;
+                    result text;
+                BEGIN
+                    old_timeout := current_setting('statement_timeout');
+                    PERFORM set_config('statement_timeout', '2000', true);
+                    BEGIN
+                        result := substr(t, start_pos, len);
+                        PERFORM set_config('statement_timeout', old_timeout, true);
+                        RETURN result;
+                    EXCEPTION WHEN OTHERS THEN
+                        PERFORM set_config('statement_timeout', old_timeout, true);
+                        RETURN '';
+                    END;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+            )
+
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(_run())

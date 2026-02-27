@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -671,6 +672,29 @@ async def init_db(max_retries: int = 5, retry_delay: float = 2.0):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                # Create safe_substr: timeout-protected substr for encoding resilience
+                await conn.execute(
+                    text("""
+                    CREATE OR REPLACE FUNCTION safe_substr(t text, start_pos int, len int)
+                    RETURNS text AS $$
+                    DECLARE
+                        old_timeout text;
+                        result text;
+                    BEGIN
+                        old_timeout := current_setting('statement_timeout');
+                        PERFORM set_config('statement_timeout', '2000', true);
+                        BEGIN
+                            result := substr(t, start_pos, len);
+                            PERFORM set_config('statement_timeout', old_timeout, true);
+                            RETURN result;
+                        EXCEPTION WHEN OTHERS THEN
+                            PERFORM set_config('statement_timeout', old_timeout, true);
+                            RETURN '';
+                        END;
+                    END;
+                    $$ LANGUAGE plpgsql;
+                    """)
+                )
             logger.info("Database tables initialized successfully")
             return
         except Exception as e:

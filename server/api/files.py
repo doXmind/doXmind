@@ -254,7 +254,8 @@ async def list_files(
             File.created_at,
             File.updated_at,
             # Lightweight preview: first 1000 chars of content + total length
-            func.substr(File.content, 1, 1000).label("content_head"),
+            # safe_substr uses a timeout to handle corrupted TOAST data gracefully
+            func.safe_substr(File.content, 1, 1000).label("content_head"),
             func.length(File.content).label("content_length"),
             Fork.id.label("fork_id"),
             Fork.source_share_id.label("forked_from_share_id"),
