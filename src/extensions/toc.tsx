@@ -29,6 +29,11 @@ export const TableOfContents = Node.create<TocOptions>({
 
   draggable: true,
 
+  // Markdown: [TOC] marker
+  renderMarkdown() {
+    return "[TOC]";
+  },
+
   parseHTML() {
     return [
       {

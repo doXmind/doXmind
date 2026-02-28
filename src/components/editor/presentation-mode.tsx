@@ -12,7 +12,7 @@ import type { JSONContent, Extensions } from "@tiptap/core";
 // Content-rendering extensions (no editing features)
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
-import TextStyle from "@tiptap/extension-text-style";
+import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Underline from "@tiptap/extension-underline";
 import Typography from "@tiptap/extension-typography";
@@ -20,7 +20,7 @@ import Link from "@tiptap/extension-link";
 import { ResizableImage } from "@/extensions/resizable-image";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import Table from "@tiptap/extension-table";
+import { Table } from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
@@ -388,8 +388,8 @@ export function PresentationMode({
     const edited = editedContentsRef.current;
     if (Object.keys(edited).length === 0) return;
 
-    const originalDoc = editor.getJSON();
-    const content = [...(originalDoc.content || [])];
+    const originalDoc = editor.getJSON() as JSONContent;
+    const content: JSONContent[] = [...(originalDoc.content || [])];
 
     // Process edited slides in reverse order so earlier splices don't shift later indices
     const sortedEntries = Object.entries(edited)
@@ -404,7 +404,7 @@ export function PresentationMode({
       content.splice(slide.sourceNodeIndex, slide.nodeCount, ...newNodes);
     }
 
-    editor.commands.setContent({ type: "doc", content });
+    editor.commands.setContent({ type: "doc", content } as JSONContent);
   }, [editor, slides]);
 
   const exit = useCallback(() => {

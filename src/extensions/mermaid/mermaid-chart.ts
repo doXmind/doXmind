@@ -60,6 +60,19 @@ export const MermaidChart = Node.create<MermaidChartOptions>({
 
   atom: true,
 
+  // Markdown: ```mermaid\n...\n``` (shares "code" token with CodeBlock)
+  markdownTokenName: "code",
+
+  parseMarkdown(token, helpers) {
+    if (token.lang !== "mermaid") return [];
+    return helpers.createNode("mermaidChart", { code: token.text || "" });
+  },
+
+  renderMarkdown(node) {
+    const code = node.attrs?.code || "";
+    return "```mermaid\n" + code + "\n```";
+  },
+
   addOptions() {
     return {
       HTMLAttributes: {},

@@ -71,7 +71,7 @@ export function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
 
           {/* Code Content */}
           <div className="min-w-0 flex-1">
-            <NodeViewContent
+            <NodeViewContent<"pre">
               as="pre"
               className={cn(
                 "code-block-content",

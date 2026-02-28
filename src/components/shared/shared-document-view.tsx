@@ -92,7 +92,7 @@ export function SharedDocumentView({
     if (editor && data.content) {
       setTimeout(() => {
         editor.commands.setContent(data.content!);
-        editor.emit("update", { editor, transaction: editor.state.tr });
+        editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
       }, 0);
     }
   }, [editor, data.content]);

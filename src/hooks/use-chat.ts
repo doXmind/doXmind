@@ -73,17 +73,19 @@ export function useChat() {
     ) => {
       const conversationId = ensureConversation(fileIds[0] || null);
 
-      // Build the full message for AI (include text contexts)
+      // Build the full message for AI (include text contexts with XML tags)
       let messageForAI = message;
       const textContexts = contexts?.filter((c) => c.type === "selection") || [];
       if (textContexts.length > 0) {
         const contextTexts = textContexts
           .map((c, i) => {
-            const prefix = textContexts.length > 1 ? `[Reference ${i + 1}:]\n` : "";
-            return `${prefix}${c.text}`;
+            if (textContexts.length > 1) {
+              return `<reference index="${i + 1}">\n${c.text}\n</reference>`;
+            }
+            return c.text;
           })
           .join("\n\n");
-        messageForAI = `${message}\n\n[Selected content for reference:]\n${contextTexts}`;
+        messageForAI = `${message}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
       }
 
       // Inject edit feedback from previous diff review session
@@ -204,7 +206,10 @@ export function useChat() {
           .map((f) => ({
             id: f.id,
             name: f.name,
-            content: isHtml(f.content) ? htmlToMarkdown(f.content) : f.content,
+            // Prefer cached markdown (from editor.getMarkdown() on save).
+            // Fallback to Turndown conversion for files not yet re-saved since upgrade.
+            content:
+              f.contentMarkdown || (isHtml(f.content) ? htmlToMarkdown(f.content) : f.content),
           }));
 
         // Get web tools settings

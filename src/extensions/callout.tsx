@@ -33,6 +33,19 @@ export const Callout = Node.create<CalloutOptions>({
 
   defining: true,
 
+  // Markdown: GFM alert syntax — > [!TYPE]\n> content
+  renderMarkdown(node, h) {
+    const type = ((node.attrs?.type as string) || "info").toUpperCase();
+    if (!node.content) return "";
+    const childContent = h.renderChildren(node.content, "\n\n");
+    const lines = childContent.split("\n");
+    const quotedLines = lines.map((line: string) => {
+      if (line.trim() === "") return ">";
+      return "> " + line;
+    });
+    return "> [!" + type + "]\n" + quotedLines.join("\n");
+  },
+
   addAttributes() {
     return {
       type: {

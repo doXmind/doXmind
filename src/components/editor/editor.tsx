@@ -95,7 +95,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   // Debounced save function
   // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce returns a new function, deps are intentionally limited
   const debouncedSave = useCallback(
-    debounce((content: string) => {
+    debounce((content: string, contentMarkdown?: string) => {
       // Skip save if content hasn't changed
       if (content === lastContentRef.current) {
         setDirty(false);
@@ -108,9 +108,9 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         setDirty(false);
         lastContentRef.current = content;
       } else {
-        // Normal mode: persist to server
+        // Normal mode: persist to server (with pre-computed markdown from editor.getMarkdown())
         setSaving(true);
-        updateFile(file.id, { content });
+        updateFile(file.id, { content, contentMarkdown });
         setSaving(false);
         setLastSavedAt(new Date().toISOString());
         setDirty(false);
@@ -131,12 +131,13 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       // notify other components (mindlines, word count, etc.)
       if (isFileSwitchingRef.current) return;
       const html = editor.getHTML();
+      const markdown = editor.getMarkdown();
       setDirty(true);
-      debouncedSave(html);
+      debouncedSave(html, markdown);
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
-      const text = editor.state.doc.textBetween(from, to, " ");
+      const text = editor.state.doc.textBetween(from, to, "\n\n");
       if (text) {
         setSelection({ from, to, text });
       } else {
@@ -227,12 +228,12 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       const domObserver = (editor.view as any).domObserver;
       domObserver?.stop();
 
-      editor.commands.setContent(file.content, false);
+      editor.commands.setContent(file.content, { emitUpdate: false });
       editor.commands.focus("start");
       // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
       // to prevent false-positive change detection in debouncedSave.
       lastContentRef.current = editor.getHTML();
-      editor.emit("update", { editor, transaction: editor.state.tr });
+      editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       // Restart DOM observer after content is fully replaced
       domObserver?.start();
@@ -271,10 +272,10 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       const domObserver = (editor.view as any).domObserver;
       domObserver?.stop();
 
-      editor.commands.setContent(file.content, false);
+      editor.commands.setContent(file.content, { emitUpdate: false });
       editor.commands.focus("start");
       lastContentRef.current = editor.getHTML();
-      editor.emit("update", { editor, transaction: editor.state.tr });
+      editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
       requestAnimationFrame(() => {

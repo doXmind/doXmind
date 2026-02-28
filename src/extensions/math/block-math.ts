@@ -90,6 +90,12 @@ export const BlockMath = Node.create<BlockMathOptions>({
 
   atom: true,
 
+  // Markdown: $$\nlatex\n$$
+  renderMarkdown(node) {
+    const latex = node.attrs?.latex || "";
+    return "$$\n" + latex + "\n$$";
+  },
+
   addOptions() {
     return {
       HTMLAttributes: {},

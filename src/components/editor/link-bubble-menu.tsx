@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { BubbleMenu, Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import type { Editor } from "@tiptap/react";
 import { ExternalLink, Pencil, Trash2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,20 +76,17 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
   const shouldShow = useCallback(() => {
     if (isDiffReviewActive(editor)) return false;
     if (useStreamingStore.getState().isStreaming) return false;
+    // Don't show when text is selected (let the main bubble menu handle that)
+    const { from, to } = editor.state.selection;
+    if (to - from > 0) return false;
     return editor.isActive("link");
   }, [editor]);
 
   return (
     <BubbleMenu
       editor={editor}
-      tippyOptions={{
-        duration: 150,
+      options={{
         placement: "bottom-start",
-        // Don't show when text is selected (let the main bubble menu handle that)
-        onShow: () => {
-          const { from, to } = editor.state.selection;
-          if (to - from > 0) return false;
-        },
       }}
       shouldShow={shouldShow}
       className="link-bubble-menu"

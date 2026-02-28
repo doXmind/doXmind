@@ -31,6 +31,7 @@ declare module "./client" {
       id: string;
       name: string;
       content: string;
+      content_markdown: string | null;
       is_folder: boolean;
       parent_id: string | null;
       position: number;
@@ -65,6 +66,7 @@ declare module "./client" {
       updates: {
         name?: string;
         content?: string;
+        content_markdown?: string;
         is_favorite?: boolean;
         icon?: string;
         presentation_simplified?: string;
@@ -138,7 +140,6 @@ declare module "./client" {
       query: string,
       fileId: string,
       topK?: number,
-      minScore?: number,
       signal?: AbortSignal
     ): Promise<SearchResults>;
     listVersions(
@@ -220,6 +221,7 @@ ApiClient.prototype.getFile = async function (this: ApiClient, id: string) {
     id: string;
     name: string;
     content: string;
+    content_markdown: string | null;
     is_folder: boolean;
     parent_id: string | null;
     position: number;
@@ -264,6 +266,7 @@ ApiClient.prototype.updateFile = async function (
   updates: {
     name?: string;
     content?: string;
+    content_markdown?: string;
     is_favorite?: boolean;
     icon?: string;
     presentation_simplified?: string;
@@ -465,24 +468,22 @@ ApiClient.prototype.searchFiles = async function (
 };
 
 /**
- * Search within a single document at sentence level.
- * Returns sentence-level chunks for precise in-document highlighting.
+ * Search within a single document using text matching.
+ * Returns match positions for in-document highlighting.
  * @param query - Search query
  * @param fileId - File to search within
  * @param topK - Maximum number of results (default 10)
- * @param minScore - Minimum similarity score 0-1 (default 0.15 for sentence-level search)
  */
 ApiClient.prototype.searchInDocument = async function (
   this: ApiClient,
   query: string,
   fileId: string,
   topK: number = 10,
-  minScore: number = 0.15,
   signal?: AbortSignal
 ) {
   return this.request<SearchResults>("/api/files/search/in-document", {
     method: "POST",
-    body: JSON.stringify({ query, file_id: fileId, top_k: topK, min_score: minScore }),
+    body: JSON.stringify({ query, file_id: fileId, top_k: topK }),
     signal,
   });
 };

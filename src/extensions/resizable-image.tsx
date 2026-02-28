@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from "@tiptap/core";
+import { Node, mergeAttributes, InputRule } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ImageNodeView } from "@/components/editor/image-node-view";
@@ -90,6 +90,25 @@ export const ResizableImage = Node.create<ResizableImageOptions>({
   group: "block",
 
   draggable: true,
+
+  // Markdown: ![alt](src "title")
+  markdownTokenName: "image",
+
+  parseMarkdown(token, helpers) {
+    return helpers.createNode("image", {
+      src: token.href,
+      title: token.title,
+      alt: token.text,
+    });
+  },
+
+  renderMarkdown(node) {
+    const src = (node.attrs?.src as string) ?? "";
+    const alt = (node.attrs?.alt as string) ?? "";
+    const title = (node.attrs?.title as string) ?? "";
+    if (title) return `![${alt}](${src} "${title}")`;
+    return `![${alt}](${src})`;
+  },
 
   addAttributes() {
     return {
@@ -190,7 +209,7 @@ export const ResizableImage = Node.create<ResizableImageOptions>({
 
   addInputRules() {
     return [
-      {
+      new InputRule({
         find: /!\[(.+|:?)]\((\S+)(?:(?:\s+)["'](\S+)["'])?\)/,
         handler: ({ state, range, match }) => {
           const [, alt, src, title] = match;
@@ -201,7 +220,7 @@ export const ResizableImage = Node.create<ResizableImageOptions>({
             tr.replaceWith(range.from, range.to, node);
           }
         },
-      },
+      }),
     ];
   },
 

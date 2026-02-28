@@ -5,9 +5,10 @@
  */
 
 import StarterKit from "@tiptap/starter-kit";
+import { Markdown } from "@tiptap/markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
-import TextStyle from "@tiptap/extension-text-style";
+import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Underline from "@tiptap/extension-underline";
 import Typography from "@tiptap/extension-typography";
@@ -15,7 +16,7 @@ import Link from "@tiptap/extension-link";
 import { ResizableImage } from "@/extensions/resizable-image";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import Table from "@tiptap/extension-table";
+import { Table } from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
@@ -59,6 +60,9 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
         levels: [1, 2, 3, 4],
       },
     }),
+
+    // Markdown serialization (schema-aware editor.getMarkdown() / editor.markdown.parse())
+    Markdown,
 
     // Text enhancements
     Underline,

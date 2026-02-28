@@ -1,6 +1,7 @@
 "use client";
 
-import { BubbleMenu, Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import type { Editor } from "@tiptap/react";
 import {
   ArrowUp,
   ArrowDown,
@@ -26,10 +27,9 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
   return (
     <BubbleMenu
       editor={editor}
-      tippyOptions={{
-        duration: 100,
+      options={{
         placement: "top",
-        offset: [0, 10],
+        offset: { mainAxis: 10 },
       }}
       shouldShow={({ editor }) => {
         if (isDiffReviewActive(editor)) return false;

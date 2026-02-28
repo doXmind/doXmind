@@ -2,7 +2,7 @@ import { Extension } from "@tiptap/core";
 import type { Editor, Range } from "@tiptap/core";
 import Suggestion from "@tiptap/suggestion";
 import { ReactRenderer } from "@tiptap/react";
-import tippy, { Instance } from "tippy.js";
+import { computePosition, flip, shift, offset } from "@floating-ui/dom";
 import { forwardRef, useEffect, useImperativeHandle, useState, useCallback, useRef } from "react";
 import {
   Heading1,
@@ -604,7 +604,30 @@ export const SlashCommands = Extension.create({
         },
         render: () => {
           let component: ReactRenderer<CommandListRef> | null = null;
-          let popup: Instance[] | null = null;
+          let wrapper: HTMLDivElement | null = null;
+          let getClientRect: (() => DOMRect | null) | null = null;
+
+          const updatePosition = () => {
+            if (!wrapper || !getClientRect) return;
+            const rect = getClientRect();
+            if (!rect) return;
+
+            const virtualEl = {
+              getBoundingClientRect: () => rect,
+            };
+
+            computePosition(virtualEl, wrapper, {
+              placement: "bottom-start",
+              middleware: [offset(8), flip(), shift({ padding: 8 })],
+            }).then(({ x, y }) => {
+              if (wrapper) {
+                Object.assign(wrapper.style, {
+                  left: `${x}px`,
+                  top: `${y}px`,
+                });
+              }
+            });
+          };
 
           return {
             onStart: (props: { editor: Editor; clientRect?: (() => DOMRect | null) | null }) => {
@@ -613,38 +636,31 @@ export const SlashCommands = Extension.create({
                 editor: props.editor,
               });
 
-              if (!props.clientRect) {
-                return;
-              }
+              if (!props.clientRect) return;
 
-              const clientRect = props.clientRect;
-              popup = tippy("body", {
-                getReferenceClientRect: () => clientRect() ?? new DOMRect(),
-                appendTo: () => document.body,
-                content: component.element,
-                showOnCreate: true,
-                interactive: true,
-                trigger: "manual",
-                placement: "bottom-start",
-              });
+              getClientRect = props.clientRect;
+
+              wrapper = document.createElement("div");
+              wrapper.style.position = "absolute";
+              wrapper.style.zIndex = "9999";
+              wrapper.appendChild(component.element);
+              document.body.appendChild(wrapper);
+
+              updatePosition();
             },
 
             onUpdate: (props: { clientRect?: (() => DOMRect | null) | null }) => {
               component?.updateProps(props);
 
-              if (!props.clientRect) {
-                return;
+              if (props.clientRect) {
+                getClientRect = props.clientRect;
+                updatePosition();
               }
-
-              const clientRect = props.clientRect;
-              popup?.[0]?.setProps({
-                getReferenceClientRect: () => clientRect() ?? new DOMRect(),
-              });
             },
 
             onKeyDown: (props: { event: KeyboardEvent }) => {
               if (props.event.key === "Escape") {
-                popup?.[0]?.hide();
+                if (wrapper) wrapper.style.display = "none";
                 return true;
               }
 
@@ -652,7 +668,10 @@ export const SlashCommands = Extension.create({
             },
 
             onExit: () => {
-              popup?.[0]?.destroy();
+              if (wrapper) {
+                wrapper.remove();
+                wrapper = null;
+              }
               component?.destroy();
             },
           };

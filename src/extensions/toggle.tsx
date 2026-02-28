@@ -29,6 +29,14 @@ export const Toggle = Node.create<ToggleOptions>({
 
   defining: true,
 
+  // Markdown: HTML <details>/<summary> tags
+  renderMarkdown(node, h) {
+    const summary = (node.attrs?.summary as string) || "Toggle heading";
+    if (!node.content) return "";
+    const childContent = h.renderChildren(node.content, "\n\n");
+    return "<details>\n<summary>" + summary + "</summary>\n\n" + childContent + "\n\n</details>";
+  },
+
   addAttributes() {
     return {
       open: {

@@ -69,7 +69,9 @@ interface FileState {
   importFile: (file: File, parentId?: string | null) => Promise<string>;
   updateFile: (
     id: string,
-    updates: Partial<Pick<FileItem, "name" | "content" | "presentationSimplified">>
+    updates: Partial<
+      Pick<FileItem, "name" | "content" | "contentMarkdown" | "presentationSimplified">
+    >
   ) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   setCurrentFile: (id: string | null) => void;
@@ -248,6 +250,7 @@ export const useFileStore = create<FileState>()(
                   ? {
                       ...f,
                       content: fullFile.content,
+                      contentMarkdown: fullFile.content_markdown ?? null,
                       presentationSimplified: fullFile.presentation_simplified ?? null,
                       fork_id: fullFile.fork_id || undefined,
                       forked_from_share_id: fullFile.forked_from_share_id || undefined,
@@ -340,7 +343,9 @@ export const useFileStore = create<FileState>()(
 
       updateFile: async (
         id: string,
-        updates: Partial<Pick<FileItem, "name" | "content" | "presentationSimplified">>
+        updates: Partial<
+          Pick<FileItem, "name" | "content" | "contentMarkdown" | "presentationSimplified">
+        >
       ) => {
         // Optimistic update
         set((state) => ({
@@ -355,10 +360,16 @@ export const useFileStore = create<FileState>()(
 
         try {
           // Map camelCase to snake_case for API
-          const apiUpdates: { name?: string; content?: string; presentation_simplified?: string } =
-            {};
+          const apiUpdates: {
+            name?: string;
+            content?: string;
+            content_markdown?: string;
+            presentation_simplified?: string;
+          } = {};
           if (updates.name !== undefined) apiUpdates.name = updates.name;
           if (updates.content !== undefined) apiUpdates.content = updates.content;
+          if (updates.contentMarkdown !== undefined)
+            apiUpdates.content_markdown = updates.contentMarkdown ?? undefined;
           if (updates.presentationSimplified !== undefined)
             apiUpdates.presentation_simplified = updates.presentationSimplified ?? "";
           // Sync to server

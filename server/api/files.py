@@ -1,6 +1,5 @@
 """File management API endpoints with user data isolation."""
 
-import contextlib
 import hashlib
 import logging
 import re
@@ -13,7 +12,6 @@ from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import DocumentShare, File, Fork, User, get_db, utcnow
-from dependencies import resolve_user_api_key
 from exceptions import (
     AppException,
     BadRequestError,
@@ -24,7 +22,8 @@ from exceptions import (
 )
 from services.auth_service import TokenData, require_auth
 from services.llm_service import LLMService
-from services.rag_service import DEFAULT_STRATEGY_FACTORY, RAGService
+from utils.html import _extract_data_content, strip_html_tags
+from utils.markdown_converter import html_to_markdown
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -43,14 +42,6 @@ def get_user_id(token: TokenData) -> str | None:
     return token.sub
 
 
-async def _get_rag(db: AsyncSession, user_id: str | None = None) -> RAGService:
-    """Create RAGService with user's API key if available."""
-    api_key = None
-    if user_id:
-        api_key = await resolve_user_api_key(user_id, db)
-    return RAGService(db, api_key=api_key)
-
-
 def compute_content_hash(content: str) -> str:
     """Compute SHA-256 hash of content for change detection."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -63,7 +54,8 @@ _NBSP_RE = re.compile(r"&nbsp;")
 
 def _strip_html(html: str) -> str:
     """Strip HTML tags and collapse whitespace, matching the frontend stripHtml()."""
-    text = _HTML_TAG_RE.sub(" ", html)
+    text = _extract_data_content(html)
+    text = _HTML_TAG_RE.sub(" ", text)
     text = _NBSP_RE.sub(" ", text)
     return _WHITESPACE_RE.sub(" ", text).strip()
 
@@ -171,6 +163,7 @@ class FileUpdate(BaseModel):
 
     name: str | None = None
     content: str | None = None
+    content_markdown: str | None = None  # Frontend-computed markdown (from editor.getMarkdown())
     is_favorite: bool | None = None
     icon: str | None = None
     presentation_simplified: str | None = None
@@ -195,6 +188,7 @@ class FileResponse(BaseModel):
     id: str
     name: str
     content: str
+    content_markdown: str | None = None  # Cached markdown for AI consumption
     is_folder: bool = False
     parent_id: str | None = None
     position: int = 0
@@ -369,12 +363,14 @@ async def create_file(
             raise BadRequestError(message="Parent must be a folder")
 
     try:
+        content_md = html_to_markdown(sanitized) if sanitized else None
         result = await db.execute(
             insert(File)
             .values(
                 name=file.name,
                 content=sanitized,
                 content_hash=content_hash,
+                content_markdown=content_md,
                 user_id=user_id,
                 parent_id=file.parent_id,  # Use the validated parent_id
             )
@@ -394,26 +390,6 @@ async def create_file(
             raise RuntimeError("Failed to create file")
         created = cast(dict[str, Any], created_row)
         file_id = cast(str, created["id"])
-
-        # Index in vector store with auto-selected chunking strategy
-        try:
-            rag = await _get_rag(db, user_id)
-            # Auto-select chunking strategy based on document type
-            strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file.content, file.name)
-            await rag.index_file(
-                file_id=file_id,
-                content=file.content,
-                metadata={"name": file.name, "user_id": user_id},
-                strategy=strategy,
-            )
-            # Also index at sentence level for in-document search
-            await rag.index_file_sentences(
-                file_id=file_id,
-                content=file.content,
-                metadata={"name": file.name, "user_id": user_id},
-            )
-        except Exception as e:
-            logger.warning(f"Failed to index file: {e}")
 
         return FileResponse(
             id=file_id,
@@ -487,6 +463,7 @@ async def get_file(
         id=file.id,
         name=file.name,
         content=file.content,
+        content_markdown=file.content_markdown,
         is_folder=file.is_folder,
         parent_id=file.parent_id,
         position=file.position,
@@ -522,19 +499,20 @@ async def update_file(
     if not file:
         raise DocumentNotFoundError(file_id=file_id)
 
-    # Determine if re-indexing is needed based on actual content changes
-    need_reindex = False
-
     if update.name is not None:
         file.name = update.name
-        need_reindex = True  # Name change affects metadata in index
 
     if update.content is not None:
         new_hash = compute_content_hash(update.content)
         if file.content_hash != new_hash:
             file.content = update.content
             file.content_hash = new_hash
-            need_reindex = True
+            # Prefer frontend-computed markdown (schema-aware editor.getMarkdown())
+            # over server-side markdownify conversion
+            if update.content_markdown:
+                file.content_markdown = update.content_markdown
+            else:
+                file.content_markdown = html_to_markdown(update.content)
 
     if update.is_favorite is not None:
         file.is_favorite = update.is_favorite
@@ -554,6 +532,7 @@ async def update_file(
     file_id = file.id
     file_name = file.name
     file_content = file.content
+    file_content_markdown = file.content_markdown
     file_summary = file.summary
     file_is_favorite = file.is_favorite or False
     file_icon = file.icon
@@ -564,31 +543,11 @@ async def update_file(
     file_parent_id = file.parent_id
     file_position = file.position
 
-    # Re-index in vector store only when content or name actually changed
-    if need_reindex:
-        try:
-            rag = await _get_rag(db, user_id)
-            # Auto-select chunking strategy based on document type
-            strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file_content, file_name)
-            await rag.index_file(
-                file_id=file_id,
-                content=file_content,
-                metadata={"name": file_name, "user_id": user_id},
-                strategy=strategy,
-            )
-            # Also re-index at sentence level for in-document search
-            await rag.index_file_sentences(
-                file_id=file_id,
-                content=file_content,
-                metadata={"name": file_name, "user_id": user_id},
-            )
-        except Exception as e:
-            logger.warning(f"Failed to re-index file: {e}")
-
     return FileResponse(
         id=file_id,
         name=file_name,
         content=file_content,
+        content_markdown=file_content_markdown,
         is_folder=file_is_folder,
         parent_id=file_parent_id,
         position=file_position,
@@ -647,16 +606,6 @@ async def delete_file(
     # Soft delete the file/folder
     file.deleted_at = now
     await db.commit()
-
-    # Remove from vector store (trashed files shouldn't appear in search)
-    try:
-        rag = await _get_rag(db, user_id)
-        await rag.delete_file(file_id)
-        for desc_id in descendant_ids:
-            with contextlib.suppress(Exception):
-                await rag.delete_file(desc_id)
-    except Exception as e:
-        logger.warning(f"Failed to delete file from vector store: {e}")
 
     return {"status": "trashed"}
 
@@ -863,9 +812,7 @@ class SearchRequest(BaseModel):
 
     query: str
     file_ids: list[str] | None = None
-    top_k: int = 5
-    use_hybrid: bool = True  # Use hybrid search (vector + keyword with RRF)
-    use_reranking: bool = False  # Use GPT reranking for improved relevance
+    top_k: int = 10
 
 
 @router.post("/search")
@@ -874,32 +821,62 @@ async def search_files(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
-    """Search files using RAG (within user's files).
-
-    Supports three search modes:
-    - Basic: Pure vector similarity search (use_hybrid=False, use_reranking=False)
-    - Hybrid: Vector + keyword search with RRF fusion (use_hybrid=True)
-    - Hybrid + Reranking: Hybrid search with GPT reranking (use_reranking=True)
-    """
+    """Search files using text matching (within user's files)."""
     user_id = get_user_id(token)
 
     try:
-        rag = await _get_rag(db, user_id)
+        pattern = f"%{request.query}%"
+        params: dict[str, Any] = {"pattern": pattern, "limit": request.top_k}
 
-        if request.use_reranking:
-            # Full pipeline: hybrid search + GPT reranking
-            results = await rag.hybrid_search_with_rerank(
-                query=request.query, file_ids=request.file_ids, top_k=request.top_k, user_id=user_id
-            )
-        elif request.use_hybrid:
-            # Hybrid search: vector + keyword with RRF
-            results = await rag.hybrid_search(
-                query=request.query, file_ids=request.file_ids, top_k=request.top_k, user_id=user_id
-            )
+        # Build query with optional file_ids filter
+        where_clauses = [
+            "deleted_at IS NULL",
+            "is_folder = false",
+        ]
+        if user_id:
+            where_clauses.append("user_id = :user_id")
+            params["user_id"] = user_id
         else:
-            # Basic: pure vector similarity search
-            results = await rag.search(
-                query=request.query, file_ids=request.file_ids, top_k=request.top_k, user_id=user_id
+            where_clauses.append("user_id IS NULL")
+
+        if request.file_ids:
+            where_clauses.append("id = ANY(:file_ids)")
+            params["file_ids"] = request.file_ids
+
+        where_clauses.append("(name ILIKE :pattern OR content ILIKE :pattern)")
+
+        where_sql = " AND ".join(where_clauses)
+        sql = f"SELECT id, name, content FROM files WHERE {where_sql} ORDER BY updated_at DESC LIMIT :limit"
+
+        result = await db.execute(text(sql), params)
+        rows = result.fetchall()
+
+        results = []
+        for row in rows:
+            plain = strip_html_tags(row.content or "")
+            # Find match position for highlighting
+            query_lower = request.query.lower()
+            pos = plain.lower().find(query_lower)
+            start = max(0, pos - 50) if pos >= 0 else 0
+            end = (
+                min(len(plain), pos + len(request.query) + 200)
+                if pos >= 0
+                else min(300, len(plain))
+            )
+
+            results.append(
+                {
+                    "id": f"{row.id}_0",
+                    "content": plain[start:end],
+                    "metadata": {
+                        "file_id": row.id,
+                        "name": row.name,
+                        "chunk_index": 0,
+                        "start": start if pos >= 0 else 0,
+                        "end": end if pos >= 0 else len(plain),
+                    },
+                    "distance": 0.5 if pos >= 0 else 1.0,
+                }
             )
 
         return {"results": results}
@@ -909,13 +886,11 @@ async def search_files(
 
 
 class InDocSearchRequest(BaseModel):
-    """In-document search request model for hybrid sentence-level search."""
+    """In-document search request model."""
 
     query: str
     file_id: str
     top_k: int = 10
-    min_score: float = 0.3  # Minimum similarity score (0-1)
-    use_hybrid: bool = True  # Use hybrid search (semantic + keyword with RRF)
 
 
 @router.post("/search/in-document")
@@ -924,13 +899,9 @@ async def search_in_document(
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
-    """Search within a single document using sentence-level chunks.
+    """Search within a single document using text matching.
 
-    Supports two search modes:
-    - Hybrid (default): Combines semantic (vector) and keyword (BM25) search with RRF fusion
-    - Semantic only: Pure vector similarity search (use_hybrid=False)
-
-    Results are filtered by min_score to only return sufficiently similar matches.
+    Returns matching excerpts with character positions for highlighting.
     """
     user_id = get_user_id(token)
 
@@ -948,23 +919,42 @@ async def search_in_document(
         if not file:
             raise DocumentNotFoundError(file_id=request.file_id)
 
-        rag = await _get_rag(db, user_id)
+        plain = strip_html_tags(file.content or "")
+        query_lower = request.query.lower()
+        plain_lower = plain.lower()
 
-        # Use sentence-level search for precise in-document matching
-        results = await rag.search_sentences(
-            query=request.query,
-            file_id=request.file_id,
-            top_k=request.top_k,
-            min_score=request.min_score,
-            use_hybrid=request.use_hybrid,
-        )
+        results = []
+        search_start = 0
+        while len(results) < request.top_k:
+            pos = plain_lower.find(query_lower, search_start)
+            if pos == -1:
+                break
 
-        # Calculate scores for logging
-        scores = [(1 - r.get("distance", 1)) for r in results]
-        mode = "hybrid" if request.use_hybrid else "semantic"
+            # Extract context around the match
+            ctx_start = max(0, pos - 50)
+            ctx_end = min(len(plain), pos + len(request.query) + 150)
+            content = plain[ctx_start:ctx_end]
+
+            results.append(
+                {
+                    "id": f"{request.file_id}_{len(results)}",
+                    "content": content,
+                    "metadata": {
+                        "file_id": request.file_id,
+                        "name": file.name,
+                        "chunk_index": len(results),
+                        "start": pos,
+                        "end": pos + len(request.query),
+                    },
+                    "distance": 0.0,
+                }
+            )
+
+            search_start = pos + len(request.query)
+
         logger.info(
-            f"In-document search ({mode}): query='{request.query}', file_id={request.file_id}, "
-            f"results={len(results)}, scores={scores}"
+            f"In-document search: query='{request.query}', file_id={request.file_id}, "
+            f"results={len(results)}"
         )
 
         return {"results": results}
@@ -1127,25 +1117,6 @@ async def restore_file(
     file.deleted_at = None
     await db.commit()
 
-    # Re-index in vector store
-    try:
-        rag = await _get_rag(db, user_id)
-        if not file.is_folder:
-            strategy = DEFAULT_STRATEGY_FACTORY.get_strategy(file.content, file.name)
-            await rag.index_file(
-                file_id=file.id,
-                content=file.content,
-                metadata={"name": file.name, "user_id": user_id},
-                strategy=strategy,
-            )
-            await rag.index_file_sentences(
-                file_id=file.id,
-                content=file.content,
-                metadata={"name": file.name, "user_id": user_id},
-            )
-    except Exception as e:
-        logger.warning(f"Failed to re-index restored file: {e}")
-
     return {"status": "restored"}
 
 
@@ -1171,13 +1142,6 @@ async def permanent_delete_file(
     from api.images import delete_orphaned_images, extract_image_keys_from_content
 
     image_keys = extract_image_keys_from_content(file.content) if file.content else []
-
-    # Remove from vector store (may already be removed)
-    try:
-        rag = await _get_rag(db, user_id)
-        await rag.delete_file(file_id)
-    except Exception as e:
-        logger.warning(f"Failed to delete file from vector store: {e}")
 
     await db.delete(file)
     await db.commit()
@@ -1218,14 +1182,6 @@ async def empty_trash(
         trash_file_ids.append(f.id)
         if f.content:
             all_image_keys.extend(extract_image_keys_from_content(f.content))
-
-    # Remove all from vector store
-    rag = await _get_rag(db, user_id)
-    for f in trash_files:
-        try:
-            await rag.delete_file(f.id)
-        except Exception as e:
-            logger.warning(f"Failed to delete file {f.id} from vector store: {e}")
 
     # Permanently delete all
     for f in trash_files:

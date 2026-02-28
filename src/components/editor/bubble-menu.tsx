@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { BubbleMenu, Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import type { Editor } from "@tiptap/react";
 import {
   Bold,
   Italic,
@@ -157,10 +158,8 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
       />
       <BubbleMenu
         editor={editor}
-        tippyOptions={{
-          duration: 0,
-          animation: false,
-          maxWidth: "none",
+        options={{
+          placement: "top",
         }}
         shouldShow={shouldShow}
         className="bubble-menu rounded-lg border border-border/60 bg-popover p-1 shadow-lg"

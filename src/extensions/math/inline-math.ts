@@ -82,6 +82,12 @@ export const InlineMath = Node.create<InlineMathOptions>({
 
   atom: true,
 
+  // Markdown: $latex$
+  renderMarkdown(node) {
+    const latex = node.attrs?.latex || "";
+    return "$" + latex + "$";
+  },
+
   addOptions() {
     return {
       HTMLAttributes: {},

@@ -7,7 +7,7 @@ import { CodeBlockNodeView } from "@/components/editor/code-block/code-block-nod
 export const lowlight = createLowlight(common);
 
 export interface CustomCodeBlockOptions {
-  HTMLAttributes: Record<string, unknown>;
+  HTMLAttributes?: Record<string, unknown>;
   lowlight: ReturnType<typeof createLowlight>;
   defaultLanguage: string | null;
 }
