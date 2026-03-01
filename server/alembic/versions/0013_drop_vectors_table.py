@@ -21,6 +21,16 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.execute("DROP TABLE IF EXISTS vectors CASCADE")
+    # Drop Heroku-managed extension trigger if it exists (references rds_superuser
+    # role that doesn't exist on EC2, causing DROP EXTENSION to fail)
+    op.execute("""
+        DO $$
+        BEGIN
+            DROP FUNCTION IF EXISTS _heroku.extension_before_drop() CASCADE;
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END $$;
+    """)
     op.execute("DROP EXTENSION IF EXISTS vector CASCADE")
 
 
