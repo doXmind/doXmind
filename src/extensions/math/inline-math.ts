@@ -101,7 +101,7 @@ export const InlineMath = Node.create<InlineMathOptions>({
     },
   },
 
-  parseMarkdown(token: any, helpers: any) {
+  parseMarkdown(token, helpers) {
     return helpers.createNode("inlineMath", { latex: token.latex || "" });
   },
 

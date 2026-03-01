@@ -621,31 +621,6 @@
   box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.7);
 }
 
-/* Search Highlight - Semantic (Purple/Blue) */
-.ProseMirror .search-result-semantic {
-  background-color: rgba(139, 92, 246, 0.15);
-  border-bottom: 2px solid rgba(139, 92, 246, 0.5);
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.ProseMirror .search-result-semantic-current {
-  background-color: rgba(139, 92, 246, 0.35);
-  border-bottom: 2px solid rgba(139, 92, 246, 0.8);
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.dark .ProseMirror .search-result-semantic {
-  background-color: rgba(139, 92, 246, 0.2);
-  border-bottom: 2px solid rgba(139, 92, 246, 0.4);
-}
-
-.dark .ProseMirror .search-result-semantic-current {
-  background-color: rgba(139, 92, 246, 0.4);
-  border-bottom: 2px solid rgba(139, 92, 246, 0.7);
-}
-
 /* Spellcheck Error - Red Wavy Underline */
 .ProseMirror .spellcheck-error {
   text-decoration: underline wavy red;

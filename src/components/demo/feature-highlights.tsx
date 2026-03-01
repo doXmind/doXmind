@@ -14,15 +14,11 @@ import {
   Quote,
   ListChecks,
   Bot,
-  Search,
   BookOpen,
   Send,
   ChevronLeft,
   ChevronRight,
   ArrowRight,
-  CaseSensitive,
-  WholeWord,
-  Regex,
 } from "lucide-react";
 
 /* ── Shared layout for one feature row ── */
@@ -439,73 +435,6 @@ function MiniPresentationMock() {
   );
 }
 
-function MiniSearchMock() {
-  return (
-    <div className="px-6 py-5">
-      {/* Search bar */}
-      <div className="mb-4 overflow-hidden rounded-lg border border-border shadow-sm">
-        <div className="flex items-center gap-2 px-3 py-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <span className="flex-1 text-[13px] text-foreground">writing assistant</span>
-          <span className="text-[11px] text-muted-foreground">3 of 8</span>
-          <span className="mx-1 h-4 w-px bg-border" />
-          <CaseSensitive className="h-4 w-4 text-muted-foreground/50" />
-          <WholeWord className="h-4 w-4 text-muted-foreground/50" />
-          <Regex className="h-4 w-4 text-muted-foreground/50" />
-          <span className="mx-1 h-4 w-px bg-border" />
-          <Sparkles className="h-4 w-4 text-purple-500" />
-        </div>
-      </div>
-      {/* AI semantic results */}
-      <div className="mb-3 flex items-center gap-2">
-        <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-        <span className="text-[12px] font-medium text-foreground">AI Results</span>
-        <span className="rounded-full bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400">
-          5 matches
-        </span>
-      </div>
-      <div className="space-y-2">
-        <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-2">
-          <div className="text-[13px] text-foreground">
-            The <span className="rounded bg-purple-500/20 px-0.5">writing assistant</span> analyzes
-            context to provide suggestions...
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-[10px] font-medium text-green-600 dark:text-green-400">
-              95%
-            </span>
-            <span className="text-[10px] text-muted-foreground">Paragraph 4</span>
-          </div>
-        </div>
-        <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-          <div className="text-[13px] text-foreground">
-            Modern AI <span className="rounded bg-purple-500/20 px-0.5">writing</span> tools enable
-            clearer communication...
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-[10px] font-medium text-green-600 dark:text-green-400">
-              82%
-            </span>
-            <span className="text-[10px] text-muted-foreground">Paragraph 1</span>
-          </div>
-        </div>
-        <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-          <div className="text-[13px] text-foreground">
-            Configure <span className="rounded bg-purple-500/20 px-0.5">assistant</span> preferences
-            for tone and style...
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-medium text-yellow-600 dark:text-yellow-400">
-              61%
-            </span>
-            <span className="text-[10px] text-muted-foreground">Paragraph 7</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function MiniReviewMock() {
   return (
     <div className="flex flex-col">
@@ -676,13 +605,6 @@ export function FeatureHighlights() {
         reversed
       >
         <MiniPresentationMock />
-      </FeatureRow>
-
-      <FeatureRow
-        title="Search by meaning, not just keywords"
-        description="AI-powered semantic search understands the meaning behind your query. Find relevant passages even when they don't contain exact keyword matches, with relevance scores for each result."
-      >
-        <MiniSearchMock />
       </FeatureRow>
 
       <FeatureRow

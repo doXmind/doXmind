@@ -16,7 +16,6 @@ import {
   HelpCircle,
   Loader2,
   AlertTriangle,
-  Quote,
   RefreshCw,
   X,
   Columns,
@@ -26,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { findTextInDoc } from "@/lib/position-mapper";
+
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { api, SearchResultItem } from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
@@ -41,7 +40,7 @@ interface CommandItem {
   label: string;
   icon: React.ReactNode;
   shortcut?: string[];
-  category: "file" | "navigation" | "view" | "action" | "searchFiles" | "searchDocument";
+  category: "file" | "navigation" | "view" | "action" | "searchFiles";
   action: () => void;
   keywords?: string[];
   preview?: string;
@@ -50,7 +49,6 @@ interface CommandItem {
 
 const CATEGORY_LABELS: Record<string, string> = {
   searchFiles: "Files",
-  searchDocument: "In Document",
   file: "Files",
   navigation: "Navigation",
   view: "View",
@@ -66,13 +64,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   // Search state
   const [fileSearchResults, setFileSearchResults] = React.useState<SearchResultItem[]>([]);
-  const [docSearchResults, setDocSearchResults] = React.useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
   const [searchError, setSearchError] = React.useState<string | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const router = useRouter();
-  const { files, createFile, setCurrentFile, currentFileId } = useFileStore();
+  const { files, createFile, setCurrentFile } = useFileStore();
   const {
     toggleSidebar,
     toggleChat,
@@ -87,11 +84,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { currentTheme, toggleBaseMode } = useThemeManager();
   const { editor } = useEditorRefStore();
 
-  // Perform semantic search with debounce
+  // Perform search with debounce
   const performSearch = useDebouncedCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {
       setFileSearchResults([]);
-      setDocSearchResults([]);
       setSearchError(null);
       return;
     }
@@ -105,18 +101,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     setSearchError(null);
 
     try {
-      // Semantic search in all files and current document
-      const [filesRes, docRes] = await Promise.all([
-        api.searchFiles(searchQuery, undefined, 10, controller.signal).catch(() => null),
-        currentFileId
-          ? api
-              .searchInDocument(searchQuery, currentFileId, 10, controller.signal)
-              .catch(() => null)
-          : Promise.resolve(null),
-      ]);
+      const filesRes = await api
+        .searchFiles(searchQuery, undefined, 10, controller.signal)
+        .catch(() => null);
 
       if (filesRes) setFileSearchResults(filesRes.results);
-      if (docRes) setDocSearchResults(docRes.results);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setSearchError("Search failed. Click to retry.");
@@ -327,41 +316,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }));
   }, [fileSearchResults, setCurrentFile, router, onClose, editor]);
 
-  const searchDocCommands = React.useMemo<CommandItem[]>(() => {
-    return docSearchResults.map((result, index) => ({
-      id: `search-doc-${index}`,
-      label: result.content.slice(0, 80) + (result.content.length > 80 ? "..." : ""),
-      icon: <Quote className="h-4 w-4" />,
-      category: "searchDocument" as const,
-      action: () => {
-        // Jump to position in document using metadata positions (more accurate)
-        if (editor) {
-          const start = result.metadata?.start as number | undefined;
-          const end = result.metadata?.end as number | undefined;
-
-          if (start !== undefined) {
-            // Use positions from backend (already calculated during indexing)
-            const maxPos = editor.state.doc.content.size;
-            const safeStart = Math.min(start, maxPos - 1);
-            const safeEnd = end !== undefined ? Math.min(end, maxPos) : safeStart;
-            editor.commands.setTextSelection({ from: safeStart, to: safeEnd });
-            editor.commands.scrollIntoView();
-          } else if (result.content) {
-            // Fallback: search for content if no position metadata
-            const position = findTextInDoc(editor.state.doc, result.content);
-            if (position) {
-              editor.commands.setTextSelection({ from: position.from, to: position.to });
-              editor.commands.scrollIntoView();
-            }
-          }
-        }
-        onClose();
-      },
-      keywords: [],
-      score: result.distance !== undefined ? Math.round((1 - result.distance) * 100) : undefined,
-    }));
-  }, [docSearchResults, onClose, editor]);
-
   // Group filtered commands by category
   const groupedCommands = React.useMemo(() => {
     const groups: Record<string, CommandItem[]> = {};
@@ -370,9 +324,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     if (query.trim()) {
       if (searchFileCommands.length > 0) {
         groups["searchFiles"] = searchFileCommands;
-      }
-      if (searchDocCommands.length > 0) {
-        groups["searchDocument"] = searchDocCommands;
       }
     }
 
@@ -385,7 +336,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return groups;
-  }, [filteredCommands, searchFileCommands, searchDocCommands, query]);
+  }, [filteredCommands, searchFileCommands, query]);
 
   // Flatten for keyboard navigation
   const flattenedCommands = React.useMemo(() => {
@@ -408,7 +359,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       setQuery("");
       setSelectedIndex(0);
       setFileSearchResults([]);
-      setDocSearchResults([]);
       setSearchError(null);
       // Only auto-focus on desktop to avoid keyboard popup on mobile
       if (window.innerWidth >= 768) {

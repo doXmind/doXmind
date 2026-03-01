@@ -10,19 +10,12 @@ export interface SearchRange {
   to: number;
 }
 
-// Semantic match with score
-export interface SemanticRange extends SearchRange {
-  score: number; // 0-1, higher is better match
-}
-
 // Plugin state interface
 export interface SearchPluginState {
   searchTerm: string;
   replaceTerm: string;
   results: SearchRange[]; // Keyword matches
-  semanticResults: SemanticRange[]; // Semantic matches
   currentIndex: number;
-  currentSemanticIndex: number;
   caseSensitive: boolean;
   wholeWord: boolean;
   useRegex: boolean;
@@ -35,17 +28,6 @@ export const SearchPluginKey = new PluginKey<SearchPluginState>("search");
 export interface SearchExtensionOptions {
   searchResultClass: string;
   currentResultClass: string;
-  semanticResultClass: string;
-  currentSemanticResultClass: string;
-}
-
-// Semantic chunk from API
-export interface SemanticChunk {
-  content: string;
-  score: number;
-  // Position in original document (from backend)
-  start?: number;
-  end?: number;
 }
 
 // Declare custom commands for TypeScript
@@ -57,13 +39,8 @@ declare module "@tiptap/core" {
       setCaseSensitive: (value: boolean) => ReturnType;
       setWholeWord: (value: boolean) => ReturnType;
       setUseRegex: (value: boolean) => ReturnType;
-      setSemanticResults: (chunks: SemanticChunk[]) => ReturnType;
-      clearSemanticResults: () => ReturnType;
       nextSearchResult: () => ReturnType;
       previousSearchResult: () => ReturnType;
-      goToSemanticResult: (index: number) => ReturnType;
-      nextSemanticResult: () => ReturnType;
-      previousSemanticResult: () => ReturnType;
       replace: () => ReturnType;
       replaceAll: () => ReturnType;
       closeSearch: () => ReturnType;

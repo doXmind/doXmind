@@ -106,7 +106,7 @@ export const BlockMath = Node.create<BlockMathOptions>({
     },
   },
 
-  parseMarkdown(token: any, helpers: any) {
+  parseMarkdown(token, helpers) {
     return helpers.createNode("blockMath", { latex: token.latex || "" });
   },
 

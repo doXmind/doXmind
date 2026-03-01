@@ -1,9 +1,7 @@
 /**
  * Search and Replace Extension for TipTap
  *
- * Provides hybrid search:
- * - Keyword search: immediate highlighting (yellow)
- * - Semantic search: AI-matched sections highlighting (purple)
+ * Provides keyword search with highlighting and replace.
  */
 
 import { Extension } from "@tiptap/core";
@@ -15,14 +13,13 @@ import {
   SearchPluginKey,
   type SearchPluginState,
   type SearchExtensionOptions,
-  type SemanticChunk,
 } from "./search-types";
 
-import { processSearches, findSemanticRanges } from "./search-algorithms";
+import { processSearches } from "./search-algorithms";
 
 // Re-export types for external use
 export * from "./search-types";
-export { processSearches, findSemanticRanges, dedupeRanges } from "./search-algorithms";
+export { processSearches } from "./search-algorithms";
 
 export const SearchExtension = Extension.create<SearchExtensionOptions>({
   name: "search",
@@ -31,8 +28,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
     return {
       searchResultClass: "search-result",
       currentResultClass: "search-result-current",
-      semanticResultClass: "search-result-semantic",
-      currentSemanticResultClass: "search-result-semantic-current",
     };
   },
 
@@ -45,8 +40,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
       wholeWord: false,
       useRegex: false,
       resultsCount: 0,
-      semanticResultsCount: 0,
-      currentSemanticIndex: 0,
     };
   },
 
@@ -62,9 +55,7 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
             searchTerm: "",
             replaceTerm: "",
             results: [],
-            semanticResults: [],
             currentIndex: 0,
-            currentSemanticIndex: 0,
             caseSensitive: false,
             wholeWord: false,
             useRegex: false,
@@ -84,8 +75,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
 
               let updatedResults = value.results;
               let updatedIndex = value.currentIndex;
-              let updatedSemanticResults = value.semanticResults;
-              let updatedSemanticIndex = value.currentSemanticIndex;
 
               // Recalculate keyword results
               if (
@@ -109,35 +98,16 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
                 }
               }
 
-              // Handle semantic results update
-              if (meta.semanticChunks !== undefined) {
-                updatedSemanticResults = findSemanticRanges(
-                  editorState.doc,
-                  meta.semanticChunks as SemanticChunk[]
-                );
-                updatedSemanticIndex = 0;
-              }
-
-              if (meta.clearSemantic) {
-                updatedSemanticResults = [];
-                updatedSemanticIndex = 0;
-              }
-
-              // Update indices if explicitly set
+              // Update index if explicitly set
               if (meta.currentIndex !== undefined) {
                 updatedIndex = meta.currentIndex;
-              }
-              if (meta.currentSemanticIndex !== undefined) {
-                updatedSemanticIndex = meta.currentSemanticIndex;
               }
 
               const pluginState: SearchPluginState = {
                 searchTerm: updatedSearchTerm,
                 replaceTerm: meta.replaceTerm !== undefined ? meta.replaceTerm : value.replaceTerm,
                 results: updatedResults,
-                semanticResults: updatedSemanticResults,
                 currentIndex: updatedIndex,
-                currentSemanticIndex: updatedSemanticIndex,
                 caseSensitive: updatedCaseSensitive,
                 wholeWord: updatedWholeWord,
                 useRegex: updatedUseRegex,
@@ -151,8 +121,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
               storage.wholeWord = pluginState.wholeWord;
               storage.useRegex = pluginState.useRegex;
               storage.resultsCount = pluginState.results.length;
-              storage.semanticResultsCount = pluginState.semanticResults.length;
-              storage.currentSemanticIndex = pluginState.currentSemanticIndex;
 
               return pluginState;
             }
@@ -200,19 +168,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
                   class: isCurrent
                     ? `${options.searchResultClass} ${options.currentResultClass}`
                     : options.searchResultClass,
-                })
-              );
-            });
-
-            // Semantic matches (purple)
-            pluginState.semanticResults.forEach((result, index) => {
-              const isCurrent = index === pluginState.currentSemanticIndex;
-              decorations.push(
-                Decoration.inline(result.from, result.to, {
-                  class: isCurrent
-                    ? `${options.semanticResultClass} ${options.currentSemanticResultClass}`
-                    : options.semanticResultClass,
-                  "data-score": Math.round(result.score * 100).toString(),
                 })
               );
             });
@@ -276,26 +231,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
           return true;
         },
 
-      setSemanticResults:
-        (chunks: SemanticChunk[]) =>
-        ({ tr, dispatch }) => {
-          if (dispatch) {
-            tr.setMeta(SearchPluginKey, { semanticChunks: chunks });
-            dispatch(tr);
-          }
-          return true;
-        },
-
-      clearSemanticResults:
-        () =>
-        ({ tr, dispatch }) => {
-          if (dispatch) {
-            tr.setMeta(SearchPluginKey, { clearSemantic: true });
-            dispatch(tr);
-          }
-          return true;
-        },
-
       nextSearchResult:
         () =>
         ({ tr, state, dispatch }) => {
@@ -326,59 +261,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
           dispatch(tr);
 
           const result = pluginState.results[newIndex];
-          this.editor.commands.setTextSelection(result.from);
-          scrollToPosition(this.editor, result.from);
-
-          return true;
-        },
-
-      goToSemanticResult:
-        (index: number) =>
-        ({ tr, state, dispatch }) => {
-          const pluginState = SearchPluginKey.getState(state);
-          if (!pluginState?.semanticResults[index] || !dispatch) return false;
-
-          tr.setMeta(SearchPluginKey, { currentSemanticIndex: index });
-          dispatch(tr);
-
-          const result = pluginState.semanticResults[index];
-          this.editor.commands.setTextSelection(result.from);
-          scrollToPosition(this.editor, result.from);
-
-          return true;
-        },
-
-      nextSemanticResult:
-        () =>
-        ({ tr, state, dispatch }) => {
-          const pluginState = SearchPluginKey.getState(state);
-          if (!pluginState?.semanticResults.length || !dispatch) return false;
-
-          const newIndex =
-            (pluginState.currentSemanticIndex + 1) % pluginState.semanticResults.length;
-          tr.setMeta(SearchPluginKey, { currentSemanticIndex: newIndex });
-          dispatch(tr);
-
-          const result = pluginState.semanticResults[newIndex];
-          this.editor.commands.setTextSelection(result.from);
-          scrollToPosition(this.editor, result.from);
-
-          return true;
-        },
-
-      previousSemanticResult:
-        () =>
-        ({ tr, state, dispatch }) => {
-          const pluginState = SearchPluginKey.getState(state);
-          if (!pluginState?.semanticResults.length || !dispatch) return false;
-
-          const newIndex =
-            (pluginState.currentSemanticIndex - 1 + pluginState.semanticResults.length) %
-            pluginState.semanticResults.length;
-          tr.setMeta(SearchPluginKey, { currentSemanticIndex: newIndex });
-          dispatch(tr);
-
-          const result = pluginState.semanticResults[newIndex];
           this.editor.commands.setTextSelection(result.from);
           scrollToPosition(this.editor, result.from);
 
@@ -422,7 +304,6 @@ export const SearchExtension = Extension.create<SearchExtensionOptions>({
               searchTerm: "",
               replaceTerm: "",
               currentIndex: 0,
-              clearSemantic: true,
             });
             dispatch(tr);
           }

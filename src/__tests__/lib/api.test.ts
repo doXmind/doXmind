@@ -543,26 +543,6 @@ describe("ApiClient", () => {
         })
       );
     });
-
-    it("searchInDocument sends correct parameters", async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ results: [] }),
-      });
-
-      await client.searchInDocument("query", "file-1", 20);
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        "http://test-api.com/api/files/search/in-document",
-        expect.objectContaining({
-          body: JSON.stringify({
-            query: "query",
-            file_id: "file-1",
-            top_k: 20,
-          }),
-        })
-      );
-    });
   });
 
   // ============================================================================

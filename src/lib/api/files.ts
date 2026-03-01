@@ -136,12 +136,6 @@ declare module "./client" {
       topK?: number,
       signal?: AbortSignal
     ): Promise<SearchResults>;
-    searchInDocument(
-      query: string,
-      fileId: string,
-      topK?: number,
-      signal?: AbortSignal
-    ): Promise<SearchResults>;
     listVersions(
       fileId: string,
       limit?: number
@@ -463,27 +457,6 @@ ApiClient.prototype.searchFiles = async function (
   return this.request<SearchResults>("/api/files/search", {
     method: "POST",
     body: JSON.stringify({ query, file_ids: fileIds, top_k: topK }),
-    signal,
-  });
-};
-
-/**
- * Search within a single document using text matching.
- * Returns match positions for in-document highlighting.
- * @param query - Search query
- * @param fileId - File to search within
- * @param topK - Maximum number of results (default 10)
- */
-ApiClient.prototype.searchInDocument = async function (
-  this: ApiClient,
-  query: string,
-  fileId: string,
-  topK: number = 10,
-  signal?: AbortSignal
-) {
-  return this.request<SearchResults>("/api/files/search/in-document", {
-    method: "POST",
-    body: JSON.stringify({ query, file_id: fileId, top_k: topK }),
     signal,
   });
 };

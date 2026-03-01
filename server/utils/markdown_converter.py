@@ -110,7 +110,7 @@ def _restore_atom_blocks(markdown: str, blocks: dict[str, str]) -> str:
 class _TipTapConverter(MarkdownConverter):
     """Custom converter that handles TipTap-specific HTML patterns."""
 
-    def convert_pre(self, el, text, convert_as_inline):
+    def convert_pre(self, el, text, *args, **kwargs):
         """Handle <pre> elements: extract language from <code> child class."""
         code_el = el.find("code")
         if code_el:
@@ -127,7 +127,7 @@ class _TipTapConverter(MarkdownConverter):
             if code_text and not code_text.endswith("\n"):
                 code_text += "\n"
             return f"\n\n```{lang}\n{code_text}```\n\n"
-        return super().convert_pre(el, text, convert_as_inline)
+        return super().convert_pre(el, text, *args, **kwargs)
 
 
 def _get_code_language(el) -> str | None:

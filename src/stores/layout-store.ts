@@ -54,7 +54,6 @@ interface LayoutState {
 
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
-  shouldOpenSearchWithAI: boolean; // Flag to open search in AI mode
 
   // Global agent sheet
   isAgentSheetOpen: boolean;
@@ -131,7 +130,6 @@ interface LayoutState {
   // Search bar actions
   setSearchBarOpen: (open: boolean) => void;
   toggleSearchBar: () => void;
-  openSearchBarWithAI: () => void; // Opens search bar in AI mode
 
   // Global agent sheet actions
   setAgentSheetOpen: (open: boolean) => void;
@@ -231,7 +229,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Search bar
       isSearchBarOpen: false,
-      shouldOpenSearchWithAI: false,
 
       // Global agent sheet
       isAgentSheetOpen: false,
@@ -419,18 +416,11 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Search bar actions
       setSearchBarOpen: (open: boolean) => {
-        set({ isSearchBarOpen: open, shouldOpenSearchWithAI: false });
+        set({ isSearchBarOpen: open });
       },
 
       toggleSearchBar: () => {
-        set((state) => ({
-          isSearchBarOpen: !state.isSearchBarOpen,
-          shouldOpenSearchWithAI: false,
-        }));
-      },
-
-      openSearchBarWithAI: () => {
-        set({ isSearchBarOpen: true, shouldOpenSearchWithAI: true });
+        set((state) => ({ isSearchBarOpen: !state.isSearchBarOpen }));
       },
 
       // Global agent sheet actions

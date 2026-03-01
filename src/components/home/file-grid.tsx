@@ -40,6 +40,7 @@ interface FileGridProps {
   isSearching: boolean;
   hideActions?: boolean;
   maxColumns?: number;
+  totalDocs?: number;
   onResultClick?: (fileId: string, position: number, score: number) => void;
 }
 
@@ -89,6 +90,7 @@ export function FileGrid({
   isSearching,
   hideActions,
   maxColumns,
+  totalDocs,
   onResultClick,
 }: FileGridProps) {
   const {
@@ -409,7 +411,9 @@ export function FileGrid({
             {isSearchActive ? "Results" : currentFolder ? currentFolder.name : "All Documents"}
           </h2>
           <span className="text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60">
-            {displayFiles.length}
+            {isSearchActive || currentFolder
+              ? displayFiles.length
+              : (totalDocs ?? displayFiles.length)}
           </span>
         </div>
 

@@ -552,6 +552,7 @@ export function HomeDashboard() {
                   searchQuery={query}
                   searchResults={searchResults}
                   isSearching={isSearching}
+                  totalDocs={totalDocs}
                   onResultClick={handleSearchResultClick}
                 />
               ) : homeActiveTab === "shared" ? (
@@ -599,6 +600,7 @@ export function HomeDashboard() {
                       searchQuery=""
                       searchResults={[]}
                       isSearching={false}
+                      totalDocs={totalDocs}
                     />
                   </CollapsibleSection>
 

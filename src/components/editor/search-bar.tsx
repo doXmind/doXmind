@@ -10,17 +10,12 @@ import {
   CaseSensitive,
   WholeWord,
   Replace,
-  Sparkles,
-  Loader2,
   Regex,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useFileStore } from "@/stores/file-store";
-import { SearchPluginKey, type SemanticChunk } from "@/extensions/search";
-import { api, type SearchResultItem } from "@/lib/api";
-import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
+import { SearchPluginKey } from "@/extensions/search";
 
 export function SearchBar() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -31,104 +26,46 @@ export function SearchBar() {
   const [useRegex, setUseRegex] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // AI Search state
-  const [isAIMode, setIsAIMode] = useState(false);
-  const [isAISearching, setIsAISearching] = useState(false);
-  const [_aiResults, setAIResults] = useState<SearchResultItem[]>([]);
-  const [_showAIResults, setShowAIResults] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-
   const { editor } = useEditorRefStore();
-  const { isSearchBarOpen, setSearchBarOpen, shouldOpenSearchWithAI } = useLayoutStore();
-  const { currentFileId } = useFileStore();
+  const { isSearchBarOpen, setSearchBarOpen } = useLayoutStore();
 
-  // Get search state from plugin
-  const pluginState = editor ? SearchPluginKey.getState(editor.state) : null;
-  const resultsCount = pluginState?.results.length ?? 0;
-  const currentIndex = pluginState?.currentIndex ?? 0;
-  const semanticResultsCount = pluginState?.semanticResults.length ?? 0;
-  const currentSemanticIndex = pluginState?.currentSemanticIndex ?? 0;
+  // Track search results via editor transactions (plugin state isn't reactive in React)
+  const [resultsCount, setResultsCount] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
-  // AI Search function with debounce
-  const performAISearch = useDebouncedCallback(async (query: string) => {
-    if (!query.trim() || !currentFileId) {
-      setAIResults([]);
-      editor?.commands.clearSemanticResults();
-      return;
+  const syncSearchState = useCallback(() => {
+    if (!editor) return;
+    const state = SearchPluginKey.getState(editor.state);
+    if (state) {
+      setResultsCount(state.results.length);
+      setCurrentIndex(state.currentIndex);
     }
+  }, [editor]);
 
-    // Cancel previous request
-    abortControllerRef.current?.abort();
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    setIsAISearching(true);
-
-    try {
-      const response = await api.searchInDocument(query, currentFileId, 10, controller.signal);
-
-      if (response.results.length > 0) {
-        setAIResults(response.results);
-        setShowAIResults(true);
-
-        // Convert to SemanticChunk format for editor highlighting
-        // Include start/end positions from backend for accurate highlighting
-        const semanticChunks: SemanticChunk[] = response.results.map((r) => ({
-          content: r.content,
-          score: r.distance !== undefined ? 1 - r.distance : 0.5,
-          start: r.metadata?.start as number | undefined,
-          end: r.metadata?.end as number | undefined,
-        }));
-        editor?.commands.setSemanticResults(semanticChunks);
-      } else {
-        setAIResults([]);
-        editor?.commands.clearSemanticResults();
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      console.error("[SearchBar] AI search failed:", error);
-      setAIResults([]);
-    } finally {
-      setIsAISearching(false);
-    }
-  }, 500);
-
-  // Trigger AI search when search term changes (only in AI mode)
   useEffect(() => {
-    if (isAIMode && searchTerm.trim()) {
-      performAISearch(searchTerm);
-    }
-  }, [searchTerm, performAISearch, isAIMode]);
+    if (!editor) return;
+    editor.on("transaction", syncSearchState);
+    return () => {
+      editor.off("transaction", syncSearchState);
+    };
+  }, [editor, syncSearchState]);
 
   // Focus input when opened (only on desktop to avoid keyboard popup on mobile)
-  // Also handle shouldOpenSearchWithAI flag
   useEffect(() => {
     if (isSearchBarOpen) {
-      // Check if we should open in AI mode
-      if (shouldOpenSearchWithAI) {
-        setIsAIMode(true);
-      }
-      // Focus input on desktop
       if (window.innerWidth >= 768) {
         requestAnimationFrame(() => searchInputRef.current?.focus());
       }
     }
-  }, [isSearchBarOpen, shouldOpenSearchWithAI]);
+  }, [isSearchBarOpen]);
 
-  // Sync search term with editor (only for keyword search)
+  // Sync search term with editor
   useEffect(() => {
     if (!editor) return;
-    // Defer the editor command to a new macrotask to avoid flushSync warning.
-    // queueMicrotask runs within React's commit phase; setTimeout(0) runs after.
     setTimeout(() => {
-      // Only do keyword search when not in AI mode
-      if (!isAIMode) {
-        editor.commands.setSearchTerm(searchTerm);
-      } else {
-        editor.commands.setSearchTerm(""); // Clear keyword highlights in AI mode
-      }
+      editor.commands.setSearchTerm(searchTerm);
     });
-  }, [editor, searchTerm, isAIMode]);
+  }, [editor, searchTerm]);
 
   // Sync case sensitivity with editor
   useEffect(() => {
@@ -166,27 +103,13 @@ export function SearchBar() {
       setCaseSensitive(false);
       setWholeWord(false);
       setUseRegex(false);
-      setIsAIMode(false);
-      setAIResults([]);
-      setShowAIResults(false);
-      abortControllerRef.current?.abort();
+      setResultsCount(0);
+      setCurrentIndex(0);
     }
   }, [isSearchBarOpen, editor]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      abortControllerRef.current?.abort();
-    };
-  }, []);
-
-  // Keyword search navigation
   const handleNext = () => editor?.commands.nextSearchResult();
   const handlePrevious = () => editor?.commands.previousSearchResult();
-
-  // AI search navigation
-  const handleNextSemantic = () => editor?.commands.nextSemanticResult();
-  const handlePreviousSemantic = () => editor?.commands.previousSemanticResult();
 
   const handleReplace = () => {
     if (!editor || resultsCount === 0) return;
@@ -204,44 +127,6 @@ export function SearchBar() {
     setSearchBarOpen(false);
   };
 
-  // Toggle AI mode - only update state, effects handle editor commands
-  const toggleAIMode = useCallback(() => {
-    setIsAIMode((prev) => !prev);
-  }, []);
-
-  // Handle AI mode changes - clear/restore highlights
-  useEffect(() => {
-    if (!editor) return;
-
-    setTimeout(() => {
-      if (isAIMode) {
-        // Switching to AI mode - clear keyword highlights, trigger AI search
-        editor.commands.setSearchTerm("");
-        if (searchTerm.trim()) {
-          performAISearch(searchTerm);
-        }
-      } else {
-        // Switching to keyword mode - clear AI results, restore keyword search
-        setAIResults([]);
-        setShowAIResults(false);
-        editor.commands.clearSemanticResults();
-        if (searchTerm) {
-          editor.commands.setSearchTerm(searchTerm);
-        }
-      }
-    }, 0);
-    // Only run when isAIMode changes, not on every searchTerm change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAIMode, editor]);
-
-  // Jump to semantic result by clicking - uses same command pattern as arrow navigation
-  const handleSemanticResultClick = useCallback(
-    (index: number) => {
-      editor?.commands.goToSemanticResult(index);
-    },
-    [editor]
-  );
-
   // Keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -249,18 +134,10 @@ export function SearchBar() {
       handleClose();
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (isAIMode) {
-        handleNextSemantic();
-      } else {
-        handleNext();
-      }
+      handleNext();
     } else if (e.key === "Enter" && e.shiftKey) {
       e.preventDefault();
-      if (isAIMode) {
-        handlePreviousSemantic();
-      } else {
-        handlePrevious();
-      }
+      handlePrevious();
     }
   };
 
@@ -285,42 +162,22 @@ export function SearchBar() {
         >
           {/* Search row */}
           <div className="flex items-center gap-2 px-3 py-2.5">
-            {/* Search icon / AI loading indicator */}
-            {isAISearching ? (
-              <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-purple-500" />
-            ) : isAIMode ? (
-              <Sparkles className="h-4 w-4 flex-shrink-0 text-purple-500" />
-            ) : (
-              <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-            )}
+            <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
 
             <input
               ref={searchInputRef}
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={isAIMode ? "AI semantic search..." : "Find in document..."}
-              className={cn(
-                "min-w-[80px] flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm",
-                isAIMode && "placeholder:text-purple-400"
-              )}
+              placeholder="Find in document..."
+              className="min-w-[80px] flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
               aria-label="Search text"
             />
 
-            {/* Match counter - different display for AI vs keyword mode */}
+            {/* Match counter */}
             <span className="min-w-[60px] whitespace-nowrap text-center text-xs text-muted-foreground">
               {searchTerm ? (
-                isAIMode ? (
-                  isAISearching ? (
-                    <span className="text-purple-500">Searching...</span>
-                  ) : semanticResultsCount > 0 ? (
-                    <span className="text-purple-600 dark:text-purple-400">
-                      {currentSemanticIndex + 1} of {semanticResultsCount}
-                    </span>
-                  ) : (
-                    <span className="text-amber-500">No matches</span>
-                  )
-                ) : resultsCount > 0 ? (
+                resultsCount > 0 ? (
                   `${currentIndex + 1} of ${resultsCount}`
                 ) : (
                   <span className="text-amber-500">No matches</span>
@@ -328,68 +185,48 @@ export function SearchBar() {
               ) : null}
             </span>
 
-            {/* AI Search toggle */}
+            {/* Search option toggles */}
             <button
-              onClick={toggleAIMode}
+              onClick={() => setCaseSensitive(!caseSensitive)}
               className={cn(
-                "rounded-md p-1.5 transition-colors",
-                isAIMode
-                  ? "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400"
-                  : "text-muted-foreground hover:bg-accent"
+                "rounded-md p-1.5 transition-colors hover:bg-accent",
+                caseSensitive && "bg-accent text-accent-foreground"
               )}
-              aria-label="Toggle AI search"
-              aria-pressed={isAIMode}
-              title={isAIMode ? "Switch to keyword search" : "Switch to AI search"}
+              aria-label="Toggle case sensitivity"
+              aria-pressed={caseSensitive}
+              title="Match case"
             >
-              <Sparkles className="h-4 w-4" />
+              <CaseSensitive className="h-4 w-4" />
             </button>
-
-            {/* Search option toggles - only show in keyword mode */}
-            {!isAIMode && (
-              <>
-                <button
-                  onClick={() => setCaseSensitive(!caseSensitive)}
-                  className={cn(
-                    "rounded-md p-1.5 transition-colors hover:bg-accent",
-                    caseSensitive && "bg-accent text-accent-foreground"
-                  )}
-                  aria-label="Toggle case sensitivity"
-                  aria-pressed={caseSensitive}
-                  title="Match case"
-                >
-                  <CaseSensitive className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setWholeWord(!wholeWord)}
-                  className={cn(
-                    "rounded-md p-1.5 transition-colors hover:bg-accent",
-                    wholeWord && "bg-accent text-accent-foreground"
-                  )}
-                  aria-label="Toggle whole word matching"
-                  aria-pressed={wholeWord}
-                  title="Match whole word"
-                >
-                  <WholeWord className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setUseRegex(!useRegex)}
-                  className={cn(
-                    "rounded-md p-1.5 transition-colors hover:bg-accent",
-                    useRegex && "bg-accent text-accent-foreground"
-                  )}
-                  aria-label="Toggle regex mode"
-                  aria-pressed={useRegex}
-                  title="Use regular expression"
-                >
-                  <Regex className="h-4 w-4" />
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => setWholeWord(!wholeWord)}
+              className={cn(
+                "rounded-md p-1.5 transition-colors hover:bg-accent",
+                wholeWord && "bg-accent text-accent-foreground"
+              )}
+              aria-label="Toggle whole word matching"
+              aria-pressed={wholeWord}
+              title="Match whole word"
+            >
+              <WholeWord className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setUseRegex(!useRegex)}
+              className={cn(
+                "rounded-md p-1.5 transition-colors hover:bg-accent",
+                useRegex && "bg-accent text-accent-foreground"
+              )}
+              aria-label="Toggle regex mode"
+              aria-pressed={useRegex}
+              title="Use regular expression"
+            >
+              <Regex className="h-4 w-4" />
+            </button>
 
             {/* Navigation */}
             <button
-              onClick={isAIMode ? handlePreviousSemantic : handlePrevious}
-              disabled={isAIMode ? semanticResultsCount === 0 : resultsCount === 0}
+              onClick={handlePrevious}
+              disabled={resultsCount === 0}
               className="rounded-md p-1.5 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Previous result"
               title="Previous (Shift+Enter)"
@@ -397,8 +234,8 @@ export function SearchBar() {
               <ChevronUp className="h-4 w-4" />
             </button>
             <button
-              onClick={isAIMode ? handleNextSemantic : handleNext}
-              disabled={isAIMode ? semanticResultsCount === 0 : resultsCount === 0}
+              onClick={handleNext}
+              disabled={resultsCount === 0}
               className="rounded-md p-1.5 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Next result"
               title="Next (Enter)"
@@ -406,21 +243,19 @@ export function SearchBar() {
               <ChevronDown className="h-4 w-4" />
             </button>
 
-            {/* Toggle replace - only show in keyword mode */}
-            {!isAIMode && (
-              <button
-                onClick={() => setShowReplace(!showReplace)}
-                className={cn(
-                  "rounded-md p-1.5 transition-colors hover:bg-accent",
-                  showReplace && "bg-accent text-accent-foreground"
-                )}
-                aria-label="Toggle replace"
-                aria-expanded={showReplace}
-                title="Toggle replace"
-              >
-                <Replace className="h-4 w-4" />
-              </button>
-            )}
+            {/* Toggle replace */}
+            <button
+              onClick={() => setShowReplace(!showReplace)}
+              className={cn(
+                "rounded-md p-1.5 transition-colors hover:bg-accent",
+                showReplace && "bg-accent text-accent-foreground"
+              )}
+              aria-label="Toggle replace"
+              aria-expanded={showReplace}
+              title="Toggle replace"
+            >
+              <Replace className="h-4 w-4" />
+            </button>
 
             {/* Close */}
             <button
@@ -433,9 +268,9 @@ export function SearchBar() {
             </button>
           </div>
 
-          {/* Replace row (collapsible) - only in keyword mode */}
+          {/* Replace row (collapsible) */}
           <AnimatePresence>
-            {showReplace && !isAIMode && (
+            {showReplace && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: "auto", opacity: 1 }}
@@ -467,66 +302,6 @@ export function SearchBar() {
                   >
                     Replace All
                   </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* AI Search Results Panel - renders from semanticResults for correct index mapping */}
-          <AnimatePresence>
-            {isAIMode && semanticResultsCount > 0 && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="overflow-hidden border-t border-purple-200 dark:border-purple-800"
-              >
-                <div className="max-h-[200px] overflow-y-auto">
-                  <div className="sticky top-0 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-600 dark:bg-purple-900/20 dark:text-purple-400">
-                    AI Results ({semanticResultsCount})
-                  </div>
-                  {pluginState?.semanticResults.map((result, index) => {
-                    const score = Math.round(result.score * 100);
-                    const content = editor?.state.doc.textBetween(result.from, result.to) ?? "";
-                    const isCurrentResult = index === currentSemanticIndex;
-
-                    return (
-                      <button
-                        key={`semantic-result-${index}`}
-                        onClick={() => handleSemanticResultClick(index)}
-                        className={cn(
-                          "w-full px-3 py-2 text-left text-sm transition-colors",
-                          "hover:bg-purple-50 dark:hover:bg-purple-900/30",
-                          "border-b border-border/50 last:border-b-0",
-                          isCurrentResult && "bg-purple-100 dark:bg-purple-900/40"
-                        )}
-                      >
-                        <div className="flex items-start gap-2">
-                          <div
-                            className={cn(
-                              "line-clamp-2 min-w-0 flex-1 text-foreground/80",
-                              isCurrentResult && "text-purple-700 dark:text-purple-300"
-                            )}
-                          >
-                            {content}
-                          </div>
-                          <span
-                            className={cn(
-                              "flex-shrink-0 rounded px-1.5 py-0.5 text-xs",
-                              score >= 70
-                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                : score >= 50
-                                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                            )}
-                          >
-                            {score}%
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
                 </div>
               </motion.div>
             )}

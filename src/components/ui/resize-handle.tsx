@@ -23,19 +23,27 @@ export function ResizeHandle({
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
 
+  // Keep refs to latest callbacks to avoid stale closures in document event listeners
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
+  const onResizeStartRef = useRef(onResizeStart);
+  onResizeStartRef.current = onResizeStart;
+  const onResizeEndRef = useRef(onResizeEnd);
+  onResizeEndRef.current = onResizeEnd;
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       isDraggingRef.current = true;
       startXRef.current = e.clientX;
-      onResizeStart?.();
+      onResizeStartRef.current?.();
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!isDraggingRef.current) return;
         const delta = moveEvent.clientX - startXRef.current;
         startXRef.current = moveEvent.clientX;
         const adjustedDelta = side === "right" ? -delta : delta;
-        onResize(adjustedDelta);
+        onResizeRef.current(adjustedDelta);
       };
 
       const handleMouseUp = () => {
@@ -44,7 +52,7 @@ export function ResizeHandle({
         document.removeEventListener("mouseup", handleMouseUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        onResizeEnd?.();
+        onResizeEndRef.current?.();
       };
 
       document.addEventListener("mousemove", handleMouseMove);
@@ -52,7 +60,7 @@ export function ResizeHandle({
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     },
-    [onResize, onResizeStart, onResizeEnd, side]
+    [side]
   );
 
   return (

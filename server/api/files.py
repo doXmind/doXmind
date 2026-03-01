@@ -247,8 +247,11 @@ async def list_files(
             File.icon,
             File.created_at,
             File.updated_at,
-            # Lightweight preview: first 1000 chars of content + total length
-            # safe_substr uses a timeout to handle corrupted TOAST data gracefully
+            # Lightweight preview: prefer content_markdown (no HTML, no TOAST issues)
+            # Only 250 chars needed (preview truncates to 200)
+            func.substr(File.content_markdown, 1, 250).label("content_markdown_head"),
+            func.length(File.content_markdown).label("content_markdown_length"),
+            # Fallback for files without cached markdown
             func.safe_substr(File.content, 1, 1000).label("content_head"),
             func.length(File.content).label("content_length"),
             Fork.id.label("fork_id"),
@@ -287,14 +290,23 @@ async def list_files(
 
     response_data = []
     for row in rows:
-        # Compute preview and word count from content_head (first 1000 chars)
-        plain = _strip_html(row.content_head or "") if not row.is_folder else ""
+        # Compute preview and word count
+        # Prefer content_markdown (tag-free, truncation-safe) over HTML content
+        if not row.is_folder and row.content_markdown_head:
+            plain = row.content_markdown_head.strip()
+            total_len = row.content_markdown_length or 0
+        elif not row.is_folder:
+            plain = _strip_html(row.content_head or "")
+            total_len = row.content_length or 0
+        else:
+            plain = ""
+            total_len = 0
         preview = plain[:200] if plain else ""
         word_count = len(plain.split()) if plain else 0
-        # If content was truncated (>1000 chars), estimate full word count
-        if row.content_length and row.content_length > 1000 and word_count > 0:
-            ratio = row.content_length / min(len(row.content_head or ""), 1000)
-            word_count = int(word_count * ratio)
+        # If content was truncated, estimate full word count from ratio
+        sample_len = min(len(plain), 250) if plain else 0
+        if total_len > sample_len and word_count > 0 and sample_len > 0:
+            word_count = int(word_count * (total_len / sample_len))
 
         response_data.append(
             FileResponse(
@@ -882,86 +894,6 @@ async def search_files(
         return {"results": results}
     except Exception as e:
         logger.error(f"Search error: {e}")
-        raise InternalError(message=str(e))
-
-
-class InDocSearchRequest(BaseModel):
-    """In-document search request model."""
-
-    query: str
-    file_id: str
-    top_k: int = 10
-
-
-@router.post("/search/in-document")
-async def search_in_document(
-    request: InDocSearchRequest,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
-):
-    """Search within a single document using text matching.
-
-    Returns matching excerpts with character positions for highlighting.
-    """
-    user_id = get_user_id(token)
-
-    try:
-        # Verify file exists, belongs to user, and is not in trash
-        query = select(File).where(File.id == request.file_id, File.deleted_at.is_(None))
-        if user_id:
-            query = query.where(File.user_id == user_id)
-        else:
-            query = query.where(File.user_id.is_(None))
-
-        result = await db.execute(query)
-        file = result.scalar_one_or_none()
-
-        if not file:
-            raise DocumentNotFoundError(file_id=request.file_id)
-
-        plain = strip_html_tags(file.content or "")
-        query_lower = request.query.lower()
-        plain_lower = plain.lower()
-
-        results = []
-        search_start = 0
-        while len(results) < request.top_k:
-            pos = plain_lower.find(query_lower, search_start)
-            if pos == -1:
-                break
-
-            # Extract context around the match
-            ctx_start = max(0, pos - 50)
-            ctx_end = min(len(plain), pos + len(request.query) + 150)
-            content = plain[ctx_start:ctx_end]
-
-            results.append(
-                {
-                    "id": f"{request.file_id}_{len(results)}",
-                    "content": content,
-                    "metadata": {
-                        "file_id": request.file_id,
-                        "name": file.name,
-                        "chunk_index": len(results),
-                        "start": pos,
-                        "end": pos + len(request.query),
-                    },
-                    "distance": 0.0,
-                }
-            )
-
-            search_start = pos + len(request.query)
-
-        logger.info(
-            f"In-document search: query='{request.query}', file_id={request.file_id}, "
-            f"results={len(results)}"
-        )
-
-        return {"results": results}
-    except AppException:
-        raise
-    except Exception as e:
-        logger.error(f"In-document search error: {e}")
         raise InternalError(message=str(e))
 
 

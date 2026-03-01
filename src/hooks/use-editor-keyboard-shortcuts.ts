@@ -21,7 +21,6 @@ export function useEditorKeyboardShortcuts() {
     openCommandPalette,
     isSearchBarOpen,
     setSearchBarOpen,
-    openSearchBarWithAI,
     isFocusMode,
     toggleFocusMode,
     setQuickSwitcherOpen,
@@ -44,16 +43,6 @@ export function useEditorKeyboardShortcuts() {
         } else {
           openCommandPalette();
         }
-        return;
-      }
-
-      // Ctrl+Shift+F or Cmd+Shift+F - AI Search (semantic search)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        }
-        openSearchBarWithAI();
         return;
       }
 
@@ -96,7 +85,6 @@ export function useEditorKeyboardShortcuts() {
       openCommandPalette,
       isSearchBarOpen,
       setSearchBarOpen,
-      openSearchBarWithAI,
       isFocusMode,
       toggleFocusMode,
       setQuickSwitcherOpen,
