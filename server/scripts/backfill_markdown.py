@@ -116,10 +116,16 @@ def backfill():
                 if err:
                     if isinstance(err, TimeoutError):
                         timeouts += 1
-                        print(f"  TIMEOUT [{i}/{total}] {file_id} ({name}, {content_len}ch)", flush=True)
+                        print(
+                            f"  TIMEOUT [{i}/{total}] {file_id} ({name}, {content_len}ch)",
+                            flush=True,
+                        )
                     else:
                         errors += 1
-                        print(f"  ERROR [{i}/{total}] {file_id} ({name}, {content_len}ch): {str(err)[:100]}", flush=True)
+                        print(
+                            f"  ERROR [{i}/{total}] {file_id} ({name}, {content_len}ch): {str(err)[:100]}",
+                            flush=True,
+                        )
                     continue
 
                 conn.execute(
@@ -131,22 +137,34 @@ def backfill():
 
                 dt = time.time() - t0
                 if dt > 2:
-                    print(f"  SLOW [{i}/{total}] {file_id} ({name}, {content_len}ch): {dt:.1f}s", flush=True)
+                    print(
+                        f"  SLOW [{i}/{total}] {file_id} ({name}, {content_len}ch): {dt:.1f}s",
+                        flush=True,
+                    )
 
             except Exception as e:
                 errors += 1
                 err_msg = str(e)[:120]
-                print(f"  ERROR [{i}/{total}] {file_id} ({name}, {content_len}ch): {err_msg}", flush=True)
+                print(
+                    f"  ERROR [{i}/{total}] {file_id} ({name}, {content_len}ch): {err_msg}",
+                    flush=True,
+                )
                 with contextlib.suppress(Exception):
                     conn.rollback()
 
             if i % 20 == 0:
                 elapsed = time.time() - start
-                print(f"  [{i}/{total}] {success} ok, {errors} err, {timeouts} timeout ({elapsed:.0f}s)", flush=True)
+                print(
+                    f"  [{i}/{total}] {success} ok, {errors} err, {timeouts} timeout ({elapsed:.0f}s)",
+                    flush=True,
+                )
 
         # Final status
         elapsed = time.time() - start
-        print(f"\nDone in {elapsed:.1f}s: {success} converted, {errors} errors, {timeouts} timeouts out of {total}", flush=True)
+        print(
+            f"\nDone in {elapsed:.1f}s: {success} converted, {errors} errors, {timeouts} timeouts out of {total}",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":
