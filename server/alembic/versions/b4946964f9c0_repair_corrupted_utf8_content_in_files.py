@@ -39,7 +39,7 @@ def upgrade() -> None:
             BEGIN
                 -- Strip null bytes and control chars (preserve tab, newline, CR)
                 cleaned := regexp_replace(t,
-                    E'[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]', '', 'g');
+                    E'[\\x01-\\x08\\x0B\\x0C\\x0E-\\x1F]', '', 'g');
                 PERFORM set_config('statement_timeout', old_timeout, true);
                 RETURN cleaned;
             EXCEPTION WHEN OTHERS THEN
