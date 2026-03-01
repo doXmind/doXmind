@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
   Eye,
   Globe,
@@ -14,11 +14,16 @@ import {
   Pencil,
   X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useLazyList } from "@/hooks/use-lazy-list";
+import { useGridPageSize } from "@/hooks/use-grid-page-size";
+import { GridPagination } from "./grid-pagination";
 
 import { type Share, type InviteEntry, type SearchUserResult, api } from "@/lib/api";
 import { EditShareModal, type EditableShareItem } from "@/components/community/edit-share-modal";
 import { UserSearchInput } from "@/components/share/user-search-input";
 import { toast } from "sonner";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 
 interface SharesSectionProps {
   shares: Share[];
@@ -44,6 +49,26 @@ function EmptyState() {
 export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [editingShare, setEditingShare] = useState<EditableShareItem | null>(null);
+  const [revokingShareId, setRevokingShareId] = useState<string | null>(null);
+
+  // Pagination
+  const [page, setPage] = useState(0);
+  const pageSize = useGridPageSize();
+  const totalPages = Math.max(1, Math.ceil(shares.length / pageSize));
+  const pagedShares = useMemo(
+    () => shares.slice(page * pageSize, (page + 1) * pageSize),
+    [shares, page, pageSize]
+  );
+
+  // Reset page when shares list changes (e.g. after revocation)
+  useEffect(() => {
+    setPage(0);
+  }, [shares.length]);
+
+  // Clamp page if out of bounds
+  useEffect(() => {
+    if (page >= totalPages) setPage(Math.max(0, totalPages - 1));
+  }, [page, totalPages]);
 
   // Invite management
   const [expandedShareId, setExpandedShareId] = useState<string | null>(null);
@@ -107,6 +132,8 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
     }
   }
 
+  const { visibleItems: visibleShares, sentinelRef, hasMore } = useLazyList(pagedShares);
+
   if (shares.length === 0) return <EmptyState />;
 
   const handleAction = async (id: string, action: () => void | Promise<void>) => {
@@ -131,8 +158,8 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
 
   return (
     <>
-      <div className="space-y-3">
-        {shares.map((share) => {
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {visibleShares.map((share) => {
           const isExpanded = expandedShareId === share.id;
           const invites = shareInvites[share.id] || [];
           const isLoadingInvites = invitesLoading === share.id;
@@ -140,71 +167,48 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
           return (
             <div
               key={share.id}
-              className={`group rounded-xl border p-4 transition-all ${
-                share.visibility === "public"
-                  ? "border-emerald-500/30 bg-emerald-500/[0.03] hover:border-emerald-500/50"
-                  : "border-amber-500/30 bg-amber-500/[0.03] hover:border-amber-500/50"
-              }`}
+              className="group rounded-xl border border-border/50 bg-card px-4 py-3.5 transition-all hover:border-border"
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="truncate text-[14px] font-medium text-foreground">
-                      {share.title || share.file_name || "Untitled"}
-                    </h3>
-                    <span
-                      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        share.visibility === "public"
-                          ? "bg-emerald-500/15 text-emerald-500"
-                          : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                      }`}
-                    >
+                  <h3 className="truncate text-[14px] font-medium text-foreground">
+                    {share.title || share.file_name || "Untitled"}
+                  </h3>
+                  <div className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground/60">
+                    <span className="flex items-center gap-1">
                       {share.visibility === "public" ? (
-                        <>
-                          <Globe className="h-2.5 w-2.5" /> Public
-                        </>
+                        <Globe className="h-3 w-3" />
                       ) : (
-                        <>
-                          <Lock className="h-2.5 w-2.5" /> Private
-                        </>
+                        <Lock className="h-3 w-3" />
                       )}
+                      {share.visibility === "public" ? "Public" : "Private"}
                     </span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-3 text-[12px] text-muted-foreground/60">
+                    <span className="text-muted-foreground/30">&middot;</span>
                     <span className="flex items-center gap-1">
                       <Eye className="h-3 w-3" />
-                      {share.view_count} views
+                      {share.view_count}
                     </span>
+                    <span className="text-muted-foreground/30">&middot;</span>
                     <span>
-                      Created{" "}
                       {new Date(share.created_at).toLocaleDateString("en-US", {
                         month: "short",
                         day: "numeric",
                         year: "numeric",
                       })}
                     </span>
-                    {share.expires_at && (
-                      <span>
-                        Expires{" "}
-                        {new Date(share.expires_at).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                    )}
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  {/* Manage invites (private only) */}
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100">
                   {share.visibility === "private" && (
                     <button
                       onClick={() => toggleInvitePanel(share.id)}
-                      className={`rounded-lg p-2 transition-colors ${
+                      className={cn(
+                        "rounded-lg p-1.5 transition-colors",
                         isExpanded
                           ? "bg-accent text-foreground"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
+                      )}
                       title="Manage invited users"
                     >
                       <Users className="h-3.5 w-3.5" />
@@ -220,7 +224,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                           tags: share.tags ?? [],
                         })
                       }
-                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       title="Edit description & tags"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -230,15 +234,15 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                     href={share.share_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     title="Open share link"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                   <button
-                    onClick={() => handleAction(share.id, () => handleRevoke(share.id))}
+                    onClick={() => setRevokingShareId(share.id)}
                     disabled={actionLoading === share.id}
-                    className="rounded-lg p-2 text-destructive/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    className="rounded-lg p-1.5 text-destructive/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
                     title="Revoke share link"
                   >
                     {actionLoading === share.id ? (
@@ -324,7 +328,10 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
             </div>
           );
         })}
+        {hasMore && <div ref={sentinelRef} className="h-px" />}
       </div>
+
+      <GridPagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       {editingShare && (
         <EditShareModal
@@ -348,6 +355,17 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
           }}
         />
       )}
+
+      <ConfirmModal
+        open={!!revokingShareId}
+        onClose={() => setRevokingShareId(null)}
+        onConfirm={() =>
+          revokingShareId && handleAction(revokingShareId, () => handleRevoke(revokingShareId))
+        }
+        title="Revoke share link?"
+        description="This share link will be permanently deactivated. Anyone with the link will no longer be able to access the document."
+        confirmLabel="Revoke"
+      />
     </>
   );
 }

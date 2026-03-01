@@ -216,6 +216,23 @@ async def sync_fork(
     return result
 
 
+@router.delete("/forks/{fork_id}")
+async def delete_fork(
+    fork_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Delete a fork record (does not delete the forked file)."""
+    user_id = get_user_id(token)
+    if not user_id:
+        raise NotFoundError(resource="User", message="Authentication required")
+
+    service = CommunityService(db)
+    await service.delete_fork(fork_id, user_id)
+
+    return {"status": "deleted", "fork_id": fork_id}
+
+
 @router.get("/forks")
 async def list_forks(
     limit: int = Query(50, ge=1, le=100),

@@ -139,32 +139,45 @@ function CollapsibleSection({
   title,
   count,
   defaultExpanded = false,
+  onAdd,
   children,
 }: {
   icon: typeof FileText;
   title: string;
   count: number;
   defaultExpanded?: boolean;
+  onAdd?: () => void;
   children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
     <div className="mt-4">
-      <button
-        onClick={() => setExpanded((prev) => !prev)}
-        className="flex w-full items-center gap-2 py-2 active:opacity-70"
-      >
-        <ChevronRight
-          className={cn(
-            "h-4 w-4 text-muted-foreground/50 transition-transform duration-200",
-            expanded && "rotate-90"
-          )}
-        />
-        <Icon className="h-4 w-4 text-muted-foreground/70" />
-        <span className="text-[14px] font-medium text-foreground/80">{title}</span>
-        <span className="text-[12px] tabular-nums text-muted-foreground/50">{count}</span>
-      </button>
+      <div className="flex w-full items-center gap-2 py-2">
+        <button
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex flex-1 items-center gap-2 active:opacity-70"
+        >
+          <ChevronRight
+            className={cn(
+              "h-4 w-4 text-muted-foreground/50 transition-transform duration-200",
+              expanded && "rotate-90"
+            )}
+          />
+          <Icon className="h-4 w-4 text-muted-foreground/70" />
+          <span className="text-[14px] font-medium text-foreground/80">{title}</span>
+          <span className="text-[12px] tabular-nums text-muted-foreground/50">{count}</span>
+        </button>
+        {onAdd && (
+          <button
+            onClick={onAdd}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/50 active:bg-accent/50"
+            aria-label={`Add to ${title}`}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
@@ -494,7 +507,7 @@ export function HomeDashboard() {
       </div>
 
       <SwipeCoordinatorProvider>
-        <main className="relative flex-1 px-4 pb-16 md:px-10">
+        <main className="relative flex-1 px-4 pb-4 md:px-10 md:pb-16">
           {/* Desktop hero section (hidden on mobile) */}
           <div className="mx-auto hidden max-w-xl pt-8 md:block md:pt-20">
             {/* Greeting */}
@@ -569,7 +582,7 @@ export function HomeDashboard() {
                 </div>
               ) : homeActiveTab === "bookmarks" ? (
                 <div className="mx-auto mt-6 max-w-5xl">
-                  <BookmarksSection bookmarks={bookmarks} />
+                  <BookmarksSection bookmarks={bookmarks} onBookmarksChange={setBookmarks} />
                 </div>
               ) : null}
             </div>
@@ -637,7 +650,7 @@ export function HomeDashboard() {
                   {bookmarks.length > 0 && (
                     <CollapsibleSection icon={Bookmark} title="Saved" count={bookmarks.length}>
                       <div className="mt-2">
-                        <BookmarksSection bookmarks={bookmarks} />
+                        <BookmarksSection bookmarks={bookmarks} onBookmarksChange={setBookmarks} />
                       </div>
                     </CollapsibleSection>
                   )}

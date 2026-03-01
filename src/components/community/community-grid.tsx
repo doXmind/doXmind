@@ -5,7 +5,7 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { CommunityCard } from "./community-card";
-import { Eye, FileText, GitFork, MessageSquare, Search } from "lucide-react";
+import { Clock, Eye, FileText, GitFork, MessageSquare, Search } from "lucide-react";
 
 interface CommunityGridProps {
   items: CommunityItem[];
@@ -83,8 +83,15 @@ function FeaturedCard({
 
           {/* Description */}
           {item.description && (
-            <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 line-clamp-2 text-[13px] italic leading-relaxed text-muted-foreground/70">
               {item.description}
+            </p>
+          )}
+
+          {/* Content preview */}
+          {item.content_preview && item.content_preview.trim().length > 0 && (
+            <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">
+              {item.content_preview}
             </p>
           )}
 
@@ -111,6 +118,12 @@ function FeaturedCard({
 
             {/* Metrics */}
             <div className="flex shrink-0 items-center gap-3 text-muted-foreground/60">
+              {item.reading_time > 0 && (
+                <span className="flex items-center gap-1 text-[11px]">
+                  <Clock className="h-3 w-3" />
+                  {item.reading_time} min
+                </span>
+              )}
               <span className="flex items-center gap-1 text-[11px]">
                 <Eye className="h-3 w-3" />
                 {formatCount(item.view_count)}
@@ -161,8 +174,9 @@ export function CommunityGrid({
               <div className="h-3 w-20 animate-pulse rounded bg-muted" />
             </div>
             <div className="h-5 w-4/5 animate-pulse rounded bg-muted" />
-            <div className="mt-2 h-4 w-full animate-pulse rounded bg-muted/60" />
-            <div className="mt-1 h-4 w-2/3 animate-pulse rounded bg-muted/60" />
+            <div className="mt-2 h-3.5 w-full animate-pulse rounded bg-muted/50" />
+            <div className="mt-1.5 h-3.5 w-full animate-pulse rounded bg-muted/50" />
+            <div className="mt-1.5 h-3.5 w-3/5 animate-pulse rounded bg-muted/50" />
             <div className="mt-4 flex gap-1.5">
               <div className="h-5 w-12 animate-pulse rounded-full bg-muted/50" />
               <div className="h-5 w-10 animate-pulse rounded-full bg-muted/50" />

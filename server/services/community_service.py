@@ -11,8 +11,36 @@ from sqlalchemy.types import Text
 
 from db.database import Bookmark, DocumentShare, File, Fork, User, utcnow
 from exceptions import BadRequestError, NotFoundError
+from utils.html import strip_html_tags
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_preview(row, preview_chars: int = 300) -> tuple[str, int, int]:
+    """Compute (content_preview, word_count, reading_time) from a query row.
+
+    Expects row to have: is_folder, content_markdown_head, content_markdown_length,
+    content_head, content_length.
+    """
+    if row.is_folder:
+        return "", 0, 0
+
+    if row.content_markdown_head:
+        plain = row.content_markdown_head.strip()
+        total_len = row.content_markdown_length or 0
+    elif row.content_head:
+        plain = strip_html_tags(row.content_head)
+        total_len = row.content_length or 0
+    else:
+        return "", 0, 0
+
+    preview = plain[:preview_chars] if plain else ""
+    word_count = len(plain.split()) if plain else 0
+    sample_len = min(len(plain), preview_chars + 50) if plain else 0
+    if total_len > sample_len and word_count > 0 and sample_len > 0:
+        word_count = int(word_count * (total_len / sample_len))
+    reading_time = max(1, round(word_count / 200)) if word_count > 0 else 0
+    return preview, word_count, reading_time
 
 
 class CommunityService:
@@ -119,6 +147,11 @@ class CommunityService:
                 DocumentShare.user_id,
                 File.name.label("file_name"),
                 File.is_folder,
+                # Content preview fields
+                func.substr(File.content_markdown, 1, 350).label("content_markdown_head"),
+                func.length(File.content_markdown).label("content_markdown_length"),
+                func.safe_substr(File.content, 1, 1000).label("content_head"),
+                func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
             )
@@ -174,6 +207,7 @@ class CommunityService:
         # Build response items
         items = []
         for row in rows:
+            content_preview, word_count, reading_time = _compute_preview(row)
             item = {
                 "share_id": row.id,
                 "share_token": row.share_token,
@@ -194,6 +228,9 @@ class CommunityService:
                 "updated_at": row.updated_at.isoformat() if row.updated_at else "",
                 "is_bookmarked": False,
                 "is_forked": False,
+                "content_preview": content_preview,
+                "word_count": word_count,
+                "reading_time": reading_time,
             }
             items.append(item)
 
@@ -590,6 +627,22 @@ class CommunityService:
             for row in rows
         ]
 
+    async def delete_fork(self, fork_id: str, user_id: str) -> None:
+        """Delete a fork record. Only the fork owner can delete it."""
+        result = await self.db.execute(
+            select(Fork).where(Fork.id == fork_id, Fork.user_id == user_id)
+        )
+        fork = result.scalar_one_or_none()
+        if not fork:
+            raise NotFoundError(resource="Fork", message="Fork not found")
+
+        # Decrement fork_count on the source share
+        if fork.source_share_id:
+            await self._update_denormalized_count(fork.source_share_id, "fork_count", -1)
+
+        await self.db.delete(fork)
+        await self.db.commit()
+
     # =========================================================================
     # Bookmarks
     # =========================================================================
@@ -796,6 +849,11 @@ class CommunityService:
                 DocumentShare.user_id,
                 File.name.label("file_name"),
                 File.is_folder,
+                # Content preview fields
+                func.substr(File.content_markdown, 1, 350).label("content_markdown_head"),
+                func.length(File.content_markdown).label("content_markdown_length"),
+                func.safe_substr(File.content, 1, 1000).label("content_head"),
+                func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
             )
@@ -813,30 +871,35 @@ class CommunityService:
         result = await self.db.execute(query)
         rows = result.all()
 
-        items = [
-            {
-                "share_id": row.id,
-                "share_token": row.share_token,
-                "title": row.title or row.file_name,
-                "description": row.description,
-                "tags": row.tags or [],
-                "owner": {
-                    "id": row.user_id,
-                    "username": row.owner_name,
-                    "avatar_url": row.owner_avatar_url,
-                },
-                "is_folder": row.is_folder,
-                "view_count": row.view_count,
-                "fork_count": row.fork_count,
-                "bookmark_count": row.bookmark_count,
-                "comment_count": row.comment_count,
-                "published_at": row.published_at.isoformat() if row.published_at else "",
-                "updated_at": row.updated_at.isoformat() if row.updated_at else "",
-                "is_bookmarked": False,
-                "is_forked": False,
-            }
-            for row in rows
-        ]
+        items = []
+        for row in rows:
+            content_preview, word_count, reading_time = _compute_preview(row)
+            items.append(
+                {
+                    "share_id": row.id,
+                    "share_token": row.share_token,
+                    "title": row.title or row.file_name,
+                    "description": row.description,
+                    "tags": row.tags or [],
+                    "owner": {
+                        "id": row.user_id,
+                        "username": row.owner_name,
+                        "avatar_url": row.owner_avatar_url,
+                    },
+                    "is_folder": row.is_folder,
+                    "view_count": row.view_count,
+                    "fork_count": row.fork_count,
+                    "bookmark_count": row.bookmark_count,
+                    "comment_count": row.comment_count,
+                    "published_at": row.published_at.isoformat() if row.published_at else "",
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+                    "is_bookmarked": False,
+                    "is_forked": False,
+                    "content_preview": content_preview,
+                    "word_count": word_count,
+                    "reading_time": reading_time,
+                }
+            )
 
         return items, total
 
@@ -1065,6 +1128,11 @@ class CommunityService:
                 DocumentShare.user_id,
                 File.name.label("file_name"),
                 File.is_folder,
+                # Content preview fields
+                func.substr(File.content_markdown, 1, 350).label("content_markdown_head"),
+                func.length(File.content_markdown).label("content_markdown_length"),
+                func.safe_substr(File.content, 1, 1000).label("content_head"),
+                func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
             )
@@ -1079,6 +1147,7 @@ class CommunityService:
         # Build items dict keyed by share_id for ordering
         items_by_id: dict[str, dict] = {}
         for row in rows:
+            content_preview, word_count, reading_time = _compute_preview(row)
             items_by_id[row.id] = {
                 "share_id": row.id,
                 "share_token": row.share_token,
@@ -1099,6 +1168,9 @@ class CommunityService:
                 "updated_at": row.updated_at.isoformat() if row.updated_at else "",
                 "is_bookmarked": False,
                 "is_forked": False,
+                "content_preview": content_preview,
+                "word_count": word_count,
+                "reading_time": reading_time,
             }
 
         # Preserve recommendation order

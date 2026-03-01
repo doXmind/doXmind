@@ -72,6 +72,8 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
   const [renameDraft, setRenameDraft] = useState("");
   const [isHovering, setIsHovering] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
@@ -179,6 +181,11 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
         <motion.div
           className="group relative cursor-pointer"
           onClick={handleOpen}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenuPos({ x: e.clientX, y: e.clientY });
+            setDropdownOpen(true);
+          }}
           onHoverStart={() => setIsHovering(true)}
           onHoverEnd={() => setIsHovering(false)}
           onDragOver={handleDragOver}
@@ -202,7 +209,14 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
               className="absolute right-2 top-2 z-[2] flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
               onClick={(e) => e.stopPropagation()}
             >
-              <DropdownMenu>
+              <DropdownMenu
+                open={dropdownOpen}
+                onOpenChange={(v) => {
+                  setDropdownOpen(v);
+                  if (!v) setContextMenuPos(null);
+                }}
+                anchorPoint={contextMenuPos}
+              >
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
@@ -336,6 +350,11 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
         className="group relative cursor-pointer"
         data-onboarding="file-card"
         onClick={handleOpen}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenuPos({ x: e.clientX, y: e.clientY });
+          setDropdownOpen(true);
+        }}
         draggable={true}
         onDragStart={handleDragStart}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
@@ -378,7 +397,14 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
               className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
               onClick={(e) => e.stopPropagation()}
             >
-              <DropdownMenu>
+              <DropdownMenu
+                open={dropdownOpen}
+                onOpenChange={(v) => {
+                  setDropdownOpen(v);
+                  if (!v) setContextMenuPos(null);
+                }}
+                anchorPoint={contextMenuPos}
+              >
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"

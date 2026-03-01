@@ -9,7 +9,7 @@ declare module "./client" {
   interface ApiClient {
     createShare(request: CreateShareRequest): Promise<Share>;
     listFileShares(fileId: string, includeExpired?: boolean): Promise<ShareListResponse>;
-    getMyShares(): Promise<ShareListResponse>;
+    getMyShares(offset?: number, limit?: number): Promise<ShareListResponse>;
     revokeShare(shareId: string): Promise<{ status: string; share_id: string }>;
     updateShareMetadata(
       shareId: string,
@@ -57,8 +57,16 @@ ApiClient.prototype.listFileShares = async function (
   );
 };
 
-ApiClient.prototype.getMyShares = async function (this: ApiClient): Promise<ShareListResponse> {
-  return this.request<ShareListResponse>("/api/shares/my");
+ApiClient.prototype.getMyShares = async function (
+  this: ApiClient,
+  offset?: number,
+  limit?: number
+): Promise<ShareListResponse> {
+  const params = new URLSearchParams();
+  if (offset !== undefined) params.set("offset", String(offset));
+  if (limit !== undefined) params.set("limit", String(limit));
+  const qs = params.toString();
+  return this.request<ShareListResponse>(`/api/shares/my${qs ? `?${qs}` : ""}`);
 };
 
 /**

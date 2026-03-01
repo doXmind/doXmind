@@ -50,6 +50,8 @@ export function FileRow({ file }: FileRowProps) {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
@@ -150,6 +152,11 @@ export function FileRow({ file }: FileRowProps) {
             "bg-amber-50/80 ring-1 ring-amber-300/50 dark:bg-amber-900/20 dark:ring-amber-500/30"
         )}
         onClick={handleOpen}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenuPos({ x: e.clientX, y: e.clientY });
+          setDropdownOpen(true);
+        }}
         draggable={!file.isFolder}
         onDragStart={!file.isFolder ? handleDragStart : undefined}
         onDragOver={file.isFolder ? handleDragOver : undefined}
@@ -212,7 +219,14 @@ export function FileRow({ file }: FileRowProps) {
           className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
-          <DropdownMenu>
+          <DropdownMenu
+            open={dropdownOpen}
+            onOpenChange={(v) => {
+              setDropdownOpen(v);
+              if (!v) setContextMenuPos(null);
+            }}
+            anchorPoint={contextMenuPos}
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"

@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import type { FileItem } from "@/stores/file-store";
 import { MobileDocumentRow } from "./mobile-document-row";
+import { useLazyList } from "@/hooks/use-lazy-list";
 
 interface MobileDocumentListProps {
   files: FileItem[];
@@ -19,10 +20,12 @@ export function MobileDocumentList({
   searchQuery,
   onResultClick: _onResultClick,
 }: MobileDocumentListProps) {
+  const { visibleItems, sentinelRef, hasMore } = useLazyList(files);
+
   return (
-    <motion.div className="pb-24 sm:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div className="sm:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="divide-y divide-border/30">
-        {files.map((file, i) => (
+        {visibleItems.map((file, i) => (
           <motion.div
             key={file.id}
             initial={{ opacity: 0, y: 12 }}
@@ -50,6 +53,7 @@ export function MobileDocumentList({
           </motion.div>
         ))}
       </div>
+      {hasMore && <div ref={sentinelRef} className="h-px" />}
     </motion.div>
   );
 }

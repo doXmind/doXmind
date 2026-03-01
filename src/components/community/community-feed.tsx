@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import {
   Bookmark,
+  Clock,
   Eye,
   FileText,
   GitFork,
@@ -30,6 +32,12 @@ interface CommunityFeedProps {
 function formatCount(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
+}
+
+function formatWordCount(n: number): string {
+  if (n <= 0) return "";
+  if (n < 1000) return `${n} words`;
+  return `${(n / 1000).toFixed(1)}k words`;
 }
 
 function relativeTime(dateStr: string): string {
@@ -71,11 +79,24 @@ function FeedCard({
     await toggleBookmark(item.share_token, item.share_id);
   };
 
+  const router = useRouter();
+
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     await navigator.clipboard.writeText(`${window.location.origin}/community/${item.share_token}`);
   };
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Don't navigate if user clicked an interactive element inside the card
+    const target = e.target as HTMLElement;
+    if (target.closest("a, button")) return;
+    router.push(`/community/${item.share_token}`);
+  };
+
+  const hasPreview = item.content_preview && item.content_preview.trim().length > 0;
+  const readingTime = item.reading_time || 0;
+  const wordCount = item.word_count || 0;
 
   return (
     <motion.div
@@ -90,81 +111,93 @@ function FeedCard({
       exit={{ opacity: 0, transition: { duration: 0.1 } }}
       layout
     >
-      <article className="border-b border-border px-1 py-5 transition-colors hover:bg-accent/30 sm:px-3">
-        <div className="flex gap-3">
-          {/* Avatar */}
-          <Link
-            href={`/profile/${owner.id}`}
-            className="shrink-0"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {owner.avatar_url ? (
-              <Image
-                src={owner.avatar_url}
-                alt=""
-                width={40}
-                height={40}
-                className="h-10 w-10 rounded-full"
-                unoptimized
-              />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
-                {(owner.username || "?")[0].toUpperCase()}
-              </div>
-            )}
-          </Link>
-
-          {/* Content */}
-          <div className="min-w-0 flex-1">
-            {/* Header: name · time · edit */}
-            <div className="flex items-center gap-1.5">
+      <article className="px-1 py-3 sm:px-3">
+        <div
+          className="group cursor-pointer rounded-xl border border-border/60 p-4 transition-colors hover:border-border hover:bg-accent/20 sm:p-5"
+          onClick={handleCardClick}
+          role="link"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") router.push(`/community/${item.share_token}`);
+          }}
+        >
+          {/* Author row: avatar + name + time + edit */}
+          <div className="flex items-center gap-2.5">
+            <Link href={`/profile/${owner.id}`} className="shrink-0">
+              {owner.avatar_url ? (
+                <Image
+                  src={owner.avatar_url}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 rounded-full"
+                  unoptimized
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                  {(owner.username || "?")[0].toUpperCase()}
+                </div>
+              )}
+            </Link>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <Link
                 href={`/profile/${owner.id}`}
-                className="truncate text-[14px] font-semibold text-foreground hover:underline"
-                onClick={(e) => e.stopPropagation()}
+                className="truncate text-[13px] font-semibold text-foreground hover:underline"
               >
                 {owner.username || "Anonymous"}
               </Link>
-              <span className="text-[13px] text-muted-foreground/50">·</span>
-              <span className="shrink-0 text-[13px] text-muted-foreground/50">
+              <span className="text-[12px] text-muted-foreground/50">·</span>
+              <span className="shrink-0 text-[12px] text-muted-foreground/50">
                 {relativeTime(item.published_at)}
               </span>
-
-              {/* Edit (own posts) */}
-              {onEditItem && (
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onEditItem(item);
-                  }}
-                  className="ml-auto rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Edit post"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              )}
             </div>
 
-            {/* Title */}
-            <Link href={`/community/${item.share_token}`} className="group mt-1 block">
-              <h3 className="text-[15px] font-semibold leading-snug text-foreground group-hover:text-foreground/80">
-                {item.title}
-              </h3>
-            </Link>
-
-            {/* Description */}
-            {item.description && (
-              <Link href={`/community/${item.share_token}`}>
-                <p className="mt-1 line-clamp-2 text-[14px] leading-relaxed text-muted-foreground">
-                  {item.description}
-                </p>
-              </Link>
+            {readingTime > 0 && (
+              <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/50">
+                <Clock className="h-3 w-3" />
+                {readingTime} min
+              </span>
             )}
 
-            {/* Tags */}
-            {item.tags.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {/* Edit (own posts) */}
+            {onEditItem && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onEditItem(item);
+                }}
+                className="rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Edit post"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Title */}
+          <h3 className="mt-3 text-[15px] font-semibold leading-snug text-foreground">
+            {item.title}
+          </h3>
+
+          {/* Description (author summary) */}
+          {item.description && (
+            <p className="mt-1.5 line-clamp-2 text-[13px] italic leading-relaxed text-muted-foreground/70">
+              {item.description}
+            </p>
+          )}
+
+          {/* Content preview */}
+          {hasPreview && (
+            <p className="mt-2 line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">
+              {item.content_preview}
+            </p>
+          )}
+
+          {/* Tags + word count */}
+          {(item.tags.length > 0 || wordCount > 0) && (
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-wrap gap-1.5">
                 {item.tags.slice(0, 4).map((tag) => (
                   <button
                     key={tag}
@@ -173,67 +206,66 @@ function FeedCard({
                       e.stopPropagation();
                       onTagClick?.(tag);
                     }}
-                    className="rounded-full bg-muted/80 px-2.5 py-0.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    className="rounded-full bg-muted/80 px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
                     #{tag}
                   </button>
                 ))}
                 {item.tags.length > 4 && (
-                  <span className="py-0.5 text-[12px] text-muted-foreground/40">
+                  <span className="py-0.5 text-[11px] text-muted-foreground/40">
                     +{item.tags.length - 4}
                   </span>
                 )}
               </div>
+              {wordCount > 0 && (
+                <span className="shrink-0 text-[11px] text-muted-foreground/40">
+                  {formatWordCount(wordCount)}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Engagement bar */}
+          <div className="mt-3 flex items-center gap-1 border-t border-border/40 pt-3">
+            <span className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60">
+              <Eye className="h-3.5 w-3.5" />
+              {formatCount(item.view_count)}
+            </span>
+
+            <span className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60">
+              <GitFork className="h-3.5 w-3.5" />
+              {formatCount(item.fork_count)}
+            </span>
+
+            <Link
+              href={`/community/${item.share_token}#comments`}
+              className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              {item.comment_count > 0 ? formatCount(item.comment_count) : ""}
+            </Link>
+
+            <div className="flex-1" />
+
+            {user && (
+              <button
+                onClick={handleBookmark}
+                className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                title={isBookmarked ? "Remove bookmark" : "Bookmark"}
+              >
+                <Bookmark
+                  className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
+                />
+              </button>
             )}
 
-            {/* Engagement bar — like X.com */}
-            <div className="-ml-2.5 mt-3 flex items-center gap-1">
-              {/* Views */}
-              <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-muted-foreground/60">
-                <Eye className="h-3.5 w-3.5" />
-                {formatCount(item.view_count)}
-              </span>
-
-              {/* Forks */}
-              <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-muted-foreground/60">
-                <GitFork className="h-3.5 w-3.5" />
-                {formatCount(item.fork_count)}
-              </span>
-
-              {/* Comments */}
-              <Link
-                href={`/community/${item.share_token}#comments`}
-                className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                {item.comment_count > 0 ? formatCount(item.comment_count) : ""}
-              </Link>
-
-              <div className="flex-1" />
-
-              {/* Bookmark */}
-              {user && (
-                <button
-                  onClick={handleBookmark}
-                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                  title={isBookmarked ? "Remove bookmark" : "Bookmark"}
-                >
-                  <Bookmark
-                    className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
-                  />
-                </button>
-              )}
-
-              {/* Share */}
-              <button
-                onClick={handleShare}
-                className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                title="Copy link"
-              >
-                <Share2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+              title="Copy link"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       </article>
@@ -256,22 +288,32 @@ export function CommunityFeed({
     return (
       <div>
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="border-b border-border px-1 py-5 sm:px-3">
-            <div className="flex gap-3">
-              <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-muted" />
-              <div className="flex-1 space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="h-3.5 w-24 animate-pulse rounded bg-muted" />
-                  <div className="h-3 w-12 animate-pulse rounded bg-muted/60" />
-                </div>
-                <div className="h-4 w-4/5 animate-pulse rounded bg-muted" />
-                <div className="h-3.5 w-full animate-pulse rounded bg-muted/60" />
-                <div className="h-3.5 w-3/5 animate-pulse rounded bg-muted/60" />
-                <div className="flex gap-4 pt-1">
-                  <div className="h-3 w-10 animate-pulse rounded bg-muted/40" />
-                  <div className="h-3 w-10 animate-pulse rounded bg-muted/40" />
-                  <div className="h-3 w-10 animate-pulse rounded bg-muted/40" />
-                </div>
+          <div key={i} className="px-1 py-3 sm:px-3">
+            <div className="space-y-3 rounded-xl border border-border/40 p-4 sm:p-5">
+              {/* Author row */}
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
+                <div className="h-3.5 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-12 animate-pulse rounded bg-muted/60" />
+              </div>
+              {/* Title */}
+              <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+              {/* Content preview lines */}
+              <div className="space-y-1.5">
+                <div className="h-3.5 w-full animate-pulse rounded bg-muted/50" />
+                <div className="h-3.5 w-full animate-pulse rounded bg-muted/50" />
+                <div className="h-3.5 w-2/3 animate-pulse rounded bg-muted/50" />
+              </div>
+              {/* Tags */}
+              <div className="flex gap-1.5">
+                <div className="h-5 w-12 animate-pulse rounded-full bg-muted/40" />
+                <div className="h-5 w-10 animate-pulse rounded-full bg-muted/40" />
+              </div>
+              {/* Engagement bar */}
+              <div className="flex gap-4 border-t border-border/40 pt-3">
+                <div className="h-3 w-10 animate-pulse rounded bg-muted/40" />
+                <div className="h-3 w-10 animate-pulse rounded bg-muted/40" />
+                <div className="h-3 w-10 animate-pulse rounded bg-muted/40" />
               </div>
             </div>
           </div>
@@ -325,7 +367,7 @@ export function CommunityFeed({
   }
 
   return (
-    <div className="border-t border-border">
+    <div>
       <AnimatePresence mode="popLayout">
         {items.map((item, i) => (
           <FeedCard

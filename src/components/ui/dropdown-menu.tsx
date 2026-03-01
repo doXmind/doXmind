@@ -8,6 +8,8 @@ interface DropdownMenuProps {
   children: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** When set, the dropdown positions at this point instead of the trigger element */
+  anchorPoint?: { x: number; y: number } | null;
 }
 
 interface DropdownMenuTriggerProps {
@@ -29,6 +31,7 @@ const DropdownMenuContext = React.createContext<{
   open: boolean;
   setOpen: (open: boolean) => void;
   triggerRef: React.RefObject<HTMLElement | null>;
+  anchorPoint: { x: number; y: number } | null;
   focusedId: string | null;
   setFocusedId: (id: string | null) => void;
   itemIds: string[];
@@ -41,6 +44,7 @@ const DropdownMenuContext = React.createContext<{
   open: false,
   setOpen: () => {},
   triggerRef: { current: null },
+  anchorPoint: null,
   focusedId: null,
   setFocusedId: () => {},
   itemIds: [],
@@ -51,7 +55,12 @@ const DropdownMenuContext = React.createContext<{
   setHasOpenSub: () => {},
 });
 
-export function DropdownMenu({ children, open: controlledOpen, onOpenChange }: DropdownMenuProps) {
+export function DropdownMenu({
+  children,
+  open: controlledOpen,
+  onOpenChange,
+  anchorPoint: anchorPointProp,
+}: DropdownMenuProps) {
   const [internalOpen, setInternalOpen] = React.useState(false);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
@@ -98,6 +107,7 @@ export function DropdownMenu({ children, open: controlledOpen, onOpenChange }: D
         open,
         setOpen,
         triggerRef,
+        anchorPoint: anchorPointProp ?? null,
         focusedId,
         setFocusedId,
         itemIds,
@@ -165,7 +175,7 @@ export function DropdownMenuContent({
   sideOffset = 4,
   ...props
 }: DropdownMenuContentProps) {
-  const { open, setOpen, triggerRef, focusedId, setFocusedId, itemIds } =
+  const { open, setOpen, triggerRef, anchorPoint, focusedId, setFocusedId, itemIds } =
     React.useContext(DropdownMenuContext);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = React.useState<{
@@ -174,9 +184,16 @@ export function DropdownMenuContent({
     left: number;
   } | null>(null);
 
-  // Calculate position from trigger element
+  // Calculate position from anchor point (right-click) or trigger element
   React.useEffect(() => {
-    if (!open || !triggerRef.current) return;
+    if (!open) return;
+
+    if (anchorPoint) {
+      setPos({ top: anchorPoint.y, bottom: "auto", left: anchorPoint.x });
+      return;
+    }
+
+    if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     let left: number;
     if (align === "end") {
@@ -192,7 +209,7 @@ export function DropdownMenuContent({
     } else {
       setPos({ top: rect.bottom + sideOffset, bottom: "auto", left });
     }
-  }, [open, triggerRef, align, side, sideOffset]);
+  }, [open, triggerRef, anchorPoint, align, side, sideOffset]);
 
   // Handle click outside
   React.useEffect(() => {
@@ -281,11 +298,13 @@ export function DropdownMenuContent({
       style={{
         ...(pos.top !== "auto" ? { top: pos.top } : {}),
         ...(pos.bottom !== "auto" ? { bottom: pos.bottom } : {}),
-        ...(align === "end"
-          ? { right: window.innerWidth - pos.left }
-          : align === "start"
-            ? { left: pos.left }
-            : { left: pos.left, transform: "translateX(-50%)" }),
+        ...(anchorPoint
+          ? { left: pos.left }
+          : align === "end"
+            ? { right: window.innerWidth - pos.left }
+            : align === "start"
+              ? { left: pos.left }
+              : { left: pos.left, transform: "translateX(-50%)" }),
       }}
       {...props}
     >
@@ -588,6 +607,7 @@ export function DropdownMenuSubContent({
       open: parentCtx.open,
       setOpen: parentCtx.setOpen,
       triggerRef: parentCtx.triggerRef,
+      anchorPoint: null,
       focusedId: subFocusedId,
       setFocusedId: setSubFocusedId,
       itemIds: subItemIds,

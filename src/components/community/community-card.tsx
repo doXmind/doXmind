@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
-import { Eye, GitFork, Bookmark, MessageSquare, Pencil } from "lucide-react";
+import { Eye, GitFork, Bookmark, Clock, MessageSquare, Pencil } from "lucide-react";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
 
@@ -106,8 +106,15 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
 
         {/* Description */}
         {item.description && (
-          <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 line-clamp-2 text-[13px] italic leading-relaxed text-muted-foreground/70">
             {item.description}
+          </p>
+        )}
+
+        {/* Content preview */}
+        {item.content_preview && item.content_preview.trim().length > 0 && (
+          <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-muted-foreground">
+            {item.content_preview}
           </p>
         )}
 
@@ -140,6 +147,12 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
 
           {/* Metrics */}
           <div className="flex shrink-0 items-center gap-3 text-muted-foreground/50">
+            {item.reading_time > 0 && (
+              <span className="flex items-center gap-1 text-[11px]" title="Reading time">
+                <Clock className="h-3 w-3" />
+                {item.reading_time} min
+              </span>
+            )}
             <span className="flex items-center gap-1 text-[11px]" title="Views">
               <Eye className="h-3 w-3" />
               {formatCount(item.view_count)}

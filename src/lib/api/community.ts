@@ -56,6 +56,7 @@ declare module "./client" {
       backup_file_id?: string | null;
     }>;
     getMyForks(): Promise<{ forks: ForkInfo[] }>;
+    deleteFork(forkId: string): Promise<{ status: string; fork_id: string }>;
 
     // Bookmark
     toggleBookmark(shareToken: string): Promise<{ bookmarked: boolean; bookmark_count: number }>;
@@ -212,6 +213,15 @@ ApiClient.prototype.syncFork = async function (
 
 ApiClient.prototype.getMyForks = async function (this: ApiClient): Promise<{ forks: ForkInfo[] }> {
   return this.request<{ forks: ForkInfo[] }>("/api/community/forks");
+};
+
+ApiClient.prototype.deleteFork = async function (
+  this: ApiClient,
+  forkId: string
+): Promise<{ status: string; fork_id: string }> {
+  return this.request<{ status: string; fork_id: string }>(`/api/community/forks/${forkId}`, {
+    method: "DELETE",
+  });
 };
 
 // ==========================================================================

@@ -897,6 +897,70 @@ async def search_files(
         raise InternalError(message=str(e))
 
 
+class InDocSearchRequest(BaseModel):
+    """In-document search request model."""
+
+    query: str
+    file_id: str
+    top_k: int = 10
+
+
+@router.post("/search/in-document")
+async def search_in_document(
+    request: InDocSearchRequest,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Search within a specific document by file_id."""
+    user_id = get_user_id(token)
+
+    # Check file exists
+    where_clauses = ["id = :file_id", "deleted_at IS NULL"]
+    params: dict[str, Any] = {"file_id": request.file_id}
+    if user_id:
+        where_clauses.append("user_id = :user_id")
+        params["user_id"] = user_id
+    else:
+        where_clauses.append("user_id IS NULL")
+
+    where_sql = " AND ".join(where_clauses)
+    result = await db.execute(
+        text(f"SELECT id, name, content FROM files WHERE {where_sql}"), params
+    )
+    row = result.fetchone()
+    if not row:
+        raise NotFoundError(message="File not found")
+
+    plain = strip_html_tags(row.content or "")
+    query_lower = request.query.lower()
+    results = []
+
+    # Find all occurrences
+    pos = plain.lower().find(query_lower)
+    chunk_index = 0
+    while pos >= 0 and chunk_index < request.top_k:
+        start = max(0, pos - 50)
+        end = min(len(plain), pos + len(request.query) + 200)
+        results.append(
+            {
+                "id": f"{row.id}_{chunk_index}",
+                "content": plain[start:end],
+                "metadata": {
+                    "file_id": row.id,
+                    "name": row.name,
+                    "chunk_index": chunk_index,
+                    "start": start,
+                    "end": end,
+                },
+                "distance": 0.5,
+            }
+        )
+        chunk_index += 1
+        pos = plain.lower().find(query_lower, pos + 1)
+
+    return {"results": results}
+
+
 class SummaryResponse(BaseModel):
     """Summary generation response."""
 

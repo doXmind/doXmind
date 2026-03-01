@@ -54,10 +54,29 @@ export function RecentFiles({ files, favorites = [] }: RecentFilesProps) {
         Continue writing
       </h2>
 
-      {/* Mobile: horizontal carousel */}
-      <div className="scrollbar-none flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 pl-1 md:hidden">
+      {/* Mobile: horizontal pill chips */}
+      <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 md:hidden">
         {carouselFiles.map((file, index) => (
-          <RecentCarouselCard key={file.id} file={file} index={index} onOpen={handleOpen} />
+          <motion.button
+            key={file.id}
+            className={cn(
+              "flex flex-shrink-0 items-center gap-1.5 rounded-lg",
+              "border border-border/40 bg-card/80 px-3 py-2",
+              "active:scale-[0.97] active:bg-accent/30",
+              "transition-transform duration-150"
+            )}
+            initial={{ opacity: 0, x: 12 }}
+            animate={{
+              opacity: 1,
+              x: 0,
+              transition: { delay: index * 0.04, duration: 0.3, ease: [0.16, 1, 0.3, 1] },
+            }}
+            onClick={() => handleOpen(file)}
+          >
+            <span className="max-w-[200px] truncate text-[13px] font-medium text-foreground/80">
+              {file.name?.replace(/\.md$/i, "") || "Untitled"}
+            </span>
+          </motion.button>
         ))}
       </div>
 
@@ -68,51 +87,6 @@ export function RecentFiles({ files, favorites = [] }: RecentFilesProps) {
         ))}
       </div>
     </motion.div>
-  );
-}
-
-function RecentCarouselCard({
-  file,
-  index,
-  onOpen,
-}: {
-  file: FileItem;
-  index: number;
-  onOpen: (f: FileItem) => void;
-}) {
-  const preview = file.preview;
-
-  return (
-    <motion.button
-      className={cn(
-        "flex w-[152px] flex-shrink-0 snap-start flex-col gap-1.5",
-        "rounded-xl border border-border/50 bg-card/80 p-3",
-        "text-left active:scale-[0.97] active:bg-accent/30",
-        "transition-transform duration-150"
-      )}
-      initial={{ opacity: 0, x: 20 }}
-      animate={{
-        opacity: 1,
-        x: 0,
-        transition: { delay: index * 0.06, duration: 0.35, ease: [0.16, 1, 0.3, 1] },
-      }}
-      onClick={() => onOpen(file)}
-    >
-      <div className="flex items-start gap-1.5">
-        <h3 className="line-clamp-1 min-w-0 flex-1 text-[13px] font-semibold leading-snug text-foreground/85">
-          {file.name?.replace(/\.md$/i, "") || "Untitled"}
-        </h3>
-        {file.isFavorite && (
-          <Star className="mt-0.5 h-3 w-3 flex-shrink-0 fill-amber-500 text-amber-500" />
-        )}
-      </div>
-      <p className="line-clamp-2 text-[12px] leading-relaxed text-foreground/40 dark:text-foreground/50">
-        {preview || <span className="italic">Empty document</span>}
-      </p>
-      <span className="mt-auto text-[11px] text-muted-foreground/50">
-        {formatRelativeDate(file.updatedAt)}
-      </span>
-    </motion.button>
   );
 }
 

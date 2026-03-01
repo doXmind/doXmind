@@ -18,7 +18,7 @@ export function MobileFAB() {
       }}
     >
       <motion.button
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground text-background shadow-xl ring-1 ring-foreground/10 active:scale-95"
+        className="flex h-14 w-14 items-center justify-center rounded-full border border-border/60 bg-background text-foreground shadow-lg active:scale-95"
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{

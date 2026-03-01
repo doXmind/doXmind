@@ -9,6 +9,7 @@ import {
   SearchX,
   Home,
   FolderOpen,
+  Plus,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -347,7 +348,7 @@ export function FileGrid({
       {/* Breadcrumb navigation - only show when in a folder or searching */}
       {(currentFolderId || isSearchActive) && (
         <>
-          {/* Mobile: simple back-arrow + folder name */}
+          {/* Mobile: simple back-arrow + folder name + add button */}
           <div className="mb-3 flex items-center gap-2 md:hidden">
             <button
               onClick={() => setCurrentFolder(null)}
@@ -357,9 +358,18 @@ export function FileGrid({
               <span>Back</span>
             </button>
             {currentFolder && !isSearchActive && (
-              <span className="text-[14px] font-medium text-foreground/80">
-                {currentFolder.name}
-              </span>
+              <>
+                <span className="flex-1 text-[14px] font-medium text-foreground/80">
+                  {currentFolder.name}
+                </span>
+                <button
+                  onClick={handleCreate}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 active:bg-accent/50"
+                  aria-label="New file in folder"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </>
             )}
             {isSearchActive && (
               <span className="text-[14px] text-muted-foreground/70">Search Results</span>

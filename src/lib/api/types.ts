@@ -75,6 +75,7 @@ export interface Share {
 export interface ShareListResponse {
   shares: Share[];
   count: number;
+  total?: number;
 }
 
 export interface CreateShareRequest {
@@ -150,6 +151,9 @@ export interface CommunityItem {
   updated_at: string;
   is_bookmarked: boolean;
   is_forked: boolean;
+  content_preview: string | null;
+  word_count: number;
+  reading_time: number;
 }
 
 export interface CommunityListResponse {

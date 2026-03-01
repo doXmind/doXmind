@@ -38,6 +38,7 @@ export function SharedDocumentView({
     extensions: getEditorExtensions({ isMobile: false }),
     content: "",
     editable: false,
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: cn(

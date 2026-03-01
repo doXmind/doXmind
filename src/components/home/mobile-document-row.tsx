@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Star, Share2, Trash2, Folder, FileText } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import { formatWordCount, getNameWithoutExtension } from "@/lib/file-utils";
+import { getNameWithoutExtension } from "@/lib/file-utils";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -46,8 +46,6 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
   const [showShareDialog, setShowShareDialog] = useState(false);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
-  const preview = file.preview;
-  const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
 
   const swipe = useSwipeToReveal({
@@ -175,39 +173,27 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
               )}
             </div>
 
-            {/* Content preview */}
-            <p className="mt-0.5 line-clamp-1 text-[13px] leading-snug text-foreground/40 dark:text-foreground/50">
-              {searchMatch?.snippet ? (
-                <span className="text-foreground/55 dark:text-foreground/65">
-                  {highlightQuery(searchMatch.snippet, searchMatch.query)}
-                </span>
-              ) : file.isFolder ? (
-                folderFileCount === 0 ? (
+            {/* Content preview - only for search results and folders */}
+            {(searchMatch?.snippet || file.isFolder) && (
+              <p className="mt-0.5 line-clamp-1 text-[13px] leading-snug text-foreground/40 dark:text-foreground/50">
+                {searchMatch?.snippet ? (
+                  <span className="text-foreground/55 dark:text-foreground/65">
+                    {highlightQuery(searchMatch.snippet, searchMatch.query)}
+                  </span>
+                ) : folderFileCount === 0 ? (
                   "Empty folder"
                 ) : folderFileCount === 1 ? (
                   "1 file"
                 ) : (
                   `${folderFileCount} files`
-                )
-              ) : preview ? (
-                preview
-              ) : (
-                <span className="italic text-foreground/25 dark:text-foreground/35">
-                  Empty document
-                </span>
-              )}
-            </p>
+                )}
+              </p>
+            )}
 
-            {/* Metadata row */}
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60">
-              <span>{formatRelativeDate(file.updatedAt)}</span>
-              {!file.isFolder && wordCount > 0 && (
-                <>
-                  <span className="text-muted-foreground/30">·</span>
-                  <span>{formatWordCount(wordCount)}</span>
-                </>
-              )}
-            </div>
+            {/* Metadata */}
+            <span className="mt-1 block text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60">
+              {formatRelativeDate(file.updatedAt)}
+            </span>
           </div>
         </motion.div>
       </div>

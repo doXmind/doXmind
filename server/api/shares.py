@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
@@ -84,6 +84,7 @@ class ShareListResponse(BaseModel):
 
     shares: list[ShareResponse]
     count: int
+    total: int | None = None
 
 
 class SharedDocumentResponse(BaseModel):
@@ -315,6 +316,8 @@ async def list_file_shares(
 
 @router.get("/my", response_model=ShareListResponse)
 async def list_my_shares(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
@@ -322,14 +325,24 @@ async def list_my_shares(
     user_id = get_user_id(token)
 
     now = datetime.now(UTC)
+    where_clause = [
+        DocumentShare.user_id == user_id if user_id else DocumentShare.user_id.is_(None),
+        DocumentShare.is_active == True,  # noqa: E712
+        or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+    ]
+
+    # Total count (before pagination)
+    count_result = await db.execute(
+        select(func.count()).select_from(DocumentShare).where(*where_clause)
+    )
+    total_count = count_result.scalar() or 0
+
     query = (
         select(DocumentShare)
-        .where(
-            DocumentShare.user_id == user_id if user_id else DocumentShare.user_id.is_(None),
-            DocumentShare.is_active == True,  # noqa: E712
-            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
-        )
+        .where(*where_clause)
         .order_by(DocumentShare.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
 
     result = await db.execute(query)
@@ -368,7 +381,7 @@ async def list_my_shares(
         for s in shares
     ]
 
-    return ShareListResponse(shares=share_responses, count=len(share_responses))
+    return ShareListResponse(shares=share_responses, count=len(share_responses), total=total_count)
 
 
 # =============================================================================
