@@ -177,6 +177,7 @@ async def _load_conversation_context(
             "filename": att.original_filename,
             "file_type": att.file_type,
             "chunk_count": att.chunk_count,
+            "extracted_text": att.extracted_text,
         }
         for att in attachments_raw
     ]

@@ -263,7 +263,7 @@ describe("useDiffReviewStore", () => {
       expect(session.hunks[1].id).toBe("h2");
     });
 
-    it("converts to full-doc-replace when sequential dependency detected", () => {
+    it("splits into regional hunks when sequential dependency detected", () => {
       const originalMd = "Hello World.";
       const workingMd = "Modified World. Extra content.";
       useDiffReviewStore
@@ -279,12 +279,16 @@ describe("useDiffReviewStore", () => {
       useDiffReviewStore.getState().addHunksToDiffSession([newHunk], workingMd);
 
       const session = useDiffReviewStore.getState().diffSession!;
-      // All pending hunks are replaced with one full-doc-replace
+      // Pending hunks are replaced with regional hunks (not one full-doc-replace)
       const pendingHunks = session.hunks.filter((h) => h.status === "pending");
-      expect(pendingHunks).toHaveLength(1);
-      expect(pendingHunks[0].isFullDocumentReplace).toBe(true);
-      expect(pendingHunks[0].oldContent).toBe(originalMd);
-      expect(pendingHunks[0].newContent).toBe(workingMd);
+      expect(pendingHunks.length).toBeGreaterThanOrEqual(1);
+      // Regional hunks should NOT be full-doc-replace
+      expect(pendingHunks.every((h) => !h.isFullDocumentReplace)).toBe(true);
+      // Combined old/new content should represent the diff from original to working
+      const combinedOld = pendingHunks.map((h) => h.oldContent).join("");
+      const combinedNew = pendingHunks.map((h) => h.newContent).join("");
+      expect(originalMd).toContain(combinedOld);
+      expect(workingMd).toContain(combinedNew);
     });
 
     it("preserves accepted/rejected hunks during sequential conversion", () => {

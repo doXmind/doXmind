@@ -44,5 +44,6 @@ quadrantChart
 - `y-axis Bottom Label --> Top Label` - Vertical axis
 - `quadrant-1` through `quadrant-4` - Quadrant labels (1=top-right, 2=top-left, 3=bottom-left, 4=bottom-right)
 - `Point Name: [x, y]` - Data point (x and y range from 0.0 to 1.0)
-- Optional point styling: `Point: [x, y] color: #ff0000, radius: 15`
+- Point styling: `Point: [x, y] radius: 15, stroke-width: 2` (use `radius` and `stroke-width` for distinction; **avoid `color`** — editor theme handles colors)
+- Class-based styling: `classDef cls1 radius: 10` then `Point:::cls1: [x, y]`
 - **IMPORTANT**: For non-ASCII (Chinese, etc.) text in title, axis labels, quadrant labels, and point names, wrap them in double quotes

@@ -13,7 +13,7 @@ import { create } from "zustand";
 import type { DiffHunk, DiffSession, EditFeedbackItem } from "@/types/diff";
 import { telemetry } from "@/lib/telemetry";
 import { useEditorStore } from "./editor-store";
-import { generateId } from "@/lib/utils";
+import { splitMarkdownIntoHunks } from "@/lib/diff-utils";
 
 interface DiffReviewState {
   // State
@@ -280,9 +280,11 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
       );
 
       if (hasSequentialDependency && updatedWorkingMarkdown && originalMarkdown) {
-        // Sequential edits detected — individual hunks can't be matched in the
-        // actual document. Convert ALL pending hunks to a single full-doc-replace
-        // that shows the overall change from original to final state.
+        // Sequential edits detected — split the original→final diff into
+        // multiple regional hunks instead of one monolithic full-doc-replace.
+        const regionalHunks = splitMarkdownIntoHunks(originalMarkdown, updatedWorkingMarkdown);
+        if (regionalHunks.length === 0) return state;
+
         const now = Date.now();
         return {
           diffSession: {
@@ -290,21 +292,8 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
             hunks: [
               // Keep already accepted/rejected hunks
               ...state.diffSession.hunks.filter((h) => h.status !== "pending"),
-              // Replace all pending + new hunks with one full-doc-replace
-              {
-                id: generateId(),
-                type: "replace" as const,
-                from: 0,
-                to: -1,
-                oldContent: originalMarkdown,
-                searchText: "",
-                newContent: updatedWorkingMarkdown,
-                status: "pending" as const,
-                createdAt: new Date().toISOString(),
-                displayedAt: now,
-                editId: "batch",
-                isFullDocumentReplace: true,
-              },
+              // Replace all pending + new hunks with granular regional hunks
+              ...regionalHunks.map((h) => ({ ...h, displayedAt: now })),
             ],
             workingMarkdown: updatedWorkingMarkdown,
           },

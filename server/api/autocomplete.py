@@ -203,7 +203,7 @@ async def suggest(
     try:
         settings = get_settings()
         user_api_key = await resolve_user_api_key(token.sub, db)
-        context_service = AutocompleteContextService(db, api_key=user_api_key)
+        context_service = AutocompleteContextService(db)
 
         # Assemble context based on mode
         if request.include_rag and request.mode == "short":

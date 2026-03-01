@@ -211,12 +211,12 @@ export function MermaidNodeView({
     }
   }, [code]);
 
-  // Ask AI about this chart
+  // Ask AI about this chart — wrap in mermaid code fence so AI knows it's a chart
   const handleAskInChat = useCallback(() => {
     if (code && nodePos !== undefined) {
       useChatContextStore.getState().addChatContext({
         type: "selection",
-        text: code,
+        text: "```mermaid\n" + code + "\n```",
         from: nodePos,
         to: nodePos + node.nodeSize,
       });

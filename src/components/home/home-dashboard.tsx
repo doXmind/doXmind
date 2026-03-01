@@ -1,8 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Search, ChevronRight, FileText, Link2, GitFork, Bookmark } from "lucide-react";
+import {
+  Search,
+  ChevronRight,
+  FileText,
+  Users,
+  Link2,
+  GitFork,
+  Bookmark,
+  Plus,
+  FilePlus,
+  FolderPlus,
+  LayoutTemplate,
+  Upload,
+  Loader2,
+} from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -12,23 +27,35 @@ import {
   type Share,
   type ForkInfo,
   type CommunityItem,
+  type SharedWithMeItem,
 } from "@/lib/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
-import { useKBAgent } from "@/hooks/use-kb-agent";
 import { telemetry } from "@/lib/telemetry";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { cn } from "@/lib/utils";
-import { HomeSearch, type SearchMode } from "./home-search";
+import { HomeSearch } from "./home-search";
 import { FileGrid } from "./file-grid";
-import { KBAnswerCard } from "./kb-answer-card";
 import { RecentFiles } from "./recent-files";
 import { FavoritesSection } from "./favorites-section";
+import { SwipeCoordinatorProvider } from "./swipe-coordinator";
 import { HomeTabs } from "./home-tabs";
 import { SharesSection } from "./shares-section";
+import { SharedWithMeSection } from "./shared-with-me-section";
 import { ForksSection } from "./forks-section";
 import { BookmarksSection } from "./bookmarks-section";
-import { MobileFAB } from "./mobile-fab";
 import { HomeSortDropdown } from "./home-sort-dropdown";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { TemplatePicker, type FileTemplate } from "@/components/sidebar/template-picker";
+import { markdownToHtml } from "@/lib/markdown";
+import { haptics } from "@/lib/haptics";
+import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils";
 
 function getGreeting(): { title: string; subtitle: string } {
   const hour = new Date().getHours();
@@ -156,36 +183,47 @@ function CollapsibleSection({
 }
 
 export function HomeDashboard() {
-  const { files, loadFiles, isLoading, getRecentFiles, getFavorites, sortBy, setSortBy } =
-    useFileStore();
+  const router = useRouter();
+  const {
+    files,
+    loadFiles,
+    isLoading,
+    getRecentFiles,
+    getFavorites,
+    sortBy,
+    setSortBy,
+    createFile,
+    createFolder,
+    importFile,
+    currentFolderId,
+    getFolders,
+  } = useFileStore();
   const { user } = useAuthStore();
   const homeActiveTab = useLayoutStore((s) => s.homeActiveTab);
   const isMobile = useIsMobile();
   const [mobileSearchExpanded, setMobileSearchExpanded] = useState(false);
 
+  // Mobile file creation state
+  const [isImporting, setIsImporting] = useState(false);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Management data (shares, forks, bookmarks)
   const [shares, setShares] = useState<Share[]>([]);
   const [forks, setForks] = useState<ForkInfo[]>([]);
   const [bookmarks, setBookmarks] = useState<CommunityItem[]>([]);
+  const [sharedWithMe, setSharedWithMe] = useState<SharedWithMeItem[]>([]);
   const managementLoadedRef = useRef(false);
 
   // Search state — lifted here so FileGrid can filter
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchMode, setSearchMode] = useState<SearchMode>("ask");
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Telemetry refs
   const searchResultClickedRef = useRef(false);
   const searchResultsShownAtRef = useRef<number | null>(null);
-  const searchQueryCountRef = useRef(0);
-  const searchModeEnteredAtRef = useRef<number | null>(null);
-  const recentQueriesRef = useRef<string[]>([]);
-
-  // KB Agent state
-  const kbAgent = useKBAgent();
-  const showAnswerCard = kbAgent.isAnswering || kbAgent.answer || kbAgent.error;
 
   useEffect(() => {
     loadFiles();
@@ -196,13 +234,18 @@ export function HomeDashboard() {
     if (!user || managementLoadedRef.current) return;
     managementLoadedRef.current = true;
 
-    Promise.allSettled([api.getMyShares(), api.getMyForks(), api.getBookmarks()]).then(
-      ([sharesResult, forksResult, bookmarksResult]) => {
-        if (sharesResult.status === "fulfilled") setShares(sharesResult.value.shares);
-        if (forksResult.status === "fulfilled") setForks(forksResult.value.forks);
-        if (bookmarksResult.status === "fulfilled") setBookmarks(bookmarksResult.value.items);
-      }
-    );
+    Promise.allSettled([
+      api.getMyShares(),
+      api.getMyForks(),
+      api.getBookmarks(),
+      api.getSharedWithMe(),
+    ]).then(([sharesResult, forksResult, bookmarksResult, sharedWithMeResult]) => {
+      if (sharesResult.status === "fulfilled") setShares(sharesResult.value.shares);
+      if (forksResult.status === "fulfilled") setForks(forksResult.value.forks);
+      if (bookmarksResult.status === "fulfilled") setBookmarks(bookmarksResult.value.items);
+      if (sharedWithMeResult.status === "fulfilled")
+        setSharedWithMe(sharedWithMeResult.value.shares);
+    });
   }, [user]);
 
   const performSearch = useDebouncedCallback(async (q: string) => {
@@ -230,7 +273,6 @@ export function HomeDashboard() {
     abortControllerRef.current = controller;
 
     setIsSearching(true);
-    searchQueryCountRef.current++;
     const startTime = Date.now();
     try {
       const res = await api.searchFiles(q, undefined, 10, controller.signal);
@@ -251,77 +293,14 @@ export function HomeDashboard() {
   }, 300);
 
   useEffect(() => {
-    if (searchMode === "search") {
-      performSearch(query);
-    } else {
-      setSearchResults([]);
-      setIsSearching(false);
-    }
-  }, [query, performSearch, searchMode]);
+    performSearch(query);
+  }, [query, performSearch]);
 
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
     };
   }, []);
-
-  const handleModeChange = (newMode: SearchMode) => {
-    if (searchMode === "search" && newMode === "ask" && searchQueryCountRef.current > 0) {
-      telemetry.trackFeature("kb_search", "completed", undefined, {
-        event: "search_then_ask",
-        search_query_count: searchQueryCountRef.current,
-        time_in_search_mode_ms: searchModeEnteredAtRef.current
-          ? Date.now() - searchModeEnteredAtRef.current
-          : undefined,
-      });
-    }
-    if (newMode === "search") {
-      searchModeEnteredAtRef.current = Date.now();
-      searchQueryCountRef.current = 0;
-    }
-    setSearchMode(newMode);
-  };
-
-  const checkQueryRephrase = (q: string, feature: "kb_search" | "file_search") => {
-    const words = new Set(q.toLowerCase().trim().split(/\s+/).filter(Boolean));
-    if (words.size < 2) {
-      recentQueriesRef.current = [...recentQueriesRef.current.slice(-2), q];
-      return;
-    }
-    for (const prev of recentQueriesRef.current) {
-      const prevWords = new Set(prev.toLowerCase().trim().split(/\s+/).filter(Boolean));
-      const intersection = [...words].filter((w) => prevWords.has(w)).length;
-      const union = new Set([...words, ...prevWords]).size;
-      const jaccard = union > 0 ? intersection / union : 0;
-      if (q.toLowerCase().trim() === prev.toLowerCase().trim()) {
-        telemetry.trackFeature(feature, "completed", undefined, {
-          event: "query_rephrased",
-          similarity: "exact_retry",
-          original_length: prev.length,
-          new_length: q.length,
-        });
-        break;
-      } else if (jaccard > 0.7) {
-        telemetry.trackFeature(feature, "completed", undefined, {
-          event: "query_rephrased",
-          similarity: "likely_rephrase",
-          original_length: prev.length,
-          new_length: q.length,
-        });
-        break;
-      }
-    }
-    recentQueriesRef.current = [...recentQueriesRef.current.slice(-2), q];
-  };
-
-  const handleAskAgent = (question: string) => {
-    checkQueryRephrase(question, "kb_search");
-    kbAgent.ask(question);
-  };
-
-  const handleCloseAnswer = () => {
-    kbAgent.clear();
-  };
 
   const handleSearchResultClick = useCallback(
     (fileId: string, position: number, score: number) => {
@@ -337,15 +316,79 @@ export function HomeDashboard() {
     [searchResults.length]
   );
 
-  // Clear KB agent when query is emptied
   const handleQueryChange = (q: string) => {
     setQuery(q);
-    if (!q.trim() && showAnswerCard) {
-      kbAgent.clear();
+  };
+
+  // Mobile file creation handlers
+  const handleMobileCreateFile = async () => {
+    haptics.light();
+    try {
+      const newId = await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
+      router.push(`/editor/${newId}`);
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
     }
   };
 
-  const isAskMode = searchMode === "ask";
+  const handleMobileCreateFolder = async () => {
+    haptics.light();
+    const folders = getFolders();
+    const name = `New Folder ${folders.length + 1}`;
+    try {
+      await createFolder(name);
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const handleMobileImportClick = () => {
+    haptics.light();
+    fileInputRef.current?.click();
+  };
+
+  const handleMobileFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setIsImporting(true);
+    const toastId = toast.loading(`Importing "${file.name}"...`);
+    try {
+      await importFile(file, currentFolderId);
+      toast.success(`Imported "${file.name}" successfully`, { id: toastId });
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { id: toastId, description });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleMobileTemplateSelect = async (template: FileTemplate) => {
+    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+    let counter = 0;
+    let name: string;
+    do {
+      counter++;
+      name =
+        counter === 1
+          ? `${template.defaultFileName}.md`
+          : `${template.defaultFileName} ${counter}.md`;
+    } while (currentFiles.some((f) => f.name === name));
+
+    try {
+      const markdown = template.getContent();
+      const htmlContent = markdown ? markdownToHtml(markdown) : "";
+      const newId = await createFile(name, htmlContent, currentFolderId);
+      router.push(`/editor/${newId}`);
+    } catch (error) {
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+      throw error;
+    }
+  };
 
   const { title: greeting, subtitle: greetingSubtitle } = getGreeting();
   const firstName = user?.username?.split(" ")[0];
@@ -356,11 +399,12 @@ export function HomeDashboard() {
   const totalDocs = files.filter((f) => !f.isFolder).length;
   const isSearchActive = query.trim().length > 0;
   const isDocumentsTab = homeActiveTab === "documents";
-  const showRecent = totalDocs >= 4 && !showAnswerCard && !isSearchActive;
-  const showFavorites = favorites.length > 0 && !showAnswerCard && !isSearchActive;
+  const showRecent = totalDocs >= 4 && !isSearchActive;
+  const showFavorites = favorites.length > 0 && !isSearchActive;
 
   const tabCounts = {
     documents: totalDocs,
+    shared: sharedWithMe.length,
     shares: shares.length,
     forks: forks.length,
     bookmarks: bookmarks.length,
@@ -384,7 +428,40 @@ export function HomeDashboard() {
             {firstName ? `${greeting}, ${firstName}` : greeting}
           </h1>
           <div className="flex items-center gap-0.5">
-            {!showAnswerCard && <HomeSortDropdown sortBy={sortBy} setSortBy={setSortBy} />}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors active:bg-accent/50"
+                  aria-label="Create new"
+                >
+                  <Plus className="h-[18px] w-[18px]" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleMobileCreateFile}>
+                  <FilePlus className="mr-2 h-4 w-4" />
+                  New Document
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleMobileCreateFolder} disabled={!!currentFolderId}>
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  New Folder
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setIsTemplatePickerOpen(true)}>
+                  <LayoutTemplate className="mr-2 h-4 w-4" />
+                  From Template
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleMobileImportClick} disabled={isImporting}>
+                  {isImporting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Import File
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <HomeSortDropdown sortBy={sortBy} setSortBy={setSortBy} />
             <button
               onClick={() => setMobileSearchExpanded((prev) => !prev)}
               className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors active:bg-accent/50"
@@ -409,9 +486,6 @@ export function HomeDashboard() {
                 query={query}
                 onQueryChange={handleQueryChange}
                 isSearching={isSearching}
-                isAnswering={kbAgent.isAnswering}
-                onAskAgent={handleAskAgent}
-                onModeChange={handleModeChange}
                 onClose={() => setMobileSearchExpanded(false)}
               />
             </motion.div>
@@ -419,80 +493,55 @@ export function HomeDashboard() {
         </AnimatePresence>
       </div>
 
-      <main className="relative flex-1 px-4 pb-16 md:px-10">
-        {/* Desktop hero section (hidden on mobile) */}
-        <div className="mx-auto hidden max-w-xl pt-8 md:block md:pt-20">
-          {/* Greeting */}
-          <motion.div
-            className="mb-6 text-center md:mb-10"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <h1 className="text-2xl font-semibold tracking-tight md:text-[28px]">
-              <TypewriterText text={firstName ? `${greeting}, ${firstName}` : greeting} />
-            </h1>
-            <p className="mt-2.5 text-[13px] text-muted-foreground/60 dark:text-muted-foreground/70">
-              <TypewriterText
-                text={files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
-                speed={30}
-                delay={300}
-              />
-            </p>
-          </motion.div>
+      <SwipeCoordinatorProvider>
+        <main className="relative flex-1 px-4 pb-16 md:px-10">
+          {/* Desktop hero section (hidden on mobile) */}
+          <div className="mx-auto hidden max-w-xl pt-8 md:block md:pt-20">
+            {/* Greeting */}
+            <motion.div
+              className="mb-6 text-center md:mb-10"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <h1 className="text-2xl font-semibold tracking-tight md:text-[28px]">
+                <TypewriterText text={firstName ? `${greeting}, ${firstName}` : greeting} />
+              </h1>
+              <p className="mt-2.5 text-[13px] text-muted-foreground/60 dark:text-muted-foreground/70">
+                <TypewriterText
+                  text={files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
+                  speed={30}
+                  delay={300}
+                />
+              </p>
+            </motion.div>
 
-          {/* Desktop Search */}
-          <HomeSearch
-            query={query}
-            onQueryChange={handleQueryChange}
-            isSearching={isSearching}
-            isAnswering={kbAgent.isAnswering}
-            onAskAgent={handleAskAgent}
-            onModeChange={handleModeChange}
-          />
-        </div>
-
-        {/* Continue writing — recent files (with favorites merged on mobile) */}
-        {showRecent && (
-          <div className="mx-auto mt-3 max-w-5xl md:mt-10">
-            <RecentFiles files={recentFiles} favorites={favorites} />
+            {/* Desktop Search */}
+            <HomeSearch query={query} onQueryChange={handleQueryChange} isSearching={isSearching} />
           </div>
-        )}
 
-        {/* Favorites (desktop only — merged into carousel on mobile) */}
-        {showFavorites && (
-          <div className="mx-auto mt-6 hidden max-w-5xl md:mt-8 md:block">
-            <FavoritesSection favorites={favorites} />
-          </div>
-        )}
+          {/* Continue writing — recent files (with favorites merged on mobile) */}
+          {showRecent && (
+            <div className="mx-auto mt-3 max-w-5xl md:mt-10">
+              <RecentFiles files={recentFiles} favorites={favorites} />
+            </div>
+          )}
 
-        {/* Desktop: Tab navigation */}
-        {!showAnswerCard && !isSearchActive && (
-          <div className="mx-auto mt-3 hidden max-w-5xl md:mt-10 md:block">
-            <HomeTabs counts={tabCounts} />
-          </div>
-        )}
+          {/* Favorites (desktop only — merged into carousel on mobile) */}
+          {showFavorites && (
+            <div className="mx-auto mt-6 hidden max-w-5xl md:mt-8 md:block">
+              <FavoritesSection favorites={favorites} />
+            </div>
+          )}
 
-        {/* Content area */}
-        {showAnswerCard ? (
-          <div className="mx-auto mt-6 max-w-2xl">
-            <KBAnswerCard
-              question={kbAgent.question}
-              answer={kbAgent.answer}
-              sources={kbAgent.sources}
-              activeTool={kbAgent.activeTool}
-              isAnswering={kbAgent.isAnswering}
-              error={kbAgent.error}
-              onClose={handleCloseAnswer}
-              onStop={kbAgent.stop}
-              onAsk={handleAskAgent}
-              history={kbAgent.history}
-              conversationId={kbAgent.conversationId}
-              thinking={kbAgent.thinking}
-              toolHistory={kbAgent.toolHistory}
-            />
-          </div>
-        ) : (
+          {/* Desktop: Tab navigation */}
+          {!isSearchActive && (
+            <div className="mx-auto mt-3 hidden max-w-5xl md:mt-10 md:block">
+              <HomeTabs counts={tabCounts} />
+            </div>
+          )}
+
+          {/* Content area */}
           <>
             {/* Desktop: tab-based content switching */}
             <div className="hidden md:block">
@@ -500,11 +549,15 @@ export function HomeDashboard() {
                 <FileGrid
                   files={files}
                   isLoading={isLoading}
-                  searchQuery={isAskMode ? "" : query}
+                  searchQuery={query}
                   searchResults={searchResults}
-                  isSearching={isAskMode ? false : isSearching}
+                  isSearching={isSearching}
                   onResultClick={handleSearchResultClick}
                 />
+              ) : homeActiveTab === "shared" ? (
+                <div className="mx-auto mt-6 max-w-5xl">
+                  <SharedWithMeSection items={sharedWithMe} />
+                </div>
               ) : homeActiveTab === "shares" ? (
                 <div className="mx-auto mt-6 max-w-5xl">
                   <SharesSection shares={shares} onSharesChange={setShares} />
@@ -526,9 +579,9 @@ export function HomeDashboard() {
                 <FileGrid
                   files={files}
                   isLoading={isLoading}
-                  searchQuery={isAskMode ? "" : query}
+                  searchQuery={query}
                   searchResults={searchResults}
-                  isSearching={isAskMode ? false : isSearching}
+                  isSearching={isSearching}
                   onResultClick={handleSearchResultClick}
                 />
               ) : (
@@ -549,9 +602,20 @@ export function HomeDashboard() {
                     />
                   </CollapsibleSection>
 
-                  {/* Shares section */}
+                  {/* Shared with me section — always visible for discoverability */}
+                  <CollapsibleSection
+                    icon={Users}
+                    title="Shared with me"
+                    count={sharedWithMe.length}
+                  >
+                    <div className="mt-2">
+                      <SharedWithMeSection items={sharedWithMe} />
+                    </div>
+                  </CollapsibleSection>
+
+                  {/* My Links section */}
                   {shares.length > 0 && (
-                    <CollapsibleSection icon={Link2} title="Shares" count={shares.length}>
+                    <CollapsibleSection icon={Link2} title="My Links" count={shares.length}>
                       <div className="mt-2">
                         <SharesSection shares={shares} onSharesChange={setShares} />
                       </div>
@@ -579,11 +643,24 @@ export function HomeDashboard() {
               )}
             </div>
           </>
-        )}
-      </main>
+        </main>
+      </SwipeCoordinatorProvider>
 
-      {/* Mobile floating action button */}
-      {isMobile && !showAnswerCard && <MobileFAB />}
+      {/* Hidden file input for mobile import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.docx,.md,.markdown"
+        onChange={handleMobileFileSelect}
+        className="hidden"
+      />
+
+      {/* Template Picker Modal (mobile) */}
+      <TemplatePicker
+        open={isTemplatePickerOpen}
+        onClose={() => setIsTemplatePickerOpen(false)}
+        onSelect={handleMobileTemplateSelect}
+      />
     </div>
   );
 }

@@ -550,7 +550,7 @@ describe("ApiClient", () => {
         json: () => Promise.resolve({ results: [] }),
       });
 
-      await client.searchInDocument("query", "file-1", 20, 0.5);
+      await client.searchInDocument("query", "file-1", 20);
 
       expect(global.fetch).toHaveBeenCalledWith(
         "http://test-api.com/api/files/search/in-document",
@@ -559,7 +559,6 @@ describe("ApiClient", () => {
             query: "query",
             file_id: "file-1",
             top_k: 20,
-            min_score: 0.5,
           }),
         })
       );

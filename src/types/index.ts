@@ -6,6 +6,7 @@ export interface FileItem {
   id: string;
   name: string;
   content: string;
+  contentMarkdown?: string | null; // Cached markdown for AI consumption
   isFolder: boolean;
   parentId: string | null;
   position: number;
@@ -112,6 +113,14 @@ export interface ChatMessage {
   toolCalls?: ToolCall[] | null;
   edits?: EditOperation[] | null;
   model?: string | null;
+  /** Files created or modified by the agent during this message */
+  affectedFiles?: AffectedFile[] | null;
+}
+
+export interface AffectedFile {
+  fileId: string;
+  fileName: string;
+  action: "created" | "edited" | "referenced";
 }
 
 export interface Conversation {

@@ -124,7 +124,7 @@ describe("diff-utils", () => {
         expect(hunks).toHaveLength(0);
       });
 
-      it("handles HTML content by converting to markdown", () => {
+      it("uses edit.old_str for oldContent regardless of input format", () => {
         const htmlContent = "<p>Hello <strong>World</strong></p>";
         const edit: EditOperation = {
           type: "str_replace",
@@ -254,7 +254,7 @@ describe("diff-utils", () => {
         expect(hunks).toHaveLength(0);
       });
 
-      it("converts HTML original content to markdown", () => {
+      it("uses provided originalMarkdown for oldContent", () => {
         const htmlContent = "<p>Original <em>content</em></p>";
         const edit: EditOperation = {
           type: "replace_all",
@@ -264,10 +264,24 @@ describe("diff-utils", () => {
           success: true,
         };
 
-        const hunks = computeDiffHunks(htmlContent, edit);
+        // Pass pre-computed markdown via 3rd parameter (from contentMarkdown cache)
+        const hunks = computeDiffHunks(htmlContent, edit, "Original *content*");
 
-        // Turndown converts <em> to underscore style by default
-        expect(hunks[0].oldContent).toBe("Original _content_");
+        expect(hunks[0].oldContent).toBe("Original *content*");
+      });
+
+      it("falls back to raw content when no originalMarkdown provided", () => {
+        const edit: EditOperation = {
+          type: "replace_all",
+          new_content: "New content",
+          file_id: "file-1",
+          file_name: "test.md",
+          success: true,
+        };
+
+        const hunks = computeDiffHunks("Original content", edit);
+
+        expect(hunks[0].oldContent).toBe("Original content");
       });
     });
   });

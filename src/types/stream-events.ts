@@ -64,6 +64,12 @@ export interface ToolEndEvent {
   tool_id?: string;
   output?: string;
   success?: boolean;
+  /** File ID if this tool affected a file */
+  file_id?: string;
+  /** File name if this tool affected a file */
+  file_name?: string;
+  /** What the tool did to the file */
+  file_action?: "created" | "edited" | "referenced";
 }
 
 /** Single edit operation */

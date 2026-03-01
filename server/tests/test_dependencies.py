@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import (
     get_conversation_by_file_id,
     get_db,
-    get_rag_service,
     normalize_file_id,
 )
 
@@ -82,37 +81,6 @@ class TestGetDb:
 
             # Context manager should have been exited
             mock_context.__aexit__.assert_called_once()
-
-
-# ============================================================================
-# get_rag_service Tests
-# ============================================================================
-
-
-class TestGetRagService:
-    """Tests for get_rag_service dependency."""
-
-    @pytest.mark.asyncio
-    async def test_creates_rag_service_with_db(self):
-        """Should create RAGService with db session."""
-        mock_db = MagicMock(spec=AsyncSession)
-
-        with patch("dependencies.RAGService") as mock_rag_class:
-            mock_instance = MagicMock()
-            mock_rag_class.return_value = mock_instance
-
-            result = await get_rag_service(db=mock_db)
-
-            # Should create with db
-            mock_rag_class.assert_called_once_with(mock_db)
-            assert result is mock_instance
-
-    @pytest.mark.asyncio
-    async def test_is_async_function(self):
-        """Should be an async function."""
-        import inspect
-
-        assert inspect.iscoroutinefunction(get_rag_service)
 
 
 # ============================================================================
@@ -262,7 +230,6 @@ class TestDependencyIntegration:
 
         # Check functions exist
         assert callable(dependencies.get_db)
-        assert callable(dependencies.get_rag_service)
         assert callable(dependencies.normalize_file_id)
         assert callable(dependencies.get_conversation_by_file_id)
 
@@ -272,9 +239,3 @@ class TestDependencyIntegration:
         import inspect
 
         assert inspect.isasyncgenfunction(get_db)
-
-    def test_get_rag_service_is_async_function(self):
-        """Should be an async function."""
-        import inspect
-
-        assert inspect.iscoroutinefunction(get_rag_service)

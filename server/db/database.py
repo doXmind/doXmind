@@ -127,6 +127,7 @@ class File(Base):
     name = Column(String(255), nullable=False)
     content = Column(Text, default="")
     content_hash = Column(String(64), nullable=True)  # SHA-256 hash for change detection
+    content_markdown = Column(Text, nullable=True)  # Cached markdown for AI consumption
     summary = Column(Text, nullable=True)  # AI-generated document summary
     is_favorite = Column(Boolean, default=False)  # Pinned/favorite status
     icon = Column(String(10), nullable=True)  # Document emoji icon
@@ -246,8 +247,8 @@ class Message(Base):
 class ApiUsage(Base):
     """API usage tracking for non-chat OpenRouter calls.
 
-    Tracks token usage for: embeddings, file conversion, reranking,
-    autocomplete, quick edit, custom edit, review, KB chat, STT.
+    Tracks token usage for: file conversion, autocomplete, quick edit,
+    custom edit, review, KB chat, STT.
     """
 
     __tablename__ = "api_usage"
@@ -283,7 +284,7 @@ class ConversationAttachment(Base):
     # Extracted content
     extracted_text = Column(Text, nullable=True)  # Markdown-converted text
 
-    # Vector store info
+    # Content info
     chunk_count = Column(Integer, default=0)
 
     # Processing status
@@ -303,7 +304,7 @@ class ConversationDataFile(Base):
     Stores uploaded data files (CSV, XLSX, JSON, TXT, images) that are passed
     to Claude's code execution sandbox for data analysis and visualization.
 
-    Unlike ConversationAttachment (KB files), these are NOT vectorized.
+    Unlike ConversationAttachment (KB files), these are not used for text search.
     Instead, they are directly passed to the API as base64 content.
 
     Upload strategy:
@@ -651,6 +652,8 @@ def _sanitize_content_columns(mapper, connection, target):
     """Sanitize all text content columns before INSERT/UPDATE."""
     if hasattr(target, "content") and target.content is not None:
         target.content = _sanitize(target.content)
+    if hasattr(target, "content_markdown") and target.content_markdown is not None:
+        target.content_markdown = _sanitize(target.content_markdown)
 
 
 for _model in (File, FileVersion):

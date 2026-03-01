@@ -41,7 +41,6 @@ class Settings(BaseSettings):
             "X-Title": self.openrouter_app_name,
         }
 
-    courtlistener_api_key: str = ""  # For legal case search
     brave_search_api_key: str = ""  # For Brave web search
 
     # =========================================================================
@@ -92,7 +91,7 @@ class Settings(BaseSettings):
     max_verification_attempts: int = 5
 
     # =========================================================================
-    # Database (PostgreSQL with pgvector)
+    # Database (PostgreSQL)
     # =========================================================================
     # Format: postgresql+asyncpg://user:password@host:port/dbname
     # Local Docker uses port 5433 to avoid conflict with local PostgreSQL
@@ -123,11 +122,6 @@ class Settings(BaseSettings):
     aws_s3_region: str = "us-east-1"
 
     # =========================================================================
-    # Vector Store (pgvector)
-    # =========================================================================
-    pgvector_enabled: bool = True  # Enable/disable vector search features
-
-    # =========================================================================
     # Server
     # =========================================================================
     host: str = "0.0.0.0"
@@ -141,10 +135,6 @@ class Settings(BaseSettings):
     fast_model: str = "google/gemini-2.5-flash-lite"  # For quick operations (autocomplete, quick edits, simplified slides)
     smart_model: str = "minimax/minimax-m2.5"  # For complex operations (chat, analysis)
     review_model: str = "minimax/minimax-m2.5"  # For text review (needs JSON mode support)
-    embedding_model: str = "openai/text-embedding-3-small"  # For vector search embeddings
-    embedding_dimension: int = (
-        256  # Embedding dimensions (text-embedding-3-small supports 256-1536)
-    )
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
     stt_model: str = "openai/whisper-1"  # For speech-to-text via OpenRouter
 
@@ -201,49 +191,6 @@ class Settings(BaseSettings):
     autocomplete_cache_size: int = 1000
     autocomplete_cache_ttl_seconds: int = 300  # 5 minutes
 
-    # RAG settings
-    # Note: OpenAI embedding API has 8192 token limit. These character limits
-    # are set conservatively to account for varying token density (code/CJK text
-    # can have 1 token per 1-2 chars vs ~4 chars per token for English).
-    chunk_size: int = 3000  # Reduced from 4000 for token safety
-    chunk_overlap: int = 0  # No overlap - cleaner search results
-    sentence_min_length: int = 5
-
-    # Advanced chunking settings
-    chunking_strategy: str = "auto"  # "auto", "overlap", "semantic", "recursive_markdown"
-    semantic_min_chunk_size: int = 200
-    markdown_max_chunk_size: int = 1500  # Reduced from 2000 for token safety
-    preserve_code_blocks: bool = True
-    preserve_tables: bool = True
-
-    # Search thresholds
-    search_distance_threshold: float = (
-        0.7  # Max cosine distance for relevant results (lower = stricter)
-    )
-    search_min_content_length: int = 3  # Min chars for valid search result
-    search_expanded_k_multiplier: int = 3  # Candidates = top_k * this for hybrid fusion
-
-    # Hybrid search settings (vector + keyword + filename with RRF fusion)
-    hybrid_search_enabled: bool = True
-    semantic_weight: float = 0.7  # Weight for vector similarity search
-    keyword_weight: float = 0.3  # Weight for full-text keyword search
-    filename_weight: float = 0.5  # Weight for filename matching
-    rrf_k: int = 60  # RRF constant (standard value)
-
-    # Embedding parallel processing settings
-    embedding_batch_size: int = 100  # Texts per API call (OpenAI max is 2048)
-    embedding_max_concurrent: int = 10  # Max parallel API calls (user RPM: 10,000)
-    embedding_max_retries: int = 3  # Retry attempts per batch
-    embedding_retry_delay: float = 1.0  # Initial retry delay in seconds
-    embedding_retry_backoff: float = 2.0  # Exponential backoff multiplier
-
-    # Reranking settings (GPT-based with structured outputs)
-    reranking_enabled: bool = False  # Disabled by default (adds latency/cost)
-    reranking_candidates: int = 20  # Number of candidates to fetch before reranking
-    reranking_model: str = (
-        "google/gemini-2.5-flash-lite"  # Fast & cheap model for reranking (via OpenRouter)
-    )
-
     class Config:
         env_file = str(_BASE_DIR / ".env")
         env_file_encoding = "utf-8"
@@ -257,11 +204,6 @@ class Settings(BaseSettings):
     def max_file_size_mb(self) -> float:
         """Get max file size in megabytes."""
         return self.max_file_size / (1024 * 1024)
-
-    @property
-    def has_legal_tools(self) -> bool:
-        """Check if legal tools are available (API key configured)."""
-        return bool(self.courtlistener_api_key)
 
     @property
     def has_data_analysis_tools(self) -> bool:

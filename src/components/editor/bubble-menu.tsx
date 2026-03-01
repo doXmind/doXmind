@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { motion } from "framer-motion";
-import { BubbleMenu } from "@tiptap/react/menus";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import {
   Bold,
@@ -89,10 +88,89 @@ function getCurrentBlockLabel(editor: Editor): string {
   return "Aa";
 }
 
+/** Get the bounding rect of the current text selection */
+function getSelectionRect(): DOMRect | null {
+  const domSelection = window.getSelection();
+  if (!domSelection || domSelection.rangeCount === 0) return null;
+  const range = domSelection.getRangeAt(0);
+  if (range.collapsed) return null;
+  return range.getBoundingClientRect();
+}
+
 export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentProps) {
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const { openQuickEdit, selection } = useEditorStore();
   const { addChatContext } = useChatContextStore();
+  const [visible, setVisible] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
+  const preventHideRef = useRef(false);
+  const updateTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const checkShouldShow = useCallback(() => {
+    if (isDiffReviewActive(editor)) return false;
+    if (useStreamingStore.getState().isStreaming) return false;
+    if (editor.state.selection instanceof CellSelection) return false;
+    if (editor.state.selection instanceof NodeSelection) return false;
+    const { from, to } = editor.state.selection;
+    return to - from > 0;
+  }, [editor]);
+
+  const updateMenu = useCallback(() => {
+    const shouldShow = checkShouldShow();
+    const rect = getSelectionRect();
+    if (!shouldShow) {
+      setVisible(false);
+      return;
+    }
+    if (!rect || rect.width === 0) {
+      setVisible(false);
+      return;
+    }
+    // Position above the selection, centered
+    const x = rect.left + rect.width / 2;
+    const y = rect.top - 8;
+    setPosition({ x, y });
+    setVisible(true);
+  }, [checkShouldShow]);
+
+  // Listen to editor selection changes, focus/blur, and mouseup
+  useEffect(() => {
+    const handleSelectionUpdate = () => {
+      // Debounce to avoid rapid updates during drag selection
+      if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = setTimeout(updateMenu, 100);
+    };
+
+    const handleBlur = ({ event }: { event: FocusEvent }) => {
+      if (preventHideRef.current) {
+        preventHideRef.current = false;
+        return;
+      }
+      // Don't hide if focus moved to the menu itself
+      if (event?.relatedTarget && menuRef.current?.contains(event.relatedTarget as Node)) {
+        return;
+      }
+      setVisible(false);
+    };
+
+    // Also listen for mouseup to catch selections that may not trigger selectionUpdate
+    const handleMouseUp = () => {
+      // Short delay to let the selection settle
+      setTimeout(updateMenu, 50);
+    };
+
+    editor.on("selectionUpdate", handleSelectionUpdate);
+    editor.on("blur", handleBlur);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      editor.off("selectionUpdate", handleSelectionUpdate);
+      editor.off("blur", handleBlur);
+      document.removeEventListener("mouseup", handleMouseUp);
+      if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
+    };
+  }, [editor, updateMenu]);
 
   const handleImproveWritingClick = (event: React.MouseEvent) => {
     const button = event.currentTarget as HTMLElement;
@@ -136,162 +214,140 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
     [editor]
   );
 
-  const shouldShow = useCallback(() => {
-    if (isDiffReviewActive(editor)) return false;
-    // Hide during AI streaming to prevent accidental edits
-    if (useStreamingStore.getState().isStreaming) return false;
-    // Don't show text formatting menu for table cell selections
-    if (editor.state.selection instanceof CellSelection) return false;
-    // Don't show text formatting for node selections (images, math, charts, etc.)
-    if (editor.state.selection instanceof NodeSelection) return false;
-    const { from, to } = editor.state.selection;
-    const hasSelection = to - from > 0;
-    return hasSelection;
-  }, [editor]);
-
-  return (
+  const menuContent = (
     <>
       <LinkModal
         open={linkModalOpen}
         onClose={() => setLinkModalOpen(false)}
         onConfirm={handleLinkConfirm}
       />
-      <BubbleMenu
-        editor={editor}
-        options={{
-          placement: "top",
-        }}
-        shouldShow={shouldShow}
-        className="bubble-menu rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
-      >
-        <motion.div
-          initial={{ opacity: 0, y: 8, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{
-            type: "spring",
-            stiffness: 500,
-            damping: 30,
-            mass: 0.8,
+      {visible && (
+        <div
+          ref={menuRef}
+          className="bubble-menu fixed z-50 rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
+          style={{
+            left: position.x,
+            top: position.y,
+            transform: "translate(-50%, -100%)",
           }}
-          className="flex flex-nowrap items-center gap-0.5"
+          onMouseDown={() => {
+            preventHideRef.current = true;
+          }}
         >
-          {/* Left side: AI actions with text labels (Notion-style) */}
+          <div className="flex flex-nowrap items-center gap-0.5">
+            {/* Left side: AI actions with text labels (Notion-style) */}
 
-          {/* Improve Writing - opens quick edit menu */}
-          <motion.button
-            type="button"
-            onClick={handleImproveWritingClick}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
-          >
-            <Wand2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-            <span className="hidden text-sm font-medium md:inline">inline improve</span>
-          </motion.button>
+            {/* Improve Writing - opens quick edit menu */}
+            <button
+              type="button"
+              onClick={handleImproveWritingClick}
+              className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
+            >
+              <Wand2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              <span className="hidden text-sm font-medium md:inline">inline improve</span>
+            </button>
 
-          {/* Ask AI button */}
-          <motion.button
-            type="button"
-            onClick={handleAskAI}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
-          >
-            <AiLogoIcon className="h-4 w-4" />
-            <span className="hidden text-sm font-medium md:inline">ask ai in chat</span>
-          </motion.button>
+            {/* Ask AI button */}
+            <button
+              type="button"
+              onClick={handleAskAI}
+              className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
+            >
+              <AiLogoIcon className="h-4 w-4" />
+              <span className="hidden text-sm font-medium md:inline">ask ai in chat</span>
+            </button>
 
-          {/* Divider */}
-          <div className="mx-1 h-5 w-px bg-border" />
+            {/* Divider */}
+            <div className="mx-1 h-5 w-px bg-border" />
 
-          {/* Right side: Formatting tools */}
-          {!isMobile && (
-            <>
-              <DropdownMenu>
-                <Tooltip content="Turn into" side="top">
-                  <DropdownMenuTrigger asChild>
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                      className="inline-flex h-8 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <span className="text-xs">{getCurrentBlockLabel(editor)}</span>
-                      <ChevronDown className="h-3 w-3 opacity-60" />
-                    </motion.button>
-                  </DropdownMenuTrigger>
-                </Tooltip>
-                <DropdownMenuContent align="start" className="min-w-[160px]">
-                  {turnIntoOptions.map((option, index) => {
-                    if (isTurnIntoSeparator(option)) {
-                      return <DropdownMenuSeparator key={`sep-${index}`} />;
-                    }
-                    return (
-                      <DropdownMenuItem
-                        key={option.label}
-                        onClick={() => option.action(editor)}
-                        className={cn(option.isActive(editor) && "bg-accent")}
+            {/* Right side: Formatting tools */}
+            {!isMobile && (
+              <>
+                <DropdownMenu>
+                  <Tooltip content="Turn into" side="top">
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 items-center gap-0.5 rounded-md px-1.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
                       >
-                        {turnIntoIconMap[option.iconName] || <Type className="h-4 w-4" />}
-                        <span className="ml-2">{option.label}</span>
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          )}
+                        <span className="text-xs">{getCurrentBlockLabel(editor)}</span>
+                        <ChevronDown className="h-3 w-3 opacity-60" />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </Tooltip>
+                  <DropdownMenuContent align="start" className="min-w-[160px]">
+                    {turnIntoOptions.map((option, index) => {
+                      if (isTurnIntoSeparator(option)) {
+                        return <DropdownMenuSeparator key={`sep-${index}`} />;
+                      }
+                      return (
+                        <DropdownMenuItem
+                          key={option.label}
+                          onClick={() => option.action(editor)}
+                          className={cn(option.isActive(editor) && "bg-accent")}
+                        >
+                          {turnIntoIconMap[option.iconName] || <Type className="h-4 w-4" />}
+                          <span className="ml-2">{option.label}</span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            )}
 
-          <BubbleButton
-            icon={<Bold className="h-4 w-4" />}
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            isActive={editor.isActive("bold")}
-            tooltip="Bold (Ctrl+B)"
-          />
-          <BubbleButton
-            icon={<Italic className="h-4 w-4" />}
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            isActive={editor.isActive("italic")}
-            tooltip="Italic (Ctrl+I)"
-          />
-          <BubbleButton
-            icon={<Underline className="h-4 w-4" />}
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
-            isActive={editor.isActive("underline")}
-            tooltip="Underline (Ctrl+U)"
-          />
+            <BubbleButton
+              icon={<Bold className="h-4 w-4" />}
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              isActive={editor.isActive("bold")}
+              tooltip="Bold (Ctrl+B)"
+            />
+            <BubbleButton
+              icon={<Italic className="h-4 w-4" />}
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              isActive={editor.isActive("italic")}
+              tooltip="Italic (Ctrl+I)"
+            />
+            <BubbleButton
+              icon={<Underline className="h-4 w-4" />}
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+              isActive={editor.isActive("underline")}
+              tooltip="Underline (Ctrl+U)"
+            />
 
-          {/* Strikethrough, Code, Color - desktop only */}
-          {!isMobile && (
-            <>
-              <BubbleButton
-                icon={<Strikethrough className="h-4 w-4" />}
-                onClick={() => editor.chain().focus().toggleStrike().run()}
-                isActive={editor.isActive("strike")}
-                tooltip="Strikethrough"
-              />
-              <BubbleButton
-                icon={<Code className="h-4 w-4" />}
-                onClick={() => editor.chain().focus().toggleCode().run()}
-                isActive={editor.isActive("code")}
-                tooltip="Inline Code (Ctrl+E)"
-              />
-              {/* Color dropdown (replaces standalone Highlight button) */}
-              <ColorDropdown editor={editor} onColorChange={handleColorChange} />
-            </>
-          )}
+            {/* Strikethrough, Code, Color - desktop only */}
+            {!isMobile && (
+              <>
+                <BubbleButton
+                  icon={<Strikethrough className="h-4 w-4" />}
+                  onClick={() => editor.chain().focus().toggleStrike().run()}
+                  isActive={editor.isActive("strike")}
+                  tooltip="Strikethrough"
+                />
+                <BubbleButton
+                  icon={<Code className="h-4 w-4" />}
+                  onClick={() => editor.chain().focus().toggleCode().run()}
+                  isActive={editor.isActive("code")}
+                  tooltip="Inline Code (Ctrl+E)"
+                />
+                {/* Color dropdown (replaces standalone Highlight button) */}
+                <ColorDropdown editor={editor} onColorChange={handleColorChange} />
+              </>
+            )}
 
-          <BubbleButton
-            icon={<LinkIcon className="h-4 w-4" />}
-            onClick={() => setLinkModalOpen(true)}
-            isActive={editor.isActive("link")}
-            tooltip="Add Link (Ctrl+K)"
-          />
-        </motion.div>
-      </BubbleMenu>
+            <BubbleButton
+              icon={<LinkIcon className="h-4 w-4" />}
+              onClick={() => setLinkModalOpen(true)}
+              isActive={editor.isActive("link")}
+              tooltip="Add Link (Ctrl+K)"
+            />
+          </div>
+        </div>
+      )}
     </>
   );
+
+  return createPortal(menuContent, document.body);
 }
 
 interface BubbleButtonProps {
@@ -317,11 +373,8 @@ function ColorDropdown({
     <DropdownMenu>
       <Tooltip content="Color" side="top">
         <DropdownMenuTrigger asChild>
-          <motion.button
+          <button
             type="button"
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ type: "spring", stiffness: 400, damping: 20 }}
             className={cn(
               "h-11 w-11 md:h-8 md:w-8",
               "inline-flex flex-col items-center justify-center rounded-md",
@@ -342,7 +395,7 @@ function ColorDropdown({
                 opacity: hasColor ? 1 : 0.4,
               }}
             />
-          </motion.button>
+          </button>
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="start" className="p-0">
@@ -359,12 +412,9 @@ function ColorDropdown({
 
 function BubbleButton({ icon, onClick, isActive, className, tooltip }: BubbleButtonProps) {
   const button = (
-    <motion.button
+    <button
       type="button"
       onClick={onClick}
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.95 }}
-      transition={{ type: "spring", stiffness: 400, damping: 20 }}
       className={cn(
         "h-11 w-11 md:h-8 md:w-8",
         "inline-flex items-center justify-center rounded-md",
@@ -374,7 +424,7 @@ function BubbleButton({ icon, onClick, isActive, className, tooltip }: BubbleBut
       )}
     >
       <span className="[&>svg]:h-5 [&>svg]:w-5 md:[&>svg]:h-4 md:[&>svg]:w-4">{icon}</span>
-    </motion.button>
+    </button>
   );
 
   if (tooltip) {

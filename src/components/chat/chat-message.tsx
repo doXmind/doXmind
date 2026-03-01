@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { User, ChevronDown, ChevronRight, ImageIcon, FileText, Sparkles } from "lucide-react";
+import {
+  User,
+  ChevronDown,
+  ChevronRight,
+  ImageIcon,
+  FileText,
+  Sparkles,
+  BarChart3,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { QUICK_EDIT_LABELS } from "@/lib/quick-edit-prompts";
@@ -24,7 +32,9 @@ function parseMarkdownWithMath(text: string): string {
         displayMode: true,
         throwOnError: false,
       });
-      const key = `__MATH_BLOCK_${idx++}__`;
+      // Use a format that marked won't interpret as markdown syntax
+      // (double underscores __X__ get converted to <strong> by marked)
+      const key = `MATHBLOCK${idx++}ENDMATH`;
       placeholders.push({ key, rendered });
       return key;
     } catch {
@@ -39,7 +49,7 @@ function parseMarkdownWithMath(text: string): string {
         displayMode: false,
         throwOnError: false,
       });
-      const key = `__MATH_INLINE_${idx++}__`;
+      const key = `MATHINLINE${idx++}ENDMATH`;
       placeholders.push({ key, rendered });
       return key;
     } catch {
@@ -89,11 +99,17 @@ function ContextReference({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const isImage = context.type === "image";
-  const Icon = isImage ? ImageIcon : FileText;
+  const isChart = !isImage && context.text?.startsWith("```mermaid\n");
+  const Icon = isImage ? ImageIcon : isChart ? BarChart3 : FileText;
   const prefix = total > 1 ? `Reference ${index + 1}` : "Reference";
+  const displayText = isChart
+    ? context.text?.replace(/^```mermaid\n/, "").replace(/\n```$/, "") || ""
+    : context.text || "";
   const label = isImage
     ? `${prefix}: Image${context.alt ? ` (${context.alt})` : ""}`
-    : `${prefix}: "${context.text?.slice(0, 40)?.replace(/\n/g, " ") || ""}${(context.text?.length || 0) > 40 ? "..." : ""}"`;
+    : isChart
+      ? `${prefix}: Chart`
+      : `${prefix}: "${displayText.slice(0, 40).replace(/\n/g, " ")}${displayText.length > 40 ? "..." : ""}"`;
 
   return (
     <div className="text-xs">

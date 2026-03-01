@@ -8,45 +8,31 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { DOMParser as ProseMirrorDOMParser, Slice } from "@tiptap/pm/model";
+import { Slice } from "@tiptap/pm/model";
 import type { DiffHunk } from "@/types/diff";
-import { markdownToHtml, isHtml } from "@/lib/markdown";
+import { isHtml } from "@/lib/markdown";
 import { findInMarkdown } from "@/lib/diff-utils";
 
 import { DiffReviewPluginKey, type DiffReviewPluginState } from "./diff-types";
 import {
   findTextInDocument,
-  findTextNormalized,
   findTextViaMarkdown,
+  findAtomNode,
   clearMarkdownCache,
 } from "./position-mapping";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { createInsertWidget, createActionWidget, createInlineDiffWidget } from "./diff-widgets";
-import { normalizeTableHtml, normalizeMermaidHtml } from "./replacement-utils";
 
 // Re-export types for external use
 export * from "./diff-types";
 export {
   findTextInDocument,
   findAllTextInDocument,
-  findTextNormalized,
   findTextViaMarkdown,
   clearMarkdownCache,
 } from "./position-mapping";
 export { createInsertWidget, createActionWidget, createInlineDiffWidget } from "./diff-widgets";
-
-/**
- * Cache for ProseMirror-parsed textContent and block type.
- * Key = markdown oldContent, Value = { textContent, blockType } from ProseMirror parser.
- * Using the SAME parser/schema as the document guarantees textContent matches doc.textContent.
- * blockType is the first text-containing block's type name (e.g., "heading", "paragraph"),
- * used to disambiguate when the same text appears in multiple locations (e.g., TOC vs heading).
- */
-interface ParsedContentCache {
-  textContent: string;
-  blockType: string | null;
-}
-const pmTextCache = new Map<string, ParsedContentCache>();
 
 /**
  * Detect structured content that would lose meaning if flattened to plain text.
@@ -64,6 +50,8 @@ function isStructuredContent(content: string): boolean {
   if (/```[\s\S]*?```/.test(content)) return true;
   // HTML block elements (tables, divs, etc. — not just inline formatting)
   if (isHtml(content)) return true;
+  // Block math ($$...$$) — atom nodes that would be garbled by inline word diff
+  if (/\$\$[\s\S]*?\$\$/.test(content)) return true;
   return false;
 }
 
@@ -170,7 +158,7 @@ export const DiffReviewExtension = Extension.create({
                 // Full document replacement: use entire document range
                 from = 0;
                 to = state.doc.content.size;
-                buttonPos = 1; // Place button at start of document
+                buttonPos = 0; // Place before first block node (not inside it)
                 hunk.resolvedFrom = from;
                 hunk.resolvedTo = to;
               } else if (hunk.oldContent) {
@@ -203,58 +191,20 @@ export const DiffReviewExtension = Extension.create({
                   );
                 }
 
-                // Fallback: fragment-based matching (when markdown strategies fail)
+                // Fallback: parse via @tiptap/markdown and search by textContent or atom attrs
                 if (!found) {
-                  let cached = pmTextCache.get(hunk.oldContent);
-                  if (!cached) {
-                    const html = isHtml(hunk.oldContent)
-                      ? hunk.oldContent
-                      : markdownToHtml(hunk.oldContent);
-                    const el = document.createElement("div");
-                    el.innerHTML = html;
-                    normalizeTableHtml(el);
-                    normalizeMermaidHtml(el);
-                    const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
-
-                    let blockType: string | null = null;
-                    for (let i = 0; i < parsed.content.childCount; i++) {
-                      const child = parsed.content.child(i);
-                      if (child.isBlock && child.textContent.trim()) {
-                        blockType = child.type.name;
-                        break;
-                      }
+                  const editor = useEditorRefStore.getState().editor;
+                  if (editor?.markdown) {
+                    const json = editor.markdown.parse(hunk.oldContent);
+                    const fragmentDoc = state.schema.nodeFromJSON(json);
+                    const searchText = fragmentDoc.textContent;
+                    if (searchText) {
+                      found = findTextInDocument(state.doc, searchText, usedPositions);
+                    } else {
+                      // Atom node (mermaid, blockMath, inlineMath) — no textContent.
+                      // Search the actual editor doc for a matching node by type + attributes.
+                      found = findAtomNode(state.doc, fragmentDoc, usedPositions);
                     }
-
-                    cached = { textContent: parsed.textContent, blockType };
-                    pmTextCache.set(hunk.oldContent, cached);
-                  }
-
-                  // Fallback strategy 1: Exact textContent match
-                  found = findTextInDocument(
-                    state.doc,
-                    cached.textContent,
-                    usedPositions,
-                    cached.blockType
-                  );
-
-                  // Fallback strategy 2: searchText from hunk
-                  if (!found && hunk.searchText && hunk.searchText !== cached.textContent) {
-                    found = findTextInDocument(
-                      state.doc,
-                      hunk.searchText,
-                      usedPositions,
-                      cached.blockType
-                    );
-                  }
-
-                  // Fallback strategy 3: Normalized whitespace
-                  if (!found) {
-                    found = findTextNormalized(
-                      state.doc,
-                      cached.textContent,
-                      usedPositions,
-                      cached.blockType
-                    );
                   }
                 }
 
@@ -309,8 +259,9 @@ export const DiffReviewExtension = Extension.create({
                 isStructuredContent(hunk.newContent || "");
 
               if (isReplace && !hunk.isFullDocumentReplace && !useBlockFallback) {
-                // --- Notion-style inline word-level diff (plain text only) ---
+                // --- Notion-style inline word-level diff ---
                 // 1. Hide original text via inline decoration
+                //    ProseMirror auto-clips at block boundaries, applying to each block separately
                 decorations.push(
                   Decoration.inline(from, to, {
                     class: isFocused
@@ -320,13 +271,22 @@ export const DiffReviewExtension = Extension.create({
                   })
                 );
 
-                // 2. Show word-level diff widget at the start position
+                // 2. Show word-level diff widget
+                //    For multi-block hunks: place BEFORE the first block so all blocks
+                //    collapse (no widget inside → CSS :has() rule hides them)
+                //    For single-block hunks: place inside the block at `from`
+                const $fromR = state.doc.resolve(from);
+                const $toR = state.doc.resolve(to);
+                const isMultiBlock = $fromR.parent !== $toR.parent;
+                const widgetPos = isMultiBlock ? buttonPos - 1 : from;
+
                 decorations.push(
                   Decoration.widget(
-                    from,
+                    widgetPos,
                     () => {
                       const widget = createInlineDiffWidget(hunk);
                       if (isFocused) widget.classList.add("diff-hunk-focused");
+                      if (isMultiBlock) widget.classList.add("diff-structured");
                       return widget;
                     },
                     {
@@ -339,12 +299,28 @@ export const DiffReviewExtension = Extension.create({
                 // --- Block fallback for structured content (tables, mermaid, code) ---
                 // Strikethrough old content + insert widget with full markdown rendering
                 // (createInsertWidget already has integrated hover accept/reject buttons)
-                decorations.push(
-                  Decoration.inline(from, to, {
-                    class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
-                    "data-hunk-id": hunk.id,
-                  })
-                );
+
+                // Check if range covers an atom block node (mermaid chart, block math, etc.)
+                // Inline decorations don't visually affect NodeViews rendered by ReactNodeViewRenderer,
+                // so we use Decoration.node() which applies class to the outermost wrapper DOM element.
+                const nodeAtFrom = state.doc.nodeAt(from);
+                const isAtomBlock = nodeAtFrom?.isAtom && nodeAtFrom?.isBlock;
+
+                if (isAtomBlock) {
+                  decorations.push(
+                    Decoration.node(from, from + nodeAtFrom.nodeSize, {
+                      class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
+                      "data-hunk-id": hunk.id,
+                    })
+                  );
+                } else {
+                  decorations.push(
+                    Decoration.inline(from, to, {
+                      class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
+                      "data-hunk-id": hunk.id,
+                    })
+                  );
+                }
 
                 // Compute position AFTER the containing structural block (table, codeBlock, etc.)
                 // so the insert widget renders below the block, not inside a cell
@@ -353,7 +329,12 @@ export const DiffReviewExtension = Extension.create({
                   const $to = state.doc.resolve(to);
                   for (let d = $to.depth; d >= 1; d--) {
                     const nodeName = $to.node(d).type.name;
-                    if (nodeName === "table" || nodeName === "codeBlock") {
+                    if (
+                      nodeName === "table" ||
+                      nodeName === "codeBlock" ||
+                      nodeName === "mermaidChart" ||
+                      nodeName === "blockMath"
+                    ) {
                       insertAfterPos = $to.after(d);
                       break;
                     }
@@ -393,12 +374,25 @@ export const DiffReviewExtension = Extension.create({
                   )
                 );
 
-                decorations.push(
-                  Decoration.inline(from, to, {
-                    class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
-                    "data-hunk-id": hunk.id,
-                  })
-                );
+                // Check if range covers an atom block node (mermaid chart, block math, etc.)
+                const delNodeAtFrom = state.doc.nodeAt(from);
+                const isDelAtomBlock = delNodeAtFrom?.isAtom && delNodeAtFrom?.isBlock;
+
+                if (isDelAtomBlock) {
+                  decorations.push(
+                    Decoration.node(from, from + delNodeAtFrom.nodeSize, {
+                      class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
+                      "data-hunk-id": hunk.id,
+                    })
+                  );
+                } else {
+                  decorations.push(
+                    Decoration.inline(from, to, {
+                      class: isFocused ? "diff-deleted diff-hunk-focused" : "diff-deleted",
+                      "data-hunk-id": hunk.id,
+                    })
+                  );
+                }
               } else if (!hasOldContent && hasNewContent) {
                 // --- Insert only: show insert widget with hover buttons ---
                 decorations.push(
@@ -416,38 +410,32 @@ export const DiffReviewExtension = Extension.create({
                   )
                 );
               } else if (hunk.isFullDocumentReplace) {
-                // --- Full document replace: use insert widget for preview ---
+                // --- Full document replace: inline word-level diff ---
+                // Show the same Notion-style word diff used for partial edits
                 decorations.push(
                   Decoration.widget(
                     buttonPos,
                     () => {
-                      const widget = createActionWidget(hunk);
+                      const widget = createInlineDiffWidget(hunk);
                       if (isFocused) widget.classList.add("diff-hunk-focused");
                       return widget;
                     },
                     {
                       side: -1,
-                      key: `actions-${hunk.id}`,
+                      key: `inline-diff-${hunk.id}`,
                     }
                   )
                 );
 
-                if (hasNewContent) {
+                // Hide all existing document content (the widget shows the diff)
+                state.doc.forEach((node, offset) => {
                   decorations.push(
-                    Decoration.widget(
-                      buttonPos,
-                      () => {
-                        const widget = createInsertWidget(hunk);
-                        if (isFocused) widget.classList.add("diff-hunk-focused");
-                        return widget;
-                      },
-                      {
-                        side: 1,
-                        key: `insert-${hunk.id}`,
-                      }
-                    )
+                    Decoration.node(offset, offset + node.nodeSize, {
+                      class: "diff-block-collapsed",
+                      "data-hunk-id": hunk.id,
+                    })
                   );
-                }
+                });
               }
 
               // Advance cumulative markdown for subsequent hunks
@@ -502,7 +490,6 @@ export const DiffReviewExtension = Extension.create({
             });
             dispatch(tr);
             // Clear caches when diff session ends
-            pmTextCache.clear();
             clearMarkdownCache();
           }
           return true;
@@ -579,44 +566,19 @@ export const DiffReviewExtension = Extension.create({
                 }
               }
 
-              // Fallback: fragment-based matching
+              // Fallback: parse via @tiptap/markdown and search by textContent or atom attrs
               if (!found) {
-                let cached = pmTextCache.get(hunk.oldContent);
-                if (!cached) {
-                  const html = isHtml(hunk.oldContent)
-                    ? hunk.oldContent
-                    : markdownToHtml(hunk.oldContent);
-                  const el = document.createElement("div");
-                  el.innerHTML = html;
-                  normalizeTableHtml(el);
-                  normalizeMermaidHtml(el);
-                  const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
-
-                  let blockType: string | null = null;
-                  for (let i = 0; i < parsed.content.childCount; i++) {
-                    const child = parsed.content.child(i);
-                    if (child.isBlock && child.textContent.trim()) {
-                      blockType = child.type.name;
-                      break;
-                    }
+                const editor = useEditorRefStore.getState().editor;
+                if (editor?.markdown) {
+                  const json = editor.markdown.parse(hunk.oldContent);
+                  const fragmentDoc = state.schema.nodeFromJSON(json);
+                  const searchText = fragmentDoc.textContent;
+                  if (searchText) {
+                    found = findTextInDocument(state.doc, searchText);
+                  } else {
+                    // Atom node (mermaid, blockMath, inlineMath) — search by type + attrs
+                    found = findAtomNode(state.doc, fragmentDoc);
                   }
-
-                  cached = { textContent: parsed.textContent, blockType };
-                  pmTextCache.set(hunk.oldContent, cached);
-                }
-                found = findTextInDocument(
-                  state.doc,
-                  cached.textContent,
-                  undefined,
-                  cached.blockType
-                );
-                if (!found) {
-                  found = findTextNormalized(
-                    state.doc,
-                    cached.textContent,
-                    undefined,
-                    cached.blockType
-                  );
                 }
               }
               if (found) {
@@ -640,38 +602,71 @@ export const DiffReviewExtension = Extension.create({
           const newContent = (hunk.newContent || "").replace(/\n+$/, "");
 
           if (newContent) {
+            const editor = useEditorRefStore.getState().editor;
+
             if (hunk.isFullDocumentReplace) {
-              // Full document replacement
-              const html = isHtml(newContent) ? newContent : markdownToHtml(newContent);
-              const el = document.createElement("div");
-              el.innerHTML = html;
-              normalizeTableHtml(el);
-              normalizeMermaidHtml(el);
-              const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
-              if (parsed.content.size > 0) {
-                tr.replaceWith(0, state.doc.content.size, parsed.content);
+              // Full document replacement via @tiptap/markdown parser
+              if (editor?.markdown) {
+                const json = editor.markdown.parse(newContent);
+                const parsed = state.schema.nodeFromJSON(json);
+                if (parsed.content.size > 0) {
+                  tr.replaceWith(0, state.doc.content.size, parsed.content);
+                }
               }
             } else {
               const $from = state.doc.resolve(from);
               const isInCodeBlock = $from.parent.type.name === "codeBlock";
 
+              // Expand range to structural block boundaries (table, codeBlock, etc.)
+              // so replacing a table doesn't nest the new table inside the old one
+              let blockFrom = from;
+              let blockTo = to;
+              let isStructuralBlock = false;
+              try {
+                for (let d = $from.depth; d >= 1; d--) {
+                  const nodeName = $from.node(d).type.name;
+                  if (nodeName === "table" || nodeName === "codeBlock") {
+                    blockFrom = $from.before(d);
+                    blockTo = $from.after(d);
+                    isStructuralBlock = true;
+                    break;
+                  }
+                }
+              } catch {
+                /* keep defaults */
+              }
+
               if (isInCodeBlock) {
                 // Code block: plain text replacement (strip markdown fences)
                 const code = newContent.replace(/^```[^\n]*\n?/, "").replace(/\n?```\s*$/, "");
                 tr.replaceWith(from, to, state.schema.text(code));
-              } else {
-                // Parse new content as HTML
-                const html = isHtml(newContent) ? newContent : markdownToHtml(newContent);
-                const el = document.createElement("div");
-                el.innerHTML = html;
-                normalizeTableHtml(el);
-                normalizeMermaidHtml(el);
-                const parsed = ProseMirrorDOMParser.fromSchema(state.schema).parse(el);
+              } else if (editor?.markdown) {
+                // Parse new content via @tiptap/markdown — schema-aware, no HTML roundtrip
+                const json = editor.markdown.parse(newContent);
+                const parsed = state.schema.nodeFromJSON(json);
 
                 if (parsed.content.size > 0) {
-                  // Use replaceRange — ProseMirror's built-in smart replacement
-                  // Automatically handles cross-block boundaries, tables, lists, etc.
-                  tr.replaceRange(from, to, new Slice(parsed.content, 0, 0));
+                  // For multi-block replacements, expand to block boundaries
+                  // to avoid leaving empty block shells after replaceRange splits
+                  if (!isStructuralBlock && parsed.content.childCount > 1) {
+                    try {
+                      const $f = state.doc.resolve(from);
+                      const $t = state.doc.resolve(to);
+                      blockFrom = $f.before($f.depth);
+                      blockTo = $t.after($t.depth);
+                      isStructuralBlock = true;
+                    } catch {
+                      /* keep defaults */
+                    }
+                  }
+
+                  if (isStructuralBlock) {
+                    // Replace the entire structural block to avoid nesting/empty lines
+                    tr.replaceWith(blockFrom, blockTo, parsed.content);
+                  } else {
+                    // Use replaceRange — ProseMirror's built-in smart replacement
+                    tr.replaceRange(from, to, new Slice(parsed.content, 0, 0));
+                  }
                 }
               }
             }

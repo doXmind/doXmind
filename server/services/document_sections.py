@@ -163,6 +163,68 @@ def generate_outline(sections: list[DocumentSection], total_lines: int) -> str:
     return "\n".join(out)
 
 
+def find_section_for_text(
+    sections: list[DocumentSection], document: str, text: str
+) -> DocumentSection | None:
+    """Find which section contains the given text snippet.
+
+    Searches the document for the text, converts the character offset
+    to a line number, then finds the most specific (deepest) section
+    containing that line.
+
+    Returns None if the text is not found.
+    """
+    needle = text.strip()
+    if not needle:
+        return None
+
+    idx = document.find(needle)
+    if idx == -1:
+        return None
+
+    # Convert char offset to 1-indexed line number.
+    line_num = document[:idx].count("\n") + 1
+
+    # Find the most specific (last matching) section containing this line.
+    # Sections are ordered by start_line; deeper sections appear after parents.
+    result = None
+    for sec in sections:
+        if sec.start_line <= line_num <= sec.end_line:
+            result = sec
+
+    return result
+
+
+def get_heading_path(sections: list[DocumentSection], target: DocumentSection) -> str:
+    """Build heading breadcrumb path for a section.
+
+    Walks up the section ID hierarchy to build a string like
+    ``# Introduction > ## Background > ### Related Work``.
+
+    Returns empty string for preamble sections.
+    """
+    if target.heading_level == 0:
+        return target.heading_text  # "(preamble)" or "(document)"
+
+    id_to_section = {s.section_id: s for s in sections}
+    path: list[str] = []
+    current_id = target.section_id
+
+    while current_id:
+        sec = id_to_section.get(current_id)
+        if sec and sec.heading_level > 0:
+            path.append("#" * sec.heading_level + " " + sec.heading_text)
+        # Walk to parent: "s1.2.3" → "s1.2"
+        parts = current_id.rsplit(".", 1)
+        if len(parts) == 2:
+            current_id = parts[0]
+        else:
+            break
+
+    path.reverse()
+    return " > ".join(path)
+
+
 def find_sections(sections: list[DocumentSection], section_ids: list[str]) -> list[DocumentSection]:
     """Find sections by ID. Reading a parent includes all its children.
 

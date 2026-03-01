@@ -201,15 +201,6 @@ Services,Consulting,20
 Services,Support,18`,
   },
   {
-    label: "Radar",
-    category: "Data",
-    code: `radar-beta
-    title Skills Assessment
-    axis html["HTML"], css["CSS"], js["JavaScript"], py["Python"], sql["SQL"]
-    curve alice["Alice"]{4, 3, 5, 2, 4}
-    curve bob["Bob"]{3, 5, 2, 4, 3}`,
-  },
-  {
     label: "Treemap",
     category: "Data",
     code: `treemap-beta

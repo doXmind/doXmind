@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useBlockSelectionStore } from "@/stores/block-selection-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useChatContextStore } from "@/stores/chat-context-store";
+import { rangeToMarkdown } from "@/lib/markdown-selection";
 
 /**
  * Hook for managing mobile editor actions (copy, cut, delete, AI)
@@ -48,21 +49,24 @@ export function useMobileEditorActions() {
     }
   }, [editor, selectedBlocks, clearSelection]);
 
-  // Mobile: Prepare AI context from selection
+  // Mobile: Prepare AI context from selection (serialized as markdown)
   const prepareAIContext = useCallback(() => {
-    const selectedText = getSelectedText();
-    if (selectedText && selectedBlocks.length > 0) {
+    if (selectedBlocks.length > 0 && editor) {
       const firstBlock = selectedBlocks[0];
       const lastBlock = selectedBlocks[selectedBlocks.length - 1];
-      addChatContext({
-        type: "selection",
-        text: selectedText,
-        from: firstBlock.from,
-        to: lastBlock.to,
-      });
+      const text = rangeToMarkdown(editor, firstBlock.from, lastBlock.to);
+      if (text) {
+        addChatContext({
+          type: "selection",
+          text,
+          from: firstBlock.from,
+          to: lastBlock.to,
+        });
+      }
+      return text;
     }
     return getSelectedText();
-  }, [getSelectedText, selectedBlocks, addChatContext]);
+  }, [editor, getSelectedText, selectedBlocks, addChatContext]);
 
   return {
     handleCopy,

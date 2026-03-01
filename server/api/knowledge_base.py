@@ -21,7 +21,6 @@ from exceptions import (
     UnsupportedFileTypeError,
 )
 from services.gemini_converter import convert_file_to_markdown, is_converter_configured
-from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -143,21 +142,11 @@ async def upload_attachment(
             )
 
         attachment.extracted_text = extracted_text
-
-        rag = RAGService(db)
-        chunk_count = await rag.index_kb_attachment(
-            attachment_id=attachment.id,
-            conversation_id=conv.id,
-            content=extracted_text,
-            filename=file.filename or "unknown",
-        )
-
-        attachment.chunk_count = chunk_count
         attachment.status = "indexed"
         await db.commit()
         await db.refresh(attachment)
 
-        logger.info(f"Successfully indexed KB attachment: {file.filename} ({chunk_count} chunks)")
+        logger.info(f"Successfully processed KB attachment: {file.filename}")
 
     except Exception as e:
         logger.error(f"Failed to process KB attachment: {e}")
@@ -304,22 +293,10 @@ async def _process_files_background(
             try:
                 extracted_text = await extract_text_content(content, filename, ext)
                 attachment.extracted_text = extracted_text
-
-                rag = RAGService(file_db)
-                chunk_count = await rag.index_kb_attachment(
-                    attachment_id=attachment.id,
-                    conversation_id=conv_db_id,
-                    content=extracted_text,
-                    filename=filename,
-                )
-
-                attachment.chunk_count = chunk_count
                 attachment.status = "indexed"
                 await file_db.commit()
 
-                logger.info(
-                    f"Successfully indexed KB attachment: {filename} ({chunk_count} chunks)"
-                )
+                logger.info(f"Successfully processed KB attachment: {filename}")
 
             except Exception as e:
                 logger.error(f"Failed to process KB attachment {filename}: {e}")
@@ -384,13 +361,6 @@ async def delete_attachment(
     if not attachment or attachment.conversation_id != conv.id:
         raise AttachmentNotFoundError(attachment_id)
 
-    # Delete from vector store
-    try:
-        rag = RAGService(db)
-        await rag.delete_kb_attachment(attachment_id)
-    except Exception as e:
-        logger.warning(f"Failed to delete KB vectors: {e}")
-
     await db.delete(attachment)
     await db.commit()
 
@@ -407,17 +377,43 @@ async def search_knowledge_base(
         raise ConversationNotFoundError(conversation_id)
 
     try:
-        rag = RAGService(db)
-        results = await rag.search_kb(
-            conversation_id=conv.id, query=request.query, top_k=request.top_k
+        # Search across all attachments' extracted_text using text matching
+        att_result = await db.execute(
+            select(ConversationAttachment).where(
+                ConversationAttachment.conversation_id == conv.id,
+                ConversationAttachment.extracted_text.is_not(None),
+            )
         )
+        attachments = att_result.scalars().all()
 
-        return KBSearchResponse(
-            results=[
-                KBSearchResult(content=r["content"], source_file=r["source_file"], score=r["score"])
-                for r in results
-            ]
-        )
+        results = []
+        query_lower = request.query.lower()
+
+        for att in attachments:
+            text_content = att.extracted_text or ""
+            text_lower = text_content.lower()
+            search_start = 0
+
+            while len(results) < request.top_k:
+                pos = text_lower.find(query_lower, search_start)
+                if pos == -1:
+                    break
+
+                # Extract context around match
+                start = max(0, pos - 100)
+                end = min(len(text_content), pos + len(request.query) + 200)
+                snippet = text_content[start:end].strip()
+
+                results.append(
+                    KBSearchResult(
+                        content=snippet,
+                        source_file=att.original_filename,
+                        score=1.0,
+                    )
+                )
+                search_start = pos + len(request.query)
+
+        return KBSearchResponse(results=results[: request.top_k])
     except Exception as e:
         logger.error(f"KB search failed: {e}")
         raise InternalError(message="Search failed", details={"error": str(e)})

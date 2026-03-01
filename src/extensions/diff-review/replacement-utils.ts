@@ -54,3 +54,31 @@ export function normalizeMermaidHtml(element: HTMLElement): void {
     }
   });
 }
+
+/**
+ * Normalize math block/inline HTML for TipTap compatibility.
+ *
+ * Ensures data-latex attributes contain clean, decoded LaTeX.
+ * Handles cases where the attribute value may contain HTML entities
+ * from double-encoding or round-trip encoding.
+ */
+export function normalizeMathHtml(element: HTMLElement): void {
+  const mathElements = element.querySelectorAll<HTMLElement>(
+    '[data-type="block-math"], [data-type="inline-math"]'
+  );
+
+  mathElements.forEach((el) => {
+    const latex = el.getAttribute("data-latex");
+    if (!latex) return;
+
+    const decoded = latex
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+
+    if (decoded !== latex) {
+      el.setAttribute("data-latex", decoded);
+    }
+  });
+}

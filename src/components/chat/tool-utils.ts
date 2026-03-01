@@ -10,7 +10,6 @@ import {
   Link2,
   Wand2,
   FileText,
-  Scale,
   Terminal,
   ListTodo,
 } from "lucide-react";
@@ -20,28 +19,24 @@ import {
  */
 export function getToolIcon(toolName: string) {
   switch (toolName) {
-    // Document tools
-    case "view_document":
+    // Unified document tools
+    case "get_outline":
       return Eye;
+    case "read_content":
+      return Eye;
+    case "search":
+      return Search;
+    // Edit tools
     case "str_replace_editor":
       return Replace;
     case "insert_text":
     case "replace_document":
       return FileEdit;
-    case "search_in_document":
-      return Search;
     case "apply_edits":
       return Check;
     // Knowledge base tools
-    case "search_knowledge_base":
-    case "read_kb_document":
     case "list_kb_documents":
     case "read_skill_knowledge":
-      return BookOpen;
-    // KB Agent tools (home page)
-    case "search_files":
-      return Search;
-    case "read_file_sections":
       return BookOpen;
     // Web tools
     case "web_search":
@@ -56,10 +51,6 @@ export function getToolIcon(toolName: string) {
       return Wand2;
     case "read_skill_template":
       return FileText;
-    // Legal tools
-    case "search_court_opinions":
-    case "get_court_opinion":
-      return Scale;
     // Code execution tool
     case "code_execution":
     case "Code Execution":
@@ -78,31 +69,25 @@ export function getToolIcon(toolName: string) {
  */
 export function getToolDisplayName(toolName: string) {
   switch (toolName) {
-    // Document tools
-    case "view_document":
-      return "Reading document";
+    // Unified document tools
+    case "get_outline":
+      return "Reading outline";
+    case "read_content":
+      return "Reading content";
+    case "search":
+      return "Searching";
+    // Edit tools
     case "str_replace_editor":
       return "Editing text";
     case "insert_text":
       return "Inserting text";
     case "replace_document":
       return "Replacing document";
-    case "search_in_document":
-      return "Searching document";
     case "apply_edits":
       return "Applying changes";
     // Knowledge base tools
-    case "search_knowledge_base":
-      return "Searching knowledge base";
-    case "read_kb_document":
-      return "Reading KB document";
     case "list_kb_documents":
       return "Listing KB documents";
-    // KB Agent tools (home page)
-    case "search_files":
-      return "Searching documents";
-    case "read_file_sections":
-      return "Reading document";
     // Web tools
     case "web_search":
     case "Web Search":
@@ -119,11 +104,6 @@ export function getToolDisplayName(toolName: string) {
       return "Loading template";
     case "read_skill_knowledge":
       return "Loading knowledge";
-    // Legal tools
-    case "search_court_opinions":
-      return "Searching court cases";
-    case "get_court_opinion":
-      return "Reading court opinion";
     // Code execution tool
     case "code_execution":
     case "Code Execution":

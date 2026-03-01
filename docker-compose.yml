@@ -12,9 +12,9 @@ services:
       timeout: 5s
       retries: 5
 
-  # PostgreSQL Database with pgvector
+  # PostgreSQL Database
   postgres:
-    image: pgvector/pgvector:pg16
+    image: postgres:16
     container_name: doxmind-postgres
     restart: unless-stopped
     environment:
@@ -46,10 +46,8 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-doxmind}:${POSTGRES_PASSWORD:-doxmind123}@postgres:5432/${POSTGRES_DB:-doxmind}
-      - PGVECTOR_ENABLED=true
       - RATE_LIMIT_STORAGE_URI=redis://redis:6379
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-doxmind}

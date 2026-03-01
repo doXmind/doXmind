@@ -48,10 +48,27 @@ architecture-beta
     orders:B --> T:orderdb
 ```
 
+## Non-ASCII Labels (Chinese/Japanese/Korean)
+
+```mermaid
+architecture-beta
+    group frontend(cloud)[前端]
+    group backend(server)[后端服务]
+
+    service web(internet)[浏览器] in frontend
+    service api(server)[API网关] in backend
+    service db(database)[数据库] in backend
+
+    web:R --> L:api
+    api:R --> L:db
+```
+
+**Note:** Group/service IDs must be ASCII (frontend, api, db). Put non-ASCII text in bracket labels: `service api(server)[API网关]`, NOT `service API网关(server)[API网关]`.
+
 ## Key Syntax
 
 - `architecture-beta` - Declaration keyword (beta suffix required)
-- **Groups**: `group id(icon)[Label]`, nest with `in parent_id`
+- **Groups**: `group id(icon)[Label]` — IDs must be ASCII, labels support non-ASCII
 - **Services**: `service id(icon)[Label]`, place with `in group_id`
 - **Junctions**: `junction id` - enable 4-way splits
 - **Edges**: `service1:Direction --> Direction:service2`

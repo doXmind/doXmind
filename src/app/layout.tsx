@@ -10,6 +10,7 @@ import "./styles/presentation.css";
 import "./styles/mobile.css";
 import "./styles/components.css";
 import { Providers } from "@/components/providers";
+import { GlobalAgentOverlay } from "@/components/global-agent/global-agent-overlay";
 import { Toaster } from "sonner";
 
 // Prevent auto-zoom on input focus on mobile (iOS/Chrome)
@@ -107,6 +108,7 @@ export default function RootLayout({
             Skip to content
           </a>
           {children}
+          <GlobalAgentOverlay />
           <Toaster position="bottom-right" richColors />
         </Providers>
       </body>

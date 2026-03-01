@@ -117,7 +117,7 @@ When helping with essays:
 When writing research papers or essays that involve data or processes, consider adding Mermaid diagrams:
 
 - **Research Papers**: Flowcharts for methodology, pie/XY charts for results
-- **Compare/Contrast Essays**: Quadrant charts or radar charts for multi-factor comparison
+- **Compare/Contrast Essays**: Quadrant charts for multi-factor comparison
 
 To add charts, use `read_skill_instructions("charting")` for templates and syntax reference. Insert diagrams as mermaid code fences in the document.
 

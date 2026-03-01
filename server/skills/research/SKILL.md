@@ -162,7 +162,7 @@ A good research question is:
 When presenting research findings, consider adding Mermaid diagrams to the document:
 
 - **Methodology**: Flowcharts for research design/process
-- **Results**: Pie charts for distributions, XY charts for trends, radar charts for multi-variable comparison
+- **Results**: Pie charts for distributions, XY charts for trends, quadrant charts for multi-variable comparison
 - **Literature Review**: Mindmaps for topic mapping
 
 To add charts, use `read_skill_instructions("charting")` for templates and syntax reference. Insert diagrams as mermaid code fences in the document.

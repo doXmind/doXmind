@@ -1,54 +1,13 @@
 /**
  * Markdown/HTML conversion utilities
+ *
+ * HTML→Markdown conversion is handled by TipTap's @tiptap/markdown extension
+ * via editor.getMarkdown() (schema-aware serialization). This module provides:
+ * - Markdown→HTML conversion (via marked) for AI output → editor
+ * - HTML detection, plain text extraction, and normalization helpers
  */
 
-import TurndownService from "turndown";
-import { gfm } from "turndown-plugin-gfm";
 import { marked } from "marked";
-
-// Configure turndown for HTML to Markdown
-const turndownService = new TurndownService({
-  headingStyle: "atx",
-  codeBlockStyle: "fenced",
-  bulletListMarker: "-",
-});
-
-// Add GFM plugin for tables, strikethrough, task lists, etc.
-turndownService.use(gfm);
-
-// Add custom rules
-turndownService.addRule("strikethrough", {
-  filter: ["del", "s"] as const,
-  replacement: function (content) {
-    return "~~" + content + "~~";
-  },
-});
-
-// Convert mermaid chart divs to ```mermaid code fences
-turndownService.addRule("mermaidChart", {
-  filter: function (node) {
-    return (
-      node.nodeName === "DIV" && (node as HTMLElement).getAttribute("data-type") === "mermaid-chart"
-    );
-  },
-  replacement: function (_content, node) {
-    const code = (node as HTMLElement).getAttribute("data-code") || "";
-    return "\n\n```mermaid\n" + code + "\n```\n\n";
-  },
-});
-
-// Convert block math divs to $$...$$ fences
-turndownService.addRule("blockMath", {
-  filter: function (node) {
-    return (
-      node.nodeName === "DIV" && (node as HTMLElement).getAttribute("data-type") === "block-math"
-    );
-  },
-  replacement: function (_content, node) {
-    const latex = (node as HTMLElement).getAttribute("data-latex") || "";
-    return "\n\n$$\n" + latex + "\n$$\n\n";
-  },
-});
 
 // Configure marked to handle mermaid code fences
 marked.use({
@@ -75,137 +34,66 @@ marked.use({
   },
 });
 
-/**
- * Normalize TipTap table HTML to standard format for turndown.
- *
- * TipTap generates tables with:
- * 1. ALL cells as <th> (tableHeader nodes)
- * 2. Cell content wrapped in <p> tags
- *
- * turndown-plugin-gfm expects:
- * - <thead> with <th> cells for header row
- * - <tbody> with <td> cells for body rows
- * - No <p> tags inside cells (causes extra newlines in markdown)
- *
- * This function converts TipTap's format to standard HTML table format.
- */
-function normalizeTipTapTableForTurndown(html: string): string {
-  // Only process if there are tables
-  if (!/<table/i.test(html)) {
-    return html;
-  }
-
-  // Use browser DOM if available
-  if (typeof document !== "undefined") {
-    const temp = document.createElement("div");
-    temp.innerHTML = html;
-
-    const tables = temp.querySelectorAll("table");
-    tables.forEach((table) => {
-      // Remove colgroup (not needed for markdown)
-      table.querySelectorAll("colgroup").forEach((cg) => cg.remove());
-
-      // Get all rows
-      const allRows = Array.from(table.querySelectorAll("tr"));
-      if (allRows.length === 0) return;
-
-      // First row becomes header, rest become body
-      const headerRow = allRows[0];
-      const bodyRows = allRows.slice(1);
-
-      // Unwrap <p> tags inside all cells (TipTap wraps cell content in <p>)
-      // This prevents turndown from adding extra newlines
-      table.querySelectorAll("th, td").forEach((cell) => {
-        const p = cell.querySelector("p");
-        if (p && cell.childNodes.length === 1) {
-          // Replace <p> with its inner content
-          cell.innerHTML = p.innerHTML;
-        }
-      });
-
-      // Ensure header row cells are <th>
-      headerRow.querySelectorAll("td").forEach((td) => {
-        const th = document.createElement("th");
-        th.innerHTML = td.innerHTML;
-        Array.from(td.attributes).forEach((attr) => {
-          if (attr.name !== "data-colwidth") {
-            th.setAttribute(attr.name, attr.value);
-          }
-        });
-        td.parentNode?.replaceChild(th, td);
-      });
-
-      // Ensure body row cells are <td>
-      bodyRows.forEach((row) => {
-        row.querySelectorAll("th").forEach((th) => {
-          const td = document.createElement("td");
-          td.innerHTML = th.innerHTML;
-          Array.from(th.attributes).forEach((attr) => {
-            if (attr.name !== "data-colwidth") {
-              td.setAttribute(attr.name, attr.value);
-            }
-          });
-          th.parentNode?.replaceChild(td, th);
-        });
-      });
-
-      // Remove existing thead/tbody
-      table.querySelectorAll("thead, tbody").forEach((el) => {
-        // Move children to table before removing
-        while (el.firstChild) {
-          table.insertBefore(el.firstChild, el);
-        }
-        el.remove();
-      });
-
-      // Create proper thead and tbody
-      const thead = document.createElement("thead");
-      const tbody = document.createElement("tbody");
-
-      // Move header row to thead
-      thead.appendChild(headerRow);
-
-      // Move body rows to tbody
-      bodyRows.forEach((row) => tbody.appendChild(row));
-
-      // Clear table and add thead + tbody
-      while (table.firstChild) {
-        table.removeChild(table.firstChild);
-      }
-      table.appendChild(thead);
-      if (bodyRows.length > 0) {
-        table.appendChild(tbody);
-      }
-
-      // Remove style attribute (TipTap adds min-width which isn't needed)
-      table.removeAttribute("style");
-    });
-
-    return temp.innerHTML;
-  }
-
-  // Fallback: return as-is (SSR case - tables will remain as HTML)
-  return html;
+// Configure marked to handle math expressions ($$...$$ and $...$).
+// Converts to the same HTML format that ProseMirror's block-math/inline-math parseHTML expects.
+// This ensures parseFullMarkdown() in the diff review system produces proper atom nodes
+// that match the actual editor document structure.
+function escapeLatexForAttr(latex: string): string {
+  return latex
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
-/**
- * Convert HTML to Markdown
- */
-export function htmlToMarkdown(html: string): string {
-  if (!html || html.trim() === "") return "";
-
-  // Handle empty paragraph placeholder
-  if (html === "<p></p>") return "";
-
-  try {
-    // Normalize TipTap tables to standard format before conversion
-    const normalizedHtml = normalizeTipTapTableForTurndown(html);
-    return turndownService.turndown(normalizedHtml);
-  } catch (e) {
-    console.error("HTML to Markdown conversion error:", e);
-    return html;
-  }
-}
+marked.use({
+  extensions: [
+    {
+      name: "blockMath",
+      level: "block" as const,
+      start(src: string) {
+        return src.match(/\$\$/)?.index;
+      },
+      tokenizer(src: string) {
+        const match = src.match(/^\$\$([\s\S]*?)\$\$/);
+        if (match) {
+          return {
+            type: "blockMath",
+            raw: match[0],
+            latex: match[1].trim(),
+          };
+        }
+        return undefined;
+      },
+      renderer(token) {
+        const latex = (token as Record<string, string>).latex || "";
+        return `<div data-type="block-math" data-latex="${escapeLatexForAttr(latex)}" class="block-math"></div>\n`;
+      },
+    },
+    {
+      name: "inlineMath",
+      level: "inline" as const,
+      start(src: string) {
+        return src.match(/(?<!\$)\$(?!\$)/)?.index;
+      },
+      tokenizer(src: string) {
+        const match = src.match(/^(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/);
+        if (match) {
+          return {
+            type: "inlineMath",
+            raw: match[0],
+            latex: match[1].trim(),
+          };
+        }
+        return undefined;
+      },
+      renderer(token) {
+        const latex = (token as Record<string, string>).latex || "";
+        return `<span data-type="inline-math" data-latex="${escapeLatexForAttr(latex)}" class="inline-math"></span>`;
+      },
+    },
+  ],
+});
 
 /**
  * Convert Markdown to HTML
@@ -241,16 +129,6 @@ export function isHtml(content: string): boolean {
     /<(p|div|span|table|tr|td|th|thead|tbody|ul|ol|li|h[1-6]|br|hr|img|a|strong|em|code|pre|blockquote)(\s[^>]*)?\/?>/i;
 
   return htmlTagPattern.test(content);
-}
-
-/**
- * Normalize content to markdown for AI processing
- */
-export function normalizeForAI(content: string): string {
-  if (isHtml(content)) {
-    return htmlToMarkdown(content);
-  }
-  return content;
 }
 
 /**

@@ -57,32 +57,32 @@
     /* Chat UI tokens */
     --chat-cursor-color: 45 8% 20%;
 
-    /* Diff Review — Apple HIG-inspired palette (light) */
-    --diff-deleted-bg: rgba(255, 59, 48, 0.08);
-    --diff-deleted-bg-hover: rgba(255, 59, 48, 0.12);
-    --diff-deleted-border: rgba(255, 59, 48, 0.2);
-    --diff-deleted-text: rgba(255, 59, 48, 0.7);
-    --diff-inserted-bg: rgba(52, 199, 89, 0.07);
-    --diff-inserted-bg-hover: rgba(52, 199, 89, 0.11);
-    --diff-inserted-border: rgba(52, 199, 89, 0.18);
-    --diff-inserted-accent: rgba(52, 199, 89, 0.5);
-    --diff-focus-ring: rgba(0, 122, 255, 0.25);
-    --diff-focus-border: rgba(0, 122, 255, 0.3);
+    /* Diff Review — Notion-inspired palette (light): gray deleted, blue inserted */
+    --diff-deleted-bg: rgba(0, 0, 0, 0.04);
+    --diff-deleted-bg-hover: rgba(0, 0, 0, 0.07);
+    --diff-deleted-border: rgba(0, 0, 0, 0.1);
+    --diff-deleted-text: rgba(0, 0, 0, 0.3);
+    --diff-inserted-bg: rgba(35, 131, 226, 0.06);
+    --diff-inserted-bg-hover: rgba(35, 131, 226, 0.1);
+    --diff-inserted-border: rgba(35, 131, 226, 0.15);
+    --diff-inserted-accent: rgba(35, 131, 226, 0.45);
+    --diff-focus-ring: rgba(35, 131, 226, 0.2);
+    --diff-focus-border: rgba(35, 131, 226, 0.35);
     --diff-toolbar-bg: rgba(255, 255, 255, 0.72);
     --diff-toolbar-border: rgba(0, 0, 0, 0.06);
     --diff-toolbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
-    --diff-btn-accept-bg: rgba(52, 199, 89, 0.12);
-    --diff-btn-accept-fg: rgb(36, 138, 61);
-    --diff-btn-accept-hover: rgba(52, 199, 89, 0.2);
-    --diff-btn-reject-bg: rgba(255, 59, 48, 0.1);
-    --diff-btn-reject-fg: rgb(196, 43, 28);
-    --diff-btn-reject-hover: rgba(255, 59, 48, 0.18);
+    --diff-btn-accept-bg: rgba(35, 131, 226, 0.1);
+    --diff-btn-accept-fg: rgb(35, 131, 226);
+    --diff-btn-accept-hover: rgba(35, 131, 226, 0.18);
+    --diff-btn-reject-bg: rgba(0, 0, 0, 0.06);
+    --diff-btn-reject-fg: rgba(0, 0, 0, 0.5);
+    --diff-btn-reject-hover: rgba(0, 0, 0, 0.1);
 
     /* Word-level diff (Notion-style inline) */
-    --diff-word-removed-bg: rgba(255, 59, 48, 0.12);
-    --diff-word-removed-fg: rgba(255, 59, 48, 0.8);
-    --diff-word-added-bg: rgba(52, 199, 89, 0.12);
-    --diff-word-added-fg: rgb(36, 138, 61);
+    --diff-word-removed-bg: rgba(0, 0, 0, 0.06);
+    --diff-word-removed-fg: rgba(0, 0, 0, 0.4);
+    --diff-word-added-bg: rgba(35, 131, 226, 0.1);
+    --diff-word-added-fg: rgb(35, 131, 226);
   }
 
   .dark {
@@ -112,32 +112,32 @@
     /* Chat UI tokens */
     --chat-cursor-color: 0 0% 98%;
 
-    /* Diff Review — Apple HIG-inspired palette (dark) */
-    --diff-deleted-bg: rgba(255, 69, 58, 0.1);
-    --diff-deleted-bg-hover: rgba(255, 69, 58, 0.16);
-    --diff-deleted-border: rgba(255, 69, 58, 0.22);
-    --diff-deleted-text: rgba(255, 69, 58, 0.65);
-    --diff-inserted-bg: rgba(48, 209, 88, 0.08);
-    --diff-inserted-bg-hover: rgba(48, 209, 88, 0.14);
-    --diff-inserted-border: rgba(48, 209, 88, 0.2);
-    --diff-inserted-accent: rgba(48, 209, 88, 0.45);
-    --diff-focus-ring: rgba(10, 132, 255, 0.3);
-    --diff-focus-border: rgba(10, 132, 255, 0.35);
+    /* Diff Review — Notion-inspired palette (dark): gray deleted, blue inserted */
+    --diff-deleted-bg: rgba(255, 255, 255, 0.04);
+    --diff-deleted-bg-hover: rgba(255, 255, 255, 0.07);
+    --diff-deleted-border: rgba(255, 255, 255, 0.1);
+    --diff-deleted-text: rgba(255, 255, 255, 0.25);
+    --diff-inserted-bg: rgba(56, 152, 236, 0.08);
+    --diff-inserted-bg-hover: rgba(56, 152, 236, 0.13);
+    --diff-inserted-border: rgba(56, 152, 236, 0.18);
+    --diff-inserted-accent: rgba(56, 152, 236, 0.4);
+    --diff-focus-ring: rgba(56, 152, 236, 0.25);
+    --diff-focus-border: rgba(56, 152, 236, 0.35);
     --diff-toolbar-bg: rgba(26, 26, 26, 0.78);
     --diff-toolbar-border: rgba(255, 255, 255, 0.08);
     --diff-toolbar-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
-    --diff-btn-accept-bg: rgba(48, 209, 88, 0.15);
-    --diff-btn-accept-fg: rgb(48, 209, 88);
-    --diff-btn-accept-hover: rgba(48, 209, 88, 0.25);
-    --diff-btn-reject-bg: rgba(255, 69, 58, 0.12);
-    --diff-btn-reject-fg: rgb(255, 69, 58);
-    --diff-btn-reject-hover: rgba(255, 69, 58, 0.2);
+    --diff-btn-accept-bg: rgba(56, 152, 236, 0.15);
+    --diff-btn-accept-fg: rgb(56, 152, 236);
+    --diff-btn-accept-hover: rgba(56, 152, 236, 0.25);
+    --diff-btn-reject-bg: rgba(255, 255, 255, 0.08);
+    --diff-btn-reject-fg: rgba(255, 255, 255, 0.45);
+    --diff-btn-reject-hover: rgba(255, 255, 255, 0.12);
 
     /* Word-level diff (Notion-style inline) */
-    --diff-word-removed-bg: rgba(255, 69, 58, 0.15);
-    --diff-word-removed-fg: rgba(255, 69, 58, 0.75);
-    --diff-word-added-bg: rgba(48, 209, 88, 0.12);
-    --diff-word-added-fg: rgb(48, 209, 88);
+    --diff-word-removed-bg: rgba(255, 255, 255, 0.06);
+    --diff-word-removed-fg: rgba(255, 255, 255, 0.35);
+    --diff-word-added-bg: rgba(56, 152, 236, 0.12);
+    --diff-word-added-fg: rgb(56, 152, 236);
   }
 
   /* High Contrast Mode - Light */

@@ -26,13 +26,12 @@ WRITING_AGENT_TEMPLATE = """You are doXmind Writing Assistant, an AI agent speci
 </core_principle>
 
 <available_tools>
-1. get_document_outline: See heading structure with section IDs and line ranges (use FIRST for long documents)
-2. read_section: Read specific sections by ID (from outline)
-3. view_document: See entire document with line numbers (prefer outline + read_section for long docs)
+1. get_outline: See heading structure with section IDs and line ranges (use FIRST for long documents)
+2. read_content: Read full document or specific sections by ID (from outline). Pass section_ids to read specific parts.
+3. search: Find text in document. Use scope="all" to search all documents, scope="kb" for knowledge base.
 4. str_replace_editor: Edit the document (PRIMARY tool) — exact text replacement
 5. replace_document: Replace entire document (for major rewrites or new content)
-6. search_in_document: Find text in document
-7. TodoWrite: Track task progress (for multi-step tasks)
+6. TodoWrite: Track task progress (for multi-step tasks)
 </available_tools>
 
 <task_tracking>
@@ -68,8 +67,10 @@ All content uses Markdown:
 - Headings: #, ##, ###
 - Bold/Italic: **bold**, *italic*
 - Lists: - item or 1. item
-- Tables: | Header | Header |
-- Code: triple backticks
+- Tables: | Header | Header | — all rows must have equal column count, row 2 must be separator (| --- | --- |)
+- Code: ```language — use valid language identifiers (python, javascript, typescript, etc.)
+- Mermaid diagrams: ```mermaid — always use charting skill for syntax guidance
+- Math: $inline$ or $$block$$ — ensure delimiters are paired and closed
 </content_format>
 
 <workflow>
@@ -77,8 +78,8 @@ All content uses Markdown:
 2. If a matching skill exists: read_skill_instructions FIRST
 3. Understand the document:
    - Short documents (content already visible above): ready to edit
-   - Long documents (outline shown above): use read_section to read relevant parts
-   - Need to find something? use search_in_document
+   - Long documents (outline shown above): use read_content(section_ids=[...]) to read relevant parts
+   - Need to find something? use search
 4. Plan edits based on user request + skill guidance
 5. Execute edits using appropriate tools
 6. Confirm changes in a brief message
@@ -96,20 +97,24 @@ ALWAYS check available skills first. Skills provide expert templates and guidanc
 </constraints>
 
 <selected_content_handling>
-When the user's message includes "[Selected content for reference:]" followed by text:
+When the user's message includes a <selected_content> XML tag:
 - This is content the user explicitly selected from the document for you to reference
 - **CRITICAL**: Work ONLY with the selected content, NOT the entire document
-- The selected content appears at the END of the user's message after their question/request
+- The selected content appears at the END of the user's message wrapped in <selected_content> tags
+- If multiple selections are provided, each is wrapped in <reference index="N"> tags within <selected_content>
 - Common use cases and correct behavior:
   * "Translate this" → translate ONLY the selected content, not the whole document
   * "Explain this code" → explain ONLY the selected content
   * "Improve this section" → edit/rewrite ONLY the selected content
   * "Fix grammar" → correct errors ONLY in the selected content
   * "Summarize this" → summarize ONLY the selected content
+- A <location> tag may be present inside <selected_content>, indicating the section ID and
+  heading path where the content is located (e.g., `s1.2: # Intro > ## Background [L10-L20]`).
+  Use read_content(section_ids=[...]) to read surrounding context if needed for editing.
 - Workflow when selected content is present:
-  1. Extract the text after "[Selected content for reference:]"
+  1. Extract the text within the <selected_content> tags
   2. Apply the user's request ONLY to that extracted text
-  3. Use search_in_document to locate it in the document if you need to edit it in place
+  3. Use the <location> section ID to navigate directly, or search to locate it in the document
   4. Do NOT process the entire document unless explicitly asked
 - If the user wants to work with the entire document, they will NOT provide selected content
 </selected_content_handling>
@@ -121,13 +126,13 @@ CREATE new content (empty document or "write/create/draft"):
 → Check skills (list_skills) → Load guidance if available → replace_document
 
 MODIFY existing content ("improve/change/rewrite/make it..."):
-→ read_section (target area from outline) → Identify target text → str_replace_editor
+→ read_content(section_ids=[...]) (target area from outline) → Identify target text → str_replace_editor
 
 ADD to document ("add/insert/append/include"):
-→ read_section (area around insertion point) → str_replace_editor with insert_after
+→ read_content(section_ids=[...]) (area around insertion point) → str_replace_editor with insert_after
 
 RESTRUCTURE ("reorganize/reorder/restructure"):
-→ get_document_outline → Plan new structure → replace_document (if major) or multiple str_replace_editor
+→ get_outline → Plan new structure → replace_document (if major) or multiple str_replace_editor
 
 Always: Keep chat responses brief, let the document changes speak for themselves.
 </action_patterns>
@@ -247,7 +252,7 @@ def _build_document_context(files: list[dict[str, Any]]) -> str:
 
     For short documents (<=80 lines), embeds the full content with line numbers.
     For longer documents, embeds a structural outline with section IDs so the
-    agent can use ``read_section`` to load specific parts on demand.
+    agent can use ``read_content`` to load specific parts on demand.
 
     Args:
         files: List of file dicts with id, name, content
@@ -285,8 +290,8 @@ File: {file_name} (ID: {file_id})
 {outline}
 </document_outline>
 
-Use read_section with section IDs above to read specific parts before editing.
-Use search_in_document to find specific content by keyword.
+Use read_content with section_ids to read specific parts before editing.
+Use search to find specific content by keyword.
 </current_document>"""
     else:
         context = f"""<current_document>
@@ -296,7 +301,7 @@ Use replace_document to add content.
 
     # Note about additional files
     if len(files) > 1:
-        context += f"\n\n*{len(files) - 1} additional file(s) available. Use view_document with file_id to see them.*"
+        context += f"\n\n*{len(files) - 1} additional file(s) available. Use read_content with file_id to see them.*"
 
     return context
 
@@ -327,8 +332,9 @@ Available reference documents:
 {docs_list}
 
 Tools:
-- search_knowledge_base: Find specific information
-- read_kb_document: Read document content
+- search(query, scope="kb"): Find specific information across KB documents
+- get_outline(kb_document="filename"): See document outline and section IDs
+- read_content(kb_document="filename", section_ids=[...]): Read document content
 - list_kb_documents: See available documents
 
 IMPORTANT: ALWAYS search KB first before providing general knowledge.

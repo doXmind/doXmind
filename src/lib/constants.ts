@@ -271,6 +271,22 @@ export const MOBILE_V2 = {
   SWIPE_VELOCITY_THRESHOLD: 300,
   /** Long press duration (ms) */
   LONG_PRESS_DURATION: 500,
+
+  /** Row swipe-to-reveal thresholds */
+  ROW_SWIPE: {
+    /** Minimum offset to trigger action via distance alone */
+    DISTANCE_THRESHOLD: 80,
+    /** Minimum offset for velocity-assisted trigger (was 40) */
+    VELOCITY_MIN_DISTANCE: 60,
+    /** Velocity required for velocity-assisted trigger in px/s (was 300) */
+    VELOCITY_THRESHOLD: 500,
+    /** Single action button width */
+    SINGLE_ACTION_WIDTH: 80,
+    /** Double action buttons width (star + delete) */
+    DOUBLE_ACTION_WIDTH: 160,
+    /** Triple action buttons width (star + share + delete, 3 × 64px) */
+    TRIPLE_ACTION_WIDTH: 192,
+  },
 } as const;
 
 /** Spring animation configurations for Mobile V2 */

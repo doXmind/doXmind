@@ -11,11 +11,14 @@ from typing import Any
 from agents.tools.community_tools import execute_community_tool, is_community_tool
 from agents.tools.data_files_tools import execute_data_files_tool, is_data_files_tool
 from agents.tools.definitions import get_external_tools_for_skill
-from agents.tools.document_tools import execute_document_tool
+from agents.tools.document_tools import (
+    EDIT_TOOL_NAMES,
+    UNIFIED_TOOL_NAMES,
+    execute_edit_tool,
+    execute_unified_tool,
+)
 from agents.tools.file_management_tools import execute_file_management_tool, is_file_management_tool
-from agents.tools.global_kb_tools import execute_global_kb_tool, is_global_kb_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
-from agents.tools.legal_tools import execute_legal_tool, is_legal_tool
 from agents.tools.skill_tools import execute_skill_tool, is_skill_tool
 from agents.tools.todo_tools import execute_todo_tool, is_todo_tool
 from agents.tools.web_tools import execute_web_tool, is_web_tool
@@ -66,6 +69,17 @@ class ToolExecutor:
                     1 for t in result.get("todos", []) if t.get("status") == "completed"
                 )
                 result["result"] = f"Tracking {count} task(s), {completed} completed"
+            elif tool_name in UNIFIED_TOOL_NAMES:
+                result = await execute_unified_tool(
+                    tool_name,
+                    tool_input,
+                    files,
+                    current_file_id,
+                    kb_context=kb_context,
+                    global_kb_context=global_kb_context,
+                )
+            elif tool_name in EDIT_TOOL_NAMES:
+                result = execute_edit_tool(tool_name, tool_input, files, current_file_id)
             elif is_kb_tool(tool_name):
                 result = await execute_kb_tool(tool_name, tool_input, kb_context)
             elif is_data_files_tool(tool_name):
@@ -75,20 +89,16 @@ class ToolExecutor:
                 # Dynamically add external tools when skill instructions are read
                 if tool_name == "read_skill_instructions":
                     self.activate_skill_external_tools(tool_input.get("skill_name", ""))
-            elif is_global_kb_tool(tool_name):
-                result = await execute_global_kb_tool(tool_name, tool_input, global_kb_context)
             elif is_file_management_tool(tool_name):
                 result = await execute_file_management_tool(
                     tool_name, tool_input, file_mgmt_context
                 )
             elif is_community_tool(tool_name):
                 result = await execute_community_tool(tool_name, tool_input, community_context)
-            elif is_legal_tool(tool_name):
-                result = await execute_legal_tool(tool_name, tool_input)
             elif is_web_tool(tool_name):
                 result = await execute_web_tool(tool_name, tool_input, data_files_context)
             else:
-                result = execute_document_tool(tool_name, tool_input, files, current_file_id)
+                result = {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
             logger.error(f"Tool execution error for {tool_name}: {e}")
             result = {"error": f"Tool execution failed: {str(e)}"}
@@ -117,13 +127,24 @@ class ToolExecutor:
             result_content = (
                 f"Edit prepared: {result['type']} on {result.get('file_name', 'document')}"
             )
-            yield {
+            if result.get("normalization_note"):
+                result_content += f"\n\nNote: {result['normalization_note']}"
+            if result.get("markdown_warnings"):
+                result_content += f"\n\n⚠ Markdown issues detected:\n{result['markdown_warnings']}\nPlease review and fix these issues."
+            tool_end_event: dict[str, Any] = {
                 "type": "tool_end",
                 "tool": tool_name,
                 "tool_id": tool_id,
                 "output": result_content,
                 "success": True,
             }
+            # Include file metadata for edit operations
+            if result.get("file_id"):
+                tool_end_event["file_id"] = result["file_id"]
+                tool_end_event["file_action"] = "edited"
+            if result.get("file_name"):
+                tool_end_event["file_name"] = result["file_name"]
+            yield tool_end_event
         elif result.get("error"):
             result_content = f"Error: {result['error']}"
             yield {
@@ -136,13 +157,18 @@ class ToolExecutor:
         else:
             result_content = result.get("result", str(result))
             display_output = self.format_output_for_display(tool_name, tool_input, result_content)
-            yield {
+            tool_end_event = {
                 "type": "tool_end",
                 "tool": tool_name,
                 "tool_id": tool_id,
                 "output": display_output,
                 "success": True,
             }
+            # Extract file metadata from tool results for file-affecting/reading tools
+            file_meta = self._extract_file_metadata(tool_name, tool_input, result, files)
+            if file_meta:
+                tool_end_event.update(file_meta)
+            yield tool_end_event
 
         # Add instruction reinforcement to tool results
         reinforced_content = self.add_tool_result_reminder(
@@ -158,6 +184,86 @@ class ToolExecutor:
                 "content": reinforced_content,
             },
         }
+
+    def _extract_file_metadata(
+        self,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        result: dict[str, Any],
+        files: list[dict[str, Any]] | None = None,
+    ) -> dict[str, str] | None:
+        """Extract file_id, file_name, and file_action from tool results."""
+        import re
+
+        result_str = result.get("result", "")
+
+        def _lookup_file_name(fid: str) -> str | None:
+            if files:
+                for f in files:
+                    if f.get("id") == fid:
+                        return f.get("name")
+            return None
+
+        # --- Write operations ---
+
+        if tool_name == "create_file":
+            match = re.search(r"\(id=([^)]+)\)", result_str)
+            name_match = re.search(r"'([^']+)'", result_str)
+            if match:
+                meta: dict[str, str] = {
+                    "file_id": match.group(1),
+                    "file_action": "created",
+                }
+                if name_match:
+                    meta["file_name"] = name_match.group(1)
+                return meta
+
+        if tool_name == "rename_file":
+            file_id = tool_input.get("file_id", "")
+            new_name = tool_input.get("new_name", "")
+            if file_id:
+                return {"file_id": file_id, "file_name": new_name, "file_action": "edited"}
+
+        if tool_name == "replace_document":
+            file_id = tool_input.get("file_id", "")
+            if file_id:
+                meta = {"file_id": file_id, "file_action": "edited"}
+                name = _lookup_file_name(file_id)
+                if name:
+                    meta["file_name"] = name
+                return meta
+
+        if tool_name == "fork_community_document":
+            match = re.search(r"\(id=([^)]+)\)", result_str)
+            name_match = re.search(r"'([^']+)'", result_str)
+            if match:
+                meta = {"file_id": match.group(1), "file_action": "created"}
+                if name_match:
+                    meta["file_name"] = name_match.group(1)
+                return meta
+
+        # --- Read operations (referenced documents) ---
+
+        if tool_name in ("read_content", "get_outline"):
+            file_id = tool_input.get("file_id", "")
+            if file_id and "Error" not in result_str:
+                meta = {"file_id": file_id, "file_action": "referenced"}
+                name = _lookup_file_name(file_id)
+                if name:
+                    meta["file_name"] = name
+                return meta
+
+        if tool_name == "search":
+            scope = tool_input.get("scope", "document")
+            file_id = tool_input.get("file_id", "")
+            if scope == "document" and file_id and "No matches" not in result_str:
+                meta = {"file_id": file_id, "file_action": "referenced"}
+                name = _lookup_file_name(file_id)
+                if name:
+                    meta["file_name"] = name
+                return meta
+
+        return None
 
     def format_output_for_display(
         self, tool_name: str, tool_input: dict[str, Any], result_content: Any
@@ -185,18 +291,28 @@ class ToolExecutor:
             knowledge_name = tool_input.get("knowledge_name", "knowledge")
             return f"Loaded {knowledge_name} knowledge"
 
-        # KB tools
-        if tool_name == "search_knowledge_base":
-            if isinstance(result_content, str):
-                if "No relevant content found" in result_content:
-                    return "Found 0 results"
-                result_count = result_content.count("## ")
-                return f"Found {result_count} result{'s' if result_count != 1 else ''}"
-            return "Searched knowledge base"
+        # Unified document tools
+        if tool_name == "get_outline":
+            return "Read document outline"
 
-        if tool_name == "read_kb_document":
-            doc_title = tool_input.get("document_title", "document")
-            return f"Read {doc_title}"
+        if tool_name == "read_content":
+            section_ids = tool_input.get("section_ids", [])
+            if section_ids:
+                return (
+                    f"Read section{'s' if len(section_ids) != 1 else ''}: {', '.join(section_ids)}"
+                )
+            return "Read document content"
+
+        if tool_name == "search":
+            scope = tool_input.get("scope", "document")
+            query = tool_input.get("query", "")
+            if isinstance(result_content, str):
+                if "No matches found" in result_content or "No results found" in result_content:
+                    return f"No matches for '{query}'"
+                if scope == "all":
+                    result_count = result_content.count("**Result ")
+                    return f"Found {result_count} result{'s' if result_count != 1 else ''}"
+            return f"Searched for '{query}'"
 
         if tool_name == "list_kb_documents":
             if isinstance(result_content, str):
@@ -234,18 +350,6 @@ class ToolExecutor:
                     return "Execution completed with errors"
                 return "Execution completed"
             return "Executed Python code"
-
-        # Global KB tools
-        if tool_name == "search_files":
-            if isinstance(result_content, str):
-                if "No relevant results found" in result_content:
-                    return "Found 0 results"
-                result_count = result_content.count("**Result ")
-                return f"Found {result_count} result{'s' if result_count != 1 else ''}"
-            return "Searched all documents"
-
-        if tool_name == "read_file_sections":
-            return "Read file sections"
 
         # File management tools
         if tool_name == "create_file":
@@ -286,36 +390,6 @@ class ToolExecutor:
         if tool_name == "get_community_recommendations":
             return "Got recommendations"
 
-        # Document tools
-        if tool_name == "get_document_outline":
-            return "Read document outline"
-
-        if tool_name == "read_section":
-            section_ids = tool_input.get("section_ids", [])
-            return f"Read section{'s' if len(section_ids) != 1 else ''}: {', '.join(section_ids)}"
-
-        if tool_name == "view_document":
-            return "Read document content"
-
-        if tool_name == "search_in_document":
-            query = tool_input.get("query", "")
-            if isinstance(result_content, str) and "No matches found" in result_content:
-                return f"No matches for '{query}'"
-            return f"Searched for '{query}'"
-
-        # Legal tools
-        if tool_name == "search_court_opinions":
-            query = tool_input.get("query", "")
-            if isinstance(result_content, str):
-                if "No opinions found" in result_content or not result_content.strip():
-                    return "Found 0 court opinions"
-                result_count = result_content.count("**Case:**")
-                return f"Found {result_count} court opinion{'s' if result_count != 1 else ''}"
-            return "Searched court opinions"
-
-        if tool_name == "get_court_opinion":
-            return "Retrieved court opinion"
-
         # Todo tools
         if tool_name == "TodoWrite":
             if isinstance(result_content, str):
@@ -332,18 +406,14 @@ class ToolExecutor:
     def activate_skill_external_tools(self, skill_name: str) -> None:
         """Dynamically add external tools when a skill's instructions are read.
 
-        This enables lazy loading of skill-specific tools (like CourtListener
-        for legal-writing) only when the skill is actually used, saving tokens.
+        This enables lazy loading of skill-specific tools only when the
+        skill is actually used, saving tokens.
         """
         if not skill_name or skill_name in self._activated_skill_tools:
             return
 
         external_tools = get_external_tools_for_skill(skill_name)
         if not external_tools:
-            return
-
-        # Check if required API keys/features are configured
-        if skill_name == "legal" and not self.settings.has_legal_tools:
             return
 
         for tool in external_tools:
@@ -363,13 +433,9 @@ class ToolExecutor:
             return result_content
 
         reminders = {
-            "get_document_outline": (
-                "\n\n<reminder>Use read_section(section_ids) to read specific sections "
-                "before editing, or search_in_document to find content by keyword.</reminder>"
-            ),
-            "search_court_opinions": (
-                "\n\n<reminder>Use these case citations to support legal arguments. "
-                "Cite the most relevant and authoritative cases.</reminder>"
+            "get_outline": (
+                "\n\n<reminder>Use read_content(section_ids=[...]) to read specific sections "
+                "before editing, or search to find content by keyword.</reminder>"
             ),
             "web_search": (
                 "\n\n<reminder>Use web_fetch to read specific pages if you need "
@@ -383,11 +449,10 @@ class ToolExecutor:
         }
 
         # Group-based reminders
-        read_tools = ("read_section", "view_document", "search_in_document")
+        read_tools = ("read_content", "search")
         edit_tools = ("str_replace_editor", "replace_document")
-        kb_tools = ("search_knowledge_base", "read_kb_document", "list_kb_documents")
+        kb_tools = ("list_kb_documents",)
         skill_tools = ("read_skill_instructions", "read_skill_template", "read_skill_knowledge")
-        global_kb_tools = ("search_files", "read_file_sections")
         file_mgmt_tools = (
             "create_file",
             "create_folder",
@@ -424,12 +489,6 @@ class ToolExecutor:
             return result_content + (
                 "\n\n<reminder>Apply this guidance. Use editing tools to write content "
                 "directly into the document.</reminder>"
-            )
-        elif tool_name in global_kb_tools:
-            return result_content + (
-                "\n\n<reminder>Use this information to help the user. "
-                "Use read_file_sections to get more context, or editing tools "
-                "to incorporate findings into the current document.</reminder>"
             )
         elif tool_name in file_mgmt_tools:
             return result_content + (

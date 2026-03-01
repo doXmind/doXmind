@@ -5,8 +5,8 @@
  */
 
 import type { DiffHunk, DiffChangeType, EditOperation } from "@/types/diff";
-import { htmlToMarkdown, isHtml } from "./markdown";
 import { generateId } from "./utils";
+import { diffLines } from "diff";
 
 /**
  * Compute diff hunks from an edit operation.
@@ -14,15 +14,18 @@ import { generateId } from "./utils";
  *
  * @param originalContent - Current content (HTML from editor)
  * @param edit - Edit operation from AI
+ * @param originalMarkdown - Pre-computed markdown (from contentMarkdown cache). Falls back to originalContent if not provided.
  * @returns Array of DiffHunk objects
  */
-export function computeDiffHunks(originalContent: string, edit: EditOperation): DiffHunk[] {
+export function computeDiffHunks(
+  originalContent: string,
+  edit: EditOperation,
+  originalMarkdown?: string
+): DiffHunk[] {
   const hunks: DiffHunk[] = [];
 
-  // Convert HTML to markdown for text matching (AI uses markdown)
-  const originalMarkdown = isHtml(originalContent)
-    ? htmlToMarkdown(originalContent)
-    : originalContent;
+  // Use provided markdown or fall back to raw content
+  const mdContent = originalMarkdown || originalContent;
 
   switch (edit.type) {
     case "str_replace": {
@@ -69,7 +72,7 @@ export function computeDiffHunks(originalContent: string, edit: EditOperation): 
         type: "replace" as const,
         from: 0,
         to: -1, // Special marker: means "end of document"
-        oldContent: originalMarkdown,
+        oldContent: mdContent,
         searchText: "", // Empty: don't use text search for full document replace
         newContent: edit.new_content,
         status: "pending" as const,
@@ -109,4 +112,80 @@ export function areAllHunksProcessed(hunks: DiffHunk[]): boolean {
  */
 export function getPendingHunkCount(hunks: DiffHunk[]): number {
   return hunks.filter((h) => h.status === "pending").length;
+}
+
+/**
+ * Split the difference between two markdown strings into multiple regional hunks.
+ * Used when sequential edit dependencies are detected — instead of creating one
+ * monolithic full-document-replace, this produces granular hunks for each changed region.
+ */
+export function splitMarkdownIntoHunks(
+  originalMarkdown: string,
+  updatedMarkdown: string
+): DiffHunk[] {
+  const changes = diffLines(originalMarkdown, updatedMarkdown);
+  const hunks: DiffHunk[] = [];
+
+  // Track position in originalMarkdown for markdownOffset
+  let offset = 0;
+
+  // Accumulate consecutive add/remove changes into a single region
+  let pendingOld = "";
+  let pendingNew = "";
+  let regionOffset = 0;
+  let inRegion = false;
+
+  const flushRegion = () => {
+    if (!inRegion) return;
+
+    const oldTrimmed = pendingOld.replace(/\n+$/, "");
+    const newTrimmed = pendingNew.replace(/\n+$/, "");
+
+    // Skip empty or whitespace-only changes
+    if (oldTrimmed || newTrimmed) {
+      hunks.push({
+        id: generateId(),
+        type: (newTrimmed ? "replace" : "delete") as DiffChangeType,
+        from: 0,
+        to: 0,
+        oldContent: oldTrimmed,
+        searchText: "",
+        newContent: newTrimmed,
+        status: "pending" as const,
+        createdAt: new Date().toISOString(),
+        editId: "batch",
+        markdownOffset: regionOffset,
+      });
+    }
+
+    pendingOld = "";
+    pendingNew = "";
+    inRegion = false;
+  };
+
+  for (const change of changes) {
+    if (change.added) {
+      if (!inRegion) {
+        regionOffset = offset;
+        inRegion = true;
+      }
+      pendingNew += change.value;
+    } else if (change.removed) {
+      if (!inRegion) {
+        regionOffset = offset;
+        inRegion = true;
+      }
+      pendingOld += change.value;
+      offset += change.value.length;
+    } else {
+      // Unchanged line — flush pending region
+      flushRegion();
+      offset += change.value.length;
+    }
+  }
+
+  // Flush any remaining region
+  flushRegion();
+
+  return hunks;
 }

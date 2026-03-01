@@ -55,6 +55,47 @@ graph TD
     Reject --> End
 ```
 
+## Non-ASCII Labels (Chinese/Japanese/Korean)
+
+```mermaid
+graph TD
+    A[开始] --> B{审批?}
+    B -->|通过| C[执行操作]
+    B -->|拒绝| D[返回修改]
+    C --> E[结束]
+    D --> A
+```
+
+**Note:** Use ASCII IDs (A, B, C) with non-ASCII text in labels: `A[中文标签]`. Prefer ASCII IDs for reliability.
+
+## Expanded Shapes (v11.3.0+)
+
+Use the `@{ shape: name }` syntax for 30+ specialized shapes:
+
+```mermaid
+graph TD
+    A@{ shape: doc, label: "Document" } --> B@{ shape: dbl-circ, label: "Terminal" }
+    C@{ shape: cloud, label: "Cloud" } --> D@{ shape: cyl, label: "Database" }
+    E@{ shape: bang, label: "Alert!" } --> F@{ shape: flag, label: "Milestone" }
+```
+
+Common shapes: `doc`, `cloud`, `bang`, `flag`, `dbl-circ`, `cyl`, `stadium`, `diam`, `hex`, `rect`, `fr-rect` (subroutine), `hourglass`, `bolt`, `braces`, `tag-rect`, `sm-circ`, `cross-circ`, `card`, `delay`, `multi-doc`, `stored-data`, `text-block`
+
+## Additional Link Types
+
+```mermaid
+graph LR
+    A[[Subroutine]] --> B(((Double Circle)))
+    C ~~~ D
+    E --o F
+    F --x G
+```
+
+- `A ~~~ B` - Invisible link (for layout control, no visible line)
+- `A --o B` - Link with circle end
+- `A --x B` - Link with cross end
+- `A <--> B` - Bidirectional arrow
+
 ## Node Shapes Reference
 
 - `[Text]` - Rectangle (process)
@@ -64,3 +105,6 @@ graph TD
 - `[/Text/]` - Parallelogram (input/output)
 - `((Text))` - Circle
 - `>Text]` - Flag
+- `{{Text}}` - Hexagon
+- `[[Text]]` - Subroutine/subprocess
+- `(((Text)))` - Double circle

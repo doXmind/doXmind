@@ -192,17 +192,6 @@ const lightThemeVars = {
   quadrantInternalBorderStrokeFill: "#E5E5E4",
   quadrantExternalBorderStrokeFill: "#D4D4D3",
 
-  // ── Radar chart ──
-  radar: {
-    axisColor: "#86868B",
-    axisStrokeWidth: 1,
-    graticuleColor: "#E5E5E4",
-    graticuleStrokeWidth: 1,
-    graticuleOpacity: 0.5,
-    curveOpacity: 0.5,
-    curveStrokeWidth: 2,
-  },
-
   // ── Requirement diagram ──
   requirementBackground: "#F5F5F4",
   requirementBorderColor: "#D4D4D3",
@@ -413,17 +402,6 @@ const darkThemeVars = {
   quadrantTitleFill: "#F5F5F7",
   quadrantInternalBorderStrokeFill: "#38383A",
   quadrantExternalBorderStrokeFill: "#48484A",
-
-  // ── Radar chart ──
-  radar: {
-    axisColor: "#636366",
-    axisStrokeWidth: 1,
-    graticuleColor: "#38383A",
-    graticuleStrokeWidth: 1,
-    graticuleOpacity: 0.5,
-    curveOpacity: 0.5,
-    curveStrokeWidth: 2,
-  },
 
   // ── Requirement diagram ──
   requirementBackground: "#2C2C2E",

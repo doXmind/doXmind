@@ -23,8 +23,8 @@
 | What's the system layout? | **Block Diagram** or **Architecture** |
 | What's the protocol/packet format? | **Packet Diagram** |
 | What's the task board status? | **Kanban** |
-| How do items compare on multiple dimensions? | **Radar Chart** |
 | What's the hierarchical proportion? | **Treemap** |
+
 
 ## Detailed Guidance by Category
 
@@ -59,8 +59,6 @@
 **Quadrant Chart** - Plot items on 2 dimensions (e.g., urgency vs importance). Use for prioritization matrices.
 
 **Sankey** - Flow of quantities between nodes. Use for budget flows, energy flows, user conversion funnels.
-
-**Radar Chart** - Multi-axis comparison of items. Use for skills assessments, feature comparisons, team evaluations.
 
 **Treemap** - Hierarchical proportional data. Use for budget breakdowns, disk usage, organizational structures with values.
 

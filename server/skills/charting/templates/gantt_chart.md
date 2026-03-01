@@ -46,13 +46,39 @@ gantt
     Sprint Demo         :milestone, m1, 2024-03-15, 0d
 ```
 
+## Advanced Features
+
+```mermaid
+gantt
+    title Release Timeline
+    dateFormat YYYY-MM-DD
+    axisFormat %m/%d
+    excludes weekends
+    todayMarker off
+    tickInterval 1week
+
+    section Development
+    Feature A       :a1, 2024-03-01, 10d
+    Feature B       :a2, 2024-03-01, 15d
+    Integration     :a3, after a1 a2, 5d
+
+    section Milestones
+    Code Freeze     :milestone, m1, after a3, 0d
+```
+
 ## Key Syntax
 
 - `dateFormat YYYY-MM-DD` - Date format
 - `axisFormat %b %d` - Axis display format
+- `tickInterval 1week` - Axis tick spacing (1day, 1week, 1month)
+- `excludes weekends` - Exclude weekends from durations
+- `todayMarker off` - Hide today marker line
+- `weekend friday` - Configure weekend start day (v11.0.0+)
 - `:active` - Currently active task
 - `:crit` - Critical path task
 - `:done` - Completed task
 - `:milestone` - Milestone marker
-- `after taskId` - Dependencies
+- `after taskId` - Single dependency
+- `after id1 id2` - Multiple dependencies (starts after latest)
+- `until taskId` - Run until another task starts (v10.9.0+)
 - `2024-01-01, 14d` - Start date and duration

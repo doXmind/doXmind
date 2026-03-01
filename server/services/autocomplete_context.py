@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import File
-from services.rag.search import RAGService
 from services.token_utils import count_tokens, truncate_to_token_limit
 
 logger = logging.getLogger(__name__)
@@ -47,51 +46,23 @@ class LongContextParams:
 class AutocompleteContextService:
     """Service for assembling autocomplete context from multiple sources."""
 
-    def __init__(self, db: AsyncSession, api_key: str | None = None):
+    def __init__(self, db: AsyncSession):
         self.db = db
-        self.rag = RAGService(db, api_key=api_key)
         self.settings = get_settings()
 
     async def get_rag_chunks(
         self,
         query: str,
         file_ids: list[str],
-        top_k: int = 5,
-        user_id: str | None = None,
+        top_k: int = 5,  # noqa: ARG002
+        user_id: str | None = None,  # noqa: ARG002
     ) -> list[dict[str, Any]]:
-        """Retrieve relevant chunks from specified files using RAG.
+        """Retrieve relevant chunks from specified files.
 
-        Args:
-            query: Query text (typically last 500 chars of current context)
-            file_ids: List of file IDs to search within
-            top_k: Number of chunks to retrieve
-            user_id: Optional user ID for filtering
-
-        Returns:
-            List of chunk dictionaries with content and metadata
+        RAG/vector search has been removed. Returns empty list.
+        Autocomplete context relies on open file content instead.
         """
         if not file_ids or not query:
-            return []
-
-        try:
-            # Use hybrid search for better relevance
-            results = await self.rag.hybrid_search(
-                query=query,
-                file_ids=file_ids,
-                top_k=top_k,
-                user_id=user_id,
-            )
-
-            # Filter out very low relevance results (distance > 0.6)
-            filtered = [r for r in results if r.get("distance", 1.0) < 0.6]
-
-            logger.info(
-                f"RAG retrieved {len(filtered)}/{len(results)} relevant chunks from {len(file_ids)} files"
-            )
-            return filtered
-
-        except Exception as e:
-            logger.error(f"RAG retrieval failed: {e}")
             return []
 
     async def get_open_files_context(

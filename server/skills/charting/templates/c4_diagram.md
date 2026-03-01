@@ -68,10 +68,26 @@ C4Deployment
     Rel(api, db, "SQL", "TCP")
 ```
 
+## Non-ASCII Labels (Chinese/Japanese/Korean)
+
+```mermaid
+C4Context
+    title 系统上下文图
+
+    Person(user, "用户", "系统的最终用户")
+    System(app, "Web应用", "主要业务系统")
+    System_Ext(email, "邮件服务", "发送通知邮件")
+
+    Rel(user, app, "使用", "HTTPS")
+    Rel(app, email, "发送邮件", "SMTP")
+```
+
+**Note:** First param (alias) must be ASCII: `Person(user, "用户")`, NOT `Person(用户, "用户")`. Label and description params support non-ASCII.
+
 ## Key Syntax
 
 - **Diagrams**: `C4Context`, `C4Container`, `C4Component`, `C4Dynamic`, `C4Deployment`
-- **Nodes**: `Person(alias, label, descr)`, `System(alias, label, descr)`, `Container(alias, label, techn, descr)`, `ContainerDb(...)`, `ContainerQueue(...)`
+- **Nodes**: `Person(alias, label, descr)` — alias must be ASCII, label/descr support non-ASCII
 - **External**: Add `_Ext` suffix: `System_Ext(...)`, `Container_Ext(...)`
 - **Boundaries**: `Enterprise_Boundary(alias, label) { }`, `System_Boundary(...)`, `Container_Boundary(...)`
 - **Relationships**: `Rel(from, to, label, techn)`, `BiRel(...)`, `Rel_U/D/L/R(...)`

@@ -171,9 +171,8 @@ class TestImportEndpoint:
         assert response.status_code == 413
         assert response.json()["error"]["code"] == "FILE_TOO_LARGE"
 
-    @patch("api.import_file.RAGService")
     @patch("api.import_file.get_db")
-    def test_imports_markdown_file(self, mock_get_db, mock_rag, client):
+    def test_imports_markdown_file(self, mock_get_db, client):
         """Should import markdown file successfully."""
         # Mock database
         mock_db = AsyncMock(spec=AsyncSession)
@@ -199,12 +198,6 @@ class TestImportEndpoint:
         app = FastAPI()
         app.include_router(import_router, prefix="/api/import")
         app.dependency_overrides[mock_get_db] = override_get_db
-
-        # Mock RAG service
-        mock_rag_instance = MagicMock()
-        mock_rag_instance.index_file = AsyncMock()
-        mock_rag_instance.index_file_sentences = AsyncMock()
-        mock_rag.return_value = mock_rag_instance
 
         file_content = b"# Title\n\nContent here."
 
@@ -364,27 +357,17 @@ class TestIntegration:
         """Create test client."""
         return TestClient(app)
 
-    @patch("api.import_file.RAGService")
     @patch("api.import_file.FileModel")
-    async def test_full_markdown_import_flow(self, mock_file_model, mock_rag):
+    async def test_full_markdown_import_flow(self, mock_file_model):
         """Should complete full markdown import flow."""
         # This test verifies the flow structure, actual DB integration tested elsewhere
-
-        mock_rag_instance = MagicMock()
-        mock_rag_instance.index_file = AsyncMock()
-        mock_rag_instance.index_file_sentences = AsyncMock()
-        mock_rag.return_value = mock_rag_instance
 
         # The flow should:
         # 1. Validate extension
         # 2. Check file size
         # 3. Convert content
         # 4. Save to database
-        # 5. Index in vector store
-
-        # Verify RAG service methods exist
-        assert hasattr(mock_rag_instance, "index_file")
-        assert hasattr(mock_rag_instance, "index_file_sentences")
+        assert mock_file_model is not None
 
     def test_error_message_includes_allowed_extensions(self, client):
         """Should list allowed extensions in error message."""

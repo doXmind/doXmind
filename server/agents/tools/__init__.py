@@ -9,7 +9,7 @@ from agents.tools.definitions import (
     TOOLS,
     get_tools_for_mode,
 )
-from agents.tools.document_tools import execute_document_tool
+from agents.tools.document_tools import execute_edit_tool, execute_unified_tool
 from agents.tools.kb_tools import execute_kb_tool, is_kb_tool
 
 __all__ = [
@@ -17,7 +17,8 @@ __all__ = [
     "READONLY_TOOLS",
     "KB_TOOLS",
     "get_tools_for_mode",
-    "execute_document_tool",
+    "execute_edit_tool",
+    "execute_unified_tool",
     "execute_kb_tool",
     "is_kb_tool",
 ]

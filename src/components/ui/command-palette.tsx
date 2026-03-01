@@ -110,7 +110,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         api.searchFiles(searchQuery, undefined, 10, controller.signal).catch(() => null),
         currentFileId
           ? api
-              .searchInDocument(searchQuery, currentFileId, 10, 0.4, controller.signal)
+              .searchInDocument(searchQuery, currentFileId, 10, controller.signal)
               .catch(() => null)
           : Promise.resolve(null),
       ]);

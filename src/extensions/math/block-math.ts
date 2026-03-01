@@ -91,6 +91,25 @@ export const BlockMath = Node.create<BlockMathOptions>({
   atom: true,
 
   // Markdown: $$\nlatex\n$$
+  markdownTokenName: "blockMath",
+
+  markdownTokenizer: {
+    name: "blockMath",
+    level: "block" as const,
+    start: "$$",
+    tokenize(src: string) {
+      const match = src.match(/^\$\$([\s\S]*?)\$\$/);
+      if (match) {
+        return { type: "blockMath", raw: match[0], latex: match[1].trim() };
+      }
+      return undefined;
+    },
+  },
+
+  parseMarkdown(token: any, helpers: any) {
+    return helpers.createNode("blockMath", { latex: token.latex || "" });
+  },
+
   renderMarkdown(node) {
     const latex = node.attrs?.latex || "";
     return "$$\n" + latex + "\n$$";

@@ -26,9 +26,14 @@ interface TableBubbleMenuProps {
 export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
   return (
     <BubbleMenu
+      ref={(el: HTMLDivElement | null) => {
+        if (el) el.style.zIndex = "50";
+      }}
       editor={editor}
+      appendTo={() => document.body}
       options={{
         placement: "top",
+        strategy: "fixed",
         offset: { mainAxis: 10 },
       }}
       shouldShow={({ editor }) => {

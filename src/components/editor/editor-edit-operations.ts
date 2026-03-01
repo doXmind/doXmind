@@ -6,26 +6,17 @@
 
 import type { Editor as TiptapEditor } from "@tiptap/react";
 import type { PendingEdit } from "@/stores/editor-store";
-import { htmlToMarkdown, markdownToHtml, isHtml } from "@/lib/markdown";
-import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 
 /**
  * Apply a pending edit through ProseMirror's transaction system.
- * Uses replaceWith to properly replace document content while preserving undo history.
+ * Uses @tiptap/markdown for schema-aware parsing, preserving undo history.
  *
  * @param editor - TipTap editor instance
  * @param edit - Pending edit to apply
- * @param currentHtmlContent - Current HTML content from editor
  */
-export function applyPendingEdit(
-  editor: TiptapEditor,
-  edit: PendingEdit,
-  currentHtmlContent: string
-): void {
-  // Convert current HTML to markdown for text operations
-  const currentMarkdown = isHtml(currentHtmlContent)
-    ? htmlToMarkdown(currentHtmlContent)
-    : currentHtmlContent;
+export function applyPendingEdit(editor: TiptapEditor, edit: PendingEdit): void {
+  // Get markdown directly from editor (schema-aware, no Turndown)
+  const currentMarkdown = editor.getMarkdown();
 
   let newMarkdown = currentMarkdown;
   let success = false;
@@ -48,17 +39,13 @@ export function applyPendingEdit(
       break;
   }
 
-  if (!success) {
+  if (!success || !editor.markdown) {
     return;
   }
 
-  // Convert back to HTML
-  const newHtml = markdownToHtml(newMarkdown);
-
-  // Parse the new HTML into a ProseMirror document
-  const element = document.createElement("div");
-  element.innerHTML = newHtml;
-  const newDoc = ProseMirrorDOMParser.fromSchema(editor.schema).parse(element);
+  // Parse markdown via @tiptap/markdown — schema-aware, no HTML roundtrip
+  const json = editor.markdown.parse(newMarkdown);
+  const newDoc = editor.schema.nodeFromJSON(json);
 
   // Use ProseMirror transaction to replace the entire document
   // This properly adds to undo history
@@ -81,11 +68,9 @@ export function applyPendingEdits(
 ): void {
   if (edits.length === 0) return;
 
-  const currentEditorContent = editor.getHTML();
-
   for (const edit of edits) {
     try {
-      applyPendingEdit(editor, edit, currentEditorContent);
+      applyPendingEdit(editor, edit);
       clearEdit(edit.id);
     } catch {
       clearEdit(edit.id);

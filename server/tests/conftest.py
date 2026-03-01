@@ -34,8 +34,6 @@ os.environ["DEBUG"] = "true"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("OPENROUTER_API_KEY", "test-api-key")
-os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
-os.environ.setdefault("PGVECTOR_ENABLED", "false")  # Disable vector operations in tests
 os.environ.setdefault(
     "API_KEY_ENCRYPTION_KEY", "N7rUzNKqpRGSOGKpcErTa4dn1jsdNsM8F0BO5ch2RJE="
 )  # Fernet key for encrypting user API keys
@@ -119,26 +117,6 @@ def _setup_schema():
         async with test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
-
-            # Create vectors table if it doesn't exist (normally created by init_pgvector)
-            await conn.execute(
-                text("""
-                CREATE TABLE IF NOT EXISTS vectors (
-                    id VARCHAR(255) PRIMARY KEY,
-                    content TEXT NOT NULL,
-                    embedding TEXT,
-                    chunk_type VARCHAR(50) NOT NULL,
-                    file_id VARCHAR(36),
-                    conversation_id VARCHAR(36),
-                    attachment_id VARCHAR(36),
-                    filename VARCHAR(255),
-                    chunk_index INTEGER,
-                    total_chunks INTEGER,
-                    metadata JSONB,
-                    created_at TIMESTAMP DEFAULT NOW()
-                )
-            """)
-            )
 
             # Create safe_substr function used by list_files query
             await conn.execute(
@@ -268,15 +246,6 @@ def mock_llm_service():
     return mock
 
 
-@pytest.fixture
-def mock_rag_service():
-    """Mock the RAG service for tests."""
-    mock = MagicMock()
-    mock.search.return_value = []
-    mock.add_document.return_value = True
-    return mock
-
-
 # =============================================================================
 # AI Service Mock Fixtures (OpenAI SDK via OpenRouter)
 # =============================================================================
@@ -350,48 +319,6 @@ def mock_stream_events():
         {"type": "tool_use", "tool_name": "get_file", "tool_input": {"path": "file.txt"}},
         {"type": "summary", "content": "Hello World!"},
     ]
-
-
-@pytest.fixture
-def mock_chroma_collection():
-    """Mock Chroma vector store collection."""
-
-    class MockCollection:
-        def __init__(self):
-            self.data = {}
-            self._id_counter = 0
-
-        def upsert(self, ids: list[str], documents: list[str], metadatas: list[dict]):
-            for i, id in enumerate(ids):
-                self.data[id] = {
-                    "id": id,
-                    "document": documents[i],
-                    "metadata": metadatas[i] if metadatas else {},
-                }
-
-        def query(
-            self,
-            query_texts: list[str],
-            n_results: int = 5,
-            where: dict | None = None,
-        ):
-            results = list(self.data.values())[:n_results]
-            return {
-                "ids": [[r["id"] for r in results]],
-                "documents": [[r["document"] for r in results]],
-                "metadatas": [[r["metadata"] for r in results]],
-                "distances": [[0.1] * len(results)],
-            }
-
-        def get(self, where: dict | None = None):
-            return {"ids": list(self.data.keys())}
-
-        def delete(self, ids: list[str] | None = None, where: dict | None = None):
-            if ids:
-                for id in ids:
-                    self.data.pop(id, None)
-
-    return MockCollection()
 
 
 # =============================================================================

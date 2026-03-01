@@ -1,103 +1,13 @@
 /**
  * Tests for Markdown/HTML conversion utilities
+ *
+ * HTML→Markdown is now handled by TipTap's @tiptap/markdown (editor.getMarkdown()),
+ * so only markdownToHtml, isHtml, normalizeForEditor, and markdownToPlainText are tested here.
  */
 import { describe, it, expect } from "vitest";
-import {
-  htmlToMarkdown,
-  markdownToHtml,
-  isHtml,
-  normalizeForAI,
-  normalizeForEditor,
-  markdownToPlainText,
-} from "@/lib/markdown";
+import { markdownToHtml, isHtml, normalizeForEditor, markdownToPlainText } from "@/lib/markdown";
 
 describe("Markdown Utilities", () => {
-  describe("htmlToMarkdown", () => {
-    it("converts empty string to empty string", () => {
-      expect(htmlToMarkdown("")).toBe("");
-    });
-
-    it("converts whitespace to empty string", () => {
-      expect(htmlToMarkdown("   ")).toBe("");
-    });
-
-    it("converts empty paragraph to empty string", () => {
-      expect(htmlToMarkdown("<p></p>")).toBe("");
-    });
-
-    it("converts paragraph to text", () => {
-      expect(htmlToMarkdown("<p>Hello World</p>")).toBe("Hello World");
-    });
-
-    it("converts headings", () => {
-      expect(htmlToMarkdown("<h1>Title</h1>")).toBe("# Title");
-      expect(htmlToMarkdown("<h2>Subtitle</h2>")).toBe("## Subtitle");
-      expect(htmlToMarkdown("<h3>Section</h3>")).toBe("### Section");
-    });
-
-    it("converts bold text", () => {
-      expect(htmlToMarkdown("<strong>bold</strong>")).toBe("**bold**");
-      expect(htmlToMarkdown("<b>bold</b>")).toBe("**bold**");
-    });
-
-    it("converts italic text", () => {
-      expect(htmlToMarkdown("<em>italic</em>")).toBe("_italic_");
-      expect(htmlToMarkdown("<i>italic</i>")).toBe("_italic_");
-    });
-
-    it("converts strikethrough text", () => {
-      expect(htmlToMarkdown("<del>deleted</del>")).toBe("~~deleted~~");
-      expect(htmlToMarkdown("<s>strike</s>")).toBe("~~strike~~");
-    });
-
-    it("converts links", () => {
-      expect(htmlToMarkdown('<a href="https://example.com">Link</a>')).toBe(
-        "[Link](https://example.com)"
-      );
-    });
-
-    it("converts unordered lists", () => {
-      const html = "<ul><li>Item 1</li><li>Item 2</li></ul>";
-      const result = htmlToMarkdown(html);
-      // Turndown uses 3 spaces after bullet
-      expect(result).toContain("-   Item 1");
-      expect(result).toContain("-   Item 2");
-    });
-
-    it("converts ordered lists", () => {
-      const html = "<ol><li>First</li><li>Second</li></ol>";
-      const result = htmlToMarkdown(html);
-      expect(result).toContain("1.  First");
-      expect(result).toContain("2.  Second");
-    });
-
-    it("converts code blocks", () => {
-      const html = "<pre><code>const x = 1;</code></pre>";
-      const result = htmlToMarkdown(html);
-      expect(result).toContain("const x = 1;");
-    });
-
-    it("converts inline code", () => {
-      expect(htmlToMarkdown("<code>code</code>")).toBe("`code`");
-    });
-
-    it("converts blockquotes", () => {
-      expect(htmlToMarkdown("<blockquote>Quote</blockquote>")).toBe("> Quote");
-    });
-
-    it("converts nested elements", () => {
-      const html = "<p>This is <strong>bold</strong> and <em>italic</em></p>";
-      expect(htmlToMarkdown(html)).toBe("This is **bold** and _italic_");
-    });
-
-    it("handles multiple paragraphs", () => {
-      const html = "<p>First</p><p>Second</p>";
-      const result = htmlToMarkdown(html);
-      expect(result).toContain("First");
-      expect(result).toContain("Second");
-    });
-  });
-
   describe("markdownToHtml", () => {
     it("converts empty string to empty paragraph", () => {
       expect(markdownToHtml("")).toBe("<p></p>");
@@ -227,30 +137,7 @@ describe("Markdown Utilities", () => {
     });
 
     it("returns false for angle brackets in code", () => {
-      // This might not work perfectly without markdown code fence detection
-      // but we check common patterns
       expect(isHtml("x < y && y > z")).toBe(false);
-    });
-  });
-
-  describe("normalizeForAI", () => {
-    it("converts HTML to markdown", () => {
-      const result = normalizeForAI("<p>Hello</p>");
-      expect(result).toBe("Hello");
-    });
-
-    it("returns markdown as-is", () => {
-      expect(normalizeForAI("# Title")).toBe("# Title");
-    });
-
-    it("returns plain text as-is", () => {
-      expect(normalizeForAI("Plain text")).toBe("Plain text");
-    });
-
-    it("converts complex HTML", () => {
-      const result = normalizeForAI("<h1>Title</h1><p>Content</p>");
-      expect(result).toContain("# Title");
-      expect(result).toContain("Content");
     });
   });
 
@@ -340,36 +227,6 @@ describe("Markdown Utilities", () => {
     });
   });
 
-  describe("Round-trip Conversion", () => {
-    it("preserves basic text through round-trip", () => {
-      const original = "Hello World";
-      const html = markdownToHtml(original);
-      const markdown = htmlToMarkdown(html);
-      expect(markdown).toBe(original);
-    });
-
-    it("preserves headings through round-trip", () => {
-      const original = "# Title";
-      const html = markdownToHtml(original);
-      const markdown = htmlToMarkdown(html);
-      expect(markdown).toBe(original);
-    });
-
-    it("preserves bold through round-trip", () => {
-      const original = "**bold**";
-      const html = markdownToHtml(original);
-      const markdown = htmlToMarkdown(html);
-      expect(markdown).toBe(original);
-    });
-
-    it("preserves links through round-trip", () => {
-      const original = "[Link](https://example.com)";
-      const html = markdownToHtml(original);
-      const markdown = htmlToMarkdown(html);
-      expect(markdown).toBe(original);
-    });
-  });
-
   describe("Edge Cases", () => {
     it("handles special characters in HTML", () => {
       const result = markdownToHtml("A < B > C & D");
@@ -399,16 +256,29 @@ describe("Markdown Utilities", () => {
       expect(result).toContain("*not italic*");
     });
 
-    it("handles empty paragraphs in HTML", () => {
-      expect(htmlToMarkdown("<p></p>")).toBe("");
-      expect(htmlToMarkdown("<p>   </p>")).toBe("");
-    });
-
     it("handles multiple consecutive newlines", () => {
       const markdown = "First\n\n\n\nSecond";
       const result = markdownToHtml(markdown);
       expect(result).toContain("First");
       expect(result).toContain("Second");
+    });
+  });
+
+  describe("Mermaid Chart markdownToHtml", () => {
+    it("converts mermaid code fence to data-type div", () => {
+      const markdown = "```mermaid\ngraph TD\n    A[Start] --> B[End]\n```";
+      const html = markdownToHtml(markdown);
+      expect(html).toContain('data-type="mermaid-chart"');
+      expect(html).toContain("data-code=");
+    });
+  });
+
+  describe("Block Math markdownToHtml", () => {
+    it("converts $$ delimiters to data-type div", () => {
+      const markdown = "$$\nE=mc^2\n$$";
+      const html = markdownToHtml(markdown);
+      expect(html).toContain('data-type="block-math"');
+      expect(html).toContain("E=mc^2");
     });
   });
 });

@@ -14,53 +14,93 @@ before sending to the API.
 # ============================================================================
 
 DOCUMENT_TOOLS = [
+    # --- Unified read/search tools (0, 1, 2) ---
     {
-        "name": "get_document_outline",
-        "description": "Get the document's heading structure with section IDs, line ranges, and estimated token counts. Lightweight (~200 tokens). Use this first to understand document structure before reading or editing long documents.",
+        "name": "get_outline",
+        "description": (
+            "Get the heading structure of a document with section IDs, line ranges, "
+            "and estimated token counts. Use this first to understand document structure "
+            "before reading or editing. Works on: current document (default), "
+            "any user document (file_id), or KB attachment (kb_document)."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "file_id": {
                     "type": "string",
-                    "description": "The ID of the file (optional, uses current file if not provided)",
-                }
+                    "description": "File ID of any user document (from search results). Omit for current document.",
+                },
+                "kb_document": {
+                    "type": "string",
+                    "description": "KB attachment filename (e.g., 'research.pdf'). Use for conversation knowledge base files.",
+                },
             },
             "required": [],
         },
     },
     {
-        "name": "read_section",
-        "description": "Read specific sections of the document by section ID (from get_document_outline or the outline in context). Returns content with line numbers for editing. Reading a parent section includes all its children.",
+        "name": "read_content",
+        "description": (
+            "Read document content. With section_ids (from get_outline), returns specific "
+            "sections with line numbers. Without section_ids, returns the entire document. "
+            "Reading a parent section includes all its children. Works on: current document "
+            "(default), any user document (file_id), or KB attachment (kb_document)."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "section_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Section IDs to read (e.g., ['s1', 's2.1'])",
+                    "description": "Section IDs to read (e.g., ['s1', 's2.1']). Omit to read entire document.",
                 },
                 "file_id": {
                     "type": "string",
-                    "description": "The ID of the file (optional)",
+                    "description": "File ID of any user document. Omit for current document.",
                 },
-            },
-            "required": ["section_ids"],
-        },
-    },
-    {
-        "name": "view_document",
-        "description": "View the ENTIRE document content with line numbers. For long documents (80+ lines), prefer get_document_outline + read_section to reduce token usage.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_id": {
+                "kb_document": {
                     "type": "string",
-                    "description": "The ID of the file to view (optional, uses current file if not provided)",
-                }
+                    "description": "KB attachment filename. Use for conversation knowledge base files.",
+                },
             },
             "required": [],
         },
     },
+    {
+        "name": "search",
+        "description": (
+            "Search for text across documents. "
+            'scope="document" (default): search in the current or specified file. '
+            'scope="all": search across ALL user documents by keyword. '
+            'scope="kb": search conversation knowledge base attachments. '
+            "Returns matching excerpts with surrounding context."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The text to search for (case-insensitive)",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["document", "all", "kb"],
+                    "description": 'Search scope. "document" (default): current file. "all": all user documents. "kb": KB attachments.',
+                },
+                "file_id": {
+                    "type": "string",
+                    "description": "File ID to search in (for scope=document on a non-current file).",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default: 10, max: 20).",
+                    "default": 10,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    # --- Editing tools (3, 4) ---
     {
         "name": "str_replace_editor",
         "description": (
@@ -105,36 +145,16 @@ DOCUMENT_TOOLS = [
             "required": ["new_content"],
         },
     },
-    {
-        "name": "search_in_document",
-        "description": "Search for text in the document and return matching lines with context.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The text to search for (case-insensitive)",
-                },
-                "file_id": {
-                    "type": "string",
-                    "description": "The ID of the file to search (optional)",
-                },
-            },
-            "required": ["query"],
-        },
-    },
 ]
 
 # Backward compatibility alias
 TOOLS = DOCUMENT_TOOLS
 
-# Read-only tools for analyze mode
-# get_document_outline, read_section, view_document, search_in_document
-READONLY_TOOLS = [DOCUMENT_TOOLS[i] for i in (0, 1, 2, 5)]
+# Read-only tools for analyze mode: get_outline, read_content, search
+READONLY_TOOLS = [DOCUMENT_TOOLS[i] for i in (0, 1, 2)]
 
-# Minimal tools for quick edit mode
-# str_replace_editor (index 3) + view_document (index 2) for long doc fallback
-QUICK_EDIT_TOOLS = [DOCUMENT_TOOLS[i] for i in (3, 2)]
+# Minimal tools for quick edit mode: str_replace_editor + read_content (for long doc fallback)
+QUICK_EDIT_TOOLS = [DOCUMENT_TOOLS[i] for i in (3, 1)]
 
 
 # ============================================================================
@@ -142,52 +162,6 @@ QUICK_EDIT_TOOLS = [DOCUMENT_TOOLS[i] for i in (3, 2)]
 # ============================================================================
 
 KB_TOOLS = [
-    {
-        "name": "search_knowledge_base",
-        "description": """Search the conversation's knowledge base for relevant information.
-Use this when you need to find specific information from attached documents (PDFs, DOCX, PPTX files).
-Returns the most relevant excerpts from the documents.""",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The search query - be specific about what information you need",
-                },
-                "top_k": {
-                    "type": "integer",
-                    "description": "Number of results to return (default: 5, max: 10)",
-                    "default": 5,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "read_kb_document",
-        "description": """Read content from a specific document in the knowledge base.
-Use this when you need to read through a document, or when search_knowledge_base found a document you want to explore further.""",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "document_name": {
-                    "type": "string",
-                    "description": "The filename of the document to read (e.g., 'research-paper.pdf')",
-                },
-                "start_section": {
-                    "type": "integer",
-                    "description": "Starting section/chunk to read from (0-indexed, default: 0)",
-                    "default": 0,
-                },
-                "num_sections": {
-                    "type": "integer",
-                    "description": "Number of sections to read (default: 5)",
-                    "default": 5,
-                },
-            },
-            "required": ["document_name"],
-        },
-    },
     {
         "name": "list_kb_documents",
         "description": "List all documents in the conversation's knowledge base. Use this to see what reference materials are available.",
@@ -311,74 +285,12 @@ The files can be analyzed using code execution when enabled.""",
 
 
 # ============================================================================
-# Legal Research Tools Definition
-# ============================================================================
-
-LEGAL_TOOLS = [
-    {
-        "name": "search_court_opinions",
-        "description": """Search CourtListener for court opinions and legal cases.
-Returns a list of matching cases with opinion_id for fetching full text.
-
-Use get_court_opinion to read the full opinion text after finding relevant cases.""",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query - legal concepts, case names, or keywords",
-                },
-                "court": {
-                    "type": "string",
-                    "description": "Court filter: 'scotus', 'ca1'-'ca11', state abbreviations",
-                },
-                "filed_after": {
-                    "type": "string",
-                    "description": "Cases filed after date (YYYY-MM-DD)",
-                },
-                "filed_before": {
-                    "type": "string",
-                    "description": "Cases filed before date (YYYY-MM-DD)",
-                },
-                "cited_gt": {
-                    "type": "integer",
-                    "description": "Minimum citation count",
-                },
-                "order_by": {
-                    "type": "string",
-                    "enum": ["score desc", "dateFiled desc", "citeCount desc"],
-                    "description": "Sort order",
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "get_court_opinion",
-        "description": """Get the full text of a court opinion by ID.
-Use after search_court_opinions to read the complete opinion text for citation or analysis.""",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "opinion_id": {
-                    "type": "integer",
-                    "description": "The opinion_id from search results",
-                },
-            },
-            "required": ["opinion_id"],
-        },
-    },
-]
-
-
-# ============================================================================
 # Skill-to-External-Tools Mapping
 # ============================================================================
 # Maps skill names to their associated external tools.
 # Tools are only loaded when the skill's instructions are read.
 
 SKILL_EXTERNAL_TOOLS: dict[str, list[dict]] = {
-    "legal": LEGAL_TOOLS,
     # data-analysis tools (CODE_EXECUTION_TOOL, DATA_FILES_TOOLS) are always loaded
 }
 
@@ -390,7 +302,6 @@ SKILL_EXTERNAL_TOOLS: dict[str, list[dict]] = {
 DOCUMENT_TOOL_NAMES = {tool["name"] for tool in DOCUMENT_TOOLS}
 KB_TOOL_NAMES = {tool["name"] for tool in KB_TOOLS}
 SKILL_TOOL_NAMES = {tool["name"] for tool in SKILL_TOOLS}
-LEGAL_TOOL_NAMES = {tool["name"] for tool in LEGAL_TOOLS}
 DATA_FILES_TOOL_NAMES = {tool["name"] for tool in DATA_FILES_TOOLS}
 READONLY_TOOL_NAMES = {tool["name"] for tool in READONLY_TOOLS}
 
@@ -409,7 +320,7 @@ def get_tools_for_mode(
         has_kb_attachments: Whether KB attachments exist for this conversation
         has_skills: Whether skills are available
         web_search_enabled: Whether Brave web search tool is enabled
-        is_quick_edit: Quick edit mode - only str_replace_editor + view_document
+        is_quick_edit: Quick edit mode - only str_replace_editor + read_content
 
     Returns:
         List of tool definitions for the API
@@ -592,78 +503,6 @@ def to_openai_tool(tool: dict) -> dict:
 def to_openai_tools(tools: list[dict]) -> list[dict]:
     """Convert a list of Anthropic-style tools to OpenAI function-calling format."""
     return [to_openai_tool(t) for t in tools]
-
-
-# ============================================================================
-# Global Knowledge Base Tools (search across ALL user documents)
-# ============================================================================
-
-GLOBAL_KB_TOOLS = [
-    {
-        "name": "search_files",
-        "description": (
-            "Search across ALL of the user's documents using semantic and keyword search. "
-            "Returns the most relevant text passages from any document. "
-            "Use this to find information related to a query across the entire knowledge base. "
-            "You can search multiple times with different queries to find all relevant information. "
-            "Each result includes the source document name, chunk index, and relevance score."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": (
-                        "The search query. Use specific, descriptive phrases. "
-                        "For broad topics, search multiple times with different angles."
-                    ),
-                },
-                "top_k": {
-                    "type": "integer",
-                    "description": "Number of results to return (1-10). Default: 5.",
-                    "default": 5,
-                    "minimum": 1,
-                    "maximum": 10,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "read_file_sections",
-        "description": (
-            "Read specific sections (chunks) from a document by file_id. "
-            "Use this after search_files to read more context around a relevant result, "
-            "or to read the beginning of a document to understand its structure. "
-            "Returns consecutive sections from the document."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "The file_id of the document (from search results metadata).",
-                },
-                "start_section": {
-                    "type": "integer",
-                    "description": "Starting section index (0-based). Default: 0.",
-                    "default": 0,
-                    "minimum": 0,
-                },
-                "num_sections": {
-                    "type": "integer",
-                    "description": "Number of sections to read (1-10). Default: 3.",
-                    "default": 3,
-                    "minimum": 1,
-                    "maximum": 10,
-                },
-            },
-            "required": ["file_id"],
-        },
-    },
-]
-
-GLOBAL_KB_TOOL_NAMES = {tool["name"] for tool in GLOBAL_KB_TOOLS}
 
 
 # ============================================================================

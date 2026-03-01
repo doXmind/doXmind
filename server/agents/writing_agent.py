@@ -28,9 +28,64 @@ from agents.stream_handler import stream_response
 from agents.tool_executor import ToolExecutor
 from agents.tools.definitions import get_tools_for_mode
 from config import get_settings
+from services.document_sections import (
+    find_section_for_text,
+    get_heading_path,
+    parse_sections,
+)
 from services.skills_service import get_skills_service
 
 logger = logging.getLogger(__name__)
+
+
+def _annotate_selected_content(message: str, document_content: str) -> str:
+    """Annotate <selected_content> in the message with section location.
+
+    Parses the document into sections, finds where the selected text lives,
+    and injects a <location> tag so the AI can navigate directly via section ID.
+    """
+    if "<selected_content>" not in message:
+        return message
+
+    sections = parse_sections(document_content)
+    if not sections:
+        return message
+
+    import re
+
+    # Handle multi-reference format: <reference index="N">text</reference>
+    ref_pattern = re.compile(r"(<reference\s+index=\"\d+\">)\n(.*?)\n(</reference>)", re.DOTALL)
+    refs = list(ref_pattern.finditer(message))
+
+    if refs:
+        # Multiple references — annotate each one
+        result = message
+        # Process in reverse to preserve offsets
+        for m in reversed(refs):
+            ref_text = m.group(2)
+            sec = find_section_for_text(sections, document_content, ref_text)
+            if sec:
+                path = get_heading_path(sections, sec)
+                loc = f"<location>{sec.section_id}: {path} [L{sec.start_line}-L{sec.end_line}]</location>"
+                replacement = f"{m.group(1)}\n{loc}\n{m.group(2)}\n{m.group(3)}"
+                result = result[: m.start()] + replacement + result[m.end() :]
+        return result
+
+    # Single selection — text is between <selected_content> and </selected_content>
+    sc_pattern = re.compile(r"(<selected_content>)\n(.*?)\n(</selected_content>)", re.DOTALL)
+    sc_match = sc_pattern.search(message)
+    if sc_match:
+        selected_text = sc_match.group(2)
+        sec = find_section_for_text(sections, document_content, selected_text)
+        if sec:
+            path = get_heading_path(sections, sec)
+            loc = (
+                f"<location>{sec.section_id}: {path} [L{sec.start_line}-L{sec.end_line}]</location>"
+            )
+            replacement = f"{sc_match.group(1)}\n{loc}\n{sc_match.group(2)}\n{sc_match.group(3)}"
+            return message[: sc_match.start()] + replacement + message[sc_match.end() :]
+
+    return message
 
 
 class WritingAgent:
@@ -172,6 +227,12 @@ class WritingAgent:
 
         # Hook for subclasses to append extra system prompt sections
         system_prompt += self._get_extra_system_prompt()
+
+        # Annotate <selected_content> with section location for fast AI navigation
+        if files and "<selected_content>" in message:
+            doc_content = files[0].get("content", "")
+            if doc_content:
+                message = _annotate_selected_content(message, doc_content)
 
         # Build messages (async to support file uploads)
         messages = await self._build_messages(message, images, data_files, history)

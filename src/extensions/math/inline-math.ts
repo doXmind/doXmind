@@ -83,6 +83,28 @@ export const InlineMath = Node.create<InlineMathOptions>({
   atom: true,
 
   // Markdown: $latex$
+  markdownTokenName: "inlineMath",
+
+  markdownTokenizer: {
+    name: "inlineMath",
+    level: "inline" as const,
+    start(src: string) {
+      const m = src.match(/(?<!\$)\$(?!\$)/);
+      return m?.index ?? -1;
+    },
+    tokenize(src: string) {
+      const match = src.match(/^(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/);
+      if (match) {
+        return { type: "inlineMath", raw: match[0], latex: match[1].trim() };
+      }
+      return undefined;
+    },
+  },
+
+  parseMarkdown(token: any, helpers: any) {
+    return helpers.createNode("inlineMath", { latex: token.latex || "" });
+  },
+
   renderMarkdown(node) {
     const latex = node.attrs?.latex || "";
     return "$" + latex + "$";

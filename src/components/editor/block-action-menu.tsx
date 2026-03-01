@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useChatContextStore } from "@/stores/chat-context-store";
+import { nodeToMarkdown } from "@/lib/markdown-selection";
 import { ColorPicker } from "./color-picker";
 import {
   moveBlockUp,
@@ -262,7 +263,9 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
 
   const handleAskAI = useCallback(() => {
     if (block) {
-      const text = editor.state.doc.textBetween(block.from, block.to, "\n");
+      // Serialize block node to markdown — matches the format backend operates on
+      const text = nodeToMarkdown(editor, block.node);
+
       if (text.trim()) {
         useChatContextStore.getState().addChatContext({
           type: "selection",

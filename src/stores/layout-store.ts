@@ -41,7 +41,7 @@ interface LayoutState {
 
   // Home page
   homeViewMode: "grid" | "list";
-  homeActiveTab: "documents" | "shares" | "forks" | "bookmarks";
+  homeActiveTab: "documents" | "shared" | "shares" | "forks" | "bookmarks";
 
   // Version history panel
   isVersionHistoryOpen: boolean;
@@ -55,6 +55,9 @@ interface LayoutState {
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
   shouldOpenSearchWithAI: boolean; // Flag to open search in AI mode
+
+  // Global agent sheet
+  isAgentSheetOpen: boolean;
 
   // Quick file switcher
   isQuickSwitcherOpen: boolean;
@@ -112,7 +115,7 @@ interface LayoutState {
 
   // Home page actions
   setHomeViewMode: (mode: "grid" | "list") => void;
-  setHomeActiveTab: (tab: "documents" | "shares" | "forks" | "bookmarks") => void;
+  setHomeActiveTab: (tab: "documents" | "shared" | "shares" | "forks" | "bookmarks") => void;
 
   // Focus mode actions
   setFocusMode: (enabled: boolean) => void;
@@ -129,6 +132,10 @@ interface LayoutState {
   setSearchBarOpen: (open: boolean) => void;
   toggleSearchBar: () => void;
   openSearchBarWithAI: () => void; // Opens search bar in AI mode
+
+  // Global agent sheet actions
+  setAgentSheetOpen: (open: boolean) => void;
+  toggleAgentSheet: () => void;
 
   // Quick switcher actions
   setQuickSwitcherOpen: (open: boolean) => void;
@@ -225,6 +232,9 @@ export const useLayoutStore = create<LayoutState>()(
       // Search bar
       isSearchBarOpen: false,
       shouldOpenSearchWithAI: false,
+
+      // Global agent sheet
+      isAgentSheetOpen: false,
 
       // Quick file switcher
       isQuickSwitcherOpen: false,
@@ -380,7 +390,7 @@ export const useLayoutStore = create<LayoutState>()(
         set({ homeViewMode: mode });
       },
 
-      setHomeActiveTab: (tab: "documents" | "shares" | "forks" | "bookmarks") => {
+      setHomeActiveTab: (tab: "documents" | "shared" | "shares" | "forks" | "bookmarks") => {
         set({ homeActiveTab: tab });
       },
 
@@ -421,6 +431,15 @@ export const useLayoutStore = create<LayoutState>()(
 
       openSearchBarWithAI: () => {
         set({ isSearchBarOpen: true, shouldOpenSearchWithAI: true });
+      },
+
+      // Global agent sheet actions
+      setAgentSheetOpen: (open: boolean) => {
+        set({ isAgentSheetOpen: open });
+      },
+
+      toggleAgentSheet: () => {
+        set((state) => ({ isAgentSheetOpen: !state.isAgentSheetOpen }));
       },
 
       // Quick switcher actions

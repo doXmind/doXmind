@@ -59,6 +59,10 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
       heading: {
         levels: [1, 2, 3, 4],
       },
+      // Disable extensions bundled by StarterKit v3 that we configure manually below
+      link: false,
+      underline: false,
+      trailingNode: false,
     }),
 
     // Markdown serialization (schema-aware editor.getMarkdown() / editor.markdown.parse())

@@ -4,7 +4,6 @@ import { useCallback } from "react";
 import { useFileStore } from "@/stores/file-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { computeDiffHunks, findInMarkdown } from "@/lib/diff-utils";
-import { htmlToMarkdown, isHtml } from "@/lib/markdown";
 import { editorLogger } from "@/lib/logger";
 import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
 import type { EditOperation } from "@/types";
@@ -57,6 +56,9 @@ export function useEditOperations() {
           continue;
         }
 
+        // Use cached markdown (same format backend uses to validate old_str)
+        const markdown = file.contentMarkdown || file.content;
+
         // Collect all hunks for this file
         const allHunks: DiffHunk[] = [];
         for (const edit of fileEdits) {
@@ -68,9 +70,10 @@ export function useEditOperations() {
             old_str: edit.old_str,
             new_str: edit.new_str,
             new_content: edit.new_content,
+            offset: edit.offset,
           };
 
-          const hunks = computeDiffHunks(file.content, diffEdit);
+          const hunks = computeDiffHunks(file.content, diffEdit, markdown);
           if (hunks.length > 0) {
             allHunks.push(...hunks);
             totalApplied++;
@@ -80,9 +83,6 @@ export function useEditOperations() {
         }
 
         if (allHunks.length === 0) continue;
-
-        // Compute markdown (same format backend uses to validate old_str)
-        const markdown = isHtml(file.content) ? htmlToMarkdown(file.content) : file.content;
 
         // Compute workingMarkdown by applying all edits sequentially (replicating backend logic).
         // This is used as the "final state" for full-doc-replace fallback when sequential

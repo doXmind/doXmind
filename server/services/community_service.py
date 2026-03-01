@@ -1,17 +1,14 @@
 """Community service for discovery, publishing, forks, bookmarks, and recommendations."""
 
 import hashlib
-import json
 import logging
 import uuid
 from datetime import UTC, datetime
 
-import numpy as np
-from sqlalchemy import and_, cast, func, or_, select, text, update
+from sqlalchemy import and_, cast, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import Text
 
-from config import get_settings
 from db.database import Bookmark, DocumentShare, File, Fork, User, utcnow
 from exceptions import BadRequestError, NotFoundError
 
@@ -338,9 +335,6 @@ class CommunityService:
         await self.db.commit()
         await self.db.refresh(share)
 
-        # Index embedding for recommendations (non-blocking)
-        await self.index_share_embedding(share)
-
         return share
 
     async def unpublish_share(self, share_id: str, user_id: str) -> DocumentShare:
@@ -358,9 +352,6 @@ class CommunityService:
         share.visibility = "private"
         await self.db.commit()
         await self.db.refresh(share)
-
-        # Remove embedding
-        await self.delete_share_embedding(share_id)
 
         return share
 
@@ -398,9 +389,6 @@ class CommunityService:
 
         await self.db.commit()
         await self.db.refresh(share)
-
-        # Re-index embedding with updated metadata
-        await self.index_share_embedding(share)
 
         return share
 
@@ -927,67 +915,12 @@ class CommunityService:
         return scored[:limit]
 
     async def _recommend_by_embedding(
-        self, user_id: str, limit: int = 30
+        self,
+        user_id: str,  # noqa: ARG002
+        limit: int = 30,  # noqa: ARG002
     ) -> list[tuple[str, float]]:
-        """Find semantically similar community shares based on user's recent files.
-
-        Computes a user profile vector from the user's 5 most recent file embeddings,
-        then does ANN search against community share embeddings.
-        Returns list of (share_id, similarity_score).
-        """
-        settings = get_settings()
-        if not settings.pgvector_enabled:
-            return []
-
-        try:
-            # Get user's 5 most recent file embeddings (chunk_index=0 for first chunk)
-            user_vectors_result = await self.db.execute(
-                text("""
-                    SELECT v.embedding
-                    FROM vectors v
-                    JOIN files f ON v.file_id = f.id
-                    WHERE v.chunk_type = 'document'
-                      AND f.user_id = :user_id
-                      AND v.chunk_index = 0
-                      AND f.deleted_at IS NULL
-                    ORDER BY f.updated_at DESC
-                    LIMIT 5
-                """),
-                {"user_id": user_id},
-            )
-            user_rows = user_vectors_result.fetchall()
-
-            if not user_rows:
-                return []
-
-            # Compute average embedding (user profile vector)
-            embeddings = [np.array(json.loads(row.embedding)) for row in user_rows]
-            profile_vector = np.mean(embeddings, axis=0).tolist()
-
-            # ANN search against community share embeddings
-            result = await self.db.execute(
-                text("""
-                    SELECT metadata->>'share_id' as share_id,
-                           1 - (embedding <=> :embedding) as similarity
-                    FROM vectors
-                    WHERE chunk_type = 'community'
-                      AND (metadata->>'user_id') != :user_id
-                    ORDER BY embedding <=> :embedding
-                    LIMIT :limit
-                """),
-                {
-                    "embedding": str(profile_vector),
-                    "user_id": user_id,
-                    "limit": limit,
-                },
-            )
-            rows = result.fetchall()
-
-            return [(row.share_id, float(row.similarity)) for row in rows if row.share_id]
-
-        except Exception as e:
-            logger.warning("Embedding recommendation failed: %s", e)
-            return []
+        """Embedding-based recommendations (disabled — RAG removed)."""
+        return []
 
     async def _recommend_by_trending(self, limit: int = 30) -> list[tuple[str, float]]:
         """Get trending items with time decay.
@@ -1195,73 +1128,6 @@ class CommunityService:
                 item["is_forked"] = item["share_id"] in forked_ids
 
         return items, total
-
-    # =========================================================================
-    # Share Embedding Indexing
-    # =========================================================================
-
-    async def index_share_embedding(self, share: DocumentShare) -> None:
-        """Index a published share's metadata for recommendation similarity search."""
-        settings = get_settings()
-        if not settings.pgvector_enabled:
-            return
-
-        try:
-            from services.rag.embedding import get_embedding
-
-            text_parts = []
-            if share.title:
-                text_parts.append(share.title)
-            if share.description:
-                text_parts.append(share.description)
-            if share.tags and isinstance(share.tags, list):
-                text_parts.append(" ".join(share.tags))
-
-            combined_text = " ".join(text_parts)
-            if len(combined_text) < 5:
-                return
-
-            embedding = await get_embedding(combined_text)
-            vector_id = f"community_{share.id}"
-
-            await self.db.execute(
-                text("""
-                    INSERT INTO vectors (id, content, embedding, chunk_type, file_id, metadata)
-                    VALUES (:id, :content, :embedding, 'community', :file_id, CAST(:meta AS jsonb))
-                    ON CONFLICT (id) DO UPDATE SET
-                        content = EXCLUDED.content,
-                        embedding = EXCLUDED.embedding,
-                        metadata = EXCLUDED.metadata
-                """),
-                {
-                    "id": vector_id,
-                    "content": combined_text,
-                    "embedding": str(embedding),
-                    "file_id": share.file_id,
-                    "meta": json.dumps({"share_id": share.id, "user_id": share.user_id}),
-                },
-            )
-            await self.db.commit()
-            logger.info("Indexed community embedding for share %s", share.id)
-
-        except Exception as e:
-            logger.warning("Failed to index share embedding for %s: %s", share.id, e)
-
-    async def delete_share_embedding(self, share_id: str) -> None:
-        """Delete the community embedding for a share."""
-        settings = get_settings()
-        if not settings.pgvector_enabled:
-            return
-
-        try:
-            vector_id = f"community_{share_id}"
-            await self.db.execute(
-                text("DELETE FROM vectors WHERE id = :id"),
-                {"id": vector_id},
-            )
-            await self.db.commit()
-        except Exception as e:
-            logger.warning("Failed to delete share embedding for %s: %s", share_id, e)
 
     # =========================================================================
     # Internal Helpers

@@ -1,6 +1,6 @@
 /* ====================================
    Diff Review Styles — Notion-inspired
-   Word-level inline diff with hover controls
+   Unified gray (deleted) + blue (added) palette
    ==================================== */
 
 /* ---- Hidden source text (replaced by inline diff widget) ---- */
@@ -14,6 +14,63 @@
   display: inline;
 }
 
+/* Collapse empty paragraphs that only contain hidden diff text (no visible widget).
+   Uses CSS :has() to detect — avoids JS Decoration.node which can interfere across hunks. */
+.ProseMirror p:has(.diff-source-hidden):not(:has(.ProseMirror-widget)) {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  line-height: 0 !important;
+  border: none !important;
+  overflow: hidden;
+}
+.ProseMirror h1:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror h2:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror h3:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror h4:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror h5:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror h6:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror blockquote:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror pre:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror .tableWrapper:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror table:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror tr:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror td:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror th:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror [data-callout-type]:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror [data-toggle-open]:has(.diff-source-hidden):not(:has(.ProseMirror-widget)) {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  line-height: 0 !important;
+  border: none !important;
+  overflow: hidden;
+}
+/* List elements need extra list-style:none to hide bullet/number markers */
+.ProseMirror ul:has(.diff-source-hidden):not(:has(.ProseMirror-widget)),
+.ProseMirror ol:has(.diff-source-hidden):not(:has(.ProseMirror-widget)) {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  line-height: 0 !important;
+  border: none !important;
+  overflow: hidden;
+  list-style: none !important;
+}
+.ProseMirror li:has(.diff-source-hidden):not(:has(.ProseMirror-widget)) {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  line-height: 0 !important;
+  border: none !important;
+  overflow: hidden;
+  list-style: none !important;
+}
+
 /* ---- Notion-style inline word-level diff ---- */
 .ProseMirror .diff-inline-wrapper {
   display: inline;
@@ -24,8 +81,42 @@
 
 .ProseMirror .diff-inline-content {
   display: inline;
-  line-height: inherit;
-  font-size: inherit;
+  font-size: 1rem;
+  font-weight: normal;
+  line-height: 1.75;
+}
+
+/* Block layout for structured diff content (headings, lists, blockquotes, etc.) */
+.ProseMirror .diff-inline-wrapper.diff-structured {
+  display: inline-block;
+  width: 100%;
+}
+
+.ProseMirror .diff-inline-wrapper.diff-structured .diff-inline-content {
+  display: block;
+}
+
+.ProseMirror .diff-inline-wrapper.diff-structured .diff-hover-actions {
+  top: 2px;
+  right: 4px;
+  left: auto;
+}
+
+/* Text lines inside structured diff */
+.ProseMirror .diff-inline-content .diff-text-line {
+  line-height: 1.75;
+}
+
+/* List rendering inside diff widget — matches editor list styling */
+.ProseMirror .diff-inline-content .diff-list {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin: 0.25em 0 0 0;
+}
+
+.ProseMirror .diff-inline-content .diff-list-item {
+  line-height: 1.75;
+  margin: 0.1em 0;
 }
 
 /* Word-level segments */
@@ -38,11 +129,16 @@
   color: var(--diff-word-removed-fg);
   text-decoration: line-through;
   text-decoration-color: var(--diff-word-removed-fg);
-  text-decoration-thickness: 1.5px;
+  text-decoration-thickness: 1px;
   border-radius: 2px;
   padding: 1px 2px;
   margin: 0 1px;
-  transition: background-color 0.15s ease;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.ProseMirror .diff-word-removed:hover {
+  opacity: 1;
 }
 
 .ProseMirror .diff-word-added {
@@ -85,52 +181,76 @@
   pointer-events: auto;
 }
 
-/* ---- Deleted content — soft red strikethrough (for delete-only hunks) ---- */
+/* ---- Deleted content — gray scheme matching word-level diff ---- */
 .ProseMirror .diff-deleted {
-  background-color: var(--diff-deleted-bg);
+  background-color: transparent;
   text-decoration: line-through;
-  text-decoration-color: var(--diff-deleted-text);
-  text-decoration-thickness: 1.5px;
-  color: hsl(var(--muted-foreground));
-  border-radius: 3px;
-  padding: 1px 3px;
+  text-decoration-color: var(--diff-word-removed-fg);
+  text-decoration-thickness: 1px;
+  color: var(--diff-word-removed-fg);
   display: inline;
-  transition: background-color 0.2s ease;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
 }
 
 .ProseMirror .diff-deleted:hover {
-  background-color: var(--diff-deleted-bg-hover);
+  opacity: 1;
 }
 
-/* ---- Inserted content wrapper (for insert-only hunks) ---- */
+/* ---- Atom block node deletion styling (mermaid charts, block math, etc.) ---- */
+/* Decoration.node() applies diff-deleted to the NodeView wrapper;
+   override inline text styles and add a visual deletion overlay. */
+.ProseMirror [data-node-view-wrapper].diff-deleted {
+  display: block;
+  text-decoration: none;
+  padding: 0;
+  position: relative;
+  opacity: 0.35;
+  background-color: transparent;
+}
+
+.ProseMirror [data-node-view-wrapper].diff-deleted::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--diff-word-removed-bg);
+  border: none;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ProseMirror [data-node-view-wrapper].diff-deleted.diff-hunk-focused {
+  opacity: 0.5;
+  outline: 2px solid var(--diff-focus-border);
+  outline-offset: 2px;
+}
+
+/* ---- Inserted content wrapper (block-level new content) — blue scheme matching word-level diff ---- */
 .ProseMirror .diff-inserted-wrapper {
   display: block;
   position: relative;
   margin-top: 6px;
   margin-bottom: 2px;
-  border: 1px solid var(--diff-inserted-border);
-  border-left: 3px solid var(--diff-inserted-accent);
-  border-radius: 8px;
+  border: none;
+  border-radius: 6px;
   overflow: visible;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
 }
 
 .ProseMirror .diff-inserted-wrapper:hover {
-  border-color: var(--diff-inserted-accent);
+  box-shadow: none;
 }
 
-/* Inserted content — subtle green ghost text */
+/* Inserted content — blue tinted to match word-level added */
 .ProseMirror .diff-inserted {
-  background-color: var(--diff-inserted-bg);
+  background-color: var(--diff-word-added-bg);
   color: hsl(var(--foreground));
-  border-radius: 0;
+  border-radius: 6px;
   padding: 10px 14px;
   display: block;
   font-size: 1rem;
   font-style: normal;
-  font-weight: normal;
+  font-weight: 500;
   white-space: pre-wrap;
   word-wrap: break-word;
   line-height: 1.6;
@@ -138,7 +258,7 @@
 }
 
 .ProseMirror .diff-inserted:hover {
-  background-color: var(--diff-inserted-bg-hover);
+  background-color: var(--diff-word-added-bg);
 }
 
 /* ---- Markdown content styling inside diff blocks ---- */
@@ -225,7 +345,7 @@
 }
 
 .ProseMirror .diff-markdown-content blockquote {
-  border-left: 3px solid var(--diff-inserted-accent);
+  border-left: 3px solid var(--diff-word-added-fg);
   margin: 0.5em 0;
   padding-left: 1em;
   color: hsl(var(--muted-foreground));
@@ -233,7 +353,7 @@
 
 .ProseMirror .diff-markdown-content hr {
   border: none;
-  border-top: 1px solid var(--diff-inserted-border);
+  border-top: 1px solid var(--diff-word-added-bg);
   margin: 0.75em 0;
 }
 
@@ -296,7 +416,7 @@
   padding: 0;
 }
 
-/* Accept button — tinted green */
+/* Accept button — tinted blue */
 .ProseMirror .diff-accept {
   background-color: var(--diff-btn-accept-bg);
   color: var(--diff-btn-accept-fg);
@@ -311,7 +431,7 @@
   transform: scale(0.95);
 }
 
-/* Reject button — tinted red */
+/* Reject button — tinted gray */
 .ProseMirror .diff-reject {
   background-color: var(--diff-btn-reject-bg);
   color: var(--diff-btn-reject-fg);
@@ -371,6 +491,16 @@
 .ProseMirror .diff-action-btn:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+/* Collapse document blocks during full-document replace (hides original content) */
+.ProseMirror .diff-block-collapsed {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  border: none !important;
+  overflow: hidden;
 }
 
 /* Hide inline accept/reject buttons during AI streaming */

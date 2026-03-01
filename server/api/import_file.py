@@ -22,7 +22,6 @@ from exceptions import (
 )
 from services.auth_service import TokenData, require_auth
 from services.gemini_converter import convert_file_to_markdown, is_converter_configured
-from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -156,22 +155,6 @@ async def import_file(
         db.add(new_file)
         await db.commit()
         await db.refresh(new_file)
-
-        # Index in vector store
-        try:
-            rag = RAGService(db, api_key=user_api_key)
-            await rag.index_file(
-                file_id=new_file.id,
-                content=html_content,
-                metadata={"name": new_name, "user_id": user_id},
-            )
-            await rag.index_file_sentences(
-                file_id=new_file.id,
-                content=html_content,
-                metadata={"name": new_name, "user_id": user_id},
-            )
-        except Exception as e:
-            logger.warning(f"Failed to index imported file: {e}")
 
         return {
             "id": new_file.id,

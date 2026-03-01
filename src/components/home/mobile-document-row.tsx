@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Star, Share2, Trash2, Folder, FileText } from "lucide-react";
-import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
+import { motion } from "framer-motion";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { formatWordCount, getNameWithoutExtension } from "@/lib/file-utils";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
@@ -12,15 +12,13 @@ import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { haptics } from "@/lib/haptics";
 import { toast } from "sonner";
+import { useSwipeToReveal } from "@/hooks/use-swipe-to-reveal";
+import { MOBILE_V2 } from "@/lib/constants";
 
 interface MobileDocumentRowProps {
   file: FileItem;
   searchMatch?: { snippet: string; score: number; query: string };
 }
-
-const SWIPE_THRESHOLD = 80;
-const ACTION_WIDTH = 80;
-const DELETE_ACTION_WIDTH = 160;
 
 function highlightQuery(text: string, query: string) {
   if (!query.trim()) return text;
@@ -46,27 +44,20 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
     useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
-  const [isActionsRevealed, setIsActionsRevealed] = useState(false);
-
-  const x = useMotionValue(0);
-  const hasTriggeredHapticRef = useRef(false);
-  const hasTriggeredLeftHapticRef = useRef(false);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
   const preview = file.preview;
   const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
 
-  // Swipe right: favorite indicator opacity
-  const favoriteOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 1]);
-  const favoriteScale = useTransform(x, [0, SWIPE_THRESHOLD], [0.5, 1]);
-
-  // Swipe left: action buttons opacity
-  const actionsOpacity = useTransform(x, [-ACTION_WIDTH, 0], [1, 0]);
+  const swipe = useSwipeToReveal({
+    id: file.id,
+    rightActionWidth: MOBILE_V2.ROW_SWIPE.TRIPLE_ACTION_WIDTH,
+  });
 
   const handleOpen = useCallback(() => {
-    if (isActionsRevealed) {
-      setIsActionsRevealed(false);
+    if (swipe.isRevealed) {
+      swipe.close();
       return;
     }
     if (file.isFolder) {
@@ -75,49 +66,7 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
     }
     setCurrentFile(file.id);
     router.push(`/editor/${file.id}`);
-  }, [file, router, setCurrentFile, setCurrentFolder, isActionsRevealed]);
-
-  const handleDrag = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    // Haptic feedback when crossing the right swipe threshold
-    if (info.offset.x > SWIPE_THRESHOLD && !hasTriggeredHapticRef.current) {
-      hasTriggeredHapticRef.current = true;
-      haptics.tick();
-    } else if (info.offset.x <= SWIPE_THRESHOLD) {
-      hasTriggeredHapticRef.current = false;
-    }
-
-    // Haptic feedback when crossing the left swipe threshold
-    if (info.offset.x < -ACTION_WIDTH && !hasTriggeredLeftHapticRef.current) {
-      hasTriggeredLeftHapticRef.current = true;
-      haptics.tick();
-    } else if (info.offset.x >= -ACTION_WIDTH) {
-      hasTriggeredLeftHapticRef.current = false;
-    }
-  }, []);
-
-  const handleDragEnd = useCallback(
-    (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      hasTriggeredHapticRef.current = false;
-      hasTriggeredLeftHapticRef.current = false;
-
-      // Swipe right: toggle favorite
-      if (info.offset.x > SWIPE_THRESHOLD || (info.offset.x > 40 && info.velocity.x > 300)) {
-        toggleFavorite(file.id);
-        haptics.success();
-        return;
-      }
-
-      // Swipe left: reveal action buttons
-      if (info.offset.x < -ACTION_WIDTH || (info.offset.x < -40 && info.velocity.x < -300)) {
-        setIsActionsRevealed(true);
-        return;
-      }
-
-      // Not enough swipe — snap back
-      setIsActionsRevealed(false);
-    },
-    [file.id, toggleFavorite]
-  );
+  }, [file, router, setCurrentFile, setCurrentFolder, swipe]);
 
   const handleDelete = async () => {
     try {
@@ -129,13 +78,19 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
     setShowDeleteModal(false);
   };
 
+  const handleFavoriteTap = () => {
+    swipe.close();
+    toggleFavorite(file.id);
+    haptics.success();
+  };
+
   const handleShare = () => {
-    setIsActionsRevealed(false);
+    swipe.close();
     setShowShareDialog(true);
   };
 
   const handleDeleteTap = () => {
-    setIsActionsRevealed(false);
+    swipe.close();
     setShowDeleteModal(true);
     haptics.light();
   };
@@ -143,39 +98,31 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
   return (
     <>
       <div className="relative overflow-hidden will-change-transform">
-        {/* Left action (swipe right to reveal): Favorite */}
-        <motion.div
-          className="absolute inset-y-0 left-0 flex items-center justify-center px-6"
-          style={{
-            opacity: favoriteOpacity,
-            backgroundColor: file.isFavorite ? "rgb(234 179 8 / 0.15)" : "rgb(234 179 8 / 0.1)",
-          }}
-        >
-          <motion.div style={{ scale: favoriteScale }}>
-            <Star
-              className={cn(
-                "h-5 w-5",
-                file.isFavorite ? "fill-amber-500 text-amber-500" : "text-amber-500"
-              )}
-            />
-          </motion.div>
-        </motion.div>
-
-        {/* Right actions (swipe left to reveal): Share, Delete */}
+        {/* Right actions (swipe left to reveal): Favorite, Share, Delete */}
         <motion.div
           className="absolute inset-y-0 right-0 flex items-stretch"
-          style={{ opacity: actionsOpacity }}
+          style={{ opacity: swipe.rightActionsOpacity }}
         >
           <button
+            onClick={handleFavoriteTap}
+            className={cn(
+              "flex w-16 items-center justify-center text-white active:opacity-80",
+              file.isFavorite ? "bg-amber-500" : "bg-amber-500/80"
+            )}
+            aria-label={file.isFavorite ? "Remove from favorites" : "Add to favorites"}
+          >
+            <Star className={cn("h-5 w-5", file.isFavorite && "fill-white")} />
+          </button>
+          <button
             onClick={handleShare}
-            className="flex w-20 items-center justify-center bg-blue-500 text-white active:bg-blue-600"
+            className="flex w-16 items-center justify-center bg-blue-500 text-white active:opacity-80"
             aria-label="Share"
           >
             <Share2 className="h-5 w-5" />
           </button>
           <button
             onClick={handleDeleteTap}
-            className="flex w-20 items-center justify-center bg-red-500 text-white active:bg-red-600"
+            className="flex w-16 items-center justify-center bg-red-500 text-white active:opacity-80"
             aria-label="Delete"
           >
             <Trash2 className="h-5 w-5" />
@@ -188,16 +135,7 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
             "relative z-10 flex cursor-pointer items-start gap-3 bg-background px-5 py-3.5",
             "active:bg-accent/30"
           )}
-          drag="x"
-          dragDirectionLock
-          dragConstraints={{ left: -DELETE_ACTION_WIDTH, right: SWIPE_THRESHOLD }}
-          dragElastic={{ left: 0.05, right: 0.1 }}
-          dragMomentum={false}
-          style={{ x }}
-          animate={isActionsRevealed ? { x: -DELETE_ACTION_WIDTH } : { x: 0 }}
-          transition={{ type: "spring", stiffness: 500, damping: 40, mass: 0.5 }}
-          onDrag={handleDrag}
-          onDragEnd={handleDragEnd}
+          {...swipe.dragProps}
           onClick={handleOpen}
         >
           {/* Icon */}

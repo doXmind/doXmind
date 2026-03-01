@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Star, MoreHorizontal, Trash2 } from "lucide-react";
-import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,6 +19,8 @@ import { cn, formatRelativeDate } from "@/lib/utils";
 import { formatWordCount } from "@/lib/file-utils";
 import { haptics } from "@/lib/haptics";
 import { toast } from "sonner";
+import { useSwipeToReveal } from "@/hooks/use-swipe-to-reveal";
+import { MOBILE_V2 } from "@/lib/constants";
 
 interface FavoritesSectionProps {
   favorites: FileItem[];
@@ -56,9 +58,6 @@ export function FavoritesSection({ favorites }: FavoritesSectionProps) {
   );
 }
 
-const SWIPE_THRESHOLD = 80;
-const DELETE_ACTION_WIDTH = 80;
-
 function FavoriteTile({
   file,
   index,
@@ -74,50 +73,10 @@ function FavoriteTile({
   const wordCount = file.wordCount;
   const preview = file.preview;
 
-  // Swipe state (mobile only)
-  const x = useMotionValue(0);
-  const [isActionsRevealed, setIsActionsRevealed] = useState(false);
-  const hasTriggeredHapticRef = useRef(false);
-  const hasTriggeredLeftHapticRef = useRef(false);
-
-  const favoriteOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 1]);
-  const favoriteScale = useTransform(x, [0, SWIPE_THRESHOLD], [0.5, 1]);
-  const deleteOpacity = useTransform(x, [-DELETE_ACTION_WIDTH, 0], [1, 0]);
-
-  const handleDrag = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.x > SWIPE_THRESHOLD && !hasTriggeredHapticRef.current) {
-      hasTriggeredHapticRef.current = true;
-      haptics.tick();
-    } else if (info.offset.x <= SWIPE_THRESHOLD) {
-      hasTriggeredHapticRef.current = false;
-    }
-    if (info.offset.x < -DELETE_ACTION_WIDTH && !hasTriggeredLeftHapticRef.current) {
-      hasTriggeredLeftHapticRef.current = true;
-      haptics.tick();
-    } else if (info.offset.x >= -DELETE_ACTION_WIDTH) {
-      hasTriggeredLeftHapticRef.current = false;
-    }
-  }, []);
-
-  const handleDragEnd = useCallback(
-    (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      hasTriggeredHapticRef.current = false;
-      hasTriggeredLeftHapticRef.current = false;
-      // Swipe right: unfavorite
-      if (info.offset.x > SWIPE_THRESHOLD || (info.offset.x > 40 && info.velocity.x > 300)) {
-        toggleFavorite(file.id);
-        haptics.success();
-        return;
-      }
-      // Swipe left: reveal delete
-      if (info.offset.x < -DELETE_ACTION_WIDTH || (info.offset.x < -40 && info.velocity.x < -300)) {
-        setIsActionsRevealed(true);
-        return;
-      }
-      setIsActionsRevealed(false);
-    },
-    [file.id, toggleFavorite]
-  );
+  const swipe = useSwipeToReveal({
+    id: `fav-${file.id}`,
+    rightActionWidth: MOBILE_V2.ROW_SWIPE.DOUBLE_ACTION_WIDTH,
+  });
 
   const handleDelete = async () => {
     try {
@@ -128,15 +87,21 @@ function FavoriteTile({
     setShowDeleteModal(false);
   };
 
+  const handleFavoriteTap = () => {
+    swipe.close();
+    toggleFavorite(file.id);
+    haptics.success();
+  };
+
   const handleDeleteTap = () => {
-    setIsActionsRevealed(false);
+    swipe.close();
     setShowDeleteModal(true);
     haptics.light();
   };
 
   const handleClick = () => {
-    if (isActionsRevealed) {
-      setIsActionsRevealed(false);
+    if (swipe.isRevealed) {
+      swipe.close();
       return;
     }
     onOpen(file);
@@ -186,24 +151,21 @@ function FavoriteTile({
             transition: { duration: 0.4, delay: 0.05 * index, ease: [0.16, 1, 0.3, 1] },
           }}
         >
-          {/* Left action: Unfavorite */}
-          <motion.div
-            className="absolute inset-y-0 left-0 flex items-center justify-center px-6"
-            style={{ opacity: favoriteOpacity, backgroundColor: "rgb(234 179 8 / 0.15)" }}
-          >
-            <motion.div style={{ scale: favoriteScale }}>
-              <Star className="h-5 w-5 fill-amber-500 text-amber-500" />
-            </motion.div>
-          </motion.div>
-
-          {/* Right action: Delete */}
+          {/* Right actions: Unfavorite, Delete */}
           <motion.div
             className="absolute inset-y-0 right-0 flex items-stretch"
-            style={{ opacity: deleteOpacity }}
+            style={{ opacity: swipe.rightActionsOpacity }}
           >
             <button
+              onClick={handleFavoriteTap}
+              className="flex w-20 items-center justify-center bg-amber-500 text-white active:opacity-80"
+              aria-label="Remove from favorites"
+            >
+              <Star className="h-5 w-5 fill-white" />
+            </button>
+            <button
               onClick={handleDeleteTap}
-              className="flex w-20 items-center justify-center bg-red-500 text-white active:bg-red-600"
+              className="flex w-20 items-center justify-center bg-red-500 text-white active:opacity-80"
               aria-label="Delete"
             >
               <Trash2 className="h-5 w-5" />
@@ -213,16 +175,7 @@ function FavoriteTile({
           {/* Draggable row */}
           <motion.div
             className="relative z-10 flex cursor-pointer gap-3 bg-card px-4 py-3.5 active:bg-accent/30"
-            drag="x"
-            dragDirectionLock
-            dragConstraints={{ left: -DELETE_ACTION_WIDTH, right: SWIPE_THRESHOLD }}
-            dragElastic={{ left: 0.05, right: 0.1 }}
-            dragMomentum={false}
-            style={{ x }}
-            animate={isActionsRevealed ? { x: -DELETE_ACTION_WIDTH } : { x: 0 }}
-            transition={{ type: "spring", stiffness: 500, damping: 40, mass: 0.5 }}
-            onDrag={handleDrag}
-            onDragEnd={handleDragEnd}
+            {...swipe.dragProps}
             onClick={handleClick}
           >
             {tileContent}

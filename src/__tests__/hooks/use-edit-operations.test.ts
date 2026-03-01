@@ -18,8 +18,6 @@ const mockStartDiffReview = vi.fn();
 const mockAddHunksToDiffSession = vi.fn();
 const mockComputeDiffHunks = vi.fn();
 const mockFindInMarkdown = vi.fn();
-const mockIsHtml = vi.fn();
-const mockHtmlToMarkdown = vi.fn();
 
 // Store state that can be adjusted per test
 let mockDiffState: {
@@ -51,10 +49,7 @@ vi.mock("@/lib/diff-utils", () => ({
   findInMarkdown: (...args: unknown[]) => mockFindInMarkdown(...args),
 }));
 
-vi.mock("@/lib/markdown", () => ({
-  isHtml: (...args: unknown[]) => mockIsHtml(...args),
-  htmlToMarkdown: (...args: unknown[]) => mockHtmlToMarkdown(...args),
-}));
+// @/lib/markdown is no longer imported by use-edit-operations (Turndown removed)
 
 vi.mock("@/lib/logger", () => ({
   editorLogger: {
@@ -74,9 +69,6 @@ describe("useEditOperations", () => {
       id: "file-1",
       content: "Hello World. Some text.",
     });
-
-    // Default: content is not HTML
-    mockIsHtml.mockReturnValue(false);
 
     // Default: computeDiffHunks returns a single hunk
     mockComputeDiffHunks.mockReturnValue([
@@ -358,14 +350,13 @@ describe("useEditOperations", () => {
   // ==========================================================================
   // HTML content handling
   // ==========================================================================
-  describe("HTML content", () => {
-    it("converts HTML to markdown for matching", () => {
+  describe("contentMarkdown usage", () => {
+    it("prefers contentMarkdown over raw content for matching", () => {
       mockGetFile.mockReturnValue({
         id: "file-1",
         content: "<p>Hello World.</p>",
+        contentMarkdown: "Hello World.",
       });
-      mockIsHtml.mockReturnValue(true);
-      mockHtmlToMarkdown.mockReturnValue("Hello World.");
 
       const { result } = renderHook(() => useEditOperations());
       result.current.applyEdits([
@@ -379,8 +370,29 @@ describe("useEditOperations", () => {
         },
       ]);
 
-      expect(mockHtmlToMarkdown).toHaveBeenCalledWith("<p>Hello World.</p>");
-      // originalMarkdown should be the converted markdown
+      // originalMarkdown should be the cached markdown, not raw HTML
+      const originalMd = mockStartDiffReview.mock.calls[0][3];
+      expect(originalMd).toBe("Hello World.");
+    });
+
+    it("falls back to raw content when contentMarkdown is missing", () => {
+      mockGetFile.mockReturnValue({
+        id: "file-1",
+        content: "Hello World.",
+      });
+
+      const { result } = renderHook(() => useEditOperations());
+      result.current.applyEdits([
+        {
+          type: "str_replace",
+          file_id: "file-1",
+          file_name: "test.md",
+          success: true,
+          old_str: "Hello",
+          new_str: "Hi",
+        },
+      ]);
+
       const originalMd = mockStartDiffReview.mock.calls[0][3];
       expect(originalMd).toBe("Hello World.");
     });

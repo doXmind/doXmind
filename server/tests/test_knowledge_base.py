@@ -2,7 +2,7 @@
 
 import io
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
@@ -25,15 +25,8 @@ class TestUploadAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        # Mock RAGService directly
-        with (
-            patch("api.knowledge_base.extract_text_content") as mock_extract,
-            patch("api.knowledge_base.RAGService") as mock_rag_class,
-        ):
+        with patch("api.knowledge_base.extract_text_content") as mock_extract:
             mock_extract.return_value = "Extracted PDF content"
-            mock_rag = MagicMock()
-            mock_rag.index_kb_attachment = AsyncMock(return_value=5)
-            mock_rag_class.return_value = mock_rag
 
             # Create a simple PDF file
             pdf_content = b"%PDF-1.4 test content"
@@ -56,14 +49,8 @@ class TestUploadAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        with (
-            patch("api.knowledge_base.extract_text_content") as mock_extract,
-            patch("api.knowledge_base.RAGService") as mock_rag_class,
-        ):
+        with patch("api.knowledge_base.extract_text_content") as mock_extract:
             mock_extract.return_value = "Extracted DOCX content"
-            mock_rag = MagicMock()
-            mock_rag.index_kb_attachment = AsyncMock(return_value=3)
-            mock_rag_class.return_value = mock_rag
 
             docx_content = b"PK\x03\x04 test docx"
             files = {
@@ -127,14 +114,8 @@ class TestUploadAttachment:
         self, client: AsyncClient, db_session, auth_headers
     ):
         """Should create conversation if it doesn't exist."""
-        with (
-            patch("api.knowledge_base.extract_text_content") as mock_extract,
-            patch("api.knowledge_base.RAGService") as mock_rag_class,
-        ):
+        with patch("api.knowledge_base.extract_text_content") as mock_extract:
             mock_extract.return_value = "Content"
-            mock_rag = AsyncMock()
-            mock_rag.index_kb_attachment = AsyncMock(return_value=1)
-            mock_rag_class.return_value = mock_rag
 
             pdf_content = b"%PDF-1.4"
             files = {"file": ("new.pdf", io.BytesIO(pdf_content), "application/pdf")}
@@ -154,13 +135,8 @@ class TestUploadAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        with (
-            patch("api.knowledge_base.extract_text_content") as mock_extract,
-            patch("api.knowledge_base.RAGService") as mock_rag_class,
-        ):
+        with patch("api.knowledge_base.extract_text_content") as mock_extract:
             mock_extract.side_effect = Exception("Extraction failed")
-            mock_rag = AsyncMock()
-            mock_rag_class.return_value = mock_rag
 
             pdf_content = b"%PDF-1.4"
             files = {"file": ("corrupt.pdf", io.BytesIO(pdf_content), "application/pdf")}
@@ -268,19 +244,14 @@ class TestDeleteAttachment:
         db_session.add(att)
         await db_session.commit()
 
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = AsyncMock()
-            mock_rag.delete_kb_attachment = AsyncMock()
-            mock_rag_class.return_value = mock_rag
+        response = await client.delete(
+            f"/api/kb/file-del/attachments/{att_id}", headers=auth_headers
+        )
 
-            response = await client.delete(
-                f"/api/kb/file-del/attachments/{att_id}", headers=auth_headers
-            )
-
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "deleted"
-            assert data["id"] == att_id
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "deleted"
+        assert data["id"] == att_id
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_attachment(
@@ -291,15 +262,11 @@ class TestDeleteAttachment:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = AsyncMock()
-            mock_rag_class.return_value = mock_rag
+        response = await client.delete(
+            "/api/kb/file-noatt/attachments/nonexistent-id", headers=auth_headers
+        )
 
-            response = await client.delete(
-                "/api/kb/file-noatt/attachments/nonexistent-id", headers=auth_headers
-            )
-
-            assert response.status_code == 404
+        assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_attachment_wrong_conversation(
@@ -326,16 +293,10 @@ class TestDeleteAttachment:
         db_session.add(att)
         await db_session.commit()
 
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = AsyncMock()
-            mock_rag_class.return_value = mock_rag
+        # Try to delete from conv2
+        response = await client.delete(f"/api/kb/file-2/attachments/{att_id}", headers=auth_headers)
 
-            # Try to delete from conv2
-            response = await client.delete(
-                f"/api/kb/file-2/attachments/{att_id}", headers=auth_headers
-            )
-
-            assert response.status_code == 404
+        assert response.status_code == 404
 
 
 # ============================================================================
@@ -348,33 +309,41 @@ class TestSearchKnowledgeBase:
 
     @pytest.mark.asyncio
     async def test_search_returns_results(self, client: AsyncClient, db_session, auth_headers):
-        """Should return search results."""
+        """Should return search results from attachment extracted text."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-search")
         db_session.add(conv)
+        await db_session.flush()
+
+        att1 = ConversationAttachment(
+            conversation_id=conv.id,
+            original_filename="doc1.pdf",
+            file_type="pdf",
+            file_size=1000,
+            status="indexed",
+            extracted_text="This document contains a test query for verification.",
+        )
+        att2 = ConversationAttachment(
+            conversation_id=conv.id,
+            original_filename="doc2.pdf",
+            file_type="pdf",
+            file_size=1000,
+            status="indexed",
+            extracted_text="Another file with a test query inside it.",
+        )
+        db_session.add_all([att1, att2])
         await db_session.commit()
 
-        # Mock RAGService directly
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.search_kb = AsyncMock(
-                return_value=[
-                    {"content": "Result 1", "source_file": "doc1.pdf", "score": 0.95},
-                    {"content": "Result 2", "source_file": "doc2.pdf", "score": 0.85},
-                ]
-            )
-            mock_rag_class.return_value = mock_rag
+        response = await client.post(
+            "/api/kb/file-search/search",
+            headers=auth_headers,
+            json={"query": "test query", "top_k": 5},
+        )
 
-            response = await client.post(
-                "/api/kb/file-search/search",
-                headers=auth_headers,
-                json={"query": "test query", "top_k": 5},
-            )
-
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data["results"]) == 2
-            assert data["results"][0]["content"] == "Result 1"
-            assert data["results"][0]["score"] == 0.95
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["results"]) == 2
+        assert "test query" in data["results"][0]["content"].lower()
+        assert data["results"][0]["score"] == 1.0
 
     @pytest.mark.asyncio
     async def test_search_empty_results(self, client: AsyncClient, db_session, auth_headers):
@@ -383,21 +352,15 @@ class TestSearchKnowledgeBase:
         db_session.add(conv)
         await db_session.commit()
 
-        # Mock RAGService directly
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.search_kb = AsyncMock(return_value=[])
-            mock_rag_class.return_value = mock_rag
+        response = await client.post(
+            "/api/kb/file-noresults/search",
+            headers=auth_headers,
+            json={"query": "no match", "top_k": 5},
+        )
 
-            response = await client.post(
-                "/api/kb/file-noresults/search",
-                headers=auth_headers,
-                json={"query": "no match", "top_k": 5},
-            )
-
-            assert response.status_code == 200
-            data = response.json()
-            assert data["results"] == []
+        assert response.status_code == 200
+        data = response.json()
+        assert data["results"] == []
 
     @pytest.mark.asyncio
     async def test_search_nonexistent_conversation(self, client: AsyncClient, auth_headers):
@@ -684,15 +647,8 @@ class TestExtendedUpload:
         db_session.add(conv)
         await db_session.commit()
 
-        with (
-            patch("api.knowledge_base.extract_text_content") as mock_extract,
-            patch("api.knowledge_base.RAGService") as mock_rag_class,
-        ):
+        with patch("api.knowledge_base.extract_text_content") as mock_extract:
             mock_extract.return_value = "Presentation content"
-
-            mock_rag = MagicMock()
-            mock_rag.index_kb_attachment = AsyncMock(return_value=10)
-            mock_rag_class.return_value = mock_rag
 
             pptx_content = b"PK\x03\x04 test pptx"
             files = {
@@ -741,30 +697,21 @@ class TestExtendedDelete:
         db_session.add(att)
         await db_session.commit()
 
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = AsyncMock()
-            mock_rag.delete_kb_attachment = AsyncMock(side_effect=Exception("RAG error"))
-            mock_rag_class.return_value = mock_rag
+        response = await client.delete(
+            f"/api/kb/file-rag-err/attachments/{att_id}", headers=auth_headers
+        )
 
-            response = await client.delete(
-                f"/api/kb/file-rag-err/attachments/{att_id}", headers=auth_headers
-            )
-
-            # Should still succeed
-            assert response.status_code == 200
+        # Should still succeed
+        assert response.status_code == 200
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_conversation(self, client: AsyncClient, auth_headers):
         """Should return 404 for nonexistent conversation."""
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = AsyncMock()
-            mock_rag_class.return_value = mock_rag
+        response = await client.delete(
+            "/api/kb/nonexistent-conv/attachments/some-att-id", headers=auth_headers
+        )
 
-            response = await client.delete(
-                "/api/kb/nonexistent-conv/attachments/some-att-id", headers=auth_headers
-            )
-
-            assert response.status_code == 404
+        assert response.status_code == 404
 
 
 # ============================================================================
@@ -776,24 +723,23 @@ class TestExtendedSearch:
     """Extended tests for search functionality."""
 
     @pytest.mark.asyncio
-    async def test_search_handles_rag_error(self, client: AsyncClient, db_session, auth_headers):
-        """Should return 500 when RAG search fails."""
+    async def test_search_returns_empty_when_no_attachments(
+        self, client: AsyncClient, db_session, auth_headers
+    ):
+        """Should return empty results when no attachments exist."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="file-search-err")
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.search_kb = AsyncMock(side_effect=Exception("Search failed"))
-            mock_rag_class.return_value = mock_rag
+        response = await client.post(
+            "/api/kb/file-search-err/search",
+            headers=auth_headers,
+            json={"query": "test", "top_k": 5},
+        )
 
-            response = await client.post(
-                "/api/kb/file-search-err/search",
-                headers=auth_headers,
-                json={"query": "test", "top_k": 5},
-            )
-
-            assert response.status_code == 500
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["results"]) == 0
 
     @pytest.mark.asyncio
     async def test_search_with_custom_top_k(self, client: AsyncClient, db_session, auth_headers):
@@ -802,22 +748,13 @@ class TestExtendedSearch:
         db_session.add(conv)
         await db_session.commit()
 
-        with patch("api.knowledge_base.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.search_kb = AsyncMock(return_value=[])
-            mock_rag_class.return_value = mock_rag
+        response = await client.post(
+            "/api/kb/file-topk/search",
+            headers=auth_headers,
+            json={"query": "test", "top_k": 20},
+        )
 
-            response = await client.post(
-                "/api/kb/file-topk/search",
-                headers=auth_headers,
-                json={"query": "test", "top_k": 20},
-            )
-
-            assert response.status_code == 200
-            # Verify top_k was passed
-            mock_rag.search_kb.assert_called_once()
-            call_kwargs = mock_rag.search_kb.call_args[1]
-            assert call_kwargs["top_k"] == 20
+        assert response.status_code == 200
 
 
 # ============================================================================

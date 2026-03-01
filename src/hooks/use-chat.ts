@@ -11,7 +11,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useDemoStore } from "@/stores/demo-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
-import { htmlToMarkdown, isHtml } from "@/lib/markdown";
+
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
@@ -206,10 +206,9 @@ export function useChat() {
           .map((f) => ({
             id: f.id,
             name: f.name,
-            // Prefer cached markdown (from editor.getMarkdown() on save).
-            // Fallback to Turndown conversion for files not yet re-saved since upgrade.
-            content:
-              f.contentMarkdown || (isHtml(f.content) ? htmlToMarkdown(f.content) : f.content),
+            // Use cached markdown from editor.getMarkdown() on save.
+            // Falls back to raw content for files not yet re-saved since upgrade.
+            content: f.contentMarkdown || f.content,
           }));
 
         // Get web tools settings

@@ -3,8 +3,7 @@
  *
  * Functions for finding text positions in ProseMirror documents.
  * Primary strategy: "Apply and Diff" — replicate the backend's markdown replace,
- * parse both full markdowns through ProseMirror, diff textContent to find positions.
- * Fallback: exact match and normalized whitespace match on doc.textContent.
+ * parse both full markdowns via @tiptap/markdown, diff textContent to find positions.
  */
 
 import {
@@ -13,7 +12,7 @@ import {
   type Schema,
 } from "@tiptap/pm/model";
 import { markdownToHtml } from "@/lib/markdown";
-import { normalizeTableHtml, normalizeMermaidHtml } from "./replacement-utils";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import type { TextPosition } from "./diff-types";
 
 /**
@@ -170,37 +169,48 @@ export function findTextInDocument(
 }
 
 /**
- * Parse a full markdown string through ProseMirror.
- * Uses the same pipeline as the editor: markdown → HTML → normalize → ProseMirror DOM parser.
+ * Parse a full markdown string to a ProseMirror Node via @tiptap/markdown.
+ * Uses the editor's MarkdownManager which has all extensions registered,
+ * producing documents with identical structure to the live editor.
+ * This eliminates textContent mismatches caused by the old HTML roundtrip path.
  */
-function parseFullMarkdown(markdown: string, schema: Schema): PMNode {
+function parseMarkdownToDoc(markdown: string, schema: Schema): PMNode {
+  const editor = useEditorRefStore.getState().editor;
+  if (editor?.markdown) {
+    const json = editor.markdown.parse(markdown);
+    return schema.nodeFromJSON(json);
+  }
+  // Fallback: HTML path (used in tests where no editor is available)
   const html = markdownToHtml(markdown);
   const el = document.createElement("div");
   el.innerHTML = html;
-  normalizeTableHtml(el);
-  normalizeMermaidHtml(el);
   return ProseMirrorDOMParser.fromSchema(schema).parse(el);
 }
 
 /**
- * Cache for the reference document's textContent (parsed from originalMarkdown).
+ * Cache for the reference document (parsed from originalMarkdown).
+ * Stores both textContent and the parsed PMNode so structural diff
+ * can reuse the same parsed doc without re-parsing.
  * Map-based to support multiple markdown variants (original + cumulative for sequential edits).
- * Avoids re-parsing the full document for every hunk.
  */
-const referenceTextCache = new Map<string, string>();
+interface ReferenceCache {
+  textContent: string;
+  doc: PMNode;
+}
+const referenceDocCache = new Map<string, ReferenceCache>();
 
-function getOrBuildReferenceText(markdown: string, schema: Schema): string {
-  const cached = referenceTextCache.get(markdown);
-  if (cached !== undefined) return cached;
-  const doc = parseFullMarkdown(markdown, schema);
-  const textContent = doc.textContent;
-  referenceTextCache.set(markdown, textContent);
-  return textContent;
+function getOrBuildReference(markdown: string, schema: Schema): ReferenceCache {
+  const cached = referenceDocCache.get(markdown);
+  if (cached) return cached;
+  const doc = parseMarkdownToDoc(markdown, schema);
+  const entry: ReferenceCache = { textContent: doc.textContent, doc };
+  referenceDocCache.set(markdown, entry);
+  return entry;
 }
 
-/** Clear the reference text cache (call when diff session ends). */
+/** Clear the reference document cache (call when diff session ends). */
 export function clearMarkdownCache(): void {
-  referenceTextCache.clear();
+  referenceDocCache.clear();
 }
 
 /**
@@ -224,19 +234,12 @@ function resolveBlockInfo(doc: PMNode, pos: TextPosition): void {
  * Markdown-first matching using the "Apply and Diff" approach.
  *
  * Replicates the backend's logic: find old_str in the document's markdown,
- * apply the deletion, parse both full markdowns through ProseMirror,
+ * apply the deletion, parse both full markdowns via @tiptap/markdown,
  * and diff textContent to find the exact position range.
  *
- * This avoids parsing markdown fragments (which fails for table rows, etc.)
- * because both old and new are complete documents that always parse correctly.
- *
- * Two-tier strategy:
- * - Fast path: direct offset mapping when parsed reference textContent matches
- *   the actual editor document's textContent.
- * - Fallback: "Extract and Search" — extracts the removed text from the clean
- *   reference diff and searches for it in the actual document. This handles
- *   textContent mismatches caused by lossy HTML→markdown→HTML roundtrip
- *   (nbsp, entity encoding, extension-specific parsing, etc.).
+ * Since both the editor and this function use @tiptap/markdown for parsing,
+ * the reference textContent always matches the actual document, making
+ * the fast path reliable without lossy HTML roundtrip fallbacks.
  */
 export function findTextViaMarkdown(
   doc: PMNode,
@@ -280,8 +283,9 @@ export function findTextViaMarkdown(
     const newMarkdown = markdown.slice(0, mdIdx) + markdown.slice(mdIdx + oldContent.length);
 
     // Step 3: Parse both full markdowns through ProseMirror and get textContent
-    const refOldText = getOrBuildReferenceText(markdown, schema);
-    const newDoc = parseFullMarkdown(newMarkdown, schema);
+    const refCache = getOrBuildReference(markdown, schema);
+    const refOldText = refCache.textContent;
+    const newDoc = parseMarkdownToDoc(newMarkdown, schema);
     const refNewText = newDoc.textContent;
 
     // Step 4: Diff reference textContent to find the removed range
@@ -301,8 +305,7 @@ export function findTextViaMarkdown(
       // No textContent difference: old_str produces no visible text
       // (e.g., mermaid charts, images, math blocks — atom nodes without leafText).
       // Fall back to structural node-level diff between the two parsed documents.
-      const refDoc = parseFullMarkdown(markdown, schema);
-      const structuralPos = findStructuralDiff(refDoc, newDoc);
+      const structuralPos = findStructuralDiff(refCache.doc, newDoc);
       if (structuralPos) {
         // Verify structural positions are usable in the actual editor document.
         // When reference textContent matches actual, the documents have the same
@@ -332,32 +335,28 @@ export function findTextViaMarkdown(
     if (refOldText === actualText) {
       const pos = mapOffsetsToPosition(start, oldEnd, entries);
       if (pos && !excludePositions?.has(pos.from)) {
+        // Check if structural diff gives a wider range that encompasses atom nodes.
+        // Only attempt when oldContent contains atom-producing markdown patterns
+        // (math blocks, mermaid charts) that are invisible to textContent.
+        // Without this guard, pure text changes would be widened to full-block ranges.
+        const hasAtomPatterns = /\$\$[\s\S]*?\$\$|```mermaid/i.test(oldContent);
+        if (hasAtomPatterns) {
+          const structPos = findStructuralDiff(refCache.doc, newDoc);
+          if (
+            structPos &&
+            structPos.from <= pos.from &&
+            structPos.to >= pos.to &&
+            (structPos.from < pos.from || structPos.to > pos.to) &&
+            !excludePositions?.has(structPos.from)
+          ) {
+            resolveBlockInfo(doc, structPos);
+            return structPos;
+          }
+        }
         resolveBlockInfo(doc, pos);
         return pos;
       }
-      // Direct mapping failed (offset at node boundary) — try Extract and Search below
-    }
-
-    // Fallback: "Extract and Search"
-    // The parsed reference textContent may differ from the actual editor document
-    // (lossy HTML→markdown→HTML roundtrip: nbsp, entities, custom nodes, etc.)
-    // Extract the removed text from the clean reference diff and search in the actual doc.
-    const removedText = refOldText.slice(start, oldEnd);
-    if (removedText) {
-      const allOccurrences = findAllTextInDocument(doc, removedText);
-      const candidates =
-        excludePositions && excludePositions.size > 0
-          ? allOccurrences.filter((occ) => !excludePositions.has(occ.from))
-          : allOccurrences;
-
-      if (candidates.length > 0) {
-        // Single match or first match — findAllTextInDocument already resolves blockInfo
-        return candidates[0];
-      }
-
-      // Last resort: normalized whitespace search for the removed text
-      const normalizedResult = findTextNormalized(doc, removedText, excludePositions);
-      if (normalizedResult) return normalizedResult;
+      // Direct mapping failed (offset at node boundary) — try next occurrence
     }
 
     searchFrom = mdIdx + 1;
@@ -413,94 +412,59 @@ function findStructuralDiff(oldDoc: PMNode, newDoc: PMNode): TextPosition | null
 }
 
 /**
- * Disambiguate among multiple candidates using preferredBlockType.
+ * Find an atom node in the document matching the fragment's first atom child.
+ * Used for mermaid charts, math blocks, and other atom nodes that have no textContent.
+ * Matches by node type name and content-bearing attribute (code/latex).
  */
-function disambiguate(
-  candidates: TextPosition[],
-  preferredBlockType?: string | null
+export function findAtomNode(
+  doc: PMNode,
+  fragmentDoc: PMNode,
+  excludePositions?: Set<number>
 ): TextPosition | null {
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1 || !preferredBlockType) return candidates[0];
-  const preferred = candidates.find((c) => c.blockTypeName === preferredBlockType);
-  return preferred || candidates[0];
+  // Extract the first atom node from the parsed fragment
+  let targetType = "";
+  let targetAttrs: Record<string, unknown> = {};
+  fragmentDoc.descendants((node) => {
+    if (node.isAtom && !targetType) {
+      targetType = node.type.name;
+      targetAttrs = node.attrs as Record<string, unknown>;
+      return false;
+    }
+    return true;
+  });
+  if (!targetType) return null;
+
+  let result: TextPosition | null = null;
+  doc.descendants((node, pos) => {
+    if (result) return false;
+    if (
+      node.type.name === targetType &&
+      node.isAtom &&
+      attrsMatch(node.attrs, targetAttrs, targetType) &&
+      !excludePositions?.has(pos)
+    ) {
+      result = { from: pos, to: pos + node.nodeSize, blockStart: pos };
+      return false;
+    }
+    return true;
+  });
+
+  return result;
 }
 
-/**
- * Find text in document with normalized whitespace matching.
- * Collapses consecutive whitespace to single spaces before comparing.
- * Used as a fallback when exact match fails due to whitespace differences.
- */
-export function findTextNormalized(
-  doc: PMNode,
-  searchText: string,
-  excludePositions?: Set<number>,
-  preferredBlockType?: string | null
-): TextPosition | null {
-  if (!searchText) return null;
-
-  const normalizedSearch = searchText.replace(/\s+/g, " ").trim();
-  if (!normalizedSearch) return null;
-
-  const entries = buildTextPositionMap(doc);
-  const fullText = doc.textContent;
-
-  // Build normalized version of doc text, tracking original char indices
-  const normalizedChars: { char: string; origIdx: number }[] = [];
-  let lastWasSpace = true; // treat start as space to trim leading
-  for (let i = 0; i < fullText.length; i++) {
-    const ch = fullText[i];
-    if (/\s/.test(ch)) {
-      if (!lastWasSpace) {
-        normalizedChars.push({ char: " ", origIdx: i });
-        lastWasSpace = true;
-      }
-    } else {
-      normalizedChars.push({ char: ch, origIdx: i });
-      lastWasSpace = false;
-    }
+/** Compare content-bearing attributes for atom nodes. */
+function attrsMatch(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  typeName: string
+): boolean {
+  switch (typeName) {
+    case "mermaidChart":
+      return a.code === b.code;
+    case "blockMath":
+    case "inlineMath":
+      return a.latex === b.latex;
+    default:
+      return JSON.stringify(a) === JSON.stringify(b);
   }
-  // Trim trailing space
-  if (normalizedChars.length > 0 && normalizedChars[normalizedChars.length - 1].char === " ") {
-    normalizedChars.pop();
-  }
-
-  const normalizedFullText = normalizedChars.map((c) => c.char).join("");
-  const results: TextPosition[] = [];
-  let start = 0;
-
-  while (start < normalizedFullText.length) {
-    const idx = normalizedFullText.indexOf(normalizedSearch, start);
-    if (idx === -1) break;
-
-    // Map back to original offsets
-    const origStart = normalizedChars[idx].origIdx;
-    const lastIdx = idx + normalizedSearch.length - 1;
-    const origEnd = normalizedChars[lastIdx].origIdx + 1;
-
-    const pos = mapOffsetsToPosition(origStart, origEnd, entries);
-    if (pos) {
-      try {
-        const $pos = doc.resolve(pos.from);
-        for (let d = $pos.depth; d > 0; d--) {
-          if ($pos.node(d).isBlock) {
-            pos.blockTypeName = $pos.node(d).type.name;
-            break;
-          }
-        }
-      } catch {
-        // Ignore resolution errors
-      }
-      results.push(pos);
-    }
-    start = idx + 1;
-  }
-
-  if (results.length === 0) return null;
-
-  const candidates =
-    excludePositions && excludePositions.size > 0
-      ? results.filter((occ) => !excludePositions.has(occ.from))
-      : results;
-
-  return disambiguate(candidates, preferredBlockType);
 }

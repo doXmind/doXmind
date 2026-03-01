@@ -1,9 +1,8 @@
-"""Knowledge Base Agent for agentic RAG across all user documents.
+"""Knowledge Base Agent for agentic search across all user documents.
 
-A lightweight agent with only two tools (search_files, read_file_sections)
-that answers questions by searching and reading user's documents.
-Uses the same streaming pattern as WritingAgent but stripped of all
-editing, skills, and multimodal complexity.
+A lightweight agent with search and read tools that answers questions
+by searching and reading user's documents. Uses plain text search
+and document section parsing (no embeddings/vectors).
 """
 
 import json
@@ -17,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.tools.definitions import to_openai_tools
 from config import get_settings
-from services.rag.html_utils import strip_html_tags
-from services.rag.search import RAGService
+from services.document_sections import find_sections, generate_outline, parse_sections
+from utils.html import strip_html_tags
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +29,19 @@ KB_SYSTEM_PROMPT = """You are a knowledge base assistant that answers questions 
 
 ## Critical rules
 
-- Your FIRST action must ALWAYS be calling search_files. NEVER respond with text before searching.
+- Your FIRST action must ALWAYS be calling search. NEVER respond with text before searching.
 - NEVER ask the user clarifying questions. Just search immediately with your best interpretation.
 - If the user's question is vague, search with multiple relevant terms to cast a wide net.
 - Base your answer ONLY on information found in the documents. Do NOT use general knowledge.
 
 ## Workflow
 
-1. Immediately call search_files with relevant query terms extracted from the user's message.
-2. If the topic is broad, call search_files multiple times with different angles/keywords.
-3. Use read_file_sections to get more context around promising search results.
-4. Synthesize what you found into a clear answer, citing source document names.
-5. If nothing relevant is found after searching, tell the user no matching content was found.
+1. Immediately call search with relevant keywords from the user's message.
+2. If the topic is broad, call search multiple times with different keywords.
+3. Use get_outline to see a document's outline (heading structure with section IDs).
+4. Use read_content to read specific sections by ID for detailed content.
+5. Synthesize what you found into a clear answer, citing source document names.
+6. If nothing relevant is found after searching, tell the user no matching content was found.
 
 ## Response format
 
@@ -54,14 +54,12 @@ KB_SYSTEM_PROMPT = """You are a knowledge base assistant that answers questions 
 # Tool Definitions
 # ---------------------------------------------------------------------------
 
-SEARCH_FILES_TOOL = {
-    "name": "search_files",
+SEARCH_TOOL = {
+    "name": "search",
     "description": (
-        "Search across ALL of the user's documents using semantic and keyword search. "
-        "Returns the most relevant text passages from any document. "
-        "Use this to find information related to a query across the entire knowledge base. "
-        "You can search multiple times with different queries to find all relevant information. "
-        "Each result includes the source document name, chunk index, and relevance score."
+        "Search across ALL of the user's documents by keyword/text matching. "
+        "Searches both file names and content. Returns matching excerpts with context. "
+        "You can search multiple times with different queries to find all relevant information."
     ),
     "input_schema": {
         "type": "object",
@@ -69,56 +67,65 @@ SEARCH_FILES_TOOL = {
             "query": {
                 "type": "string",
                 "description": (
-                    "The search query. Use specific, descriptive phrases. "
-                    "For broad topics, search multiple times with different angles."
+                    "The search query. Use specific keywords or phrases. "
+                    "For broad topics, search multiple times with different terms."
                 ),
             },
             "top_k": {
                 "type": "integer",
-                "description": "Number of results to return (1-10). Default: 5.",
-                "default": 5,
+                "description": "Maximum number of results to return (1-20). Default: 10.",
+                "default": 10,
                 "minimum": 1,
-                "maximum": 10,
+                "maximum": 20,
             },
         },
         "required": ["query"],
     },
 }
 
-READ_FILE_SECTIONS_TOOL = {
-    "name": "read_file_sections",
+GET_OUTLINE_TOOL = {
+    "name": "get_outline",
     "description": (
-        "Read specific sections (chunks) from a document by file_id. "
-        "Use this after search_files to read more context around a relevant result, "
-        "or to read the beginning of a document to understand its structure. "
-        "Returns consecutive sections from the document."
+        "Get the outline (heading structure) of a document by file_id. "
+        "Returns section IDs, line ranges, and estimated token counts. "
+        "Use this after search to understand a document's structure."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "file_id": {
                 "type": "string",
-                "description": "The file_id of the document (from search results metadata).",
-            },
-            "start_section": {
-                "type": "integer",
-                "description": "Starting section index (0-based). Default: 0.",
-                "default": 0,
-                "minimum": 0,
-            },
-            "num_sections": {
-                "type": "integer",
-                "description": "Number of sections to read (1-10). Default: 3.",
-                "default": 3,
-                "minimum": 1,
-                "maximum": 10,
+                "description": "The file_id of the document (from search results).",
             },
         },
         "required": ["file_id"],
     },
 }
 
-KB_TOOLS = [SEARCH_FILES_TOOL, READ_FILE_SECTIONS_TOOL]
+READ_CONTENT_TOOL = {
+    "name": "read_content",
+    "description": (
+        "Read specific sections of a document by section IDs (from get_outline). "
+        "Returns content with line numbers. Reading a parent section includes all children."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "The file_id of the document.",
+            },
+            "section_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Section IDs to read (e.g., ['s1', 's2.1']).",
+            },
+        },
+        "required": ["file_id", "section_ids"],
+    },
+}
+
+KB_TOOLS = [SEARCH_TOOL, GET_OUTLINE_TOOL, READ_CONTENT_TOOL]
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +134,7 @@ KB_TOOLS = [SEARCH_FILES_TOOL, READ_FILE_SECTIONS_TOOL]
 
 
 class KBAgent:
-    """Simple agentic RAG agent for answering questions from user's documents."""
+    """Simple agentic search agent for answering questions from user's documents."""
 
     MAX_ITERATIONS = 20
 
@@ -139,7 +146,6 @@ class KBAgent:
         model: str | None = None,
     ):
         self.db = db
-        self.rag = RAGService(db, api_key=api_key)
         self.user_id = user_id
         settings = get_settings()
         self.client = AsyncOpenAI(
@@ -156,11 +162,11 @@ class KBAgent:
         question: str,
         history: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Stream an agentic RAG response.
+        """Stream an agentic search response.
 
         Yields SSE-compatible events:
         - {"type": "text", "content": "..."}
-        - {"type": "tool_start", "tool": "search_files", "tool_id": "..."}
+        - {"type": "tool_start", "tool": "search", "tool_id": "..."}
         - {"type": "tool_end", "tool": "...", "tool_id": "...", "output": "...", "success": bool}
         - {"type": "sources", "sources": [...]}
         - {"type": "done"}
@@ -352,57 +358,73 @@ class KBAgent:
         name = tool_use["name"]
         inp = tool_use.get("input", {})
 
-        if name == "search_files":
-            return await self._exec_search_files(inp)
-        elif name == "read_file_sections":
-            return await self._exec_read_file_sections(inp)
+        if name == "search":
+            return await self._exec_search(inp)
+        elif name == "get_outline":
+            return await self._exec_get_outline(inp)
+        elif name == "read_content":
+            return await self._exec_read_content(inp)
         else:
             return f"Unknown tool: {name}", []
 
-    async def _exec_search_files(self, inp: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
-        """Execute search_files tool using RAGService.hybrid_search."""
+    async def _fetch_file(self, file_id: str) -> dict | None:
+        """Fetch a single file by ID."""
+        result = await self.db.execute(
+            text("""
+                SELECT id, name, content FROM files
+                WHERE id = :file_id AND deleted_at IS NULL AND is_folder = false
+                AND (user_id = :user_id OR user_id IS NULL)
+            """),
+            {"file_id": file_id, "user_id": self.user_id},
+        )
+        row = result.fetchone()
+        if not row:
+            return None
+        return {"id": row.id, "name": row.name, "content": row.content or ""}
+
+    async def _exec_search(self, inp: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+        """Execute search tool using text matching."""
         query = inp.get("query", "")
-        top_k = min(inp.get("top_k", 5), 10)
+        top_k = min(inp.get("top_k", 10), 20)
 
         if not query:
             return "Error: search query is required.", []
 
         try:
-            results = await self.rag.hybrid_search(
-                query=query,
-                top_k=top_k,
-                user_id=self.user_id,
+            pattern = f"%{query}%"
+            result = await self.db.execute(
+                text("""
+                    SELECT id, name, content FROM files
+                    WHERE deleted_at IS NULL AND is_folder = false
+                    AND (user_id = :user_id OR user_id IS NULL)
+                    AND (name ILIKE :pattern OR content ILIKE :pattern)
+                    ORDER BY updated_at DESC
+                    LIMIT :limit
+                """),
+                {"user_id": self.user_id, "pattern": pattern, "limit": top_k},
             )
+            rows = result.fetchall()
 
-            if not results:
-                return f"No relevant results found for: '{query}'", []
+            if not rows:
+                return f"No results found for: '{query}'", []
 
             sources = []
             formatted = []
-            for i, r in enumerate(results, 1):
-                metadata = r.get("metadata", {})
-                file_id = metadata.get("file_id", "unknown")
-                file_name = metadata.get("name", "Untitled")
-                chunk_index = metadata.get("chunk_index", 0)
-                score = 1 - r.get("distance", 1)
-                content = r.get("content", "")
+            for i, row in enumerate(rows, 1):
+                plain = strip_html_tags(row.content or "")
 
-                # Truncate content for tool result (Claude can read_file_sections for more)
-                if len(content) > 800:
-                    content = content[:800] + "..."
+                # Extract snippets around the match
+                snippets = self._extract_snippets(plain, query)
+                snippet_text = (
+                    "\n".join(snippets)
+                    if snippets
+                    else plain[:300] + ("..." if len(plain) > 300 else "")
+                )
 
                 formatted.append(
-                    f'**Result {i}** (from "{file_name}", file_id={file_id}, '
-                    f"section={chunk_index}, relevance={score:.0%}):\n{content}"
+                    f'**Result {i}** (from "{row.name}", file_id={row.id}):\n{snippet_text}'
                 )
-
-                sources.append(
-                    {
-                        "file_id": file_id,
-                        "file_name": file_name,
-                        "score": round(score, 2),
-                    }
-                )
+                sources.append({"file_id": row.id, "file_name": row.name, "score": 1.0})
 
             return "\n\n---\n\n".join(formatted), sources
 
@@ -410,63 +432,88 @@ class KBAgent:
             logger.error(f"KB agent search error: {e}")
             return f"Search failed: {str(e)}", []
 
-    async def _exec_read_file_sections(
-        self, inp: dict[str, Any]
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """Execute read_file_sections by reading chunks from the vectors table."""
-        file_id = inp.get("file_id", "")
-        start = int(inp.get("start_section", 0))
-        num = min(int(inp.get("num_sections", 3)), 10)
+    def _extract_snippets(self, text_content: str, query: str, max_snippets: int = 3) -> list[str]:
+        """Extract text snippets around query matches."""
+        query_lower = query.lower()
+        text_lower = text_content.lower()
+        snippets = []
+        search_start = 0
 
+        while len(snippets) < max_snippets:
+            pos = text_lower.find(query_lower, search_start)
+            if pos == -1:
+                break
+            start = max(0, pos - 100)
+            end = min(len(text_content), pos + len(query) + 100)
+            snippet = text_content[start:end].strip()
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text_content):
+                snippet = snippet + "..."
+            snippets.append(snippet)
+            search_start = pos + len(query)
+
+        return snippets
+
+    async def _exec_get_outline(self, inp: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+        """Execute get_outline tool - returns document outline."""
+        file_id = inp.get("file_id", "")
         if not file_id:
             return "Error: file_id is required.", []
 
         try:
-            result = await self.db.execute(
-                text("""
-                    SELECT content, chunk_index, metadata
-                    FROM vectors
-                    WHERE file_id = :file_id AND chunk_type = 'document'
-                    ORDER BY chunk_index
-                    OFFSET :offset
-                    LIMIT :limit
-                """),
-                {"file_id": file_id, "offset": start, "limit": num},
-            )
-            rows = result.fetchall()
+            file = await self._fetch_file(file_id)
+            if not file:
+                return f"File not found: {file_id}", []
 
-            if not rows:
-                return f"No sections found for file_id={file_id} at offset {start}.", []
+            plain = strip_html_tags(file["content"])
+            lines = plain.split("\n")
+            sections = parse_sections(plain)
+            outline = generate_outline(sections, len(lines))
 
-            # Get total chunk count
-            count_result = await self.db.execute(
-                text("""
-                    SELECT COUNT(*) as total FROM vectors
-                    WHERE file_id = :file_id AND chunk_type = 'document'
-                """),
-                {"file_id": file_id},
-            )
-            total = count_result.scalar() or 0
-
-            file_name = "Untitled"
-            sections = []
-            for row in rows:
-                plain = strip_html_tags(row.content)
-                sections.append(plain)
-                if row.metadata and row.metadata.get("name"):
-                    file_name = row.metadata["name"]
-
-            content = "\n\n".join(sections)
-            header = f"**{file_name}** (sections {start + 1}-{start + len(rows)} of {total}):"
-
-            return f"{header}\n\n{content}", [
-                {
-                    "file_id": file_id,
-                    "file_name": file_name,
-                    "score": 1.0,
-                }
+            return f"Document: {file['name']}\n{'=' * 50}\n{outline}", [
+                {"file_id": file_id, "file_name": file["name"], "score": 1.0}
             ]
 
         except Exception as e:
-            logger.error(f"KB agent read error: {e}")
+            logger.error(f"KB agent read file error: {e}")
+            return f"Failed to read file: {str(e)}", []
+
+    async def _exec_read_content(self, inp: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+        """Execute read_content tool - reads specific sections."""
+        file_id = inp.get("file_id", "")
+        section_ids = inp.get("section_ids", [])
+
+        if not file_id:
+            return "Error: file_id is required.", []
+        if not section_ids:
+            return "Error: section_ids is required.", []
+
+        try:
+            file = await self._fetch_file(file_id)
+            if not file:
+                return f"File not found: {file_id}", []
+
+            plain = strip_html_tags(file["content"])
+            sections = parse_sections(plain)
+            matched = find_sections(sections, section_ids)
+
+            if not matched:
+                available = [s.section_id for s in sections]
+                return f"No sections found for IDs: {section_ids}. Available: {available}", []
+
+            all_lines = plain.split("\n")
+            result_parts = []
+            for sec in matched:
+                sec_lines = all_lines[sec.start_line - 1 : sec.end_line]
+                numbered = [f"{sec.start_line + i:4d} | {line}" for i, line in enumerate(sec_lines)]
+                header = f"--- {sec.section_id}: {sec.heading_text} [L{sec.start_line}-L{sec.end_line}] ---"
+                result_parts.append(header + "\n" + "\n".join(numbered))
+
+            return "\n\n".join(result_parts), [
+                {"file_id": file_id, "file_name": file["name"], "score": 1.0}
+            ]
+
+        except Exception as e:
+            logger.error(f"KB agent read section error: {e}")
             return f"Failed to read file sections: {str(e)}", []

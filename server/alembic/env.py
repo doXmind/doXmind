@@ -50,17 +50,13 @@ def get_database_url() -> str:
 config.set_main_option("sqlalchemy.url", get_database_url())
 
 # Tables to exclude from autogenerate (managed externally)
-EXCLUDED_TABLES = {"vectors"}
+EXCLUDED_TABLES: set[str] = set()
 
 
 def include_object(object, name, type_, _reflected, _compare_to):
-    """Filter objects for autogenerate.
-
-    Excludes tables managed by external systems (e.g., pgvector).
-    """
+    """Filter objects for autogenerate."""
     if type_ == "table" and name in EXCLUDED_TABLES:
         return False
-    # Also exclude indexes on excluded tables
     return not (type_ == "index" and object.table.name in EXCLUDED_TABLES)
 
 

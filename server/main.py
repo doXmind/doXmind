@@ -38,10 +38,9 @@ from api import (
     versions,
 )
 from config import CORS_ORIGINS, get_cors_headers, get_settings
-from db.database import async_session, init_db
+from db.database import init_db
 from exceptions import AppException
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
-from services.rag import init_pgvector
 
 # Configure logging
 logging.basicConfig(
@@ -82,10 +81,6 @@ async def lifespan(app: FastAPI):
             )
 
     await init_db()
-
-    # Initialize pgvector for vector search
-    async with async_session() as db:
-        await init_pgvector(db)
 
     logger.info("Server started successfully!")
 

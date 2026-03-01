@@ -103,7 +103,7 @@ After analyzing data, consider inserting Mermaid charts directly into the docume
 
 - **Distributions**: Pie charts
 - **Trends**: XY charts (bar/line)
-- **Comparisons**: Radar charts, quadrant charts
+- **Comparisons**: Quadrant charts
 - **Flows**: Sankey diagrams for value flows
 
 To add charts, use `read_skill_instructions("charting")` for templates and syntax reference. Insert diagrams as mermaid code fences in the document.

@@ -1,7 +1,7 @@
 ---
 name: charting
 display_name: "Charting & Diagrams"
-description: "Create Mermaid diagrams: flowcharts, sequence diagrams, class diagrams, ER diagrams, Gantt charts, pie charts, architecture diagrams, and 20+ more types."
+description: "Create Mermaid diagrams: flowcharts, sequence diagrams, class diagrams, ER diagrams, Gantt charts, pie charts, architecture diagrams, and 15+ more types."
 category: technical
 version: "1.0.0"
 author: doxmind
@@ -55,8 +55,8 @@ The editor automatically renders mermaid code fences as interactive diagram bloc
 | **XY Chart** | `xychart-beta` | Bar/line charts, trends, time series |
 | **Quadrant Chart** | `quadrantChart` | 2D comparison (e.g., priority matrix) |
 | **Sankey** | `sankey-beta` | Value/resource flow (budgets, energy) |
-| **Radar Chart** | `radar-beta` | Multi-axis comparison (skills, features) |
 | **Treemap** | `treemap-beta` | Hierarchical proportional data |
+
 
 ### Project & Planning
 | Diagram | Keyword | Best For |
@@ -129,8 +129,8 @@ The editor automatically renders mermaid code fences as interactive diagram bloc
 - `templates/packet.md` - Packet diagram patterns
 - `templates/kanban.md` - Kanban board patterns
 - `templates/architecture.md` - Architecture diagram patterns
-- `templates/radar_chart.md` - Radar chart patterns
 - `templates/treemap.md` - Treemap patterns
+
 
 ### Knowledge
 - `knowledge/mermaid_syntax_reference.md` - Complete syntax reference for all 23 diagram types
@@ -143,5 +143,5 @@ The editor automatically renders mermaid code fences as interactive diagram bloc
 - For complex requests, use `TodoWrite` to break into steps (analyze, draft, refine)
 - Keep diagrams focused — one concept per diagram
 - Prefer templates as starting points when available
-- **IMPORTANT: `-beta` suffix is REQUIRED** for these diagram keywords: `xychart-beta`, `sankey-beta`, `block-beta`, `packet-beta`, `architecture-beta`, `radar-beta`, `treemap-beta`. Using the keyword without `-beta` (e.g., `xychart` instead of `xychart-beta`) will cause a syntax error
+- **IMPORTANT: `-beta` suffix is REQUIRED** for these diagram keywords: `xychart-beta`, `sankey-beta`, `block-beta`, `packet-beta`, `architecture-beta`, `treemap-beta`. Using the keyword without `-beta` (e.g., `xychart` instead of `xychart-beta`) will cause a syntax error
 - **IMPORTANT: Non-ASCII text (Chinese, Japanese, etc.) MUST be in double quotes** in ALL diagram types. Many Mermaid parsers only recognize ASCII letters as unquoted text. Unquoted Chinese/Unicode characters will cause a syntax error. This applies to: titles, axis labels, category names, and node labels. Example: use `title "2026年价格走势"` not `title 2026年价格走势`; use `x-axis ["1月", "2月"]` not `x-axis [1月, 2月]`. **When in doubt, always wrap text in double quotes.**

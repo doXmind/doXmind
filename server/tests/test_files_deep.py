@@ -4,14 +4,12 @@ These tests focus on:
 1. Real database interactions (not mocked)
 2. Edge cases and error handling
 3. User isolation and security
-4. RAG service integration
-5. Concurrent operations
+4. Concurrent operations
 """
 
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -313,104 +311,6 @@ class TestErrorHandling:
 
 
 # ============================================================================
-# RAG Integration Tests
-# ============================================================================
-
-
-class TestRAGIntegration:
-    """Tests for RAG service integration."""
-
-    @pytest.mark.asyncio
-    async def test_create_file_indexes_in_rag(self, client: AsyncClient, db_session: AsyncSession):
-        """Creating a file should trigger RAG indexing."""
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.index_file = AsyncMock()
-            mock_rag.index_file_sentences = AsyncMock()
-            mock_rag_class.return_value = mock_rag
-
-            response = await client.post(
-                "/api/files/", json={"name": "Test Doc", "content": "This is test content."}
-            )
-
-            assert response.status_code == 200
-
-            # Verify RAG methods were called
-            mock_rag.index_file.assert_called_once()
-            mock_rag.index_file_sentences.assert_called_once()
-
-            # Verify correct file_id was passed
-            call_kwargs = mock_rag.index_file.call_args[1]
-            assert "file_id" in call_kwargs
-            assert call_kwargs["content"] == "This is test content."
-
-    @pytest.mark.asyncio
-    async def test_update_file_reindexes_in_rag(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
-        """Updating file content should trigger re-indexing."""
-        # First create a file
-        file = File(name="To Update", content="Original")
-        db_session.add(file)
-        await db_session.commit()
-        await db_session.refresh(file)
-
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.index_file = AsyncMock()
-            mock_rag.index_file_sentences = AsyncMock()
-            mock_rag_class.return_value = mock_rag
-
-            response = await client.put(
-                f"/api/files/{file.id}", json={"content": "Updated content"}
-            )
-
-            assert response.status_code == 200
-
-            # Should re-index on content update
-            mock_rag.index_file.assert_called()
-            mock_rag.index_file_sentences.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_delete_file_removes_from_rag(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
-        """Deleting a file should remove it from RAG."""
-        file = File(name="To Delete", content="Will be deleted")
-        db_session.add(file)
-        await db_session.commit()
-        await db_session.refresh(file)
-        file_id = file.id
-
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.delete_file = AsyncMock()
-            mock_rag_class.return_value = mock_rag
-
-            response = await client.delete(f"/api/files/{file_id}")
-
-            assert response.status_code == 200
-
-            # Should delete from RAG
-            mock_rag.delete_file.assert_called_once_with(file_id)
-
-    @pytest.mark.asyncio
-    async def test_rag_error_does_not_break_file_creation(self, client: AsyncClient):
-        """RAG errors should not prevent file creation."""
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.index_file = AsyncMock(side_effect=Exception("RAG failure"))
-            mock_rag.index_file_sentences = AsyncMock(side_effect=Exception("RAG failure"))
-            mock_rag_class.return_value = mock_rag
-
-            response = await client.post("/api/files/", json={"name": "Test", "content": "Content"})
-
-            # File creation should still succeed
-            assert response.status_code == 200
-            assert response.json()["name"] == "Test"
-
-
-# ============================================================================
 # Concurrent Access Tests
 # ============================================================================
 
@@ -482,90 +382,6 @@ class TestConcurrentAccess:
 
 
 # ============================================================================
-# Search Functionality Tests
-# ============================================================================
-
-
-class TestSearchFunctionality:
-    """Tests for search functionality."""
-
-    @pytest.mark.asyncio
-    async def test_search_respects_file_ids_filter(self, client: AsyncClient):
-        """Search should only search in specified file_ids."""
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            # Default search uses hybrid_search (use_hybrid=True)
-            mock_rag.hybrid_search = AsyncMock(
-                return_value=[{"content": "Result", "file_id": "f1", "score": 0.9}]
-            )
-            mock_rag_class.return_value = mock_rag
-
-            response = await client.post(
-                "/api/files/search",
-                json={"query": "test query", "file_ids": ["f1", "f2"], "top_k": 3},
-            )
-
-            assert response.status_code == 200
-
-            # Verify file_ids was passed to RAG hybrid_search
-            call_kwargs = mock_rag.hybrid_search.call_args[1]
-            assert call_kwargs["file_ids"] == ["f1", "f2"]
-            assert call_kwargs["top_k"] == 3
-
-    @pytest.mark.asyncio
-    async def test_in_document_search_returns_empty_when_no_matches(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
-        """In-document search should return empty results when no matches found."""
-        file = File(name="Not Indexed", content="This content needs indexing.")
-        db_session.add(file)
-        await db_session.commit()
-        await db_session.refresh(file)
-
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            # Returns empty list when no matches
-            mock_rag.search_sentences = AsyncMock(return_value=[])
-            mock_rag_class.return_value = mock_rag
-
-            response = await client.post(
-                "/api/files/search/in-document", json={"query": "content", "file_id": file.id}
-            )
-
-            assert response.status_code == 200
-            data = response.json()
-            assert data["results"] == []
-
-    @pytest.mark.asyncio
-    async def test_in_document_search_respects_min_score(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
-        """In-document search should pass min_score to RAG."""
-        file = File(name="Test", content="Test content")
-        db_session.add(file)
-        await db_session.commit()
-        await db_session.refresh(file)
-
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            mock_rag.search_sentences = AsyncMock(return_value=[{"content": "Test", "score": 0.9}])
-            mock_rag_class.return_value = mock_rag
-
-            response = await client.post(
-                "/api/files/search/in-document",
-                json={"query": "test", "file_id": file.id, "min_score": 0.7},
-            )
-
-            assert response.status_code == 200
-
-            # Check min_score was passed (second call after existence check)
-            calls = mock_rag.search_sentences.call_args_list
-            # Last call should have min_score=0.7
-            last_call_kwargs = calls[-1][1]
-            assert last_call_kwargs.get("min_score") == 0.7
-
-
-# ============================================================================
 # API Response Format Tests
 # ============================================================================
 
@@ -613,18 +429,12 @@ class TestAPIResponseFormat:
     @pytest.mark.asyncio
     async def test_search_returns_results_array(self, client: AsyncClient):
         """Search should return results array."""
-        with patch("api.files.RAGService") as mock_rag_class:
-            mock_rag = MagicMock()
-            # Default search uses hybrid_search (use_hybrid=True)
-            mock_rag.hybrid_search = AsyncMock(return_value=[])
-            mock_rag_class.return_value = mock_rag
+        response = await client.post("/api/files/search", json={"query": "test"})
 
-            response = await client.post("/api/files/search", json={"query": "test"})
-
-            assert response.status_code == 200
-            data = response.json()
-            assert "results" in data
-            assert isinstance(data["results"], list)
+        assert response.status_code == 200
+        data = response.json()
+        assert "results" in data
+        assert isinstance(data["results"], list)
 
 
 # ============================================================================

@@ -60,3 +60,5 @@ mindmap
 - First node is the root (often uses `root((Label))`)
 - Supports **bold** and *italic* in node labels
 - Icons: `Node::icon(fa fa-book)`
+- Custom CSS classes: `Node:::className`
+- Layout config (via frontmatter): `config: { layout: tidy-tree }` (experimental)

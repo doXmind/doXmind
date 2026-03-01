@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import Conversation, async_session
-from services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 
@@ -42,21 +41,6 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 # ============================================================================
 # Service Dependencies
 # ============================================================================
-
-
-async def get_rag_service(db: AsyncSession = Depends(get_db)) -> RAGService:
-    """Get RAG service with database session.
-
-    Usage:
-        @router.post("/search")
-        async def search(
-            request: SearchRequest,
-            rag: RAGService = Depends(get_rag_service)
-        ):
-            results = await rag.search(request.query)
-            ...
-    """
-    return RAGService(db)
 
 
 async def resolve_user_api_key(user_id: str, db: AsyncSession) -> str | None:

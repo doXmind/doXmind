@@ -65,7 +65,7 @@ export function SearchBar() {
     setIsAISearching(true);
 
     try {
-      const response = await api.searchInDocument(query, currentFileId, 10, 0.3, controller.signal);
+      const response = await api.searchInDocument(query, currentFileId, 10, controller.signal);
 
       if (response.results.length > 0) {
         setAIResults(response.results);

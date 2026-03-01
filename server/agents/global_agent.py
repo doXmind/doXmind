@@ -1,7 +1,7 @@
 """Global Agent - unified agent with all capabilities.
 
 Combines WritingAgent's document editing with:
-- Global document search (search_files, read_file_sections)
+- Global document search (search scope="all", get_outline, read_content with file_id)
 - File/folder management (create, rename, move, delete)
 - Community access (search, fork, recommendations)
 
@@ -12,7 +12,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from agents.tools.definitions import COMMUNITY_TOOLS, FILE_MANAGEMENT_TOOLS, GLOBAL_KB_TOOLS
+from agents.tools.definitions import COMMUNITY_TOOLS, FILE_MANAGEMENT_TOOLS
 from agents.writing_agent import WritingAgent
 
 logger = logging.getLogger(__name__)
@@ -24,16 +24,19 @@ GLOBAL_CAPABILITIES_PROMPT = """
 You are a GLOBAL agent with full workspace access beyond the current document.
 
 <global_search>
-Search across ALL user documents (not just the current one):
-- search_files: Semantic + keyword search across all documents. Returns file_id, document name, and relevant excerpts.
-- read_file_sections: Read specific sections from any document by file_id and section index.
+Search across ALL user documents (not just the current one) using the unified tools:
+- search(query, scope="all"): Text search across all documents by keyword. Returns file_id, document name, and matching excerpts.
+- get_outline(file_id=...): Get the outline (heading structure) of any document by file_id. Returns section IDs for navigation.
+- read_content(file_id=..., section_ids=[...]): Read specific sections from any document by file_id and section IDs.
+
+Workflow: search(scope="all") → get_outline(file_id=...) → read_content(file_id=..., section_ids=[...])
 
 When to use:
 - User asks about content from other documents
 - Need to reference or cross-check information across documents
 - Research across the user's entire document library
 
-These are DIFFERENT from conversation KB tools (search_knowledge_base) which only search uploaded attachments in the current conversation.
+These tools also support KB documents: use kb_document parameter instead of file_id.
 </global_search>
 
 <file_management>
@@ -100,7 +103,6 @@ class GlobalAgent(WritingAgent):
         self.user_id = user_id
 
         # Append global tools to the tool executor's tool set
-        self.tool_executor.tools.extend(GLOBAL_KB_TOOLS)
         self.tool_executor.tools.extend(FILE_MANAGEMENT_TOOLS)
         self.tool_executor.tools.extend(COMMUNITY_TOOLS)
 

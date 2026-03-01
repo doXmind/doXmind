@@ -39,6 +39,7 @@ import { BlockHandle } from "./block-handle";
 import { TableHandles } from "./table-handles";
 import { applyPendingEdit } from "./editor-edit-operations";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
+import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useFeatureHints } from "@/components/onboarding/feature-hints";
 import { useStreamingStore } from "@/stores/streaming-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
@@ -137,9 +138,13 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
-      const text = editor.state.doc.textBetween(from, to, "\n\n");
-      if (text) {
-        setSelection({ from, to, text });
+      if (from !== to) {
+        const text = rangeToMarkdown(editor, from, to);
+        if (text) {
+          setSelection({ from, to, text });
+        } else {
+          setSelection(null);
+        }
       } else {
         setSelection(null);
       }
@@ -295,11 +300,9 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     const editsForThisFile = pendingEdits.filter((e) => e.fileId === file.id);
     if (editsForThisFile.length === 0) return;
 
-    const currentEditorContent = editor.getHTML();
-
     for (const edit of editsForThisFile) {
       try {
-        applyPendingEdit(editor, edit, currentEditorContent);
+        applyPendingEdit(editor, edit);
         clearPendingEdit(edit.id);
       } catch (error) {
         console.error(`[Editor] Failed to apply edit ${edit.id}:`, error);

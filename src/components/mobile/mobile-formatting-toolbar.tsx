@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useKeyboardState } from "@/hooks/use-mobile-gestures";
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
@@ -212,7 +213,7 @@ export function MobileFormattingToolbar() {
   const handleAIEdit = useCallback(() => {
     if (!editor) return;
     const { from, to } = editor.state.selection;
-    const selectedText = editor.state.doc.textBetween(from, to, " ");
+    const selectedText = rangeToMarkdown(editor, from, to);
     if (selectedText) {
       useLayoutStore.getState().setPendingSelectionForAI(selectedText);
       // Dismiss keyboard to reveal bottom bar with quick actions

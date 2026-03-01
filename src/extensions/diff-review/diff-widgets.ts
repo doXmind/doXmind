@@ -8,9 +8,9 @@
 import { marked } from "marked";
 import katex from "katex";
 import type { DiffHunk } from "@/types/diff";
-import { isHtml, markdownToPlainText } from "@/lib/markdown";
+import { isHtml } from "@/lib/markdown";
 import { renderMermaidSvg } from "@/lib/mermaid-renderer";
-import { computeWordDiff } from "@/lib/word-diff";
+import { computeWordDiff, type WordDiffSegment } from "@/lib/word-diff";
 
 /**
  * Render LaTeX math expressions within text using KaTeX.
@@ -132,20 +132,147 @@ function renderMarkdownToHtml(markdown: string): string {
 
 /**
  * Strip markdown formatting to get plain text for word-level diffing.
- * Uses markdownToPlainText for proper conversion, with fallback.
+ * Preserves paragraph breaks (\n) so multi-paragraph diffs render with line breaks.
  */
 function toPlainText(content: string): string {
   if (!content) return "";
-  try {
-    return markdownToPlainText(content);
-  } catch {
-    // Fallback: basic stripping
-    return content
-      .replace(/[#*_~`>]/g, "")
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/\n+/g, " ")
-      .trim();
+  return content
+    .replace(/<[^>]+>/g, "") // strip HTML tags (safety net)
+    .replace(/^#{1,6}\s+/gm, "") // strip heading markers
+    .replace(/\*\*(.+?)\*\*/g, "$1") // bold
+    .replace(/__(.+?)__/g, "$1") // bold alt
+    .replace(/\*(.+?)\*/g, "$1") // italic
+    .replace(/_(.+?)_/g, "$1") // italic alt
+    .replace(/~~(.+?)~~/g, "$1") // strikethrough
+    .replace(/`(.+?)`/g, "$1") // inline code
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links
+    .replace(/^>\s?/gm, "") // blockquote markers
+    .replace(/^[-*+]\s/gm, "• ") // unordered list markers → bullet
+    .replace(/^\d+\.\s/gm, "• ") // ordered list markers → bullet
+    .replace(/\n{3,}/g, "\n\n") // collapse 3+ newlines to 2
+    .replace(/\n+$/, "") // trim trailing newlines
+    .trim();
+}
+
+/**
+ * Create a styled span for a word-diff segment.
+ */
+function createDiffSpan(text: string, type: "equal" | "added" | "removed"): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.textContent = text;
+  switch (type) {
+    case "removed":
+      span.className = "diff-word-removed";
+      break;
+    case "added":
+      span.className = "diff-word-added";
+      break;
+    case "equal":
+      span.className = "diff-word-equal";
+      break;
   }
+  return span;
+}
+
+/**
+ * Render word-diff segments as flat inline spans with <br> for line breaks.
+ * Used for simple paragraph-only hunks where no block structure is needed.
+ */
+function renderInlineDiff(container: HTMLElement, segments: WordDiffSegment[]) {
+  for (const segment of segments) {
+    const lines = segment.text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (i > 0) container.appendChild(document.createElement("br"));
+      if (lines[i]) container.appendChild(createDiffSpan(lines[i], segment.type));
+    }
+  }
+}
+
+/**
+ * Render word-diff segments into proper block structure (headings, lists, paragraphs).
+ * Produces <div> for text lines and <ul>/<li> for list items so they match editor styling.
+ */
+function renderStructuredDiff(
+  container: HTMLElement,
+  segments: WordDiffSegment[],
+  headingLevel: number,
+  headingSizes: Record<number, string>
+) {
+  // Phase 1: Process segments into lines of spans
+  interface LineInfo {
+    spans: HTMLSpanElement[];
+    isList: boolean;
+  }
+
+  const lines: LineInfo[] = [{ spans: [], isList: false }];
+
+  for (const segment of segments) {
+    const parts = segment.text.split("\n");
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) lines.push({ spans: [], isList: false });
+
+      if (parts[i]) {
+        const currentLine = lines[lines.length - 1];
+        let text = parts[i];
+
+        // Detect list item marker at start of line
+        if (currentLine.spans.length === 0 && text.startsWith("• ")) {
+          currentLine.isList = true;
+          text = text.slice(2); // Strip "• " — the <li> bullet comes from CSS
+        }
+
+        if (text) currentLine.spans.push(createDiffSpan(text, segment.type));
+      }
+    }
+  }
+
+  // Apply heading styles to lines before the first empty line (block boundary)
+  if (headingLevel > 0) {
+    for (const line of lines) {
+      if (line.spans.length === 0) break; // first empty line = heading boundary
+      for (const span of line.spans) {
+        span.style.fontWeight = "600";
+        span.style.fontSize = headingSizes[headingLevel] || "1rem";
+        span.style.lineHeight = "1.3";
+      }
+    }
+  }
+
+  // Phase 2: Render lines into structural DOM
+  let currentList: HTMLUListElement | null = null;
+
+  for (const line of lines) {
+    if (line.spans.length === 0) {
+      // Empty line (paragraph break) — flush any open list
+      if (currentList) {
+        container.appendChild(currentList);
+        currentList = null;
+      }
+      continue;
+    }
+
+    if (line.isList) {
+      if (!currentList) {
+        currentList = document.createElement("ul");
+        currentList.className = "diff-list";
+      }
+      const li = document.createElement("li");
+      li.className = "diff-list-item";
+      for (const span of line.spans) li.appendChild(span);
+      currentList.appendChild(li);
+    } else {
+      if (currentList) {
+        container.appendChild(currentList);
+        currentList = null;
+      }
+      const div = document.createElement("div");
+      div.className = "diff-text-line";
+      for (const span of line.spans) div.appendChild(span);
+      container.appendChild(div);
+    }
+  }
+
+  if (currentList) container.appendChild(currentList);
 }
 
 /**
@@ -159,32 +286,44 @@ export function createInlineDiffWidget(hunk: DiffHunk): HTMLElement {
   wrapper.setAttribute("data-hunk-id", hunk.id);
   wrapper.setAttribute("contenteditable", "false");
 
+  // Detect structure from original markdown (before toPlainText stripping)
+  const rawOld = hunk.oldContent || "";
+  const rawNew = (hunk.newContent || "").replace(/\n+$/, "");
+  const headingMatch = rawOld.match(/^(#{1,6})\s+/) || rawNew.match(/^(#{1,6})\s+/);
+  const headingLevel = headingMatch ? headingMatch[1].length : 0;
+  const headingSizes: Record<number, string> = {
+    1: "1.875rem",
+    2: "1.5rem",
+    3: "1.25rem",
+    4: "1.125rem",
+    5: "1rem",
+    6: "0.875rem",
+  };
+  const hasListItems =
+    /^[-*+]\s/m.test(rawOld) ||
+    /^[-*+]\s/m.test(rawNew) ||
+    /^\d+\.\s/m.test(rawOld) ||
+    /^\d+\.\s/m.test(rawNew);
+  const isStructured = headingLevel > 0 || hasListItems;
+
+  // Use block layout for structured hunks (headings/lists) so DOM blocks work
+  if (isStructured) {
+    wrapper.classList.add("diff-structured");
+  }
+
   // Compute word-level diff
-  const oldPlain = toPlainText(hunk.oldContent || "");
-  const newPlain = toPlainText((hunk.newContent || "").replace(/\n+$/, ""));
+  const oldPlain = toPlainText(rawOld);
+  const newPlain = toPlainText(rawNew);
   const segments = computeWordDiff(oldPlain, newPlain);
 
   // Build diff content container
   const diffContent = document.createElement("div");
   diffContent.className = "diff-inline-content";
 
-  for (const segment of segments) {
-    const span = document.createElement("span");
-    span.textContent = segment.text;
-
-    switch (segment.type) {
-      case "removed":
-        span.className = "diff-word-removed";
-        break;
-      case "added":
-        span.className = "diff-word-added";
-        break;
-      case "equal":
-        span.className = "diff-word-equal";
-        break;
-    }
-
-    diffContent.appendChild(span);
+  if (isStructured) {
+    renderStructuredDiff(diffContent, segments, headingLevel, headingSizes);
+  } else {
+    renderInlineDiff(diffContent, segments);
   }
 
   // Build hover action buttons
@@ -229,7 +368,7 @@ export function createInlineDiffWidget(hunk: DiffHunk): HTMLElement {
 }
 
 /**
- * Create a widget for displaying inserted content (green ghost text)
+ * Create a widget for displaying inserted content (blue ghost text)
  * Renders markdown content as HTML for proper display
  */
 export function createInsertWidget(hunk: DiffHunk): HTMLElement {
@@ -301,8 +440,18 @@ export function createInsertWidget(hunk: DiffHunk): HTMLElement {
           svgEl.style.width = "auto";
         }
       })
-      .catch(() => {
-        div.textContent = "[Diagram]";
+      .catch((err) => {
+        console.error("[DiffWidget] Mermaid render failed:", err, "\nCode:", decoded);
+        // Show error details instead of generic [Diagram]
+        const errMsg =
+          err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
+        // Extract the useful part of mermaid's error (strip verbose preamble)
+        const short = errMsg.replace(/^.*?Syntax error/i, "Syntax error").slice(0, 120);
+        div.innerHTML = "";
+        const label = document.createElement("span");
+        label.style.cssText = "color:#ef4444;font-size:12px;opacity:0.85;";
+        label.textContent = `[Diagram error: ${short || "render failed"}]`;
+        div.appendChild(label);
       });
   });
 

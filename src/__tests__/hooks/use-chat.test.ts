@@ -56,10 +56,7 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-vi.mock("@/lib/markdown", () => ({
-  htmlToMarkdown: vi.fn((html: string) => html),
-  isHtml: vi.fn(() => false),
-}));
+// @/lib/markdown is no longer imported by use-chat (Turndown removed)
 
 // Mock fetch
 const mockFetch = vi.fn();

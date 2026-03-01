@@ -1,9 +1,8 @@
 /**
  * Tests for position-mapping internal functions
  *
- * Tests findTextNormalized, findAllTextInDocument edge cases,
- * findTextInDocument disambiguation, and findTextViaMarkdown
- * Extract-and-Search fallback path.
+ * Tests findAllTextInDocument edge cases,
+ * findTextInDocument disambiguation, and findTextViaMarkdown.
  *
  * Supplements position-mapping.test.ts which covers structural diff and mermaid scenarios.
  */
@@ -14,7 +13,6 @@ import {
   findTextViaMarkdown,
   findAllTextInDocument,
   findTextInDocument,
-  findTextNormalized,
   clearMarkdownCache,
 } from "@/extensions/diff-review/position-mapping";
 import { markdownToHtml } from "@/lib/markdown";
@@ -211,55 +209,6 @@ describe("position-mapping internals", () => {
       const doc = parseMarkdownDoc("Hello World");
       const result = findTextInDocument(doc, "Hello", undefined, "codeBlock");
       expect(result).not.toBeNull();
-    });
-  });
-
-  // ==========================================================================
-  // findTextNormalized — whitespace-normalized matching
-  // ==========================================================================
-  describe("findTextNormalized", () => {
-    it("matches text with normalized whitespace", () => {
-      // doc.textContent will be "Hello   World" or similar
-      const doc = parseMarkdownDoc("Hello   World");
-      // Searching for "Hello World" (single space) should match via normalization
-      const result = findTextNormalized(doc, "Hello World");
-      expect(result).not.toBeNull();
-      expect(result!.from).toBeGreaterThan(0);
-    });
-
-    it("returns null for empty search text", () => {
-      const doc = parseMarkdownDoc("Some text");
-      expect(findTextNormalized(doc, "")).toBeNull();
-    });
-
-    it("returns null for whitespace-only search text", () => {
-      const doc = parseMarkdownDoc("Some text");
-      expect(findTextNormalized(doc, "   ")).toBeNull();
-    });
-
-    it("returns null when text not found", () => {
-      const doc = parseMarkdownDoc("Hello World");
-      expect(findTextNormalized(doc, "xyz")).toBeNull();
-    });
-
-    it("excludes positions from set", () => {
-      const doc = parseMarkdownDoc("foo foo");
-      const first = findTextNormalized(doc, "foo");
-      expect(first).not.toBeNull();
-
-      const excludeSet = new Set([first!.from]);
-      const second = findTextNormalized(doc, "foo", excludeSet);
-      // Should find the second occurrence or null
-      if (second) {
-        expect(second.from).not.toBe(first!.from);
-      }
-    });
-
-    it("respects preferredBlockType", () => {
-      const doc = parseMarkdownDoc("# Title\n\nTitle text");
-      const result = findTextNormalized(doc, "Title", undefined, "heading");
-      expect(result).not.toBeNull();
-      expect(result!.blockTypeName).toBe("heading");
     });
   });
 

@@ -84,9 +84,14 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
 
   return (
     <BubbleMenu
+      ref={(el: HTMLDivElement | null) => {
+        if (el) el.style.zIndex = "50";
+      }}
       editor={editor}
+      appendTo={() => document.body}
       options={{
         placement: "bottom-start",
+        strategy: "fixed",
       }}
       shouldShow={shouldShow}
       className="link-bubble-menu"

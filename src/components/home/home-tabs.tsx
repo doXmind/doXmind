@@ -1,10 +1,10 @@
 "use client";
 
-import { FileText, Link2, GitFork, Bookmark } from "lucide-react";
+import { FileText, Users, Link2, GitFork, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout-store";
 
-type HomeTab = "documents" | "shares" | "forks" | "bookmarks";
+type HomeTab = "documents" | "shared" | "shares" | "forks" | "bookmarks";
 
 interface TabDef {
   id: HomeTab;
@@ -14,7 +14,8 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { id: "documents", label: "Documents", icon: FileText },
-  { id: "shares", label: "Shares", icon: Link2 },
+  { id: "shared", label: "Shared with me", icon: Users },
+  { id: "shares", label: "My Links", icon: Link2 },
   { id: "forks", label: "Forks", icon: GitFork },
   { id: "bookmarks", label: "Saved", icon: Bookmark },
 ];

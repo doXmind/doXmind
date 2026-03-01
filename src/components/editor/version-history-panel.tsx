@@ -8,8 +8,9 @@ import { cn, formatDate, formatTime } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useFileStore } from "@/stores/file-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { computeDiffHunks } from "@/lib/diff-utils";
-import { htmlToMarkdown } from "@/lib/markdown";
+import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { toast } from "sonner";
 
 interface VersionHistoryPanelProps {
@@ -102,15 +103,30 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
         return;
       }
 
-      const versionMarkdown = htmlToMarkdown(version.content);
+      // Convert version HTML to markdown via editor's schema-aware markdown manager
+      const editor = useEditorRefStore.getState().editor;
+      let versionMarkdown: string;
+      if (editor?.storage.markdown?.manager) {
+        const el = document.createElement("div");
+        el.innerHTML = version.content;
+        const doc = ProseMirrorDOMParser.fromSchema(editor.schema).parse(el);
+        versionMarkdown = editor.storage.markdown.manager.serialize(doc.toJSON());
+      } else {
+        // Fallback: use raw content (editor not available)
+        versionMarkdown = version.content;
+      }
 
-      const hunks = computeDiffHunks(file.content, {
-        type: "replace_all",
-        new_content: versionMarkdown,
-        file_id: fileId,
-        file_name: "",
-        success: true,
-      });
+      const hunks = computeDiffHunks(
+        file.content,
+        {
+          type: "replace_all",
+          new_content: versionMarkdown,
+          file_id: fileId,
+          file_name: "",
+          success: true,
+        },
+        file.contentMarkdown || undefined
+      );
 
       if (hunks.length === 0) {
         toast.info("No differences — content is already identical");
