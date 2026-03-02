@@ -219,7 +219,7 @@ def clear_refresh_token_cookie(response: Response, settings: Settings) -> None:
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,
         domain=settings.cookie_domain,
-        path="/api/auth",
+        path="/",
     )
 
 

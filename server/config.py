@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # IMPORTANT: This MUST be set via environment variable in production
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days (will change to 15 after migration)
+    jwt_access_token_expire_minutes: int = 15  # 15 minutes (matches production)
     jwt_refresh_token_expire_days: int = 30  # 30 days for refresh tokens
 
     # Cookie configuration for refresh tokens
