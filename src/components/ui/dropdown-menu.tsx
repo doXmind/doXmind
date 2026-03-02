@@ -292,7 +292,7 @@ export function DropdownMenuContent({
       className={cn(
         "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         "animate-in fade-in-0 zoom-in-95",
-        "max-h-[80vh] overflow-y-auto",
+        "max-h-[65vh] overflow-y-auto",
         className
       )}
       style={{
@@ -724,7 +724,7 @@ export function DropdownMenuSubContent({
         className={cn(
           "fixed z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
           "animate-in fade-in-0 zoom-in-95",
-          "max-h-[80vh] overflow-y-auto",
+          "max-h-[65vh] overflow-y-auto",
           className
         )}
         style={{ top: pos.top, left: pos.left }}

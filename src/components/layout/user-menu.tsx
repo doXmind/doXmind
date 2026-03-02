@@ -223,26 +223,26 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         </ModalHeader>
 
         {/* Tab navigation */}
-        <div className="-mx-6 mb-4 flex border-b border-border px-6">
+        <div className="mb-4 flex overflow-x-auto border-b border-border md:-mx-6 md:px-6">
           {SETTINGS_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSettingsTab(tab.id)}
               className={cn(
-                "flex items-center gap-1.5 border-b-2 px-3 pb-2 text-sm transition-colors",
+                "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 pb-2 text-sm transition-colors",
                 settingsTab === tab.id
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               )}
             >
               {tab.icon}
-              {tab.label}
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
 
         {/* Tab content */}
-        <div className="max-h-[600px] min-h-[280px] overflow-hidden">
+        <div className="h-[65vh] overflow-y-auto md:h-[500px]">
           {settingsTab === "api" && <APISettings />}
           {settingsTab === "usage" && <UsageSettings />}
           {settingsTab === "appearance" && <AppearanceSettings />}

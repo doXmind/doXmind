@@ -162,7 +162,7 @@ export function AIAnswerBubble({
               )}
 
               {/* Content */}
-              <div className="max-h-[50vh] min-h-[60px] overflow-y-auto p-4">
+              <div className="max-h-[65vh] min-h-[60px] overflow-y-auto p-4">
                 {isLoading && !response ? (
                   <div className="flex flex-col gap-2">
                     {/* Thinking dots */}

@@ -106,7 +106,7 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
     <Modal
       open={open}
       onClose={onClose}
-      className="flex max-h-[80vh] max-w-2xl flex-col overflow-hidden"
+      className="flex max-h-[65vh] max-w-2xl flex-col overflow-hidden"
     >
       <ModalHeader onClose={onClose}>
         <div className="flex items-center gap-2">
