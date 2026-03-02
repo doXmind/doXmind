@@ -23,13 +23,6 @@ export default defineConfig({
         "**/*.config.{ts,js}",
         "**/types/**",
       ],
-      // Coverage thresholds - disabled initially, enable as coverage improves
-      // thresholds: {
-      //   lines: 30,
-      //   functions: 30,
-      //   branches: 30,
-      //   statements: 30,
-      // },
     },
     reporters: ["default", "html"],
     testTimeout: 10000,
