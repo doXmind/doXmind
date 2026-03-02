@@ -120,8 +120,12 @@ class Settings(BaseSettings):
         return url
 
     # =========================================================================
-    # AWS S3 (Image Storage)
+    # File Storage (Image Storage)
     # =========================================================================
+    # storage_backend: "s3" (AWS S3 / compatible) or "local" (server filesystem)
+    storage_backend: str = "s3"
+    local_storage_path: str = "/app/data/uploads"  # Only used when storage_backend=local
+
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_s3_bucket: str = "doxmind"
@@ -268,6 +272,7 @@ CORS_ORIGINS = [
     "https://beta.doxmind.com",
     "https://doxmind.com",
     "https://www.doxmind.com",
+    "https://cn.doxmind.com",
 ]
 
 
