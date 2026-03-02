@@ -1,5 +1,6 @@
 """User service for registration, verification, and authentication."""
 
+import asyncio
 import random
 import secrets
 import string
@@ -141,8 +142,8 @@ class UserService:
         await self.db.commit()
         await self.db.refresh(user)
 
-        # Send welcome email (fire and forget)
-        await self.email_service.send_welcome_email(email, user.username or email)
+        # Send welcome email (fire and forget — don't block verification response)
+        asyncio.create_task(self.email_service.send_welcome_email(email, user.username or email))
 
         return True, "Email verified successfully", user
 
@@ -170,6 +171,17 @@ class UserService:
 
         if not verification:
             return False, "No pending registration found"
+
+        # Per-email cooldown: prevent email spam (60 seconds between sends)
+        # Calculate last send time from expires_at minus expiration duration
+        if verification.expires_at:
+            expires = verification.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=UTC)
+            last_sent = expires - timedelta(minutes=self.settings.email_verification_expire_minutes)
+            elapsed = (datetime.now(UTC) - last_sent).total_seconds()
+            if elapsed < 60:
+                return False, f"Please wait {int(60 - elapsed)} seconds before requesting another code"
 
         # Generate new code
         code = "".join(random.choices(string.digits, k=6))
@@ -258,6 +270,23 @@ class UserService:
         # Always return success to prevent email enumeration
         if not user or not user.hashed_password:
             return True, "If an account exists, a reset link will be sent"
+
+        # Per-email cooldown: prevent reset email spam (60 seconds between sends)
+        recent_reset = await self.db.execute(
+            select(PasswordReset.created_at)
+            .where(PasswordReset.user_id == user.id)
+            .order_by(PasswordReset.created_at.desc())
+            .limit(1)
+        )
+        recent_reset_row = recent_reset.scalar_one_or_none()
+        if recent_reset_row:
+            created = recent_reset_row
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            elapsed = (datetime.now(UTC) - created).total_seconds()
+            if elapsed < 60:
+                # Return success message to prevent email enumeration, but don't send
+                return True, "If an account exists, a reset link will be sent"
 
         # Clean up old reset tokens
         await self.db.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
@@ -406,8 +435,8 @@ class UserService:
         await self.db.commit()
         await self.db.refresh(user)
 
-        # Send welcome email
-        await self.email_service.send_welcome_email(email, username or email)
+        # Send welcome email (fire and forget — don't block OAuth callback)
+        asyncio.create_task(self.email_service.send_welcome_email(email, username or email))
 
         return user, True
 

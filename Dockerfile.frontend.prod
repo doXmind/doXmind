@@ -5,9 +5,9 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-# Install dependencies only when needed
+# Install all dependencies (devDeps needed for build, --ignore-scripts skips husky)
 COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+RUN npm ci --ignore-scripts
 
 # =============================================================================
 # Stage 2: Builder

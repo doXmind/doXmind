@@ -1,5 +1,6 @@
 """Document sharing API endpoints."""
 
+import asyncio
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -36,6 +37,30 @@ def get_user_id(token: TokenData) -> str | None:
         return None
 
     return token.sub
+
+
+async def _send_invite_notifications(
+    recipient_emails: list[str],
+    sender_name: str,
+    item_name: str,
+    item_type: str,
+    share_url: str,
+) -> None:
+    """Send share notification emails to invited users (fire-and-forget)."""
+    try:
+        from services.email_service import get_email_service
+
+        email_service = get_email_service()
+        for email in recipient_emails:
+            await email_service.send_share_notification(
+                to_email=email,
+                sender_name=sender_name,
+                item_name=item_name,
+                item_type=item_type,
+                share_url=share_url,
+            )
+    except Exception:
+        logger.exception("Failed to send share notification emails")
 
 
 # =============================================================================
@@ -224,6 +249,16 @@ async def create_share(
             )
             db.add(invite)
 
+        # Collect recipient emails for notification
+        notif_ids = invited_ids - {user_id}
+        if notif_ids:
+            _notif_q = await db.execute(
+                select(User.email).where(User.id.in_(notif_ids), User.email.isnot(None))
+            )
+            _recipient_emails = [r.email for r in _notif_q if r.email]
+        else:
+            _recipient_emails = []
+
     await db.commit()
     await db.refresh(share)
 
@@ -232,6 +267,18 @@ async def create_share(
         share_url = f"{settings.frontend_url}/community/{share_token}"
     else:
         share_url = f"{settings.frontend_url}/shared/{share_token}"
+
+    # Send email notifications for private share invites
+    if share_request.visibility == "private" and _recipient_emails:
+        asyncio.create_task(
+            _send_invite_notifications(
+                recipient_emails=_recipient_emails,
+                sender_name=token.username or "A doXmind user",
+                item_name=file.name,
+                item_type="folder" if file.is_folder else "file",
+                share_url=share_url,
+            )
+        )
 
     return ShareResponse(
         id=share.id,
@@ -913,6 +960,12 @@ async def invite_users(
     if share.visibility != "private":
         raise BadRequestError(message="Invites are only supported for private shares")
 
+    # Load file info for notification email
+    file_result = await db.execute(
+        select(File.name, File.is_folder).where(File.id == share.file_id)
+    )
+    file_info = file_result.one_or_none()
+
     invited_ids = set(body.user_ids or [])
 
     # Resolve emails to user IDs
@@ -944,7 +997,31 @@ async def invite_users(
         db.add(invite)
         added += 1
 
+    # Collect emails of newly invited users
+    new_invite_ids = invited_ids - existing_ids - {user_id}
+    recipient_emails: list[str] = []
+    if new_invite_ids:
+        _notif_q = await db.execute(
+            select(User.email).where(User.id.in_(new_invite_ids), User.email.isnot(None))
+        )
+        recipient_emails = [r.email for r in _notif_q if r.email]
+
     await db.commit()
+
+    # Send email notifications to newly invited users
+    if recipient_emails and file_info:
+        settings = get_settings()
+        share_url = f"{settings.frontend_url}/shared/{share.share_token}"
+        asyncio.create_task(
+            _send_invite_notifications(
+                recipient_emails=recipient_emails,
+                sender_name=token.username or "A doXmind user",
+                item_name=file_info.name,
+                item_type="folder" if file_info.is_folder else "file",
+                share_url=share_url,
+            )
+        )
+
     return {"status": "ok", "added": added}
 
 

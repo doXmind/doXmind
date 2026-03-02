@@ -1,12 +1,15 @@
 """Community API endpoints: discovery, forks, bookmarks, user profiles."""
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import get_db
+from config import get_settings
+from db.database import DocumentShare, File, User, get_db
 from exceptions import NotFoundError
 from middleware.rate_limit import limiter
 from services.auth_service import TokenData, optional_auth, require_auth
@@ -181,6 +184,49 @@ async def fork_share(
         user_id=user_id,
         target_folder_id=body.target_folder_id if body else None,
     )
+
+    # Send fork notification to document owner
+    try:
+        share_result = await db.execute(
+            select(DocumentShare.user_id, DocumentShare.file_id).where(
+                DocumentShare.share_token == share_token
+            )
+        )
+        share_row = share_result.one_or_none()
+        if share_row:
+            # Get owner email and file name
+            owner_result = await db.execute(
+                select(User.email).where(
+                    User.id == share_row.user_id, User.email.isnot(None)
+                )
+            )
+            file_result = await db.execute(
+                select(File.name).where(File.id == share_row.file_id)
+            )
+            owner_row = owner_result.one_or_none()
+            file_row = file_result.one_or_none()
+
+            if owner_row and owner_row.email and file_row:
+                settings = get_settings()
+                share_url = f"{settings.frontend_url}/community/{share_token}"
+
+                async def _send_fork_email() -> None:
+                    try:
+                        from services.email_service import get_email_service
+
+                        email_service = get_email_service()
+                        await email_service.send_fork_notification(
+                            to_email=owner_row.email,
+                            forker_name=token.username or "A doXmind user",
+                            doc_name=file_row.name,
+                            share_url=share_url,
+                        )
+                    except Exception:
+                        logger.exception("Failed to send fork notification email")
+
+                asyncio.create_task(_send_fork_email())
+    except Exception:
+        logger.exception("Failed to prepare fork notification")
 
     return {
         "fork_id": fork.id,

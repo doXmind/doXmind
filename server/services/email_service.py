@@ -1,5 +1,6 @@
 """Email service for sending verification codes and notifications."""
 
+import html as html_mod
 import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -58,6 +59,7 @@ class EmailService:
                 username=self.settings.smtp_user,
                 password=self.settings.smtp_password,
                 start_tls=self.settings.smtp_use_tls,
+                timeout=30,
             )
 
             logger.info(f"Email sent successfully to {to_email}")
@@ -197,6 +199,7 @@ This email was sent by doXmind. Please do not reply to this email.
             True if sent successfully, False otherwise
         """
         subject = "Welcome to doXmind!"
+        safe_username = html_mod.escape(username)
 
         html_content = f"""
         <!DOCTYPE html>
@@ -211,7 +214,7 @@ This email was sent by doXmind. Please do not reply to this email.
         </head>
         <body>
             <div class="container">
-                <h2>Welcome to doXmind, {username}!</h2>
+                <h2>Welcome to doXmind, {safe_username}!</h2>
                 <p>Your account has been successfully created. You can now start using doXmind to organize your thoughts and boost your productivity.</p>
                 <p>Here are some things you can do:</p>
                 <ul>
@@ -239,6 +242,272 @@ Here are some things you can do:
 - Build your knowledge base
 
 We're excited to have you on board!
+
+---
+This email was sent by doXmind. Please do not reply to this email.
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
+
+    async def send_share_notification(
+        self,
+        to_email: str,
+        sender_name: str,
+        item_name: str,
+        item_type: str,
+        share_url: str,
+    ) -> bool:
+        """Send a notification when someone shares a file/folder with a user.
+
+        Args:
+            to_email: Recipient email address
+            sender_name: Name of the user who shared
+            item_name: Name of the shared file or folder
+            item_type: "file" or "folder"
+            share_url: URL to view the shared item
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        safe_sender = html_mod.escape(sender_name)
+        safe_item = html_mod.escape(item_name)
+        subject = f"{sender_name} shared a {item_type} with you on doXmind"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .button {{ display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 20px 0; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>{safe_sender} shared a {item_type} with you</h2>
+                <p>&ldquo;{safe_item}&rdquo; has been shared with you on doXmind. Click below to view it:</p>
+                <a href="{share_url}" class="button">View {item_type.capitalize()}</a>
+                <div class="footer">
+                    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all;">{share_url}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+{sender_name} shared a {item_type} with you
+
+"{item_name}" has been shared with you on doXmind.
+
+View it here: {share_url}
+
+---
+This email was sent by doXmind. Please do not reply to this email.
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
+
+    async def send_comment_notification(
+        self,
+        to_email: str,
+        commenter_name: str,
+        comment_preview: str,
+        doc_name: str,
+        share_url: str,
+        is_reply: bool = False,
+    ) -> bool:
+        """Send a notification when someone comments on or replies to a shared document.
+
+        Args:
+            to_email: Recipient email address
+            commenter_name: Name of the commenter
+            comment_preview: First ~200 chars of the comment
+            doc_name: Name of the shared document
+            share_url: URL to the shared document
+            is_reply: True if this is a reply notification
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        safe_commenter = html_mod.escape(commenter_name)
+        safe_doc = html_mod.escape(doc_name)
+        safe_preview = html_mod.escape(comment_preview)
+
+        if is_reply:
+            subject = f'{commenter_name} replied to your comment on "{doc_name}"'
+            heading = f"{safe_commenter} replied to your comment"
+        else:
+            subject = f'{commenter_name} commented on "{doc_name}"'
+            heading = f"{safe_commenter} left a comment"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .quote {{ background: #f3f4f6; border-left: 3px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 0 6px 6px 0; color: #374151; }}
+                .button {{ display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 20px 0; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>{heading}</h2>
+                <p>On &ldquo;{safe_doc}&rdquo;:</p>
+                <div class="quote">{safe_preview}</div>
+                <a href="{share_url}" class="button">View Comment</a>
+                <div class="footer">
+                    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all;">{share_url}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+{heading}
+
+On "{doc_name}":
+
+> {comment_preview}
+
+View it here: {share_url}
+
+---
+This email was sent by doXmind. Please do not reply to this email.
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
+
+    async def send_mention_notification(
+        self,
+        to_email: str,
+        mentioner_name: str,
+        comment_preview: str,
+        doc_name: str,
+        share_url: str,
+    ) -> bool:
+        """Send a notification when someone mentions a user in a comment.
+
+        Args:
+            to_email: Recipient email address
+            mentioner_name: Name of the user who mentioned
+            comment_preview: First ~200 chars of the comment
+            doc_name: Name of the shared document
+            share_url: URL to the shared document
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        safe_mentioner = html_mod.escape(mentioner_name)
+        safe_doc = html_mod.escape(doc_name)
+        safe_preview = html_mod.escape(comment_preview)
+        subject = f'{mentioner_name} mentioned you in a comment on "{doc_name}"'
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .quote {{ background: #f3f4f6; border-left: 3px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 0 6px 6px 0; color: #374151; }}
+                .button {{ display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 20px 0; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>{safe_mentioner} mentioned you</h2>
+                <p>In a comment on &ldquo;{safe_doc}&rdquo;:</p>
+                <div class="quote">{safe_preview}</div>
+                <a href="{share_url}" class="button">View Comment</a>
+                <div class="footer">
+                    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all;">{share_url}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+{mentioner_name} mentioned you in a comment on "{doc_name}"
+
+> {comment_preview}
+
+View it here: {share_url}
+
+---
+This email was sent by doXmind. Please do not reply to this email.
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
+
+    async def send_fork_notification(
+        self,
+        to_email: str,
+        forker_name: str,
+        doc_name: str,
+        share_url: str,
+    ) -> bool:
+        """Send a notification when someone forks a user's published document.
+
+        Args:
+            to_email: Recipient email address
+            forker_name: Name of the user who forked
+            doc_name: Name of the forked document
+            share_url: URL to the original shared document
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        safe_forker = html_mod.escape(forker_name)
+        safe_doc = html_mod.escape(doc_name)
+        subject = f'{forker_name} forked your document "{doc_name}"'
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .button {{ display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 20px 0; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>{safe_forker} forked your document</h2>
+                <p>Your document &ldquo;{safe_doc}&rdquo; was forked by {safe_forker} on doXmind. Your work is inspiring others!</p>
+                <a href="{share_url}" class="button">View Document</a>
+                <div class="footer">
+                    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all;">{share_url}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+{forker_name} forked your document "{doc_name}"
+
+Your document was forked by {forker_name} on doXmind. Your work is inspiring others!
+
+View it here: {share_url}
 
 ---
 This email was sent by doXmind. Please do not reply to this email.
