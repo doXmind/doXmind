@@ -57,9 +57,9 @@ def upgrade() -> None:
         op.f("ix_refresh_tokens_token_hash"), "refresh_tokens", ["token_hash"], unique=True
     )
     op.create_index(op.f("ix_refresh_tokens_user_id"), "refresh_tokens", ["user_id"], unique=False)
-    op.drop_table("admin_audit_logs")
-    op.drop_table("export_jobs")
-    op.drop_table("admin_users")
+    op.execute("DROP TABLE IF EXISTS admin_audit_logs CASCADE")
+    op.execute("DROP TABLE IF EXISTS export_jobs CASCADE")
+    op.execute("DROP TABLE IF EXISTS admin_users CASCADE")
     op.alter_column(
         "api_usage",
         "is_byok",
@@ -88,8 +88,8 @@ def upgrade() -> None:
         nullable=True,
         existing_server_default=sa.text("now()"),
     )
-    op.drop_index(op.f("ix_reactions_comment_id"), table_name="comment_reactions")
-    op.drop_index(op.f("ix_reactions_user_id"), table_name="comment_reactions")
+    op.execute("DROP INDEX IF EXISTS ix_reactions_comment_id")
+    op.execute("DROP INDEX IF EXISTS ix_reactions_user_id")
     op.create_index(
         op.f("ix_comment_reactions_comment_id"), "comment_reactions", ["comment_id"], unique=False
     )
@@ -148,9 +148,9 @@ def upgrade() -> None:
         nullable=True,
         existing_server_default=sa.text("now()"),
     )
-    op.drop_index(op.f("idx_telemetry_events_created"), table_name="telemetry_events")
-    op.drop_index(op.f("idx_telemetry_events_type"), table_name="telemetry_events")
-    op.drop_index(op.f("idx_telemetry_events_user_id"), table_name="telemetry_events")
+    op.execute("DROP INDEX IF EXISTS idx_telemetry_events_created")
+    op.execute("DROP INDEX IF EXISTS idx_telemetry_events_type")
+    op.execute("DROP INDEX IF EXISTS idx_telemetry_events_user_id")
     # Drop index if it exists (handles case where index was already created)
     op.execute("DROP INDEX IF EXISTS idx_telemetry_user_type")
     op.execute("DROP INDEX IF EXISTS idx_telemetry_created")
@@ -209,18 +209,18 @@ def upgrade() -> None:
         nullable=True,
         existing_server_default=sa.text("now()"),
     )
-    op.drop_index(op.f("idx_users_stripe_customer"), table_name="users")
-    op.drop_constraint(op.f("uq_users_stripe_subscription"), "users", type_="unique")
-    op.drop_column("users", "claude_oauth_token_encrypted")
-    op.drop_column("users", "plan_start_date")
-    op.drop_column("users", "plan_type")
-    op.drop_column("users", "storage_used_bytes")
-    op.drop_column("users", "stripe_subscription_id")
-    op.drop_column("users", "anthropic_api_key_encrypted")
-    op.drop_column("users", "preferred_model")
-    op.drop_column("users", "plan_end_date")
-    op.drop_column("users", "stripe_customer_id")
-    op.drop_column("users", "image_storage_used_bytes")
+    op.execute("DROP INDEX IF EXISTS idx_users_stripe_customer")
+    op.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS uq_users_stripe_subscription")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS claude_oauth_token_encrypted")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS plan_start_date")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS plan_type")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS storage_used_bytes")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS stripe_subscription_id")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS anthropic_api_key_encrypted")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS preferred_model")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS plan_end_date")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS stripe_customer_id")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS image_storage_used_bytes")
     # ### end Alembic commands ###
 
 
