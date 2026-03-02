@@ -182,7 +182,9 @@ export class ApiClient {
     });
 
     // Handle 401 Unauthorized - attempt refresh once, then retry
-    if (response.status === 401) {
+    // Skip refresh for auth endpoints (login, register, etc.) - those 401s are real errors
+    const isAuthEndpoint = endpoint.startsWith("/api/auth/") && endpoint !== "/api/auth/refresh";
+    if (response.status === 401 && !isAuthEndpoint) {
       // Try to refresh token using refresh token cookie
       try {
         if (!this.refreshPromise) {

@@ -1,12 +1,15 @@
 """Comments API endpoints: CRUD, reactions, and mentions."""
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import get_db
+from config import get_settings
+from db.database import Comment, DocumentShare, File, User, get_db
 from middleware.rate_limit import limiter
 from services.auth_service import TokenData, optional_auth, require_auth
 from services.comment_service import CommentService
@@ -20,6 +23,63 @@ def get_user_id(token: TokenData) -> str | None:
     if token.sub in ("dev-user", "api-key-user", "anonymous"):
         return None
     return token.sub
+
+
+async def _send_comment_notifications(
+    share_owner_email: str | None,
+    parent_author_email: str | None,
+    mention_emails: list[str],
+    commenter_name: str,
+    comment_content: str,
+    doc_name: str,
+    share_url: str,
+    is_reply: bool,
+) -> None:
+    """Send comment/reply/mention notification emails (fire-and-forget)."""
+    try:
+        from services.email_service import get_email_service
+
+        email_service = get_email_service()
+        preview = comment_content[:200] + ("..." if len(comment_content) > 200 else "")
+        notified_emails: set[str] = set()
+
+        # 1. Send mention notifications first (highest priority)
+        for email in mention_emails:
+            if email in notified_emails:
+                continue
+            await email_service.send_mention_notification(
+                to_email=email,
+                mentioner_name=commenter_name,
+                comment_preview=preview,
+                doc_name=doc_name,
+                share_url=share_url,
+            )
+            notified_emails.add(email)
+
+        # 2. Send reply notification to parent comment author
+        if is_reply and parent_author_email and parent_author_email not in notified_emails:
+            await email_service.send_comment_notification(
+                to_email=parent_author_email,
+                commenter_name=commenter_name,
+                comment_preview=preview,
+                doc_name=doc_name,
+                share_url=share_url,
+                is_reply=True,
+            )
+            notified_emails.add(parent_author_email)
+
+        # 3. Send comment notification to share owner
+        if share_owner_email and share_owner_email not in notified_emails:
+            await email_service.send_comment_notification(
+                to_email=share_owner_email,
+                commenter_name=commenter_name,
+                comment_preview=preview,
+                doc_name=doc_name,
+                share_url=share_url,
+                is_reply=False,
+            )
+    except Exception:
+        logger.exception("Failed to send comment notification emails")
 
 
 # =============================================================================
@@ -133,6 +193,86 @@ async def create_comment(
         parent_id=body.parent_id,
         mentions=body.mentions,
     )
+
+    # --- Notification logic (fire-and-forget) ---
+    # Gather data for notifications
+    share_owner_email: str | None = None
+    parent_author_email: str | None = None
+    mention_emails: list[str] = []
+
+    try:
+        # Get share info (owner + file name)
+        share_result = await db.execute(
+            select(DocumentShare.user_id, DocumentShare.file_id, DocumentShare.share_token).where(
+                DocumentShare.share_token == share_token
+            )
+        )
+        share_row = share_result.one_or_none()
+
+        if share_row:
+            # Get document name
+            file_result = await db.execute(
+                select(File.name).where(File.id == share_row.file_id)
+            )
+            file_row = file_result.one_or_none()
+            doc_name = file_row.name if file_row else "Untitled"
+
+            # Get share owner email (skip if commenter is owner)
+            if share_row.user_id != user_id:
+                owner_result = await db.execute(
+                    select(User.email).where(
+                        User.id == share_row.user_id, User.email.isnot(None)
+                    )
+                )
+                owner_row = owner_result.one_or_none()
+                if owner_row:
+                    share_owner_email = owner_row.email
+
+            # Get parent comment author email (for replies)
+            if body.parent_id:
+                parent_result = await db.execute(
+                    select(Comment.user_id).where(Comment.id == body.parent_id)
+                )
+                parent_row = parent_result.one_or_none()
+                if parent_row and parent_row.user_id != user_id:
+                    pa_result = await db.execute(
+                        select(User.email).where(
+                            User.id == parent_row.user_id, User.email.isnot(None)
+                        )
+                    )
+                    pa_row = pa_result.one_or_none()
+                    if pa_row:
+                        parent_author_email = pa_row.email
+
+            # Get mention emails (exclude commenter)
+            if body.mentions:
+                mention_ids = [m for m in body.mentions if m != user_id]
+                if mention_ids:
+                    m_result = await db.execute(
+                        select(User.email).where(
+                            User.id.in_(mention_ids), User.email.isnot(None)
+                        )
+                    )
+                    mention_emails = [r.email for r in m_result if r.email]
+
+            settings = get_settings()
+            share_url = f"{settings.frontend_url}/shared/{share_row.share_token}"
+
+            if share_owner_email or parent_author_email or mention_emails:
+                asyncio.create_task(
+                    _send_comment_notifications(
+                        share_owner_email=share_owner_email,
+                        parent_author_email=parent_author_email,
+                        mention_emails=mention_emails,
+                        commenter_name=token.username or "A doXmind user",
+                        comment_content=body.content,
+                        doc_name=doc_name,
+                        share_url=share_url,
+                        is_reply=body.parent_id is not None,
+                    )
+                )
+    except Exception:
+        logger.exception("Failed to prepare comment notifications")
 
     return comment
 

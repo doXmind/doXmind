@@ -24,17 +24,17 @@ def upgrade() -> None:
     resulting in loss of all existing vector embeddings.
     You will need to re-index all documents after this migration.
     """
-    # Drop HNSW index first (required before altering vector column)
-    op.execute("DROP INDEX IF EXISTS idx_vectors_embedding")
-
-    # Drop and recreate embedding column with new dimensions
-    op.execute("ALTER TABLE vectors DROP COLUMN IF EXISTS embedding")
-    op.execute("ALTER TABLE vectors ADD COLUMN embedding VECTOR(256)")
-
-    # Recreate HNSW index for vector similarity search
+    # Skip if vectors table doesn't exist (fresh database)
     op.execute("""
-        CREATE INDEX idx_vectors_embedding
-        ON vectors USING hnsw (embedding vector_cosine_ops)
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vectors') THEN
+                DROP INDEX IF EXISTS idx_vectors_embedding;
+                ALTER TABLE vectors DROP COLUMN IF EXISTS embedding;
+                ALTER TABLE vectors ADD COLUMN embedding VECTOR(256);
+                CREATE INDEX idx_vectors_embedding ON vectors USING hnsw (embedding vector_cosine_ops);
+            END IF;
+        END $$;
     """)
 
 
@@ -44,15 +44,15 @@ def downgrade() -> None:
     WARNING: This will drop and recreate the embedding column,
     resulting in loss of all existing vector embeddings.
     """
-    # Drop HNSW index first
-    op.execute("DROP INDEX IF EXISTS idx_vectors_embedding")
-
-    # Drop and recreate embedding column with original dimensions
-    op.execute("ALTER TABLE vectors DROP COLUMN IF EXISTS embedding")
-    op.execute("ALTER TABLE vectors ADD COLUMN embedding VECTOR(1536)")
-
-    # Recreate HNSW index
+    # Skip if vectors table doesn't exist (fresh database)
     op.execute("""
-        CREATE INDEX idx_vectors_embedding
-        ON vectors USING hnsw (embedding vector_cosine_ops)
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vectors') THEN
+                DROP INDEX IF EXISTS idx_vectors_embedding;
+                ALTER TABLE vectors DROP COLUMN IF EXISTS embedding;
+                ALTER TABLE vectors ADD COLUMN embedding VECTOR(1536);
+                CREATE INDEX idx_vectors_embedding ON vectors USING hnsw (embedding vector_cosine_ops);
+            END IF;
+        END $$;
     """)

@@ -30,18 +30,22 @@ _IS_TESTING = os.environ.get("TESTING", "").lower() == "true"
 def get_client_ip(request: Request) -> str:
     """Get client IP address from request.
 
-    Handles X-Forwarded-For header for proxied requests.
+    Handles proxy headers securely:
+    - X-Real-IP is set by our nginx reverse proxy and cannot be spoofed by clients
+    - X-Forwarded-For can be spoofed, so we only trust the rightmost entry (added by our proxy)
+    - Falls back to direct connection IP if no proxy headers
     """
-    # Check for forwarded header (when behind proxy/load balancer)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # Take the first IP in the chain (original client)
-        return forwarded.split(",")[0].strip()
-
-    # Check for real IP header (nginx)
+    # Prefer X-Real-IP (set by nginx, not client-spoofable)
     real_ip = request.headers.get("X-Real-IP")
     if real_ip:
-        return real_ip
+        return real_ip.strip()
+
+    # X-Forwarded-For: take the RIGHTMOST entry (added by our proxy, not the client)
+    # Clients can prepend fake IPs, but cannot control what our proxy appends
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        ips = [ip.strip() for ip in forwarded.split(",")]
+        return ips[-1] if ips else get_remote_address(request)
 
     # Fall back to direct client IP
     return get_remote_address(request)
