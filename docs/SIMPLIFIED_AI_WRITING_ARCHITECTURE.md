@@ -39,22 +39,22 @@
 
 ### 功能范围
 
-| 核心功能 ✅ | 辅助功能 ✅ | 未实现 ❌ |
-|-------------|-------------|-----------|
-| Markdown 编辑器 (TipTap) | 命令面板 (Ctrl+K) | CSV 数据分析模式 |
-| AI 对话（Chat） + 语音录音 | 键盘快捷键 (Ctrl+?) | HTML 幻灯片模式 |
-| AI 快速编辑（Quick Edit） | 高对比度模式 | 实时协作（Y.js） |
-| AI 自动补全（Autocomplete） | 引导教程 | 复杂权限系统 |
-| Diff Review（差异审查） | 网络状态指示 | 工作区共享 |
-| Text Review（文本审查） | 未保存提醒 | 代码执行功能 |
-| 块选择 (Block Selection) | 动态标签标题 | |
-| 文件管理 + 导入/导出 | 加载骨架屏 | |
-| Mindlines（大纲/思维导图） | Framer Motion 动画 | |
-| 数学公式 (KaTeX) | 移动端手势支持 | |
-| 代码高亮 (Shiki) | 拼写检查 | |
-| 深色/浅色主题 | 拖放导入 | |
-| 知识库附件 (RAG) | OAuth 登录 | |
-| Skills 领域知识系统 | 遥测分析 | |
+| 核心功能 ✅                 | 辅助功能 ✅         | 未实现 ❌        |
+| --------------------------- | ------------------- | ---------------- |
+| Markdown 编辑器 (TipTap)    | 命令面板 (Ctrl+K)   | CSV 数据分析模式 |
+| AI 对话（Chat） + 语音录音  | 键盘快捷键 (Ctrl+?) | HTML 幻灯片模式  |
+| AI 快速编辑（Quick Edit）   | 高对比度模式        | 实时协作（Y.js） |
+| AI 自动补全（Autocomplete） | 引导教程            | 复杂权限系统     |
+| Diff Review（差异审查）     | 网络状态指示        | 工作区共享       |
+| Text Review（文本审查）     | 未保存提醒          | 代码执行功能     |
+| 块选择 (Block Selection)    | 动态标签标题        |                  |
+| 文件管理 + 导入/导出        | 加载骨架屏          |                  |
+| Mindlines（大纲/思维导图）  | Framer Motion 动画  |                  |
+| 数学公式 (KaTeX)            | 移动端手势支持      |                  |
+| 代码高亮 (Shiki)            | 拼写检查            |                  |
+| 深色/浅色主题               | 拖放导入            |                  |
+| 知识库附件 (RAG)            | OAuth 登录          |                  |
+| Skills 领域知识系统         | 遥测分析            |                  |
 
 ---
 
@@ -100,19 +100,19 @@
 
 ### 为什么选择这些技术？
 
-| 技术 | 选择理由 |
-|------|----------|
-| **Next.js 15** | Server Components 减少客户端 JS，App Router 更好的文件组织，内置流式渲染 |
-| **TipTap 3.x** | 官方 Markdown 扩展，AI Toolkit 支持，ProseMirror 稳定性 |
-| **FastAPI** | 异步原生，自动 OpenAPI 文档，类型提示，比 Flask 更现代 |
-| **LangGraph 1.0** | 生产级 Agent 编排，持久化执行，人机协作支持 |
-| **Claude API** | 最强的写作能力，200K 上下文，原生工具调用，Web Tools 支持 |
-| **pgvector** | PostgreSQL 原生向量扩展，统一数据库，支持精确查询 |
-| **OpenAI Embeddings** | text-embedding-3-small 高质量嵌入，1536 维向量 |
-| **Gemini API** | 高效的文档转换，支持 PDF/DOCX/PPTX 多格式 |
-| **Zustand** | 比 Redux 更简单，比 Context 更高效，完美适配 Next.js |
-| **Framer Motion** | 声明式动画 API，优秀的性能，React 生态最佳动画库 |
-| **ReactFlow** | 高性能节点图渲染，完美支持思维导图场景 |
+| 技术                  | 选择理由                                                                 |
+| --------------------- | ------------------------------------------------------------------------ |
+| **Next.js 15**        | Server Components 减少客户端 JS，App Router 更好的文件组织，内置流式渲染 |
+| **TipTap 3.x**        | 官方 Markdown 扩展，AI Toolkit 支持，ProseMirror 稳定性                  |
+| **FastAPI**           | 异步原生，自动 OpenAPI 文档，类型提示，比 Flask 更现代                   |
+| **LangGraph 1.0**     | 生产级 Agent 编排，持久化执行，人机协作支持                              |
+| **Claude API**        | 最强的写作能力，200K 上下文，原生工具调用，Web Tools 支持                |
+| **pgvector**          | PostgreSQL 原生向量扩展，统一数据库，支持精确查询                        |
+| **OpenAI Embeddings** | text-embedding-3-small 高质量嵌入，1536 维向量                           |
+| **Gemini API**        | 高效的文档转换，支持 PDF/DOCX/PPTX 多格式                                |
+| **Zustand**           | 比 Redux 更简单，比 Context 更高效，完美适配 Next.js                     |
+| **Framer Motion**     | 声明式动画 API，优秀的性能，React 生态最佳动画库                         |
+| **ReactFlow**         | 高性能节点图渲染，完美支持思维导图场景                                   |
 
 ---
 
@@ -324,13 +324,13 @@ src/
 
 ```tsx
 // components/editor/Editor.tsx
-'use client';
+"use client";
 
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Markdown from '@tiptap/extension-markdown';
-import { AIAutocomplete } from './extensions/ai-autocomplete';
-import { AICommands } from './extensions/ai-commands';
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Markdown from "@tiptap/extension-markdown";
+import { AIAutocomplete } from "./extensions/ai-autocomplete";
+import { AICommands } from "./extensions/ai-commands";
 
 interface EditorProps {
   content: string;
@@ -372,39 +372,35 @@ export function Editor({ content, fileId, onChange }: EditorProps) {
 
 ```tsx
 // components/ai/ChatPanel.tsx
-'use client';
+"use client";
 
-import { useChatStore } from '@/stores/chat-store';
-import { useStream } from '@/hooks/useStream';
-import { ChatInput } from './ChatInput';
-import { ChatMessage } from './ChatMessage';
+import { useChatStore } from "@/stores/chat-store";
+import { useStream } from "@/hooks/useStream";
+import { ChatInput } from "./ChatInput";
+import { ChatMessage } from "./ChatMessage";
 
 export function ChatPanel() {
   const { messages, addMessage, updateLastMessage } = useChatStore();
 
   const { send, isStreaming, cancel } = useStream({
-    url: '/api/chat/stream',
+    url: "/api/chat/stream",
     onChunk: (chunk) => updateLastMessage(chunk),
   });
 
   const handleSend = async (input: string, files: string[]) => {
-    addMessage({ role: 'user', content: input, files });
-    addMessage({ role: 'assistant', content: '' });
+    addMessage({ role: "user", content: input, files });
+    addMessage({ role: "assistant", content: "" });
     await send({ message: input, files });
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {messages.map((msg, i) => (
           <ChatMessage key={i} message={msg} />
         ))}
       </div>
-      <ChatInput
-        onSend={handleSend}
-        isStreaming={isStreaming}
-        onCancel={cancel}
-      />
+      <ChatInput onSend={handleSend} isStreaming={isStreaming} onCancel={cancel} />
     </div>
   );
 }
@@ -414,21 +410,21 @@ export function ChatPanel() {
 
 ```tsx
 // components/ai/QuickEditMenu.tsx
-'use client';
+"use client";
 
-import { useQuickEdit } from '@/hooks/useQuickEdit';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { useQuickEdit } from "@/hooks/useQuickEdit";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 const QUICK_EDIT_OPTIONS = [
-  { id: 'fix-grammar', label: '修正语法', icon: '✓' },
-  { id: 'improve', label: '改进写作', icon: '✨' },
-  { id: 'simplify', label: '简化语言', icon: '📝' },
-  { id: 'expand', label: '扩展内容', icon: '📖' },
-  { id: 'shorten', label: '精简内容', icon: '✂️' },
-  { id: 'translate-en', label: '翻译为英文', icon: '🌐' },
-  { id: 'translate-zh', label: '翻译为中文', icon: '🌐' },
-  { id: 'professional', label: '更专业', icon: '💼' },
-  { id: 'casual', label: '更随意', icon: '😊' },
+  { id: "fix-grammar", label: "修正语法", icon: "✓" },
+  { id: "improve", label: "改进写作", icon: "✨" },
+  { id: "simplify", label: "简化语言", icon: "📝" },
+  { id: "expand", label: "扩展内容", icon: "📖" },
+  { id: "shorten", label: "精简内容", icon: "✂️" },
+  { id: "translate-en", label: "翻译为英文", icon: "🌐" },
+  { id: "translate-zh", label: "翻译为中文", icon: "🌐" },
+  { id: "professional", label: "更专业", icon: "💼" },
+  { id: "casual", label: "更随意", icon: "😊" },
 ];
 
 interface QuickEditMenuProps {
@@ -448,7 +444,7 @@ export function QuickEditMenu({ selectedText, position, onApply }: QuickEditMenu
   return (
     <DropdownMenu>
       <DropdownMenuContent style={{ left: position.x, top: position.y }}>
-        {QUICK_EDIT_OPTIONS.map(option => (
+        {QUICK_EDIT_OPTIONS.map((option) => (
           <DropdownMenuItem
             key={option.id}
             onClick={() => handleSelect(option.id)}
@@ -468,8 +464,8 @@ export function QuickEditMenu({ selectedText, position, onApply }: QuickEditMenu
 
 ```typescript
 // stores/editor-store.ts
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface EditorState {
   currentFileId: string | null;
@@ -489,7 +485,7 @@ export const useEditorStore = create<EditorState>()(
   persist(
     (set) => ({
       currentFileId: null,
-      content: '',
+      content: "",
       isDirty: false,
       cursorPosition: { line: 1, column: 1 },
       selection: null,
@@ -499,7 +495,7 @@ export const useEditorStore = create<EditorState>()(
       setSelection: (selection) => set({ selection }),
       markClean: () => set({ isDirty: false }),
     }),
-    { name: 'editor-store' }
+    { name: "editor-store" }
   )
 );
 ```
@@ -738,7 +734,7 @@ async def quick_edit(request: QuickEditRequest):
 
 #### Autocomplete API
 
-```python
+````python
 # api/autocomplete.py
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -779,7 +775,7 @@ async def suggest(request: AutocompleteRequest):
     )
 
     return {"suggestion": suggestion.strip()}
-```
+````
 
 ---
 
@@ -966,7 +962,7 @@ async def search_files(query: str, pattern: Optional[str] = None) -> str:
 
 ### 系统提示词
 
-```python
+````python
 # agents/prompts/base.py
 from typing import List
 
@@ -1020,7 +1016,7 @@ def get_system_prompt(mode: str, files: List[dict]) -> str:
             base += f"### {f['name']}\n```\n{f['content'][:3000]}\n```\n\n"
 
     return base
-```
+````
 
 ---
 
@@ -1290,23 +1286,23 @@ doXmind Mini 提供了完整的移动端支持,包括响应式设计、触摸手
 ```typescript
 // src/hooks/use-device-type.ts
 export function useDeviceType() {
-  const [deviceType, setDeviceType] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
+  const [deviceType, setDeviceType] = useState<"mobile" | "tablet" | "desktop">("desktop");
 
   useEffect(() => {
     const checkDeviceType = () => {
       const width = window.innerWidth;
       if (width < 768) {
-        setDeviceType('mobile');
+        setDeviceType("mobile");
       } else if (width < 1024) {
-        setDeviceType('tablet');
+        setDeviceType("tablet");
       } else {
-        setDeviceType('desktop');
+        setDeviceType("desktop");
       }
     };
 
     checkDeviceType();
-    window.addEventListener('resize', checkDeviceType);
-    return () => window.removeEventListener('resize', checkDeviceType);
+    window.addEventListener("resize", checkDeviceType);
+    return () => window.removeEventListener("resize", checkDeviceType);
   }, []);
 
   return deviceType;
@@ -1357,7 +1353,7 @@ export function useMobileGestures() {
 // src/hooks/use-mobile-editor-actions.ts
 export function useMobileEditorActions(editor: Editor | null) {
   const deviceType = useDeviceType();
-  const isMobile = deviceType === 'mobile';
+  const isMobile = deviceType === "mobile";
 
   const insertAtCursor = (text: string) => {
     if (!editor) return;
@@ -1365,17 +1361,17 @@ export function useMobileEditorActions(editor: Editor | null) {
     editor.chain().focus().insertContent(text).run();
   };
 
-  const formatSelection = (format: 'bold' | 'italic' | 'code') => {
+  const formatSelection = (format: "bold" | "italic" | "code") => {
     if (!editor) return;
 
     switch (format) {
-      case 'bold':
+      case "bold":
         editor.chain().focus().toggleBold().run();
         break;
-      case 'italic':
+      case "italic":
         editor.chain().focus().toggleItalic().run();
         break;
-      case 'code':
+      case "code":
         editor.chain().focus().toggleCode().run();
         break;
     }
@@ -1396,27 +1392,27 @@ export function useMobileEditorActions(editor: Editor | null) {
 
 ### 移动端优化清单
 
-| 优化项 | 实现方式 | 效果 |
-|--------|----------|------|
-| **Viewport** | `<meta viewport>` 正确配置 | 防止缩放,1:1 渲染 |
-| **Touch Targets** | 最小 44x44px | 易于点击 |
-| **Scroll Fix** | 移除 `position: fixed` | 真机滚动正常 |
-| **Safe Area** | CSS `env(safe-area-inset-*)` | 适配刘海屏 |
-| **Keyboard** | 动态调整布局 | 输入框不被遮挡 |
-| **Loading** | 骨架屏 + Suspense | 感知性能提升 |
-| **Fonts** | 本地字体优先 | 减少网络请求 |
-| **Images** | 懒加载 + WebP | 节省流量 |
+| 优化项            | 实现方式                     | 效果              |
+| ----------------- | ---------------------------- | ----------------- |
+| **Viewport**      | `<meta viewport>` 正确配置   | 防止缩放,1:1 渲染 |
+| **Touch Targets** | 最小 44x44px                 | 易于点击          |
+| **Scroll Fix**    | 移除 `position: fixed`       | 真机滚动正常      |
+| **Safe Area**     | CSS `env(safe-area-inset-*)` | 适配刘海屏        |
+| **Keyboard**      | 动态调整布局                 | 输入框不被遮挡    |
+| **Loading**       | 骨架屏 + Suspense            | 感知性能提升      |
+| **Fonts**         | 本地字体优先                 | 减少网络请求      |
+| **Images**        | 懒加载 + WebP                | 节省流量          |
 
 ### 测试设备
 
-| 设备 | 分辨率 | 测试状态 |
-|------|--------|----------|
-| iPhone SE (1st gen) | 320x568 | ✅ 通过 |
-| iPhone 12/13/14 | 390x844 | ✅ 通过 |
-| iPhone 14 Pro Max | 430x932 | ✅ 通过 |
-| iPad Mini | 768x1024 | ✅ 通过 |
-| iPad Pro 12.9" | 1024x1366 | ✅ 通过 |
-| Android (Chrome) | Various | ✅ 通过 |
+| 设备                | 分辨率    | 测试状态 |
+| ------------------- | --------- | -------- |
+| iPhone SE (1st gen) | 320x568   | ✅ 通过  |
+| iPhone 12/13/14     | 390x844   | ✅ 通过  |
+| iPhone 14 Pro Max   | 430x932   | ✅ 通过  |
+| iPad Mini           | 768x1024  | ✅ 通过  |
+| iPad Pro 12.9"      | 1024x1366 | ✅ 通过  |
+| Android (Chrome)    | Various   | ✅ 通过  |
 
 ---
 
@@ -1424,24 +1420,24 @@ export function useMobileEditorActions(editor: Editor | null) {
 
 ### 架构简化对比
 
-| 方面 | doXmind (原版) | doXmind Mini (当前) |
-|------|---------|-------------------|
-| **前端框架** | Vue 3 + Vite | Next.js 15 (App Router + RSC) |
-| **UI 库** | Vue 组件 | React 19 + shadcn/ui |
-| **后端框架** | Flask | FastAPI 0.115 |
-| **AI 框架** | LangChain + LangGraph | LangGraph + LangChain |
-| **LLM 模型** | Claude 3.x | Claude Sonnet 4 |
-| **编辑器** | TipTap 2.x | TipTap 3.x |
-| **协作** | Y.js (复杂) | 无 (单用户) |
-| **数据库** | SQLite + S3 | PostgreSQL / SQLite |
-| **ORM** | SQLAlchemy 1.x | SQLAlchemy 2.0 (async) |
-| **向量库** | 无 | pgvector 0.3.6 |
-| **嵌入模型** | 无 | text-embedding-3-small (1536d) |
-| **文件转换** | MarkItDown | Gemini API |
-| **认证** | 简单 JWT | Google OAuth + JWT |
-| **工具系统** | 基础文档工具 | 文档工具 + KB 工具 + Todo 工具 |
-| **Skills 系统** | 无 | 领域知识系统 |
-| **部署** | 单服务 | Docker Compose 多服务 |
+| 方面            | doXmind (原版)        | doXmind Mini (当前)            |
+| --------------- | --------------------- | ------------------------------ |
+| **前端框架**    | Vue 3 + Vite          | Next.js 15 (App Router + RSC)  |
+| **UI 库**       | Vue 组件              | React 19 + shadcn/ui           |
+| **后端框架**    | Flask                 | FastAPI 0.115                  |
+| **AI 框架**     | LangChain + LangGraph | LangGraph + LangChain          |
+| **LLM 模型**    | Claude 3.x            | Claude Sonnet 4                |
+| **编辑器**      | TipTap 2.x            | TipTap 3.x                     |
+| **协作**        | Y.js (复杂)           | 无 (单用户)                    |
+| **数据库**      | SQLite + S3           | PostgreSQL / SQLite            |
+| **ORM**         | SQLAlchemy 1.x        | SQLAlchemy 2.0 (async)         |
+| **向量库**      | 无                    | pgvector 0.3.6                 |
+| **嵌入模型**    | 无                    | text-embedding-3-small (1536d) |
+| **文件转换**    | MarkItDown            | Gemini API                     |
+| **认证**        | 简单 JWT              | Google OAuth + JWT             |
+| **工具系统**    | 基础文档工具          | 文档工具 + KB 工具 + Todo 工具 |
+| **Skills 系统** | 无                    | 领域知识系统                   |
+| **部署**        | 单服务                | Docker Compose 多服务          |
 
 ### 代码量对比 (估算)
 
@@ -1554,13 +1550,16 @@ const ChatPanel = lazy(() => import('@/components/ai/chat-panel'));
 
 ```typescript
 // Zustand 选择器优化,避免不必要的重渲染
-const content = useEditorStore(state => state.content);  // ✅ 只订阅 content
-const store = useEditorStore();  // ❌ 订阅所有状态变化
+const content = useEditorStore((state) => state.content); // ✅ 只订阅 content
+const store = useEditorStore(); // ❌ 订阅所有状态变化
 
 // React.memo 避免子组件重渲染
-export const ChatMessage = memo(({ message }: ChatMessageProps) => {
-  // ...
-}, (prev, next) => prev.message.id === next.message.id);
+export const ChatMessage = memo(
+  ({ message }: ChatMessageProps) => {
+    // ...
+  },
+  (prev, next) => prev.message.id === next.message.id
+);
 ```
 
 #### 3. TipTap 编辑器优化
@@ -1571,12 +1570,12 @@ const debouncedSave = useDebouncedCallback(
   (content: string) => {
     saveFile(currentFileId, content);
   },
-  1000  // 1秒防抖
+  1000 // 1秒防抖
 );
 
 // 虚拟滚动 (大文档)
 editor.configure({
-  enableInputRules: false,  // 禁用不需要的输入规则
+  enableInputRules: false, // 禁用不需要的输入规则
   enablePasteRules: false,
 });
 ```
@@ -1685,22 +1684,22 @@ async def index_multiple_files(file_ids: list[str]):
 
 ### 性能指标
 
-| 指标 | 目标 | 当前 | 状态 |
-|------|------|------|------|
-| **首次内容绘制 (FCP)** | < 1.5s | ~1.2s | ✅ |
-| **最大内容绘制 (LCP)** | < 2.5s | ~2.0s | ✅ |
-| **首次输入延迟 (FID)** | < 100ms | ~80ms | ✅ |
-| **累积布局偏移 (CLS)** | < 0.1 | ~0.05 | ✅ |
-| **编辑器启动时间** | < 500ms | ~400ms | ✅ |
-| **AI 响应 TTFB** | < 1s | ~800ms | ✅ |
-| **Autocomplete 延迟** | < 300ms | ~250ms | ✅ |
-| **向量搜索延迟** | < 200ms | ~150ms | ✅ |
+| 指标                   | 目标    | 当前   | 状态 |
+| ---------------------- | ------- | ------ | ---- |
+| **首次内容绘制 (FCP)** | < 1.5s  | ~1.2s  | ✅   |
+| **最大内容绘制 (LCP)** | < 2.5s  | ~2.0s  | ✅   |
+| **首次输入延迟 (FID)** | < 100ms | ~80ms  | ✅   |
+| **累积布局偏移 (CLS)** | < 0.1   | ~0.05  | ✅   |
+| **编辑器启动时间**     | < 500ms | ~400ms | ✅   |
+| **AI 响应 TTFB**       | < 1s    | ~800ms | ✅   |
+| **Autocomplete 延迟**  | < 300ms | ~250ms | ✅   |
+| **向量搜索延迟**       | < 200ms | ~150ms | ✅   |
 
 ### 性能监控
 
 ```typescript
 // 前端性能监控 (Web Vitals)
-import { getCLS, getFID, getFCP, getLCP, getTTFB } from 'web-vitals';
+import { getCLS, getFID, getFCP, getLCP, getTTFB } from "web-vitals";
 
 getCLS(console.log);
 getFID(console.log);
@@ -1908,13 +1907,13 @@ doXmind Mini 包含完整的遥测系统,用于采集用户反馈信号和 RLHF 
 
 ### 事件类型
 
-| 类别 | 事件 | 用途 |
-|------|------|------|
-| **Diff 审查** | `diff_hunk_accepted/rejected` | RLHF 正/负向信号 |
-| **自动补全** | `autocomplete_accepted/dismissed` | 补全偏好学习 |
-| **对话反馈** | `chat_feedback` (+1/-1) | 回复质量评估 |
-| **编辑操作** | `post_ai_edit`, `undo_after_ai` | 用户修正追踪 |
-| **使用统计** | `feature_used`, `session_summary` | 产品分析 |
+| 类别          | 事件                              | 用途             |
+| ------------- | --------------------------------- | ---------------- |
+| **Diff 审查** | `diff_hunk_accepted/rejected`     | RLHF 正/负向信号 |
+| **自动补全**  | `autocomplete_accepted/dismissed` | 补全偏好学习     |
+| **对话反馈**  | `chat_feedback` (+1/-1)           | 回复质量评估     |
+| **编辑操作**  | `post_ai_edit`, `undo_after_ai`   | 用户修正追踪     |
+| **使用统计**  | `feature_used`, `session_summary` | 产品分析         |
 
 ### 隐私控制
 
@@ -1938,12 +1937,12 @@ post_ai_edit            → chosen=用户最终版, rejected=AI原始输出
 
 ### 决策速度分类
 
-| 时间 | 分类 | 解读 |
-|------|------|------|
-| < 1s | instant | 强烈偏好 |
-| 1-3s | quick | 明确偏好 |
-| 3-10s | normal | 深思熟虑 |
-| > 10s | delayed | 不确定 |
+| 时间  | 分类    | 解读     |
+| ----- | ------- | -------- |
+| < 1s  | instant | 强烈偏好 |
+| 1-3s  | quick   | 明确偏好 |
+| 3-10s | normal  | 深思熟虑 |
+| > 10s | delayed | 不确定   |
 
 ### 关键文件
 
@@ -1988,29 +1987,31 @@ doXmind Mini 采用多层测试策略,确保代码质量和功能稳定性。
 
 ```typescript
 // src/lib/__tests__/diff-utils.test.ts
-import { describe, it, expect } from 'vitest';
-import { computeDiff, applyDiff } from '../diff-utils';
+import { describe, it, expect } from "vitest";
+import { computeDiff, applyDiff } from "../diff-utils";
 
-describe('diff-utils', () => {
-  it('should compute diff correctly', () => {
-    const original = 'Hello World';
-    const modified = 'Hello Claude';
+describe("diff-utils", () => {
+  it("should compute diff correctly", () => {
+    const original = "Hello World";
+    const modified = "Hello Claude";
     const diff = computeDiff(original, modified);
 
     expect(diff).toMatchObject({
       changes: expect.arrayContaining([
-        { type: 'delete', value: 'World' },
-        { type: 'insert', value: 'Claude' },
+        { type: "delete", value: "World" },
+        { type: "insert", value: "Claude" },
       ]),
     });
   });
 
-  it('should apply diff correctly', () => {
-    const original = 'Hello World';
-    const diff = { /* ... */ };
+  it("should apply diff correctly", () => {
+    const original = "Hello World";
+    const diff = {
+      /* ... */
+    };
     const result = applyDiff(original, diff);
 
-    expect(result).toBe('Hello Claude');
+    expect(result).toBe("Hello Claude");
   });
 });
 ```
@@ -2047,20 +2048,20 @@ describe('Editor', () => {
 
 ```typescript
 // src/hooks/__tests__/use-chat.test.ts
-import { renderHook, waitFor } from '@testing-library/react';
-import { useChat } from '../use-chat';
+import { renderHook, waitFor } from "@testing-library/react";
+import { useChat } from "../use-chat";
 
-describe('useChat', () => {
-  it('should send message and receive response', async () => {
+describe("useChat", () => {
+  it("should send message and receive response", async () => {
     const { result } = renderHook(() => useChat());
 
     act(() => {
-      result.current.sendMessage('Hello');
+      result.current.sendMessage("Hello");
     });
 
     await waitFor(() => {
       expect(result.current.messages).toHaveLength(2);
-      expect(result.current.messages[1].role).toBe('assistant');
+      expect(result.current.messages[1].role).toBe("assistant");
     });
   });
 });
@@ -2154,39 +2155,39 @@ async def test_create_file(db_session):
 
 ```typescript
 // e2e/editor.spec.ts
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 
-test('should create and edit a file', async ({ page }) => {
-  await page.goto('http://localhost:3000/editor');
+test("should create and edit a file", async ({ page }) => {
+  await page.goto("http://localhost:3000/editor");
 
   // Create new file
   await page.click('button:has-text("New File")');
-  await page.fill('input[placeholder="File name"]', 'test.md');
+  await page.fill('input[placeholder="File name"]', "test.md");
   await page.click('button:has-text("Create")');
 
   // Edit content
-  await page.fill('.ProseMirror', '# Hello World');
+  await page.fill(".ProseMirror", "# Hello World");
 
   // Wait for auto-save
-  await page.waitForSelector('text=Saved');
+  await page.waitForSelector("text=Saved");
 
   // Verify content
   await page.reload();
-  await expect(page.locator('.ProseMirror')).toContainText('Hello World');
+  await expect(page.locator(".ProseMirror")).toContainText("Hello World");
 });
 
-test('should use AI chat', async ({ page }) => {
-  await page.goto('http://localhost:3000/editor');
+test("should use AI chat", async ({ page }) => {
+  await page.goto("http://localhost:3000/editor");
 
   // Open chat panel
   await page.click('button[aria-label="Toggle chat"]');
 
   // Send message
-  await page.fill('textarea[placeholder="Ask AI..."]', 'Write a haiku');
-  await page.press('textarea', 'Enter');
+  await page.fill('textarea[placeholder="Ask AI..."]', "Write a haiku");
+  await page.press("textarea", "Enter");
 
   // Wait for response
-  await expect(page.locator('.chat-message.assistant')).toBeVisible({
+  await expect(page.locator(".chat-message.assistant")).toBeVisible({
     timeout: 10000,
   });
 });
@@ -2194,15 +2195,15 @@ test('should use AI chat', async ({ page }) => {
 
 ### 测试覆盖率
 
-| 模块 | 当前覆盖率 | 目标 | 状态 |
-|------|-----------|------|------|
-| **Frontend Utils** | 75% | 80% | 🟡 |
-| **Frontend Hooks** | 60% | 70% | 🟡 |
-| **Frontend Components** | 45% | 60% | 🔴 |
-| **Backend Services** | 80% | 85% | 🟢 |
-| **Backend API** | 70% | 75% | 🟡 |
-| **Backend Agents** | 65% | 70% | 🟡 |
-| **Overall** | 66% | 75% | 🟡 |
+| 模块                    | 当前覆盖率 | 目标 | 状态 |
+| ----------------------- | ---------- | ---- | ---- |
+| **Frontend Utils**      | 75%        | 80%  | 🟡   |
+| **Frontend Hooks**      | 60%        | 70%  | 🟡   |
+| **Frontend Components** | 45%        | 60%  | 🔴   |
+| **Backend Services**    | 80%        | 85%  | 🟢   |
+| **Backend API**         | 70%        | 75%  | 🟡   |
+| **Backend Agents**      | 65%        | 70%  | 🟡   |
+| **Overall**             | 66%        | 75%  | 🟡   |
 
 ### 测试命令
 
@@ -2258,9 +2259,9 @@ def mock_openai():
 
 ```typescript
 // src/lib/__tests__/api.test.ts
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
-vi.mock('@/lib/api', () => ({
+vi.mock("@/lib/api", () => ({
   apiClient: {
     post: vi.fn().mockResolvedValue({ data: { success: true } }),
     get: vi.fn().mockResolvedValue({ data: [] }),

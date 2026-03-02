@@ -252,6 +252,7 @@ app.add_middleware(
         "X-RateLimit-Remaining",
         "X-RateLimit-Reset",
         "Retry-After",
+        "Set-Cookie",  # Allow frontend to see refresh token cookie
     ],
     # Cache preflight requests for 1 hour
     max_age=3600,

@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.database import User, get_db
+from db.database import RefreshToken, User, get_db
 from exceptions import UnauthorizedError
 
 logger = logging.getLogger(__name__)
@@ -260,6 +260,50 @@ async def require_auth(
                         "JWT for user %s has no email claim, cannot auto-create", token.sub
                     )
                     raise UnauthorizedError(message="Session expired. Please log in again.")
+
+            # ===================================================================
+            # MIGRATION: Auto-issue refresh token for users with old long-lived access tokens
+            # ===================================================================
+            # Check if this is an old long-lived token (>24 hours remaining)
+            # and user doesn't have a refresh token yet
+            time_until_expiry = (token.exp - datetime.now(UTC)).total_seconds()
+            if time_until_expiry > 86400:  # More than 24 hours (old 7-day token)
+                # Check if user already has a refresh token
+                from db.database import RefreshToken
+
+                result = await db.execute(
+                    select(RefreshToken.id)
+                    .where(RefreshToken.user_id == token.sub)
+                    .where(~RefreshToken.is_revoked)
+                    .limit(1)
+                )
+                if not result.scalar_one_or_none():
+                    # User has old token but no refresh token - auto-issue one
+                    logger.info(
+                        "MIGRATION: Auto-issuing refresh token for user %s (old token detected)",
+                        token.sub,
+                    )
+                    try:
+                        # Generate refresh token
+                        new_refresh_token = create_refresh_token()
+                        # Create record (without setting cookie - will be set on next /refresh call)
+                        await create_refresh_token_record(
+                            user_id=token.sub,
+                            refresh_token=new_refresh_token,
+                            request=request,
+                            db=db,
+                        )
+                        logger.info(
+                            "MIGRATION: Successfully created refresh token for user %s", token.sub
+                        )
+                    except Exception as e:
+                        # Don't block the request if migration fails
+                        logger.error(
+                            "MIGRATION: Failed to create refresh token for user %s: %s",
+                            token.sub,
+                            str(e),
+                        )
+
         return token
 
     # If a Bearer token was sent but failed validation, return 401.
@@ -334,3 +378,203 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
     return pwd_context.verify(_truncate_password(plain_password), hashed_password)
+
+
+# =============================================================================
+# Dual-Token Authentication (Access + Refresh Tokens)
+# =============================================================================
+
+
+def create_refresh_token() -> str:
+    """Generate a cryptographically secure refresh token.
+
+    Uses secrets.token_urlsafe for high entropy (~256 bits).
+
+    Returns:
+        URL-safe random token string (43 characters)
+    """
+    import secrets
+
+    return secrets.token_urlsafe(32)
+
+
+def hash_token(token: str) -> str:
+    """Hash a token using SHA-256.
+
+    Used for storing refresh tokens securely in database.
+    Never store plain tokens - always hash first.
+
+    Args:
+        token: Plain token string
+
+    Returns:
+        Hexadecimal SHA-256 hash (64 characters)
+    """
+    import hashlib
+
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_device_fingerprint(ip: str, user_agent: str) -> str:
+    """Create device fingerprint from IP and User-Agent.
+
+    Note: This is a best-effort identifier, not foolproof.
+    VPNs, proxies, and browser updates can change the fingerprint.
+
+    Args:
+        ip: Client IP address
+        user_agent: Client User-Agent header
+
+    Returns:
+        SHA-256 hash of combined IP + User-Agent
+    """
+    import hashlib
+
+    combined = f"{ip}|{user_agent}"
+    return hashlib.sha256(combined.encode()).hexdigest()
+
+
+def parse_device_name(user_agent: str) -> str:
+    """Parse User-Agent to extract human-readable device name.
+
+    Simple parsing logic - can be enhanced with user-agents library.
+
+    Args:
+        user_agent: User-Agent header string
+
+    Returns:
+        Simplified device name (e.g., "Chrome on Windows")
+    """
+    ua_lower = user_agent.lower()
+
+    # Detect browser
+    browser = "Unknown Browser"
+    if "chrome" in ua_lower and "edg" not in ua_lower:
+        browser = "Chrome"
+    elif "firefox" in ua_lower:
+        browser = "Firefox"
+    elif "safari" in ua_lower and "chrome" not in ua_lower:
+        browser = "Safari"
+    elif "edg" in ua_lower:
+        browser = "Edge"
+
+    # Detect OS
+    os_name = "Unknown OS"
+    if "windows" in ua_lower:
+        os_name = "Windows"
+    elif "mac" in ua_lower or "darwin" in ua_lower:
+        os_name = "macOS"
+    elif "linux" in ua_lower:
+        os_name = "Linux"
+    elif "android" in ua_lower:
+        os_name = "Android"
+    elif "iphone" in ua_lower or "ipad" in ua_lower:
+        os_name = "iOS"
+
+    return f"{browser} on {os_name}"
+
+
+async def create_refresh_token_record(
+    user_id: str, refresh_token: str, request: Request, db: AsyncSession
+) -> RefreshToken:
+    """Create and save a refresh token record in database.
+
+    Implements device deduplication: if a session already exists for this device,
+    the old session is revoked before creating a new one to prevent session proliferation.
+
+    Args:
+        user_id: User ID to associate token with
+        refresh_token: Plain refresh token (will be hashed before storage)
+        request: FastAPI request object (for extracting device info)
+        db: Database session
+
+    Returns:
+        Created RefreshToken record
+    """
+    from db.database import RefreshToken
+
+    settings = get_settings()
+
+    # Extract device information
+    ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    device_fingerprint = create_device_fingerprint(ip, user_agent)
+
+    # Check for existing session from this device
+    result = await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.user_id == user_id)
+        .where(RefreshToken.device_fingerprint == device_fingerprint)
+        .where(~RefreshToken.is_revoked)
+        .where(RefreshToken.expires_at > datetime.now(UTC))
+    )
+    existing_session = result.scalar_one_or_none()
+
+    # Revoke existing session if found (device re-login or token rotation)
+    if existing_session:
+        await revoke_refresh_token(existing_session, db)
+
+    # Create token record
+    token_record = RefreshToken(
+        user_id=user_id,
+        token_hash=hash_token(refresh_token),
+        device_fingerprint=device_fingerprint,
+        ip_address=ip,
+        user_agent=user_agent,
+        device_name=parse_device_name(user_agent),
+        expires_at=datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days),
+    )
+
+    db.add(token_record)
+    await db.commit()
+    await db.refresh(token_record)
+
+    return token_record
+
+
+async def verify_refresh_token(
+    refresh_token: str, db: AsyncSession
+) -> tuple[RefreshToken | None, str | None]:
+    """Verify a refresh token and return its database record.
+
+    Args:
+        refresh_token: Plain refresh token from cookie
+        db: Database session
+
+    Returns:
+        Tuple of (token_record, error_message)
+        - token_record is None if invalid
+        - error_message explains why validation failed
+    """
+    from db.database import RefreshToken
+
+    token_hash_value = hash_token(refresh_token)
+
+    # Find token in database
+    result = await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == token_hash_value)
+        .where(RefreshToken.is_revoked == False)  # noqa: E712
+    )
+    token_record = result.scalar_one_or_none()
+
+    if not token_record:
+        return None, "Invalid refresh token"
+
+    # Check expiration
+    if token_record.expires_at < datetime.now(UTC):
+        return None, "Refresh token expired"
+
+    return token_record, None
+
+
+async def revoke_refresh_token(token_record: RefreshToken, db: AsyncSession) -> None:
+    """Revoke a refresh token (mark as revoked).
+
+    Args:
+        token_record: RefreshToken record to revoke
+        db: Database session
+    """
+    token_record.is_revoked = True
+    token_record.revoked_at = datetime.now(UTC)
+    await db.commit()

@@ -148,7 +148,7 @@ class CommunityService:
                 File.name.label("file_name"),
                 File.is_folder,
                 # Content preview fields
-                func.substr(File.content_markdown, 1, 350).label("content_markdown_head"),
+                func.safe_substr(File.content_markdown, 1, 350).label("content_markdown_head"),
                 func.length(File.content_markdown).label("content_markdown_length"),
                 func.safe_substr(File.content, 1, 1000).label("content_head"),
                 func.length(File.content).label("content_length"),
@@ -850,7 +850,7 @@ class CommunityService:
                 File.name.label("file_name"),
                 File.is_folder,
                 # Content preview fields
-                func.substr(File.content_markdown, 1, 350).label("content_markdown_head"),
+                func.safe_substr(File.content_markdown, 1, 350).label("content_markdown_head"),
                 func.length(File.content_markdown).label("content_markdown_length"),
                 func.safe_substr(File.content, 1, 1000).label("content_head"),
                 func.length(File.content).label("content_length"),
@@ -1129,7 +1129,7 @@ class CommunityService:
                 File.name.label("file_name"),
                 File.is_folder,
                 # Content preview fields
-                func.substr(File.content_markdown, 1, 350).label("content_markdown_head"),
+                func.safe_substr(File.content_markdown, 1, 350).label("content_markdown_head"),
                 func.length(File.content_markdown).label("content_markdown_length"),
                 func.safe_substr(File.content, 1, 1000).label("content_head"),
                 func.length(File.content).label("content_length"),

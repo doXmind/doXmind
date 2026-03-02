@@ -12,13 +12,7 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
-    ignores: [
-      "node_modules/**",
-      ".next/**",
-      "out/**",
-      "coverage/**",
-      "server/**",
-    ],
+    ignores: ["node_modules/**", ".next/**", "out/**", "coverage/**", "server/**"],
   },
   {
     rules: {
@@ -27,10 +21,13 @@ const eslintConfig = [
       // Allow empty interfaces for extension points
       "@typescript-eslint/no-empty-object-type": "off",
       // Allow unused vars starting with underscore
-      "@typescript-eslint/no-unused-vars": ["warn", {
-        "argsIgnorePattern": "^_",
-        "varsIgnorePattern": "^_"
-      }],
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+        },
+      ],
     },
   },
 ];

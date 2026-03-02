@@ -11,6 +11,10 @@ export class ApiClient {
   protected accessToken: string | null = null;
   protected tokenExpiry: number | null = null;
 
+  // Dual-token authentication support
+  private refreshPromise: Promise<void> | null = null; // Prevent concurrent refreshes
+  private autoRefreshTimer: NodeJS.Timeout | null = null; // Auto-refresh before expiry
+
   constructor(baseUrl: string = API_BASE) {
     this.baseUrl = baseUrl;
     // Load token from storage on initialization
@@ -43,25 +47,94 @@ export class ApiClient {
 
   protected saveToken(token: string, expiresIn: number): void {
     this.accessToken = token;
-    // Set expiry with 5-minute buffer
-    this.tokenExpiry = Date.now() + (expiresIn - 300) * 1000;
+    // Dual-token: No buffer needed, auto-refresh handles expiry
+    this.tokenExpiry = Date.now() + expiresIn * 1000;
 
     if (typeof window !== "undefined") {
       localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiry: this.tokenExpiry }));
       // Also set a cookie for middleware auth check
-      const maxAge = expiresIn - 300;
-      document.cookie = `${AUTH_COOKIE_NAME}=1; path=/; max-age=${maxAge}; SameSite=Lax`;
+      document.cookie = `${AUTH_COOKIE_NAME}=1; path=/; max-age=${expiresIn}; SameSite=Lax`;
     }
+
+    // Schedule auto-refresh before token expires (1 minute before)
+    this.scheduleAutoRefresh();
   }
 
   protected clearToken(): void {
     this.accessToken = null;
     this.tokenExpiry = null;
+
+    // Cancel auto-refresh timer
+    if (this.autoRefreshTimer) {
+      clearTimeout(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+
     if (typeof window !== "undefined") {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       // Also clear the auth cookie
       document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
     }
+  }
+
+  /**
+   * Schedule automatic token refresh before expiry (dual-token system).
+   * Refreshes 1 minute before access token expires.
+   */
+  private scheduleAutoRefresh(): void {
+    // Clear existing timer
+    if (this.autoRefreshTimer) {
+      clearTimeout(this.autoRefreshTimer);
+    }
+
+    if (!this.tokenExpiry) return;
+
+    // Refresh 1 minute before expiry
+    const timeUntilRefresh = this.tokenExpiry - Date.now() - 60000;
+
+    if (timeUntilRefresh > 0) {
+      this.autoRefreshTimer = setTimeout(() => {
+        this.autoRefreshToken().catch((error) => {
+          console.error("[ApiClient] Auto-refresh failed:", error);
+          // Don't clear token on auto-refresh failure - let user continue until manual action
+        });
+      }, timeUntilRefresh);
+    }
+  }
+
+  /**
+   * Internal method to refresh access token using refresh token (dual-token authentication).
+   * Called automatically before expiry or on 401 errors.
+   * For manual refresh, use the public refreshToken() method from auth.ts.
+   */
+  private async autoRefreshToken(): Promise<void> {
+    // Prevent concurrent refresh requests
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async () => {
+      try {
+        const response = await fetch(`${this.baseUrl}/api/auth/refresh`, {
+          method: "POST",
+          credentials: "include", // Send HttpOnly refresh token cookie
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Refresh token expired or invalid");
+        }
+
+        const data: { access_token: string; expires_in: number } = await response.json();
+        this.saveToken(data.access_token, data.expires_in);
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   protected isTokenValid(): boolean {
@@ -99,6 +172,7 @@ export class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
     const response = await fetch(url, {
       ...options,
+      credentials: "include", // Dual-token: Send HttpOnly refresh token cookie
       headers: {
         "Content-Type": "application/json",
         ...this.getAuthHeaders(),
@@ -107,14 +181,27 @@ export class ApiClient {
       signal: options.signal,
     });
 
-    // Handle 401 Unauthorized - clear token and redirect to login
+    // Handle 401 Unauthorized - attempt refresh once, then retry
     if (response.status === 401) {
-      this.clearToken();
-      // Dispatch event for auth store to handle
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+      // Try to refresh token using refresh token cookie
+      try {
+        if (!this.refreshPromise) {
+          await this.autoRefreshToken();
+        } else {
+          // Wait for ongoing refresh to complete
+          await this.refreshPromise;
+        }
+
+        // Retry original request with new access token
+        return this.request<T>(endpoint, options);
+      } catch {
+        // Refresh failed - clear token and dispatch unauthorized event
+        this.clearToken();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+        }
+        throw new Error("Session expired. Please log in again.");
       }
-      throw new Error("Session expired. Please log in again.");
     }
 
     if (!response.ok) {

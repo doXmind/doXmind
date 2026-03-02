@@ -44,13 +44,19 @@ class Settings(BaseSettings):
     brave_search_api_key: str = ""  # For Brave web search
 
     # =========================================================================
-    # Security / JWT
+    # Security / JWT (Dual-Token Authentication)
     # =========================================================================
     # Generate a secure key: openssl rand -hex 32
     # IMPORTANT: This MUST be set via environment variable in production
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days (will change to 15 after migration)
+    jwt_refresh_token_expire_days: int = 30  # 30 days for refresh tokens
+
+    # Cookie configuration for refresh tokens
+    cookie_secure: bool = True  # HTTPS only (set False for localhost development)
+    cookie_samesite: str = "lax"  # CSRF protection: "lax", "strict", or "none"
+    cookie_domain: str | None = None  # None for localhost, ".doxmind.com" for production
 
     # API Key for simple authentication (optional, for external integrations)
     api_key: str = ""

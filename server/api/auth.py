@@ -8,17 +8,29 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Cookie, Depends, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_settings
-from db.database import User, get_db
+from config import Settings, get_settings
+from db.database import RefreshToken, User, get_db
 from exceptions import BadRequestError, NotFoundError, UnauthorizedError
 from middleware.rate_limit import limiter
-from services.auth_service import TokenData, create_access_token, optional_auth, require_auth
+from services.auth_service import (
+    TokenData,
+    create_access_token,
+    create_device_fingerprint,
+    create_refresh_token,
+    create_refresh_token_record,
+    optional_auth,
+    require_auth,
+    revoke_refresh_token,
+    verify_refresh_token,
+)
 from services.oauth_service import get_google_oauth_service
 from services.user_service import UserService
 
@@ -128,6 +140,17 @@ class AuthStatusResponse(BaseModel):
     debug_mode: bool
 
 
+class SessionResponse(BaseModel):
+    """Response model for active session information."""
+
+    id: str
+    device_name: str
+    ip_address: str | None
+    created_at: str
+    last_used_at: str
+    is_current: bool
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
@@ -161,6 +184,45 @@ def user_to_dict(user: User) -> dict:
     }
 
 
+def set_refresh_token_cookie(response: Response, token: str, settings: Settings) -> None:
+    """Set HttpOnly refresh token cookie for dual-token authentication.
+
+    Args:
+        response: FastAPI Response object to set cookie on
+        token: The refresh token value (plain text, will be sent to browser)
+        settings: Application settings for cookie configuration
+    """
+    response.set_cookie(
+        key="doxmind_refresh_token",
+        value=token,
+        max_age=settings.jwt_refresh_token_expire_days * 86400,  # days to seconds
+        httponly=True,  # Prevent JavaScript access (XSS protection)
+        secure=settings.cookie_secure,  # HTTPS only in production
+        samesite=settings.cookie_samesite,  # CSRF protection
+        domain=settings.cookie_domain,  # None for localhost, .doxmind.com for production
+        path="/",  # Available site-wide (needed for cookie to work across redirects)
+    )
+
+
+def clear_refresh_token_cookie(response: Response, settings: Settings) -> None:
+    """Clear refresh token cookie (for logout).
+
+    Args:
+        response: FastAPI Response object
+        settings: Application settings for cookie configuration
+    """
+    response.set_cookie(
+        key="doxmind_refresh_token",
+        value="",
+        max_age=0,  # Expire immediately
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        domain=settings.cookie_domain,
+        path="/api/auth",
+    )
+
+
 # =============================================================================
 # Registration Endpoints
 # =============================================================================
@@ -189,11 +251,14 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
 @router.post("/verify-email", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def verify_email(
-    request: Request, body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)
+    request: Request,
+    response: Response,
+    body: VerifyEmailRequest,
+    db: AsyncSession = Depends(get_db),
 ):
-    """Verify email with code and complete registration.
+    """Verify email with code and complete registration (dual-token authentication).
 
-    On success, returns access token and user information.
+    On success, returns access token and sets refresh token cookie.
     """
     settings = get_settings()
     user_service = UserService(db)
@@ -212,6 +277,13 @@ async def verify_email(
         oauth_provider=user.oauth_provider,
         oauth_id=user.oauth_id,
     )
+
+    # Create refresh token for dual-token authentication
+    refresh_token_value = create_refresh_token()
+    await create_refresh_token_record(user.id, refresh_token_value, request, db)
+
+    # Set refresh token as HttpOnly cookie
+    set_refresh_token_cookie(response, refresh_token_value, settings)
 
     return TokenResponse(
         access_token=access_token,
@@ -243,9 +315,19 @@ async def resend_code(
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("10/minute")
-async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Login with email and password."""
+@limiter.limit("5/minute")  # Reduced from 10 to 5 (prevent brute force)
+async def login(
+    request: Request,
+    response: Response,
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Login with email and password (dual-token authentication).
+
+    Returns:
+        - access_token: Short-lived JWT (15 minutes) for API requests
+        - Sets HttpOnly cookie: Refresh token (30 days) for token renewal
+    """
     settings = get_settings()
     user_service = UserService(db)
 
@@ -258,6 +340,13 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
 
     # Get user info for response
     user = await user_service.get_user_by_email(body.email)
+
+    # Create refresh token for dual-token authentication
+    refresh_token_value = create_refresh_token()
+    await create_refresh_token_record(user.id, refresh_token_value, request, db)
+
+    # Set refresh token as HttpOnly cookie
+    set_refresh_token_cookie(response, refresh_token_value, settings)
 
     return TokenResponse(
         access_token=token,
@@ -385,11 +474,15 @@ async def google_auth(request: Request, redirect_uri: str | None = None):
 @router.get("/google/callback")
 async def google_callback(
     request: Request,
+    response: Response,
     code: str = Query(...),
     state: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """Handle Google OAuth callback."""
+    """Handle Google OAuth callback (dual-token authentication).
+
+    Creates both access token and refresh token for OAuth users.
+    """
     settings = get_settings()
 
     # Verify signed state token
@@ -426,12 +519,34 @@ async def google_callback(
             oauth_id=user.oauth_id,
         )
 
-        # Redirect to frontend with token
+        # Create refresh token for dual-token authentication
+        refresh_token_value = create_refresh_token()
+        await create_refresh_token_record(user.id, refresh_token_value, request, db)
+
+        # Set refresh token cookie on the injected response parameter
+        # IMPORTANT: Must set cookie BEFORE modifying response for redirect!
+        response.set_cookie(
+            key="doxmind_refresh_token",
+            value=refresh_token_value,
+            max_age=settings.jwt_refresh_token_expire_days * 86400,
+            httponly=True,
+            secure=settings.cookie_secure,
+            samesite=settings.cookie_samesite,
+            domain=settings.cookie_domain,
+            path="/",
+        )
+
+        # Build redirect URL
         redirect_uri = state_payload.get("redirect_uri") if state_payload else None
         base_redirect = redirect_uri or settings.frontend_url
         redirect_url = f"{base_redirect}/auth/callback?token={access_token}"
 
-        return RedirectResponse(url=redirect_url)
+        # Modify the response to perform redirect (instead of returning RedirectResponse)
+        # This ensures cookies set above are preserved in the redirect
+        response.status_code = 307
+        response.headers["Location"] = redirect_url
+
+        return response
 
     except ValueError as e:
         raise BadRequestError(message=str(e))
@@ -443,35 +558,173 @@ async def google_callback(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")  # Increased from 10 - auto-refresh happens more frequently
 async def refresh_token(
     request: Request,
-    token_data: TokenData = Depends(require_auth),
+    response: Response,
+    refresh_token: str | None = Cookie(None, alias="doxmind_refresh_token"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Refresh an existing token."""
+    """Refresh access token using refresh token (implements token rotation).
+
+    Dual-Token Authentication:
+    1. Read refresh token from HttpOnly cookie
+    2. Verify refresh token from database (not expired, not revoked)
+    3. Revoke old refresh token (token rotation for security)
+    4. Generate new refresh token and store in database
+    5. Set new refresh token as HttpOnly cookie
+    6. Generate new access token (short-lived, 15 minutes)
+    7. Return new access token to client
+
+    Token Rotation: Each refresh invalidates the old token, preventing replay attacks.
+    """
     settings = get_settings()
 
-    # Get user info
-    user_service = UserService(db)
-    user = await user_service.get_user_by_id(token_data.sub)
+    # Validate refresh token presence
+    if not refresh_token:
+        raise UnauthorizedError(message="No refresh token provided")
 
-    # Refresh token with user info for auto-recreation
+    # Verify refresh token from database
+    token_record, error = await verify_refresh_token(refresh_token, db)
+    if not token_record:
+        raise UnauthorizedError(message=error or "Invalid refresh token")
+
+    # Get user (verify user still exists and is active)
+    user_service = UserService(db)
+    user = await user_service.get_user_by_id(token_record.user_id)
+    if not user or not user.is_active:
+        raise UnauthorizedError(message="User not found or inactive")
+
+    # TOKEN ROTATION: Revoke old refresh token (security best practice)
+    await revoke_refresh_token(token_record, db)
+
+    # Generate new refresh token
+    new_refresh_token = create_refresh_token()
+    await create_refresh_token_record(user.id, new_refresh_token, request, db)
+
+    # Generate new access token
     access_token = create_access_token(
-        subject=token_data.sub,
-        email=user.email if user else token_data.email,
-        username=user.username if user else token_data.username,
-        avatar_url=user.avatar_url if user else token_data.avatar_url,
-        oauth_provider=user.oauth_provider if user else token_data.oauth_provider,
-        oauth_id=user.oauth_id if user else token_data.oauth_id,
+        subject=user.id,
+        email=user.email,
+        username=user.username,
+        avatar_url=user.avatar_url,
+        oauth_provider=user.oauth_provider,
+        oauth_id=user.oauth_id,
     )
+
+    # Set new refresh token as HttpOnly cookie
+    set_refresh_token_cookie(response, new_refresh_token, settings)
 
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
         expires_in=settings.jwt_access_token_expire_minutes * 60,
-        user=user_to_dict(user) if user else None,
+        user=user_to_dict(user),
     )
+
+
+@router.post("/logout", response_model=MessageResponse)
+async def logout(
+    request: Request,
+    response: Response,
+    refresh_token: str | None = Cookie(None, alias="doxmind_refresh_token"),
+    token_data: TokenData | None = Depends(optional_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Logout and revoke refresh token.
+
+    Dual-Token Authentication:
+    1. Revoke refresh token in database (if present)
+    2. Clear refresh token cookie
+    3. Client should also clear access token from localStorage
+
+    Note: Access tokens remain valid until expiry (but are short-lived).
+    """
+    settings = get_settings()
+
+    # Revoke refresh token if present
+    if refresh_token:
+        token_record, _ = await verify_refresh_token(refresh_token, db)
+        if token_record:
+            await revoke_refresh_token(token_record, db)
+
+    # Clear refresh token cookie
+    clear_refresh_token_cookie(response, settings)
+
+    return MessageResponse(success=True, message="Logged out successfully")
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    request: Request,
+    token_data: TokenData = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all active sessions for the current user.
+
+    Returns all non-revoked, non-expired refresh tokens with device information.
+    Marks the current device based on IP + User-Agent fingerprint.
+    """
+    # Query all active refresh tokens for user
+    result = await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.user_id == token_data.sub)
+        .where(~RefreshToken.is_revoked)
+        .where(RefreshToken.expires_at > datetime.now(UTC))
+        .order_by(RefreshToken.last_used_at.desc())
+    )
+    tokens = result.scalars().all()
+
+    # Identify current device
+    current_ip = request.client.host if request.client else "unknown"
+    current_user_agent = request.headers.get("user-agent", "")
+    current_fingerprint = create_device_fingerprint(current_ip, current_user_agent)
+
+    return [
+        SessionResponse(
+            id=token.id,
+            device_name=token.device_name or "Unknown Device",
+            ip_address=token.ip_address,
+            created_at=token.created_at.isoformat(),
+            last_used_at=token.last_used_at.isoformat(),
+            is_current=token.device_fingerprint == current_fingerprint,
+        )
+        for token in tokens
+    ]
+
+
+@router.delete("/sessions/{session_id}", response_model=MessageResponse)
+async def revoke_session(
+    session_id: str,
+    token_data: TokenData = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke a specific session (logout from another device).
+
+    Args:
+        session_id: The refresh token ID to revoke
+
+    Returns:
+        Success message if session was revoked
+
+    Raises:
+        NotFoundError: If session doesn't exist or doesn't belong to user
+    """
+    # Get the refresh token (verify it belongs to current user)
+    result = await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.id == session_id)
+        .where(RefreshToken.user_id == token_data.sub)
+    )
+    token = result.scalar_one_or_none()
+
+    if not token:
+        raise NotFoundError(resource="Session", resource_id=session_id)
+
+    # Revoke the session
+    await revoke_refresh_token(token, db)
+
+    return MessageResponse(success=True, message="Session revoked successfully")
 
 
 @router.get("/status", response_model=AuthStatusResponse)

@@ -9,6 +9,7 @@ interface AuthState {
   user: User | null;
   isLoading: boolean;
   isInitialized: boolean;
+  showLogoutAnimation: boolean;
 
   // Actions
   initialize: () => Promise<void>;
@@ -16,7 +17,7 @@ interface AuthState {
   register: (email: string, username: string, password: string) => Promise<string>;
   verifyEmail: (email: string, code: string) => Promise<void>;
   resendCode: (email: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   handleOAuthCallback: (token: string) => Promise<void>;
   setUser: (user: User) => void;
@@ -29,6 +30,7 @@ interface AuthState {
   }) => Promise<void>;
   refreshUser: () => Promise<void>;
   deleteAccount: () => Promise<void>;
+  setShowLogoutAnimation: (show: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -37,6 +39,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isLoading: false,
       isInitialized: false,
+      showLogoutAnimation: false,
 
       initialize: async () => {
         if (get().isInitialized) return;
@@ -96,9 +99,22 @@ export const useAuthStore = create<AuthState>()(
         await api.resendCode(email);
       },
 
-      logout: () => {
-        api.logout();
-        set({ user: null });
+      logout: async () => {
+        set({ showLogoutAnimation: true });
+
+        try {
+          // Wait for backend to revoke refresh token before clearing local state
+          await api.logout();
+
+          // Wait minimum display time for animation (1200ms)
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+
+          set({ user: null, showLogoutAnimation: false });
+        } catch (error) {
+          // On error, hide animation and propagate error
+          set({ showLogoutAnimation: false });
+          throw error;
+        }
       },
 
       loginWithGoogle: async () => {
@@ -156,6 +172,8 @@ export const useAuthStore = create<AuthState>()(
           set({ isLoading: false });
         }
       },
+
+      setShowLogoutAnimation: (show) => set({ showLogoutAnimation: show }),
     }),
     {
       name: "auth-store",

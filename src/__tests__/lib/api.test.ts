@@ -81,14 +81,14 @@ describe("ApiClient", () => {
 
       newClient.setAccessToken("token", expiresIn);
 
-      // Check the saved data has expiry with 5-minute buffer
+      // Check the saved data has expiry WITHOUT buffer (auto-refresh handles early refresh)
       const savedCall = localStorageMock.setItem.mock.calls.find(
         (call: string[]) => call[0] === "doxmind_access_token"
       );
       expect(savedCall).toBeDefined();
       const savedData = JSON.parse(savedCall![1]);
-      // Expiry should be roughly (expiresIn - 300) * 1000 from now
-      const expectedExpiry = Date.now() + (expiresIn - 300) * 1000;
+      // Expiry should be roughly expiresIn * 1000 from now (no buffer subtracted)
+      const expectedExpiry = Date.now() + expiresIn * 1000;
       expect(Math.abs(savedData.expiry - expectedExpiry)).toBeLessThan(1000);
     });
 
@@ -111,19 +111,19 @@ describe("ApiClient", () => {
       expect(cookieStore).toContain("path=/");
     });
 
-    it("logout clears token from memory and storage", () => {
+    it("logout clears token from memory and storage", async () => {
       client.setAccessToken("token-to-clear", 3600);
       expect(client.isLoggedIn()).toBe(true);
 
-      client.logout();
+      await client.logout();
 
       expect(client.isLoggedIn()).toBe(false);
       expect(localStorageMock.removeItem).toHaveBeenCalledWith("doxmind_access_token");
     });
 
-    it("logout clears auth cookie", () => {
+    it("logout clears auth cookie", async () => {
       client.setAccessToken("token", 3600);
-      client.logout();
+      await client.logout();
 
       expect(cookieStore).toContain("max-age=0");
     });

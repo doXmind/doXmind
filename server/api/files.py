@@ -249,7 +249,7 @@ async def list_files(
             File.updated_at,
             # Lightweight preview: prefer content_markdown (no HTML, no TOAST issues)
             # Only 250 chars needed (preview truncates to 200)
-            func.substr(File.content_markdown, 1, 250).label("content_markdown_head"),
+            func.safe_substr(File.content_markdown, 1, 250).label("content_markdown_head"),
             func.length(File.content_markdown).label("content_markdown_length"),
             # Fallback for files without cached markdown
             func.safe_substr(File.content, 1, 1000).label("content_head"),

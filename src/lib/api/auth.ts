@@ -3,7 +3,7 @@
  */
 
 import { ApiClient } from "./client";
-import type { TokenResponse, AuthStatus, MessageResponse, User } from "./types";
+import type { TokenResponse, AuthStatus, MessageResponse, User, Session } from "./types";
 
 declare module "./client" {
   interface ApiClient {
@@ -27,9 +27,12 @@ declare module "./client" {
       website?: string;
       social_links?: { github?: string; twitter?: string; linkedin?: string };
     }): Promise<User>;
-    logout(): void;
+    logout(): Promise<void>; // Changed from void to Promise<void> (dual-token)
     deleteAccount(): Promise<MessageResponse>;
     isLoggedIn(): boolean;
+    // Dual-token session management
+    listSessions(): Promise<Session[]>;
+    revokeSession(sessionId: string): Promise<MessageResponse>;
   }
 }
 
@@ -221,10 +224,22 @@ ApiClient.prototype.updateProfile = async function (
 };
 
 /**
- * Logout - clear tokens.
+ * Logout - revoke refresh token and clear access token (dual-token authentication).
  */
-ApiClient.prototype.logout = function (this: ApiClient): void {
-  this.clearToken();
+ApiClient.prototype.logout = async function (this: ApiClient): Promise<void> {
+  try {
+    // Call backend to revoke refresh token (HttpOnly cookie)
+    await this.request<MessageResponse>("/api/auth/logout", {
+      method: "POST",
+      credentials: "include", // Send refresh token cookie
+    });
+  } catch (error) {
+    console.error("[ApiClient] Logout request failed:", error);
+    // Continue with local cleanup even if backend call fails
+  } finally {
+    // Always clear local token
+    this.clearToken();
+  }
 };
 
 /**
@@ -244,4 +259,31 @@ ApiClient.prototype.deleteAccount = async function (this: ApiClient): Promise<Me
  */
 ApiClient.prototype.isLoggedIn = function (this: ApiClient): boolean {
   return this.isTokenValid();
+};
+
+// ==========================================================================
+// Session Management API (Dual-Token Authentication)
+// ==========================================================================
+
+/**
+ * List all active sessions for the current user.
+ * Shows all devices with valid refresh tokens.
+ */
+ApiClient.prototype.listSessions = async function (this: ApiClient): Promise<Session[]> {
+  return this.request<Session[]>("/api/auth/sessions", {
+    credentials: "include", // Send refresh token cookie
+  });
+};
+
+/**
+ * Revoke a specific session (logout from another device).
+ */
+ApiClient.prototype.revokeSession = async function (
+  this: ApiClient,
+  sessionId: string
+): Promise<MessageResponse> {
+  return this.request<MessageResponse>(`/api/auth/sessions/${sessionId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
 };

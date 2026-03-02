@@ -33,16 +33,18 @@ import { TypographySettings } from "@/components/settings/typography-settings";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
+import { SessionManager } from "@/components/settings/session-manager";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "api" | "usage" | "appearance" | "typography" | "privacy";
+type SettingsTab = "api" | "usage" | "appearance" | "typography" | "privacy" | "security";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: "api", label: "API", icon: <Key className="h-4 w-4" /> },
   { id: "usage", label: "Usage", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "appearance", label: "Appearance", icon: <Palette className="h-4 w-4" /> },
   { id: "typography", label: "Typography", icon: <Type className="h-4 w-4" /> },
+  { id: "security", label: "Security", icon: <Shield className="h-4 w-4" /> },
   { id: "privacy", label: "Privacy", icon: <Shield className="h-4 w-4" /> },
 ];
 
@@ -55,10 +57,19 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("api");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // This now shows animation and waits internally
+      await logout();
+      router.push("/login");
+    } catch (error) {
+      console.error("Logout failed:", error);
+      toast.error("Failed to logout. Please try again.");
+      setIsLoggingOut(false);
+    }
   };
 
   const handleRestartTour = () => {
@@ -148,9 +159,9 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout}>
+        <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
           <LogOut className="mr-2 h-4 w-4" />
-          Log out
+          {isLoggingOut ? "Logging out..." : "Log out"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -231,11 +242,12 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         </div>
 
         {/* Tab content */}
-        <div className="min-h-[280px]">
+        <div className="max-h-[600px] min-h-[280px] overflow-hidden">
           {settingsTab === "api" && <APISettings />}
           {settingsTab === "usage" && <UsageSettings />}
           {settingsTab === "appearance" && <AppearanceSettings />}
           {settingsTab === "typography" && <TypographySettings />}
+          {settingsTab === "security" && <SessionManager />}
           {settingsTab === "privacy" && <TelemetrySettings />}
         </div>
       </Modal>

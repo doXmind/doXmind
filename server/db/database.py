@@ -75,6 +75,9 @@ class User(Base):
     conversations = relationship(
         "Conversation", back_populates="owner", cascade="all, delete-orphan"
     )
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (Index("idx_users_oauth", "oauth_provider", "oauth_id"),)
 
@@ -95,6 +98,49 @@ class EmailVerification(Base):
     # Pending user data (stored until verification)
     pending_username = Column(String(100), nullable=True)
     pending_hashed_password = Column(String(255), nullable=True)
+
+
+class RefreshToken(Base):
+    """Refresh token storage for dual-token authentication.
+
+    Stores long-lived refresh tokens in database with device tracking.
+    Tokens are hashed (SHA-256) for security - plain tokens never stored.
+    Supports token rotation: each refresh issues new token and revokes old.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+
+    # Device tracking for session management
+    device_fingerprint = Column(String(255), nullable=True)
+    ip_address = Column(String(45), nullable=True)  # IPv6-compatible (max 45 chars)
+    user_agent = Column(String(500), nullable=True)
+    device_name = Column(
+        String(100), nullable=True
+    )  # Parsed device name (e.g., "Chrome on Windows")
+
+    # Token lifecycle
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    last_used_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Revocation tracking
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    is_revoked = Column(Boolean, default=False, nullable=False, index=True)
+
+    # Relationship
+    user = relationship("User", back_populates="refresh_tokens")
+
+    __table_args__ = (
+        Index("idx_refresh_tokens_user_revoked", "user_id", "is_revoked"),
+        Index("idx_refresh_tokens_user_device", "user_id", "device_fingerprint"),
+        Index("idx_refresh_tokens_expires", "expires_at"),
+    )
 
 
 class PasswordReset(Base):

@@ -86,10 +86,10 @@ export function useThemeManager() {
     [setSystemThemeEnabled, preferredLightTheme, preferredDarkTheme, setThemeId, applyThemeToDOM]
   );
 
-  // Apply theme on mount
+  // Apply theme on mount and when themeId changes (e.g., after localStorage hydration)
   useEffect(() => {
     applyThemeToDOM(currentTheme);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [themeId, applyThemeToDOM]); // Re-apply when theme changes from localStorage
 
   // Listen for system theme changes when systemThemeEnabled is true
   useEffect(() => {
@@ -117,7 +117,14 @@ export function useThemeManager() {
 
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
-  }, [systemThemeEnabled, preferredLightTheme, preferredDarkTheme]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    systemThemeEnabled,
+    preferredLightTheme,
+    preferredDarkTheme,
+    themeId,
+    setThemeId,
+    applyThemeToDOM,
+  ]);
 
   return {
     currentThemeId: themeId,

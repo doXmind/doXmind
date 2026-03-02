@@ -53,6 +53,16 @@ export interface MessageResponse {
   message: string;
 }
 
+// Session management types (Dual-Token Authentication)
+export interface Session {
+  id: string;
+  device_name: string;
+  ip_address: string | null;
+  created_at: string;
+  last_used_at: string;
+  is_current: boolean;
+}
+
 // Share types
 export interface Share {
   id: string;

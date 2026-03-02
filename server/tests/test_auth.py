@@ -9,10 +9,12 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import EmailVerification, PasswordReset, User
+from db.database import EmailVerification, PasswordReset, RefreshToken, User
 from services.auth_service import (
     create_access_token,
+    create_refresh_token,
     hash_password,
+    hash_token,
     verify_password,
     verify_token,
 )
@@ -700,10 +702,20 @@ class TestRefreshTokenEndpoint:
         db_session.add(user)
         await db_session.commit()
 
-        token = create_access_token(subject="refresh-user-id")
-        headers = {"Authorization": f"Bearer {token}"}
+        # Create a refresh token
+        refresh_token_value = create_refresh_token()
+        refresh_token_record = RefreshToken(
+            user_id="refresh-user-id",
+            token_hash=hash_token(refresh_token_value),
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+            device_fingerprint="test-device",
+        )
+        db_session.add(refresh_token_record)
+        await db_session.commit()
 
-        response = await client.post("/api/auth/refresh", headers=headers)
+        # Send refresh token as cookie
+        client.cookies.set("doxmind_refresh_token", refresh_token_value)
+        response = await client.post("/api/auth/refresh")
 
         assert response.status_code == 200
         data = response.json()
