@@ -6,6 +6,7 @@ Supports per-user rate limiting via JWT tokens with IP fallback.
 """
 
 import logging
+import os
 import ssl
 
 from fastapi import Request
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 # User IDs that should fall back to IP-based rate limiting
 _SKIP_USER_IDS = {"dev-user", "api-key-user", "anonymous"}
+
+# Check if we're in testing mode (disable rate limiting for tests)
+_IS_TESTING = os.environ.get("TESTING", "").lower() == "true"
 
 
 def get_client_ip(request: Request) -> str:
@@ -80,13 +84,24 @@ _storage_options = {}
 if settings.rate_limit_storage_uri.startswith("rediss://"):
     _storage_options["ssl_cert_reqs"] = ssl.CERT_NONE
 
-limiter = Limiter(
-    key_func=get_rate_limit_key,
-    default_limits=[f"{settings.rate_limit_per_minute}/minute"],
-    storage_uri=settings.rate_limit_storage_uri,
-    storage_options=_storage_options,
-    strategy="fixed-window",
-)
+# Disable rate limiting during tests to avoid flaky test failures
+if _IS_TESTING:
+    limiter = Limiter(
+        key_func=get_rate_limit_key,
+        default_limits=[],  # No default limits in test mode
+        storage_uri=settings.rate_limit_storage_uri,
+        storage_options=_storage_options,
+        strategy="fixed-window",
+        enabled=False,  # Completely disable rate limiting
+    )
+else:
+    limiter = Limiter(
+        key_func=get_rate_limit_key,
+        default_limits=[f"{settings.rate_limit_per_minute}/minute"],
+        storage_uri=settings.rate_limit_storage_uri,
+        storage_options=_storage_options,
+        strategy="fixed-window",
+    )
 
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):

@@ -31,6 +31,7 @@ TEST_DATABASE_URL = os.environ.get(
 
 # Set test environment variables before importing app modules
 os.environ["DEBUG"] = "true"
+os.environ["TESTING"] = "true"  # Disable rate limiting during tests
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("OPENROUTER_API_KEY", "test-api-key")
