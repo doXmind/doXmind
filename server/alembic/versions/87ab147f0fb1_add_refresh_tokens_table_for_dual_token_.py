@@ -151,6 +151,9 @@ def upgrade() -> None:
     op.drop_index(op.f("idx_telemetry_events_created"), table_name="telemetry_events")
     op.drop_index(op.f("idx_telemetry_events_type"), table_name="telemetry_events")
     op.drop_index(op.f("idx_telemetry_events_user_id"), table_name="telemetry_events")
+    # Drop index if it exists (handles case where index was already created)
+    op.execute("DROP INDEX IF EXISTS idx_telemetry_user_type")
+    op.execute("DROP INDEX IF EXISTS idx_telemetry_created")
     op.create_index("idx_telemetry_created", "telemetry_events", ["created_at"], unique=False)
     op.create_index(
         "idx_telemetry_user_type", "telemetry_events", ["user_id", "event_type"], unique=False
