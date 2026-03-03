@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   MoreHorizontal,
@@ -28,6 +28,7 @@ import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { api } from "@/lib/api";
+import { markdownToPlainText } from "@/lib/markdown";
 import { toast } from "sonner";
 
 interface FileCardProps {
@@ -77,7 +78,10 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
-  const preview = file.preview;
+  const preview = useMemo(
+    () => (file.preview ? markdownToPlainText(file.preview) : ""),
+    [file.preview]
+  );
   const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
 

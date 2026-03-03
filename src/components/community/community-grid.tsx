@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
+import { MarkdownContent } from "@/components/comments/markdown-content";
 import { useTranslations } from "next-intl";
 import { CommunityCard } from "./community-card";
 import { Clock, Eye, FileText, GitFork, MessageSquare, Search } from "lucide-react";
@@ -92,9 +93,11 @@ function FeaturedCard({
 
           {/* Content preview */}
           {item.content_preview && item.content_preview.trim().length > 0 && (
-            <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">
-              {item.content_preview}
-            </p>
+            <MarkdownContent
+              content={item.content_preview}
+              baseClassName="text-[13px] leading-relaxed text-muted-foreground"
+              className="mt-1.5 line-clamp-3 [&_*]:text-[13px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
+            />
           )}
 
           <div className="flex-1" />

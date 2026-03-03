@@ -19,6 +19,9 @@ function LoginContent() {
   const tc = useTranslations("common");
   const searchParams = useSearchParams();
 
+  // Hide Google OAuth on CN deployment (no Google services in China)
+  const showGoogleAuth = process.env.NEXT_PUBLIC_DEFAULT_LOCALE !== "zh";
+
   const [view, setView] = useState<View>("login");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -304,25 +307,29 @@ function LoginContent() {
               </Button>
             </form>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">{tc("or")}</span>
-              </div>
-            </div>
+            {showGoogleAuth && (
+              <>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">{tc("or")}</span>
+                  </div>
+                </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 w-full text-base"
-              onClick={handleGoogleLogin}
-              disabled={isLoading}
-            >
-              {GoogleIcon}
-              {t("continueWithGoogle")}
-            </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full text-base"
+                  onClick={handleGoogleLogin}
+                  disabled={isLoading}
+                >
+                  {GoogleIcon}
+                  {t("continueWithGoogle")}
+                </Button>
+              </>
+            )}
 
             <p className="text-center text-sm text-muted-foreground">
               {t("noAccount")}{" "}
@@ -370,25 +377,29 @@ function LoginContent() {
               </Button>
             </form>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">{tc("or")}</span>
-              </div>
-            </div>
+            {showGoogleAuth && (
+              <>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">{tc("or")}</span>
+                  </div>
+                </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 w-full text-base"
-              onClick={handleGoogleLogin}
-              disabled={isLoading}
-            >
-              {GoogleIcon}
-              {t("continueWithGoogle")}
-            </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full text-base"
+                  onClick={handleGoogleLogin}
+                  disabled={isLoading}
+                >
+                  {GoogleIcon}
+                  {t("continueWithGoogle")}
+                </Button>
+              </>
+            )}
 
             <p className="text-center text-sm text-muted-foreground">
               {t("hasAccount")}{" "}

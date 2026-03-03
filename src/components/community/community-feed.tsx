@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
+import { MarkdownContent } from "@/components/comments/markdown-content";
 import {
   Bookmark,
   Clock,
@@ -193,9 +194,11 @@ function FeedCard({
 
           {/* Content preview */}
           {hasPreview && (
-            <p className="mt-2 line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">
-              {item.content_preview}
-            </p>
+            <MarkdownContent
+              content={item.content_preview!}
+              baseClassName="text-[13px] leading-relaxed text-muted-foreground"
+              className="mt-2 line-clamp-3 [&_*]:text-[13px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
+            />
           )}
 
           {/* Tags + word count */}

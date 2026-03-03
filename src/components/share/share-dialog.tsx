@@ -13,7 +13,6 @@ import {
   Loader2,
   Users,
   ChevronDown,
-  UserPlus,
   X,
   Plus,
 } from "lucide-react";
@@ -399,60 +398,22 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                               {t("loadingUsers")}
                             </div>
                           ) : (
-                            <div className="space-y-3">
-                              {invites.length > 0 && (
-                                <div className="space-y-1">
-                                  {invites.map((invite) => (
-                                    <div
-                                      key={invite.user_id}
-                                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/30"
-                                    >
-                                      {invite.avatar_url ? (
-                                        /* eslint-disable-next-line @next/next/no-img-element */
-                                        <img
-                                          src={invite.avatar_url}
-                                          alt=""
-                                          className="h-5 w-5 rounded-full"
-                                        />
-                                      ) : (
-                                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[9px] font-bold text-muted-foreground">
-                                          {(invite.username ||
-                                            invite.email ||
-                                            "?")[0].toUpperCase()}
-                                        </span>
-                                      )}
-                                      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">
-                                        {invite.username || invite.email}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveInvite(share.id, invite.user_id)}
-                                        className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                                        title={t("removeAccess")}
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
+                            <div className="space-y-2">
+                              <UserSearchInput
+                                selectedUsers={invites.map((i) => ({
+                                  id: i.user_id,
+                                  username: i.username || "",
+                                  email: i.email || "",
+                                  avatar_url: i.avatar_url,
+                                }))}
+                                onAdd={(user) => handleAddInvite(share.id, user)}
+                                onRemove={(userId) => handleRemoveInvite(share.id, userId)}
+                              />
+                              {invites.length === 0 && (
+                                <p className="py-1 text-[12px] text-muted-foreground">
+                                  {t("noUsersInvited")}
+                                </p>
                               )}
-
-                              <div>
-                                <span className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
-                                  <UserPlus className="mr-1 inline h-3 w-3" />
-                                  {t("addUsers")}
-                                </span>
-                                <UserSearchInput
-                                  selectedUsers={invites.map((i) => ({
-                                    id: i.user_id,
-                                    username: i.username || "",
-                                    email: i.email || "",
-                                    avatar_url: i.avatar_url,
-                                  }))}
-                                  onAdd={(user) => handleAddInvite(share.id, user)}
-                                  onRemove={(userId) => handleRemoveInvite(share.id, userId)}
-                                />
-                              </div>
                             </div>
                           )}
                         </div>
