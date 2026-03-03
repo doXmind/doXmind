@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { useTranslations } from "next-intl";
 
 interface NewButtonProps {
   onCreateFile: () => void;
@@ -28,6 +29,7 @@ export const NewButton = memo(function NewButton({
   isImporting,
   disableFolder,
 }: NewButtonProps) {
+  const t = useTranslations("sidebar");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -35,7 +37,7 @@ export const NewButton = memo(function NewButton({
           variant="ghost"
           size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          aria-label="New"
+          aria-label={t("newDocument")}
           data-onboarding="new-button"
         >
           <Plus className="h-4 w-4" />
@@ -44,16 +46,16 @@ export const NewButton = memo(function NewButton({
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem onClick={onCreateFile}>
           <FilePlus className="mr-2 h-4 w-4" />
-          New Document
+          {t("newDocument")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onCreateFolder} disabled={disableFolder}>
           <FolderPlus className="mr-2 h-4 w-4" />
-          New Folder
+          {t("newFolder")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onOpenTemplatePicker}>
           <LayoutTemplate className="mr-2 h-4 w-4" />
-          From Template
+          {t("fromTemplate")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onImportFile} disabled={isImporting}>
           {isImporting ? (
@@ -61,7 +63,7 @@ export const NewButton = memo(function NewButton({
           ) : (
             <Upload className="mr-2 h-4 w-4" />
           )}
-          Import File
+          {t("importFile")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

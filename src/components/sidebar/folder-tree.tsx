@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import {
   Folder,
   FolderOpen,
@@ -38,6 +39,7 @@ import { storeLogger } from "@/lib/logger";
 const log = storeLogger.child("FolderTree");
 
 export function FolderTree() {
+  const t = useTranslations("sidebar");
   const {
     files,
     currentFolderId,
@@ -126,7 +128,7 @@ export function FolderTree() {
 
       // Only show toast for errors
       if (failCount > 0) {
-        toast.error(`Failed to import ${failCount} file(s)`);
+        toast.error(t("failedToImportCount", { count: failCount }));
       }
 
       return;
@@ -137,10 +139,10 @@ export function FolderTree() {
     if (draggedFileId && draggedFileId !== folderId) {
       try {
         await moveFileToFolder(draggedFileId, folderId);
-        toast.success(folderId ? "File moved to folder" : "File moved to root");
+        toast.success(folderId ? t("movedToFolder") : t("movedToRoot"));
       } catch (error) {
         log.error("Failed to move file", error);
-        toast.error("Failed to move file");
+        toast.error(t("failedToMove"));
       }
     }
   };
@@ -155,7 +157,7 @@ export function FolderTree() {
 
     try {
       await renameFile(renamingFolderId, renamingFolderName.trim());
-      toast.success("Folder renamed");
+      toast.success(t("folderRenamed"));
     } catch (error) {
       log.error("Failed to rename folder", error);
       const { title, description } = getErrorMessage(error);
@@ -244,15 +246,15 @@ export function FolderTree() {
     const folderId = folder.id;
     try {
       await deleteFile(folderId);
-      toast(`"${folderName}" moved to trash`, {
+      toast(t("movedToTrash"), {
         action: {
-          label: "Undo",
+          label: t("restore"),
           onClick: async () => {
             try {
               await restoreFile(folderId);
-              toast.success(`"${folderName}" restored`);
+              toast.success(t("restoredName", { name: folderName }));
             } catch {
-              toast.error("Failed to restore folder");
+              toast.error(t("failedToRestoreFolder"));
             }
           },
         },
@@ -326,7 +328,7 @@ export function FolderTree() {
             className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />
-            All Files
+            {t("allFiles")}
           </button>
           {breadcrumbAncestors.map((ancestor, index) => (
             <span key={ancestor.id} className="flex items-center gap-1">
@@ -361,7 +363,7 @@ export function FolderTree() {
               <ChevronRight className="h-3 w-3" />
             )}
             <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
-            Favorites
+            {t("favorites")}
             <span className="ml-auto text-[10px] font-normal text-muted-foreground/60">
               {getFavorites().length}
             </span>
@@ -417,7 +419,7 @@ export function FolderTree() {
                       handleFolderRename();
                     }}
                     className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-                    aria-label="Confirm rename"
+                    aria-label={t("confirmRename")}
                   >
                     <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
                   </button>
@@ -427,7 +429,7 @@ export function FolderTree() {
                       cancelFolderRename();
                     }}
                     className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-                    aria-label="Cancel rename"
+                    aria-label={t("cancelRename")}
                   >
                     <X className="h-4 w-4 text-muted-foreground" />
                   </button>
@@ -466,13 +468,13 @@ export function FolderTree() {
                     onMouseDown={(e) => e.stopPropagation()}
                   >
                     <DropdownMenu>
-                      <Tooltip content="Folder options" side="right">
+                      <Tooltip content={t("folderOptions")} side="right">
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-10 w-10 md:h-8 md:w-8"
-                            aria-label="Folder options"
+                            aria-label={t("folderOptions")}
                           >
                             <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
                           </Button>
@@ -487,7 +489,7 @@ export function FolderTree() {
                           }}
                         >
                           <Share2 className="mr-2 h-4 w-4" />
-                          Share
+                          {t("share")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => {
@@ -497,7 +499,7 @@ export function FolderTree() {
                           }}
                         >
                           <Pencil className="mr-2 h-4 w-4" />
-                          Rename
+                          {t("rename")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -508,7 +510,7 @@ export function FolderTree() {
                           className="text-destructive focus:text-destructive"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          Move to Trash
+                          {t("moveToTrash")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -548,9 +550,12 @@ export function FolderTree() {
                 <Loader2 className="absolute -bottom-1 -right-1 h-5 w-5 animate-spin text-primary" />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">Importing files...</p>
+                <p className="text-sm font-medium text-foreground">{t("importingFiles")}</p>
                 <p className="text-xs text-muted-foreground">
-                  {importProgress.current} of {importProgress.total} completed
+                  {t("importProgress", {
+                    current: importProgress.current,
+                    total: importProgress.total,
+                  })}
                 </p>
               </div>
             </div>
@@ -570,10 +575,8 @@ export function FolderTree() {
                 )}
               />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">Empty folder</p>
-                <p className="text-xs text-muted-foreground/70">
-                  Drag files here or create new one
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">{t("emptyFolder")}</p>
+                <p className="text-xs text-muted-foreground/70">{t("dragFilesHere")}</p>
               </div>
             </div>
           ) : (
@@ -585,7 +588,10 @@ export function FolderTree() {
                 <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-accent/50 px-3 py-2.5 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   <span className="text-foreground/80">
-                    Importing files... ({importProgress.current}/{importProgress.total})
+                    {t("importingInline", {
+                      current: importProgress.current,
+                      total: importProgress.total,
+                    })}
                   </span>
                 </div>
               )}
@@ -599,10 +605,8 @@ export function FolderTree() {
         <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
           <FileText className="h-12 w-12 text-muted-foreground/30 dark:text-muted-foreground/50" />
           <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">No files yet</p>
-            <p className="text-xs text-muted-foreground/70">
-              Create your first file or import existing documents
-            </p>
+            <p className="text-sm font-medium text-muted-foreground">{t("noFiles")}</p>
+            <p className="text-xs text-muted-foreground/70">{t("createFirstFile")}</p>
           </div>
         </div>
       )}
@@ -630,7 +634,7 @@ export function FolderTree() {
               )}
             >
               <Share2 className="mr-2 h-4 w-4" />
-              Share
+              {t("share")}
             </button>
 
             {/* Rename */}
@@ -645,7 +649,7 @@ export function FolderTree() {
               )}
             >
               <Pencil className="mr-2 h-4 w-4" />
-              Rename
+              {t("rename")}
             </button>
 
             <div className="my-1 h-px bg-border" />
@@ -662,7 +666,7 @@ export function FolderTree() {
               )}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Move to Trash
+              {t("moveToTrash")}
             </button>
           </div>,
           document.body

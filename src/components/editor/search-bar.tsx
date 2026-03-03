@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -18,6 +19,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { SearchPluginKey } from "@/extensions/search";
 
 export function SearchBar() {
+  const t = useTranslations("editor");
   const [searchTerm, setSearchTerm] = useState("");
   const [replaceTerm, setReplaceTerm] = useState("");
   const [showReplace, setShowReplace] = useState(false);
@@ -146,7 +148,7 @@ export function SearchBar() {
       {isSearchBarOpen && (
         <motion.div
           role="search"
-          aria-label="Find in document"
+          aria-label={t("searchBar.findPlaceholder")}
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
@@ -169,7 +171,7 @@ export function SearchBar() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Find in document..."
+              placeholder={t("searchBar.findPlaceholder")}
               className="min-w-[80px] flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
               aria-label="Search text"
             />
@@ -180,7 +182,7 @@ export function SearchBar() {
                 resultsCount > 0 ? (
                   `${currentIndex + 1} of ${resultsCount}`
                 ) : (
-                  <span className="text-amber-500">No matches</span>
+                  <span className="text-amber-500">{t("searchBar.noMatches")}</span>
                 )
               ) : null}
             </span>
@@ -194,7 +196,7 @@ export function SearchBar() {
               )}
               aria-label="Toggle case sensitivity"
               aria-pressed={caseSensitive}
-              title="Match case"
+              title={t("searchBar.matchCase")}
             >
               <CaseSensitive className="h-4 w-4" />
             </button>
@@ -206,7 +208,7 @@ export function SearchBar() {
               )}
               aria-label="Toggle whole word matching"
               aria-pressed={wholeWord}
-              title="Match whole word"
+              title={t("searchBar.matchWholeWord")}
             >
               <WholeWord className="h-4 w-4" />
             </button>
@@ -218,7 +220,7 @@ export function SearchBar() {
               )}
               aria-label="Toggle regex mode"
               aria-pressed={useRegex}
-              title="Use regular expression"
+              title={t("searchBar.useRegex")}
             >
               <Regex className="h-4 w-4" />
             </button>
@@ -229,7 +231,7 @@ export function SearchBar() {
               disabled={resultsCount === 0}
               className="rounded-md p-1.5 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Previous result"
-              title="Previous (Shift+Enter)"
+              title={t("searchBar.previousMatch")}
             >
               <ChevronUp className="h-4 w-4" />
             </button>
@@ -238,7 +240,7 @@ export function SearchBar() {
               disabled={resultsCount === 0}
               className="rounded-md p-1.5 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Next result"
-              title="Next (Enter)"
+              title={t("searchBar.nextMatch")}
             >
               <ChevronDown className="h-4 w-4" />
             </button>
@@ -252,7 +254,7 @@ export function SearchBar() {
               )}
               aria-label="Toggle replace"
               aria-expanded={showReplace}
-              title="Toggle replace"
+              title={t("searchBar.toggleReplace")}
             >
               <Replace className="h-4 w-4" />
             </button>
@@ -262,7 +264,7 @@ export function SearchBar() {
               onClick={handleClose}
               className="rounded-md p-1.5 transition-colors hover:bg-accent"
               aria-label="Close search"
-              title="Close (Escape)"
+              title={t("searchBar.closeSearch")}
             >
               <X className="h-4 w-4" />
             </button>
@@ -284,7 +286,7 @@ export function SearchBar() {
                     type="text"
                     value={replaceTerm}
                     onChange={(e) => setReplaceTerm(e.target.value)}
-                    placeholder="Replace with..."
+                    placeholder={t("searchBar.replacePlaceholder")}
                     className="min-w-0 flex-1 bg-transparent text-base placeholder:text-muted-foreground focus:outline-none md:text-sm"
                     aria-label="Replace text"
                   />
@@ -293,14 +295,14 @@ export function SearchBar() {
                     disabled={resultsCount === 0}
                     className="rounded-md bg-secondary px-2.5 py-1 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Replace
+                    {t("searchBar.replace")}
                   </button>
                   <button
                     onClick={handleReplaceAll}
                     disabled={resultsCount === 0}
                     className="rounded-md bg-secondary px-2.5 py-1 text-xs font-medium transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Replace All
+                    {t("searchBar.replaceAll")}
                   </button>
                 </div>
               </motion.div>

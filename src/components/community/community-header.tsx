@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,9 +15,9 @@ interface CommunityHeaderProps {
 }
 
 const BASE_SORT_OPTIONS = [
-  { value: "newest", label: "Latest" },
-  { value: "popular", label: "Popular" },
-  { value: "most_viewed", label: "Most Viewed" },
+  { value: "newest", labelKey: "latest" },
+  { value: "popular", labelKey: "popular" },
+  { value: "most_viewed", labelKey: "mostViewed" },
 ] as const;
 
 export function CommunityHeader({
@@ -25,13 +26,14 @@ export function CommunityHeader({
   onSortChange,
   onSearchChange,
 }: CommunityHeaderProps) {
+  const t = useTranslations("community");
   const inputRef = useRef<HTMLInputElement>(null);
   const user = useAuthStore((s) => s.user);
 
   const sortOptions = useMemo(
     () =>
       user
-        ? [{ value: "for_you" as const, label: "For You" }, ...BASE_SORT_OPTIONS]
+        ? [{ value: "for_you" as const, labelKey: "forYou" }, ...BASE_SORT_OPTIONS]
         : BASE_SORT_OPTIONS,
     [user]
   );
@@ -45,7 +47,7 @@ export function CommunityHeader({
           ref={inputRef}
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search"
+          placeholder={t("search")}
           className="flex-1 bg-transparent text-[14px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
         />
         {searchQuery && (
@@ -75,7 +77,7 @@ export function CommunityHeader({
             )}
           >
             <span className="relative inline-block">
-              {option.label}
+              {t(option.labelKey)}
               {sortBy === option.value && (
                 <motion.div
                   className="absolute -bottom-3 left-0 right-0 h-[3px] rounded-full bg-foreground"

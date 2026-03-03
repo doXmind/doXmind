@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { X, Minus, Sparkles, Trash2 } from "lucide-react";
 import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,8 @@ const SHEET_HEIGHTS = {
 };
 
 export function MobileChatSheet() {
+  const t = useTranslations("mobile");
+  const tc = useTranslations("common");
   const { isMobileChatOpen, setMobileChatOpen } = useLayoutStore();
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation } = useChatStore();
@@ -136,7 +139,7 @@ export function MobileChatSheet() {
               <div className="flex items-center justify-between border-b border-border px-4 pb-3">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-primary" />
-                  <h3 className="text-base font-semibold">AI Assistant</h3>
+                  <h3 className="text-base font-semibold">{t("aiAssistant")}</h3>
                 </div>
                 <div className="flex items-center gap-1">
                   {conversation?.messages?.length > 0 && (
@@ -145,7 +148,7 @@ export function MobileChatSheet() {
                       size="icon"
                       onClick={handleClear}
                       className="h-10 w-10"
-                      aria-label="Clear conversation"
+                      aria-label={t("clearConversation")}
                     >
                       <Trash2 className="h-5 w-5" />
                     </Button>
@@ -161,7 +164,7 @@ export function MobileChatSheet() {
                       )
                     }
                     className="h-10 w-10"
-                    aria-label="Toggle size"
+                    aria-label={t("toggleSize")}
                   >
                     <Minus className="h-5 w-5" />
                   </Button>
@@ -170,7 +173,7 @@ export function MobileChatSheet() {
                     size="icon"
                     onClick={handleClose}
                     className="h-10 w-10"
-                    aria-label="Close"
+                    aria-label={tc("close")}
                   >
                     <X className="h-5 w-5" />
                   </Button>

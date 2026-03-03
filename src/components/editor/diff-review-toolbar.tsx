@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useTranslations } from "next-intl";
 import { Editor } from "@tiptap/react";
 import { Check, X, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ export function DiffReviewToolbar({
   onNextHunk,
   onPreviousHunk,
 }: DiffReviewToolbarProps) {
+  const t = useTranslations("editor");
   const isMobile = useIsMobile();
   const isStreaming = useStreamingStore((s) => s.isStreaming);
 
@@ -55,7 +57,7 @@ export function DiffReviewToolbar({
           <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
         </div>
         <span className="font-medium text-foreground/80">
-          {isMobile ? "Review" : "Reviewing Changes"}
+          {isMobile ? t("review") : t("diffReview.reviewingChanges")}
         </span>
       </div>
 
@@ -74,7 +76,7 @@ export function DiffReviewToolbar({
             "hover:bg-accent disabled:opacity-40",
             isMobile && "p-0.5"
           )}
-          aria-label="Previous change"
+          aria-label={t("diffReview.previousChange")}
         >
           <ChevronUp className={cn(isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
         </motion.button>
@@ -85,7 +87,9 @@ export function DiffReviewToolbar({
             isMobile ? "text-[10px]" : "text-xs"
           )}
         >
-          {pendingCount > 0 ? `${currentPendingPosition} of ${pendingCount}` : "No changes"}
+          {pendingCount > 0
+            ? t("diffReview.position", { current: currentPendingPosition, total: pendingCount })
+            : t("diffReview.noChanges")}
         </span>
 
         <motion.button
@@ -98,7 +102,7 @@ export function DiffReviewToolbar({
             "hover:bg-accent disabled:opacity-40",
             isMobile && "p-0.5"
           )}
-          aria-label="Next change"
+          aria-label={t("diffReview.nextChange")}
         >
           <ChevronDown className={cn(isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
         </motion.button>
@@ -124,7 +128,7 @@ export function DiffReviewToolbar({
             )}
           >
             <X className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
-            {!isMobile && "Reject All"}
+            {!isMobile && t("rejectAll")}
           </motion.button>
 
           <motion.button
@@ -141,7 +145,7 @@ export function DiffReviewToolbar({
             )}
           >
             <Check className={cn(isMobile ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5")} />
-            {!isMobile && "Accept All"}
+            {!isMobile && t("acceptAll")}
           </motion.button>
         </>
       )}

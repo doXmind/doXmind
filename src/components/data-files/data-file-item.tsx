@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import {
   Trash2,
   Loader2,
@@ -57,17 +58,18 @@ function getStatusIcon(status: DataFile["status"]) {
   }
 }
 
-function getStatusText(file: DataFile) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getStatusText(file: DataFile, t: (key: string, params?: any) => string) {
   switch (file.status) {
     case "uploading":
-      return `Uploading... ${file.uploadProgress ?? 0}%`;
+      return t("uploadingProgress", { progress: file.uploadProgress ?? 0 });
     case "ready":
       if (file.rowCount && file.rowCount > 0) {
-        return `${file.rowCount} rows`;
+        return t("rowsCount", { count: file.rowCount });
       }
-      return "Ready";
+      return t("fileReady");
     case "error":
-      return file.errorMessage || "Error";
+      return file.errorMessage || t("fileError");
   }
 }
 
@@ -79,7 +81,10 @@ function needsClaudeUpload(file: DataFile): boolean {
 }
 
 // Get Claude upload status display info
-function getClaudeStatusInfo(status: ClaudeUploadStatus | undefined): {
+function getClaudeStatusInfo(
+  status: ClaudeUploadStatus | undefined,
+  t: (key: string) => string
+): {
   icon: React.ReactNode;
   text: string;
   color: string;
@@ -88,25 +93,25 @@ function getClaudeStatusInfo(status: ClaudeUploadStatus | undefined): {
     case "pending":
       return {
         icon: <Cloud className="h-3 w-3" />,
-        text: "Preparing for analysis...",
+        text: t("preparingForAnalysis"),
         color: "text-muted-foreground",
       };
     case "uploading":
       return {
         icon: <Loader2 className="h-3 w-3 animate-spin" />,
-        text: "Optimizing for faster analysis...",
+        text: t("optimizingForAnalysis"),
         color: "text-blue-500",
       };
     case "ready":
       return {
         icon: <Cloud className="h-3 w-3" />,
-        text: "Optimized for fast analysis",
+        text: t("optimizedForAnalysis"),
         color: "text-green-500",
       };
     case "error":
       return {
         icon: <CloudOff className="h-3 w-3" />,
-        text: "Pre-upload failed (will upload on send)",
+        text: t("preUploadFailed"),
         color: "text-amber-500",
       };
     case "skipped":
@@ -116,8 +121,9 @@ function getClaudeStatusInfo(status: ClaudeUploadStatus | undefined): {
 }
 
 export function DataFileItem({ file, onDelete, isDeleting }: DataFileItemProps) {
+  const t = useTranslations("chat");
   const showClaudeStatus = needsClaudeUpload(file);
-  const claudeStatus = showClaudeStatus ? getClaudeStatusInfo(file.claudeUploadStatus) : null;
+  const claudeStatus = showClaudeStatus ? getClaudeStatusInfo(file.claudeUploadStatus, t) : null;
 
   return (
     <div
@@ -151,7 +157,7 @@ export function DataFileItem({ file, onDelete, isDeleting }: DataFileItemProps) 
           <span>·</span>
           <span className="flex items-center gap-1">
             {getStatusIcon(file.status)}
-            {getStatusText(file)}
+            {getStatusText(file, t)}
           </span>
         </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { NodeViewWrapper, NodeViewContent, type NodeViewProps } from "@tiptap/react";
 import { cn } from "@/lib/utils";
 import { LanguageSelector } from "./language-selector";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 
 export function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
+  const t = useTranslations("editor");
   const { language } = node.attrs;
   const [copied, setCopied] = useState(false);
   const [lineCount, setLineCount] = useState(1);
@@ -47,7 +49,7 @@ export function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
           <LanguageSelector value={language} onChange={handleLanguageChange} />
 
           {/* Copy Button */}
-          <Tooltip content={copied ? "Copied!" : "Copy code"} side="top">
+          <Tooltip content={copied ? t("codeCopied") : t("copyCode")} side="top">
             <Button
               variant="ghost"
               size="sm"
@@ -59,7 +61,7 @@ export function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
               ) : (
                 <Copy className="mr-1 h-3.5 w-3.5" />
               )}
-              {copied ? "Copied" : "Copy"}
+              {copied ? t("codeCopied") : t("copyCode")}
             </Button>
           </Tooltip>
         </div>

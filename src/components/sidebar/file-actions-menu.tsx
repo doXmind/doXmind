@@ -1,6 +1,7 @@
 "use client";
 
 import { FileDown, Home, Pencil, Share2, Star, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenuItem,
@@ -60,6 +61,7 @@ export function FileActionsMenuItems({
   onFocusIndex,
   contextMenuReady = false,
 }: FileActionsMenuItemsProps) {
+  const t = useTranslations("sidebar");
   const exportOffset = hasParent ? 1 : 0;
 
   if (variant === "dropdown") {
@@ -72,7 +74,7 @@ export function FileActionsMenuItems({
           }}
         >
           <Pencil className="mr-2 h-4 w-4" />
-          Rename
+          {t("rename")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => {
@@ -81,7 +83,7 @@ export function FileActionsMenuItems({
           }}
         >
           <Share2 className="mr-2 h-4 w-4" />
-          Share
+          {t("share")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => {
@@ -90,7 +92,7 @@ export function FileActionsMenuItems({
           }}
         >
           <Star className={cn("mr-2 h-4 w-4", isFavorite && "fill-amber-500 text-amber-500")} />
-          {isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+          {isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
         </DropdownMenuItem>
         {hasParent && (
           <>
@@ -102,12 +104,14 @@ export function FileActionsMenuItems({
               }}
             >
               <Home className="mr-2 h-4 w-4" />
-              Move to Root
+              {t("moveToRoot")}
             </DropdownMenuItem>
           </>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Export as</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
+          {t("exportAs")}
+        </DropdownMenuLabel>
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
@@ -115,7 +119,7 @@ export function FileActionsMenuItems({
           }}
         >
           <FileDown className="mr-2 h-4 w-4" />
-          Markdown
+          {t("markdownFormat")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => {
@@ -124,7 +128,7 @@ export function FileActionsMenuItems({
           }}
         >
           <FileDown className="mr-2 h-4 w-4" />
-          PDF
+          {t("pdfFormat")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => {
@@ -133,7 +137,7 @@ export function FileActionsMenuItems({
           }}
         >
           <FileDown className="mr-2 h-4 w-4" />
-          Word
+          {t("wordFormat")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -144,7 +148,7 @@ export function FileActionsMenuItems({
           className="text-destructive"
         >
           <Trash2 className="mr-2 h-4 w-4" />
-          Move to Trash
+          {t("moveToTrash")}
         </DropdownMenuItem>
       </>
     );
@@ -177,7 +181,7 @@ export function FileActionsMenuItems({
         className={contextItemClass(0)}
       >
         <Pencil className="mr-2 h-4 w-4" />
-        Rename
+        {t("rename")}
       </button>
 
       {/* Share */}
@@ -188,7 +192,7 @@ export function FileActionsMenuItems({
         className={contextItemClass(1)}
       >
         <Share2 className="mr-2 h-4 w-4" />
-        Share
+        {t("share")}
       </button>
 
       {/* Favorite */}
@@ -199,7 +203,7 @@ export function FileActionsMenuItems({
         className={contextItemClass(2)}
       >
         <Star className={cn("mr-2 h-4 w-4", isFavorite && "fill-amber-500 text-amber-500")} />
-        {isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+        {isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
       </button>
 
       {hasParent && (
@@ -214,7 +218,7 @@ export function FileActionsMenuItems({
             className={contextItemClass(3)}
           >
             <Home className="mr-2 h-4 w-4" />
-            Move to Root
+            {t("moveToRoot")}
           </button>
         </>
       )}
@@ -222,7 +226,7 @@ export function FileActionsMenuItems({
       <div className="my-1 h-px bg-border" />
 
       {/* Export submenu label */}
-      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Export as</div>
+      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{t("exportAs")}</div>
 
       {/* Export Markdown */}
       <button
@@ -232,7 +236,7 @@ export function FileActionsMenuItems({
         className={contextItemClass(3 + exportOffset)}
       >
         <FileDown className="mr-2 h-4 w-4" />
-        Markdown
+        {t("markdownFormat")}
       </button>
 
       {/* Export PDF */}
@@ -243,7 +247,7 @@ export function FileActionsMenuItems({
         className={contextItemClass(4 + exportOffset)}
       >
         <FileDown className="mr-2 h-4 w-4" />
-        PDF
+        {t("pdfFormat")}
       </button>
 
       {/* Export Word */}
@@ -254,7 +258,7 @@ export function FileActionsMenuItems({
         className={contextItemClass(5 + exportOffset)}
       >
         <FileDown className="mr-2 h-4 w-4" />
-        Word
+        {t("wordFormat")}
       </button>
 
       <div className="my-1 h-px bg-border" />
@@ -267,7 +271,7 @@ export function FileActionsMenuItems({
         className={contextItemClass(6 + exportOffset, true)}
       >
         <Trash2 className="mr-2 h-4 w-4" />
-        Move to Trash
+        {t("moveToTrash")}
       </button>
     </>
   );

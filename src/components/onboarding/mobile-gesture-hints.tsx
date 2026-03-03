@@ -3,34 +3,36 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Hand, MessageSquare, Mic } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 const STORAGE_KEY = "doxmind-mobile-hints-seen";
 
 interface GestureStep {
   icon: React.ReactNode;
-  title: string;
-  description: string;
+  titleKey: string;
+  descriptionKey: string;
 }
 
 const GESTURE_STEPS: GestureStep[] = [
   {
     icon: <Hand className="h-8 w-8" />,
-    title: "Long-press to select",
-    description: "Long-press on text to select blocks for AI editing",
+    titleKey: "longPressToSelect",
+    descriptionKey: "longPressToSelectDesc",
   },
   {
     icon: <MessageSquare className="h-8 w-8" />,
-    title: "Bottom bar actions",
-    description: "Tap icons below to open sidebar, chat, or outline",
+    titleKey: "bottomBarActions",
+    descriptionKey: "bottomBarActionsDesc",
   },
   {
     icon: <Mic className="h-8 w-8" />,
-    title: "Voice input",
-    description: "Tap the mic icon to dictate with your voice",
+    titleKey: "voiceInput",
+    descriptionKey: "voiceInputDesc",
   },
 ];
 
 export function MobileGestureHints() {
+  const t = useTranslations("mobile");
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
 
@@ -92,7 +94,7 @@ export function MobileGestureHints() {
             handleDismiss();
           }}
           className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:text-white"
-          aria-label="Skip hints"
+          aria-label={t("skipHints")}
         >
           <X className="h-5 w-5" />
         </button>
@@ -115,8 +117,8 @@ export function MobileGestureHints() {
             {step.icon}
           </motion.div>
 
-          <h3 className="text-lg font-semibold text-white">{step.title}</h3>
-          <p className="max-w-[240px] text-sm text-white/70">{step.description}</p>
+          <h3 className="text-lg font-semibold text-white">{t(step.titleKey)}</h3>
+          <p className="max-w-[240px] text-sm text-white/70">{t(step.descriptionKey)}</p>
 
           {/* Step indicators */}
           <div className="mt-4 flex gap-2">
@@ -130,7 +132,7 @@ export function MobileGestureHints() {
             ))}
           </div>
 
-          <p className="mt-2 text-xs text-white/40">Tap to continue</p>
+          <p className="mt-2 text-xs text-white/40">{t("tapToContinue")}</p>
         </motion.div>
       </motion.div>
     </AnimatePresence>

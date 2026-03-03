@@ -9,20 +9,26 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ThemeQuickPicker } from "@/components/shared/shared-theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useAuthStore } from "@/stores/auth-store";
+import { useTranslations } from "next-intl";
 
 const NAV_LINKS = [
-  { href: "/", label: "Home", match: (p: string) => p === "/" },
-  { href: "/community", label: "Community", match: (p: string) => p.startsWith("/community") },
+  { href: "/", labelKey: "home" as const, match: (p: string) => p === "/" },
+  {
+    href: "/community",
+    labelKey: "community" as const,
+    match: (p: string) => p.startsWith("/community"),
+  },
 ];
 
 export function Header() {
+  const t = useTranslations("layout");
   const user = useAuthStore((s) => s.user);
   const pathname = usePathname();
 
   return (
     <header className="bg-sidebar relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-6">
       <div className="flex items-center gap-1">
-        <Tooltip content="Home" side="bottom">
+        <Tooltip content={t("home")} side="bottom">
           <Link
             href="/"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"
@@ -44,7 +50,7 @@ export function Header() {
                   isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {link.label}
+                {t(link.labelKey)}
                 {isActive && (
                   <span className="absolute bottom-0 left-1/2 h-[2px] w-4 -translate-x-1/2 rounded-full bg-foreground" />
                 )}
@@ -63,13 +69,13 @@ export function Header() {
         ) : (
           <>
             <div className="mx-1 h-5 w-px bg-border/40" />
-            <Tooltip content="Sign in" side="bottom">
+            <Tooltip content={t("signIn")} side="bottom">
               <Link
                 href="/login"
                 className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <LogIn className="h-4 w-4" />
-                <span className="hidden sm:inline">Sign in</span>
+                <span className="hidden sm:inline">{t("signIn")}</span>
               </Link>
             </Tooltip>
           </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { useCommentsStore } from "@/stores/comments-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { CommentComposer } from "./comment-composer";
@@ -12,13 +13,16 @@ interface CommentsSectionProps {
   commentCount: number;
 }
 
-const SORT_OPTIONS = [
-  { value: "oldest" as const, label: "Oldest" },
-  { value: "newest" as const, label: "Newest" },
-];
-
 export function CommentsSection({ shareToken, commentCount }: CommentsSectionProps) {
+  const t = useTranslations("comments");
+  const tCommunity = useTranslations("community");
   const user = useAuthStore((s) => s.user);
+
+  const sortOptions = [
+    { value: "oldest" as const, label: t("oldest") },
+    { value: "newest" as const, label: tCommunity("newest") },
+  ];
+
   const {
     comments,
     isLoading,
@@ -47,7 +51,7 @@ export function CommentsSection({ shareToken, commentCount }: CommentsSectionPro
       {/* Header with sort */}
       <div className="flex items-center justify-between">
         <h2 className="text-[15px] font-semibold tracking-tight text-foreground">
-          Comments
+          {t("comments")}
           {commentCount > 0 && (
             <span className="ml-2 text-muted-foreground/60">{commentCount}</span>
           )}
@@ -55,7 +59,7 @@ export function CommentsSection({ shareToken, commentCount }: CommentsSectionPro
 
         {comments.length > 1 && (
           <div className="flex gap-0.5 rounded-md border border-border/50 bg-muted/30 p-0.5">
-            {SORT_OPTIONS.map((option) => (
+            {sortOptions.map((option) => (
               <button
                 key={option.value}
                 onClick={() => setSort(option.value)}
@@ -75,10 +79,10 @@ export function CommentsSection({ shareToken, commentCount }: CommentsSectionPro
       {/* Composer */}
       {user ? (
         <div className="mt-5">
-          <CommentComposer onSubmit={handleSubmit} placeholder="Write a comment..." />
+          <CommentComposer onSubmit={handleSubmit} placeholder={t("writeAComment")} />
         </div>
       ) : (
-        <p className="mt-4 text-[13px] text-muted-foreground">Sign in to leave a comment.</p>
+        <p className="mt-4 text-[13px] text-muted-foreground">{t("signInToComment")}</p>
       )}
 
       {/* Comments list */}
@@ -89,7 +93,7 @@ export function CommentsSection({ shareToken, commentCount }: CommentsSectionPro
           </div>
         ) : comments.length === 0 ? (
           <p className="py-10 text-center text-[13px] text-muted-foreground/60">
-            No comments yet. Start the conversation.
+            {t("noCommentsStartConversation")}
           </p>
         ) : (
           comments.map((comment) => (
@@ -107,7 +111,7 @@ export function CommentsSection({ shareToken, commentCount }: CommentsSectionPro
             className="flex items-center gap-2 rounded-lg border border-border/60 px-6 py-2 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground disabled:opacity-50"
           >
             {isLoadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Load more comments
+            {t("loadMoreComments")}
           </button>
         </div>
       )}

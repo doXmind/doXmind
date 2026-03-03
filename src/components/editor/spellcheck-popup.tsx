@@ -5,12 +5,14 @@ import { Editor } from "@tiptap/react";
 import { X, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SpellcheckPluginKey, type SpellcheckMatch } from "@/extensions/spellcheck-extension";
+import { useTranslations } from "next-intl";
 
 interface SpellcheckPopupProps {
   editor: Editor;
 }
 
 export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
+  const t = useTranslations("editor");
   const [activeMatch, setActiveMatch] = useState<SpellcheckMatch | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [_showAbove, setShowAbove] = useState(false);
@@ -271,7 +273,7 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
       {activeMatch.replacements.length > 0 && (
         <div className="py-1">
           <div className="px-3 py-1 text-xs uppercase tracking-wide text-muted-foreground">
-            Suggestions
+            {t("suggestions")}
           </div>
           {activeMatch.replacements.map((replacement, i) => (
             <button
@@ -294,7 +296,7 @@ export function SpellcheckPopup({ editor }: SpellcheckPopupProps) {
           onMouseEnter={() => setFocusIndex(activeMatch.replacements.length)}
         >
           <BookOpen className="h-3.5 w-3.5" />
-          Add to dictionary
+          {t("addToDictionary")}
         </button>
       </div>
     </div>

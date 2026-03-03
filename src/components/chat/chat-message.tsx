@@ -10,6 +10,7 @@ import {
   Sparkles,
   BarChart3,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { QUICK_EDIT_LABELS } from "@/lib/quick-edit-prompts";
@@ -97,18 +98,19 @@ function ContextReference({
   index: number;
   total: number;
 }) {
+  const t = useTranslations("chat");
   const [isExpanded, setIsExpanded] = useState(false);
   const isImage = context.type === "image";
   const isChart = !isImage && context.text?.startsWith("```mermaid\n");
   const Icon = isImage ? ImageIcon : isChart ? BarChart3 : FileText;
-  const prefix = total > 1 ? `Reference ${index + 1}` : "Reference";
+  const prefix = total > 1 ? t("referenceN", { n: index + 1 }) : t("reference");
   const displayText = isChart
     ? context.text?.replace(/^```mermaid\n/, "").replace(/\n```$/, "") || ""
     : context.text || "";
   const label = isImage
-    ? `${prefix}: Image${context.alt ? ` (${context.alt})` : ""}`
+    ? `${prefix}: ${t("imageLabel")}${context.alt ? ` (${context.alt})` : ""}`
     : isChart
-      ? `${prefix}: Chart`
+      ? `${prefix}: ${t("chartLabel")}`
       : `${prefix}: "${displayText.slice(0, 40).replace(/\n/g, " ")}${displayText.length > 40 ? "..." : ""}"`;
 
   return (
@@ -132,7 +134,7 @@ function ContextReference({
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={context.src}
-              alt={context.alt || "Image"}
+              alt={context.alt || t("imageLabel")}
               className="h-auto max-w-full rounded"
             />
           ) : (
@@ -157,6 +159,7 @@ export function ChatMessage({
   children,
   className,
 }: ChatMessageProps) {
+  const t = useTranslations("chat");
   const isUser = role === "user";
 
   // Parse markdown for AI messages
@@ -197,7 +200,9 @@ export function ChatMessage({
             <AiLogoIcon size={12} className="text-muted-foreground" />
           )}
         </div>
-        <span className="text-xs font-semibold text-foreground">{isUser ? "You" : "doXmind"}</span>
+        <span className="text-xs font-semibold text-foreground">
+          {isUser ? t("you") : t("aiName")}
+        </span>
       </div>
 
       {/* Content area — indented past avatar */}

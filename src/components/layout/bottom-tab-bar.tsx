@@ -6,6 +6,7 @@ import { Home, Users, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { Z_INDEX, MOBILE_PANEL } from "@/lib/constants";
+import { useTranslations } from "next-intl";
 
 interface TabItem {
   href: string;
@@ -15,25 +16,26 @@ interface TabItem {
 }
 
 export function BottomTabBar() {
+  const t = useTranslations("layout");
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
 
   const tabs: TabItem[] = [
     {
       href: "/",
-      label: "Home",
+      label: t("home"),
       icon: Home,
       match: (p) => p === "/",
     },
     {
       href: "/community",
-      label: "Community",
+      label: t("community"),
       icon: Users,
       match: (p) => p.startsWith("/community"),
     },
     {
       href: user?.id ? `/profile/${user.id}` : "/login",
-      label: "Profile",
+      label: t("profile"),
       icon: User,
       match: (p) => p.startsWith("/profile"),
     },

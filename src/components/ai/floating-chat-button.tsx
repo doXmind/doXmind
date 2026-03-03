@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PanelRight, AppWindow, Check } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -21,6 +22,7 @@ const iconPaths = [
 ];
 
 export function FloatingChatButton() {
+  const t = useTranslations("chat");
   const { isChatOpen, toggleChat, chatMode, setChatMode } = useLayoutStore();
   const [isHovered, setIsHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -46,7 +48,7 @@ export function FloatingChatButton() {
               if (!v) setMenuOpen(false);
             }}
           >
-            <Tooltip content="Ask AI · Right-click for options" side="left">
+            <Tooltip content={t("askAIRightClick")} side="left">
               <DropdownMenuTrigger asChild>
                 <button
                   onPointerUp={(e) => {
@@ -58,7 +60,7 @@ export function FloatingChatButton() {
                   onMouseEnter={() => setIsHovered(true)}
                   onMouseLeave={() => setIsHovered(false)}
                   data-onboarding="chat-toggle"
-                  aria-label="Open AI Chat"
+                  aria-label={t("openAIChat")}
                   className="flex h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-background shadow-md transition-all duration-200 hover:border-border hover:shadow-lg"
                 >
                   {/* Logo icon with glitch on hover */}
@@ -151,7 +153,7 @@ export function FloatingChatButton() {
                 }}
               >
                 <PanelRight className="mr-2 h-3.5 w-3.5" />
-                Sidebar
+                {t("sidebarMode")}
                 {chatMode === "sidebar" && <Check className="ml-auto h-3.5 w-3.5" />}
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -161,7 +163,7 @@ export function FloatingChatButton() {
                 }}
               >
                 <AppWindow className="mr-2 h-3.5 w-3.5" />
-                Floating
+                {t("floatingMode")}
                 {chatMode === "floating" && <Check className="ml-auto h-3.5 w-3.5" />}
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { Play, Search } from "lucide-react";
 import { useLayoutStore } from "@/stores/layout-store";
 
@@ -11,6 +12,7 @@ interface StickyReadingBarProps {
 }
 
 export function StickyReadingBar({ title, triggerRef }: StickyReadingBarProps) {
+  const t = useTranslations("sharedView");
   const [visible, setVisible] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -40,14 +42,14 @@ export function StickyReadingBar({ title, triggerRef }: StickyReadingBarProps) {
           <button
             onClick={() => useLayoutStore.getState().setPresentationMode(true)}
             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Present"
+            aria-label={t("present")}
           >
             <Play className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={() => useLayoutStore.getState().setSearchBarOpen(true)}
             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Search in document"
+            aria-label={t("searchInDocument")}
           >
             <Search className="h-3.5 w-3.5" />
           </button>

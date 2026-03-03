@@ -1,6 +1,7 @@
 "use client";
 
 import { FolderOpen, FileText, Sparkles, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ interface MoreMenuProps {
 }
 
 function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
+  const t = useTranslations("mobile");
   const { currentTheme, toggleBaseMode } = useThemeManager();
   const { toggleMobileOutline } = useLayoutStore();
 
@@ -77,7 +79,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
             <Moon className="h-5 w-5" />
           )}
           <span className="text-sm font-medium">
-            {currentTheme.baseMode === "dark" ? "Light Mode" : "Dark Mode"}
+            {currentTheme.baseMode === "dark" ? t("lightMode") : t("darkMode")}
           </span>
         </button>
 
@@ -89,7 +91,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
         >
           <ListTree className="h-5 w-5" />
-          <span className="text-sm font-medium">Document Outline</span>
+          <span className="text-sm font-medium">{t("documentOutline")}</span>
         </button>
       </div>
     </>
@@ -97,6 +99,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
 }
 
 export function MobileNavBar() {
+  const t = useTranslations("mobile");
   const { isMobileSidebarOpen, isMobileChatOpen, setMobileSidebarOpen, setMobileChatOpen } =
     useLayoutStore();
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -146,28 +149,28 @@ export function MobileNavBar() {
       >
         <NavButton
           icon={<FolderOpen className="h-5 w-5" />}
-          label="Files"
+          label={t("files")}
           isActive={isMobileSidebarOpen}
           onClick={handleFilesClick}
         />
 
         <NavButton
           icon={<FileText className="h-5 w-5" />}
-          label="Editor"
+          label={t("editor")}
           isActive={isEditorActive}
           onClick={handleEditorClick}
         />
 
         <NavButton
           icon={<Sparkles className="h-5 w-5" />}
-          label="AI"
+          label={t("ai")}
           isActive={isMobileChatOpen}
           onClick={handleAIClick}
         />
 
         <NavButton
           icon={<MoreHorizontal className="h-5 w-5" />}
-          label="More"
+          label={t("more")}
           isActive={isMoreMenuOpen}
           onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
         />

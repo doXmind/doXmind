@@ -58,19 +58,6 @@ class UserService:
         if existing_user:
             return False, "Email already registered"
 
-        # Per-email cooldown: prevent email spam (60 seconds between sends)
-        recent = await self.db.execute(
-            select(EmailVerification.created_at)
-            .where(EmailVerification.email == email)
-            .order_by(EmailVerification.created_at.desc())
-            .limit(1)
-        )
-        recent_row = recent.scalar_one_or_none()
-        if recent_row:
-            elapsed = (datetime.now(UTC) - recent_row.replace(tzinfo=UTC)).total_seconds()
-            if elapsed < 60:
-                return False, f"Please wait {int(60 - elapsed)} seconds before requesting another code"
-
         # Clean up any existing verification for this email
         await self.db.execute(delete(EmailVerification).where(EmailVerification.email == email))
 

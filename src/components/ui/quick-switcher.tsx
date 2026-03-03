@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { FileText, Clock } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -18,6 +19,7 @@ export function QuickSwitcher() {
   const router = useRouter();
   const { files, currentFileId, setCurrentFile } = useFileStore();
   const { isQuickSwitcherOpen, setQuickSwitcherOpen } = useLayoutStore();
+  const t = useTranslations("quickSwitcher");
 
   // Get recent files sorted by updatedAt, excluding folders
   const recentFiles = React.useMemo(() => {
@@ -125,10 +127,10 @@ export function QuickSwitcher() {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffMins < 1) return t("justNow");
+    if (diffMins < 60) return t("minutesAgo", { count: diffMins });
+    if (diffHours < 24) return t("hoursAgo", { count: diffHours });
+    if (diffDays < 7) return t("daysAgo", { count: diffDays });
     return date.toLocaleDateString();
   };
 
@@ -146,7 +148,7 @@ export function QuickSwitcher() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Quick file switcher"
+        aria-label={t("quickFileSwitcher")}
         className={cn(
           "relative z-50 w-full max-w-md",
           "rounded-xl border border-border bg-popover shadow-2xl",
@@ -159,8 +161,10 @@ export function QuickSwitcher() {
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Clock className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Recent Files</span>
-          <span className="ml-auto text-xs text-muted-foreground">{orderedFiles.length} files</span>
+          <span className="text-sm font-medium">{t("recentFiles")}</span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {t("filesCount", { count: orderedFiles.length })}
+          </span>
         </div>
 
         {/* File list */}
@@ -168,11 +172,11 @@ export function QuickSwitcher() {
           ref={listRef}
           className="max-h-[320px] overflow-y-auto py-1"
           role="listbox"
-          aria-label="Recent files"
+          aria-label={t("recentFilesLabel")}
         >
           {orderedFiles.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No recent files
+              {t("noRecentFiles")}
             </div>
           ) : (
             orderedFiles.map((file, index) => {
@@ -198,7 +202,7 @@ export function QuickSwitcher() {
                   <span className="min-w-0 flex-1 truncate text-left">{file.name}</span>
                   {isCurrent && (
                     <span className="flex-shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                      Current
+                      {t("current")}
                     </span>
                   )}
                   <span className="flex-shrink-0 text-xs text-muted-foreground">
@@ -220,7 +224,7 @@ export function QuickSwitcher() {
             <kbd className="mx-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
               ↑↓
             </kbd>
-            navigate
+            {t("navigate")}
           </span>
           <span className="text-xs text-muted-foreground">
             Release

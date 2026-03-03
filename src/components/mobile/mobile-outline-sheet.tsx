@@ -11,6 +11,7 @@
  */
 
 import { useRef, useCallback, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { ChevronLeft, FileText } from "lucide-react";
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -56,6 +57,7 @@ function OutlineItem({ heading, isActive, onClick }: OutlineItemProps) {
 }
 
 export function MobileOutlineSheet() {
+  const t = useTranslations("mobile");
   const { isMobileOutlineOpen, setMobileOutlineOpen } = useLayoutStore();
   const { editor } = useEditorRefStore();
   const { currentFileId, files } = useFileStore();
@@ -157,7 +159,7 @@ export function MobileOutlineSheet() {
                 <ChevronLeft className="h-5 w-5" />
               </button>
               <div className="min-w-0 flex-1">
-                <p className="mb-0.5 text-xs text-muted-foreground">Contents</p>
+                <p className="mb-0.5 text-xs text-muted-foreground">{t("contents")}</p>
                 <h3 className="truncate text-base font-semibold">{documentTitle}</h3>
               </div>
             </div>
@@ -169,9 +171,9 @@ export function MobileOutlineSheet() {
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                     <FileText className="h-6 w-6 text-muted-foreground" />
                   </div>
-                  <p className="mb-1 text-base font-medium text-foreground">No headings yet</p>
+                  <p className="mb-1 text-base font-medium text-foreground">{t("noHeadingsYet")}</p>
                   <p className="max-w-[240px] text-sm text-muted-foreground">
-                    Add headings (H1, H2, H3) to your document to create an outline.
+                    {t("addHeadingsHint")}
                   </p>
                 </div>
               ) : (
@@ -192,7 +194,9 @@ export function MobileOutlineSheet() {
             {headings.length > 0 && (
               <div className="safe-area-bottom border-t border-border/50 px-4 py-3">
                 <p className="text-center text-xs text-muted-foreground">
-                  {headings.length} heading{headings.length !== 1 ? "s" : ""}
+                  {headings.length === 1
+                    ? t("headingCountSingular", { count: headings.length })
+                    : t("headingCount", { count: headings.length })}
                 </p>
               </div>
             )}

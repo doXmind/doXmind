@@ -14,11 +14,13 @@ import { useFileStore } from "@/stores/file-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useOutlineStore } from "@/stores/outline-store";
+import { useTranslations } from "next-intl";
 import { buildTree } from "@/components/editor/mindlines/use-tree";
 import { Z_INDEX } from "@/lib/constants";
 import type { Heading } from "@/components/editor/mindlines/types";
 
 export function Sidebar() {
+  const t = useTranslations("sidebar");
   const { currentFileId } = useFileStore();
   const editor = useEditorRefStore((s) => s.editor);
   const { toggleSidebar } = useLayoutStore();
@@ -60,39 +62,39 @@ export function Sidebar() {
       {/* Outline header */}
       <div className="flex items-center justify-between px-3 py-2">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
-          Outline
+          {t("outline")}
         </span>
         <div className="flex gap-1">
-          <Tooltip content="Toggle collapse all" side="bottom">
+          <Tooltip content={t("toggleCollapseAll")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
               onClick={handleToggleAllOutline}
               disabled={headings.length === 0}
-              aria-label="Toggle collapse all"
+              aria-label={t("toggleCollapseAll")}
               className="h-8 w-8"
             >
               <ChevronsUpDown className="h-4 w-4" />
             </Button>
           </Tooltip>
-          <Tooltip content="Mindmap view" side="bottom">
+          <Tooltip content={t("mindmapView")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsMindmapOpen(true)}
               disabled={headings.length === 0}
-              aria-label="Open mindmap"
+              aria-label={t("openMindmap")}
               className="h-8 w-8"
             >
               <GitBranch className="h-4 w-4" />
             </Button>
           </Tooltip>
-          <Tooltip content="Hide Outline" side="bottom">
+          <Tooltip content={t("hideOutline")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
               onClick={toggleSidebar}
-              aria-label="Hide Outline"
+              aria-label={t("hideOutline")}
               className="h-8 w-8"
             >
               <PanelLeftClose className="h-4 w-4" />
@@ -115,7 +117,7 @@ export function Sidebar() {
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
             <FileText className="h-8 w-8 text-muted-foreground/40 dark:text-muted-foreground/60" />
             <p className="text-xs text-muted-foreground">
-              {editor ? "No headings in this document" : "Open a document to see its outline"}
+              {editor ? t("noHeadings") : t("openDocForOutline")}
             </p>
           </div>
         )}

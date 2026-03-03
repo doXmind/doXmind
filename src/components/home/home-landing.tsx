@@ -4,8 +4,10 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { AnimatedLogo } from "@/components/ui/animated-logo";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "next-intl";
 
 export function HomeLanding() {
+  const t = useTranslations("home");
   return (
     <div className="flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background">
       <AnimatedLogo size="xl" />
@@ -16,10 +18,8 @@ export function HomeLanding() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 1.2 }}
       >
-        <p className="text-2xl font-bold uppercase tracking-widest">Think. Write. Publish.</p>
-        <p className="mt-3 text-sm tracking-wide text-muted-foreground">
-          The AI editor that reasons with you
-        </p>
+        <p className="text-2xl font-bold uppercase tracking-widest">{t("thinkWritePublish")}</p>
+        <p className="mt-3 text-sm tracking-wide text-muted-foreground">{t("tagline")}</p>
       </motion.div>
 
       <motion.div
@@ -32,7 +32,7 @@ export function HomeLanding() {
             size="lg"
             className="px-10 py-6 text-base tracking-wide transition-all hover:scale-105 hover:shadow-lg"
           >
-            Get Started
+            {t("getStarted")}
           </Button>
         </Link>
       </motion.div>

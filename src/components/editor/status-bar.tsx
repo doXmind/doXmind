@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { type Editor } from "@tiptap/react";
 import { Check, Loader2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEditorStore } from "@/stores/editor-store";
 
 interface StatusBarProps {
@@ -14,14 +15,15 @@ function getWordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
-function getReadingTime(wordCount: number): string {
-  const minutes = Math.ceil(wordCount / 200);
-  if (minutes < 1) return "< 1 min read";
-  return `${minutes} min read`;
-}
-
 export function StatusBar({ editor }: StatusBarProps) {
+  const t = useTranslations("editor");
   const { isDirty, isSaving, lastSavedAt } = useEditorStore();
+
+  const getReadingTime = (wordCount: number): string => {
+    const minutes = Math.ceil(wordCount / 200);
+    if (minutes < 1) return t("lessThanOneMinRead");
+    return t("minRead", { minutes });
+  };
 
   const stats = useMemo(() => {
     const text = editor.getText();
@@ -45,28 +47,30 @@ export function StatusBar({ editor }: StatusBarProps) {
         {saveStatus === "saving" && (
           <span className="flex items-center gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
-            Saving...
+            {t("saving")}
           </span>
         )}
         {saveStatus === "saved" && (
           <span className="flex items-center gap-1 transition-opacity">
             <Check className="h-3 w-3 text-green-600 dark:text-green-500" />
-            Saved
+            {t("saved")}
           </span>
         )}
         {saveStatus === "unsaved" && (
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            Unsaved changes
+            {t("unsavedChanges")}
           </span>
         )}
 
         <span className="text-border">·</span>
         <span>
-          {stats.words.toLocaleString()} {stats.words === 1 ? "word" : "words"}
+          {stats.words.toLocaleString()} {stats.words === 1 ? t("wordSingular") : t("wordPlural")}
         </span>
         <span className="text-border">·</span>
-        <span>{stats.characters.toLocaleString()} characters</span>
+        <span>
+          {stats.characters.toLocaleString()} {t("characters")}
+        </span>
         <span className="text-border">·</span>
         <span>{getReadingTime(stats.words)}</span>
       </div>

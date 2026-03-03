@@ -490,10 +490,10 @@
 
 @keyframes zoomIn {
   from {
-    transform: scale(0.95);
+    scale: 0.95;
   }
   to {
-    transform: scale(1);
+    scale: 1;
   }
 }
 

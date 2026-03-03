@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useState } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, Scissors, Trash2, Check, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,9 @@ interface MobileActionBarProps {
 }
 
 export function MobileActionBar({ onCopy, onCut, onDelete, onAIVoice }: MobileActionBarProps) {
+  const t = useTranslations("mobile");
+  const tc = useTranslations("common");
+  const tCom = useTranslations("community");
   const { selectedBlocks, isSelectionActive, clearSelection } = useBlockSelectionStore();
   const [copiedFeedback, setCopiedFeedback] = useState(false);
 
@@ -79,14 +83,16 @@ export function MobileActionBar({ onCopy, onCut, onDelete, onAIVoice }: MobileAc
           {/* Selection counter */}
           <div className="flex items-center justify-between border-b border-border/30 px-4 py-2">
             <span className="text-sm text-muted-foreground">
-              {selectedBlocks.length} block{selectedBlocks.length > 1 ? "s" : ""} selected
+              {selectedBlocks.length > 1
+                ? t("blocksSelectedPlural", { count: selectedBlocks.length })
+                : t("blocksSelected", { count: selectedBlocks.length })}
             </span>
             <button
               type="button"
               onClick={handleClear}
               className="text-sm font-medium text-primary"
             >
-              Clear
+              {tCom("clear")}
             </button>
           </div>
 
@@ -110,7 +116,7 @@ export function MobileActionBar({ onCopy, onCut, onDelete, onAIVoice }: MobileAc
                   <Copy className="h-6 w-6" />
                 )
               }
-              label={copiedFeedback ? "Copied!" : "Copy"}
+              label={copiedFeedback ? t("copied") : tc("copy")}
               onPress={handleCopy}
               disabled={!hasSelection}
             />
@@ -118,7 +124,7 @@ export function MobileActionBar({ onCopy, onCut, onDelete, onAIVoice }: MobileAc
             {/* Cut */}
             <ActionButton
               icon={<Scissors className="h-6 w-6" />}
-              label="Cut"
+              label={tc("cut")}
               onPress={handleCut}
               disabled={!hasSelection}
             />
@@ -126,7 +132,7 @@ export function MobileActionBar({ onCopy, onCut, onDelete, onAIVoice }: MobileAc
             {/* Delete */}
             <ActionButton
               icon={<Trash2 className="h-6 w-6" />}
-              label="Delete"
+              label={tc("delete")}
               onPress={handleDelete}
               disabled={!hasSelection}
               destructive

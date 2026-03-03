@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Check, Monitor } from "lucide-react";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { cn } from "@/lib/utils";
@@ -93,18 +94,19 @@ function ThemeCard({
 }
 
 export function AppearanceSettings() {
+  const t = useTranslations("settings");
   const { currentThemeId, selectTheme, isSystemMode, setSystemMode, lightThemes, darkThemes } =
     useThemeManager();
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Choose a theme for your writing environment.</p>
+      <p className="text-sm text-muted-foreground">{t("chooseTheme")}</p>
 
       <div className="space-y-4 rounded-lg border p-4">
         {/* Light Themes */}
         <div className="space-y-2">
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Light
+            {t("light")}
           </span>
           <div className="grid grid-cols-4 gap-2">
             {lightThemes.map((theme) => (
@@ -121,7 +123,7 @@ export function AppearanceSettings() {
         {/* Dark Themes */}
         <div className="space-y-2">
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Dark
+            {t("dark")}
           </span>
           <div className="grid grid-cols-4 gap-2">
             {darkThemes.map((theme) => (
@@ -140,10 +142,8 @@ export function AppearanceSettings() {
           <div className="flex items-center gap-2">
             <Monitor className="h-4 w-4 text-muted-foreground" />
             <div>
-              <span className="text-sm font-medium">Follow System</span>
-              <p className="text-xs text-muted-foreground">
-                Auto-switch between your preferred light and dark themes
-              </p>
+              <span className="text-sm font-medium">{t("followSystem")}</span>
+              <p className="text-xs text-muted-foreground">{t("autoSwitch")}</p>
             </div>
           </div>
           <button

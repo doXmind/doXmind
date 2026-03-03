@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 const HINTS_STORAGE_KEY = "doxmind-feature-hints";
 
@@ -20,66 +21,58 @@ export type FeatureHintId =
 
 interface FeatureHint {
   id: FeatureHintId;
-  title: string;
-  description: string;
+  titleKey: string;
+  descriptionKey: string;
   position?: "top" | "bottom";
 }
 
 const FEATURE_HINTS: Record<FeatureHintId, FeatureHint> = {
   "autocomplete-shown": {
     id: "autocomplete-shown",
-    title: "AI Autocomplete",
-    description:
-      "Press Tab to accept the full suggestion, Ctrl+Space for word-by-word, or Escape to dismiss.",
+    titleKey: "hintAutocompleteTitle",
+    descriptionKey: "hintAutocompleteDesc",
     position: "top",
   },
   "slash-command-used": {
     id: "slash-command-used",
-    title: "Slash Commands",
-    description:
-      "Browse all blocks — headings, tables, code, math, callouts, and more. Type / anywhere to open.",
+    titleKey: "hintSlashTitle",
+    descriptionKey: "hintSlashDesc",
     position: "bottom",
   },
   "search-opened": {
     id: "search-opened",
-    title: "Smart Search",
-    description:
-      "Switch to the AI tab for semantic search that understands meaning, not just keywords.",
+    titleKey: "hintSearchTitle",
+    descriptionKey: "hintSearchDesc",
     position: "bottom",
   },
   "quick-edit-shown": {
     id: "quick-edit-shown",
-    title: "Quick Edit",
-    description:
-      "Choose an action to apply instantly, or click Ask in Chat for custom instructions.",
+    titleKey: "hintQuickEditTitle",
+    descriptionKey: "hintQuickEditDesc",
     position: "top",
   },
   "diff-review-shown": {
     id: "diff-review-shown",
-    title: "Review Changes",
-    description:
-      "Accept or reject each AI edit individually, or use Accept All / Reject All for the entire batch.",
+    titleKey: "hintDiffReviewTitle",
+    descriptionKey: "hintDiffReviewDesc",
     position: "top",
   },
   "text-review-shown": {
     id: "text-review-shown",
-    title: "Writing Review",
-    description:
-      "Color-coded suggestions appear as underlines. Click any underlined text to see details and apply fixes.",
+    titleKey: "hintTextReviewTitle",
+    descriptionKey: "hintTextReviewDesc",
     position: "top",
   },
   "knowledge-base-used": {
     id: "knowledge-base-used",
-    title: "Knowledge Base",
-    description:
-      "Upload PDFs and documents as references — AI will search and cite them when answering your questions.",
+    titleKey: "hintKbTitle",
+    descriptionKey: "hintKbDesc",
     position: "bottom",
   },
   "focus-mode-entered": {
     id: "focus-mode-entered",
-    title: "Focus Mode",
-    description:
-      "Distraction-free writing. Press F11 again or hover the top of the screen to exit.",
+    titleKey: "hintFocusModeTitle",
+    descriptionKey: "hintFocusModeDesc",
     position: "bottom",
   },
 };
@@ -107,6 +100,7 @@ interface FeatureHintTooltipProps {
 }
 
 function FeatureHintTooltip({ hint, anchorRect, onDismiss }: FeatureHintTooltipProps) {
+  const t = useTranslations("onboarding");
   const position = hint.position ?? "bottom";
   const tooltipWidth = 260;
 
@@ -140,9 +134,9 @@ function FeatureHintTooltip({ hint, anchorRect, onDismiss }: FeatureHintTooltipP
         >
           <X className="h-3 w-3" />
         </button>
-        <p className="text-xs font-medium text-primary">{hint.title}</p>
+        <p className="text-xs font-medium text-primary">{t(hint.titleKey)}</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-          {hint.description}
+          {t(hint.descriptionKey)}
         </p>
       </motion.div>
     </AnimatePresence>,

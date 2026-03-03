@@ -15,6 +15,7 @@ import {
   Palette,
   GraduationCap,
   HelpCircle,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,23 +37,33 @@ import { UsageSettings } from "@/components/settings/usage-settings";
 import { SessionManager } from "@/components/settings/session-manager";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { cn } from "@/lib/utils";
+import { useTranslations, useLocale } from "next-intl";
 
 type SettingsTab = "api" | "usage" | "appearance" | "typography" | "privacy" | "security";
 
-const SETTINGS_TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-  { id: "api", label: "API", icon: <Key className="h-4 w-4" /> },
-  { id: "usage", label: "Usage", icon: <BarChart3 className="h-4 w-4" /> },
-  { id: "appearance", label: "Appearance", icon: <Palette className="h-4 w-4" /> },
-  { id: "typography", label: "Typography", icon: <Type className="h-4 w-4" /> },
-  { id: "security", label: "Security", icon: <Shield className="h-4 w-4" /> },
-  { id: "privacy", label: "Privacy", icon: <Shield className="h-4 w-4" /> },
+const SETTINGS_TAB_IDS: { id: SettingsTab; labelKey: string; icon: React.ReactNode }[] = [
+  { id: "api", labelKey: "api", icon: <Key className="h-4 w-4" /> },
+  { id: "usage", labelKey: "usage", icon: <BarChart3 className="h-4 w-4" /> },
+  { id: "appearance", labelKey: "appearance", icon: <Palette className="h-4 w-4" /> },
+  { id: "typography", labelKey: "typography", icon: <Type className="h-4 w-4" /> },
+  { id: "security", labelKey: "security", icon: <Shield className="h-4 w-4" /> },
+  { id: "privacy", labelKey: "privacy", icon: <Shield className="h-4 w-4" /> },
 ];
+
+const LOCALES = [
+  { code: "en", label: "English" },
+  { code: "zh", label: "中文" },
+] as const;
 
 export function UserMenu({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const { user, logout, deleteAccount } = useAuthStore();
   const { onboardingCompleted, resetOnboarding, startOnboarding, tutorialFileId } =
     useOnboardingStore();
+  const t = useTranslations("userMenu");
+  const ts = useTranslations("settings");
+  const tc = useTranslations("common");
+  const locale = useLocale();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("api");
@@ -67,7 +78,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       router.push("/login");
     } catch (error) {
       console.error("Logout failed:", error);
-      toast.error("Failed to logout. Please try again.");
+      toast.error(t("logoutFailed"));
       setIsLoggingOut(false);
     }
   };
@@ -85,7 +96,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       router.push("/login");
     } catch (error) {
       console.error("Failed to delete account:", error);
-      toast.error("Failed to delete account");
+      toast.error(t("deleteAccountFailed"));
       setIsDeleting(false);
     }
   };
@@ -108,7 +119,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           variant="ghost"
           size="icon"
           className={cn("relative rounded-full", compact ? "h-7 w-7" : "h-8 w-8")}
-          aria-label="User menu"
+          aria-label={t("userMenu")}
         >
           {user?.avatar_url ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -132,7 +143,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{user?.username || "User"}</p>
+            <p className="text-sm font-medium leading-none">{user?.username || tc("user")}</p>
             <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
           </div>
         </DropdownMenuLabel>
@@ -142,26 +153,37 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           disabled={!user?.id}
         >
           <User className="mr-2 h-4 w-4" />
-          Profile
+          {t("profile")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setShowSettingsModal(true)}>
           <Settings className="mr-2 h-4 w-4" />
-          Settings
+          {t("settings")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => router.push("/help")}>
           <HelpCircle className="mr-2 h-4 w-4" />
-          Help
+          {t("help")}
         </DropdownMenuItem>
         {onboardingCompleted && (
           <DropdownMenuItem onClick={handleRestartTour}>
             <GraduationCap className="mr-2 h-4 w-4" />
-            Restart Tour
+            {t("restartTour")}
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => {
+            const nextLocale = locale === "en" ? "zh" : "en";
+            document.cookie = `NEXT_LOCALE=${nextLocale};path=/;max-age=${365 * 24 * 60 * 60};samesite=lax`;
+            window.location.reload();
+          }}
+        >
+          <Globe className="mr-2 h-4 w-4" />
+          {LOCALES.find((l) => l.code !== locale)?.label}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
           <LogOut className="mr-2 h-4 w-4" />
-          {isLoggingOut ? "Logging out..." : "Log out"}
+          {isLoggingOut ? t("loggingOut") : t("logOut")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -169,7 +191,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           className="text-destructive focus:bg-destructive/10 focus:text-destructive"
         >
           <Trash2 className="mr-2 h-4 w-4" />
-          Delete account
+          {t("deleteAccount")}
         </DropdownMenuItem>
       </DropdownMenuContent>
 
@@ -178,21 +200,16 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         <ModalHeader onClose={() => setShowDeleteDialog(false)}>
           <span className="flex items-center gap-2 text-destructive">
             <AlertTriangle className="h-5 w-5" />
-            Delete Account
+            {t("deleteAccountTitle")}
           </span>
         </ModalHeader>
         <div className="space-y-4 text-sm">
-          <p>
-            Are you sure you want to delete your account? This action is{" "}
-            <strong>permanent and cannot be undone</strong>.
-          </p>
-          <p className="text-muted-foreground">
-            All your data will be permanently deleted, including:
-          </p>
+          <p>{t("deleteAccountConfirm")}</p>
+          <p className="text-muted-foreground">{t("deleteAccountData")}</p>
           <ul className="list-inside list-disc space-y-1 text-muted-foreground">
-            <li>All your documents and files</li>
-            <li>All conversation history</li>
-            <li>Your profile and settings</li>
+            <li>{t("deleteAccountDocs")}</li>
+            <li>{t("deleteAccountHistory")}</li>
+            <li>{t("deleteAccountProfile")}</li>
           </ul>
         </div>
         <ModalFooter>
@@ -201,10 +218,10 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
             onClick={() => setShowDeleteDialog(false)}
             disabled={isDeleting}
           >
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDeleteAccount} disabled={isDeleting}>
-            {isDeleting ? "Deleting..." : "Delete my account"}
+            {isDeleting ? t("deleting") : t("deleteMyAccount")}
           </Button>
         </ModalFooter>
       </Modal>
@@ -218,13 +235,13 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         <ModalHeader onClose={() => setShowSettingsModal(false)}>
           <span className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Settings
+            {t("settings")}
           </span>
         </ModalHeader>
 
         {/* Tab navigation */}
         <div className="mb-4 flex overflow-x-auto border-b border-border md:-mx-6 md:px-6">
-          {SETTINGS_TABS.map((tab) => (
+          {SETTINGS_TAB_IDS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSettingsTab(tab.id)}
@@ -236,7 +253,17 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
               )}
             >
               {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="hidden sm:inline">
+                {ts(
+                  tab.labelKey as
+                    | "api"
+                    | "usage"
+                    | "appearance"
+                    | "typography"
+                    | "security"
+                    | "privacy"
+                )}
+              </span>
             </button>
           ))}
         </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
+import { useTranslations } from "next-intl";
 import {
   Type,
   Heading1,
@@ -36,8 +37,8 @@ interface BlockInsertMenuProps {
 }
 
 interface InsertItem {
-  title: string;
-  description: string;
+  titleKey: string;
+  descKey: string;
   icon: React.ReactNode;
   category: "basic" | "lists" | "media" | "advanced";
   shortcut?: string;
@@ -45,17 +46,17 @@ interface InsertItem {
   _showSizePicker?: boolean;
 }
 
-const categoryLabels: Record<string, string> = {
-  basic: "Basic Blocks",
-  lists: "Lists",
-  media: "Media",
-  advanced: "Advanced",
+const categoryLabelKeys: Record<string, string> = {
+  basic: "blockMenu.basicBlocks",
+  lists: "blockMenu.lists",
+  media: "blockMenu.media",
+  advanced: "blockMenu.advanced",
 };
 
 const insertItems: InsertItem[] = [
   {
-    title: "Text",
-    description: "Plain text paragraph",
+    titleKey: "blockMenu.text",
+    descKey: "blockMenu.textDesc",
     icon: <Type className="h-4 w-4" />,
     category: "basic",
     insert: (editor, pos) => {
@@ -68,8 +69,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Heading 1",
-    description: "Large section heading",
+    titleKey: "blockMenu.heading1",
+    descKey: "blockMenu.heading1Desc",
     icon: <Heading1 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+1",
@@ -83,8 +84,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Heading 2",
-    description: "Medium section heading",
+    titleKey: "blockMenu.heading2",
+    descKey: "blockMenu.heading2Desc",
     icon: <Heading2 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+2",
@@ -98,8 +99,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Heading 3",
-    description: "Small section heading",
+    titleKey: "blockMenu.heading3",
+    descKey: "blockMenu.heading3Desc",
     icon: <Heading3 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+3",
@@ -113,8 +114,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Quote",
-    description: "Create a blockquote",
+    titleKey: "blockMenu.quote",
+    descKey: "blockMenu.quoteDesc",
     icon: <Quote className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Shift+B",
@@ -128,8 +129,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Callout",
-    description: "Highlighted info or warning block",
+    titleKey: "blockMenu.callout",
+    descKey: "blockMenu.calloutDesc",
     icon: <MessageSquareQuote className="h-4 w-4" />,
     category: "basic",
     insert: (editor, pos) => {
@@ -146,8 +147,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Toggle",
-    description: "Collapsible content block",
+    titleKey: "blockMenu.toggle",
+    descKey: "blockMenu.toggleDesc",
     icon: <ChevronRight className="h-4 w-4" />,
     category: "basic",
     insert: (editor, pos) => {
@@ -163,8 +164,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Table of Contents",
-    description: "Auto-generated from headings",
+    titleKey: "blockMenu.toc",
+    descKey: "blockMenu.tocDesc",
     icon: <TableOfContents className="h-4 w-4" />,
     category: "basic",
     insert: (editor, pos) => {
@@ -172,8 +173,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Divider",
-    description: "Insert a horizontal divider",
+    titleKey: "blockMenu.divider",
+    descKey: "blockMenu.dividerDesc",
     icon: <Minus className="h-4 w-4" />,
     category: "basic",
     shortcut: "---",
@@ -187,8 +188,8 @@ const insertItems: InsertItem[] = [
   },
   // Lists
   {
-    title: "Bullet List",
-    description: "Create a simple bullet list",
+    titleKey: "blockMenu.bulletList",
+    descKey: "blockMenu.bulletListDesc",
     icon: <List className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+8",
@@ -205,8 +206,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Numbered List",
-    description: "Create a numbered list",
+    titleKey: "blockMenu.numberedList",
+    descKey: "blockMenu.numberedListDesc",
     icon: <ListOrdered className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+7",
@@ -223,8 +224,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Task List",
-    description: "Create a task list with checkboxes",
+    titleKey: "blockMenu.taskList",
+    descKey: "blockMenu.taskListDesc",
     icon: <ListTodo className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+9",
@@ -244,8 +245,8 @@ const insertItems: InsertItem[] = [
   },
   // Media
   {
-    title: "Image",
-    description: "Upload or embed an image",
+    titleKey: "blockMenu.image",
+    descKey: "blockMenu.imageDesc",
     // eslint-disable-next-line jsx-a11y/alt-text -- Lucide icon, not img element
     icon: <Image className="h-4 w-4" />,
     category: "media",
@@ -284,8 +285,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Table",
-    description: "Insert a table",
+    titleKey: "blockMenu.table",
+    descKey: "blockMenu.tableDesc",
     icon: <Table className="h-4 w-4" />,
     category: "media",
     // Table uses a size picker sub-view — insert is handled via subView state
@@ -294,8 +295,8 @@ const insertItems: InsertItem[] = [
   },
   // Advanced
   {
-    title: "Code Block",
-    description: "Create a code block",
+    titleKey: "blockMenu.codeBlock",
+    descKey: "blockMenu.codeBlockDesc",
     icon: <Code className="h-4 w-4" />,
     category: "advanced",
     shortcut: "Ctrl+Alt+C",
@@ -304,8 +305,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Math Block",
-    description: "Insert a block math equation",
+    titleKey: "blockMenu.mathBlock",
+    descKey: "blockMenu.mathBlockDesc",
     icon: <Sigma className="h-4 w-4" />,
     category: "advanced",
     insert: (editor, pos) => {
@@ -317,8 +318,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Inline Math",
-    description: "Insert inline math expression",
+    titleKey: "blockMenu.inlineMath",
+    descKey: "blockMenu.inlineMathDesc",
     icon: <span className="flex h-4 w-4 items-center justify-center font-serif text-sm">x²</span>,
     category: "advanced",
     insert: (editor, pos) => {
@@ -334,8 +335,8 @@ const insertItems: InsertItem[] = [
     },
   },
   {
-    title: "Mermaid Chart",
-    description: "Diagram or chart",
+    titleKey: "blockMenu.mermaidChart",
+    descKey: "blockMenu.mermaidChartDesc",
     icon: <GitBranch className="h-4 w-4" />,
     category: "advanced",
     insert: (editor, pos) => {
@@ -349,6 +350,7 @@ const insertItems: InsertItem[] = [
 ];
 
 export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: BlockInsertMenuProps) {
+  const t = useTranslations("editor");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [query, setQuery] = useState("");
   const [subView, setSubView] = useState<"table-size" | null>(null);
@@ -357,11 +359,16 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Filter items by query
+  type TKey = Parameters<typeof t>[0];
   const filteredItems = query
     ? insertItems.filter(
         (item) =>
-          item.title.toLowerCase().includes(query.toLowerCase()) ||
-          item.description.toLowerCase().includes(query.toLowerCase())
+          t(item.titleKey as TKey)
+            .toLowerCase()
+            .includes(query.toLowerCase()) ||
+          t(item.descKey as TKey)
+            .toLowerCase()
+            .includes(query.toLowerCase())
       )
     : insertItems;
 
@@ -550,10 +557,10 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
             onClick={() => setSubView(null)}
             className="mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50"
           >
-            ← Back
+            {t("blockMenu.back")}
           </button>
           <div className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Table Size
+            {t("blockMenu.tableSize")}
           </div>
           <TableSizePicker onSelect={handleTableSizeSelect} />
         </div>
@@ -561,18 +568,20 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
         /* Scrollable command list */
         <div ref={scrollRef} className="max-h-[320px] overflow-y-auto p-1">
           {filteredItems.length === 0 && (
-            <div className="px-3 py-2 text-sm text-muted-foreground">No results</div>
+            <div className="px-3 py-2 text-sm text-muted-foreground">
+              {t("blockMenu.noResults")}
+            </div>
           )}
 
           {groupedItems.map((group, groupIndex) => (
             <div key={group.category}>
               {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
               <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                {categoryLabels[group.category] ?? group.category}
+                {t(categoryLabelKeys[group.category] as TKey)}
               </div>
               {group.items.map(({ item, globalIndex }) => (
                 <button
-                  key={item.title}
+                  key={item.titleKey}
                   data-insert-item
                   type="button"
                   onClick={() => selectItem(globalIndex)}
@@ -589,8 +598,8 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
                     {item.icon}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{item.title}</p>
-                    <p className="text-xs text-muted-foreground">{item.description}</p>
+                    <p className="font-medium">{t(item.titleKey as TKey)}</p>
+                    <p className="text-xs text-muted-foreground">{t(item.descKey as TKey)}</p>
                   </div>
                   {item.shortcut && (
                     <span className="shrink-0 text-[10px] text-muted-foreground/60">
@@ -612,7 +621,7 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type to filter..."
+            placeholder={t("blockMenu.filterPlaceholder")}
             className="w-full bg-transparent text-xs text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none"
           />
         </div>

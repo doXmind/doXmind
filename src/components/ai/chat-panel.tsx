@@ -48,6 +48,7 @@ import { useDataFilePollingCleanup } from "@/hooks/use-data-file-polling-cleanup
 import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { haptics } from "@/lib/haptics";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
 import { useOnboardingStore } from "@/stores/onboarding-store";
@@ -56,21 +57,24 @@ interface ChatPanelProps {
   isDemoMode?: boolean;
 }
 
-const SUGGESTIONS = [
-  { label: "Write a report", prompt: "Help me write a report" },
-  { label: "Improve writing style", prompt: "Help me improve the writing style" },
-  { label: "Summarize document", prompt: "Summarize this document" },
-  { label: "Brainstorm ideas", prompt: "Help me brainstorm ideas" },
-];
-
-const ONBOARDING_SUGGESTIONS = [
-  { label: "Improve my writing", prompt: "Review and improve the current document" },
-  { label: "Summarize this", prompt: "Summarize the key points of this document" },
-  { label: "Continue writing", prompt: "Continue writing from where I left off" },
-  { label: "What can you do?", prompt: "What are all the things you can help me with?" },
-];
-
 export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
+  const t = useTranslations("chat");
+  const tc = useTranslations("common");
+
+  const SUGGESTIONS = [
+    { label: t("writeReport"), prompt: "Help me write a report" },
+    { label: t("improveStyle"), prompt: "Help me improve the writing style" },
+    { label: t("summarize"), prompt: "Summarize this document" },
+    { label: t("brainstorm"), prompt: "Help me brainstorm ideas" },
+  ];
+
+  const ONBOARDING_SUGGESTIONS = [
+    { label: t("improveWriting"), prompt: "Review and improve the current document" },
+    { label: t("summarizeThis"), prompt: "Summarize the key points of this document" },
+    { label: t("continueWriting"), prompt: "Continue writing from where I left off" },
+    { label: t("whatCanYouDo"), prompt: "What are all the things you can help me with?" },
+  ];
+
   const [input, setInput] = useState("");
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
@@ -346,17 +350,17 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     <div className="flex h-full flex-col" data-onboarding="chat-composer">
       {/* Header */}
       <PanelSubHeader className="chat-header-desktop hidden justify-between md:flex">
-        <span className="text-xs font-medium text-muted-foreground">AI Chat</span>
+        <span className="text-xs font-medium text-muted-foreground">{t("aiChat")}</span>
         <div className="flex items-center gap-0.5">
           {/* New chat / clear */}
-          <Tooltip content="New chat" side="bottom">
+          <Tooltip content={t("newChat")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
               onClick={handleClear}
               disabled={conversation.messages.length === 0}
               className="h-6 w-6 text-muted-foreground"
-              aria-label="New chat"
+              aria-label={t("newChat")}
             >
               <SquarePen className="h-3.5 w-3.5" />
             </Button>
@@ -366,8 +370,8 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
             <Tooltip
               content={
                 useLayoutStore.getState().chatMode === "sidebar"
-                  ? "Switch to floating"
-                  : "Switch to sidebar"
+                  ? t("switchToFloating")
+                  : t("switchToSidebar")
               }
               side="bottom"
             >
@@ -376,7 +380,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 text-muted-foreground"
-                  aria-label="Switch chat mode"
+                  aria-label={t("switchChatMode")}
                   onClick={(e) => {
                     e.preventDefault();
                     const store = useLayoutStore.getState();
@@ -398,14 +402,14 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
             <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
               <DropdownMenuItem onClick={() => useLayoutStore.getState().setChatMode("sidebar")}>
                 <PanelRight className="mr-2 h-3.5 w-3.5" />
-                Sidebar
+                {t("sidebarMode")}
                 {useLayoutStore.getState().chatMode === "sidebar" && (
                   <Check className="ml-auto h-3.5 w-3.5" />
                 )}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => useLayoutStore.getState().setChatMode("floating")}>
                 <AppWindow className="mr-2 h-3.5 w-3.5" />
-                Floating
+                {t("floatingMode")}
                 {useLayoutStore.getState().chatMode === "floating" && (
                   <Check className="ml-auto h-3.5 w-3.5" />
                 )}
@@ -413,13 +417,13 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
             </DropdownMenuContent>
           </DropdownMenu>
           {/* Close / minimize */}
-          <Tooltip content="Close" side="bottom">
+          <Tooltip content={tc("close")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => useLayoutStore.getState().toggleChat()}
               className="h-6 w-6 text-muted-foreground"
-              aria-label="Close AI Chat"
+              aria-label={t("closeAIChat")}
             >
               <Minus className="h-3.5 w-3.5" />
             </Button>
@@ -435,12 +439,12 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
         {isLoadingHistory ? (
           <div className="flex h-full flex-col items-center justify-center py-8 text-center">
             <Loader2 className="mb-4 h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading conversation history...</p>
+            <p className="text-sm text-muted-foreground">{t("loadingHistory")}</p>
           </div>
         ) : conversation.messages.length === 0 ? (
           <ChatEmptyState
-            greeting="How can I help?"
-            subtitle="Ask me to write, edit, or improve your document."
+            greeting={t("howCanIHelp")}
+            subtitle={t("askToEdit")}
             suggestions={chatSuggestions}
             onSelectSuggestion={setInput}
           />
@@ -523,7 +527,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
               {isTranscribing && (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-muted-foreground">Transcribing...</span>
+                  <span className="text-muted-foreground">{t("transcribing")}</span>
                 </>
               )}
               {recordingError && <span className="text-xs text-destructive">{recordingError}</span>}
@@ -560,7 +564,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
               >
                 <Mic className={cn("h-5 w-5", isRecording && "animate-pulse")} />
                 <span className="text-sm font-medium">
-                  {isRecording ? "Release to send" : "Hold to talk"}
+                  {isRecording ? t("releaseToSend") : t("holdToTalk")}
                 </span>
               </motion.button>
             )}
@@ -570,7 +574,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
               onClick={handleVoiceCancel}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {tc("cancel")}
             </button>
           </div>
         ) : (
@@ -580,7 +584,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
             onSubmit={handleSubmit}
             onStop={stopStreaming}
             isStreaming={isStreaming}
-            placeholder="Ask AI anything..."
+            placeholder={t("placeholder")}
             showHint
             onPaste={handlePaste}
             onDragEnter={handleDragEnter}
@@ -647,19 +651,16 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
         <ModalHeader onClose={() => setShowClearModal(false)}>
           <span className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            Clear conversation?
+            {t("clearConversation")}
           </span>
         </ModalHeader>
-        <p className="text-sm text-muted-foreground">
-          All messages in this conversation will be permanently deleted. This action cannot be
-          undone.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("clearConversationDesc")}</p>
         <ModalFooter>
           <Button variant="outline" onClick={() => setShowClearModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleClearConfirm}>
-            Clear
+            {t("clear")}
           </Button>
         </ModalFooter>
       </Modal>

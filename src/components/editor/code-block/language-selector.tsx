@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ interface LanguageSelectorProps {
 }
 
 export function LanguageSelector({ value, onChange }: LanguageSelectorProps) {
+  const t = useTranslations("editor");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
 
@@ -69,7 +71,7 @@ export function LanguageSelector({ value, onChange }: LanguageSelectorProps) {
           <div className="relative">
             <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search language..."
+              placeholder={t("searchLanguage")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 pl-8 text-xs"
@@ -96,14 +98,14 @@ export function LanguageSelector({ value, onChange }: LanguageSelectorProps) {
               ))
             ) : (
               <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                No languages found
+                {t("noLanguagesFound")}
               </div>
             )
           ) : (
             // Grouped view
             <>
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                Popular
+                {t("popularLanguages")}
               </DropdownMenuLabel>
               {popularLanguages.map((lang) => (
                 <DropdownMenuItem
@@ -118,7 +120,7 @@ export function LanguageSelector({ value, onChange }: LanguageSelectorProps) {
               <DropdownMenuSeparator />
 
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                All Languages
+                {t("allLanguages")}
               </DropdownMenuLabel>
               {otherLanguages.map((lang) => (
                 <DropdownMenuItem

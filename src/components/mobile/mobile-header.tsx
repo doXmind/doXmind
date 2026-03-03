@@ -8,6 +8,7 @@
  */
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { FolderOpen, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
 import { useThemeManager } from "@/hooks/use-theme-manager";
@@ -25,6 +26,7 @@ interface MoreMenuProps {
 }
 
 function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
+  const t = useTranslations("mobile");
   const { currentTheme, toggleBaseMode } = useThemeManager();
   const { toggleMobileOutline, setSearchBarOpen } = useLayoutStore();
 
@@ -76,7 +78,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
             <Moon className="h-5 w-5" />
           )}
           <span className="text-sm font-medium">
-            {currentTheme.baseMode === "dark" ? "Light Mode" : "Dark Mode"}
+            {currentTheme.baseMode === "dark" ? t("lightMode") : t("darkMode")}
           </span>
         </button>
 
@@ -88,7 +90,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
         >
           <ListTree className="h-5 w-5" />
-          <span className="text-sm font-medium">Document Outline</span>
+          <span className="text-sm font-medium">{t("documentOutline")}</span>
         </button>
 
         <div className="h-px bg-border" />
@@ -111,7 +113,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.3-4.3" />
           </svg>
-          <span className="text-sm font-medium">Find & Replace</span>
+          <span className="text-sm font-medium">{t("findReplace")}</span>
         </button>
       </div>
     </>
@@ -119,6 +121,7 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
 }
 
 export function MobileHeader() {
+  const t = useTranslations("mobile");
   const router = useRouter();
   const { setMobileSidebarOpen } = useLayoutStore();
   const { currentFileId } = useFileStore();
@@ -160,7 +163,7 @@ export function MobileHeader() {
               type="button"
               onClick={handleBackClick}
               className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-accent active:scale-95"
-              aria-label="Back to home"
+              aria-label={t("backToHome")}
             >
               <Logo variant="icon" size="sm" animated={false} />
             </button>
@@ -170,7 +173,7 @@ export function MobileHeader() {
               size="icon"
               onClick={handleFilesClick}
               className="h-10 w-10 rounded-full"
-              aria-label="Open files"
+              aria-label={t("openFiles")}
             >
               <FolderOpen className="h-5 w-5" />
             </Button>
@@ -189,7 +192,7 @@ export function MobileHeader() {
               size="icon"
               onClick={handleMoreClick}
               className={cn("h-10 w-10 rounded-full", isMoreMenuOpen && "bg-accent")}
-              aria-label="More options"
+              aria-label={t("moreOptions")}
             >
               <MoreHorizontal className="h-5 w-5" />
             </Button>

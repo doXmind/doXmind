@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { ChevronsUpDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ function getScrollContainer(): HTMLElement | null {
 }
 
 export function FloatingOutline() {
+  const t = useTranslations("mobile");
   const { editor } = useEditorRefStore();
   const { headings, activeId, navigateTo } = useHeadings(editor);
   const { isSelectionActive } = useBlockSelectionStore();
@@ -52,7 +54,7 @@ export function FloatingOutline() {
   const rafRef = useRef(0);
 
   const currentFile = files.find((f) => f.id === currentFileId);
-  const documentTitle = currentFile?.name || "Untitled";
+  const documentTitle = currentFile?.name || t("untitled");
 
   // Continuously poll scroll position to drive handle placement.
   useEffect(() => {
@@ -215,7 +217,7 @@ export function FloatingOutline() {
             "active:bg-accent"
           )}
           role="slider"
-          aria-label="Document scroll position"
+          aria-label={t("scrollPosition")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(
@@ -282,7 +284,7 @@ export function FloatingOutline() {
                       heading.level >= 3 && "pl-12"
                     )}
                   >
-                    <span className="line-clamp-1">{heading.text || "Untitled"}</span>
+                    <span className="line-clamp-1">{heading.text || t("untitled")}</span>
                   </button>
                 );
               })}

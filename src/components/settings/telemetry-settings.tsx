@@ -8,6 +8,7 @@
  */
 
 import { useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { BarChart3, MessageSquare, Sparkles, Zap } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useTelemetryStore } from "@/stores/telemetry-store";
@@ -44,6 +45,7 @@ function SettingRow({
 }
 
 export function TelemetrySettings() {
+  const t = useTranslations("settings");
   const {
     productImprovementEnabled,
     collectEditFeedback,
@@ -64,16 +66,14 @@ export function TelemetrySettings() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Control how your data is used to improve doXmind.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("controlData")}</p>
 
       <div className="space-y-1 rounded-lg border p-4">
         {/* Master toggle */}
         <SettingRow
           icon={<BarChart3 className="h-5 w-5" />}
-          title="Help improve doXmind"
-          description="Allow your interactions to be used for product improvement and AI training. Your data is never shared with third parties."
+          title={t("helpImprove")}
+          description={t("helpImproveDesc")}
           checked={productImprovementEnabled}
           onCheckedChange={setProductImprovementEnabled}
           disabled={isLoading}
@@ -87,8 +87,8 @@ export function TelemetrySettings() {
         >
           <SettingRow
             icon={<Sparkles className="h-5 w-5" />}
-            title="Edit suggestions feedback"
-            description="Track which AI editing suggestions you accept or reject"
+            title={t("editSuggestionsFeedback")}
+            description={t("editSuggestionsFeedbackDesc")}
             checked={collectEditFeedback}
             onCheckedChange={setCollectEditFeedback}
             disabled={!productImprovementEnabled || isLoading}
@@ -96,8 +96,8 @@ export function TelemetrySettings() {
 
           <SettingRow
             icon={<MessageSquare className="h-5 w-5" />}
-            title="Chat feedback"
-            description="Track your feedback on AI chat responses"
+            title={t("chatFeedback")}
+            description={t("chatFeedbackDesc")}
             checked={collectChatFeedback}
             onCheckedChange={setCollectChatFeedback}
             disabled={!productImprovementEnabled || isLoading}
@@ -105,8 +105,8 @@ export function TelemetrySettings() {
 
           <SettingRow
             icon={<Zap className="h-5 w-5" />}
-            title="Autocomplete usage"
-            description="Track which autocomplete suggestions you use"
+            title={t("autocompleteUsage")}
+            description={t("autocompleteUsageDesc")}
             checked={collectAutocompleteStats}
             onCheckedChange={setCollectAutocompleteStats}
             disabled={!productImprovementEnabled || isLoading}
@@ -115,10 +115,9 @@ export function TelemetrySettings() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Even when disabled, we may collect anonymous aggregate statistics (like total word count) to
-        improve our service. Learn more in our{" "}
+        {t("evenWhenDisabled")}{" "}
         <a href="/privacy" className="text-primary hover:underline">
-          Privacy Policy
+          {t("privacyPolicy")}
         </a>
         .
       </p>

@@ -11,12 +11,12 @@ import { createElement } from "react";
 
 export interface QuickEditSubmenuItem {
   id: string;
-  label: string;
+  labelKey: string;
 }
 
 export interface QuickEditOption {
   id: string;
-  label: string;
+  labelKey: string;
   icon: React.ReactNode;
   submenu?: QuickEditSubmenuItem[];
 }
@@ -28,51 +28,51 @@ export interface QuickEditOption {
 export const QUICK_EDIT_OPTIONS: QuickEditOption[] = [
   {
     id: "fix-grammar",
-    label: "Fix Grammar",
+    labelKey: "fixGrammar",
     icon: createElement(CheckCircle, { className: "h-4 w-4" }),
   },
   {
     id: "improve",
-    label: "Improve Writing",
+    labelKey: "improveWriting",
     icon: createElement(Sparkles, { className: "h-4 w-4" }),
   },
   {
     id: "simplify",
-    label: "Simplify",
+    labelKey: "simplify",
     icon: createElement(FileText, { className: "h-4 w-4" }),
   },
   {
     id: "expand",
-    label: "Make Longer",
+    labelKey: "makeLonger",
     icon: createElement(ArrowUp, { className: "h-4 w-4" }),
   },
   {
     id: "shorten",
-    label: "Make Shorter",
+    labelKey: "makeShorter",
     icon: createElement(ArrowDown, { className: "h-4 w-4" }),
   },
   {
     id: "tone",
-    label: "Change Tone",
+    labelKey: "changeTone",
     icon: createElement(MessageSquare, { className: "h-4 w-4" }),
     submenu: [
-      { id: "professional", label: "Professional" },
-      { id: "casual", label: "Casual" },
-      { id: "friendly", label: "Friendly" },
-      { id: "confident", label: "Confident" },
+      { id: "professional", labelKey: "professional" },
+      { id: "casual", labelKey: "casual" },
+      { id: "friendly", labelKey: "friendly" },
+      { id: "confident", labelKey: "confident" },
     ],
   },
   {
     id: "translate",
-    label: "Translate",
+    labelKey: "translate",
     icon: createElement(Languages, { className: "h-4 w-4" }),
     submenu: [
-      { id: "translate-en", label: "English" },
-      { id: "translate-zh", label: "Chinese" },
-      { id: "translate-es", label: "Spanish" },
-      { id: "translate-fr", label: "French" },
-      { id: "translate-de", label: "German" },
-      { id: "translate-ja", label: "Japanese" },
+      { id: "translate-en", labelKey: "english" },
+      { id: "translate-zh", labelKey: "chinese" },
+      { id: "translate-es", labelKey: "spanish" },
+      { id: "translate-fr", labelKey: "french" },
+      { id: "translate-de", labelKey: "german" },
+      { id: "translate-ja", labelKey: "japanese" },
     ],
   },
 ];

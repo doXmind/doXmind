@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import { ArrowUp, ArrowDown, Copy, Trash2, Eraser, TableProperties } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import { focusCellAt, duplicateRow, clearRow, isHeaderRowActive } from "@/lib/table-operations";
 
 interface TableRowMenuProps {
@@ -24,6 +25,7 @@ export function TableRowMenu({
   rowCount,
   onClose,
 }: TableRowMenuProps) {
+  const t = useTranslations("editor");
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -106,16 +108,16 @@ export function TableRowMenu({
       )}
       style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
       role="menu"
-      aria-label="Row actions"
+      aria-label={t("tableMenu.rowActions")}
     >
       <MenuItem
         icon={<ArrowUp className="h-3.5 w-3.5" />}
-        label="Insert Above"
+        label={t("tableMenu.insertAbove")}
         onClick={handleInsertAbove}
       />
       <MenuItem
         icon={<ArrowDown className="h-3.5 w-3.5" />}
-        label="Insert Below"
+        label={t("tableMenu.insertBelow")}
         onClick={handleInsertBelow}
       />
 
@@ -123,7 +125,7 @@ export function TableRowMenu({
 
       <MenuItem
         icon={<TableProperties className="h-3.5 w-3.5" />}
-        label="Header Row"
+        label={t("tableMenu.headerRow")}
         onClick={handleToggleHeader}
         active={isHeaderRow}
       />
@@ -132,12 +134,12 @@ export function TableRowMenu({
 
       <MenuItem
         icon={<Copy className="h-3.5 w-3.5" />}
-        label="Duplicate"
+        label={t("tableMenu.duplicate")}
         onClick={handleDuplicate}
       />
       <MenuItem
         icon={<Eraser className="h-3.5 w-3.5" />}
-        label="Clear Contents"
+        label={t("tableMenu.clearContents")}
         onClick={handleClear}
       />
 
@@ -145,7 +147,7 @@ export function TableRowMenu({
 
       <MenuItem
         icon={<Trash2 className="h-3.5 w-3.5" />}
-        label="Delete Row"
+        label={t("tableMenu.deleteRow")}
         onClick={handleDelete}
         disabled={!canDelete}
         destructive

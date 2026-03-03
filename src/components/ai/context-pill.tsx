@@ -2,6 +2,7 @@
 
 import { useState, memo } from "react";
 import { ChevronDown, ChevronRight, X, FileText, ImageIcon, Copy, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { ChatContextItem } from "@/stores/chat-context-store";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,8 @@ export const ContextPill = memo(function ContextPill({
   onDelete,
   showActions,
 }: ContextPillProps) {
+  const t = useTranslations("chat");
+  const tc = useTranslations("common");
   const [isExpanded, setIsExpanded] = useState(true);
 
   const isImage = context.type === "image";
@@ -31,10 +34,10 @@ export const ContextPill = memo(function ContextPill({
   const isEmptySelection = isSelection && !context.text.trim();
   const Icon = isImage ? ImageIcon : FileText;
   const label = isImage
-    ? `Image${context.alt ? `: ${context.alt}` : ""}`
+    ? `${t("imageContext")}${context.alt ? `: ${context.alt}` : ""}`
     : isEmptySelection
-      ? "Empty block"
-      : `Selected Text (${context.text.length} chars)`;
+      ? t("emptyBlock")
+      : t("selectedTextChars", { count: context.text.length });
 
   // Show action buttons for selection contexts when showActions is true
   const shouldShowActions = showActions && isSelection;
@@ -67,7 +70,7 @@ export const ContextPill = memo(function ContextPill({
                   "flex-shrink-0 rounded p-1.5 transition-colors",
                   "bg-primary/10 text-primary hover:bg-primary/20"
                 )}
-                title="Copy"
+                title={tc("copy")}
               >
                 <Copy className="h-3.5 w-3.5" />
               </button>
@@ -80,7 +83,7 @@ export const ContextPill = memo(function ContextPill({
                   "flex-shrink-0 rounded p-1.5 transition-colors",
                   "bg-destructive/10 text-destructive hover:bg-destructive/20"
                 )}
-                title="Delete"
+                title={tc("delete")}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -92,7 +95,7 @@ export const ContextPill = memo(function ContextPill({
           type="button"
           onClick={onRemove}
           className="flex-shrink-0 rounded p-1 transition-colors hover:bg-accent"
-          title="Remove context"
+          title={t("removeContext")}
         >
           <X className="h-3 w-3 text-muted-foreground" />
         </button>

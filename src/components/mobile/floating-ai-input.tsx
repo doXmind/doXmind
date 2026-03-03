@@ -12,6 +12,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Send, Mic, Loader2, MessageCircle, X, AudioLines } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ interface FloatingAIInputProps {
 }
 
 export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
+  const t = useTranslations("mobile");
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -140,12 +142,12 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
   const currentImageCount = chatContexts.filter((c) => c.type === "image").length;
 
   const getPlaceholder = () => {
-    if (isStreaming) return "AI is thinking...";
-    if (isRecording) return "Listening...";
-    if (isTranscribing) return "Transcribing...";
-    if (hasSelection) return "Edit selected text...";
-    if (hasContexts) return "Ask about attached content...";
-    return "Ask AI anything...";
+    if (isStreaming) return t("aiIsThinking");
+    if (isRecording) return t("listening");
+    if (isTranscribing) return t("transcribing");
+    if (hasSelection) return t("editSelectedText");
+    if (hasContexts) return t("askAboutAttached");
+    return t("askAIAnything");
   };
 
   // Process image file and add to context

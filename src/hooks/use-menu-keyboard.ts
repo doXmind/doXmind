@@ -22,7 +22,7 @@ interface UseMenuKeyboardOptions {
   /** Set submenu focused index */
   setSubmenuFocusedIndex: (index: number | ((prev: number) => number)) => void;
   /** Get submenu items for active option */
-  getSubmenuItems: (activeSubmenu: string) => { id: string; label: string }[];
+  getSubmenuItems: (activeSubmenu: string) => { id: string }[];
   /** Callback to select a main menu item */
   onSelectItem: (index: number) => void;
   /** Callback to select a submenu item */

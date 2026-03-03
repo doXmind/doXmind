@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -125,6 +126,7 @@ function Divider() {
 }
 
 export function MobileFormattingToolbar() {
+  const t = useTranslations("mobile");
   const { editor } = useEditorRefStore();
   const { setMobileBlockInsertOpen } = useLayoutStore();
   const { isVisible: isKeyboardVisible, keyboardHeight } = useKeyboardState();
@@ -346,7 +348,7 @@ export function MobileFormattingToolbar() {
                   <ToolbarButton
                     icon={<Plus className="h-5 w-5" />}
                     onPress={handleBlockInsert}
-                    label="Insert block"
+                    label={t("insertBlock")}
                   />
 
                   <Divider />
@@ -358,7 +360,7 @@ export function MobileFormattingToolbar() {
                       setShowTurnInto(!showTurnInto);
                     }}
                     isActive={showTurnInto}
-                    label="Turn into"
+                    label={t("turnInto")}
                     className="w-auto min-w-[40px] gap-0.5 px-1.5"
                   >
                     <span className="text-xs font-semibold">{getCurrentBlockLabel(editor)}</span>
@@ -370,25 +372,25 @@ export function MobileFormattingToolbar() {
                     icon={<Bold className="h-4.5 w-4.5" />}
                     isActive={editor.isActive("bold")}
                     onPress={() => editor.chain().focus().toggleBold().run()}
-                    label="Bold"
+                    label={t("bold")}
                   />
                   <ToolbarButton
                     icon={<Italic className="h-4.5 w-4.5" />}
                     isActive={editor.isActive("italic")}
                     onPress={() => editor.chain().focus().toggleItalic().run()}
-                    label="Italic"
+                    label={t("italic")}
                   />
                   <ToolbarButton
                     icon={<Underline className="h-4.5 w-4.5" />}
                     isActive={editor.isActive("underline")}
                     onPress={() => editor.chain().focus().toggleUnderline().run()}
-                    label="Underline"
+                    label={t("underline")}
                   />
                   <ToolbarButton
                     icon={<Strikethrough className="h-4.5 w-4.5" />}
                     isActive={editor.isActive("strike")}
                     onPress={() => editor.chain().focus().toggleStrike().run()}
-                    label="Strikethrough"
+                    label={t("strikethrough")}
                   />
 
                   <Divider />
@@ -398,7 +400,7 @@ export function MobileFormattingToolbar() {
                     icon={<LinkIcon className="h-4.5 w-4.5" />}
                     isActive={editor.isActive("link")}
                     onPress={() => setShowLinkModal(true)}
-                    label="Link"
+                    label={t("link")}
                   />
 
                   {/* Color */}
@@ -408,7 +410,7 @@ export function MobileFormattingToolbar() {
                       setShowColorPicker(!showColorPicker);
                     }}
                     isActive={showColorPicker}
-                    label="Color"
+                    label={t("color")}
                   >
                     <div className="flex flex-col items-center">
                       <span
@@ -435,13 +437,13 @@ export function MobileFormattingToolbar() {
                     icon={<Outdent className="h-4.5 w-4.5" />}
                     isDisabled={!isInList}
                     onPress={() => editor.chain().focus().liftListItem("listItem").run()}
-                    label="Outdent"
+                    label={t("outdent")}
                   />
                   <ToolbarButton
                     icon={<Indent className="h-4.5 w-4.5" />}
                     isDisabled={!isInList}
                     onPress={() => editor.chain().focus().sinkListItem("listItem").run()}
-                    label="Indent"
+                    label={t("indent")}
                   />
 
                   <Divider />
@@ -451,13 +453,13 @@ export function MobileFormattingToolbar() {
                     icon={<Undo2 className="h-4.5 w-4.5" />}
                     isDisabled={!editor.can().undo()}
                     onPress={() => editor.chain().focus().undo().run()}
-                    label="Undo"
+                    label={t("undo")}
                   />
                   <ToolbarButton
                     icon={<Redo2 className="h-4.5 w-4.5" />}
                     isDisabled={!editor.can().redo()}
                     onPress={() => editor.chain().focus().redo().run()}
-                    label="Redo"
+                    label={t("redo")}
                   />
 
                   {/* AI Edit - shown when text is selected */}
@@ -467,7 +469,7 @@ export function MobileFormattingToolbar() {
                       <ToolbarButton
                         icon={<Sparkles className="h-4.5 w-4.5" />}
                         onPress={handleAIEdit}
-                        label="AI Edit"
+                        label={t("aiEdit")}
                         className="text-primary"
                       />
                     </>
@@ -479,7 +481,7 @@ export function MobileFormattingToolbar() {
                   <ToolbarButton
                     icon={<KeyboardOff className="h-4.5 w-4.5" />}
                     onPress={handleDismissKeyboard}
-                    label="Dismiss keyboard"
+                    label={t("dismissKeyboard")}
                   />
                 </div>
               </div>

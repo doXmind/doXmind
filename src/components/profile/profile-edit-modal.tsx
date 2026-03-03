@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth-store";
@@ -14,6 +15,8 @@ interface ProfileEditModalProps {
 }
 
 export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
+  const t = useTranslations("profile");
+  const tc = useTranslations("common");
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
 
@@ -41,10 +44,10 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
       });
 
       setUser(updatedUser);
-      toast.success("Profile updated!");
+      toast.success(t("profileUpdated"));
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update profile");
+      toast.error(err instanceof Error ? err.message : t("failedToUpdateProfile"));
     } finally {
       setIsSaving(false);
     }
@@ -52,23 +55,23 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
 
   return (
     <Modal open={open} onClose={onClose}>
-      <ModalHeader onClose={onClose}>Edit Profile</ModalHeader>
+      <ModalHeader onClose={onClose}>{t("editProfile")}</ModalHeader>
 
       <div className="space-y-5 py-2">
-        <FieldGroup label="Username">
+        <FieldGroup label={t("username")}>
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="Your username"
+            placeholder={t("usernamePlaceholder")}
             className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/10"
           />
         </FieldGroup>
 
-        <FieldGroup label="Bio">
+        <FieldGroup label={t("bio")}>
           <textarea
             value={bio}
             onChange={(e) => setBio(e.target.value)}
-            placeholder="Tell us about yourself..."
+            placeholder={t("bioPlaceholder")}
             rows={3}
             maxLength={500}
             className="w-full resize-none rounded-lg border border-border/60 bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/10"
@@ -76,30 +79,30 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
           <p className="mt-1 text-right text-[11px] text-muted-foreground/50">{bio.length}/500</p>
         </FieldGroup>
 
-        <FieldGroup label="Website">
+        <FieldGroup label={t("website")}>
           <input
             value={website}
             onChange={(e) => setWebsite(e.target.value)}
-            placeholder="https://example.com"
+            placeholder={t("websitePlaceholder")}
             className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/10"
           />
         </FieldGroup>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FieldGroup label="GitHub">
+          <FieldGroup label={t("github")}>
             <input
               value={github}
               onChange={(e) => setGithub(e.target.value)}
-              placeholder="username"
+              placeholder={t("usernamePlaceholder")}
               className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/10"
             />
           </FieldGroup>
 
-          <FieldGroup label="Twitter">
+          <FieldGroup label={t("twitter")}>
             <input
               value={twitter}
               onChange={(e) => setTwitter(e.target.value)}
-              placeholder="username"
+              placeholder={t("usernamePlaceholder")}
               className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/10"
             />
           </FieldGroup>
@@ -111,7 +114,7 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
           onClick={onClose}
           className="rounded-lg px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          Cancel
+          {tc("cancel")}
         </button>
         <Button
           onClick={handleSave}
@@ -119,7 +122,7 @@ export function ProfileEditModal({ open, onClose }: ProfileEditModalProps) {
           className="h-9 rounded-lg px-5 text-[13px]"
         >
           {isSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-          Save Changes
+          {t("saveChanges")}
         </Button>
       </ModalFooter>
     </Modal>

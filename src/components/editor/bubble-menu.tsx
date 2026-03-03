@@ -32,7 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+import { cn, formatShortcut } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { isDiffReviewActive } from "@/extensions/diff-review";
 import { useStreamingStore } from "@/stores/streaming-store";
@@ -43,6 +43,7 @@ import { ColorPicker } from "./color-picker";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
 import { useChatContextStore } from "@/stores/chat-context-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useTranslations } from "next-intl";
 
 /** Map icon names to components for the Turn Into dropdown */
 const turnIntoIconMap: Record<string, React.ReactNode> = {
@@ -98,6 +99,7 @@ function getSelectionRect(): DOMRect | null {
 }
 
 export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentProps) {
+  const t = useTranslations("editor");
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const { openQuickEdit, selection } = useEditorStore();
   const { addChatContext } = useChatContextStore();
@@ -156,8 +158,9 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
 
     // Also listen for mouseup to catch selections that may not trigger selectionUpdate
     const handleMouseUp = () => {
-      // Short delay to let the selection settle
-      setTimeout(updateMenu, 50);
+      // Share the same debounce timer to avoid double-firing with selectionUpdate
+      if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = setTimeout(updateMenu, 100);
     };
 
     editor.on("selectionUpdate", handleSelectionUpdate);
@@ -244,7 +247,9 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
               className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
             >
               <Wand2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-              <span className="hidden text-sm font-medium md:inline">inline improve</span>
+              <span className="hidden text-sm font-medium md:inline">
+                {t("bubbleMenu.inlineImprove")}
+              </span>
             </button>
 
             {/* Ask AI button */}
@@ -254,7 +259,9 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
               className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
             >
               <AiLogoIcon className="h-4 w-4" />
-              <span className="hidden text-sm font-medium md:inline">ask ai in chat</span>
+              <span className="hidden text-sm font-medium md:inline">
+                {t("bubbleMenu.askAIInChat")}
+              </span>
             </button>
 
             {/* Divider */}
@@ -264,7 +271,7 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
             {!isMobile && (
               <>
                 <DropdownMenu>
-                  <Tooltip content="Turn into" side="top">
+                  <Tooltip content={t("bubbleMenu.turnInto")} side="top">
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
@@ -300,19 +307,19 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
               icon={<Bold className="h-4 w-4" />}
               onClick={() => editor.chain().focus().toggleBold().run()}
               isActive={editor.isActive("bold")}
-              tooltip="Bold (Ctrl+B)"
+              tooltip={t("bubbleMenu.boldTooltip", { shortcut: formatShortcut("Ctrl+B") })}
             />
             <BubbleButton
               icon={<Italic className="h-4 w-4" />}
               onClick={() => editor.chain().focus().toggleItalic().run()}
               isActive={editor.isActive("italic")}
-              tooltip="Italic (Ctrl+I)"
+              tooltip={t("bubbleMenu.italicTooltip", { shortcut: formatShortcut("Ctrl+I") })}
             />
             <BubbleButton
               icon={<Underline className="h-4 w-4" />}
               onClick={() => editor.chain().focus().toggleUnderline().run()}
               isActive={editor.isActive("underline")}
-              tooltip="Underline (Ctrl+U)"
+              tooltip={t("bubbleMenu.underlineTooltip", { shortcut: formatShortcut("Ctrl+U") })}
             />
 
             {/* Strikethrough, Code, Color - desktop only */}
@@ -322,13 +329,13 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
                   icon={<Strikethrough className="h-4 w-4" />}
                   onClick={() => editor.chain().focus().toggleStrike().run()}
                   isActive={editor.isActive("strike")}
-                  tooltip="Strikethrough"
+                  tooltip={t("bubbleMenu.strikethroughTooltip")}
                 />
                 <BubbleButton
                   icon={<Code className="h-4 w-4" />}
                   onClick={() => editor.chain().focus().toggleCode().run()}
                   isActive={editor.isActive("code")}
-                  tooltip="Inline Code (Ctrl+E)"
+                  tooltip={t("bubbleMenu.codeTooltip", { shortcut: formatShortcut("Ctrl+E") })}
                 />
                 {/* Color dropdown (replaces standalone Highlight button) */}
                 <ColorDropdown editor={editor} onColorChange={handleColorChange} />
@@ -339,7 +346,7 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
               icon={<LinkIcon className="h-4 w-4" />}
               onClick={() => setLinkModalOpen(true)}
               isActive={editor.isActive("link")}
-              tooltip="Add Link (Ctrl+K)"
+              tooltip={t("bubbleMenu.linkTooltip", { shortcut: formatShortcut("Ctrl+K") })}
             />
           </div>
         </div>
@@ -366,12 +373,13 @@ function ColorDropdown({
   editor: Editor;
   onColorChange: (color: string, type: "text" | "background") => void;
 }) {
+  const t = useTranslations("editor");
   const { textColor, backgroundColor } = getSelectionColors(editor);
   const hasColor = !!textColor || !!backgroundColor;
 
   return (
     <DropdownMenu>
-      <Tooltip content="Color" side="top">
+      <Tooltip content={t("bubbleMenu.color")} side="top">
         <DropdownMenuTrigger asChild>
           <button
             type="button"

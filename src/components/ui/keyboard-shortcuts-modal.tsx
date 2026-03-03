@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Keyboard } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Modal, ModalHeader } from "./modal";
 import { cn } from "@/lib/utils";
 
@@ -11,60 +12,60 @@ interface KeyboardShortcutsModalProps {
 }
 
 interface ShortcutGroup {
-  title: string;
+  titleKey: string;
   shortcuts: {
     keys: string[];
-    description: string;
+    descriptionKey: string;
   }[];
 }
 
 const shortcutGroups: ShortcutGroup[] = [
   {
-    title: "Text Formatting",
+    titleKey: "textFormatting",
     shortcuts: [
-      { keys: ["Ctrl", "B"], description: "Bold" },
-      { keys: ["Ctrl", "I"], description: "Italic" },
-      { keys: ["Ctrl", "U"], description: "Underline" },
-      { keys: ["Ctrl", "Shift", "S"], description: "Strikethrough" },
-      { keys: ["Ctrl", "E"], description: "Inline code" },
-      { keys: ["Ctrl", "Shift", "H"], description: "Highlight" },
-      { keys: ["Ctrl", "K"], description: "Add link" },
+      { keys: ["Ctrl", "B"], descriptionKey: "bold" },
+      { keys: ["Ctrl", "I"], descriptionKey: "italic" },
+      { keys: ["Ctrl", "U"], descriptionKey: "underline" },
+      { keys: ["Ctrl", "Shift", "S"], descriptionKey: "strikethrough" },
+      { keys: ["Ctrl", "E"], descriptionKey: "inlineCode" },
+      { keys: ["Ctrl", "Shift", "H"], descriptionKey: "highlight" },
+      { keys: ["Ctrl", "K"], descriptionKey: "addLink" },
     ],
   },
   {
-    title: "Headings & Blocks",
+    titleKey: "headingsBlocks",
     shortcuts: [
-      { keys: ["Ctrl", "Alt", "1"], description: "Heading 1" },
-      { keys: ["Ctrl", "Alt", "2"], description: "Heading 2" },
-      { keys: ["Ctrl", "Alt", "3"], description: "Heading 3" },
-      { keys: ["Ctrl", "Shift", "8"], description: "Bullet list" },
-      { keys: ["Ctrl", "Shift", "7"], description: "Numbered list" },
-      { keys: ["Ctrl", "Shift", "9"], description: "Task list" },
+      { keys: ["Ctrl", "Alt", "1"], descriptionKey: "heading1" },
+      { keys: ["Ctrl", "Alt", "2"], descriptionKey: "heading2" },
+      { keys: ["Ctrl", "Alt", "3"], descriptionKey: "heading3" },
+      { keys: ["Ctrl", "Shift", "8"], descriptionKey: "bulletList" },
+      { keys: ["Ctrl", "Shift", "7"], descriptionKey: "numberedList" },
+      { keys: ["Ctrl", "Shift", "9"], descriptionKey: "taskList" },
     ],
   },
   {
-    title: "Navigation & View",
+    titleKey: "navigationView",
     shortcuts: [
-      { keys: ["Ctrl", "K"], description: "Command palette" },
-      { keys: ["Ctrl", "F"], description: "Find in document" },
-      { keys: ["Ctrl", "Shift", "O"], description: "Toggle outline" },
-      { keys: ["Ctrl", "?"], description: "Keyboard shortcuts" },
+      { keys: ["Ctrl", "K"], descriptionKey: "commandPalette" },
+      { keys: ["Ctrl", "F"], descriptionKey: "findInDocument" },
+      { keys: ["Ctrl", "Shift", "O"], descriptionKey: "toggleOutline" },
+      { keys: ["Ctrl", "?"], descriptionKey: "keyboardShortcuts" },
     ],
   },
   {
-    title: "Editing",
+    titleKey: "editing",
     shortcuts: [
-      { keys: ["Ctrl", "Z"], description: "Undo" },
-      { keys: ["Ctrl", "Y"], description: "Redo" },
-      { keys: ["Alt", "/"], description: "Trigger AI autocomplete" },
+      { keys: ["Ctrl", "Z"], descriptionKey: "undoAction" },
+      { keys: ["Ctrl", "Y"], descriptionKey: "redoAction" },
+      { keys: ["Alt", "/"], descriptionKey: "triggerAutocomplete" },
     ],
   },
   {
-    title: "AI Features",
+    titleKey: "aiFeatures",
     shortcuts: [
-      { keys: ["Select text"], description: "Show AI quick edit menu" },
-      { keys: ["Enter"], description: "Send message in chat" },
-      { keys: ["Shift", "Enter"], description: "New line in chat" },
+      { keys: ["Select text"], descriptionKey: "showQuickEdit" },
+      { keys: ["Enter"], descriptionKey: "sendInChat" },
+      { keys: ["Shift", "Enter"], descriptionKey: "newLineInChat" },
     ],
   },
 ];
@@ -87,6 +88,7 @@ function KeyboardKey({ children }: { children: React.ReactNode }) {
 }
 
 export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModalProps) {
+  const t = useTranslations("shortcuts");
   // Detect if user is on macOS
   const [isMac, setIsMac] = React.useState(false);
 
@@ -111,19 +113,21 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
       <ModalHeader onClose={onClose}>
         <div className="flex items-center gap-2">
           <Keyboard className="h-5 w-5" />
-          <span>Keyboard Shortcuts</span>
+          <span>{t("keyboardShortcuts")}</span>
         </div>
       </ModalHeader>
 
       <div className="-mx-6 flex-1 overflow-y-auto px-6 pb-2">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {shortcutGroups.map((group) => (
-            <div key={group.title}>
-              <h3 className="mb-3 text-sm font-semibold text-muted-foreground">{group.title}</h3>
+            <div key={group.titleKey}>
+              <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+                {t(group.titleKey)}
+              </h3>
               <div className="space-y-2">
                 {group.shortcuts.map((shortcut, index) => (
                   <div key={index} className="flex items-center justify-between py-1">
-                    <span className="text-sm">{shortcut.description}</span>
+                    <span className="text-sm">{t(shortcut.descriptionKey)}</span>
                     <div className="flex items-center gap-1">
                       {shortcut.keys.map((key, keyIndex) => (
                         <React.Fragment key={keyIndex}>

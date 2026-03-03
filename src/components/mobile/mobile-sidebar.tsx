@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { X, ChevronLeft } from "lucide-react";
 import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ const SIDEBAR_WIDTH = 300; // Sidebar width in pixels
 const DRAG_CLOSE_THRESHOLD = 100; // Pixels dragged to trigger close
 
 export function MobileSidebar() {
+  const t = useTranslations("mobile");
   const { isMobileSidebarOpen, setMobileSidebarOpen } = useLayoutStore();
   const { currentFolderId, getFile, setCurrentFolder } = useFileStore();
   const dragControls = useDragControls();
@@ -94,13 +96,13 @@ export function MobileSidebar() {
                     size="icon"
                     onClick={() => setCurrentFolder(null)}
                     className="h-8 w-8 flex-shrink-0"
-                    aria-label="Back to all files"
+                    aria-label={t("backToAllFiles")}
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                 )}
                 <h3 className="truncate text-base font-semibold">
-                  {currentFolder ? currentFolder.name : "Files"}
+                  {currentFolder ? currentFolder.name : t("files")}
                 </h3>
               </div>
               <Button
@@ -108,7 +110,7 @@ export function MobileSidebar() {
                 size="icon"
                 onClick={handleClose}
                 className="h-10 w-10 flex-shrink-0"
-                aria-label="Close sidebar"
+                aria-label={t("closeSidebar")}
               >
                 <X className="h-5 w-5" />
               </Button>

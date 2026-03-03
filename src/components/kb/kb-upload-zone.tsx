@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Upload, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,23 +23,27 @@ const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".pptx"];
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
 export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps) {
+  const t = useTranslations("kb");
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const validateFile = useCallback((file: File): string | null => {
-    // Check file type
-    const extension = "." + file.name.split(".").pop()?.toLowerCase();
-    if (!ALLOWED_EXTENSIONS.includes(extension) && !ALLOWED_TYPES.includes(file.type)) {
-      return `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}`;
-    }
+  const validateFile = useCallback(
+    (file: File): string | null => {
+      // Check file type
+      const extension = "." + file.name.split(".").pop()?.toLowerCase();
+      if (!ALLOWED_EXTENSIONS.includes(extension) && !ALLOWED_TYPES.includes(file.type)) {
+        return t("unsupportedFileType", { formats: ALLOWED_EXTENSIONS.join(", ") });
+      }
 
-    // Check file size
-    if (file.size > MAX_SIZE) {
-      return `File too large. Maximum size: ${MAX_SIZE / (1024 * 1024)}MB`;
-    }
+      // Check file size
+      if (file.size > MAX_SIZE) {
+        return t("fileTooLarge", { size: String(MAX_SIZE / (1024 * 1024)) });
+      }
 
-    return null;
-  }, []);
+      return null;
+    },
+    [t]
+  );
 
   const handleFiles = useCallback(
     async (files: FileList | null) => {
@@ -65,12 +70,12 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
       try {
         await onUpload(validFiles);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Upload failed";
+        const message = err instanceof Error ? err.message : t("uploadFailed");
         setError(message);
         toast.error(message);
       }
     },
-    [onUpload, validateFile]
+    [onUpload, validateFile, t]
   );
 
   const handleDragOver = useCallback(
@@ -130,7 +135,7 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
         disabled={disabled}
       >
         <Plus className="h-4 w-4" />
-        Add files
+        {t("addFiles")}
       </Button>
     );
   }
@@ -158,10 +163,10 @@ export function KBUploadZone({ onUpload, disabled, compact }: KBUploadZoneProps)
             )}
           />
           <div className="text-sm">
-            <span className="font-medium text-primary">Click to upload</span>
-            <span className="text-muted-foreground"> or drag and drop</span>
+            <span className="font-medium text-primary">{t("clickToUpload")}</span>
+            <span className="text-muted-foreground"> {t("orDragAndDrop")}</span>
           </div>
-          <p className="text-xs text-muted-foreground">PDF, DOCX, PPTX (max 50MB)</p>
+          <p className="text-xs text-muted-foreground">{t("allowedFormats")}</p>
         </div>
       </div>
 

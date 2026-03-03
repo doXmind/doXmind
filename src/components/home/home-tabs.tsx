@@ -3,21 +3,24 @@
 import { FileText, Users, Link2, GitFork, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useTranslations } from "next-intl";
 
 type HomeTab = "documents" | "shared" | "shares" | "forks" | "bookmarks";
 
+type TabLabelKey = "documentsTab" | "sharedWithMeTab" | "myLinksTab" | "forksTab" | "savedTab";
+
 interface TabDef {
   id: HomeTab;
-  label: string;
+  labelKey: TabLabelKey;
   icon: typeof FileText;
 }
 
 const TABS: TabDef[] = [
-  { id: "documents", label: "Documents", icon: FileText },
-  { id: "shared", label: "Shared with me", icon: Users },
-  { id: "shares", label: "My Links", icon: Link2 },
-  { id: "forks", label: "Forks", icon: GitFork },
-  { id: "bookmarks", label: "Saved", icon: Bookmark },
+  { id: "documents", labelKey: "documentsTab", icon: FileText },
+  { id: "shared", labelKey: "sharedWithMeTab", icon: Users },
+  { id: "shares", labelKey: "myLinksTab", icon: Link2 },
+  { id: "forks", labelKey: "forksTab", icon: GitFork },
+  { id: "bookmarks", labelKey: "savedTab", icon: Bookmark },
 ];
 
 interface HomeTabsProps {
@@ -25,6 +28,7 @@ interface HomeTabsProps {
 }
 
 export function HomeTabs({ counts }: HomeTabsProps) {
+  const t = useTranslations("home");
   const activeTab = useLayoutStore((s) => s.homeActiveTab);
   const setActiveTab = useLayoutStore((s) => s.setHomeActiveTab);
 
@@ -47,7 +51,7 @@ export function HomeTabs({ counts }: HomeTabsProps) {
               )}
             >
               <Icon className="h-3.5 w-3.5" />
-              {tab.label}
+              {t(tab.labelKey)}
               <span
                 className={cn(
                   "ml-0.5 tabular-nums",
@@ -78,7 +82,7 @@ export function HomeTabs({ counts }: HomeTabsProps) {
               )}
             >
               <Icon className="h-3.5 w-3.5" />
-              {tab.label}
+              {t(tab.labelKey)}
               <span
                 className={cn(
                   "tabular-nums",

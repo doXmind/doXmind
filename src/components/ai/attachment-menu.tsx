@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { useKBStore, formatFileSize } from "@/stores/kb-store";
 import { useDataFilesStore, isKBFile, isDataFile } from "@/stores/data-files-store";
@@ -49,6 +50,7 @@ export function AttachmentMenu({
   disabled,
   className,
 }: AttachmentMenuProps) {
+  const t = useTranslations("chat");
   const [isOpen, setIsOpen] = useState(false);
   const [view, setView] = useState<MenuView>("main");
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -131,10 +133,10 @@ export function AttachmentMenu({
   const validateFile = (file: File): string | null => {
     const extension = "." + file.name.split(".").pop()?.toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(extension)) {
-      return `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}`;
+      return t("unsupportedFileType", { formats: ALLOWED_EXTENSIONS.join(", ") });
     }
     if (file.size > MAX_FILE_SIZE) {
-      return `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`;
+      return t("fileTooLargeMessage", { size: MAX_FILE_SIZE / (1024 * 1024) });
     }
     return null;
   };
@@ -269,7 +271,7 @@ export function AttachmentMenu({
               className
             )}
             disabled={disabled}
-            aria-label="Add attachment"
+            aria-label={t("addAttachment")}
           >
             <Plus className="h-4 w-4" />
             {totalIndicator > 0 && (
@@ -302,8 +304,8 @@ export function AttachmentMenu({
                   <Globe className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Web Search</div>
-                  <div className="text-xs text-muted-foreground">Find real-time news and info</div>
+                  <div className="text-sm font-medium">{t("webSearchOption")}</div>
+                  <div className="text-xs text-muted-foreground">{t("findRealtimeInfo")}</div>
                 </div>
                 {webSearchEnabled && <Check className="h-4 w-4 text-blue-500" />}
               </button>
@@ -322,11 +324,11 @@ export function AttachmentMenu({
                   <ImageIcon className="h-4 w-4 text-green-500" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Attach Image</div>
+                  <div className="text-sm font-medium">{t("attachImageOption")}</div>
                   <div className="text-xs text-muted-foreground">
                     {imageCount >= maxImages
-                      ? `Max ${maxImages} images reached`
-                      : "Paste or select images"}
+                      ? t("maxImagesReached", { count: maxImages })
+                      : t("pasteOrSelectImages")}
                   </div>
                 </div>
                 {imageCount > 0 && (
@@ -350,8 +352,8 @@ export function AttachmentMenu({
                   <FileText className="h-4 w-4 text-orange-500" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Upload Files</div>
-                  <div className="text-xs text-muted-foreground">PDF, DOCX, CSV, Excel, etc.</div>
+                  <div className="text-sm font-medium">{t("uploadFilesOption")}</div>
+                  <div className="text-xs text-muted-foreground">{t("pdfDocxCsvEtc")}</div>
                 </div>
               </button>
 
@@ -369,8 +371,8 @@ export function AttachmentMenu({
                   <FolderOpen className="h-4 w-4 text-purple-500" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Uploaded Files</div>
-                  <div className="text-xs text-muted-foreground">Manage your files</div>
+                  <div className="text-sm font-medium">{t("uploadedFilesOption")}</div>
+                  <div className="text-xs text-muted-foreground">{t("manageYourFiles")}</div>
                 </div>
                 {totalFileCount > 0 && (
                   <Badge variant="secondary" className="text-xs">
@@ -391,7 +393,7 @@ export function AttachmentMenu({
                   className="flex items-center gap-2 text-sm font-medium transition-colors hover:text-primary"
                 >
                   <ChevronRight className="h-4 w-4 rotate-180" />
-                  Uploaded Files
+                  {t("uploadedFilesOption")}
                 </button>
                 <Button
                   variant="ghost"
@@ -414,7 +416,7 @@ export function AttachmentMenu({
                   disabled={isLoading || !conversationId}
                 >
                   <Plus className="h-4 w-4" />
-                  Add files
+                  {t("addFilesButton")}
                 </Button>
 
                 {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
@@ -424,7 +426,9 @@ export function AttachmentMenu({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>
-                        {totalFileCount} file{totalFileCount !== 1 ? "s" : ""}
+                        {totalFileCount !== 1
+                          ? t("fileCountPlural", { count: totalFileCount })
+                          : t("fileCountSingular", { count: totalFileCount })}
                       </span>
                       <span>{formatFileSize(totalSize)}</span>
                     </div>
@@ -457,8 +461,7 @@ export function AttachmentMenu({
                 {/* Empty state */}
                 {kbAttachments.length === 0 && dataFiles.length === 0 && !isLoading && (
                   <p className="py-2 text-center text-xs text-muted-foreground">
-                    Upload files to give the AI context. PDFs and documents are searchable, data
-                    files can be analyzed.
+                    {t("uploadEmptyState")}
                   </p>
                 )}
               </div>

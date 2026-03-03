@@ -5,6 +5,7 @@ import { Search, X, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { telemetry } from "@/lib/telemetry";
+import { useTranslations } from "next-intl";
 
 interface HomeSearchProps {
   query: string;
@@ -14,6 +15,7 @@ interface HomeSearchProps {
 }
 
 export function HomeSearch({ query, onQueryChange, isSearching, onClose }: HomeSearchProps) {
+  const t = useTranslations("home");
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -78,9 +80,9 @@ export function HomeSearch({ query, onQueryChange, isSearching, onClose }: HomeS
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           onKeyDown={handleKeyDown}
-          placeholder="Search by title or content..."
+          placeholder={t("searchByTitleOrContent")}
           className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none md:text-base"
-          aria-label="Search documents"
+          aria-label={t("searchDocumentsLabel")}
         />
 
         {isSearching && (
@@ -91,7 +93,7 @@ export function HomeSearch({ query, onQueryChange, isSearching, onClose }: HomeS
           <button
             onClick={handleClear}
             className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Clear"
+            aria-label={t("clearSearch")}
           >
             <X className="h-3.5 w-3.5" />
           </button>

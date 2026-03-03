@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/ui/logo";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 function ResetPasswordContent() {
+  const t = useTranslations("auth");
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
@@ -24,32 +26,32 @@ function ResetPasswordContent() {
     setError("");
 
     if (!token) {
-      setError("Invalid reset link");
+      setError(t("invalidLink"));
       return;
     }
 
     if (!password || !confirmPassword) {
-      setError("Please fill in all fields");
+      setError(t("fillAllFields"));
       return;
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError(t("passwordsDoNotMatch"));
       return;
     }
 
     if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+      setError(t("passwordMinLength"));
       return;
     }
 
     setIsLoading(true);
     try {
       await api.resetPassword(token, password);
-      toast.success("Password reset successful!");
+      toast.success(t("passwordResetSuccess"));
       router.push("/login");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to reset password";
+      const message = err instanceof Error ? err.message : t("resetPasswordFailed");
       setError(message);
     } finally {
       setIsLoading(false);
@@ -62,14 +64,14 @@ function ResetPasswordContent() {
         <div className="w-full max-w-sm space-y-6 text-center">
           <Logo size="lg" />
           <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-destructive">Invalid Link</h1>
-            <p className="text-sm text-muted-foreground">
-              This password reset link is invalid or has expired.
-            </p>
+            <h1 className="text-2xl font-semibold tracking-tight text-destructive">
+              {t("invalidLink")}
+            </h1>
+            <p className="text-sm text-muted-foreground">{t("invalidLinkMessage")}</p>
           </div>
           <p className="text-sm text-muted-foreground">
             <Link href="/forgot-password" className="text-primary hover:underline">
-              Request a new reset link
+              {t("requestNewResetLink")}
             </Link>
           </p>
         </div>
@@ -82,8 +84,8 @@ function ResetPasswordContent() {
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-2 text-center">
           <Logo size="lg" />
-          <h1 className="text-2xl font-semibold tracking-tight">Set new password</h1>
-          <p className="text-sm text-muted-foreground">Enter your new password below</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("setNewPassword")}</h1>
+          <p className="text-sm text-muted-foreground">{t("resetPasswordSubtitle")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -93,12 +95,12 @@ function ResetPasswordContent() {
 
           <div className="space-y-2">
             <label htmlFor="password" className="text-sm font-medium">
-              New Password
+              {t("newPassword")}
             </label>
             <Input
               id="password"
               type="password"
-              placeholder="At least 8 characters"
+              placeholder={t("atLeast8Characters")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
@@ -108,12 +110,12 @@ function ResetPasswordContent() {
 
           <div className="space-y-2">
             <label htmlFor="confirmPassword" className="text-sm font-medium">
-              Confirm Password
+              {t("confirmPassword")}
             </label>
             <Input
               id="confirmPassword"
               type="password"
-              placeholder="Confirm your password"
+              placeholder={t("confirmYourPassword")}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               disabled={isLoading}
@@ -122,13 +124,13 @@ function ResetPasswordContent() {
           </div>
 
           <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Resetting..." : "Reset password"}
+            {isLoading ? t("resettingPassword") : t("resetPasswordButton")}
           </Button>
         </form>
 
         <p className="text-center text-sm text-muted-foreground">
           <Link href="/login" className="text-primary hover:underline">
-            Return to login
+            {t("returnToLogin")}
           </Link>
         </p>
       </div>
