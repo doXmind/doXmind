@@ -7,6 +7,7 @@ import DOMPurify from "dompurify";
 interface MarkdownContentProps {
   content: string;
   className?: string;
+  baseClassName?: string;
 }
 
 // Configure a minimal marked instance for comments
@@ -17,7 +18,7 @@ commentMarked.link = ({ href, text }: { href: string; text: string }) => {
   return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 };
 
-export function MarkdownContent({ content, className }: MarkdownContentProps) {
+export function MarkdownContent({ content, className, baseClassName }: MarkdownContentProps) {
   const html = useMemo(() => {
     if (!content) return "";
 
@@ -63,7 +64,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
 
   return (
     <div
-      className={`comment-prose text-[14px] leading-relaxed text-foreground/90 ${className || ""}`}
+      className={`${baseClassName ?? "comment-prose text-[14px] leading-relaxed text-foreground/90"} ${className || ""}`}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
+import { MarkdownContent } from "@/components/comments/markdown-content";
 import { Eye, GitFork, Bookmark, Clock, MessageSquare, Pencil } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
@@ -117,9 +118,11 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
 
         {/* Content preview */}
         {item.content_preview && item.content_preview.trim().length > 0 && (
-          <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-muted-foreground">
-            {item.content_preview}
-          </p>
+          <MarkdownContent
+            content={item.content_preview}
+            baseClassName="text-[12px] leading-relaxed text-muted-foreground"
+            className="mt-1.5 line-clamp-3 [&_*]:text-[12px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
+          />
         )}
 
         {/* Spacer */}
