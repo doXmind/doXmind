@@ -16,6 +16,10 @@ on:
         default: "false"
         type: boolean
 
+permissions:
+  checks: read
+  contents: read
+
 concurrency:
   group: deploy-cn
   cancel-in-progress: false # Never cancel in-progress deployments
