@@ -208,6 +208,12 @@ jobs:
               rsync -a --delete \
                   --exclude='server/' \
                   --exclude='.env.production' \
+                  --exclude='frontend-src/' \
+                  --exclude='logs/' \
+                  --exclude='backups/' \
+                  --exclude='data/' \
+                  --exclude='deploy-cn.sh' \
+                  --exclude='deploy.sh' \
                   "${DEPLOY_DIR}/frontend-src/" "${DEPLOY_DIR}/"
 
               log "Building new frontend image (this may take 3-5 minutes)..."
