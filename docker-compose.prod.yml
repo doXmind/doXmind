@@ -130,11 +130,13 @@ services:
       dockerfile: Dockerfile.frontend.prod
       args:
         - NEXT_PUBLIC_API_URL=https://cn.api.doxmind.com
+        - NEXT_PUBLIC_DEFAULT_LOCALE=zh
         - BACKEND_URL=http://backend:8000
     container_name: doxmind-frontend
     restart: unless-stopped
     environment:
       - BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_DEFAULT_LOCALE=zh
     depends_on:
       backend:
         condition: service_healthy
