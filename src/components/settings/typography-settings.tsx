@@ -1,41 +1,43 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Type } from "lucide-react";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
 
 const FONT_OPTIONS = [
-  { value: "sans", label: "Sans-serif", preview: "font-sans" },
-  { value: "serif", label: "Serif", preview: "font-serif" },
-  { value: "mono", label: "Monospace", preview: "font-mono" },
+  { value: "sans", labelKey: "sansSerif", preview: "font-sans" },
+  { value: "serif", labelKey: "serif", preview: "font-serif" },
+  { value: "mono", labelKey: "monospace", preview: "font-mono" },
 ] as const;
 
 const SIZE_OPTIONS = [
-  { value: "small", label: "Small" },
-  { value: "normal", label: "Normal" },
-  { value: "large", label: "Large" },
+  { value: "small", labelKey: "small" },
+  { value: "normal", labelKey: "normal" },
+  { value: "large", labelKey: "large" },
 ] as const;
 
 const LINE_HEIGHT_OPTIONS = [
-  { value: "compact", label: "Compact" },
-  { value: "normal", label: "Normal" },
-  { value: "relaxed", label: "Relaxed" },
+  { value: "compact", labelKey: "compact" },
+  { value: "normal", labelKey: "normal" },
+  { value: "relaxed", labelKey: "relaxed" },
 ] as const;
 
 export function TypographySettings() {
+  const t = useTranslations("settings");
   const { fontFamily, fontSize, lineHeight, setFontFamily, setFontSize, setLineHeight } =
     useLayoutStore();
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Customize the editor reading experience.</p>
+      <p className="text-sm text-muted-foreground">{t("customizeReading")}</p>
 
       <div className="space-y-4 rounded-lg border p-4">
         {/* Font Family */}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Type className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Font Family</span>
+            <span className="text-sm font-medium">{t("fontFamily")}</span>
           </div>
           <div className="flex gap-2">
             {FONT_OPTIONS.map((option) => (
@@ -50,7 +52,7 @@ export function TypographySettings() {
                     : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                 )}
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
           </div>
@@ -58,7 +60,7 @@ export function TypographySettings() {
 
         {/* Font Size */}
         <div className="space-y-2">
-          <span className="text-sm font-medium">Font Size</span>
+          <span className="text-sm font-medium">{t("fontSize")}</span>
           <div className="flex gap-2">
             {SIZE_OPTIONS.map((option) => (
               <button
@@ -71,7 +73,7 @@ export function TypographySettings() {
                     : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                 )}
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
           </div>
@@ -79,7 +81,7 @@ export function TypographySettings() {
 
         {/* Line Height */}
         <div className="space-y-2">
-          <span className="text-sm font-medium">Line Spacing</span>
+          <span className="text-sm font-medium">{t("lineSpacing")}</span>
           <div className="flex gap-2">
             {LINE_HEIGHT_OPTIONS.map((option) => (
               <button
@@ -92,7 +94,7 @@ export function TypographySettings() {
                     : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                 )}
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
           </div>
@@ -100,7 +102,7 @@ export function TypographySettings() {
 
         {/* Preview */}
         <div className="space-y-1">
-          <span className="text-xs text-muted-foreground">Preview</span>
+          <span className="text-xs text-muted-foreground">{t("preview")}</span>
           <div
             className={cn(
               "rounded-md border border-dashed p-3",
@@ -115,8 +117,7 @@ export function TypographySettings() {
               lineHeight === "relaxed" && "leading-loose"
             )}
           >
-            The quick brown fox jumps over the lazy dog. Writing is an exploration. You start from
-            nothing and learn as you go.
+            {t("previewText")}
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { ChevronRight, ChevronLeft, X, Loader2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { OnboardingStep } from "@/stores/onboarding-store";
@@ -30,6 +31,8 @@ export function TourTooltip({
   onBack,
   onSkip,
 }: TourTooltipProps) {
+  const t = useTranslations("onboarding");
+  const tc = useTranslations("common");
   const isFirstStep = stepIndex <= 1; // hide back on welcome (0) and first real step (1)
   const isActionRequired = step.requiresAction;
   const progressPercent = Math.round((stepIndex / (totalSteps - 1)) * 100);
@@ -68,7 +71,7 @@ export function TourTooltip({
       )}
       style={{ top: position.top, left: position.left }}
       role="dialog"
-      aria-label={step.title}
+      aria-label={t(step.titleKey)}
     >
       {/* Directional arrow */}
       {placement !== "center" && (
@@ -94,12 +97,12 @@ export function TourTooltip({
       {/* Header: group label + close */}
       <div className="flex items-center justify-between px-4 pt-3.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-primary">
-          {step.group}
+          {t(step.groupKey)}
         </span>
         <button
           onClick={onSkip}
           className="rounded-md p-0.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground dark:text-muted-foreground/70"
-          aria-label="Skip tutorial"
+          aria-label={t("skipTutorial")}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -107,8 +110,10 @@ export function TourTooltip({
 
       {/* Content */}
       <div className="px-4 pb-1 pt-1.5">
-        <h3 className="text-sm font-semibold tracking-tight">{step.title}</h3>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{step.instruction}</p>
+        <h3 className="text-sm font-semibold tracking-tight">{t(step.titleKey)}</h3>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {t(step.instructionKey)}
+        </p>
       </div>
 
       {/* Progress bar */}
@@ -132,7 +137,7 @@ export function TourTooltip({
           {isActionRequired && (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground/50 dark:text-muted-foreground/70">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Try it
+              {t("tryIt")}
             </span>
           )}
         </div>
@@ -140,7 +145,7 @@ export function TourTooltip({
           {!isFirstStep && (
             <Button variant="ghost" size="sm" onClick={onBack} className="h-7 px-2 text-xs">
               <ChevronLeft className="mr-0.5 h-3.5 w-3.5" />
-              Back
+              {tc("back")}
             </Button>
           )}
           {isActionRequired && (
@@ -150,12 +155,12 @@ export function TourTooltip({
               onClick={onNext}
               className="h-7 px-2 text-[11px] text-muted-foreground"
             >
-              Skip step
+              {t("skipStep")}
             </Button>
           )}
           {!isActionRequired && (
             <Button size="sm" onClick={onNext} className="h-7 px-3 text-xs">
-              Next
+              {tc("next")}
               <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
             </Button>
           )}

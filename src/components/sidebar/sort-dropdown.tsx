@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Check, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
@@ -10,16 +11,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useFileStore, type SortOption } from "@/stores/file-store";
 
-const sortOptions: { value: SortOption; label: string; shortLabel: string }[] = [
-  { value: "name-asc", label: "Name (A-Z)", shortLabel: "Name" },
-  { value: "name-desc", label: "Name (Z-A)", shortLabel: "Name" },
-  { value: "modified-newest", label: "Modified (Newest)", shortLabel: "Modified" },
-  { value: "modified-oldest", label: "Modified (Oldest)", shortLabel: "Modified" },
-  { value: "created-newest", label: "Created (Newest)", shortLabel: "Created" },
-  { value: "created-oldest", label: "Created (Oldest)", shortLabel: "Created" },
+const sortOptions: { value: SortOption; labelKey: string; shortLabelKey: string }[] = [
+  { value: "name-asc", labelKey: "sortNameAsc", shortLabelKey: "sortByName" },
+  { value: "name-desc", labelKey: "sortNameDesc", shortLabelKey: "sortByName" },
+  { value: "modified-newest", labelKey: "sortModifiedNewest", shortLabelKey: "sortShortModified" },
+  { value: "modified-oldest", labelKey: "sortModifiedOldest", shortLabelKey: "sortShortModified" },
+  { value: "created-newest", labelKey: "sortCreatedNewest", shortLabelKey: "sortShortCreated" },
+  { value: "created-oldest", labelKey: "sortCreatedOldest", shortLabelKey: "sortShortCreated" },
 ];
 
 export function SortDropdown() {
+  const t = useTranslations("sidebar");
   const { sortBy, setSortBy } = useFileStore();
   const currentOption = sortOptions.find((o) => o.value === sortBy);
 
@@ -28,9 +30,9 @@ export function SortDropdown() {
       <DropdownMenuTrigger asChild>
         <button
           className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Sort files"
+          aria-label={t("sortFiles")}
         >
-          <span>{currentOption?.shortLabel ?? "Sort"}</span>
+          <span>{currentOption ? t(currentOption.shortLabelKey) : t("sort")}</span>
           <ChevronDown className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>
@@ -41,7 +43,7 @@ export function SortDropdown() {
             onClick={() => setSortBy(option.value)}
             className="flex items-center justify-between"
           >
-            <span>{option.label}</span>
+            <span>{t(option.labelKey)}</span>
             {sortBy === option.value && <Check className="h-4 w-4" />}
           </DropdownMenuItem>
         ))}
@@ -52,7 +54,7 @@ export function SortDropdown() {
             onClick={() => setSortBy(option.value)}
             className="flex items-center justify-between"
           >
-            <span>{option.label}</span>
+            <span>{t(option.labelKey)}</span>
             {sortBy === option.value && <Check className="h-4 w-4" />}
           </DropdownMenuItem>
         ))}
@@ -63,7 +65,7 @@ export function SortDropdown() {
             onClick={() => setSortBy(option.value)}
             className="flex items-center justify-between"
           >
-            <span>{option.label}</span>
+            <span>{t(option.labelKey)}</span>
             {sortBy === option.value && <Check className="h-4 w-4" />}
           </DropdownMenuItem>
         ))}

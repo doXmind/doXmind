@@ -17,10 +17,12 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage, formatShortcut } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
+import { useTranslations } from "next-intl";
 
 const log = storeLogger.child("FilesSidebar");
 
 export function FilesSidebar() {
+  const t = useTranslations("sidebar");
   const router = useRouter();
   const { files, createFile, createFolder, importFile, currentFolderId, getFolders } =
     useFileStore();
@@ -102,11 +104,11 @@ export function FilesSidebar() {
     e.target.value = "";
 
     setIsImporting(true);
-    const toastId = toast.loading(`Importing "${file.name}"...`);
+    const toastId = toast.loading(t("importing", { name: file.name }));
     try {
       const newId = await importFile(file, currentFolderId);
       router.push(`/editor/${newId}`);
-      toast.success(`Imported "${file.name}" successfully`, { id: toastId });
+      toast.success(t("imported", { name: file.name }), { id: toastId });
     } catch (error) {
       log.error("Failed to import file", error);
       const { title, description } = getErrorMessage(error);
@@ -125,7 +127,7 @@ export function FilesSidebar() {
           className="flex w-full items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Search className="h-3.5 w-3.5 shrink-0" />
-          <span>Search</span>
+          <span>{t("search")}</span>
           <kbd className="ml-auto hidden text-[10px] font-medium text-muted-foreground/60 md:inline">
             {formatShortcut("Ctrl+K")}
           </kbd>
@@ -172,7 +174,7 @@ export function FilesSidebar() {
           onClick={() => setIsTrashOpen(true)}
         >
           <Trash2 className="h-4 w-4" />
-          Trash
+          {t("trash")}
         </Button>
       </div>
 

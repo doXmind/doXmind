@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { CommentResponse } from "@/lib/api";
 import { CommentItem } from "./comment-item";
 import { CommentComposer } from "./comment-composer";
@@ -30,6 +31,7 @@ function CommentSkeleton() {
 }
 
 export function CommentThread({ comment, shareToken, depth }: CommentThreadProps) {
+  const t = useTranslations("comments");
   const user = useAuthStore((s) => s.user);
   const { addComment, loadReplies, toggleReaction, editComment, deleteComment } =
     useCommentsStore();
@@ -93,14 +95,18 @@ export function CommentThread({ comment, shareToken, depth }: CommentThreadProps
           className="mt-2 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           {showReplies
-            ? "Hide replies"
-            : `${comment.reply_count} ${comment.reply_count === 1 ? "reply" : "replies"}`}
+            ? t("hideReplies")
+            : comment.reply_count === 1
+              ? t("replySingular", { count: comment.reply_count })
+              : t("replyPlural", { count: comment.reply_count })}
         </button>
       )}
 
       {/* Depth limit indicator */}
       {user && depth >= MAX_DEPTH && !comment.is_deleted && (
-        <p className="mt-1.5 pl-8 text-[11px] text-muted-foreground/40">Thread limit reached</p>
+        <p className="mt-1.5 pl-8 text-[11px] text-muted-foreground/40">
+          {t("threadLimitReached")}
+        </p>
       )}
 
       {/* Reply composer */}
@@ -108,7 +114,7 @@ export function CommentThread({ comment, shareToken, depth }: CommentThreadProps
         <div className="ml-6 mt-3">
           <CommentComposer
             onSubmit={handleReply}
-            placeholder={`Reply to ${comment.author.username || "user"}...`}
+            placeholder={t("replyToUser", { name: comment.author.username || "user" })}
             autoFocus
             onCancel={() => setIsReplying(false)}
           />

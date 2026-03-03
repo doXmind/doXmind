@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Editor } from "@tiptap/react";
 import { Wand2, Scissors, Maximize2, Check, Languages } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -15,6 +16,7 @@ import { useFileStore } from "@/stores/file-store";
 interface QuickAIAction {
   id: string;
   label: string;
+  labelKey: string;
   icon: React.ReactNode;
   /** Backend action ID for quick edit prompt mapping */
   backendAction: string;
@@ -24,30 +26,35 @@ const QUICK_ACTIONS: QuickAIAction[] = [
   {
     id: "improve",
     label: "Improve",
+    labelKey: "improve",
     icon: <Wand2 className="h-4 w-4" />,
     backendAction: "improve",
   },
   {
     id: "shorten",
     label: "Shorten",
+    labelKey: "shorten",
     icon: <Scissors className="h-4 w-4" />,
     backendAction: "shorten",
   },
   {
     id: "expand",
     label: "Expand",
+    labelKey: "expand",
     icon: <Maximize2 className="h-4 w-4" />,
     backendAction: "expand",
   },
   {
     id: "fix",
     label: "Fix",
+    labelKey: "fix",
     icon: <Check className="h-4 w-4" />,
     backendAction: "fix-grammar",
   },
   {
     id: "translate",
     label: "Translate",
+    labelKey: "translate",
     icon: <Languages className="h-4 w-4" />,
     backendAction: "translate-en",
   },
@@ -61,6 +68,7 @@ interface InlineAIActionsProps {
 }
 
 export function InlineAIActions({ editor, position, visible, onAction }: InlineAIActionsProps) {
+  const t = useTranslations("mobile");
   const { selection } = useEditorStore();
   const { sendQuickEditMessage, isStreaming } = useChat();
   const { currentFileId } = useFileStore();
@@ -128,7 +136,7 @@ export function InlineAIActions({ editor, position, visible, onAction }: InlineA
             whileTap={{ scale: 0.95 }}
           >
             {action.icon}
-            <span className="hidden sm:inline">{action.label}</span>
+            <span className="hidden sm:inline">{t(action.labelKey)}</span>
           </motion.button>
         ))}
       </motion.div>

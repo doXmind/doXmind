@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import katex from "katex";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,8 @@ export function MathEditorPanel({
   const [showSymbols, setShowSymbols] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
 
   // Focus input on mount (desktop only to avoid mobile keyboard popup)
   useEffect(() => {
@@ -53,8 +56,7 @@ export function MathEditorPanel({
     const latexToRender = latex.trim();
 
     if (!latexToRender) {
-      previewRef.current.innerHTML =
-        '<span class="text-muted-foreground italic text-sm">Preview will appear here...</span>';
+      previewRef.current.innerHTML = `<span class="text-muted-foreground italic text-sm">${t("mathPreviewPlaceholder")}</span>`;
       return;
     }
 
@@ -66,9 +68,9 @@ export function MathEditorPanel({
         trust: true,
       });
     } catch {
-      previewRef.current.innerHTML = `<span class="text-destructive text-sm">Invalid LaTeX</span>`;
+      previewRef.current.innerHTML = `<span class="text-destructive text-sm">${t("invalidLatex")}</span>`;
     }
-  }, [latex, displayMode]);
+  }, [latex, displayMode, t]);
 
   // Insert symbol at cursor position
   const insertSymbol = useCallback(
@@ -178,7 +180,7 @@ export function MathEditorPanel({
             variant="ghost"
             onClick={() => setShowSymbols(!showSymbols)}
             className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            title="Insert symbol"
+            title={t("insertSymbol")}
           >
             <span className="font-serif text-lg">Σ</span>
           </Button>
@@ -190,7 +192,7 @@ export function MathEditorPanel({
             variant="ghost"
             onClick={onSave}
             className="h-8 w-8 text-green-600 hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/30"
-            title="Save (Enter)"
+            title={t("saveEnter")}
           >
             <Check className="h-4 w-4" />
           </Button>
@@ -202,7 +204,7 @@ export function MathEditorPanel({
             variant="ghost"
             onClick={onCancel}
             className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            title="Cancel (Escape)"
+            title={t("cancelEscape")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -214,7 +216,7 @@ export function MathEditorPanel({
             variant="ghost"
             onClick={onDelete}
             className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            title="Delete"
+            title={tc("delete")}
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -224,14 +226,15 @@ export function MathEditorPanel({
       {/* Keyboard hints */}
       <div className="mt-2 text-xs text-muted-foreground">
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Enter</kbd> to save
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Enter</kbd> {t("enterToSave")}
         </span>
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Esc</kbd> to cancel
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Esc</kbd> {t("escToCancel")}
         </span>
         {displayMode && (
           <span>
-            <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Shift+Enter</kbd> for newline
+            <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Shift+Enter</kbd>{" "}
+            {t("shiftEnterNewline")}
           </span>
         )}
       </div>

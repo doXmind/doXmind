@@ -8,6 +8,7 @@
  */
 
 import { useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Check, RotateCcw, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,8 @@ export function BlockAIPreview({
   onRetry,
   isStreaming = false,
 }: BlockAIPreviewProps) {
+  const t = useTranslations("mobile");
+  const tc = useTranslations("common");
   const { editPreview, selectedBlocks } = useBlockSelectionStore();
 
   const handleAccept = useCallback(() => {
@@ -77,10 +80,10 @@ export function BlockAIPreview({
           {/* Header */}
           <div className="safe-area-top flex items-center justify-between border-b px-4 py-3">
             <div>
-              <h2 className="text-lg font-semibold">Review Changes</h2>
+              <h2 className="text-lg font-semibold">{t("reviewChanges")}</h2>
               {actionType && (
                 <p className="text-xs capitalize text-muted-foreground">
-                  Action: {actionType.replace("-", " ")}
+                  {t("actionLabel")} {actionType.replace("-", " ")}
                 </p>
               )}
             </div>
@@ -96,7 +99,7 @@ export function BlockAIPreview({
           {/* Voice instruction if present */}
           {voiceInstruction && (
             <div className="border-b bg-muted/30 px-4 py-2">
-              <p className="text-xs text-muted-foreground">Your instruction:</p>
+              <p className="text-xs text-muted-foreground">{t("yourInstruction")}</p>
               <p className="mt-1 text-sm">&ldquo;{voiceInstruction}&rdquo;</p>
             </div>
           )}
@@ -108,7 +111,7 @@ export function BlockAIPreview({
               <div>
                 <div className="mb-2 flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-destructive" />
-                  <span className="text-sm font-medium text-muted-foreground">Original</span>
+                  <span className="text-sm font-medium text-muted-foreground">{t("original")}</span>
                 </div>
                 <div className="preview-original">
                   <div className="preview-original-text prose prose-sm max-w-none dark:prose-invert">
@@ -126,7 +129,7 @@ export function BlockAIPreview({
               <div>
                 <div className="mb-2 flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-primary" />
-                  <span className="text-sm font-medium text-muted-foreground">Proposed</span>
+                  <span className="text-sm font-medium text-muted-foreground">{t("proposed")}</span>
                   {isStreaming && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
                 </div>
                 <div className="preview-proposed">
@@ -142,10 +145,10 @@ export function BlockAIPreview({
                   ) : isStreaming ? (
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">Generating...</span>
+                      <span className="text-sm">{t("generating")}</span>
                     </div>
                   ) : (
-                    <p className="text-sm italic text-muted-foreground">No changes proposed</p>
+                    <p className="text-sm italic text-muted-foreground">{t("noChangesProposed")}</p>
                   )}
                 </div>
               </div>
@@ -162,7 +165,7 @@ export function BlockAIPreview({
                 className="flex-1"
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
-                Retry
+                {tc("retry")}
               </Button>
             )}
             <Button
@@ -172,7 +175,7 @@ export function BlockAIPreview({
               className="flex-1"
             >
               <X className="mr-2 h-4 w-4" />
-              Reject
+              {t("reject")}
             </Button>
             <Button
               onClick={handleAccept}
@@ -180,7 +183,7 @@ export function BlockAIPreview({
               className="flex-1"
             >
               <Check className="mr-2 h-4 w-4" />
-              Accept
+              {t("accept")}
             </Button>
           </div>
         </motion.div>
@@ -207,6 +210,8 @@ export function QuickPreview({
   onAccept,
   onReject,
 }: QuickPreviewProps) {
+  const t = useTranslations("mobile");
+  const tc = useTranslations("common");
   return (
     <motion.div
       className="space-y-3 rounded-lg border bg-background p-4 shadow-lg"
@@ -216,7 +221,7 @@ export function QuickPreview({
     >
       {/* Original - compact */}
       <div className="text-xs">
-        <span className="text-muted-foreground">Original: </span>
+        <span className="text-muted-foreground">{t("original")}: </span>
         <span className="line-through opacity-60">
           {originalText.length > 100 ? originalText.slice(0, 100) + "..." : originalText}
         </span>
@@ -227,7 +232,7 @@ export function QuickPreview({
         {isStreaming ? (
           <span className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
-            Generating...
+            {t("generating")}
           </span>
         ) : (
           proposedText
@@ -246,7 +251,7 @@ export function QuickPreview({
           disabled={isStreaming}
         >
           <X className="mr-1 h-3 w-3" />
-          Cancel
+          {tc("cancel")}
         </Button>
         <Button
           size="sm"
@@ -257,7 +262,7 @@ export function QuickPreview({
           disabled={isStreaming || !proposedText}
         >
           <Check className="mr-1 h-3 w-3" />
-          Apply
+          {t("apply")}
         </Button>
       </div>
     </motion.div>

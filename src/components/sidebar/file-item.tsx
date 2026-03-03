@@ -3,6 +3,7 @@
 import { FileText, MoreHorizontal, Check, X, CheckSquare, Square, Star } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { cn, formatDate } from "@/lib/utils";
@@ -33,6 +34,7 @@ let lastClickedFileId: string | null = null;
 
 export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const router = useRouter();
+  const t = useTranslations("sidebar");
   const {
     currentFileId,
     setCurrentFile,
@@ -113,11 +115,11 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             setContextMenuFocusIndex(-1);
             moveFileToFolder(file.id, null)
               .then(() => {
-                toast.success("File moved to root");
+                toast.success(t("movedToRoot"));
               })
               .catch((error) => {
                 log.error("Failed to move file to root", error);
-                toast.error("Failed to move file");
+                toast.error(t("failedToMove"));
               });
           } else if (contextMenuFocusIndex === 3 + exportOffset) {
             setContextMenu(null);
@@ -243,7 +245,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         await renameFile(file.id, fullName);
       } catch (error) {
         log.error("Failed to rename file", error);
-        toast.error("Failed to rename file");
+        toast.error(t("failedToRename"));
       }
     }
     setIsRenaming(false);
@@ -274,13 +276,13 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       router.push(nextId ? `/editor/${nextId}` : "/editor");
       toast(`"${fileName}" moved to trash`, {
         action: {
-          label: "Undo",
+          label: t("restore"),
           onClick: async () => {
             try {
               await restoreFile(file.id);
-              toast.success(`"${fileName}" restored`);
+              toast.success(t("restoredName", { name: fileName }));
             } catch {
-              toast.error("Failed to restore file");
+              toast.error(t("failedToRestore"));
             }
           },
         },
@@ -288,7 +290,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       });
     } catch (error) {
       log.error("Failed to delete file", error);
-      toast.error("Failed to delete file");
+      toast.error(t("failedToDelete"));
     }
   };
 
@@ -311,9 +313,9 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         URL.revokeObjectURL(url);
       }),
       {
-        loading: `Exporting as ${formatLabel}...`,
-        success: `Exported as ${formatLabel}`,
-        error: `Failed to export as ${formatLabel}`,
+        loading: t("exportingAs", { format: formatLabel }),
+        success: t("exportedAs", { format: formatLabel }),
+        error: t("failedToExport", { format: formatLabel }),
       }
     );
   };
@@ -339,10 +341,10 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     setContextMenu(null);
     try {
       await moveFileToFolder(file.id, null);
-      toast.success("File moved to root");
+      toast.success(t("movedToRoot"));
     } catch (error) {
       log.error("Failed to move file to root", error);
-      toast.error("Failed to move file");
+      toast.error(t("failedToMove"));
     }
   };
 
@@ -381,7 +383,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             toggleFileSelection(file.id);
           }}
           className="flex-shrink-0"
-          aria-label={isSelected ? "Deselect file" : "Select file"}
+          aria-label={isSelected ? t("deselectFile") : t("selectFile")}
         >
           {isSelected ? (
             <CheckSquare className="h-5 w-5 text-primary md:h-4 md:w-4" />
@@ -423,7 +425,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
                 handleRename();
               }}
               className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-              aria-label="Confirm rename"
+              aria-label={t("confirmRename")}
             >
               <Check className="h-4 w-4 text-primary" />
             </button>
@@ -433,7 +435,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
                 cancelRename();
               }}
               className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-              aria-label="Cancel rename"
+              aria-label={t("cancelRename")}
             >
               <X className="h-4 w-4 text-muted-foreground" />
             </button>
@@ -456,13 +458,13 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <DropdownMenu>
-          <Tooltip content="File options" side="right">
+          <Tooltip content={t("fileOptions")} side="right">
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-10 w-10 md:h-8 md:w-8"
-                aria-label="File options"
+                aria-label={t("fileOptions")}
               >
                 <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
               </Button>
@@ -482,10 +484,10 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
               onMoveToRoot={async () => {
                 try {
                   await moveFileToFolder(file.id, null);
-                  toast.success("File moved to root");
+                  toast.success(t("movedToRoot"));
                 } catch (error) {
                   log.error("Failed to move file to root", error);
-                  toast.error("Failed to move file");
+                  toast.error(t("failedToMove"));
                 }
               }}
               onExport={handleExport}

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { Eye, GitFork, Bookmark, Clock, MessageSquare, Pencil } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
 
@@ -20,6 +21,7 @@ function formatCount(n: number): string {
 }
 
 export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardProps) {
+  const t = useTranslations("community");
   const user = useAuthStore((s) => s.user);
   const isBookmarked = useBookmarksStore((s) => s.isBookmarked(item.share_id));
   const toggleBookmark = useBookmarksStore((s) => s.toggleBookmark);
@@ -56,7 +58,7 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
               onEditItem(item);
             }}
             className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground/50 opacity-0 transition-all duration-150 hover:bg-muted hover:text-foreground group-hover:opacity-100"
-            aria-label="Edit post"
+            aria-label={t("editPost")}
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
@@ -90,7 +92,9 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
               {(owner.username || "?")[0].toUpperCase()}
             </div>
           )}
-          <span className="text-[12px] text-muted-foreground">{owner.username || "Anonymous"}</span>
+          <span className="text-[12px] text-muted-foreground">
+            {owner.username || t("anonymous")}
+          </span>
           {publishedDate && (
             <>
               <span className="text-[12px] text-muted-foreground/40">·</span>
@@ -148,21 +152,21 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
           {/* Metrics */}
           <div className="flex shrink-0 items-center gap-3 text-muted-foreground/50">
             {item.reading_time > 0 && (
-              <span className="flex items-center gap-1 text-[11px]" title="Reading time">
+              <span className="flex items-center gap-1 text-[11px]" title={t("readingTimeTitle")}>
                 <Clock className="h-3 w-3" />
                 {item.reading_time} min
               </span>
             )}
-            <span className="flex items-center gap-1 text-[11px]" title="Views">
+            <span className="flex items-center gap-1 text-[11px]" title={t("viewsTitle")}>
               <Eye className="h-3 w-3" />
               {formatCount(item.view_count)}
             </span>
-            <span className="flex items-center gap-1 text-[11px]" title="Forks">
+            <span className="flex items-center gap-1 text-[11px]" title={t("forksTitle")}>
               <GitFork className="h-3 w-3" />
               {formatCount(item.fork_count)}
             </span>
             {item.comment_count > 0 && (
-              <span className="flex items-center gap-1 text-[11px]" title="Comments">
+              <span className="flex items-center gap-1 text-[11px]" title={t("commentsTitle")}>
                 <MessageSquare className="h-3 w-3" />
                 {formatCount(item.comment_count)}
               </span>

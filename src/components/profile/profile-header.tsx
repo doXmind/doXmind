@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import Image from "next/image";
 import { UserProfileResponse } from "@/lib/api";
 import { ExternalLink, Pencil, FileText, Eye, GitFork, Bookmark } from "lucide-react";
@@ -18,6 +19,7 @@ function formatNumber(n: number): string {
 }
 
 export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
+  const t = useTranslations("profile");
   const [isEditing, setIsEditing] = useState(false);
 
   return (
@@ -43,7 +45,7 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
           {/* Name + Edit */}
           <div className="flex items-center justify-center gap-3 sm:justify-start">
             <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-              {profile.username || "Anonymous"}
+              {profile.username || t("anonymous")}
             </h1>
             {isOwnProfile && (
               <button
@@ -51,8 +53,8 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
                 className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground sm:px-3"
               >
                 <Pencil className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Edit Profile</span>
-                <span className="sm:hidden">Edit</span>
+                <span className="hidden sm:inline">{t("editProfile")}</span>
+                <span className="sm:hidden">{t("editShort")}</span>
               </button>
             )}
           </div>
@@ -89,7 +91,7 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
                 rel="noopener noreferrer"
                 className="transition-colors hover:text-foreground"
               >
-                GitHub
+                {t("github")}
               </a>
             )}
 
@@ -100,15 +102,16 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
                 rel="noopener noreferrer"
                 className="transition-colors hover:text-foreground"
               >
-                Twitter
+                {t("twitter")}
               </a>
             )}
 
             <span className="text-muted-foreground/50">
-              Joined{" "}
-              {new Date(profile.created_at).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
+              {t("joinedOn", {
+                date: new Date(profile.created_at).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "long",
+                }),
               })}
             </span>
           </div>
@@ -120,28 +123,28 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_published)}
               </span>
-              published
+              {t("published")}
             </span>
             <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <Eye className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_views)}
               </span>
-              views
+              {t("views")}
             </span>
             <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <GitFork className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_forks_received)}
               </span>
-              forks
+              {t("forks")}
             </span>
             <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <Bookmark className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
                 {formatNumber(profile.stats.total_bookmarks_received)}
               </span>
-              saves
+              {t("saves")}
             </span>
           </div>
         </div>

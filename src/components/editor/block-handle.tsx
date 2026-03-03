@@ -7,6 +7,7 @@ import { GripVertical, Plus } from "lucide-react";
 import { TextSelection } from "@tiptap/pm/state";
 import { findBlockAtCoords } from "@/extensions/block-handle-extension";
 import { useStreamingStore } from "@/stores/streaming-store";
+import { useTranslations } from "next-intl";
 import { BlockActionMenu } from "./block-action-menu";
 import { BlockInsertMenu } from "./block-insert-menu";
 
@@ -67,6 +68,7 @@ const DRAG_THRESHOLD = 5;
  * between blocks (above or below target depending on cursor vertical position).
  */
 export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProps) {
+  const t = useTranslations("editor");
   // The block position we're showing the handle for
   const [hoveredBlockPos, setHoveredBlockPos] = useState<number | null>(null);
   // Computed screen position
@@ -693,7 +695,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
               e.preventDefault(); // prevent editor blur
               handlePlusClick(e);
             }}
-            title="Add block below"
+            title={t("blockHandle.addBelow")}
           >
             <Plus className="h-[18px] w-[18px]" strokeWidth={2.2} />
           </button>
@@ -710,7 +712,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
                 handleGripClick(e);
               }
             }}
-            title="Drag to move / Click for options"
+            title={t("blockHandle.dragToMove")}
           >
             <GripVertical className="h-[18px] w-[18px]" />
           </button>

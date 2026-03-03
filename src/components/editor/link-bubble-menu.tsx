@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/react";
 import { ExternalLink, Pencil, Trash2, Copy, Check } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isDiffReviewActive } from "@/extensions/diff-review";
@@ -15,6 +16,8 @@ interface LinkBubbleMenuProps {
 }
 
 export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const [isEditing, setIsEditing] = useState(false);
   const [url, setUrl] = useState("");
   const [copied, setCopied] = useState(false);
@@ -105,7 +108,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Enter URL"
+              placeholder={t("linkMenu.urlPlaceholder")}
               className="h-7 w-64 text-sm"
               autoFocus={typeof window !== "undefined" && window.innerWidth >= 768}
             />
@@ -114,7 +117,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               size="icon"
               onClick={handleSave}
               className="h-7 w-7 text-primary"
-              title="Save"
+              title={tc("save")}
             >
               <Check className="h-4 w-4" />
             </Button>
@@ -148,7 +151,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               size="icon"
               onClick={handleCopy}
               className="h-7 w-7"
-              title="Copy link"
+              title={t("linkMenu.copy")}
             >
               {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
             </Button>
@@ -157,7 +160,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               size="icon"
               onClick={handleEdit}
               className="h-7 w-7"
-              title="Edit link"
+              title={t("linkMenu.edit")}
             >
               <Pencil className="h-4 w-4" />
             </Button>
@@ -166,7 +169,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               size="icon"
               onClick={handleOpen}
               className="h-7 w-7"
-              title="Open link"
+              title={t("linkMenu.open")}
             >
               <ExternalLink className="h-4 w-4" />
             </Button>
@@ -175,7 +178,7 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
               size="icon"
               onClick={handleRemove}
               className="h-7 w-7 text-destructive hover:text-destructive"
-              title="Remove link"
+              title={t("linkMenu.remove")}
             >
               <Trash2 className="h-4 w-4" />
             </Button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Folder, FolderOpen, FileText, ChevronRight, ArrowLeft, Calendar } from "lucide-react";
 import Image from "next/image";
 import type { SharedItemResponse } from "@/lib/api";
@@ -12,7 +13,7 @@ interface SharedFolderViewProps {
 }
 
 function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("en-US", {
+  return new Date(dateString).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -20,7 +21,7 @@ function formatDate(dateString: string): string {
 }
 
 function formatDateLong(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("en-US", {
+  return new Date(dateString).toLocaleDateString(undefined, {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -28,6 +29,7 @@ function formatDateLong(dateString: string): string {
 }
 
 export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
+  const t = useTranslations("sharedView");
   useEffect(() => {
     window.document.title = data.name;
   }, [data.name]);
@@ -51,7 +53,7 @@ export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
                     className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground/70 transition-colors hover:text-foreground"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" />
-                    {data.root_folder_name || "Folder"}
+                    {data.root_folder_name || t("folder")}
                   </button>
                   {breadcrumbs.map((crumb) => (
                     <span key={crumb.id} className="flex items-center gap-1">
@@ -99,7 +101,7 @@ export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
 
               <span className="flex items-center gap-1.5">
                 <FolderOpen className="h-3.5 w-3.5 opacity-50" />
-                {items.length} {items.length === 1 ? "item" : "items"}
+                {items.length === 1 ? t("oneItem") : t("itemCount", { count: items.length })}
               </span>
 
               <span className="text-border/60">&middot;</span>
@@ -118,7 +120,7 @@ export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
             {items.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <Folder className="h-12 w-12 text-muted-foreground/20" />
-                <p className="text-sm text-muted-foreground">This folder is empty</p>
+                <p className="text-sm text-muted-foreground">{t("folderEmpty")}</p>
               </div>
             ) : (
               <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -167,7 +169,7 @@ export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
           <div className="flex items-center justify-center gap-2 pb-10 text-xs text-muted-foreground/50">
             <Logo variant="icon" size="sm" className="h-3.5 w-3.5 opacity-40" />
             <span>
-              Shared with{" "}
+              {t("sharedWith")}{" "}
               <a
                 href="https://beta.doxmind.com"
                 target="_blank"

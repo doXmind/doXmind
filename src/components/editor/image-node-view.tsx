@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { NodeViewWrapper, NodeViewProps } from "@tiptap/react";
 import {
   AlignLeft,
@@ -43,6 +44,8 @@ export function ImageNodeView({
   deleteNode,
   getPos,
 }: NodeViewProps) {
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const { src, alt, title, width, height, align } = node.attrs;
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -287,7 +290,7 @@ export function ImageNodeView({
             {/* Lift out of list (only when nested) */}
             {isNested && (
               <>
-                <Tooltip content="Lift out of list" side="top">
+                <Tooltip content={t("liftOutOfList")} side="top">
                   <button type="button" className="image-toolbar-icon-btn" onClick={handleLiftOut}>
                     <ArrowUpFromLine className="h-3.5 w-3.5" />
                   </button>
@@ -297,17 +300,17 @@ export function ImageNodeView({
             )}
 
             {/* Ask AI */}
-            <Tooltip content="Ask AI" side="top">
+            <Tooltip content={t("blockAction.askAI")} side="top">
               <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
                 <AiLogoIcon className="h-3.5 w-3.5" />
-                <span className="text-xs">Ask AI</span>
+                <span className="text-xs">{t("blockAction.askAI")}</span>
               </button>
             </Tooltip>
 
             <div className="image-toolbar-sep" />
 
             {/* Alignment buttons */}
-            <Tooltip content="Align left" side="top">
+            <Tooltip content={t("alignLeft")} side="top">
               <button
                 type="button"
                 className={cn("image-toolbar-icon-btn", align === "left" && "active")}
@@ -316,7 +319,7 @@ export function ImageNodeView({
                 <AlignLeft className="h-3.5 w-3.5" />
               </button>
             </Tooltip>
-            <Tooltip content="Align center" side="top">
+            <Tooltip content={t("alignCenter")} side="top">
               <button
                 type="button"
                 className={cn("image-toolbar-icon-btn", (!align || align === "center") && "active")}
@@ -325,7 +328,7 @@ export function ImageNodeView({
                 <AlignCenter className="h-3.5 w-3.5" />
               </button>
             </Tooltip>
-            <Tooltip content="Align right" side="top">
+            <Tooltip content={t("alignRight")} side="top">
               <button
                 type="button"
                 className={cn("image-toolbar-icon-btn", align === "right" && "active")}
@@ -338,7 +341,7 @@ export function ImageNodeView({
             <div className="image-toolbar-sep" />
 
             {/* Download */}
-            <Tooltip content="Download" side="top">
+            <Tooltip content={t("imageDownload")} side="top">
               <button type="button" className="image-toolbar-icon-btn" onClick={handleDownload}>
                 <Download className="h-3.5 w-3.5" />
               </button>
@@ -346,7 +349,7 @@ export function ImageNodeView({
 
             {/* More menu */}
             <div className="relative" ref={moreMenuRef}>
-              <Tooltip content="More" side="top">
+              <Tooltip content={t("imageMore")} side="top">
                 <button
                   type="button"
                   className="image-toolbar-icon-btn"
@@ -360,11 +363,11 @@ export function ImageNodeView({
                 <div className="image-more-menu">
                   <button type="button" className="image-more-menu-item" onClick={handleEditUrl}>
                     <ImageIcon className="h-3.5 w-3.5" />
-                    <span>Replace image</span>
+                    <span>{t("replaceImage")}</span>
                   </button>
                   <button type="button" className="image-more-menu-item" onClick={handleEditAlt}>
                     <Type className="h-3.5 w-3.5" />
-                    <span>Alt text</span>
+                    <span>{t("altTextLabel")}</span>
                   </button>
                   <div className="my-1 h-px bg-border" />
                   <button
@@ -373,7 +376,7 @@ export function ImageNodeView({
                     onClick={handleDelete}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    <span>Delete</span>
+                    <span>{tc("delete")}</span>
                   </button>
                 </div>
               )}
@@ -393,7 +396,7 @@ export function ImageNodeView({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleInputKeyDown}
-              placeholder={editMode === "url" ? "Paste image URL..." : "Describe this image..."}
+              placeholder={editMode === "url" ? t("pasteImageUrl") : t("describeImage")}
               className="h-8 flex-1 bg-background/90 text-sm"
               autoFocus
             />

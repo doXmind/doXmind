@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { Check, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { haptics } from "@/lib/haptics";
@@ -34,6 +35,8 @@ export function EditSuccessIndicator({
   onViewDetails,
   autoDismissMs = 3000,
 }: EditSuccessIndicatorProps) {
+  const t = useTranslations("mobile");
+
   // Auto dismiss after timeout
   useEffect(() => {
     if (isVisible && autoDismissMs > 0) {
@@ -96,11 +99,13 @@ export function EditSuccessIndicator({
 
             {/* Message */}
             <span className="text-sm font-medium">
-              {editCount === 1 ? "1 edit applied" : `${editCount} edits applied`}
+              {editCount === 1
+                ? t("editAppliedSingular")
+                : t("editAppliedPlural", { count: editCount })}
             </span>
 
             {/* Tap hint */}
-            {onViewDetails && <span className="text-xs opacity-70">Tap to view</span>}
+            {onViewDetails && <span className="text-xs opacity-70">{t("tapToView")}</span>}
           </button>
         </motion.div>
       )}

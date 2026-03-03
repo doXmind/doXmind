@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import {
   Trash2,
   Loader2,
@@ -45,20 +46,24 @@ function getStatusIcon(status: KBAttachment["status"]) {
   }
 }
 
-function getStatusText(attachment: KBAttachment) {
+function getStatusText(
+  attachment: KBAttachment,
+  t: (key: string, values?: Record<string, string | number>) => string
+) {
   switch (attachment.status) {
     case "uploading":
-      return `Uploading... ${attachment.uploadProgress ?? 0}%`;
+      return t("uploading", { progress: String(attachment.uploadProgress ?? 0) });
     case "processing":
-      return "Processing...";
+      return t("processing");
     case "indexed":
-      return `${attachment.chunkCount} sections`;
+      return t("sections", { count: attachment.chunkCount ?? 0 });
     case "error":
-      return attachment.errorMessage || "Error";
+      return attachment.errorMessage || t("error");
   }
 }
 
 export function KBAttachmentItem({ attachment, onDelete, isDeleting }: KBAttachmentItemProps) {
+  const t = useTranslations("kb");
   return (
     <div
       className={cn(
@@ -83,7 +88,7 @@ export function KBAttachmentItem({ attachment, onDelete, isDeleting }: KBAttachm
           <span>·</span>
           <span className="flex items-center gap-1">
             {getStatusIcon(attachment.status)}
-            {getStatusText(attachment)}
+            {getStatusText(attachment, t)}
           </span>
         </div>
 

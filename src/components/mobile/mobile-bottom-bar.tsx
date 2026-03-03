@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { Wand2, Scissors, Maximize2, Check, Languages } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FloatingAIInput } from "./floating-ai-input";
@@ -51,6 +52,7 @@ interface MobileBottomBarProps {
 }
 
 export function MobileBottomBar({ onViewChat }: MobileBottomBarProps) {
+  const t = useTranslations("mobile");
   const { pendingSelectionForAI, clearPendingSelectionForAI } = useLayoutStore();
   const { currentFileId } = useFileStore();
   const { sendMessage, isStreaming } = useChat();
@@ -82,13 +84,13 @@ export function MobileBottomBar({ onViewChat }: MobileBottomBarProps) {
 
   const quickActions = useMemo(
     () => [
-      { icon: <Wand2 className="h-4 w-4" />, label: "Improve", action: "improve" },
-      { icon: <Scissors className="h-4 w-4" />, label: "Shorten", action: "shorten" },
-      { icon: <Maximize2 className="h-4 w-4" />, label: "Expand", action: "expand" },
-      { icon: <Check className="h-4 w-4" />, label: "Fix", action: "fix" },
-      { icon: <Languages className="h-4 w-4" />, label: "Translate", action: "translate" },
+      { icon: <Wand2 className="h-4 w-4" />, label: t("improve"), action: "improve" },
+      { icon: <Scissors className="h-4 w-4" />, label: t("shorten"), action: "shorten" },
+      { icon: <Maximize2 className="h-4 w-4" />, label: t("expand"), action: "expand" },
+      { icon: <Check className="h-4 w-4" />, label: t("fix"), action: "fix" },
+      { icon: <Languages className="h-4 w-4" />, label: t("translate"), action: "translate" },
     ],
-    []
+    [t]
   );
 
   return (

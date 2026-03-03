@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -16,6 +17,7 @@ interface TagInfo {
 }
 
 export function TagFilterBar({ activeTag, onTagSelect }: TagFilterBarProps) {
+  const t = useTranslations("community");
   const [tags, setTags] = useState<TagInfo[]>([]);
 
   useEffect(() => {
@@ -30,14 +32,14 @@ export function TagFilterBar({ activeTag, onTagSelect }: TagFilterBarProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold text-foreground">Popular Tags</h2>
+        <h2 className="text-[13px] font-semibold text-foreground">{t("popularTags")}</h2>
         {activeTag && (
           <button
             onClick={() => onTagSelect("")}
             className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
           >
             <X className="h-3 w-3" />
-            Clear
+            {t("clear")}
           </button>
         )}
       </div>

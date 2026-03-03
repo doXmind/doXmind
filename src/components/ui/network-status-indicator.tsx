@@ -5,12 +5,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Wifi, WifiOff, RefreshCw } from "lucide-react";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface NetworkStatusIndicatorProps {
   className?: string;
 }
 
 export function NetworkStatusIndicator({ className }: NetworkStatusIndicatorProps) {
+  const t = useTranslations("common");
   const { isOnline, wasOffline } = useNetworkStatus();
   const [showReconnected, setShowReconnected] = React.useState(false);
 
@@ -50,12 +52,12 @@ export function NetworkStatusIndicator({ className }: NetworkStatusIndicatorProp
         {isOnline ? (
           <>
             <Wifi className="h-4 w-4" />
-            <span>Back online</span>
+            <span>{t("backOnline")}</span>
           </>
         ) : (
           <>
             <WifiOff className="h-4 w-4" />
-            <span>You&apos;re offline</span>
+            <span>{t("youreOffline")}</span>
             <RefreshCw className="ml-1 h-3 w-3 animate-spin opacity-60" />
           </>
         )}

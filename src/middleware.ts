@@ -11,8 +11,13 @@ const authRoutes = ["/login", "/register", "/forgot-password", "/reset-password"
 // Default: always require auth (both dev and prod)
 const skipAuth = process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 
+// i18n locale detection
+const SUPPORTED_LOCALES = ["en", "zh"];
+const DEFAULT_LOCALE = process.env.NEXT_PUBLIC_DEFAULT_LOCALE || "en";
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  let response: NextResponse | undefined;
 
   // Allow public routes (no auth required)
   if (
@@ -21,38 +26,50 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/community") ||
     pathname.startsWith("/profile")
   ) {
-    return NextResponse.next();
+    response = NextResponse.next();
   }
 
   // Skip auth only if explicitly configured
-  if (skipAuth) {
-    return NextResponse.next();
+  if (!response && skipAuth) {
+    response = NextResponse.next();
   }
 
-  // Get token from cookie (set by auth store persist)
-  // Note: We check localStorage token via cookie since middleware runs on server
-  const authCookie = request.cookies.get("doxmind_auth");
-  const isAuthenticated = !!authCookie?.value;
+  if (!response) {
+    // Get token from cookie (set by auth store persist)
+    const authCookie = request.cookies.get("doxmind_auth");
+    const isAuthenticated = !!authCookie?.value;
 
-  // Check if this is a protected route
-  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
+    const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
+    const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
 
-  // Check if this is an auth route (login, register, etc.)
-  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
+    if (isProtectedRoute && !isAuthenticated) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("redirect", pathname);
+      response = NextResponse.redirect(loginUrl);
+    }
 
-  // If trying to access protected route without auth, redirect to login
-  if (isProtectedRoute && !isAuthenticated) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+    if (!response && isAuthRoute && isAuthenticated) {
+      response = NextResponse.redirect(new URL("/", request.url));
+    }
   }
 
-  // If authenticated user tries to access auth routes, redirect to editor
-  if (isAuthRoute && isAuthenticated) {
-    return NextResponse.redirect(new URL("/", request.url));
+  if (!response) {
+    response = NextResponse.next();
   }
 
-  return NextResponse.next();
+  // Set locale cookie if missing (for i18n)
+  if (!request.cookies.get("NEXT_LOCALE")) {
+    const acceptLang = request.headers.get("accept-language") || "";
+    const preferred = acceptLang.split(",").map((s) => s.split(";")[0].trim().split("-")[0]);
+    const detected = preferred.find((l) => SUPPORTED_LOCALES.includes(l)) || DEFAULT_LOCALE;
+    response.cookies.set("NEXT_LOCALE", detected, {
+      path: "/",
+      maxAge: 365 * 24 * 60 * 60,
+      sameSite: "lax",
+    });
+  }
+
+  return response;
 }
 
 export const config = {

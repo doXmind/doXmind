@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Send, Loader2 } from "lucide-react";
 
@@ -13,12 +14,15 @@ interface CommentComposerProps {
 
 export function CommentComposer({
   onSubmit,
-  placeholder = "Write a comment...",
+  placeholder,
   autoFocus = false,
   onCancel,
 }: CommentComposerProps) {
+  const t = useTranslations("comments");
+  const tc = useTranslations("common");
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const resolvedPlaceholder = placeholder ?? t("writeAComment");
 
   const handleSubmit = async () => {
     if (!content.trim()) return;
@@ -48,14 +52,14 @@ export function CommentComposer({
         value={content}
         onChange={(e) => setContent(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         rows={3}
         autoFocus={autoFocus}
         className="w-full resize-none rounded-xl border border-border/60 bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/10"
       />
       <div className="flex items-center justify-between">
         <p className="text-[11px] text-muted-foreground/50">
-          **bold**, *italic*, `code`, lists supported · Ctrl+Enter to submit
+          {t("formattingHelp")} · {t("ctrlEnterToSubmit")}
         </p>
         <div className="flex gap-2">
           {onCancel && (
@@ -63,7 +67,7 @@ export function CommentComposer({
               onClick={onCancel}
               className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              Cancel
+              {tc("cancel")}
             </button>
           )}
           <Button
@@ -77,7 +81,7 @@ export function CommentComposer({
             ) : (
               <Send className="h-3.5 w-3.5" />
             )}
-            Comment
+            {t("comment")}
           </Button>
         </div>
       </div>

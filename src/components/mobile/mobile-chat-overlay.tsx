@@ -8,6 +8,7 @@
  */
 
 import { useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ interface MobileChatOverlayProps {
 }
 
 export function MobileChatOverlay({ isOpen, onClose }: MobileChatOverlayProps) {
+  const t = useTranslations("mobile");
   const dragControls = useDragControls();
 
   const handleClose = useCallback(() => {
@@ -91,13 +93,13 @@ export function MobileChatOverlay({ isOpen, onClose }: MobileChatOverlayProps) {
 
               {/* Header */}
               <div className="flex items-center justify-between border-b border-border px-4 pb-3">
-                <h2 className="text-base font-semibold">Chat History</h2>
+                <h2 className="text-base font-semibold">{t("chatHistory")}</h2>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={handleClose}
                   className="h-10 w-10 rounded-full"
-                  aria-label="Close chat"
+                  aria-label={t("closeChat")}
                 >
                   <X className="h-5 w-5" />
                 </Button>

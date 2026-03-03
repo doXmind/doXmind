@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import {
   X,
   FileSpreadsheet,
@@ -55,7 +56,10 @@ function needsClaudeIndicator(file: DataFile): boolean {
 }
 
 // Get Claude status indicator for tag
-function getClaudeIndicator(status: ClaudeUploadStatus | undefined): {
+function getClaudeIndicator(
+  status: ClaudeUploadStatus | undefined,
+  t: (key: string) => string
+): {
   icon: React.ReactNode;
   tooltip: string;
   color: string;
@@ -65,19 +69,19 @@ function getClaudeIndicator(status: ClaudeUploadStatus | undefined): {
     case "uploading":
       return {
         icon: <Loader2 className="h-2.5 w-2.5 animate-spin" />,
-        tooltip: "Optimizing...",
+        tooltip: t("optimizing"),
         color: "text-blue-500",
       };
     case "ready":
       return {
         icon: <Cloud className="h-2.5 w-2.5" />,
-        tooltip: "Optimized",
+        tooltip: t("optimized"),
         color: "text-green-500",
       };
     case "error":
       return {
         icon: <CloudOff className="h-2.5 w-2.5" />,
-        tooltip: "Will upload on send",
+        tooltip: t("willUploadOnSend"),
         color: "text-amber-500",
       };
     default:
@@ -86,11 +90,14 @@ function getClaudeIndicator(status: ClaudeUploadStatus | undefined): {
 }
 
 export function DataFileTag({ file, onRemove, disabled }: DataFileTagProps) {
+  const t = useTranslations("chat");
   const Icon = getFileIcon(file.fileType);
   const isUploading = file.status === "uploading";
   const isError = file.status === "error";
   const showClaudeIndicator = needsClaudeIndicator(file);
-  const claudeIndicator = showClaudeIndicator ? getClaudeIndicator(file.claudeUploadStatus) : null;
+  const claudeIndicator = showClaudeIndicator
+    ? getClaudeIndicator(file.claudeUploadStatus, t)
+    : null;
 
   return (
     <div
@@ -121,7 +128,7 @@ export function DataFileTag({ file, onRemove, disabled }: DataFileTagProps) {
 
       {/* Row count for tabular data */}
       {file.rowCount !== undefined && file.rowCount > 0 && (
-        <span className="text-[10px] opacity-70">({file.rowCount} rows)</span>
+        <span className="text-[10px] opacity-70">{t("rowCount", { count: file.rowCount })}</span>
       )}
 
       {/* Claude optimization indicator */}

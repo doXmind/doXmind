@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import {
@@ -34,25 +35,27 @@ function formatCount(n: number): string {
   return String(n);
 }
 
-function formatWordCount(n: number): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatWordCount(n: number, t: (key: string, values?: any) => string): string {
   if (n <= 0) return "";
-  if (n < 1000) return `${n} words`;
-  return `${(n / 1000).toFixed(1)}k words`;
+  if (n < 1000) return t("words", { count: n });
+  return t("wordsK", { count: (n / 1000).toFixed(1) });
 }
 
-function relativeTime(dateStr: string): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function relativeTime(dateStr: string, t: (key: string, values?: any) => string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
   const diff = now - then;
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("justNow");
+  if (minutes < 60) return t("mAgo", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t("hAgo", { count: hours });
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (days < 7) return t("dAgo", { count: days });
+  if (days < 30) return t("wAgo", { count: Math.floor(days / 7) });
+  return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /* ── Single feed item ───────────────────────────────────────── */
@@ -67,6 +70,7 @@ function FeedCard({
   onTagClick?: (tag: string) => void;
   onEditItem?: (item: CommunityItem) => void;
 }) {
+  const t = useTranslations("community");
   const user = useAuthStore((s) => s.user);
   const isBookmarked = useBookmarksStore((s) => s.isBookmarked(item.share_id));
   const toggleBookmark = useBookmarksStore((s) => s.toggleBookmark);
@@ -144,18 +148,18 @@ function FeedCard({
                 href={`/profile/${owner.id}`}
                 className="truncate text-[13px] font-semibold text-foreground hover:underline"
               >
-                {owner.username || "Anonymous"}
+                {owner.username || t("anonymous")}
               </Link>
               <span className="text-[12px] text-muted-foreground/50">·</span>
               <span className="shrink-0 text-[12px] text-muted-foreground/50">
-                {relativeTime(item.published_at)}
+                {relativeTime(item.published_at, t)}
               </span>
             </div>
 
             {readingTime > 0 && (
               <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/50">
                 <Clock className="h-3 w-3" />
-                {readingTime} min
+                {t("min", { count: readingTime })}
               </span>
             )}
 
@@ -168,7 +172,7 @@ function FeedCard({
                   onEditItem(item);
                 }}
                 className="rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-muted hover:text-foreground"
-                aria-label="Edit post"
+                aria-label={t("editPost")}
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
@@ -219,7 +223,7 @@ function FeedCard({
               </div>
               {wordCount > 0 && (
                 <span className="shrink-0 text-[11px] text-muted-foreground/40">
-                  {formatWordCount(wordCount)}
+                  {formatWordCount(wordCount, t)}
                 </span>
               )}
             </div>
@@ -251,7 +255,7 @@ function FeedCard({
               <button
                 onClick={handleBookmark}
                 className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                title={isBookmarked ? "Remove bookmark" : "Bookmark"}
+                title={isBookmarked ? t("removeBookmark") : t("bookmark")}
               >
                 <Bookmark
                   className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
@@ -262,7 +266,7 @@ function FeedCard({
             <button
               onClick={handleShare}
               className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-              title="Copy link"
+              title={t("copyLink")}
             >
               <Share2 className="h-3.5 w-3.5" />
             </button>
@@ -283,6 +287,8 @@ export function CommunityFeed({
   onTagClick,
   onEditItem,
 }: CommunityFeedProps) {
+  const t = useTranslations("community");
+
   /* Loading skeleton */
   if (isLoading && items.length === 0) {
     return (
@@ -328,17 +334,15 @@ export function CommunityFeed({
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <Search className="h-8 w-8 text-muted-foreground/30" />
         <h3 className="mt-4 text-[15px] font-semibold text-foreground">
-          No results{searchQuery ? ` for "${searchQuery}"` : ""}
+          {searchQuery ? t("noResultsFor", { query: searchQuery }) : t("noResults")}
         </h3>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Try different keywords or clear your filters.
-        </p>
+        <p className="mt-1 text-[13px] text-muted-foreground">{t("tryDifferentKeywords")}</p>
         {onClearFilters && (
           <button
             onClick={onClearFilters}
             className="mt-3 text-[13px] font-medium text-foreground underline underline-offset-2 transition-colors hover:text-foreground/70"
           >
-            Clear filters
+            {t("clearFilters")}
           </button>
         )}
       </div>
@@ -351,16 +355,14 @@ export function CommunityFeed({
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <FileText className="h-8 w-8 text-muted-foreground/30" />
         <h3 className="mt-4 text-[15px] font-semibold text-foreground">
-          No published documents yet
+          {t("noPublishedDocuments")}
         </h3>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Be the first to share your work with the community.
-        </p>
+        <p className="mt-1 text-[13px] text-muted-foreground">{t("beTheFirstToShare")}</p>
         <Link
           href="/editor"
           className="mt-3 text-[13px] font-medium text-foreground underline underline-offset-2 transition-colors hover:text-foreground/70"
         >
-          Start writing
+          {t("startWriting")}
         </Link>
       </div>
     );

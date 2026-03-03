@@ -5,6 +5,7 @@ import { ArrowUp, Square } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface ChatComposerProps {
   value: string;
@@ -57,6 +58,7 @@ export function ChatComposer({
   extraActions,
   className,
 }: ChatComposerProps) {
+  const t = useTranslations("chat");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea to fit content
@@ -110,7 +112,7 @@ export function ChatComposer({
       {/* Drag overlay */}
       {isDragging && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-sm">
-          <span className="text-sm font-medium text-primary">Drop files here</span>
+          <span className="text-sm font-medium text-primary">{t("dropFilesHere")}</span>
         </div>
       )}
 
@@ -148,18 +150,18 @@ export function ChatComposer({
 
           {/* Send / Stop button */}
           {isStreaming ? (
-            <Tooltip content="Stop generating" side="top">
+            <Tooltip content={t("stopGenerating")} side="top">
               <button
                 type="button"
                 onClick={onStop}
                 className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/90"
-                aria-label="Stop generating"
+                aria-label={t("stopGenerating")}
               >
                 <Square className="h-4 w-4" />
               </button>
             </Tooltip>
           ) : (
-            <Tooltip content="Send message" side="top">
+            <Tooltip content={t("sendMessage")} side="top">
               <button
                 type="button"
                 onClick={() => hasContent && onSubmit()}
@@ -170,7 +172,7 @@ export function ChatComposer({
                     ? "bg-foreground text-background hover:bg-foreground/90"
                     : "bg-muted text-muted-foreground"
                 )}
-                aria-label="Send message"
+                aria-label={t("sendMessage")}
               >
                 <ArrowUp className="h-4 w-4" />
               </button>
@@ -182,7 +184,7 @@ export function ChatComposer({
       {/* Hint text */}
       {showHint && (
         <p className="mt-1.5 hidden text-center text-[11px] text-muted-foreground/50 dark:text-muted-foreground/70 md:block">
-          Press Enter to send, Shift+Enter for new line
+          {t("pressEnterHint")}
         </p>
       )}
     </div>

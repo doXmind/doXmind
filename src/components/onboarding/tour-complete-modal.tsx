@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { PenLine, Check, RotateCcw } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -11,26 +12,28 @@ interface TourCompleteModalProps {
 }
 
 const COMPLETED_FEATURES = [
-  "Search & Ask AI",
-  "KB Agent",
-  "Autocomplete",
-  "Slash Commands",
-  "Quick Edit",
-  "Diff Review",
-  "Writing Review",
-  "AI Chat",
-  "Knowledge Base",
-  "Mindlines",
-  "Version History",
-  "Focus Mode",
-  "Export",
-  "New Button",
-  "Recent Files",
-  "Favorites",
-  "File Actions",
+  { labelKey: "completedFeatureSearch" },
+  { labelKey: "completedFeatureKBAgent" },
+  { labelKey: "completedFeatureAutocomplete" },
+  { labelKey: "completedFeatureSlash" },
+  { labelKey: "completedFeatureQuickEdit" },
+  { labelKey: "completedFeatureDiff" },
+  { labelKey: "completedFeatureWritingReview" },
+  { labelKey: "completedFeatureChat" },
+  { labelKey: "completedFeatureKB" },
+  { labelKey: "completedFeatureMindlines" },
+  { labelKey: "completedFeatureVersionHistory" },
+  { labelKey: "completedFeatureFocusMode" },
+  { labelKey: "completedFeatureExport" },
+  { labelKey: "completedFeatureNewButton" },
+  { labelKey: "completedFeatureRecentFiles" },
+  { labelKey: "completedFeatureFavorites" },
+  { labelKey: "completedFeatureFileActions" },
 ];
 
 export function TourCompleteModal({ onFinish, onRestart }: TourCompleteModalProps) {
+  const t = useTranslations("onboarding");
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -110,10 +113,9 @@ export function TourCompleteModal({ onFinish, onRestart }: TourCompleteModalProp
 
         {/* Content */}
         <div className="px-8 pb-2 pt-5 text-center">
-          <h2 className="text-xl font-semibold tracking-tight">You&apos;re All Set!</h2>
+          <h2 className="text-xl font-semibold tracking-tight">{t("youreAllSet")}</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            You&apos;ve explored all {COMPLETED_FEATURES.length} key features. You&apos;re ready to
-            create amazing content with AI by your side.
+            {t("completedFeaturesMessage", { count: COMPLETED_FEATURES.length })}
           </p>
         </div>
 
@@ -122,14 +124,16 @@ export function TourCompleteModal({ onFinish, onRestart }: TourCompleteModalProp
           <div className="grid grid-cols-3 gap-x-2 gap-y-2">
             {COMPLETED_FEATURES.map((feature, i) => (
               <motion.div
-                key={feature}
+                key={feature.labelKey}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.6 + i * 0.05 }}
                 className="flex items-center gap-1.5"
               >
                 <Check className="h-3 w-3 flex-shrink-0 text-primary" />
-                <span className="truncate text-[11px] text-muted-foreground">{feature}</span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  {t(feature.labelKey)}
+                </span>
               </motion.div>
             ))}
           </div>
@@ -139,14 +143,14 @@ export function TourCompleteModal({ onFinish, onRestart }: TourCompleteModalProp
         <div className="flex flex-col gap-2 px-8 pb-8 pt-6">
           <Button onClick={onFinish} className="w-full gap-2">
             <PenLine className="h-4 w-4" />
-            Start Writing
+            {t("startWritingButton")}
           </Button>
           <button
             onClick={onRestart}
             className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/50 transition-colors hover:text-muted-foreground dark:text-muted-foreground/70"
           >
             <RotateCcw className="h-3 w-3" />
-            Restart Tour
+            {t("restartTour")}
           </button>
         </div>
       </motion.div>

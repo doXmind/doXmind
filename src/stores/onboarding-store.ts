@@ -24,21 +24,11 @@ export type OnboardingStepId =
   | "file-card"
   | "complete";
 
-type StepGroup =
-  | "Welcome"
-  | "Home"
-  | "AI Writing"
-  | "AI Editing"
-  | "AI Chat & Knowledge"
-  | "Navigation"
-  | "File Management"
-  | "Finishing";
-
 export interface OnboardingStep {
   id: OnboardingStepId;
-  group: StepGroup;
-  title: string;
-  instruction: string;
+  groupKey: string;
+  titleKey: string;
+  instructionKey: string;
   targetSelector: string;
   position: "top" | "bottom" | "left" | "right" | "center";
   allowInteraction: boolean;
@@ -53,10 +43,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- Welcome ---
   {
     id: "welcome",
-    group: "Welcome",
-    title: "Welcome to doXmind!",
-    instruction:
-      "Let's walk through a complete tour of your AI writing workspace. You'll discover every feature hands-on — it only takes about 5 minutes.",
+    groupKey: "groupWelcome",
+    titleKey: "tourStep1Title",
+    instructionKey: "tourStep1Instruction",
     targetSelector: "",
     position: "center",
     allowInteraction: false,
@@ -68,10 +57,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- Home: Search & KB ---
   {
     id: "home-search",
-    group: "Home",
-    title: "Search & Ask AI",
-    instruction:
-      "This is your search bar. In Ask AI mode, get AI answers from your knowledge base. Switch to Search mode to find documents by content.",
+    groupKey: "groupHomeSearch",
+    titleKey: "tourStep2Title",
+    instructionKey: "tourStep2Instruction",
     targetSelector: "[data-onboarding='home-search']",
     position: "bottom",
     allowInteraction: false,
@@ -81,10 +69,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "kb-agent",
-    group: "Home",
-    title: "AI Answers",
-    instruction:
-      "Ask any question and the AI will search your documents and give a cited answer. Perfect for research and quick lookups.",
+    groupKey: "groupHomeSearch",
+    titleKey: "tourStep3Title",
+    instructionKey: "tourStep3Instruction",
     targetSelector: "[data-onboarding='search-mode-toggle']",
     position: "bottom",
     allowInteraction: false,
@@ -96,10 +83,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- AI Writing ---
   {
     id: "autocomplete",
-    group: "AI Writing",
-    title: "AI Autocomplete",
-    instruction:
-      'Place your cursor at the end of the incomplete paragraph (ending with "the way we") and pause. Ghost text will appear — press Tab to accept it.',
+    groupKey: "groupAIWriting",
+    titleKey: "tourStep4Title",
+    instructionKey: "tourStep4Instruction",
     targetSelector: ".ProseMirror",
     position: "top",
     allowInteraction: true,
@@ -109,10 +95,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "slash-command",
-    group: "AI Writing",
-    title: "Slash Commands",
-    instruction:
-      'Click on the empty line below the "Slash Commands" heading and type / to open the block menu. Pick any block to insert.',
+    groupKey: "groupAIWriting",
+    titleKey: "tourStep5Title",
+    instructionKey: "tourStep5Instruction",
     targetSelector: ".ProseMirror",
     position: "top",
     allowInteraction: true,
@@ -124,10 +109,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- AI Editing ---
   {
     id: "quick-edit",
-    group: "AI Editing",
-    title: "Quick Edit",
-    instruction:
-      'Select the verbose sentence under "Quick Edit" and choose an action (like "Simplify" or "Improve Writing") from the popup menu.',
+    groupKey: "groupAIEditing",
+    titleKey: "tourStep6Title",
+    instructionKey: "tourStep6Instruction",
     targetSelector: ".ProseMirror",
     position: "top",
     allowInteraction: true,
@@ -137,10 +121,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "diff-review",
-    group: "AI Editing",
-    title: "Review AI Changes",
-    instruction:
-      "The AI has suggested changes. Click Accept or Reject on each highlighted change, or use Accept All / Reject All.",
+    groupKey: "groupAIEditing",
+    titleKey: "tourStep7Title",
+    instructionKey: "tourStep7Instruction",
     targetSelector: ".diff-actions-row, [data-onboarding='diff-toolbar']",
     position: "top",
     allowInteraction: true,
@@ -152,10 +135,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "writing-review",
-    group: "AI Editing",
-    title: "Writing Review",
-    instruction:
-      'Open the More menu (\u2026) in the toolbar and click "AI Writing Review" to get color-coded writing feedback on your document.',
+    groupKey: "groupAIEditing",
+    titleKey: "tourStep8Title",
+    instructionKey: "tourStep8Instruction",
     targetSelector: "[data-onboarding='more-menu']",
     position: "left",
     allowInteraction: true,
@@ -167,10 +149,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- AI Chat & Knowledge ---
   {
     id: "ai-chat",
-    group: "AI Chat & Knowledge",
-    title: "AI Chat",
-    instruction:
-      'Open the chat panel and send a message like "Summarize this document" to see AI streaming in action.',
+    groupKey: "groupChatKnowledge",
+    titleKey: "tourStep9Title",
+    instructionKey: "tourStep9Instruction",
     targetSelector: "[data-onboarding='chat-toggle'], [data-onboarding='chat-composer']",
     position: "left",
     allowInteraction: true,
@@ -180,10 +161,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "knowledge-base",
-    group: "AI Chat & Knowledge",
-    title: "Knowledge Base",
-    instruction:
-      "Click the attachment icon in the chat input to see the Knowledge Base. You can upload PDFs and docs as context for AI.",
+    groupKey: "groupChatKnowledge",
+    titleKey: "tourStep10Title",
+    instructionKey: "tourStep10Instruction",
     targetSelector: "[data-onboarding='kb-button']",
     position: "left",
     allowInteraction: true,
@@ -195,10 +175,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- Navigation ---
   {
     id: "mindlines",
-    group: "Navigation",
-    title: "Outline & Mindlines",
-    instruction:
-      "Toggle the sidebar to view your document outline. Click any heading to jump to it.",
+    groupKey: "groupNavigation",
+    titleKey: "tourStep11Title",
+    instructionKey: "tourStep11Instruction",
     targetSelector: "[data-onboarding='sidebar-toggle']",
     position: "right",
     allowInteraction: true,
@@ -208,10 +187,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "version-history",
-    group: "Navigation",
-    title: "Version History",
-    instruction:
-      "Open the More menu (\u2026) in the toolbar, then click Version History. Every AI edit is automatically saved as a version.",
+    groupKey: "groupNavigation",
+    titleKey: "tourStep12Title",
+    instructionKey: "tourStep12Instruction",
     targetSelector: "[data-onboarding='more-menu']",
     position: "left",
     allowInteraction: true,
@@ -221,10 +199,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "focus-mode",
-    group: "Navigation",
-    title: "Focus Mode",
-    instruction:
-      "Press F11 or click the Focus Mode button for distraction-free writing. Press F11 again to exit.",
+    groupKey: "groupNavigation",
+    titleKey: "tourStep13Title",
+    instructionKey: "tourStep13Instruction",
     targetSelector: "[data-onboarding='focus-mode'], .ProseMirror",
     position: "top",
     allowInteraction: true,
@@ -234,10 +211,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "export",
-    group: "Navigation",
-    title: "Export",
-    instruction:
-      "Open the More menu (\u2026) in the toolbar to export your document as Markdown, PDF, or Word.",
+    groupKey: "groupNavigation",
+    titleKey: "tourStep14Title",
+    instructionKey: "tourStep14Instruction",
     targetSelector: "[data-onboarding='more-menu']",
     position: "left",
     allowInteraction: true,
@@ -249,10 +225,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- File Management (home page) ---
   {
     id: "new-button",
-    group: "File Management",
-    title: "Create New",
-    instruction:
-      "Click the + button to create a new document, folder, start from a template, or import a file.",
+    groupKey: "groupFileManagement",
+    titleKey: "tourStep15Title",
+    instructionKey: "tourStep15Instruction",
     targetSelector: "[data-onboarding='new-button']",
     position: "bottom",
     allowInteraction: false,
@@ -262,9 +237,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "recent-files",
-    group: "File Management",
-    title: "Recent Files",
-    instruction: "Your most recently edited documents appear here for quick access.",
+    groupKey: "groupFileManagement",
+    titleKey: "tourStep16Title",
+    instructionKey: "tourStep16Instruction",
     targetSelector: "[data-onboarding='recent-files']",
     position: "bottom",
     allowInteraction: false,
@@ -275,10 +250,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "favorites",
-    group: "File Management",
-    title: "Favorites",
-    instruction:
-      "Star important documents to pin them here. Use the menu on any file card to add favorites.",
+    groupKey: "groupFileManagement",
+    titleKey: "tourStep17Title",
+    instructionKey: "tourStep17Instruction",
     targetSelector: "[data-onboarding='favorites-section']",
     position: "bottom",
     allowInteraction: false,
@@ -289,10 +263,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: "file-card",
-    group: "File Management",
-    title: "File Actions",
-    instruction:
-      "Hover over any document card to see its options — rename, share, export, or delete.",
+    groupKey: "groupFileManagement",
+    titleKey: "tourStep18Title",
+    instructionKey: "tourStep18Instruction",
     targetSelector: "[data-onboarding='file-card']",
     position: "top",
     allowInteraction: false,
@@ -304,9 +277,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   // --- Finishing ---
   {
     id: "complete",
-    group: "Finishing",
-    title: "You're All Set!",
-    instruction: "You've explored all the key features of doXmind. Time to start writing!",
+    groupKey: "groupFinishing",
+    titleKey: "tourStep19Title",
+    instructionKey: "tourStep19Instruction",
     targetSelector: "",
     position: "center",
     allowInteraction: false,

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderInput, Trash2, Download, X, AlertTriangle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import {
@@ -19,6 +20,8 @@ import { storeLogger } from "@/lib/logger";
 const log = storeLogger.child("BulkActionBar");
 
 export function BulkActionBar() {
+  const t = useTranslations("sidebar");
+  const tc = useTranslations("common");
   const router = useRouter();
   const { selectedFileIds, clearSelection, bulkMoveFiles, bulkDeleteFiles, getFolders, files } =
     useFileStore();
@@ -34,9 +37,7 @@ export function BulkActionBar() {
     try {
       const fileIds = Array.from(selectedFileIds);
       await bulkMoveFiles(fileIds, folderId);
-      toast.success(
-        `Moved ${selectedCount} file${selectedCount > 1 ? "s" : ""} ${folderId ? "to folder" : "to root"}`
-      );
+      toast.success(t("movedFilesCount", { count: selectedCount }));
     } catch (error) {
       log.error("Failed to bulk move files", error);
       const { title, description } = getErrorMessage(error);
@@ -53,7 +54,7 @@ export function BulkActionBar() {
       // Navigate to the next file or welcome screen
       const nextId = useFileStore.getState().currentFileId;
       router.push(nextId ? `/editor/${nextId}` : "/editor");
-      toast.success(`Moved ${selectedCount} file${selectedCount > 1 ? "s" : ""} to trash`);
+      toast.success(t("movedFilesToTrash", { count: selectedCount }));
     } catch (error) {
       log.error("Failed to bulk delete files", error);
       const { title, description } = getErrorMessage(error);
@@ -82,7 +83,7 @@ export function BulkActionBar() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    toast.success(`Exported ${selectedCount} file${selectedCount > 1 ? "s" : ""}`);
+    toast.success(t("exportedFiles", { count: selectedCount }));
   };
 
   return (
@@ -91,7 +92,9 @@ export function BulkActionBar() {
         <div className="flex items-center justify-between gap-2 px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">
-              {selectedCount} file{selectedCount > 1 ? "s" : ""} selected
+              {selectedCount === 1
+                ? t("fileSelected", { count: selectedCount })
+                : t("filesSelected", { count: selectedCount })}
             </span>
           </div>
 
@@ -101,13 +104,13 @@ export function BulkActionBar() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 gap-2">
                   <FolderInput className="h-4 w-4" />
-                  Move
+                  {t("move")}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => handleMove(null)}>
                   <span className="flex items-center gap-2">
-                    <span>Root</span>
+                    <span>{t("root")}</span>
                   </span>
                 </DropdownMenuItem>
                 {folders.length > 0 && <div className="my-1 h-px bg-border" />}
@@ -122,7 +125,7 @@ export function BulkActionBar() {
             {/* Export */}
             <Button variant="outline" size="sm" onClick={handleExport} className="h-8 gap-2">
               <Download className="h-4 w-4" />
-              Export
+              {t("export")}
             </Button>
 
             {/* Move to Trash */}
@@ -134,13 +137,13 @@ export function BulkActionBar() {
               className="h-8 gap-2"
             >
               <Trash2 className="h-4 w-4" />
-              Trash
+              {t("trash")}
             </Button>
 
             {/* Cancel */}
             <Button variant="ghost" size="sm" onClick={clearSelection} className="h-8 gap-2">
               <X className="h-4 w-4" />
-              Cancel
+              {tc("cancel")}
             </Button>
           </div>
         </div>
@@ -151,19 +154,18 @@ export function BulkActionBar() {
         <ModalHeader onClose={() => setShowDeleteModal(false)}>
           <span className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            Move {selectedCount} file{selectedCount > 1 ? "s" : ""} to trash?
+            {t("moveToTrashConfirmTitle", { count: selectedCount })}
           </span>
         </ModalHeader>
         <p className="text-sm text-muted-foreground">
-          {selectedCount > 1 ? "These files" : "This file"} will be moved to trash. You can restore{" "}
-          {selectedCount > 1 ? "them" : "it"} later.
+          {selectedCount > 1 ? t("moveToTrashDescMultiple") : t("moveToTrashDescSingle")}
         </p>
         <ModalFooter>
           <Button variant="outline" onClick={() => setShowDeleteModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDeleteConfirm}>
-            Move to Trash
+            {t("moveToTrash")}
           </Button>
         </ModalFooter>
       </Modal>

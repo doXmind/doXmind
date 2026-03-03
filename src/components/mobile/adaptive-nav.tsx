@@ -11,6 +11,7 @@
  */
 
 import { useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { FolderOpen, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ interface AdaptiveNavProps {
 }
 
 export function AdaptiveNav({ onAITap }: AdaptiveNavProps) {
+  const t = useTranslations("mobile");
   const { setMobileSidebarOpen, isMobileSidebarOpen } = useLayoutStore();
   const { isSelectionActive } = useBlockSelectionStore();
 
@@ -78,7 +80,7 @@ export function AdaptiveNav({ onAITap }: AdaptiveNavProps) {
         <div className="flex h-5 w-5 items-center justify-center">
           <Sparkles className="h-5 w-5" />
         </div>
-        <span className="text-[10px] font-medium">AI</span>
+        <span className="text-[10px] font-medium">{t("ai")}</span>
       </button>
 
       {/* Files Button */}
@@ -99,7 +101,7 @@ export function AdaptiveNav({ onAITap }: AdaptiveNavProps) {
         <div className="flex h-5 w-5 items-center justify-center">
           <FolderOpen className="h-5 w-5" />
         </div>
-        <span className="text-[10px] font-medium">Files</span>
+        <span className="text-[10px] font-medium">{t("files")}</span>
       </button>
     </motion.nav>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -22,6 +23,9 @@ interface EditShareModalProps {
 }
 
 export function EditShareModal({ open, onClose, item, onSave }: EditShareModalProps) {
+  const t = useTranslations("community");
+  const ts = useTranslations("share");
+  const tc = useTranslations("common");
   const [title, setTitle] = useState(item.title);
   const [description, setDescription] = useState(item.description || "");
   const [tagsInput, setTagsInput] = useState(item.tags.join(", "));
@@ -37,7 +41,7 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
 
   const handleSave = async () => {
     if (!title.trim()) {
-      toast.error("Title is required");
+      toast.error(t("titleRequired"));
       return;
     }
 
@@ -45,7 +49,7 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
     try {
       const tagList = tagsInput
         .split(",")
-        .map((t) => t.trim())
+        .map((s) => s.trim())
         .filter(Boolean);
 
       const result = await api.updateShareMetadata(item.shareId, {
@@ -60,10 +64,10 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
         tags: result.tags || [],
       });
 
-      toast.success("Post updated!");
+      toast.success(t("postUpdated"));
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update post");
+      toast.error(err instanceof Error ? err.message : t("failedToUpdatePost"));
     } finally {
       setIsSaving(false);
     }
@@ -71,28 +75,31 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
 
   return (
     <Modal open={open} onClose={onClose}>
-      <ModalHeader onClose={onClose}>Edit Post</ModalHeader>
+      <ModalHeader onClose={onClose}>{t("editShareTitle")}</ModalHeader>
 
       <div className="space-y-4 py-2">
         <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-foreground">Title</label>
+          <label className="mb-1.5 block text-[13px] font-medium text-foreground">
+            {ts("title")}
+          </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Document title"
+            placeholder={ts("titlePlaceholder")}
             className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-            Description <span className="font-normal text-muted-foreground">(optional)</span>
+            {ts("description")}{" "}
+            <span className="font-normal text-muted-foreground">{ts("descriptionOptional")}</span>
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="What is this about?"
+            placeholder={ts("descriptionPlaceholder")}
             rows={3}
             maxLength={500}
             className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -104,14 +111,14 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
 
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-            Tags{" "}
-            <span className="font-normal text-muted-foreground">(comma-separated, max 10)</span>
+            {ts("tags")}{" "}
+            <span className="font-normal text-muted-foreground">{t("tagsMaxCount")}</span>
           </label>
           <input
             type="text"
             value={tagsInput}
             onChange={(e) => setTagsInput(e.target.value)}
-            placeholder="e.g. tutorial, react, design"
+            placeholder={ts("tagsPlaceholder")}
             className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
@@ -122,11 +129,11 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
           onClick={onClose}
           className="rounded-lg px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          Cancel
+          {tc("cancel")}
         </button>
         <Button onClick={handleSave} disabled={isSaving || !title.trim()} className="h-9 px-5">
           {isSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-          Save Changes
+          {t("saveChanges")}
         </Button>
       </ModalFooter>
     </Modal>

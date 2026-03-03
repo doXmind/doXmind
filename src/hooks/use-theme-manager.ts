@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getTheme, getThemesByBaseMode, THEME_LIST } from "@/lib/themes/registry";
@@ -19,6 +19,15 @@ export function useThemeManager() {
     setPreferredDarkTheme,
     setSystemThemeEnabled,
   } = useLayoutStore();
+
+  // Wait for Zustand persist to hydrate before applying theme
+  const [hydrated, setHydrated] = useState(useLayoutStore.persist.hasHydrated());
+
+  useEffect(() => {
+    if (hydrated) return;
+    const unsub = useLayoutStore.persist.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, [hydrated]);
 
   const currentTheme = getTheme(themeId);
 
@@ -86,14 +95,16 @@ export function useThemeManager() {
     [setSystemThemeEnabled, preferredLightTheme, preferredDarkTheme, setThemeId, applyThemeToDOM]
   );
 
-  // Apply theme on mount and when themeId changes (e.g., after localStorage hydration)
+  // Apply theme on mount and when themeId changes — only after Zustand hydration
+  // to prevent overwriting the blocking script's theme with default values
   useEffect(() => {
+    if (!hydrated) return;
     applyThemeToDOM(currentTheme);
-  }, [themeId, applyThemeToDOM]); // Re-apply when theme changes from localStorage
+  }, [hydrated, themeId, applyThemeToDOM, currentTheme]);
 
   // Listen for system theme changes when systemThemeEnabled is true
   useEffect(() => {
-    if (!systemThemeEnabled || typeof window === "undefined") {
+    if (!hydrated || !systemThemeEnabled || typeof window === "undefined") {
       return;
     }
 
@@ -118,6 +129,7 @@ export function useThemeManager() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, [
+    hydrated,
     systemThemeEnabled,
     preferredLightTheme,
     preferredDarkTheme,

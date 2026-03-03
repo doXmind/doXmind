@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEditorStore } from "@/stores/editor-store";
 import { useMenuPosition, getSubmenuPosition } from "@/hooks/use-menu-position";
 import { useMenuKeyboard } from "@/hooks/use-menu-keyboard";
@@ -19,6 +20,7 @@ interface QuickEditMenuProps {
 }
 
 export function QuickEditMenu({ onQuickEdit }: QuickEditMenuProps) {
+  const t = useTranslations("quickEdit");
   const { quickEditOpen, quickEditPosition, selection, closeQuickEdit } = useEditorStore();
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
@@ -190,7 +192,7 @@ export function QuickEditMenu({ onQuickEdit }: QuickEditMenuProps) {
           <motion.div
             ref={submenuRef}
             role="menu"
-            aria-label={`${activeOption.label} options`}
+            aria-label={t(activeOption.labelKey)}
             initial={{ opacity: 0, x: -8, scale: 0.96 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
             exit={{ opacity: 0, x: -8, scale: 0.96 }}
@@ -218,7 +220,7 @@ export function QuickEditMenu({ onQuickEdit }: QuickEditMenuProps) {
                   submenuFocusedIndex === subIndex && "bg-accent text-accent-foreground"
                 )}
               >
-                {subItem.label}
+                {t(subItem.labelKey)}
               </motion.button>
             ))}
           </motion.div>
@@ -246,6 +248,7 @@ function MenuOption({
   onSelect,
   onHover,
 }: MenuOptionProps) {
+  const t = useTranslations("quickEdit");
   const hasSubmenu = !!option.submenu;
 
   return (
@@ -262,7 +265,7 @@ function MenuOption({
         )}
       >
         {option.icon}
-        <span className="flex-1 text-left">{option.label}</span>
+        <span className="flex-1 text-left">{t(option.labelKey)}</span>
         {hasSubmenu && (
           <motion.span animate={{ x: isSubmenuActive ? 2 : 0 }} transition={{ duration: 0.15 }}>
             <ChevronRight className="h-3 w-3 text-muted-foreground" />

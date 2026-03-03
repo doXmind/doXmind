@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Brain, Loader2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import type { ThinkingStatus } from "@/hooks/use-chat";
 
 interface ChatThinkingProps {
@@ -16,6 +17,7 @@ interface ChatThinkingProps {
  * Shows "Thinking..." while active, expandable content when done.
  */
 export function ChatThinking({ thinking, className }: ChatThinkingProps) {
+  const t = useTranslations("chat");
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!thinking.content && !thinking.isThinking) return null;
@@ -44,7 +46,7 @@ export function ChatThinking({ thinking, className }: ChatThinkingProps) {
           <Brain className="h-3 w-3" />
         )}
         <span className="font-medium">
-          {thinking.isThinking ? "Thinking..." : "Thought process"}
+          {thinking.isThinking ? t("thinking") : t("thoughtProcess")}
         </span>
         {thinking.content && (
           <ChevronRight

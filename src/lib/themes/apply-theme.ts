@@ -71,22 +71,43 @@ export function applyTheme(theme: ThemeDefinition): void {
 
   root.setAttribute("data-theme", theme.id);
 
+  const vars: Record<string, string> = {};
+
   // Apply core tokens
   for (const [key, cssVar] of Object.entries(TOKEN_TO_CSS_VAR)) {
     const value = theme.tokens[key as keyof typeof theme.tokens];
-    if (value) root.style.setProperty(cssVar, value);
+    if (value) {
+      root.style.setProperty(cssVar, value);
+      vars[cssVar] = value;
+    }
   }
 
   // Apply diff tokens
   for (const [key, cssVar] of Object.entries(DIFF_TO_CSS_VAR)) {
     const value = theme.diff[key as keyof typeof theme.diff];
-    if (value) root.style.setProperty(cssVar, value);
+    if (value) {
+      root.style.setProperty(cssVar, value);
+      vars[cssVar] = value;
+    }
   }
 
   // Apply status tokens
   for (const [key, cssVar] of Object.entries(STATUS_TO_CSS_VAR)) {
     const value = theme.status[key as keyof typeof theme.status];
-    if (value) root.style.setProperty(cssVar, value);
+    if (value) {
+      root.style.setProperty(cssVar, value);
+      vars[cssVar] = value;
+    }
+  }
+
+  // Cache theme for blocking script to restore on next page load
+  try {
+    localStorage.setItem(
+      "doxmind-theme-cache",
+      JSON.stringify({ id: theme.id, mode: theme.baseMode, vars })
+    );
+  } catch {
+    // localStorage may be unavailable; silently ignore
   }
 }
 
@@ -95,5 +116,10 @@ export function clearThemeOverrides(): void {
   root.removeAttribute("data-theme");
   for (const cssVar of ALL_CSS_VARS) {
     root.style.removeProperty(cssVar);
+  }
+  try {
+    localStorage.removeItem("doxmind-theme-cache");
+  } catch {
+    // silently ignore
   }
 }

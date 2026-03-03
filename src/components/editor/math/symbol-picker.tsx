@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { Search, X } from "lucide-react";
 import katex from "katex";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ interface SymbolPickerProps {
  * Provides a searchable grid of common LaTeX symbols
  */
 export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
+  const t = useTranslations("editor");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("common");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,7 +100,7 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-sm font-medium">Insert Symbol</span>
+        <span className="text-sm font-medium">{t("insertSymbolTitle")}</span>
         <button
           onClick={onClose}
           className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -114,7 +116,7 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
           <input
             ref={searchInputRef}
             type="text"
-            placeholder="Search symbols..."
+            placeholder={t("searchSymbols")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={cn(
@@ -150,7 +152,9 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
       {/* Symbol grid */}
       <div className="max-h-48 overflow-y-auto p-2">
         {filteredSymbols.length === 0 ? (
-          <div className="py-4 text-center text-sm text-muted-foreground">No symbols found</div>
+          <div className="py-4 text-center text-sm text-muted-foreground">
+            {t("noSymbolsFound")}
+          </div>
         ) : (
           <div className="grid grid-cols-5 gap-1">
             {filteredSymbols.map((symbol) => (
@@ -177,7 +181,7 @@ export function SymbolPicker({ onSelect, onClose }: SymbolPickerProps) {
 
       {/* Footer hint */}
       <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-        Click a symbol to insert • Hover for LaTeX code
+        {t("symbolPickerHint")}
       </div>
     </div>
   );

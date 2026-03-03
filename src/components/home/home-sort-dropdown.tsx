@@ -10,14 +10,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { SortOption } from "@/stores/file-store";
+import { useTranslations } from "next-intl";
 
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: "name-asc", label: "Name (A-Z)" },
-  { value: "name-desc", label: "Name (Z-A)" },
-  { value: "modified-newest", label: "Modified (Newest)" },
-  { value: "modified-oldest", label: "Modified (Oldest)" },
-  { value: "created-newest", label: "Created (Newest)" },
-  { value: "created-oldest", label: "Created (Oldest)" },
+type SortLabelKey =
+  | "sortNameAsc"
+  | "sortNameDesc"
+  | "sortModifiedNewest"
+  | "sortModifiedOldest"
+  | "sortCreatedNewest"
+  | "sortCreatedOldest";
+
+const SORT_OPTIONS: { value: SortOption; labelKey: SortLabelKey }[] = [
+  { value: "name-asc", labelKey: "sortNameAsc" },
+  { value: "name-desc", labelKey: "sortNameDesc" },
+  { value: "modified-newest", labelKey: "sortModifiedNewest" },
+  { value: "modified-oldest", labelKey: "sortModifiedOldest" },
+  { value: "created-newest", labelKey: "sortCreatedNewest" },
+  { value: "created-oldest", labelKey: "sortCreatedOldest" },
 ];
 
 export function HomeSortDropdown({
@@ -27,13 +36,14 @@ export function HomeSortDropdown({
   sortBy: SortOption;
   setSortBy: (v: SortOption) => void;
 }) {
+  const t = useTranslations("home");
   return (
     <DropdownMenu>
-      <Tooltip content="Sort files" side="bottom">
+      <Tooltip content={t("sortFiles")} side="bottom">
         <DropdownMenuTrigger asChild>
           <button
             className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground"
-            aria-label="Sort files"
+            aria-label={t("sortFiles")}
           >
             <ArrowUpDown className="h-4 w-4" />
           </button>
@@ -46,7 +56,7 @@ export function HomeSortDropdown({
             onClick={() => setSortBy(opt.value)}
             className="flex items-center justify-between"
           >
-            <span>{opt.label}</span>
+            <span>{t(opt.labelKey)}</span>
             {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
           </DropdownMenuItem>
         ))}
@@ -57,7 +67,7 @@ export function HomeSortDropdown({
             onClick={() => setSortBy(opt.value)}
             className="flex items-center justify-between"
           >
-            <span>{opt.label}</span>
+            <span>{t(opt.labelKey)}</span>
             {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
           </DropdownMenuItem>
         ))}
@@ -68,7 +78,7 @@ export function HomeSortDropdown({
             onClick={() => setSortBy(opt.value)}
             className="flex items-center justify-between"
           >
-            <span>{opt.label}</span>
+            <span>{t(opt.labelKey)}</span>
             {sortBy === opt.value && <Check className="h-3.5 w-3.5 text-foreground/50" />}
           </DropdownMenuItem>
         ))}
