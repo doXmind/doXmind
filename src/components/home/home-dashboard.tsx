@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
@@ -57,38 +58,6 @@ import { haptics } from "@/lib/haptics";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 
-function getGreeting(): { title: string; subtitle: string } {
-  const hour = new Date().getHours();
-  if (hour < 5)
-    return {
-      title: "Burning the midnight oil",
-      subtitle: "Don't forget to rest. Your words will still be here tomorrow.",
-    };
-  if (hour < 9)
-    return { title: "Good morning", subtitle: "A fresh start. What will you write today?" };
-  if (hour < 12)
-    return {
-      title: "Good morning",
-      subtitle: "Pick up where you left off, or search across your writing.",
-    };
-  if (hour < 18)
-    return {
-      title: "Good afternoon",
-      subtitle: "Pick up where you left off, or search across your writing.",
-    };
-  if (hour < 21)
-    return {
-      title: "Good evening",
-      subtitle: "Wind down with some writing, or revisit an old draft.",
-    };
-  if (hour < 23)
-    return { title: "Winding down", subtitle: "A quiet moment to write. Take it easy." };
-  return {
-    title: "Still up late",
-    subtitle: "The best ideas come at night. But don't stay up too late.",
-  };
-}
-
 function TypewriterText({
   text,
   speed = 80,
@@ -140,6 +109,7 @@ function CollapsibleSection({
   count,
   defaultExpanded = false,
   onAdd,
+  addToLabel,
   children,
 }: {
   icon: typeof FileText;
@@ -147,6 +117,7 @@ function CollapsibleSection({
   count: number;
   defaultExpanded?: boolean;
   onAdd?: () => void;
+  addToLabel?: string;
   children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -172,7 +143,7 @@ function CollapsibleSection({
           <button
             onClick={onAdd}
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/50 active:bg-accent/50"
-            aria-label={`Add to ${title}`}
+            aria-label={addToLabel}
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -196,6 +167,8 @@ function CollapsibleSection({
 }
 
 export function HomeDashboard() {
+  const t = useTranslations("home");
+  const ts = useTranslations("sidebar");
   const router = useRouter();
   const {
     files,
@@ -220,6 +193,19 @@ export function HomeDashboard() {
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function getGreeting(): { title: string; subtitle: string } {
+    const hour = new Date().getHours();
+    if (hour < 5) return { title: t("greetingMidnight"), subtitle: t("greetingMidnightSub") };
+    if (hour < 9)
+      return { title: t("greetingEarlyMorning"), subtitle: t("greetingEarlyMorningSub") };
+    if (hour < 12) return { title: t("greetingMorning"), subtitle: t("greetingMorningSub") };
+    if (hour < 18) return { title: t("greetingAfternoon"), subtitle: t("greetingAfternoonSub") };
+    if (hour < 21) return { title: t("greetingEvening"), subtitle: t("greetingEveningSub") };
+    if (hour < 23)
+      return { title: t("greetingWindingDown"), subtitle: t("greetingWindingDownSub") };
+    return { title: t("greetingLateNight"), subtitle: t("greetingLateNightSub") };
+  }
 
   // Management data (shares, forks, bookmarks)
   const [shares, setShares] = useState<Share[]>([]);
@@ -348,7 +334,7 @@ export function HomeDashboard() {
   const handleMobileCreateFolder = async () => {
     haptics.light();
     const folders = getFolders();
-    const name = `New Folder ${folders.length + 1}`;
+    const name = t("newFolderN", { n: folders.length + 1 });
     try {
       await createFolder(name);
     } catch (error) {
@@ -367,10 +353,10 @@ export function HomeDashboard() {
     if (!file) return;
     e.target.value = "";
     setIsImporting(true);
-    const toastId = toast.loading(`Importing "${file.name}"...`);
+    const toastId = toast.loading(t("importing", { name: file.name }));
     try {
       await importFile(file, currentFolderId);
-      toast.success(`Imported "${file.name}" successfully`, { id: toastId });
+      toast.success(t("imported", { name: file.name }), { id: toastId });
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { id: toastId, description });
@@ -445,7 +431,7 @@ export function HomeDashboard() {
               <DropdownMenuTrigger asChild>
                 <button
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors active:bg-accent/50"
-                  aria-label="Create new"
+                  aria-label={t("createNew")}
                 >
                   <Plus className="h-[18px] w-[18px]" />
                 </button>
@@ -453,16 +439,16 @@ export function HomeDashboard() {
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={handleMobileCreateFile}>
                   <FilePlus className="mr-2 h-4 w-4" />
-                  New Document
+                  {ts("newDocument")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleMobileCreateFolder} disabled={!!currentFolderId}>
                   <FolderPlus className="mr-2 h-4 w-4" />
-                  New Folder
+                  {ts("newFolder")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setIsTemplatePickerOpen(true)}>
                   <LayoutTemplate className="mr-2 h-4 w-4" />
-                  From Template
+                  {ts("fromTemplate")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleMobileImportClick} disabled={isImporting}>
                   {isImporting ? (
@@ -470,7 +456,7 @@ export function HomeDashboard() {
                   ) : (
                     <Upload className="mr-2 h-4 w-4" />
                   )}
-                  Import File
+                  {ts("importFile")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -522,7 +508,7 @@ export function HomeDashboard() {
               </h1>
               <p className="mt-2.5 text-[13px] text-muted-foreground/60 dark:text-muted-foreground/70">
                 <TypewriterText
-                  text={files.length > 0 ? greetingSubtitle : "Start writing something brilliant."}
+                  text={files.length > 0 ? greetingSubtitle : t("startWritingBrilliant")}
                   speed={30}
                   delay={300}
                 />
@@ -603,7 +589,7 @@ export function HomeDashboard() {
                   {/* Documents section — expanded by default */}
                   <CollapsibleSection
                     icon={FileText}
-                    title="Documents"
+                    title={t("documentsTab")}
                     count={totalDocs}
                     defaultExpanded
                   >
@@ -620,7 +606,7 @@ export function HomeDashboard() {
                   {/* Shared with me section — always visible for discoverability */}
                   <CollapsibleSection
                     icon={Users}
-                    title="Shared with me"
+                    title={t("sharedWithMeTab")}
                     count={sharedWithMe.length}
                   >
                     <div className="mt-2">
@@ -630,7 +616,7 @@ export function HomeDashboard() {
 
                   {/* My Links section */}
                   {shares.length > 0 && (
-                    <CollapsibleSection icon={Link2} title="My Links" count={shares.length}>
+                    <CollapsibleSection icon={Link2} title={t("myLinksTab")} count={shares.length}>
                       <div className="mt-2">
                         <SharesSection shares={shares} onSharesChange={setShares} />
                       </div>
@@ -639,7 +625,7 @@ export function HomeDashboard() {
 
                   {/* Forks section */}
                   {forks.length > 0 && (
-                    <CollapsibleSection icon={GitFork} title="Forks" count={forks.length}>
+                    <CollapsibleSection icon={GitFork} title={t("forksTab")} count={forks.length}>
                       <div className="mt-2">
                         <ForksSection forks={forks} onForksChange={setForks} />
                       </div>
@@ -648,7 +634,11 @@ export function HomeDashboard() {
 
                   {/* Bookmarks section */}
                   {bookmarks.length > 0 && (
-                    <CollapsibleSection icon={Bookmark} title="Saved" count={bookmarks.length}>
+                    <CollapsibleSection
+                      icon={Bookmark}
+                      title={t("savedTab")}
+                      count={bookmarks.length}
+                    >
                       <div className="mt-2">
                         <BookmarksSection bookmarks={bookmarks} onBookmarksChange={setBookmarks} />
                       </div>

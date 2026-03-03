@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import Image from "next/image";
 import { CommentResponse } from "@/lib/api";
@@ -19,12 +20,15 @@ interface CommentItemProps {
 }
 
 export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: CommentItemProps) {
+  const t = useTranslations("comments");
+  const tc = useTranslations("common");
+  const tCom = useTranslations("community");
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const timeAgo = getTimeAgo(comment.created_at);
+  const timeAgo = getTimeAgo(comment.created_at, tCom);
 
   const handleSaveEdit = async () => {
     if (!editContent.trim() || !onEdit) return;
@@ -41,7 +45,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
   };
 
   if (comment.is_deleted) {
-    return <div className="py-2 text-[13px] italic text-muted-foreground/50">[deleted]</div>;
+    return <div className="py-2 text-[13px] italic text-muted-foreground/50">{t("deleted")}</div>;
   }
 
   return (
@@ -67,12 +71,12 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
             </div>
           )}
           <span className="text-[13px] font-medium text-foreground/80">
-            {comment.author.username || "Anonymous"}
+            {comment.author.username || tCom("anonymous")}
           </span>
         </Link>
         <span className="text-[12px] text-muted-foreground/50">{timeAgo}</span>
         {comment.is_edited && (
-          <span className="text-[11px] text-muted-foreground/40">(edited)</span>
+          <span className="text-[11px] text-muted-foreground/40">{t("edited")}</span>
         )}
       </div>
 
@@ -88,7 +92,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
           />
           <div className="flex gap-2">
             <Button size="sm" onClick={handleSaveEdit} className="h-7 rounded-lg px-3 text-[12px]">
-              Save
+              {tc("save")}
             </Button>
             <button
               onClick={() => {
@@ -97,7 +101,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
               }}
               className="rounded-lg px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              Cancel
+              {tc("cancel")}
             </button>
           </div>
         </div>
@@ -138,7 +142,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
               className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground"
             >
               <Reply className="h-3 w-3" />
-              Reply
+              {t("reply")}
             </button>
           )}
 
@@ -148,7 +152,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
               className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground"
             >
               <Pencil className="h-3 w-3" />
-              Edit
+              {tc("edit")}
             </button>
           )}
 
@@ -158,7 +162,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
               className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-destructive/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
             >
               <Trash2 className="h-3 w-3" />
-              Delete
+              {tc("delete")}
             </button>
           )}
         </div>
@@ -166,10 +170,8 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
 
       {/* Delete confirmation modal */}
       <Modal open={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)}>
-        <ModalHeader>Delete comment</ModalHeader>
-        <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete this comment? This action cannot be undone.
-        </p>
+        <ModalHeader>{t("deleteConfirmTitle")}</ModalHeader>
+        <p className="text-sm text-muted-foreground">{t("deleteConfirmMessage")}</p>
         <ModalFooter>
           <Button
             variant="ghost"
@@ -177,7 +179,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
             onClick={() => setShowDeleteConfirm(false)}
             disabled={isDeleting}
           >
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button
             variant="destructive"
@@ -185,7 +187,7 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
             onClick={handleConfirmDelete}
             disabled={isDeleting}
           >
-            {isDeleting ? "Deleting..." : "Delete"}
+            {isDeleting ? t("deleting") : tc("delete")}
           </Button>
         </ModalFooter>
       </Modal>
@@ -193,20 +195,23 @@ export function CommentItem({ comment, onReply, onReact, onEdit, onDelete }: Com
   );
 }
 
-function getTimeAgo(dateStr: string): string {
+function getTimeAgo(
+  dateStr: string,
+  t: (key: string, values?: Record<string, number>) => string
+): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
 
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffMins < 1) return t("justNow");
+  if (diffMins < 60) return t("mAgo", { count: diffMins });
 
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24) return t("hAgo", { count: diffHours });
 
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
+  if (diffDays < 30) return t("dAgo", { count: diffDays });
 
   return date.toLocaleDateString();
 }

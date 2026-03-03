@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Type,
@@ -39,18 +40,13 @@ import { Z_INDEX, MOBILE_SPRINGS } from "@/lib/constants";
 
 interface BlockCommand {
   title: string;
+  titleKey: string;
   description: string;
+  descriptionKey: string;
   iconName: string;
   category: "basic" | "lists" | "media" | "advanced";
   action: (editor: Editor) => void;
 }
-
-const categoryLabels: Record<string, string> = {
-  basic: "Basic Blocks",
-  lists: "Lists",
-  media: "Media",
-  advanced: "Advanced",
-};
 
 const iconMap: Record<string, React.ReactNode> = {
   Type: <Type className="h-5 w-5" />,
@@ -81,7 +77,9 @@ const blockCommands: BlockCommand[] = [
   // Basic Blocks
   {
     title: "Text",
+    titleKey: "text",
     description: "Plain text paragraph",
+    descriptionKey: "textDesc",
     iconName: "Type",
     category: "basic",
     action: (editor) => {
@@ -90,7 +88,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Heading 1",
+    titleKey: "heading1",
     description: "Large section heading",
+    descriptionKey: "heading1Desc",
     iconName: "Heading1",
     category: "basic",
     action: (editor) => {
@@ -99,7 +99,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Heading 2",
+    titleKey: "heading2",
     description: "Medium section heading",
+    descriptionKey: "heading2Desc",
     iconName: "Heading2",
     category: "basic",
     action: (editor) => {
@@ -108,7 +110,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Heading 3",
+    titleKey: "heading3",
     description: "Small section heading",
+    descriptionKey: "heading3Desc",
     iconName: "Heading3",
     category: "basic",
     action: (editor) => {
@@ -117,7 +121,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Quote",
+    titleKey: "quote",
     description: "Create a blockquote",
+    descriptionKey: "quoteDesc",
     iconName: "Quote",
     category: "basic",
     action: (editor) => {
@@ -126,7 +132,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Callout",
+    titleKey: "callout",
     description: "Highlighted info block",
+    descriptionKey: "calloutDesc",
     iconName: "MessageSquareQuote",
     category: "basic",
     action: (editor) => {
@@ -135,7 +143,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Toggle",
+    titleKey: "toggle",
     description: "Collapsible content",
+    descriptionKey: "toggleDesc",
     iconName: "ChevronRight",
     category: "basic",
     action: (editor) => {
@@ -144,7 +154,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Table of Contents",
+    titleKey: "tableOfContents",
     description: "Auto-generated from headings",
+    descriptionKey: "tableOfContentsDesc",
     iconName: "TableOfContents",
     category: "basic",
     action: (editor) => {
@@ -153,7 +165,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Divider",
+    titleKey: "divider",
     description: "Horizontal divider line",
+    descriptionKey: "dividerDesc",
     iconName: "Minus",
     category: "basic",
     action: (editor) => {
@@ -164,7 +178,9 @@ const blockCommands: BlockCommand[] = [
   // Lists
   {
     title: "Bullet List",
+    titleKey: "bulletList",
     description: "Simple bullet list",
+    descriptionKey: "bulletListDesc",
     iconName: "List",
     category: "lists",
     action: (editor) => {
@@ -173,7 +189,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Numbered List",
+    titleKey: "numberedList",
     description: "Numbered list",
+    descriptionKey: "numberedListDesc",
     iconName: "ListOrdered",
     category: "lists",
     action: (editor) => {
@@ -182,7 +200,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Task List",
+    titleKey: "taskList",
     description: "List with checkboxes",
+    descriptionKey: "taskListDesc",
     iconName: "ListTodo",
     category: "lists",
     action: (editor) => {
@@ -193,7 +213,9 @@ const blockCommands: BlockCommand[] = [
   // Media
   {
     title: "Image",
+    titleKey: "image",
     description: "Upload or embed an image",
+    descriptionKey: "imageDesc",
     iconName: "Image",
     category: "media",
     action: (editor) => {
@@ -209,7 +231,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Table",
+    titleKey: "table",
     description: "Insert a table",
+    descriptionKey: "tableDesc",
     iconName: "Table",
     category: "media",
     action: (editor) => {
@@ -220,7 +244,9 @@ const blockCommands: BlockCommand[] = [
   // Advanced
   {
     title: "Code Block",
+    titleKey: "codeBlock",
     description: "Code with syntax highlighting",
+    descriptionKey: "codeBlockDesc",
     iconName: "Code",
     category: "advanced",
     action: (editor) => {
@@ -229,7 +255,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Math Block",
+    titleKey: "mathBlock",
     description: "Block math equation",
+    descriptionKey: "mathBlockDesc",
     iconName: "Sigma",
     category: "advanced",
     action: (editor) => {
@@ -242,7 +270,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Mermaid Chart",
+    titleKey: "mermaidChart",
     description: "Diagram or chart",
+    descriptionKey: "mermaidChartDesc",
     iconName: "GitBranch",
     category: "advanced",
     action: (editor) => {
@@ -255,7 +285,9 @@ const blockCommands: BlockCommand[] = [
   },
   {
     title: "Inline Math",
+    titleKey: "inlineMath",
     description: "Inline math expression",
+    descriptionKey: "inlineMathDesc",
     iconName: "InlineMath",
     category: "advanced",
     action: (editor) => {
@@ -269,9 +301,17 @@ const blockCommands: BlockCommand[] = [
 ];
 
 export function MobileBlockInsertSheet() {
+  const t = useTranslations("mobile");
   const { editor } = useEditorRefStore();
   const { isMobileBlockInsertOpen, setMobileBlockInsertOpen } = useLayoutStore();
   const [filter, setFilter] = useState("");
+
+  const categoryLabels: Record<string, string> = {
+    basic: t("basicBlocks"),
+    lists: t("lists"),
+    media: t("mediaCategory"),
+    advanced: t("advancedCategory"),
+  };
 
   const filteredCommands = useMemo(() => {
     if (!filter.trim()) return blockCommands;
@@ -351,7 +391,7 @@ export function MobileBlockInsertSheet() {
 
               {/* Header */}
               <div className="flex items-center justify-between px-4 pb-2">
-                <h3 className="text-base font-semibold">Insert Block</h3>
+                <h3 className="text-base font-semibold">{t("insertBlock")}</h3>
                 <button
                   type="button"
                   onClick={handleClose}
@@ -365,7 +405,7 @@ export function MobileBlockInsertSheet() {
               <div className="px-4 pb-2">
                 <input
                   type="text"
-                  placeholder="Filter blocks..."
+                  placeholder={t("filterBlocks")}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   className={cn(
@@ -383,7 +423,7 @@ export function MobileBlockInsertSheet() {
               >
                 {grouped.length === 0 ? (
                   <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                    No blocks found
+                    {t("noBlocksFound")}
                   </div>
                 ) : (
                   grouped.map((group, groupIndex) => (
@@ -406,8 +446,8 @@ export function MobileBlockInsertSheet() {
                             {iconMap[cmd.iconName] || <Type className="h-5 w-5" />}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium">{cmd.title}</p>
-                            <p className="text-xs text-muted-foreground">{cmd.description}</p>
+                            <p className="text-sm font-medium">{t(cmd.titleKey)}</p>
+                            <p className="text-xs text-muted-foreground">{t(cmd.descriptionKey)}</p>
                           </div>
                         </button>
                       ))}

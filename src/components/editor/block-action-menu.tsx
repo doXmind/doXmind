@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
+import { useTranslations } from "next-intl";
 import { TextSelection } from "@tiptap/pm/state";
 import {
   Trash2,
@@ -93,6 +94,7 @@ const COLOR_TYPES = new Set([
 ]);
 
 export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockActionMenuProps) {
+  const t = useTranslations("editor");
   const [focusIndex, setFocusIndex] = useState(0);
   const [activeSubmenu, setActiveSubmenu] = useState<SubmenuType>(null);
   const [submenuFocusIndex, setSubmenuFocusIndex] = useState(0);
@@ -402,12 +404,12 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       )}
       style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
       role="menu"
-      aria-label="Block actions"
+      aria-label={t("blockAction.blockActionsAria")}
     >
       {/* Delete */}
       <MenuButton
         icon={<Trash2 className="h-3.5 w-3.5" />}
-        label="Delete"
+        label={t("blockAction.delete")}
         focused={currentItemId === "delete" && !activeSubmenu}
         onClick={handleDelete}
         onMouseEnter={() => {
@@ -420,7 +422,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       {/* Duplicate */}
       <MenuButton
         icon={<Copy className="h-3.5 w-3.5" />}
-        label="Duplicate"
+        label={t("blockAction.duplicate")}
         focused={currentItemId === "duplicate" && !activeSubmenu}
         onClick={handleDuplicate}
         onMouseEnter={() => {
@@ -454,7 +456,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
             <span className="text-muted-foreground">
               <ArrowRightLeft className="h-3.5 w-3.5" />
             </span>
-            <span className="flex-1">Turn Into</span>
+            <span className="flex-1">{t("blockAction.turnInto")}</span>
             <ChevronRight className="h-3 w-3 text-muted-foreground" />
           </div>
 
@@ -500,7 +502,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       {/* Copy Block */}
       <MenuButton
         icon={<Clipboard className="h-3.5 w-3.5" />}
-        label="Copy"
+        label={t("blockAction.copy")}
         focused={currentItemId === "copy" && !activeSubmenu}
         onClick={handleCopy}
         onMouseEnter={() => {
@@ -514,7 +516,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       {/* Move Up */}
       <MenuButton
         icon={<ArrowUp className="h-3.5 w-3.5" />}
-        label="Move Up"
+        label={t("blockAction.moveUp")}
         focused={currentItemId === "moveUp" && !activeSubmenu}
         onClick={handleMoveUp}
         onMouseEnter={() => {
@@ -527,7 +529,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       {/* Move Down */}
       <MenuButton
         icon={<ArrowDown className="h-3.5 w-3.5" />}
-        label="Move Down"
+        label={t("blockAction.moveDown")}
         focused={currentItemId === "moveDown" && !activeSubmenu}
         onClick={handleMoveDown}
         onMouseEnter={() => {
@@ -563,7 +565,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
               <span className="text-muted-foreground">
                 <Palette className="h-3.5 w-3.5" />
               </span>
-              <span className="flex-1">Color</span>
+              <span className="flex-1">{t("blockAction.color")}</span>
               <ChevronRight className="h-3 w-3 text-muted-foreground" />
             </div>
 
@@ -591,7 +593,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       <div className="my-1.5 h-px bg-border" />
       <MenuButton
         icon={<AiLogoIcon className="h-3.5 w-3.5 text-primary" />}
-        label="Ask AI"
+        label={t("blockAction.askAI")}
         focused={currentItemId === "askAI" && !activeSubmenu}
         onClick={handleAskAI}
         onMouseEnter={() => {

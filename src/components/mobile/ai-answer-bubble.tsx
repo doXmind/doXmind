@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { X, Sparkles, Copy, Check, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { marked } from "marked";
@@ -42,6 +43,7 @@ export function AIAnswerBubble({
   userQuestion,
   selectedContext,
 }: AIAnswerBubbleProps) {
+  const t = useTranslations("mobile");
   const [copied, setCopied] = useState(false);
 
   // Parse markdown content
@@ -113,7 +115,9 @@ export function AIAnswerBubble({
                     className={cn("h-4 w-4", isLoading && "animate-spin")}
                     style={{ animationDuration: "2s" }}
                   />
-                  <span className="text-xs font-bold uppercase tracking-wider">AI Insight</span>
+                  <span className="text-xs font-bold uppercase tracking-wider">
+                    {t("aiInsight")}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   {!isLoading && response && (
@@ -122,7 +126,7 @@ export function AIAnswerBubble({
                       size="icon"
                       onClick={handleCopy}
                       className="h-8 w-8 rounded-full"
-                      aria-label="Copy response"
+                      aria-label={t("copyResponse")}
                     >
                       {copied ? (
                         <Check className="h-4 w-4 text-green-500" />
@@ -136,7 +140,7 @@ export function AIAnswerBubble({
                     size="icon"
                     onClick={handleClose}
                     className="h-8 w-8 rounded-full"
-                    aria-label="Close"
+                    aria-label={t("close")}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -148,12 +152,12 @@ export function AIAnswerBubble({
                 <div className="border-b border-border/30 bg-muted/30 px-4 py-2.5">
                   {userQuestion && (
                     <p className="line-clamp-3 text-xs text-muted-foreground">
-                      <span className="font-medium">Q:</span> {userQuestion}
+                      <span className="font-medium">{t("questionLabel")}</span> {userQuestion}
                     </p>
                   )}
                   {selectedContext && (
                     <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/70">
-                      <span className="font-medium">Context:</span> &quot;
+                      <span className="font-medium">{t("contextLabel")}</span> &quot;
                       {selectedContext.slice(0, 120)}
                       {selectedContext.length > 120 ? "..." : ""}&quot;
                     </p>
@@ -179,7 +183,7 @@ export function AIAnswerBubble({
                         className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"
                         style={{ animationDelay: "300ms" }}
                       />
-                      <span className="ml-1 font-medium text-primary/80">Thinking...</span>
+                      <span className="ml-1 font-medium text-primary/80">{t("thinkingDots")}</span>
                     </div>
                     {/* Shimmer placeholders */}
                     <div className="mt-2 space-y-2 opacity-50">
@@ -214,7 +218,7 @@ export function AIAnswerBubble({
                       "active:scale-[0.98]"
                     )}
                   >
-                    <span>View full chat</span>
+                    <span>{t("viewFullChat")}</span>
                     <ChevronDown className="h-4 w-4" />
                   </button>
                 </div>

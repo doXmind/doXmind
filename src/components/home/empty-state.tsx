@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Loader2, PenLine, FileText, ClipboardList, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -16,8 +17,8 @@ import {
 
 interface TemplateCard {
   id: string;
-  name: string;
-  description: string;
+  nameKey: string;
+  descKey: string;
   icon: React.ReactNode;
   highlight?: boolean;
   getMarkdown: () => string;
@@ -27,8 +28,8 @@ interface TemplateCard {
 const TEMPLATE_CARDS: TemplateCard[] = [
   {
     id: "welcome",
-    name: "Welcome to doXmind",
-    description: "Interactive tutorial with examples to try",
+    nameKey: "welcomeToDoXmind",
+    descKey: "interactiveTutorial",
     icon: <Sparkles className="h-5 w-5" />,
     highlight: true,
     getMarkdown: getWelcomeDocumentMarkdown,
@@ -36,16 +37,16 @@ const TEMPLATE_CARDS: TemplateCard[] = [
   },
   {
     id: "blank",
-    name: "Blank Document",
-    description: "Start from scratch",
+    nameKey: "blankDocument",
+    descKey: "startFromScratch",
     icon: <FileText className="h-5 w-5" />,
     getMarkdown: () => "",
     fileName: "Untitled-1.md",
   },
   {
     id: "blog-post",
-    name: "Blog Post",
-    description: "Article or blog post template",
+    nameKey: "blogPost",
+    descKey: "blogPostDesc",
     icon: <PenLine className="h-5 w-5" />,
     getMarkdown: () => `*A one-line hook that draws readers in.*
 
@@ -67,8 +68,8 @@ Summarize the key insights and end with a call to action or open question.
   },
   {
     id: "meeting-notes",
-    name: "Meeting Notes",
-    description: "Structured meeting agenda and notes",
+    nameKey: "meetingNotes",
+    descKey: "meetingNotesDesc",
     icon: <ClipboardList className="h-5 w-5" />,
     getMarkdown: () => {
       const date = new Date().toISOString().split("T")[0];
@@ -101,6 +102,8 @@ Summarize the key insights and end with a call to action or open question.
 ];
 
 export function EmptyState() {
+  const t = useTranslations("home");
+  const tc = useTranslations("common");
   const router = useRouter();
   const { files, createFile, importFile, currentFolderId } = useFileStore();
   const { startOnboarding, onboardingCompleted } = useOnboardingStore();
@@ -160,10 +163,10 @@ export function EmptyState() {
     e.target.value = "";
 
     setIsImporting(true);
-    const toastId = toast.loading(`Importing "${file.name}"...`);
+    const toastId = toast.loading(t("importing", { name: file.name }));
     try {
       await importFile(file, currentFolderId);
-      toast.success(`Imported "${file.name}" successfully`, { id: toastId });
+      toast.success(t("imported", { name: file.name }), { id: toastId });
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { id: toastId, description });
@@ -196,11 +199,11 @@ export function EmptyState() {
         />
       </motion.div>
 
-      <h2 className="text-xl font-semibold tracking-tight">Your blank canvas awaits</h2>
+      <h2 className="text-xl font-semibold tracking-tight">{t("blankCanvasAwaits")}</h2>
       <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground/65 dark:text-muted-foreground/75">
-        Every great piece of writing starts with a single word.
+        {t("everyGreatPiece")}
         <br />
-        Pick a template to get started.
+        {t("pickTemplateToStart")}
       </p>
 
       {/* Template cards grid */}
@@ -228,9 +231,13 @@ export function EmptyState() {
                 <div className={cn("text-muted-foreground", template.highlight && "text-primary")}>
                   {isCreating ? <Loader2 className="h-5 w-5 animate-spin" /> : template.icon}
                 </div>
-                <span className="text-sm font-medium">{template.name}</span>
+                <span className="text-sm font-medium">
+                  {t(template.nameKey as Parameters<typeof t>[0])}
+                </span>
               </div>
-              <p className="text-xs text-muted-foreground/80">{template.description}</p>
+              <p className="text-xs text-muted-foreground/80">
+                {t(template.descKey as Parameters<typeof t>[0])}
+              </p>
             </motion.button>
           );
         })}
@@ -238,15 +245,15 @@ export function EmptyState() {
 
       {/* Import link */}
       <p className="mt-8 text-xs text-muted-foreground/55 dark:text-muted-foreground/65">
-        or{" "}
+        {tc("or")}{" "}
         <button
           onClick={handleImportClick}
           disabled={isImporting}
           className="text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
         >
-          {isImporting ? "importing..." : "import a file"}
+          {isImporting ? t("importingDots") : t("importAFile")}
         </button>{" "}
-        (PDF, DOCX, Markdown)
+        {t("supportedFormats")}
       </p>
 
       <input

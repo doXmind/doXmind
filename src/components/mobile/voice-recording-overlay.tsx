@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ export function VoiceRecordingOverlay({
   onTranscriptionComplete,
   maxDuration = 60000,
 }: VoiceRecordingOverlayProps) {
+  const t = useTranslations("mobile");
   const { selectedBlocks, getSelectedText } = useBlockSelectionStore();
   const [isPressing, setIsPressing] = useState(false);
 
@@ -145,10 +147,10 @@ export function VoiceRecordingOverlay({
                 <RecordingIndicator isRecording={isRecording} />
                 <span className="text-sm font-medium">
                   {isRecording
-                    ? "Recording..."
+                    ? t("recording")
                     : isTranscribing
-                      ? "Transcribing..."
-                      : "Voice Input"}
+                      ? t("transcribing")
+                      : t("voiceInputTitle")}
                 </span>
               </div>
 
@@ -164,7 +166,9 @@ export function VoiceRecordingOverlay({
             {selectedBlocks.length > 0 && (
               <div className="mx-4 mb-3 rounded-lg bg-muted/30 px-4 py-2">
                 <p className="text-xs text-muted-foreground">
-                  {selectedBlocks.length} block{selectedBlocks.length > 1 ? "s" : ""} selected
+                  {selectedBlocks.length === 1
+                    ? t("blocksSelected", { count: selectedBlocks.length })
+                    : t("blocksSelectedPlural", { count: selectedBlocks.length })}
                 </p>
                 <p className="mt-1 truncate text-sm">
                   {getSelectedText().slice(0, 100)}
@@ -187,17 +191,17 @@ export function VoiceRecordingOverlay({
                       resetTranscription();
                     }}
                   >
-                    Try Again
+                    {t("tryAgain")}
                   </Button>
                 </div>
               ) : isTranscribing ? (
                 <div className="flex flex-col items-center gap-3">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">Converting speech to text...</p>
+                  <p className="text-sm text-muted-foreground">{t("convertingSpeech")}</p>
                 </div>
               ) : transcription ? (
                 <div className="w-full">
-                  <p className="mb-2 text-sm text-muted-foreground">Transcription:</p>
+                  <p className="mb-2 text-sm text-muted-foreground">{t("transcriptionLabel")}</p>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-sm">{transcription}</p>
                   </div>
@@ -269,7 +273,7 @@ export function VoiceRecordingOverlay({
                 >
                   <Mic className={cn("h-5 w-5", isRecording && "animate-pulse")} />
                   <span className="text-sm font-medium">
-                    {isRecording ? "Release to send" : "Hold to talk"}
+                    {isRecording ? t("releaseToSend") : t("holdToTalk")}
                   </span>
                 </motion.button>
               )}
@@ -277,9 +281,7 @@ export function VoiceRecordingOverlay({
 
             {/* Instructions - hidden when recording */}
             {!isRecording && !isTranscribing && !transcription && !error && (
-              <p className="pb-4 text-center text-xs text-muted-foreground">
-                Hold button to record, release to send
-              </p>
+              <p className="pb-4 text-center text-xs text-muted-foreground">{t("holdToRecord")}</p>
             )}
           </motion.div>
         </>

@@ -12,6 +12,7 @@ import {
   GraduationCap,
   Loader2,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Modal, ModalHeader } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
 
@@ -375,7 +376,31 @@ interface TemplatePickerProps {
 }
 
 export function TemplatePicker({ open, onClose, onSelect }: TemplatePickerProps) {
+  const t = useTranslations("sidebar");
   const [creatingId, setCreatingId] = useState<string | null>(null);
+
+  const templateI18n: Record<string, { name: string; description: string }> = {
+    blank: { name: t("templateBlankDocument"), description: t("templateBlankDocumentDesc") },
+    "meeting-notes": {
+      name: t("templateMeetingNotes"),
+      description: t("templateMeetingNotesDesc"),
+    },
+    "weekly-report": {
+      name: t("templateWeeklyReport"),
+      description: t("templateWeeklyReportDesc"),
+    },
+    "blog-post": { name: t("templateBlogPost"), description: t("templateBlogPostDesc") },
+    "technical-doc": {
+      name: t("templateTechnicalDoc"),
+      description: t("templateTechnicalDocDesc"),
+    },
+    "project-brief": {
+      name: t("templateProjectBrief"),
+      description: t("templateProjectBriefDesc"),
+    },
+    "study-notes": { name: t("templateStudyNotes"), description: t("templateStudyNotesDesc") },
+    journal: { name: t("templateJournal"), description: t("templateJournalDesc") },
+  };
 
   const handleSelect = async (template: FileTemplate) => {
     setCreatingId(template.id);
@@ -392,7 +417,7 @@ export function TemplatePicker({ open, onClose, onSelect }: TemplatePickerProps)
 
   return (
     <Modal open={open} onClose={creatingId ? () => {} : onClose}>
-      <ModalHeader onClose={creatingId ? undefined : onClose}>New from Template</ModalHeader>
+      <ModalHeader onClose={creatingId ? undefined : onClose}>{t("newFromTemplate")}</ModalHeader>
       <div className="grid grid-cols-2 gap-2">
         {templates.map((template) => {
           const isCreating = creatingId === template.id;
@@ -413,9 +438,13 @@ export function TemplatePicker({ open, onClose, onSelect }: TemplatePickerProps)
                 <div className="text-muted-foreground">
                   {isCreating ? <Loader2 className="h-5 w-5 animate-spin" /> : template.icon}
                 </div>
-                <span className="text-sm font-medium">{template.name}</span>
+                <span className="text-sm font-medium">
+                  {templateI18n[template.id]?.name ?? template.name}
+                </span>
               </div>
-              <p className="text-xs text-muted-foreground">{template.description}</p>
+              <p className="text-xs text-muted-foreground">
+                {templateI18n[template.id]?.description ?? template.description}
+              </p>
             </button>
           );
         })}

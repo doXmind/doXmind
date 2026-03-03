@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
+import { useTranslations } from "next-intl";
 import {
   Scissors,
   Copy,
@@ -64,6 +65,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
   const [submenuFocusIndex, setSubmenuFocusIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const { openQuickEdit } = useEditorStore();
+  const t = useTranslations("editor");
 
   const hasSelection = editor.state.selection.from !== editor.state.selection.to;
 
@@ -139,7 +141,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
   // Build menu items
   const menuItems: MenuEntry[] = [
     {
-      label: "Cut",
+      label: t("contextMenu.cut"),
       icon: <Scissors className="h-3.5 w-3.5" />,
       shortcut: "Ctrl+X",
       disabled: !hasSelection,
@@ -149,7 +151,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       },
     },
     {
-      label: "Copy",
+      label: t("contextMenu.copy"),
       icon: <Copy className="h-3.5 w-3.5" />,
       shortcut: "Ctrl+C",
       disabled: !hasSelection,
@@ -159,7 +161,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       },
     },
     {
-      label: "Paste",
+      label: t("contextMenu.paste"),
       icon: <ClipboardPaste className="h-3.5 w-3.5" />,
       shortcut: "Ctrl+V",
       action: () => {
@@ -169,11 +171,11 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
     },
     { separator: true },
     {
-      label: "Format",
+      label: t("contextMenu.format"),
       icon: <Bold className="h-3.5 w-3.5" />,
       items: [
         {
-          label: "Bold",
+          label: t("bubbleMenu.bold"),
           icon: <Bold className="h-3.5 w-3.5" />,
           shortcut: "Ctrl+B",
           action: () => {
@@ -182,7 +184,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
           },
         },
         {
-          label: "Italic",
+          label: t("bubbleMenu.italic"),
           icon: <Italic className="h-3.5 w-3.5" />,
           shortcut: "Ctrl+I",
           action: () => {
@@ -191,7 +193,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
           },
         },
         {
-          label: "Strikethrough",
+          label: t("bubbleMenu.strikethrough"),
           icon: <Strikethrough className="h-3.5 w-3.5" />,
           action: () => {
             editor.chain().focus().toggleStrike().run();
@@ -199,7 +201,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
           },
         },
         {
-          label: "Code",
+          label: t("bubbleMenu.code"),
           icon: <Code className="h-3.5 w-3.5" />,
           shortcut: "Ctrl+E",
           action: () => {
@@ -208,7 +210,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
           },
         },
         {
-          label: "Highlight",
+          label: t("bubbleMenu.highlight"),
           icon: <Highlighter className="h-3.5 w-3.5" />,
           action: () => {
             editor.chain().focus().toggleHighlight().run();
@@ -218,7 +220,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       ],
     },
     {
-      label: "Turn Into",
+      label: t("bubbleMenu.turnInto"),
       icon: <Type className="h-3.5 w-3.5" />,
       items: turnIntoOptions
         .filter((o) => !isTurnIntoSeparator(o))
@@ -249,7 +251,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
     },
     { separator: true },
     {
-      label: "AI Edit",
+      label: t("contextMenu.askAI"),
       icon: <Sparkles className="h-3.5 w-3.5 text-primary" />,
       disabled: !hasSelection,
       action: () => {
@@ -347,7 +349,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       )}
       style={{ left: position.x, top: position.y }}
       role="menu"
-      aria-label="Editor context menu"
+      aria-label={t("contextMenuAria")}
     >
       {menuItems.map((item, idx) => {
         if (isSeparator(item)) {

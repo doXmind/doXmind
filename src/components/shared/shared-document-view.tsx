@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { SearchBar } from "@/components/editor/search-bar";
 import { getEditorExtensions } from "@/components/editor/editor-extensions";
@@ -30,6 +31,7 @@ export function SharedDocumentView({
   onNavigate,
   embedded = false,
 }: SharedDocumentViewProps) {
+  const t = useTranslations("sharedView");
   const { setEditor } = useEditorRefStore();
   const { setSearchBarOpen } = useLayoutStore();
   const headerRef = useRef<HTMLDivElement>(null);
@@ -114,7 +116,7 @@ export function SharedDocumentView({
     );
   }
 
-  const formattedDate = new Date(data.updated_at).toLocaleDateString("en-US", {
+  const formattedDate = new Date(data.updated_at).toLocaleDateString(undefined, {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -143,7 +145,7 @@ export function SharedDocumentView({
                       className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground/70 transition-colors hover:text-foreground"
                     >
                       <ArrowLeft className="h-3.5 w-3.5" />
-                      {data.root_folder_name || "Folder"}
+                      {data.root_folder_name || t("folder")}
                     </button>
                     {breadcrumbs.map((crumb) => (
                       <span key={crumb.id} className="flex items-center gap-1 text-[13px]">
@@ -201,11 +203,11 @@ export function SharedDocumentView({
               {data.is_snapshot && (
                 <>
                   <span className="text-border/60">&middot;</span>
-                  <span>Snapshot</span>
+                  <span>{t("snapshot")}</span>
                 </>
               )}
               <span className="text-border/60">&middot;</span>
-              <span>Read-Only</span>
+              <span>{t("readOnly")}</span>
             </div>
           </div>
         </div>

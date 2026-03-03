@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { Terminal, ChevronRight, Check, AlertCircle, Download, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ export function CodeExecutionOutput({
   returnCode,
   files = [],
 }: CodeExecutionOutputProps) {
+  const t = useTranslations("chat");
   const [isExpanded, setIsExpanded] = useState(false);
   const isSuccess = returnCode === 0;
   const hasOutput = stdout || stderr;
@@ -51,8 +53,9 @@ export function CodeExecutionOutput({
           <Terminal className="h-4 w-4" />
         </div>
         <span className="flex-1 truncate font-medium">
-          {isSuccess ? "Code executed successfully" : "Code execution failed"}
-          {hasFiles && ` (${files.length} file${files.length > 1 ? "s" : ""} created)`}
+          {isSuccess ? t("codeExecutedSuccessfully") : t("codeExecutionFailed")}
+          {hasFiles &&
+            ` ${files.length > 1 ? t("filesCreatedPlural", { count: files.length }) : t("filesCreated", { count: files.length })}`}
         </span>
         {isSuccess ? (
           <Check className="h-4 w-4 flex-shrink-0" />
@@ -77,7 +80,7 @@ export function CodeExecutionOutput({
               {/* stdout */}
               {stdout && (
                 <div className="max-h-[200px] overflow-y-auto rounded-lg border border-border/50 bg-muted/50 px-3 py-2 text-xs">
-                  <div className="mb-1 font-medium text-muted-foreground">Output:</div>
+                  <div className="mb-1 font-medium text-muted-foreground">{t("outputLabel")}</div>
                   <pre className="whitespace-pre-wrap font-mono text-foreground/80">{stdout}</pre>
                 </div>
               )}
@@ -85,7 +88,9 @@ export function CodeExecutionOutput({
               {/* stderr */}
               {stderr && (
                 <div className="max-h-[150px] overflow-y-auto rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs">
-                  <div className="mb-1 font-medium text-red-600 dark:text-red-400">Error:</div>
+                  <div className="mb-1 font-medium text-red-600 dark:text-red-400">
+                    {t("errorLabel")}
+                  </div>
                   <pre className="whitespace-pre-wrap font-mono text-red-600/80 dark:text-red-400/80">
                     {stderr}
                   </pre>
@@ -95,7 +100,9 @@ export function CodeExecutionOutput({
               {/* Generated files */}
               {hasFiles && (
                 <div className="rounded-lg border border-border/50 bg-muted/50 px-3 py-2 text-xs">
-                  <div className="mb-2 font-medium text-muted-foreground">Generated files:</div>
+                  <div className="mb-2 font-medium text-muted-foreground">
+                    {t("generatedFiles")}
+                  </div>
                   <div className="space-y-1">
                     {files.map((file) => (
                       <div
@@ -114,7 +121,7 @@ export function CodeExecutionOutput({
                           }}
                         >
                           <Download className="h-3 w-3" />
-                          <span>Download</span>
+                          <span>{t("download")}</span>
                         </button>
                       </div>
                     ))}
@@ -123,7 +130,9 @@ export function CodeExecutionOutput({
               )}
 
               {/* Exit code */}
-              <div className="px-3 py-1 text-xs text-muted-foreground">Exit code: {returnCode}</div>
+              <div className="px-3 py-1 text-xs text-muted-foreground">
+                {t("exitCode", { code: returnCode })}
+              </div>
             </div>
           </motion.div>
         )}

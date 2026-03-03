@@ -12,6 +12,7 @@ import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { computeDiffHunks } from "@/lib/diff-utils";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface VersionHistoryPanelProps {
   fileId: string;
@@ -29,33 +30,34 @@ interface Version {
   created_at: string;
 }
 
-const EDIT_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  manual: {
-    label: "Manual",
-    icon: <Pencil className="h-3 w-3" />,
-    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  },
-  ai_edit: {
-    label: "AI Edit",
-    icon: <Sparkles className="h-3 w-3" />,
-    color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  },
-  ai_quick_edit: {
-    label: "Quick Edit",
-    icon: <Sparkles className="h-3 w-3" />,
-    color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
-  },
-  restore: {
-    label: "Restored",
-    icon: <Undo2 className="h-3 w-3" />,
-    color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  },
-};
+const EDIT_TYPE_CONFIG: Record<string, { labelKey: string; icon: React.ReactNode; color: string }> =
+  {
+    manual: {
+      labelKey: "versionPanel.manualEdit",
+      icon: <Pencil className="h-3 w-3" />,
+      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+    },
+    ai_edit: {
+      labelKey: "versionPanel.aiEdit",
+      icon: <Sparkles className="h-3 w-3" />,
+      color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+    },
+    ai_quick_edit: {
+      labelKey: "versionPanel.quickEdit",
+      icon: <Sparkles className="h-3 w-3" />,
+      color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
+    },
+    restore: {
+      labelKey: "versionPanel.restored",
+      icon: <Undo2 className="h-3 w-3" />,
+      color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    },
+  };
 
 function getEditTypeConfig(editType?: string) {
   return (
     EDIT_TYPE_CONFIG[editType || "manual"] || {
-      label: editType || "Edit",
+      labelKey: editType || "Edit",
       icon: <FileText className="h-3 w-3" />,
       color: "bg-muted text-muted-foreground",
     }
@@ -63,6 +65,7 @@ function getEditTypeConfig(editType?: string) {
 }
 
 export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryPanelProps) {
+  const t = useTranslations("editor");
   const [versions, setVersions] = useState<Version[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
@@ -76,11 +79,11 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
       setVersions(result);
     } catch (error) {
       console.error("Failed to load versions:", error);
-      toast.error("Failed to load version history");
+      toast.error(t("versionPanel.loadFailed"));
     } finally {
       setIsLoading(false);
     }
-  }, [fileId]);
+  }, [fileId, t]);
 
   useEffect(() => {
     if (isOpen && fileId) {
@@ -93,13 +96,13 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
       const { isReviewMode, startDiffReview } = useDiffReviewStore.getState();
 
       if (isReviewMode) {
-        toast.error("Please finish the current diff review first");
+        toast.error(t("versionPanel.finishDiffReviewFirst"));
         return;
       }
 
       const file = getFile(fileId);
       if (!file) {
-        toast.error("File not found");
+        toast.error(t("versionPanel.fileNotFound"));
         return;
       }
 
@@ -129,7 +132,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
       );
 
       if (hunks.length === 0) {
-        toast.info("No differences — content is already identical");
+        toast.info(t("versionPanel.noChangesIdentical"));
         return;
       }
 
@@ -137,7 +140,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
       setPreviewVersion(null);
       onClose();
     },
-    [fileId, getFile, onClose]
+    [fileId, getFile, onClose, t]
   );
 
   const handleVersionClick = (version: Version) => {
@@ -156,7 +159,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Version History</h3>
+          <h3 className="text-sm font-semibold">{t("versionHistory")}</h3>
         </div>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
           <X className="h-4 w-4" />
@@ -172,9 +175,9 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
         ) : versions.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
             <Clock className="h-8 w-8 text-muted-foreground/30 dark:text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">No versions yet</p>
+            <p className="text-sm text-muted-foreground">{t("noVersions")}</p>
             <p className="px-4 text-xs text-muted-foreground/70">
-              Versions are created automatically when AI edits your document.
+              {t("versionPanel.versionsAutoCreated")}
             </p>
           </div>
         ) : (
@@ -201,7 +204,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
                       )}
                     >
                       {config.icon}
-                      {config.label}
+                      {t(config.labelKey as Parameters<typeof t>[0])}
                     </span>
                   </div>
                   {version.summary && (
@@ -223,7 +226,9 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
       {previewVersion && (
         <div className="flex min-h-0 flex-1 flex-col border-t border-border">
           <div className="flex items-center justify-between px-4 py-2">
-            <span className="text-xs font-medium text-muted-foreground">Preview</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              {t("versionPanel.preview")}
+            </span>
             <Button
               variant="outline"
               size="sm"
@@ -231,7 +236,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
               onClick={() => handleRestore(previewVersion)}
             >
               <RotateCcw className="h-3 w-3" />
-              Restore
+              {t("restoreVersion")}
             </Button>
           </div>
           <ScrollArea className="min-h-0 flex-1 border-t border-border/50">

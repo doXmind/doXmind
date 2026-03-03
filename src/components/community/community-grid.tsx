@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
+import { useTranslations } from "next-intl";
 import { CommunityCard } from "./community-card";
 import { Clock, Eye, FileText, GitFork, MessageSquare, Search } from "lucide-react";
 
@@ -33,6 +34,7 @@ function FeaturedCard({
   index: number;
   onTagClick?: (tag: string) => void;
 }) {
+  const t = useTranslations("community");
   const owner = item.owner || { id: "", username: null, avatar_url: null };
   const publishedDate = item.published_at
     ? new Date(item.published_at).toLocaleDateString("en-US", {
@@ -70,7 +72,7 @@ function FeaturedCard({
               </div>
             )}
             <span className="text-[12px] font-medium text-muted-foreground">
-              {owner.username || "Anonymous"}
+              {owner.username || t("anonymous")}
             </span>
             <span className="text-[12px] text-muted-foreground/50">·</span>
             <span className="text-[12px] text-muted-foreground/50">{publishedDate}</span>
@@ -157,6 +159,8 @@ export function CommunityGrid({
   onTagClick,
   onEditItem,
 }: CommunityGridProps) {
+  const t = useTranslations("community");
+
   /* Loading skeleton */
   if (isLoading && items.length === 0) {
     return (
@@ -200,17 +204,15 @@ export function CommunityGrid({
           <Search className="h-5 w-5 text-muted-foreground/50" />
         </div>
         <h3 className="mt-4 text-[15px] font-semibold text-foreground">
-          No results{searchQuery ? ` for "${searchQuery}"` : ""}
+          {searchQuery ? t("noResultsFor", { query: searchQuery }) : t("noResults")}
         </h3>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Try different keywords or clear your filters.
-        </p>
+        <p className="mt-1 text-[13px] text-muted-foreground">{t("tryDifferentKeywords")}</p>
         {onClearFilters && (
           <button
             onClick={onClearFilters}
             className="mt-3 rounded-lg px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
           >
-            Clear filters
+            {t("clearFilters")}
           </button>
         )}
       </motion.div>
@@ -230,16 +232,14 @@ export function CommunityGrid({
           <FileText className="h-5 w-5 text-muted-foreground/50" />
         </div>
         <h3 className="mt-4 text-[15px] font-semibold text-foreground">
-          No published documents yet
+          {t("noPublishedDocuments")}
         </h3>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Be the first to share your work with the community.
-        </p>
+        <p className="mt-1 text-[13px] text-muted-foreground">{t("beTheFirstToShare")}</p>
         <Link
           href="/editor"
           className="mt-3 rounded-lg px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
         >
-          Start writing
+          {t("startWriting")}
         </Link>
       </motion.div>
     );

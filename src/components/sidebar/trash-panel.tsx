@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { Trash2, RotateCcw, X, Loader2, FileText, Folder } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useFileStore } from "@/stores/file-store";
 import { getErrorMessage } from "@/lib/utils";
 
-function formatTimeAgo(dateStr: string): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatTimeAgo(dateStr: string, t: (key: string, values?: any) => string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -17,10 +19,10 @@ function formatTimeAgo(dateStr: string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) return t("justNow");
+  if (diffMins < 60) return t("minutesAgo", { n: diffMins });
+  if (diffHours < 24) return t("hoursAgo", { n: diffHours });
+  if (diffDays < 7) return t("daysAgo", { n: diffDays });
   return date.toLocaleDateString();
 }
 
@@ -30,6 +32,8 @@ interface TrashPanelProps {
 }
 
 export function TrashPanel({ open, onClose }: TrashPanelProps) {
+  const t = useTranslations("sidebar");
+  const tc = useTranslations("common");
   const { trashFiles, isTrashLoading, loadTrash, restoreFile, permanentDeleteFile, emptyTrash } =
     useFileStore();
 
@@ -48,7 +52,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
     setRestoringId(id);
     try {
       await restoreFile(id);
-      toast.success(`Restored "${name}"`);
+      toast.success(t("restoredName", { name }));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
@@ -61,7 +65,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
     setDeletingId(id);
     try {
       await permanentDeleteFile(id);
-      toast.success(`Permanently deleted "${name}"`);
+      toast.success(t("permanentlyDeletedName", { name }));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
@@ -75,7 +79,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
     try {
       await emptyTrash();
       setConfirmEmptyOpen(false);
-      toast.success("Trash emptied");
+      toast.success(t("trashEmptied"));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
@@ -92,7 +96,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
         <ModalHeader onClose={onClose}>
           <div className="flex items-center gap-2">
             <Trash2 className="h-4 w-4" />
-            <span>Trash</span>
+            <span>{t("trash")}</span>
             {trashFiles.length > 0 && (
               <span className="text-xs text-muted-foreground">({trashFiles.length})</span>
             )}
@@ -107,7 +111,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
           ) : trashFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Trash2 className="mb-2 h-8 w-8 opacity-40" />
-              <p className="text-sm">Trash is empty</p>
+              <p className="text-sm">{t("trashIsEmpty")}</p>
             </div>
           ) : (
             <ScrollArea className="max-h-[400px]">
@@ -126,7 +130,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm">{file.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          Deleted {formatTimeAgo(file.deletedAt)}
+                          {t("deleted")} {formatTimeAgo(file.deletedAt, t)}
                         </p>
                       </div>
                     </div>
@@ -137,7 +141,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
                         className="h-7 w-7"
                         onClick={() => handleRestore(file.id, file.name)}
                         disabled={restoringId === file.id}
-                        title="Restore"
+                        title={t("restore")}
                       >
                         {restoringId === file.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -151,7 +155,7 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
                         className="h-7 w-7 text-destructive hover:text-destructive"
                         onClick={() => handlePermanentDelete(file.id, file.name)}
                         disabled={deletingId === file.id}
-                        title="Delete permanently"
+                        title={t("deletePermanently")}
                       >
                         {deletingId === file.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -170,10 +174,10 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
         {trashFiles.length > 0 && (
           <ModalFooter>
             <Button variant="outline" size="sm" onClick={onClose}>
-              Close
+              {tc("close")}
             </Button>
             <Button variant="destructive" size="sm" onClick={() => setConfirmEmptyOpen(true)}>
-              Empty Trash
+              {t("emptyTrash")}
             </Button>
           </ModalFooter>
         )}
@@ -185,25 +189,26 @@ export function TrashPanel({ open, onClose }: TrashPanelProps) {
         onClose={() => setConfirmEmptyOpen(false)}
         className="max-w-sm"
       >
-        <ModalHeader onClose={() => setConfirmEmptyOpen(false)}>Empty Trash?</ModalHeader>
+        <ModalHeader onClose={() => setConfirmEmptyOpen(false)}>
+          {t("emptyTrashConfirm")}
+        </ModalHeader>
         <div className="px-4 py-3">
           <p className="text-sm text-muted-foreground">
-            This will permanently delete {trashFiles.length} item
-            {trashFiles.length !== 1 ? "s" : ""}. This action cannot be undone.
+            {t("permanentlyDeleteItems", { count: trashFiles.length })}
           </p>
         </div>
         <ModalFooter>
           <Button variant="outline" size="sm" onClick={() => setConfirmEmptyOpen(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" size="sm" onClick={handleEmptyTrash} disabled={isEmptying}>
             {isEmptying ? (
               <>
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                Emptying...
+                {t("emptying")}
               </>
             ) : (
-              "Empty Trash"
+              t("emptyTrash")
             )}
           </Button>
         </ModalFooter>

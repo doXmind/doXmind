@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, ChevronUp, Check } from "lucide-react";
 import { ChatToolStep } from "./chat-tool-step";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import type { ToolStatus } from "@/hooks/use-chat";
 
 interface ChatToolStepsProps {
@@ -19,6 +20,7 @@ interface ChatToolStepsProps {
  * Keeps running + recent tools visible, collapses older completed ones.
  */
 export function ChatToolSteps({ tools, collapseThreshold = 2, className }: ChatToolStepsProps) {
+  const t = useTranslations("chat");
   const [isExpanded, setIsExpanded] = useState(false);
 
   const { runningTools, completedTools } = useMemo(() => {
@@ -53,7 +55,9 @@ export function ChatToolSteps({ tools, collapseThreshold = 2, className }: ChatT
         >
           <Check className="h-3 w-3 text-green-600 dark:text-green-400" />
           <span>
-            {collapsedCount} more step{collapsedCount > 1 ? "s" : ""} completed
+            {collapsedCount === 1
+              ? t("oneMoreStepCompleted")
+              : t("moreStepsCompleted", { count: collapsedCount })}
           </span>
           <ChevronDown className="h-3 w-3" />
         </button>
@@ -76,7 +80,7 @@ export function ChatToolSteps({ tools, collapseThreshold = 2, className }: ChatT
               className="flex items-center gap-1 py-1 text-xs text-muted-foreground hover:text-foreground"
             >
               <ChevronUp className="h-3 w-3" />
-              <span>Show less</span>
+              <span>{t("showLess")}</span>
             </button>
           </motion.div>
         )}

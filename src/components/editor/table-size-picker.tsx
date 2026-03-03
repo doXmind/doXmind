@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, memo } from "react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
 interface TableSizePickerProps {
@@ -16,6 +17,7 @@ export const TableSizePicker = memo(function TableSizePicker({
 }: TableSizePickerProps) {
   const [hoverRow, setHoverRow] = useState(0);
   const [hoverCol, setHoverCol] = useState(0);
+  const t = useTranslations("editor");
 
   const handleCellHover = useCallback((row: number, col: number) => {
     setHoverRow(row);
@@ -49,14 +51,16 @@ export const TableSizePicker = memo(function TableSizePicker({
                     ? "border-primary bg-primary/20"
                     : "border-border bg-background hover:border-muted-foreground/30"
                 )}
-                aria-label={`${row} rows by ${col} columns`}
+                aria-label={t("tableSizeAria", { rows: row, cols: col })}
               />
             );
           })
         )}
       </div>
       <p className="mt-2 text-center text-xs text-muted-foreground">
-        {hoverRow > 0 && hoverCol > 0 ? `${hoverRow} × ${hoverCol}` : "Select size"}
+        {hoverRow > 0 && hoverCol > 0
+          ? t("tableSize", { rows: hoverRow, cols: hoverCol })
+          : t("selectSize")}
       </p>
     </div>
   );

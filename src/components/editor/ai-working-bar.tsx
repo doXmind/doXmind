@@ -3,12 +3,14 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-device-type";
+import { useTranslations } from "next-intl";
 
 interface AIWorkingBarProps {
   isActive: boolean;
 }
 
 export function AIWorkingBar({ isActive }: AIWorkingBarProps) {
+  const t = useTranslations("editor");
   const isMobile = useIsMobile();
 
   return (
@@ -34,7 +36,7 @@ export function AIWorkingBar({ isActive }: AIWorkingBarProps) {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
             </div>
             <span className="font-medium text-foreground/80">
-              {isMobile ? "AI editing..." : "AI is editing — editor is read-only"}
+              {isMobile ? t("aiWorking.editing") : t("aiWorking.readOnly")}
             </span>
           </div>
         </motion.div>

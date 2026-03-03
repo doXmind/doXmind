@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import { telemetry } from "@/lib/telemetry";
 
 interface ChatFeedbackToolbarProps {
@@ -41,6 +42,7 @@ export function ChatFeedbackToolbar({
   alwaysVisible = false,
   className,
 }: ChatFeedbackToolbarProps) {
+  const t = useTranslations("chat");
   const [feedback, setFeedback] = useState<"positive" | "negative" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -93,8 +95,8 @@ export function ChatFeedbackToolbar({
         type="button"
         onClick={handleCopy}
         className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground dark:text-muted-foreground/70"
-        title="Copy"
-        aria-label="Copy response"
+        title={t("copyResponse")}
+        aria-label={t("copyResponse")}
       >
         {copied ? (
           <Check className="h-3.5 w-3.5 text-green-500" />
@@ -115,8 +117,8 @@ export function ChatFeedbackToolbar({
             ? "text-green-500 dark:text-green-400"
             : "text-muted-foreground/50 hover:text-foreground dark:text-muted-foreground/70"
         )}
-        title="Good response"
-        aria-label="Mark as good response"
+        title={t("goodResponse")}
+        aria-label={t("markGoodResponse")}
       >
         <ThumbsUp className={cn("h-3.5 w-3.5", feedback === "positive" && "fill-current")} />
       </button>
@@ -133,8 +135,8 @@ export function ChatFeedbackToolbar({
             ? "text-red-500 dark:text-red-400"
             : "text-muted-foreground/50 hover:text-foreground dark:text-muted-foreground/70"
         )}
-        title="Poor response"
-        aria-label="Mark as poor response"
+        title={t("poorResponse")}
+        aria-label={t("markPoorResponse")}
       >
         <ThumbsDown className={cn("h-3.5 w-3.5", feedback === "negative" && "fill-current")} />
       </button>

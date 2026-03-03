@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Check, X, Trash2 } from "lucide-react";
@@ -301,6 +302,8 @@ export function MermaidEditorPanel({
   previewRef,
   renderError,
 }: MermaidEditorPanelProps) {
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showTemplates, setShowTemplates] = useState(false);
 
@@ -415,27 +418,27 @@ export function MermaidEditorPanel({
               onClick={() => setShowTemplates(!showTemplates)}
               className="h-8 text-xs"
             >
-              Templates
+              {t("mermaid.templates")}
             </Button>
             {showTemplates && (
               <div className="absolute bottom-full left-0 z-10 mb-1 max-h-72 w-48 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
                 {(() => {
                   let lastCategory = "";
-                  return CHART_TEMPLATES.map((t) => {
-                    const showCategory = t.category !== lastCategory;
-                    lastCategory = t.category;
+                  return CHART_TEMPLATES.map((tpl) => {
+                    const showCategory = tpl.category !== lastCategory;
+                    lastCategory = tpl.category;
                     return (
-                      <div key={t.label}>
+                      <div key={tpl.label}>
                         {showCategory && (
                           <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                            {t.category}
+                            {tpl.category}
                           </div>
                         )}
                         <button
-                          onClick={() => applyTemplate(t.code)}
+                          onClick={() => applyTemplate(tpl.code)}
                           className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
                         >
-                          {t.label}
+                          {tpl.label}
                         </button>
                       </div>
                     );
@@ -453,7 +456,7 @@ export function MermaidEditorPanel({
               variant="ghost"
               onClick={onSave}
               className="h-8 w-8 text-green-600 hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/30"
-              title="Save (Ctrl+Enter)"
+              title={t("mermaid.saveCtrlEnter")}
             >
               <Check className="h-4 w-4" />
             </Button>
@@ -465,7 +468,7 @@ export function MermaidEditorPanel({
               variant="ghost"
               onClick={onCancel}
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              title="Cancel (Escape)"
+              title={t("mermaid.cancelEscape")}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -477,7 +480,7 @@ export function MermaidEditorPanel({
               variant="ghost"
               onClick={onDelete}
               className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              title="Delete"
+              title={tc("delete")}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -488,13 +491,16 @@ export function MermaidEditorPanel({
       {/* Keyboard hints */}
       <div className="mt-2 text-xs text-muted-foreground">
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Ctrl+Enter</kbd> to save
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Ctrl+Enter</kbd>{" "}
+          {t("mermaid.toSave")}
         </span>
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Esc</kbd> to cancel
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Esc</kbd>{" "}
+          {t("mermaid.toCancel")}
         </span>
         <span>
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Tab</kbd> to indent
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Tab</kbd>{" "}
+          {t("mermaid.toIndent")}
         </span>
       </div>
     </div>

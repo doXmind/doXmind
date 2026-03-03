@@ -8,12 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/ui/logo";
 import { useAuthStore } from "@/stores/auth-store";
 import { api } from "@/lib/api";
+import { useTranslations } from "next-intl";
 
 type View = "login" | "register" | "verify" | "forgot";
 
 function LoginContent() {
   const router = useRouter();
   const { login, register, verifyEmail, resendCode, loginWithGoogle, isLoading } = useAuthStore();
+  const t = useTranslations("auth");
+  const tc = useTranslations("common");
   const searchParams = useSearchParams();
 
   const [view, setView] = useState<View>("login");
@@ -35,10 +38,10 @@ function LoginContent() {
   useEffect(() => {
     const reason = searchParams.get("reason");
     if (reason === "session_expired") {
-      setSessionMessage("Your session has expired. Please sign in again.");
+      setSessionMessage(t("sessionExpired"));
       window.history.replaceState({}, "", "/login");
     }
-  }, [searchParams]);
+  }, [searchParams, t]);
 
   // Resend countdown timer
   useEffect(() => {
@@ -74,14 +77,14 @@ function LoginContent() {
     e.preventDefault();
     clearMessages();
     if (!email || !password) {
-      setError("Please enter your email and password.");
+      setError(t("enterEmailAndPassword"));
       return;
     }
     try {
       await login(email, password);
       router.push("/");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Login failed";
+      const message = err instanceof Error ? err.message : t("loginFailed");
       setError(message);
     }
   };
@@ -91,11 +94,11 @@ function LoginContent() {
     e.preventDefault();
     clearMessages();
     if (!email || !username || !password) {
-      setError("Please fill in all fields.");
+      setError(t("fillAllFields"));
       return;
     }
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setError(t("passwordMinLength"));
       return;
     }
     try {
@@ -104,7 +107,7 @@ function LoginContent() {
       setResendTimer(60);
       setView("verify");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Registration failed";
+      const message = err instanceof Error ? err.message : t("registrationFailed");
       setError(message);
     }
   };
@@ -115,14 +118,14 @@ function LoginContent() {
     clearMessages();
     const codeStr = code.join("");
     if (codeStr.length !== 6) {
-      setError("Please enter the 6-digit code.");
+      setError(t("enterSixDigitCode"));
       return;
     }
     try {
       await verifyEmail(email, codeStr);
       router.push("/");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Verification failed";
+      const message = err instanceof Error ? err.message : t("verificationFailed");
       setError(message);
     }
   };
@@ -133,9 +136,9 @@ function LoginContent() {
     try {
       await resendCode(email);
       setResendTimer(60);
-      setSuccess("A new code has been sent to your email.");
+      setSuccess(t("codeSent"));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to resend code";
+      const message = err instanceof Error ? err.message : t("resendFailed");
       setError(message);
     }
   };
@@ -145,14 +148,14 @@ function LoginContent() {
     e.preventDefault();
     clearMessages();
     if (!email) {
-      setError("Please enter your email address.");
+      setError(t("enterEmailAddress"));
       return;
     }
     try {
       await api.forgotPassword(email);
-      setSuccess("If an account exists with this email, you will receive a password reset link.");
+      setSuccess(t("resetEmailSent"));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to send reset email";
+      const message = err instanceof Error ? err.message : t("resetEmailFailed");
       setError(message);
     }
   };
@@ -163,7 +166,7 @@ function LoginContent() {
     try {
       await loginWithGoogle();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Google login failed";
+      const message = err instanceof Error ? err.message : t("googleLoginFailed");
       setError(message);
     }
   };
@@ -239,21 +242,16 @@ function LoginContent() {
             <Logo size="lg" />
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {view === "login" && "Welcome back"}
-            {view === "register" && "Create your account"}
-            {view === "verify" && "Check your email"}
-            {view === "forgot" && "Reset password"}
+            {view === "login" && t("welcomeBack")}
+            {view === "register" && t("createYourAccount")}
+            {view === "verify" && t("checkYourEmail")}
+            {view === "forgot" && t("resetPassword")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {view === "login" && "Sign in to continue to doXmind"}
-            {view === "register" && "Sign up to get started with doXmind"}
-            {view === "verify" && (
-              <>
-                We sent a 6-digit code to{" "}
-                <span className="font-medium text-foreground">{email}</span>
-              </>
-            )}
-            {view === "forgot" && "Enter your email to receive a reset link"}
+            {view === "login" && t("signInToContinue")}
+            {view === "register" && t("signUpToGetStarted")}
+            {view === "verify" && t("codeSentTo", { email })}
+            {view === "forgot" && t("enterEmailForReset")}
           </p>
         </div>
 
@@ -278,7 +276,7 @@ function LoginContent() {
             <form onSubmit={handleLogin} className="space-y-4">
               <Input
                 type="email"
-                placeholder="Email"
+                placeholder={t("email")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
@@ -286,7 +284,7 @@ function LoginContent() {
               />
               <Input
                 type="password"
-                placeholder="Password"
+                placeholder={t("password")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
@@ -298,11 +296,11 @@ function LoginContent() {
                   className="text-xs text-muted-foreground hover:text-foreground"
                   onClick={() => switchView("forgot")}
                 >
-                  Forgot password?
+                  {t("forgotPassword")}
                 </button>
               </div>
               <Button type="submit" className="h-11 w-full text-base" disabled={isLoading}>
-                {isLoading ? "Signing in..." : "Sign In"}
+                {isLoading ? t("signingIn") : t("signIn")}
               </Button>
             </form>
 
@@ -311,7 +309,7 @@ function LoginContent() {
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">or</span>
+                <span className="bg-background px-2 text-muted-foreground">{tc("or")}</span>
               </div>
             </div>
 
@@ -323,17 +321,17 @@ function LoginContent() {
               disabled={isLoading}
             >
               {GoogleIcon}
-              Continue with Google
+              {t("continueWithGoogle")}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
-              Don&apos;t have an account?{" "}
+              {t("noAccount")}{" "}
               <button
                 type="button"
                 className="font-medium text-foreground hover:underline"
                 onClick={() => switchView("register")}
               >
-                Sign up
+                {t("signUp")}
               </button>
             </p>
           </>
@@ -345,7 +343,7 @@ function LoginContent() {
             <form onSubmit={handleRegister} className="space-y-4">
               <Input
                 type="email"
-                placeholder="Email"
+                placeholder={t("email")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
@@ -353,7 +351,7 @@ function LoginContent() {
               />
               <Input
                 type="text"
-                placeholder="Username"
+                placeholder={t("username")}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
@@ -361,14 +359,14 @@ function LoginContent() {
               />
               <Input
                 type="password"
-                placeholder="Password (8+ characters)"
+                placeholder={t("passwordHint")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
                 className="h-11"
               />
               <Button type="submit" className="h-11 w-full text-base" disabled={isLoading}>
-                {isLoading ? "Creating account..." : "Create Account"}
+                {isLoading ? t("creatingAccount") : t("createAccount")}
               </Button>
             </form>
 
@@ -377,7 +375,7 @@ function LoginContent() {
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">or</span>
+                <span className="bg-background px-2 text-muted-foreground">{tc("or")}</span>
               </div>
             </div>
 
@@ -389,17 +387,17 @@ function LoginContent() {
               disabled={isLoading}
             >
               {GoogleIcon}
-              Continue with Google
+              {t("continueWithGoogle")}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
-              Already have an account?{" "}
+              {t("hasAccount")}{" "}
               <button
                 type="button"
                 className="font-medium text-foreground hover:underline"
                 onClick={() => switchView("login")}
               >
-                Sign in
+                {t("signInLink")}
               </button>
             </p>
           </>
@@ -428,13 +426,15 @@ function LoginContent() {
                 ))}
               </div>
               <Button type="submit" className="h-11 w-full text-base" disabled={isLoading}>
-                {isLoading ? "Verifying..." : "Verify Email"}
+                {isLoading ? t("verifying") : t("verifyEmail")}
               </Button>
             </form>
 
             <div className="text-center">
               {resendTimer > 0 ? (
-                <p className="text-sm text-muted-foreground">Resend code in {resendTimer}s</p>
+                <p className="text-sm text-muted-foreground">
+                  {t("resendCodeIn", { seconds: resendTimer })}
+                </p>
               ) : (
                 <button
                   type="button"
@@ -442,7 +442,7 @@ function LoginContent() {
                   onClick={handleResend}
                   disabled={isLoading}
                 >
-                  Resend code
+                  {t("resendCode")}
                 </button>
               )}
             </div>
@@ -453,7 +453,7 @@ function LoginContent() {
                 className="hover:underline"
                 onClick={() => switchView("register")}
               >
-                &larr; Back to sign up
+                &larr; {t("backToSignUp")}
               </button>
             </p>
           </>
@@ -465,20 +465,20 @@ function LoginContent() {
             <form onSubmit={handleForgot} className="space-y-4">
               <Input
                 type="email"
-                placeholder="Email"
+                placeholder={t("email")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
                 className="h-11"
               />
               <Button type="submit" className="h-11 w-full text-base" disabled={isLoading}>
-                {isLoading ? "Sending..." : "Send Reset Link"}
+                {isLoading ? t("sending") : t("sendResetLink")}
               </Button>
             </form>
 
             <p className="text-center text-sm text-muted-foreground">
               <button type="button" className="hover:underline" onClick={() => switchView("login")}>
-                &larr; Back to sign in
+                &larr; {t("backToSignIn")}
               </button>
             </p>
           </>
@@ -486,13 +486,13 @@ function LoginContent() {
 
         {/* Terms & Privacy */}
         <p className="text-center text-xs text-muted-foreground">
-          By continuing, you agree to our{" "}
+          {t("termsAgreement")}{" "}
           <Link href="/terms" className="underline hover:text-foreground">
-            Terms of Service
+            {t("termsOfService")}
           </Link>{" "}
-          and{" "}
+          {tc("and")}{" "}
           <Link href="/privacy" className="underline hover:text-foreground">
-            Privacy Policy
+            {t("privacyPolicy")}
           </Link>
         </p>
       </div>
@@ -504,9 +504,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-background">
-          Loading...
-        </div>
+        <div className="flex min-h-screen items-center justify-center bg-background">...</div>
       }
     >
       <LoginContent />

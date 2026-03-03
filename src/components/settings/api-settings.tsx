@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { Key, CheckCircle, XCircle, Loader2, Eye, EyeOff, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,8 @@ function formatContext(length: number): string {
 }
 
 export function APISettings() {
+  const t = useTranslations("settings");
+  const tc = useTranslations("common");
   const {
     hasAPIKey,
     preferredModel,
@@ -67,14 +70,14 @@ export function APISettings() {
       setApiKey("");
       setShowKey(false);
     } else {
-      setError(result.error || "Failed to save API key");
+      setError(result.error || t("failedToSaveApiKey"));
     }
 
     setIsSaving(false);
   };
 
   const handleDeleteKey = async () => {
-    if (!window.confirm("Are you sure you want to remove your API key?")) return;
+    if (!window.confirm(t("removeApiKeyConfirm"))) return;
     await deleteAPIKey();
     setApiKey("");
   };
@@ -89,29 +92,27 @@ export function APISettings() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Use your own OpenRouter API key to unlock model selection.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("openRouterDescription")}</p>
 
       <div className="space-y-4 rounded-lg border p-4">
         {/* API Key Section */}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Key className="h-5 w-5 text-muted-foreground" />
-            <span className="font-medium">OpenRouter API Key</span>
+            <span className="font-medium">{t("openRouterApiKey")}</span>
             {hasAPIKey && <CheckCircle className="h-4 w-4 text-green-500" />}
           </div>
 
           {hasAPIKey ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">API key configured</span>
+              <span className="text-sm text-muted-foreground">{t("apiKeyConfigured")}</span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleDeleteKey}
                 className="text-destructive hover:text-destructive"
               >
-                Remove
+                {t("removeApiKey")}
               </Button>
             </div>
           ) : (
@@ -136,7 +137,7 @@ export function APISettings() {
                   </button>
                 </div>
                 <Button onClick={handleSaveKey} disabled={!apiKey.trim() || isSaving}>
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : tc("save")}
                 </Button>
               </div>
               {error && (
@@ -146,14 +147,14 @@ export function APISettings() {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Your API key is encrypted and stored securely.{" "}
+                {t("apiKeyEncrypted")}{" "}
                 <a
                   href="https://openrouter.ai/keys"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
-                  Get your API key
+                  {t("getApiKey")}
                 </a>
               </p>
             </div>
@@ -165,12 +166,12 @@ export function APISettings() {
           <>
             <hr />
             <div className="space-y-2">
-              <span className="font-medium">Preferred Model</span>
+              <span className="font-medium">{t("preferredModel")}</span>
               {/* Search filter */}
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search models..."
+                  placeholder={t("searchModels")}
                   value={modelSearch}
                   onChange={(e) => setModelSearch(e.target.value)}
                   className="h-8 pl-8 text-sm"
@@ -188,7 +189,7 @@ export function APISettings() {
                 ))}
                 {filteredModels.length === 0 && (
                   <p className="py-3 text-center text-xs text-muted-foreground">
-                    No models match your search
+                    {t("noModelsMatch")}
                   </p>
                 )}
               </div>
@@ -197,10 +198,7 @@ export function APISettings() {
         )}
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Without your own API key, you&apos;ll use the default model provided by doXmind. Your own
-        API key gives you access to more powerful models.
-      </p>
+      <p className="text-xs text-muted-foreground">{t("withoutApiKey")}</p>
     </div>
   );
 }

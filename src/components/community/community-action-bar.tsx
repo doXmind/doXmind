@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { CommunityDetailResponse, api } from "@/lib/api";
 import { GitFork, Bookmark, Share2, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ interface CommunityActionBarProps {
 }
 
 export function CommunityActionBar({ detail, shareToken, onForkSuccess }: CommunityActionBarProps) {
+  const t = useTranslations("community");
   const user = useAuthStore((s) => s.user);
   const isBookmarked = useBookmarksStore((s) => s.isBookmarked(detail.share_id));
   const toggleBookmark = useBookmarksStore((s) => s.toggleBookmark);
@@ -23,17 +25,17 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
 
   const handleFork = async () => {
     if (!user) {
-      toast.error("Please sign in to fork documents");
+      toast.error(t("signInToFork"));
       return;
     }
 
     setIsForking(true);
     try {
       const result = await api.forkDocument(shareToken);
-      toast.success("Saved to your workspace!");
+      toast.success(t("savedToWorkspace"));
       onForkSuccess(result.forked_file_id);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to fork document");
+      toast.error(err instanceof Error ? err.message : t("failedToFork"));
     } finally {
       setIsForking(false);
     }
@@ -41,11 +43,11 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
 
   const handleBookmark = async () => {
     if (!user) {
-      toast.error("Please sign in to bookmark");
+      toast.error(t("signInToBookmark"));
       return;
     }
     const result = await toggleBookmark(shareToken, detail.share_id);
-    toast.success(result ? "Bookmark removed" : "Bookmarked!");
+    toast.success(result ? t("bookmarkRemoved") : t("bookmarked"));
   };
 
   const handleShare = async () => {
@@ -54,9 +56,9 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      toast.success("Link copied to clipboard!");
+      toast.success(t("linkCopied"));
     } catch {
-      toast.error("Failed to copy link");
+      toast.error(t("failedToCopyLink"));
     }
   };
 
@@ -75,7 +77,7 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
         ) : (
           <GitFork className="h-3.5 w-3.5" />
         )}
-        {detail.is_forked ? "Forked" : "Fork"}
+        {detail.is_forked ? t("forked") : t("fork")}
         {detail.fork_count > 0 && (
           <span className="ml-0.5 text-muted-foreground">{detail.fork_count}</span>
         )}
@@ -91,7 +93,7 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
         }`}
       >
         <Bookmark className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current" : ""}`} />
-        {isBookmarked ? "Saved" : "Save"}
+        {isBookmarked ? t("saved") : t("save")}
         {detail.bookmark_count > 0 && (
           <span className="ml-0.5 text-muted-foreground">{detail.bookmark_count}</span>
         )}
@@ -109,7 +111,7 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
         ) : (
           <Share2 className="h-3.5 w-3.5" />
         )}
-        {copied ? "Copied" : "Share"}
+        {copied ? t("copied") : t("share")}
       </Button>
     </div>
   );

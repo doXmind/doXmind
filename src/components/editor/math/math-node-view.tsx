@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { Pencil, Copy, Trash2, ArrowUpFromLine } from "lucide-react";
 import katex from "katex";
@@ -27,6 +28,8 @@ export function MathNodeView({
   editor,
   getPos,
 }: NodeViewProps) {
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const { latex } = node.attrs;
   const isBlock = node.type.name === "blockMath";
   const isMobile = useIsMobile();
@@ -83,7 +86,7 @@ export function MathNodeView({
     const latexToRender = latex || "";
 
     if (!latexToRender.trim()) {
-      renderedRef.current.innerHTML = '<span class="math-empty-placeholder">Empty equation</span>';
+      renderedRef.current.innerHTML = `<span class="math-empty-placeholder">${t("emptyEquation")}</span>`;
       return;
     }
 
@@ -99,7 +102,7 @@ export function MathNodeView({
       setRenderError((err as Error).message);
       renderedRef.current.innerHTML = `<span class="text-destructive">${latexToRender}</span>`;
     }
-  }, [latex, isBlock, isEditing]);
+  }, [latex, isBlock, isEditing, t]);
 
   // Sync local latex when prop changes
   useEffect(() => {
@@ -183,7 +186,7 @@ export function MathNodeView({
     >
       {isNested && (
         <>
-          <Tooltip content="Lift out of list" side="top">
+          <Tooltip content={t("liftOutOfList")} side="top">
             <button type="button" className="image-toolbar-icon-btn" onClick={handleLiftOut}>
               <ArrowUpFromLine className="h-3.5 w-3.5" />
             </button>
@@ -191,25 +194,25 @@ export function MathNodeView({
           <div className="image-toolbar-sep" />
         </>
       )}
-      <Tooltip content="Ask AI" side="top">
+      <Tooltip content={t("blockAction.askAI")} side="top">
         <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
           <AiLogoIcon className="h-3.5 w-3.5" />
-          <span className="text-xs">Ask AI</span>
+          <span className="text-xs">{t("blockAction.askAI")}</span>
         </button>
       </Tooltip>
       <div className="image-toolbar-sep" />
-      <Tooltip content="Edit equation" side="top">
+      <Tooltip content={t("editEquation")} side="top">
         <button type="button" className="image-toolbar-icon-btn" onClick={handleEnterEdit}>
           <Pencil className="h-3.5 w-3.5" />
         </button>
       </Tooltip>
-      <Tooltip content="Copy LaTeX" side="top">
+      <Tooltip content={t("copyLatex")} side="top">
         <button type="button" className="image-toolbar-icon-btn" onClick={handleCopyLatex}>
           <Copy className="h-3.5 w-3.5" />
         </button>
       </Tooltip>
       <div className="image-toolbar-sep" />
-      <Tooltip content="Delete" side="top">
+      <Tooltip content={tc("delete")} side="top">
         <button
           type="button"
           className="image-toolbar-icon-btn"

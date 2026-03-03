@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { Image as ImageIcon, Upload, Link, Loader2, AlertCircle } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,8 @@ interface ImageModalProps {
 type Tab = "upload" | "url";
 
 export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const [tab, setTab] = React.useState<Tab>("upload");
   const [url, setUrl] = React.useState("");
   const [alt, setAlt] = React.useState("");
@@ -127,7 +130,7 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
       <ModalHeader onClose={onClose}>
         <span className="flex items-center gap-2">
           <ImageIcon className="h-5 w-5" />
-          Insert Image
+          {t("insertImage")}
         </span>
       </ModalHeader>
 
@@ -144,7 +147,7 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
           )}
         >
           <Upload className="h-4 w-4" />
-          Upload
+          {t("uploadTab")}
         </button>
         <button
           type="button"
@@ -157,7 +160,7 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
           )}
         >
           <Link className="h-4 w-4" />
-          URL
+          {t("urlTab")}
         </button>
       </div>
 
@@ -179,22 +182,20 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
             {isUploading ? (
               <>
                 <Loader2 className="mb-2 h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Uploading...</p>
+                <p className="text-sm text-muted-foreground">{t("uploadingImage")}</p>
               </>
             ) : preview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={preview}
-                alt="Preview"
+                alt={t("previewLabel")}
                 className="max-h-32 max-w-full rounded object-contain"
               />
             ) : (
               <>
                 <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
-                <p className="text-sm font-medium">Drop an image here or click to browse</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  PNG, JPG, GIF, WebP, SVG (max 10MB)
-                </p>
+                <p className="text-sm font-medium">{t("dropImageHere")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("imageFormats")}</p>
               </>
             )}
           </div>
@@ -221,7 +222,7 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
                   disabled={isUploading}
                   className="h-8"
                 >
-                  Retry Upload
+                  {t("retryUpload")}
                 </Button>
               </div>
             </div>
@@ -229,12 +230,12 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
 
           <div className="space-y-2">
             <label htmlFor="upload-alt" className="text-sm font-medium">
-              Alt Text <span className="font-normal text-muted-foreground">(optional)</span>
+              {t("altTextOptional")}
             </label>
             <Input
               id="upload-alt"
               type="text"
-              placeholder="Describe the image"
+              placeholder={t("describeTheImage")}
               value={alt}
               onChange={(e) => setAlt(e.target.value)}
             />
@@ -245,13 +246,13 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
           <div className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="image-url" className="text-sm font-medium">
-                Image URL
+                {t("imageUrl")}
               </label>
               <Input
                 ref={inputRef}
                 id="image-url"
                 type="url"
-                placeholder="https://example.com/image.png"
+                placeholder={t("imageUrlPlaceholder")}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
@@ -259,12 +260,12 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
 
             <div className="space-y-2">
               <label htmlFor="image-alt" className="text-sm font-medium">
-                Alt Text <span className="font-normal text-muted-foreground">(optional)</span>
+                {t("altTextOptional")}
               </label>
               <Input
                 id="image-alt"
                 type="text"
-                placeholder="Describe the image"
+                placeholder={t("describeTheImage")}
                 value={alt}
                 onChange={(e) => setAlt(e.target.value)}
               />
@@ -273,10 +274,10 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
 
           <ModalFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button type="submit" disabled={!url.trim()}>
-              Insert
+              {t("insert")}
             </Button>
           </ModalFooter>
         </form>

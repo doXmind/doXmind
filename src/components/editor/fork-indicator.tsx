@@ -7,6 +7,7 @@ import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useFileStore } from "@/stores/file-store";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface ForkIndicatorProps {
   forkId: string;
@@ -15,6 +16,8 @@ interface ForkIndicatorProps {
 }
 
 export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicatorProps) {
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const [isSyncing, setIsSyncing] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [showConflict, setShowConflict] = useState(false);
@@ -38,10 +41,10 @@ export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicat
 
       switch (result.status) {
         case "up_to_date":
-          toast.info("Already up to date with the original.");
+          toast.info(t("alreadyUpToDate"));
           break;
         case "synced":
-          toast.success("Synced with original!");
+          toast.success(t("syncedWithOriginal"));
           await reloadCurrentFile();
           break;
         case "conflict":
@@ -53,7 +56,7 @@ export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicat
           break;
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to sync");
+      toast.error(err instanceof Error ? err.message : t("failedToSync"));
     } finally {
       setIsSyncing(false);
     }
@@ -70,18 +73,18 @@ export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicat
 
       if (result.status === "synced") {
         if (result.backup_file_id) {
-          toast.success("Synced! A backup of your version was saved.");
+          toast.success(t("syncedBackupSaved"));
           // Reload file list so the backup shows up in sidebar
           await useFileStore.getState().loadFiles();
         } else {
-          toast.success("Synced with original!");
+          toast.success(t("syncedWithOriginal"));
         }
         await reloadCurrentFile();
       } else {
         toast.error(result.message);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to sync");
+      toast.error(err instanceof Error ? err.message : t("failedToSync"));
     } finally {
       setIsSyncing(false);
     }
@@ -92,8 +95,7 @@ export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicat
       <div className="flex items-center gap-3 border-b border-border bg-muted/50 px-4 py-2 text-sm">
         <GitFork className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
-          Forked from <strong className="font-medium text-foreground">{sourceTitle}</strong> by{" "}
-          {sourceAuthor}
+          {t("forkedFromBy", { title: sourceTitle, author: sourceAuthor })}
         </span>
         <Button
           variant="ghost"
@@ -107,7 +109,7 @@ export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicat
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          Sync from original
+          {t("syncFromOriginal")}
         </Button>
         <button
           onClick={() => setDismissed(true)}
@@ -122,18 +124,15 @@ export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicat
         <ModalHeader onClose={() => setShowConflict(false)}>
           <span className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
-            Local changes detected
+            {t("localChangesDetected")}
           </span>
         </ModalHeader>
 
-        <p className="text-sm text-muted-foreground">
-          The original document has been updated, but you&apos;ve also made changes to your copy.
-          Syncing will replace your content with the latest version from the original.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("syncConflictMessage")}</p>
 
         <ModalFooter>
           <Button variant="ghost" size="sm" onClick={() => setShowConflict(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button
             variant="outline"
@@ -142,11 +141,11 @@ export function ForkIndicator({ forkId, sourceTitle, sourceAuthor }: ForkIndicat
             className="gap-1.5"
           >
             <ArrowRight className="h-3.5 w-3.5" />
-            Sync anyway
+            {t("syncAnyway")}
           </Button>
           <Button size="sm" onClick={() => handleForceSync(true)} className="gap-1.5">
             <Copy className="h-3.5 w-3.5" />
-            Sync &amp; keep backup
+            {t("syncKeepBackup")}
           </Button>
         </ModalFooter>
       </Modal>

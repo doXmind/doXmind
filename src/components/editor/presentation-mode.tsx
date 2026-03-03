@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, ChevronLeft, ChevronRight, Sun, Moon, Loader2, RefreshCw } from "lucide-react";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { useThemeManager } from "@/hooks/use-theme-manager";
+import { useTranslations } from "next-intl";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent, Extensions } from "@tiptap/core";
 
@@ -166,19 +167,19 @@ function formatPresentationDate(dateStr: string): string {
   }
 }
 
-function extractSlideTitleFromJson(doc: JSONContent): string {
+function extractSlideTitleFromJson(doc: JSONContent, fallback: string): string {
   const firstNode = doc.content?.[0];
-  if (!firstNode) return "Untitled slide";
+  if (!firstNode) return fallback;
 
   if (firstNode.type === "heading") {
-    return getTextContent(firstNode).slice(0, 60) || "Untitled slide";
+    return getTextContent(firstNode).slice(0, 60) || fallback;
   }
 
   const text = getTextContent(firstNode);
   if (text) {
     return text.slice(0, 60) + (text.length > 60 ? "\u2026" : "");
   }
-  return "Untitled slide";
+  return fallback;
 }
 
 /* ─── Slide renderer (optionally editable) ───────────── */
@@ -268,6 +269,8 @@ export function PresentationMode({
   const [isIdle, setIsIdle] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const [showNavigator, setShowNavigator] = useState(false);
   const [jumpInput, setJumpInput] = useState("");
   const [showSummaries, setShowSummaries] = useState(false);
@@ -296,7 +299,7 @@ export function PresentationMode({
     const contentSlides = splitJsonIntoSlides(sourceDoc);
     if (contentSlides.length === 0) return [];
 
-    const title = titleProp || currentFile?.name?.replace(/\.md$/i, "") || "Untitled";
+    const title = titleProp || currentFile?.name?.replace(/\.md$/i, "") || t("untitled");
     const author = authorProp ?? (user?.username || user?.email || "");
     const date =
       dateProp ?? (currentFile?.updatedAt ? formatPresentationDate(currentFile.updatedAt) : "");
@@ -333,6 +336,7 @@ export function PresentationMode({
     dateProp,
     showSummaries,
     simplifiedDoc,
+    t,
   ]);
 
   // Reset state when entering presentation
@@ -589,8 +593,8 @@ export function PresentationMode({
               "presentation-control-btn flex items-center gap-1.5",
               (showSummaries || isGenerating) && "presentation-control-btn-active"
             )}
-            aria-label="AI presentation options"
-            title="AI presentation options"
+            aria-label={t("presentation.aiOptions")}
+            title={t("presentation.aiOptions")}
           >
             <AiLogoIcon size={16} className={cn(isGenerating && "animate-pulse")} />
             <span className="text-xs font-medium">AI</span>
@@ -609,7 +613,7 @@ export function PresentationMode({
                   !showSummaries && !isGenerating && "presentation-ai-menu-item-active"
                 )}
               >
-                Original
+                {t("presentation.original")}
               </button>
 
               {/* Simplified — use cached or generate */}
@@ -640,12 +644,12 @@ export function PresentationMode({
                 {isGenerating ? (
                   <>
                     <Loader2 className="mr-1.5 inline h-3 w-3 animate-spin" />
-                    Cancel
+                    {tc("cancel")}
                   </>
                 ) : simplifiedDoc ? (
-                  "Simplified"
+                  t("presentation.simplified")
                 ) : (
-                  "Generate simplified"
+                  t("presentation.generateSimplified")
                 )}
               </button>
 
@@ -663,7 +667,7 @@ export function PresentationMode({
                   className="presentation-ai-menu-item"
                 >
                   <RefreshCw className="mr-1.5 inline h-3 w-3" />
-                  Regenerate
+                  {t("presentation.regenerate")}
                 </button>
               )}
             </div>
@@ -672,11 +676,15 @@ export function PresentationMode({
         <button
           onClick={() => setIsDark((d) => !d)}
           className="presentation-control-btn"
-          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={isDark ? t("presentation.switchToLight") : t("presentation.switchToDark")}
         >
           {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
-        <button onClick={exit} className="presentation-control-btn" aria-label="Exit presentation">
+        <button
+          onClick={exit}
+          className="presentation-control-btn"
+          aria-label={t("presentation.exitPresentation")}
+        >
           <X className="h-4 w-4" />
           <span className="presentation-close-label">ESC</span>
         </button>
@@ -687,7 +695,7 @@ export function PresentationMode({
         {isGenerating && (
           <div className="presentation-generating-overlay">
             <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--pres-text-muted)" }} />
-            <p className="presentation-generating-text">Generating simplified presentation...</p>
+            <p className="presentation-generating-text">{t("presentation.generatingSimplified")}</p>
           </div>
         )}
         <AnimatePresence mode="wait" custom={direction}>
@@ -733,7 +741,7 @@ export function PresentationMode({
             "presentation-nav-btn presentation-nav-prev",
             isIdle && "presentation-idle"
           )}
-          aria-label="Previous slide"
+          aria-label={t("presentation.previousSlide")}
         >
           <ChevronLeft className="h-6 w-6" />
         </button>
@@ -745,7 +753,7 @@ export function PresentationMode({
             "presentation-nav-btn presentation-nav-next",
             isIdle && "presentation-idle"
           )}
-          aria-label="Next slide"
+          aria-label={t("presentation.nextSlide")}
         >
           <ChevronRight className="h-6 w-6" />
         </button>
@@ -767,7 +775,7 @@ export function PresentationMode({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="presentation-navigator-header">
-              <span className="presentation-navigator-title">Go to slide</span>
+              <span className="presentation-navigator-title">{t("presentation.goToSlide")}</span>
               {jumpInput && <span className="presentation-navigator-jump">#{jumpInput}_</span>}
               <button
                 onClick={() => {
@@ -775,7 +783,7 @@ export function PresentationMode({
                   setJumpInput("");
                 }}
                 className="presentation-control-btn"
-                aria-label="Close navigator"
+                aria-label={t("presentation.closeNavigator")}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -792,7 +800,9 @@ export function PresentationMode({
                 >
                   <span className="presentation-navigator-number">{i + 1}</span>
                   <span className="presentation-navigator-label">
-                    {s.type === "title" ? "Title Slide" : extractSlideTitleFromJson(s.json!)}
+                    {s.type === "title"
+                      ? t("presentation.titleSlide")
+                      : extractSlideTitleFromJson(s.json!, t("presentation.untitledSlide"))}
                   </span>
                 </button>
               ))}
@@ -809,7 +819,7 @@ export function PresentationMode({
             setJumpInput("");
           }}
           className="presentation-counter presentation-counter-btn"
-          title="Press G to open slide navigator"
+          title={t("presentation.pressGToNavigate")}
         >
           {safeIndex + 1} / {slides.length}
         </button>

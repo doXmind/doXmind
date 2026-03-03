@@ -35,6 +35,7 @@ import {
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { cn, formatShortcut } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
@@ -71,6 +72,7 @@ export function UnifiedHeader() {
     setSpellcheckEnabled,
   } = useEditorStore();
   const { currentTheme, toggleBaseMode } = useThemeManager();
+  const t = useTranslations("editor");
 
   const currentFile = files.find((f) => f.id === currentFileId);
 
@@ -107,9 +109,9 @@ export function UnifiedHeader() {
           .catch(() => {});
       }),
       {
-        loading: `Exporting as ${formatLabel}...`,
-        success: `Exported as ${formatLabel}`,
-        error: `Failed to export as ${formatLabel}`,
+        loading: t("exportingAs", { format: formatLabel }),
+        success: t("exportedAs", { format: formatLabel }),
+        error: t("failedToExportAs", { format: formatLabel }),
       }
     );
   };
@@ -129,7 +131,7 @@ export function UnifiedHeader() {
     <header className="bg-sidebar relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-6">
       {/* Left: Home + Sidebar toggle + Breadcrumb */}
       <div className="flex min-w-0 items-center gap-1">
-        <Tooltip content="Home" side="bottom">
+        <Tooltip content={t("homeTooltip")} side="bottom">
           <Link
             href="/"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"
@@ -140,13 +142,13 @@ export function UnifiedHeader() {
 
         <div className="mx-1 h-5 w-px bg-border/40" />
 
-        <Tooltip content={isFilesSidebarOpen ? "Hide Files" : "Show Files"} side="bottom">
+        <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
           <Button
             variant="ghost"
             size="icon"
             className={cn("h-8 w-8 text-foreground", isFilesSidebarOpen && "bg-accent")}
             onClick={toggleFilesSidebar}
-            aria-label={isFilesSidebarOpen ? "Hide Files" : "Show Files"}
+            aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
           >
             <PanelLeft className="h-4 w-4" />
           </Button>
@@ -158,20 +160,23 @@ export function UnifiedHeader() {
         {currentFile && (
           <>
             {/* Present */}
-            <Tooltip content="Present" side="bottom">
+            <Tooltip content={t("present")} side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
                 onClick={() => setPresentationMode(true)}
-                aria-label="Present"
+                aria-label={t("present")}
               >
                 <Play className="h-4 w-4" />
               </Button>
             </Tooltip>
 
             {/* Search */}
-            <Tooltip content={`Find (${formatShortcut("Ctrl+F")})`} side="bottom">
+            <Tooltip
+              content={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
+              side="bottom"
+            >
               <Button
                 variant="ghost"
                 size="icon"
@@ -180,7 +185,7 @@ export function UnifiedHeader() {
                   isSearchBarOpen && "bg-accent text-accent-foreground"
                 )}
                 onClick={toggleSearchBar}
-                aria-label="Search"
+                aria-label={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
               >
                 <Search className="h-4 w-4" />
               </Button>
@@ -188,13 +193,13 @@ export function UnifiedHeader() {
 
             {/* More Menu */}
             <DropdownMenu>
-              <Tooltip content="More" side="bottom">
+              <Tooltip content={t("moreTooltip")} side="bottom">
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    aria-label="More actions"
+                    aria-label={t("moreActions")}
                     data-onboarding="more-menu"
                   >
                     <MoreHorizontal className="h-4 w-4" />
@@ -213,7 +218,7 @@ export function UnifiedHeader() {
                   ) : (
                     <FileSearch className="mr-2 h-4 w-4" />
                   )}
-                  AI Writing Review
+                  {t("aiWritingReview")}
                   {isReviewActive && <Check className="ml-auto h-4 w-4" />}
                 </DropdownMenuItem>
 
@@ -221,17 +226,17 @@ export function UnifiedHeader() {
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Autocomplete
+                    {t("autocomplete")}
                     <span className="ml-auto text-xs text-muted-foreground">
                       {!autocompleteEnabled
-                        ? "Off"
+                        ? t("autocompleteOff")
                         : autocompleteTriggerMode === "manual"
-                          ? "Manual"
+                          ? t("autocompleteManual")
                           : autocompleteMode === "short"
-                            ? "Short"
+                            ? t("autocompleteShort")
                             : autocompleteMode === "long"
-                              ? "Long"
-                              : "Adaptive"}
+                              ? t("autocompleteLong")
+                              : t("autocompleteAdaptive")}
                     </span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="w-56">
@@ -245,8 +250,10 @@ export function UnifiedHeader() {
                       )}
                     >
                       <Zap className="mr-2 h-4 w-4" />
-                      Short
-                      <span className="ml-auto text-xs text-muted-foreground">1 line, fast</span>
+                      {t("autocompleteShort")}
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {t("shortDesc")}
+                      </span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => setAutocomplete("long")}
@@ -258,8 +265,8 @@ export function UnifiedHeader() {
                       )}
                     >
                       <FileText className="mr-2 h-4 w-4" />
-                      Long
-                      <span className="ml-auto text-xs text-muted-foreground">Multi-line</span>
+                      {t("autocompleteLong")}
+                      <span className="ml-auto text-xs text-muted-foreground">{t("longDesc")}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => setAutocomplete("adaptive")}
@@ -271,8 +278,10 @@ export function UnifiedHeader() {
                       )}
                     >
                       <Target className="mr-2 h-4 w-4" />
-                      Adaptive
-                      <span className="ml-auto text-xs text-muted-foreground">Auto-switch</span>
+                      {t("autocompleteAdaptive")}
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {t("adaptiveDesc")}
+                      </span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={setAutocompleteManual}
@@ -281,16 +290,20 @@ export function UnifiedHeader() {
                       )}
                     >
                       <Keyboard className="mr-2 h-4 w-4" />
-                      Manual
-                      <span className="ml-auto text-xs text-muted-foreground">Alt+/</span>
+                      {t("autocompleteManual")}
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {t("manualTrigger")}
+                      </span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => setAutocompleteEnabled(false)}
                       className={cn(!autocompleteEnabled && "bg-accent")}
                     >
                       <Sparkles className="mr-2 h-4 w-4 opacity-50" />
-                      Off
-                      <span className="ml-auto text-xs text-muted-foreground">Disabled</span>
+                      {t("autocompleteOff")}
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {t("disabledLabel")}
+                      </span>
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
@@ -298,7 +311,7 @@ export function UnifiedHeader() {
                 {/* Spell Check */}
                 <DropdownMenuItem onClick={() => setSpellcheckEnabled(!spellcheckEnabled)}>
                   <SpellCheck className="mr-2 h-4 w-4" />
-                  Spell Check
+                  {t("spellCheck")}
                   {spellcheckEnabled && <Check className="ml-auto h-4 w-4" />}
                 </DropdownMenuItem>
 
@@ -311,7 +324,7 @@ export function UnifiedHeader() {
                   ) : (
                     <Moon className="mr-2 h-4 w-4" />
                   )}
-                  {currentTheme.baseMode === "dark" ? "Light Mode" : "Dark Mode"}
+                  {currentTheme.baseMode === "dark" ? t("lightMode") : t("darkMode")}
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
@@ -319,7 +332,7 @@ export function UnifiedHeader() {
                 {/* Version History */}
                 <DropdownMenuItem onClick={toggleVersionHistory} data-onboarding="version-history">
                   <Clock className="mr-2 h-4 w-4" />
-                  Version History
+                  {t("versionHistory")}
                   {isVersionHistoryOpen && <Check className="ml-auto h-4 w-4" />}
                 </DropdownMenuItem>
 
@@ -331,15 +344,15 @@ export function UnifiedHeader() {
                   data-onboarding="export-button"
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Export as Markdown
+                  {t("exportAsMarkdown")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExport("pdf")}>
                   <Download className="mr-2 h-4 w-4" />
-                  Export as PDF
+                  {t("exportAsPDF")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExport("docx")}>
                   <Download className="mr-2 h-4 w-4" />
-                  Export as Word
+                  {t("exportAsWord")}
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
@@ -347,7 +360,7 @@ export function UnifiedHeader() {
                 {/* Keyboard Shortcuts */}
                 <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
                   <Keyboard className="mr-2 h-4 w-4" />
-                  Keyboard Shortcuts
+                  {t("keyboardShortcuts")}
                   <span className="ml-auto text-xs text-muted-foreground">
                     {formatShortcut("Ctrl+?")}
                   </span>

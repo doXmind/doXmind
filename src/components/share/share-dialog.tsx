@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import {
   Copy,
   Check,
@@ -35,11 +36,11 @@ import {
 } from "@/lib/api";
 
 const EXPIRATION_OPTIONS = [
-  { value: "never", label: "Never expires" },
-  { value: "1", label: "1 day" },
-  { value: "7", label: "7 days" },
-  { value: "30", label: "30 days" },
-  { value: "90", label: "90 days" },
+  { value: "never", labelKey: "neverExpires" },
+  { value: "1", labelKey: "oneDay" },
+  { value: "7", labelKey: "sevenDays" },
+  { value: "30", labelKey: "thirtyDays" },
+  { value: "90", labelKey: "ninetyDays" },
 ] as const;
 
 interface ShareDialogProps {
@@ -51,6 +52,9 @@ interface ShareDialogProps {
 }
 
 export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: ShareDialogProps) {
+  const t = useTranslations("share");
+  const tc = useTranslations("common");
+
   // Existing shares list
   const [shares, setShares] = useState<Share[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,7 +107,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
           setShowCreateForm(true);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to load shares";
+        const message = err instanceof Error ? err.message : t("loadSharesFailed");
         setError(message);
       } finally {
         setLoading(false);
@@ -113,7 +117,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
     if (open && fileId) {
       fetchShares();
     }
-  }, [open, fileId]);
+  }, [open, fileId, t]);
 
   // Smart default: switch to private when public share already exists
   useEffect(() => {
@@ -123,17 +127,20 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
   }, [hasPublicShare, showCreateForm]);
 
   // Fetch invites for a specific share
-  const fetchInvites = useCallback(async (shareId: string) => {
-    setInvitesLoading(shareId);
-    try {
-      const { invites } = await api.listInvites(shareId);
-      setShareInvites((prev) => ({ ...prev, [shareId]: invites }));
-    } catch {
-      toast.error("Failed to load invited users");
-    } finally {
-      setInvitesLoading(null);
-    }
-  }, []);
+  const fetchInvites = useCallback(
+    async (shareId: string) => {
+      setInvitesLoading(shareId);
+      try {
+        const { invites } = await api.listInvites(shareId);
+        setShareInvites((prev) => ({ ...prev, [shareId]: invites }));
+      } catch {
+        toast.error(t("loadInvitedFailed"));
+      } finally {
+        setInvitesLoading(null);
+      }
+    },
+    [t]
+  );
 
   function toggleInvitePanel(shareId: string) {
     if (expandedShareId === shareId) {
@@ -161,9 +168,9 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
         ...prev,
         [shareId]: [...(prev[shareId] || []), newEntry],
       }));
-      toast.success(`${user.username || user.email} invited`);
+      toast.success(t("userInvited", { name: user.username || user.email }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to invite user");
+      toast.error(err instanceof Error ? err.message : t("failedToInvite"));
     }
   }
 
@@ -174,9 +181,9 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
         ...prev,
         [shareId]: (prev[shareId] || []).filter((i) => i.user_id !== userId),
       }));
-      toast.success("User removed");
+      toast.success(t("userRemoved"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove user");
+      toast.error(err instanceof Error ? err.message : t("failedToRemoveUser"));
     }
   }
 
@@ -189,7 +196,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
 
       const tagList = tags
         .split(",")
-        .map((t) => t.trim())
+        .map((tag) => tag.trim())
         .filter(Boolean);
 
       const share = await api.createShare({
@@ -219,7 +226,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
         /* clipboard may not be available */
       }
 
-      toast.success(visibility === "public" ? "Published to community!" : "Private share created!");
+      toast.success(visibility === "public" ? t("publishedToCommunity") : t("privateShareCreated"));
 
       // Reset form
       setInvitedUsers([]);
@@ -227,7 +234,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
       setDescription("");
       setTags("");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to create share";
+      const message = err instanceof Error ? err.message : t("failedToCreateShare");
       setError(message);
       toast.error(message);
     } finally {
@@ -241,9 +248,9 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
       await api.revokeShare(shareId);
       setShares(shares.filter((s) => s.id !== shareId));
       if (expandedShareId === shareId) setExpandedShareId(null);
-      toast.success("Share revoked");
+      toast.success(t("shareRevoked"));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to revoke share";
+      const message = err instanceof Error ? err.message : t("failedToRevokeShare");
       toast.error(message);
     }
   }
@@ -252,11 +259,11 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
     navigator.clipboard.writeText(url);
     setCopiedId(shareId);
     setTimeout(() => setCopiedId(null), 2000);
-    toast.success("Link copied");
+    toast.success(t("linkCopiedToClipboard"));
   }
 
   function formatDate(dateString: string): string {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    return new Date(dateString).toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -265,7 +272,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
 
   return (
     <Modal open={open} onClose={onClose} className="max-w-2xl">
-      <ModalHeader onClose={onClose}>Share &quot;{fileName}&quot;</ModalHeader>
+      <ModalHeader onClose={onClose}>{t("shareFileName", { name: fileName })}</ModalHeader>
 
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
@@ -278,7 +285,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
         {loading ? (
           <div className="py-6 text-center text-sm text-muted-foreground">
             <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
-            Loading shares...
+            {t("loadingShares")}
           </div>
         ) : shares.length > 0 ? (
           <div className="space-y-3">
@@ -308,17 +315,17 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                       >
                         {share.visibility === "public" ? (
                           <>
-                            <Globe className="h-2.5 w-2.5" /> Public
+                            <Globe className="h-2.5 w-2.5" /> {t("public")}
                           </>
                         ) : (
                           <>
-                            <Lock className="h-2.5 w-2.5" /> Private
+                            <Lock className="h-2.5 w-2.5" /> {t("private")}
                           </>
                         )}
                       </span>
                       <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Eye className="h-3 w-3" />
-                        {share.view_count} views
+                        {t("views", { count: share.view_count })}
                       </span>
                       <span className="text-[11px] text-muted-foreground">
                         {formatDate(share.created_at)}
@@ -326,7 +333,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                       {share.expires_at && (
                         <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                           <Clock className="h-3 w-3" />
-                          Expires {formatDate(share.expires_at)}
+                          {t("expiresOn", { date: formatDate(share.expires_at) })}
                         </span>
                       )}
                     </div>
@@ -335,7 +342,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                       size="icon"
                       onClick={() => revokeShare(share.id)}
                       className="h-7 w-7 text-destructive/60 hover:bg-destructive/10 hover:text-destructive"
-                      title="Revoke share"
+                      title={t("revokeShare")}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -357,11 +364,11 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                     >
                       {copiedId === share.id ? (
                         <>
-                          <Check className="h-3.5 w-3.5 text-green-500" /> Copied
+                          <Check className="h-3.5 w-3.5 text-green-500" /> {t("copied")}
                         </>
                       ) : (
                         <>
-                          <Copy className="h-3.5 w-3.5" /> Copy
+                          <Copy className="h-3.5 w-3.5" /> {t("copyLink")}
                         </>
                       )}
                     </Button>
@@ -376,7 +383,9 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                         className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
                       >
                         <Users className="h-3.5 w-3.5" />
-                        {invites.length > 0 ? `${invites.length} invited` : "Manage users"}
+                        {invites.length > 0
+                          ? t("invitedCount", { count: invites.length })
+                          : t("manageUsers")}
                         <ChevronDown
                           className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                         />
@@ -387,7 +396,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                           {isLoadingInvites ? (
                             <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              Loading users...
+                              {t("loadingUsers")}
                             </div>
                           ) : (
                             <div className="space-y-3">
@@ -419,7 +428,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                                         type="button"
                                         onClick={() => handleRemoveInvite(share.id, invite.user_id)}
                                         className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                                        title="Remove access"
+                                        title={t("removeAccess")}
                                       >
                                         <X className="h-3 w-3" />
                                       </button>
@@ -431,7 +440,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                               <div>
                                 <span className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
                                   <UserPlus className="mr-1 inline h-3 w-3" />
-                                  Add users
+                                  {t("addUsers")}
                                 </span>
                                 <UserSearchInput
                                   selectedUsers={invites.map((i) => ({
@@ -456,7 +465,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
           </div>
         ) : !loading ? (
           <p className="py-2 text-center text-[13px] text-muted-foreground">
-            No active shares yet. Create one below.
+            {t("noActiveShares")}
           </p>
         ) : null}
 
@@ -470,19 +479,19 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border py-3 text-[13px] text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-accent/30 hover:text-foreground"
           >
             <Plus className="h-4 w-4" />
-            New Share
+            {t("newShare")}
           </button>
         ) : (
           <div className="space-y-4">
             {/* Header with collapse button */}
             <div className="flex items-center justify-between">
-              <span className="text-[13px] font-medium text-foreground">New Share</span>
+              <span className="text-[13px] font-medium text-foreground">{t("newShare")}</span>
               {shares.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowCreateForm(false)}
                   className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-                  title="Cancel"
+                  title={tc("cancel")}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -504,9 +513,9 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                 }`}
               >
                 <Globe className="h-4 w-4" />
-                Public
+                {t("public")}
                 {hasPublicShare && (
-                  <span className="text-[10px] font-normal opacity-60">(exists)</span>
+                  <span className="text-[10px] font-normal opacity-60">{t("publicExists")}</span>
                 )}
               </button>
               <button
@@ -519,15 +528,15 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                 }`}
               >
                 <Lock className="h-4 w-4" />
-                Private
+                {t("private")}
               </button>
             </div>
 
             {/* Description text */}
             <p className="text-[12px] text-muted-foreground">
               {visibility === "public"
-                ? `Anyone can discover and view this ${isFolder ? "folder" : "document"} in the community.`
-                : `Only invited users can access this ${isFolder ? "folder" : "document"}.`}
+                ? t("anyoneCanDiscover", { type: isFolder ? t("folder") : t("document") })
+                : t("onlyInvitedUsers", { type: isFolder ? t("folder") : t("document") })}
             </p>
 
             {/* Public mode fields */}
@@ -535,25 +544,27 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
               <div className="space-y-3">
                 <div>
                   <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-                    Title
+                    {t("title")}
                   </label>
                   <input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Document title"
+                    placeholder={t("titlePlaceholder")}
                     className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <div>
                   <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-                    Description{" "}
-                    <span className="font-normal text-muted-foreground">(optional)</span>
+                    {t("description")}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      {t("descriptionOptional")}
+                    </span>
                   </label>
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="What is this about?"
+                    placeholder={t("descriptionPlaceholder")}
                     rows={2}
                     maxLength={500}
                     className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -561,16 +572,16 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                 </div>
                 <div>
                   <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-                    Tags{" "}
+                    {t("tags")}{" "}
                     <span className="font-normal text-muted-foreground">
-                      (comma-separated, optional)
+                      {t("tagsCommaSeparated")}
                     </span>
                   </label>
                   <input
                     type="text"
                     value={tags}
                     onChange={(e) => setTags(e.target.value)}
-                    placeholder="e.g. tutorial, react, design"
+                    placeholder={t("tagsPlaceholder")}
                     className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -581,7 +592,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
             {visibility === "private" && (
               <div className="space-y-3">
                 <label className="block text-[13px] font-medium text-foreground">
-                  Invite users
+                  {t("inviteUsers")}
                 </label>
                 <UserSearchInput
                   selectedUsers={invitedUsers}
@@ -595,7 +606,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
             {visibility === "private" && (
               <div>
                 <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-                  Expiration
+                  {t("expiration")}
                 </label>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -604,7 +615,10 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                       disabled={creating}
                       className="flex h-9 w-full items-center justify-between rounded-lg border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
                     >
-                      <span>{EXPIRATION_OPTIONS.find((o) => o.value === expiresIn)?.label}</span>
+                      <span>
+                        {EXPIRATION_OPTIONS.find((o) => o.value === expiresIn)?.labelKey &&
+                          t(EXPIRATION_OPTIONS.find((o) => o.value === expiresIn)!.labelKey)}
+                      </span>
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     </button>
                   </DropdownMenuTrigger>
@@ -615,7 +629,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                         onClick={() => setExpiresIn(option.value)}
                         className={expiresIn === option.value ? "bg-accent/50 font-medium" : ""}
                       >
-                        {option.label}
+                        {t(option.labelKey)}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
@@ -642,10 +656,10 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                 <Lock className="mr-2 h-4 w-4" />
               )}
               {creating
-                ? "Creating..."
+                ? t("creating")
                 : visibility === "public"
-                  ? "Publish to Community"
-                  : "Share Privately"}
+                  ? t("publishToCommunity")
+                  : t("sharePrivately")}
             </Button>
           </div>
         )}

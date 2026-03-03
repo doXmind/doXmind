@@ -12,6 +12,8 @@ import "./styles/components.css";
 import { Providers } from "@/components/providers";
 import { GlobalAgentOverlay } from "@/components/global-agent/global-agent-overlay";
 import { Toaster } from "sonner";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getMessages } from "next-intl/server";
 
 // Prevent auto-zoom on input focus on mobile (iOS/Chrome)
 export const viewport: Viewport = {
@@ -90,27 +92,37 @@ const jsonLd = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await getLocale();
+  const messages = await getMessages();
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var c=localStorage.getItem('doxmind-theme-cache');if(!c)return;var t=JSON.parse(c);if(!t||!t.vars)return;var d=document.documentElement;if(t.mode==='dark'){d.classList.add('dark');d.style.colorScheme='dark'}else{d.classList.remove('dark');d.style.colorScheme='light'}localStorage.setItem('theme',t.mode);if(t.id)d.setAttribute('data-theme',t.id);var v=t.vars;for(var k in v){if(v.hasOwnProperty(k))d.style.setProperty(k,v[k])}}catch(e){}})();`,
+          }}
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <Providers>
-          {/* Skip to Content - Accessibility feature for keyboard users */}
-          <a href="#main-content" className="skip-to-content">
-            Skip to content
-          </a>
-          {children}
-          <GlobalAgentOverlay />
-          <Toaster position="bottom-right" richColors />
-        </Providers>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <Providers>
+            {/* Skip to Content - Accessibility feature for keyboard users */}
+            <a href="#main-content" className="skip-to-content">
+              Skip to content
+            </a>
+            {children}
+            <GlobalAgentOverlay />
+            <Toaster position="bottom-right" richColors />
+          </Providers>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

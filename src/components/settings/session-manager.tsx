@@ -7,7 +7,8 @@
  * Allows users to revoke sessions from other devices (dual-token authentication).
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { Monitor, Smartphone, Tablet, Trash2, Loader2, MapPin, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -27,6 +28,7 @@ function getDeviceIcon(deviceName: string) {
 }
 
 export function SessionManager() {
+  const t = useTranslations("settings");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export function SessionManager() {
   const [page, setPage] = useState(0);
   const ITEMS_PER_PAGE = 5;
 
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -44,18 +46,18 @@ export function SessionManager() {
       setSessions(data);
     } catch (err) {
       console.error("[SessionManager] Failed to load sessions:", err);
-      setError(err instanceof Error ? err.message : "Failed to load sessions");
+      setError(err instanceof Error ? err.message : t("failedToLoadSessions"));
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     loadSessions();
-  }, []);
+  }, [loadSessions]);
 
   const handleRevokeSession = async (sessionId: string, deviceName: string) => {
-    if (!window.confirm(`Revoke session from ${deviceName}?\n\nThis device will be logged out.`)) {
+    if (!window.confirm(t("revokeSessionConfirm", { device: deviceName }))) {
       return;
     }
 
@@ -68,7 +70,7 @@ export function SessionManager() {
       setSessions(sessions.filter((s) => s.id !== sessionId));
     } catch (err) {
       console.error("[SessionManager] Failed to revoke session:", err);
-      setError(err instanceof Error ? err.message : "Failed to revoke session");
+      setError(err instanceof Error ? err.message : t("failedToRevokeSession"));
     } finally {
       setRevokingId(null);
     }
@@ -86,13 +88,11 @@ export function SessionManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-base font-medium">Active Sessions</h3>
-          <p className="text-sm text-muted-foreground">
-            Manage devices that have access to your account
-          </p>
+          <h3 className="text-base font-medium">{t("activeSessions")}</h3>
+          <p className="text-sm text-muted-foreground">{t("manageSessions")}</p>
         </div>
         <Button onClick={loadSessions} variant="outline" size="sm">
-          Refresh
+          {t("refresh")}
         </Button>
       </div>
 
@@ -103,7 +103,7 @@ export function SessionManager() {
       {sessions.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
           <Monitor className="mx-auto h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-2 text-sm text-muted-foreground">No active sessions found</p>
+          <p className="mt-2 text-sm text-muted-foreground">{t("noActiveSessions")}</p>
         </div>
       ) : (
         <>
@@ -140,7 +140,7 @@ export function SessionManager() {
                           <h4 className="truncate text-sm font-medium">{session.device_name}</h4>
                           {session.is_current && (
                             <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                              Current
+                              {t("current")}
                             </span>
                           )}
                         </div>
@@ -153,9 +153,11 @@ export function SessionManager() {
                           )}
                           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3" />
-                            <span>Last active {lastUsed}</span>
+                            <span>{t("lastActive", { time: lastUsed })}</span>
                           </div>
-                          <div className="text-xs text-muted-foreground">Created {createdAt}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {t("created", { time: createdAt })}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -173,7 +175,7 @@ export function SessionManager() {
                         ) : (
                           <>
                             <Trash2 className="mr-1 h-4 w-4" />
-                            Revoke
+                            {t("revokeSession")}
                           </>
                         )}
                       </Button>
@@ -195,10 +197,7 @@ export function SessionManager() {
         </>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Sessions expire after 30 days of inactivity. Revoking a session will log out that device
-        immediately.
-      </p>
+      <p className="text-xs text-muted-foreground">{t("sessionsExpire")}</p>
     </div>
   );
 }

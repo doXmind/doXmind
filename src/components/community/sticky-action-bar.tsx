@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { CommunityDetailResponse, api } from "@/lib/api";
 import { GitFork, Bookmark, Share2, Loader2, Check, Play, Search } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
@@ -22,6 +23,7 @@ export function StickyActionBar({
   triggerRef,
   onForkSuccess,
 }: StickyActionBarProps) {
+  const t = useTranslations("community");
   const user = useAuthStore((s) => s.user);
   const isBookmarked = useBookmarksStore((s) => s.isBookmarked(detail.share_id));
   const toggleBookmark = useBookmarksStore((s) => s.toggleBookmark);
@@ -49,16 +51,16 @@ export function StickyActionBar({
 
   const handleFork = async () => {
     if (!user) {
-      toast.error("Please sign in to fork documents");
+      toast.error(t("signInToFork"));
       return;
     }
     setIsForking(true);
     try {
       const result = await api.forkDocument(shareToken);
-      toast.success("Saved to your workspace!");
+      toast.success(t("savedToWorkspace"));
       onForkSuccess(result.forked_file_id);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to fork document");
+      toast.error(err instanceof Error ? err.message : t("failedToFork"));
     } finally {
       setIsForking(false);
     }
@@ -66,11 +68,11 @@ export function StickyActionBar({
 
   const handleBookmark = async () => {
     if (!user) {
-      toast.error("Please sign in to bookmark");
+      toast.error(t("signInToBookmark"));
       return;
     }
     const result = await toggleBookmark(shareToken, detail.share_id);
-    toast.success(result ? "Bookmark removed" : "Bookmarked!");
+    toast.success(result ? t("bookmarkRemoved") : t("bookmarked"));
   };
 
   const handleShare = async () => {
@@ -78,9 +80,9 @@ export function StickyActionBar({
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      toast.success("Link copied to clipboard!");
+      toast.success(t("linkCopied"));
     } catch {
-      toast.error("Failed to copy link");
+      toast.error(t("failedToCopyLink"));
     }
   };
 
@@ -94,14 +96,14 @@ export function StickyActionBar({
           <button
             onClick={() => useLayoutStore.getState().setPresentationMode(true)}
             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Present"
+            aria-label={t("present")}
           >
             <Play className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={() => useLayoutStore.getState().setSearchBarOpen(true)}
             className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Search in document"
+            aria-label={t("searchInDocument")}
           >
             <Search className="h-3.5 w-3.5" />
           </button>
@@ -119,7 +121,7 @@ export function StickyActionBar({
             ) : (
               <GitFork className="h-3.5 w-3.5" />
             )}
-            {detail.is_forked ? "Forked" : "Fork"}
+            {detail.is_forked ? t("forked") : t("fork")}
           </button>
 
           <button
@@ -129,7 +131,7 @@ export function StickyActionBar({
             <Bookmark
               className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
             />
-            {isBookmarked ? "Saved" : "Save"}
+            {isBookmarked ? t("saved") : t("save")}
           </button>
 
           <button
@@ -141,7 +143,7 @@ export function StickyActionBar({
             ) : (
               <Share2 className="h-3.5 w-3.5" />
             )}
-            {copied ? "Copied" : "Share"}
+            {copied ? t("copied") : t("share")}
           </button>
         </div>
       </div>

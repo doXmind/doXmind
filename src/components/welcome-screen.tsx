@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Upload, Loader2 } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
@@ -45,6 +46,7 @@ const itemVariants = {
 
 export function WelcomeScreen() {
   const router = useRouter();
+  const t = useTranslations("welcome");
   const { files, createFile, importFile, currentFolderId } = useFileStore();
   const { onboardingCompleted, startOnboarding } = useOnboardingStore();
   const [isDragging, setIsDragging] = useState(false);
@@ -159,10 +161,10 @@ export function WelcomeScreen() {
               )}
             >
               {isCreating ? (
-                "Creating..."
+                t("creating")
               ) : (
                 <>
-                  Start Writing
+                  {t("startWriting")}
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}
@@ -183,12 +185,12 @@ export function WelcomeScreen() {
           {isImporting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Importing file...</span>
+              <span>{t("importingFile")}</span>
             </>
           ) : (
             <>
               <Upload className="h-4 w-4" />
-              <span>{isDragging ? "Drop to import" : "or drop a file here"}</span>
+              <span>{isDragging ? t("dropToImport") : t("orDropFile")}</span>
             </>
           )}
         </motion.div>

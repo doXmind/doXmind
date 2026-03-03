@@ -5,6 +5,7 @@ import { Link as LinkIcon } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslations } from "next-intl";
 
 interface LinkModalProps {
   open: boolean;
@@ -14,6 +15,8 @@ interface LinkModalProps {
 }
 
 export function LinkModal({ open, onClose, onConfirm, initialUrl = "" }: LinkModalProps) {
+  const t = useTranslations("editor");
+  const tc = useTranslations("common");
   const [url, setUrl] = React.useState(initialUrl);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -46,14 +49,14 @@ export function LinkModal({ open, onClose, onConfirm, initialUrl = "" }: LinkMod
       <ModalHeader onClose={onClose}>
         <span className="flex items-center gap-2">
           <LinkIcon className="h-5 w-5" />
-          Insert Link
+          {t("insertLink")}
         </span>
       </ModalHeader>
 
       <form onSubmit={handleSubmit}>
         <div className="space-y-2">
           <label htmlFor="link-url" className="text-sm font-medium">
-            URL
+            {t("linkUrl")}
           </label>
           <Input
             ref={inputRef}
@@ -68,10 +71,10 @@ export function LinkModal({ open, onClose, onConfirm, initialUrl = "" }: LinkMod
 
         <ModalFooter>
           <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button type="submit" disabled={!url.trim()}>
-            Insert
+            {tc("confirm")}
           </Button>
         </ModalFooter>
       </form>

@@ -11,6 +11,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { motion, AnimatePresence, PanInfo, useDragControls } from "framer-motion";
 import { Send, Square, X, Sparkles, Mic, Check, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,8 @@ export function VoiceEditPreview({
   toolHistory,
   thinking,
 }: MobileAIChatSheetProps) {
+  const t = useTranslations("mobile");
+  const tc = useTranslations("common");
   const [input, setInput] = useState("");
   const [sheetState, setSheetState] = useState<SheetState>("compact");
   const [isDragging, setIsDragging] = useState(false);
@@ -371,7 +374,7 @@ export function VoiceEditPreview({
             <div className="flex items-center justify-between border-b border-border px-4 py-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <span className="font-medium">AI Chat</span>
+                <span className="font-medium">{t("aiChat")}</span>
               </div>
               <div className="flex items-center gap-1">
                 {conversation.messages.length > 0 && (
@@ -380,7 +383,7 @@ export function VoiceEditPreview({
                     size="icon"
                     onClick={handleClear}
                     className="h-8 w-8"
-                    aria-label="Clear conversation"
+                    aria-label={t("clearConversation")}
                   >
                     <Trash2 className="h-5 w-5" />
                   </Button>
@@ -401,14 +404,12 @@ export function VoiceEditPreview({
                 {isLoadingHistory ? (
                   <div className="flex flex-col items-center justify-center py-8">
                     <Loader2 className="mb-4 h-8 w-8 animate-spin text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">Loading...</p>
+                    <p className="text-sm text-muted-foreground">{tc("loading")}</p>
                   </div>
                 ) : conversation.messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8">
                     <Sparkles className="mb-4 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Ask me to help you write or edit
-                    </p>
+                    <p className="text-sm text-muted-foreground">{t("askMeToHelp")}</p>
                   </div>
                 ) : (
                   <>
@@ -500,11 +501,11 @@ export function VoiceEditPreview({
                     <div className="flex gap-2 pt-2">
                       <Button variant="outline" size="sm" className="flex-1" onClick={onReject}>
                         <X className="mr-1 h-4 w-4" />
-                        Reject
+                        {t("reject")}
                       </Button>
                       <Button size="sm" className="flex-1" onClick={onAccept}>
                         <Check className="mr-1 h-4 w-4" />
-                        Accept
+                        {t("accept")}
                       </Button>
                     </div>
                   </div>
@@ -579,17 +580,19 @@ export function VoiceEditPreview({
                     {isTranscribing ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Transcribing...</span>
+                        <span>{t("transcribing")}</span>
                       </>
                     ) : isRecording ? (
                       <>
                         <span className="h-2 w-2 animate-pulse rounded-full bg-destructive-foreground" />
-                        <span>{formatDuration(duration)} - Release to send</span>
+                        <span>
+                          {formatDuration(duration)} - {t("releaseToSend")}
+                        </span>
                       </>
                     ) : (
                       <>
                         <Mic className="h-4 w-4" />
-                        <span>Hold to talk</span>
+                        <span>{t("holdToTalk")}</span>
                       </>
                     )}
                   </motion.button>
@@ -600,7 +603,7 @@ export function VoiceEditPreview({
                     onChange={handleTextareaChange}
                     onKeyDown={handleKeyDown}
                     onPaste={handlePaste}
-                    placeholder="Ask AI..."
+                    placeholder={t("askAIAnything")}
                     className="max-h-[120px] min-h-[24px] flex-1 resize-none border-0 bg-transparent px-1 py-1 text-base focus-visible:ring-0 focus-visible:ring-offset-0"
                     disabled={isStreaming}
                     rows={1}

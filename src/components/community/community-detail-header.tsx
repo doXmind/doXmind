@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import { CommunityDetailResponse } from "@/lib/api";
 import { Eye, Calendar } from "lucide-react";
 
@@ -10,8 +11,9 @@ interface CommunityDetailHeaderProps {
 }
 
 export function CommunityDetailHeader({ detail }: CommunityDetailHeaderProps) {
+  const t = useTranslations("community");
   const publishedDate = detail.published_at
-    ? new Date(detail.published_at).toLocaleDateString("en-US", {
+    ? new Date(detail.published_at).toLocaleDateString(undefined, {
         year: "numeric",
         month: "long",
         day: "numeric",
@@ -44,7 +46,7 @@ export function CommunityDetailHeader({ detail }: CommunityDetailHeaderProps) {
               {(detail.owner.username || "?")[0].toUpperCase()}
             </div>
           )}
-          <span>{detail.owner.username || "Anonymous"}</span>
+          <span>{detail.owner.username || t("anonymous")}</span>
         </Link>
 
         <span className="flex items-center gap-1">
@@ -54,7 +56,7 @@ export function CommunityDetailHeader({ detail }: CommunityDetailHeaderProps) {
 
         <span className="flex items-center gap-1">
           <Eye className="h-3.5 w-3.5" />
-          {detail.view_count} views
+          {t("views", { count: detail.view_count })}
         </span>
       </div>
 

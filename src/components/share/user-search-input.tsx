@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import Image from "next/image";
 import { X, Search, Loader2 } from "lucide-react";
 import { api, type SearchUserResult } from "@/lib/api";
@@ -12,6 +13,7 @@ interface UserSearchInputProps {
 }
 
 export function UserSearchInput({ selectedUsers, onAdd, onRemove }: UserSearchInputProps) {
+  const t = useTranslations("share");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchUserResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -116,7 +118,7 @@ export function UserSearchInput({ selectedUsers, onAdd, onRemove }: UserSearchIn
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.trim() && results.length > 0 && setShowDropdown(true)}
-          placeholder="Search by username or email..."
+          placeholder={t("searchByUsernameOrEmail")}
           className="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-9 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
         />
         {loading && (
@@ -129,7 +131,7 @@ export function UserSearchInput({ selectedUsers, onAdd, onRemove }: UserSearchIn
         <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
           {results.length === 0 && !loading ? (
             <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-              {query.trim() ? "No users found" : "Start typing to search"}
+              {query.trim() ? t("noUsersFound") : t("startTypingToSearch")}
             </div>
           ) : (
             results.map((user) => (

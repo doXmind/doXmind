@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Doughnut } from "react-chartjs-2";
@@ -38,16 +39,16 @@ interface UsageSummary {
   period_days: number;
 }
 
-const SERVICE_LABELS: Record<string, string> = {
-  chat: "Chat",
-  autocomplete: "Autocomplete",
-  quick_edit: "Quick Edit",
-  custom_edit: "Custom Edit",
-  review: "Review",
-  file_conversion: "File Conversion",
-  reranking: "Reranking",
-  stt: "Speech to Text",
-  simple_chat: "Simple Chat",
+const SERVICE_LABEL_KEYS: Record<string, string> = {
+  chat: "serviceChat",
+  autocomplete: "serviceAutocomplete",
+  quick_edit: "serviceQuickEdit",
+  custom_edit: "serviceCustomEdit",
+  review: "serviceReview",
+  file_conversion: "serviceFileConversion",
+  reranking: "serviceReranking",
+  stt: "serviceStt",
+  simple_chat: "serviceSimpleChat",
 };
 
 const SERVICE_COLORS = [
@@ -73,49 +74,53 @@ function formatCost(cost: number | null): string {
   return `$${cost.toFixed(2)}`;
 }
 
-function getServiceLabel(service: string): string {
-  return (
-    SERVICE_LABELS[service] || service.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-  );
+function getServiceLabel(service: string, t: (key: string) => string): string {
+  const key = SERVICE_LABEL_KEYS[service];
+  return key ? t(key) : service.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const PERIOD_OPTIONS = [
-  { value: 7, label: "7 days" },
-  { value: 30, label: "30 days" },
-  { value: 90, label: "90 days" },
+  { value: 7, labelKey: "days7" },
+  { value: 30, labelKey: "days30" },
+  { value: 90, labelKey: "days90" },
 ];
 
 export function UsageSettings() {
+  const t = useTranslations("settings");
+  const tc = useTranslations("common");
   const [serviceData, setServiceData] = useState<ServiceUsageResponse | null>(null);
   const [summaryData, setSummaryData] = useState<UsageSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
 
-  const fetchUsage = useCallback(async (period: number) => {
-    setIsLoading(true);
-    setError(null);
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const headers = api.getAuthorizationHeaders();
-    try {
-      const [serviceRes, summaryRes] = await Promise.all([
-        fetch(`${baseUrl}/api/usage/by-service?days=${period}`, { headers }),
-        fetch(`${baseUrl}/api/usage/summary?days=${period}`, { headers }),
-      ]);
-      if (!serviceRes.ok) throw new Error(`HTTP ${serviceRes.status}`);
-      if (!summaryRes.ok) throw new Error(`HTTP ${summaryRes.status}`);
-      const [services, summary] = await Promise.all([
-        serviceRes.json() as Promise<ServiceUsageResponse>,
-        summaryRes.json() as Promise<UsageSummary>,
-      ]);
-      setServiceData(services);
-      setSummaryData(summary);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load usage data");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const fetchUsage = useCallback(
+    async (period: number) => {
+      setIsLoading(true);
+      setError(null);
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const headers = api.getAuthorizationHeaders();
+      try {
+        const [serviceRes, summaryRes] = await Promise.all([
+          fetch(`${baseUrl}/api/usage/by-service?days=${period}`, { headers }),
+          fetch(`${baseUrl}/api/usage/summary?days=${period}`, { headers }),
+        ]);
+        if (!serviceRes.ok) throw new Error(`HTTP ${serviceRes.status}`);
+        if (!summaryRes.ok) throw new Error(`HTTP ${summaryRes.status}`);
+        const [services, summary] = await Promise.all([
+          serviceRes.json() as Promise<ServiceUsageResponse>,
+          summaryRes.json() as Promise<UsageSummary>,
+        ]);
+        setServiceData(services);
+        setSummaryData(summary);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t("failedToLoadUsageData"));
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [t]
+  );
 
   useEffect(() => {
     fetchUsage(days);
@@ -125,7 +130,7 @@ export function UsageSettings() {
     if (!serviceData?.services.length) return null;
     const sorted = [...serviceData.services].sort((a, b) => b.total_tokens - a.total_tokens);
     return {
-      labels: sorted.map((s) => getServiceLabel(s.service)),
+      labels: sorted.map((s) => getServiceLabel(s.service, t)),
       datasets: [
         {
           data: sorted.map((s) => s.total_tokens),
@@ -135,7 +140,7 @@ export function UsageSettings() {
         },
       ],
     };
-  }, [serviceData]);
+  }, [serviceData, t]);
 
   if (isLoading) {
     return (
@@ -150,7 +155,7 @@ export function UsageSettings() {
       <div className="p-4 text-center text-sm text-muted-foreground">
         <p>{error}</p>
         <button onClick={() => fetchUsage(days)} className="mt-2 text-primary hover:underline">
-          Retry
+          {tc("retry")}
         </button>
       </div>
     );
@@ -163,10 +168,10 @@ export function UsageSettings() {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Token usage by service</p>
-          <PeriodSelector value={days} onChange={setDays} />
+          <p className="text-sm text-muted-foreground">{t("tokenUsageByService")}</p>
+          <PeriodSelector value={days} onChange={setDays} t={t} />
         </div>
-        <p className="py-8 text-center text-sm text-muted-foreground">No usage data yet</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">{t("noUsageData")}</p>
       </div>
     );
   }
@@ -175,16 +180,16 @@ export function UsageSettings() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Token usage by service</p>
-        <PeriodSelector value={days} onChange={setDays} />
+        <p className="text-sm text-muted-foreground">{t("tokenUsageByService")}</p>
+        <PeriodSelector value={days} onChange={setDays} t={t} />
       </div>
 
       {/* Summary totals */}
       {summaryData && (
         <div className="grid grid-cols-3 gap-3">
-          <StatCard label="Input" value={formatTokens(summaryData.total_input_tokens)} />
-          <StatCard label="Output" value={formatTokens(summaryData.total_output_tokens)} />
-          <StatCard label="You saved" value={formatCost(summaryData.total_cost)} />
+          <StatCard label={t("input")} value={formatTokens(summaryData.total_input_tokens)} />
+          <StatCard label={t("output")} value={formatTokens(summaryData.total_output_tokens)} />
+          <StatCard label={t("youSaved")} value={formatCost(summaryData.total_cost)} />
         </div>
       )}
 
@@ -226,11 +231,11 @@ export function UsageSettings() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2 font-medium">Service</th>
-                <th className="px-3 py-2 text-right font-medium">Input</th>
-                <th className="px-3 py-2 text-right font-medium">Output</th>
-                <th className="px-3 py-2 text-right font-medium">Saved</th>
-                <th className="px-3 py-2 text-right font-medium">Reqs</th>
+                <th className="px-3 py-2 font-medium">{t("service")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("input")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("output")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("saved")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("reqs")}</th>
               </tr>
             </thead>
             <tbody>
@@ -246,7 +251,7 @@ export function UsageSettings() {
                             backgroundColor: SERVICE_COLORS[i % SERVICE_COLORS.length],
                           }}
                         />
-                        {getServiceLabel(svc.service)}
+                        {getServiceLabel(svc.service, t)}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
@@ -269,7 +274,7 @@ export function UsageSettings() {
       )}
 
       <p className="text-xs text-muted-foreground">
-        {summaryData?.total_requests ?? 0} total requests in the last {days} days
+        {t("totalRequestsDays", { count: summaryData?.total_requests ?? 0, days })}
       </p>
     </div>
   );
@@ -284,7 +289,15 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PeriodSelector({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function PeriodSelector({
+  value,
+  onChange,
+  t,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  t: (key: string) => string;
+}) {
   return (
     <div className="flex gap-1 rounded-md border p-0.5">
       {PERIOD_OPTIONS.map((opt) => (
@@ -297,7 +310,7 @@ function PeriodSelector({ value, onChange }: { value: number; onChange: (v: numb
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          {opt.label}
+          {t(opt.labelKey)}
         </button>
       ))}
     </div>
