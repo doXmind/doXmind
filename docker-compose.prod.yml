@@ -1,5 +1,5 @@
 # =============================================================================
-# doXmind Mini - Production Docker Compose (AWS EC2)
+# doXmind Mini - Production Docker Compose
 # =============================================================================
 # Usage:
 #   docker compose -f docker-compose.prod.yml up -d
@@ -129,14 +129,14 @@ services:
       context: .
       dockerfile: Dockerfile.frontend.prod
       args:
-        - NEXT_PUBLIC_API_URL=https://cn.api.doxmind.com
-        - NEXT_PUBLIC_DEFAULT_LOCALE=zh
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - NEXT_PUBLIC_DEFAULT_LOCALE=${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
         - BACKEND_URL=http://backend:8000
     container_name: doxmind-frontend
     restart: unless-stopped
     environment:
       - BACKEND_URL=http://backend:8000
-      - NEXT_PUBLIC_DEFAULT_LOCALE=zh
+      - NEXT_PUBLIC_DEFAULT_LOCALE=${NEXT_PUBLIC_DEFAULT_LOCALE:-en}
     depends_on:
       backend:
         condition: service_healthy
