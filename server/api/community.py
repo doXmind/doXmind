@@ -52,6 +52,12 @@ class SyncForkRequest(BaseModel):
     create_backup: bool = False
 
 
+class ReactRequest(BaseModel):
+    """Request to toggle an emoji reaction."""
+
+    emoji: str = Field(min_length=1, max_length=10)
+
+
 # =============================================================================
 # Tags
 # =============================================================================
@@ -196,15 +202,14 @@ async def fork_share(
         if share_row:
             # Get owner email and file name
             owner_result = await db.execute(
-                select(User.email).where(
-                    User.id == share_row.user_id, User.email.isnot(None)
-                )
+                select(User.email).where(User.id == share_row.user_id, User.email.isnot(None))
             )
-            file_result = await db.execute(
-                select(File.name).where(File.id == share_row.file_id)
-            )
+            file_result = await db.execute(select(File.name).where(File.id == share_row.file_id))
             owner_row = owner_result.one_or_none()
             file_row = file_result.one_or_none()
+
+            forker_name = token.username or "A doXmind user"
+            doc_name = file_row.name if file_row else "Untitled"
 
             if owner_row and owner_row.email and file_row:
                 settings = get_settings()
@@ -217,14 +222,30 @@ async def fork_share(
                         email_service = get_email_service()
                         await email_service.send_fork_notification(
                             to_email=owner_row.email,
-                            forker_name=token.username or "A doXmind user",
-                            doc_name=file_row.name,
+                            forker_name=forker_name,
+                            doc_name=doc_name,
                             share_url=share_url,
                         )
                     except Exception:
                         logger.exception("Failed to send fork notification email")
 
                 asyncio.create_task(_send_fork_email())
+
+            # In-app notification to document owner
+            if share_row.user_id != user_id:
+                from services.notification_service import create_notification
+
+                asyncio.create_task(
+                    create_notification(
+                        user_id=share_row.user_id,
+                        type="fork",
+                        title=forker_name,
+                        message=f'{forker_name} forked your document "{doc_name}"',
+                        link=f"/community/{share_token}",
+                        actor_id=user_id,
+                        actor_name=forker_name,
+                    )
+                )
     except Exception:
         logger.exception("Failed to prepare fork notification")
 
@@ -340,6 +361,31 @@ async def list_bookmarks(
 
 
 # =============================================================================
+# Reactions
+# =============================================================================
+
+
+@router.post("/{share_token}/react")
+@limiter.limit("60/minute")
+async def toggle_reaction(
+    request: Request,
+    share_token: str,
+    body: ReactRequest,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Toggle an emoji reaction on a shared community item."""
+    user_id = get_user_id(token)
+    if not user_id:
+        raise NotFoundError(resource="User", message="Authentication required")
+
+    service = CommunityService(db)
+    reacted, reactions = await service.toggle_share_reaction(share_token, user_id, body.emoji)
+
+    return {"reacted": reacted, "reactions": reactions}
+
+
+# =============================================================================
 # User Profile Endpoints
 # =============================================================================
 
@@ -350,10 +396,12 @@ async def get_user_profile(
     request: Request,
     user_id: str,
     db: AsyncSession = Depends(get_db),
+    token: TokenData | None = Depends(optional_auth),
 ):
-    """View a user's public profile."""
+    """View a user's public profile with follow status."""
+    current_user_id = get_user_id(token) if token else None
     service = CommunityService(db)
-    profile = await service.get_public_profile(user_id)
+    profile = await service.get_public_profile(user_id, viewer_id=current_user_id)
 
     if not profile:
         raise NotFoundError(resource="User", resource_id=user_id)
@@ -376,3 +424,136 @@ async def get_user_published(
     items, total = await service.get_user_published(user_id, limit, offset, sort)
 
     return {"items": items, "total": total, "has_more": offset + limit < total}
+
+
+# =============================================================================
+# Follow Endpoints
+# =============================================================================
+
+
+@router.post("/users/{user_id}/follow")
+@limiter.limit("30/minute")
+async def toggle_follow(
+    request: Request,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Toggle follow on a user."""
+    current_user_id = get_user_id(token)
+    if not current_user_id:
+        raise NotFoundError(resource="User", message="Authentication required")
+
+    service = CommunityService(db)
+    is_following, follower_count = await service.toggle_follow(
+        follower_id=current_user_id, following_id=user_id
+    )
+
+    # Send notifications on follow (fire-and-forget)
+    if is_following:
+        follower_name = token.username or "A doXmind user"
+        asyncio.create_task(
+            _send_follow_notification(
+                follower_name=follower_name,
+                followed_user_id=user_id,
+            )
+        )
+        # In-app notification
+        from services.notification_service import create_notification
+
+        asyncio.create_task(
+            create_notification(
+                user_id=user_id,
+                type="follow",
+                title=follower_name,
+                message=f"{follower_name} followed you",
+                link=f"/profile/{current_user_id}",
+                actor_id=current_user_id,
+                actor_name=follower_name,
+            )
+        )
+
+    return {"is_following": is_following, "follower_count": follower_count}
+
+
+@router.get("/users/{user_id}/followers")
+@limiter.limit("60/minute")
+async def get_followers(
+    request: Request,
+    user_id: str,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData | None = Depends(optional_auth),
+):
+    """List a user's followers."""
+    current_user_id = get_user_id(token) if token else None
+    service = CommunityService(db)
+    users, total = await service.get_followers(user_id, limit, offset, current_user_id)
+    return {"users": users, "total": total, "has_more": offset + limit < total}
+
+
+@router.get("/users/{user_id}/following")
+@limiter.limit("60/minute")
+async def get_following(
+    request: Request,
+    user_id: str,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData | None = Depends(optional_auth),
+):
+    """List users that a user is following."""
+    current_user_id = get_user_id(token) if token else None
+    service = CommunityService(db)
+    users, total = await service.get_following(user_id, limit, offset, current_user_id)
+    return {"users": users, "total": total, "has_more": offset + limit < total}
+
+
+@router.get("/following-feed")
+@limiter.limit("30/minute")
+async def get_following_feed(
+    request: Request,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Get feed of publications from followed users only."""
+    user_id = get_user_id(token)
+    if not user_id:
+        return {"items": [], "total": 0, "has_more": False}
+
+    service = CommunityService(db)
+    items, total = await service.get_following_feed(user_id, limit, offset)
+    return {"items": items, "total": total, "has_more": offset + limit < total}
+
+
+async def _send_follow_notification(
+    follower_name: str,
+    followed_user_id: str,
+) -> None:
+    """Send email notification when someone follows a user."""
+    try:
+        from db.database import async_session
+
+        async with async_session() as session:
+            result = await session.execute(
+                select(User.email, User.username).where(User.id == followed_user_id)
+            )
+            row = result.first()
+            if not row or not row.email:
+                return
+
+            from services.email_service import get_email_service
+
+            settings = get_settings()
+            email_service = get_email_service()
+            profile_url = f"{settings.frontend_url}/profile/{followed_user_id}"
+            await email_service.send_new_follower_notification(
+                to_email=row.email,
+                follower_name=follower_name,
+                profile_url=profile_url,
+            )
+    except Exception:
+        logger.exception("Failed to send follow notification")

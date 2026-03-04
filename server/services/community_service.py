@@ -7,13 +7,28 @@ from datetime import UTC, datetime
 
 from sqlalchemy import and_, cast, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.types import Text
 
-from db.database import Bookmark, DocumentShare, File, Fork, User, utcnow
+from db.database import (
+    Bookmark,
+    Comment,
+    DocumentShare,
+    File,
+    Fork,
+    ShareReaction,
+    ShareView,
+    User,
+    UserFollow,
+    utcnow,
+)
 from exceptions import BadRequestError, NotFoundError
 from utils.html import strip_html_tags
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_REACTION_EMOJIS = {"👍", "👎", "❤️", "🔥", "🎉", "😄", "🤔", "👀", "🚀", "💯"}
+POSITIVE_REACTION_EMOJIS = {"👍", "❤️", "🔥", "🎉", "🚀", "💯"}
 
 
 def _compute_preview(row, preview_chars: int = 300) -> tuple[str, int, int]:
@@ -43,11 +58,172 @@ def _compute_preview(row, preview_chars: int = 300) -> tuple[str, int, int]:
     return preview, word_count, reading_time
 
 
+def _item_count_subquery():
+    """Correlated subquery: count non-deleted children of the joined File row."""
+    ChildFile = aliased(File, flat=True)
+    return (
+        select(func.count(ChildFile.id))
+        .where(and_(ChildFile.parent_id == File.id, ChildFile.deleted_at.is_(None)))
+        .correlate(File)
+        .scalar_subquery()
+        .label("item_count")
+    )
+
+
 class CommunityService:
     """Service for community features: publishing, discovery, forks, bookmarks."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _fetch_folder_children(self, file_ids: list[str]) -> dict[str, list[dict]]:
+        """Batch-fetch first 3 children (name, icon, is_folder) for folder items."""
+        if not file_ids:
+            return {}
+        query = (
+            select(File.parent_id, File.name, File.icon, File.is_folder)
+            .where(File.parent_id.in_(file_ids), File.deleted_at.is_(None))
+            .order_by(File.parent_id, File.is_folder.desc(), File.position.asc())
+        )
+        result = await self.db.execute(query)
+        children_map: dict[str, list[dict]] = {}
+        for row in result.all():
+            pid = row.parent_id
+            if pid not in children_map:
+                children_map[pid] = []
+            if len(children_map[pid]) < 3:
+                children_map[pid].append(
+                    {"name": row.name, "icon": row.icon, "is_folder": row.is_folder}
+                )
+        return children_map
+
+    async def _attach_folder_children(self, items: list[dict]) -> None:
+        """Attach child_previews to folder items and clean up _file_id."""
+        folder_file_ids = [item["_file_id"] for item in items if item.get("_file_id")]
+        children_map = await self._fetch_folder_children(folder_file_ids)
+        for item in items:
+            fid = item.pop("_file_id", None)
+            if item["is_folder"]:
+                item["child_previews"] = children_map.get(fid, [])
+            else:
+                item["child_previews"] = None
+
+    # =========================================================================
+    # Share Reactions
+    # =========================================================================
+
+    async def toggle_share_reaction(
+        self, share_token: str, user_id: str, emoji: str
+    ) -> tuple[bool, list[dict]]:
+        """Toggle emoji reaction on a share. Returns (reacted, updated_reactions)."""
+        if emoji not in ALLOWED_REACTION_EMOJIS:
+            raise BadRequestError(message=f"Emoji '{emoji}' is not allowed")
+
+        share = await self._resolve_share_by_token(share_token)
+        if not share:
+            raise NotFoundError(resource="Share", resource_id=share_token)
+
+        existing = await self.db.execute(
+            select(ShareReaction).where(
+                ShareReaction.share_id == share.id,
+                ShareReaction.user_id == user_id,
+                ShareReaction.emoji == emoji,
+            )
+        )
+        reaction = existing.scalar_one_or_none()
+
+        if reaction:
+            await self.db.delete(reaction)
+            share.reaction_count = max(0, (share.reaction_count or 0) - 1)
+            reacted = False
+        else:
+            self.db.add(ShareReaction(share_id=share.id, user_id=user_id, emoji=emoji))
+            share.reaction_count = (share.reaction_count or 0) + 1
+            reacted = True
+
+        await self.db.commit()
+        reactions = await self._get_reactions_for_share(share.id, user_id)
+        return reacted, reactions
+
+    async def _get_reactions_for_share(
+        self, share_id: str, current_user_id: str | None = None
+    ) -> list[dict]:
+        """Get aggregated reactions for a share."""
+        result = await self.db.execute(
+            select(
+                ShareReaction.emoji,
+                func.count(ShareReaction.id).label("count"),
+            )
+            .where(ShareReaction.share_id == share_id)
+            .group_by(ShareReaction.emoji)
+        )
+        rows = result.all()
+
+        user_emojis: set[str] = set()
+        if current_user_id:
+            user_result = await self.db.execute(
+                select(ShareReaction.emoji).where(
+                    ShareReaction.share_id == share_id,
+                    ShareReaction.user_id == current_user_id,
+                )
+            )
+            user_emojis = {row[0] for row in user_result.all()}
+
+        return [
+            {
+                "emoji": row.emoji,
+                "count": row.count,
+                "has_reacted": row.emoji in user_emojis,
+            }
+            for row in rows
+        ]
+
+    async def _attach_share_reactions(
+        self, items: list[dict], current_user_id: str | None = None
+    ) -> None:
+        """Batch-attach reactions to listing items."""
+        if not items:
+            return
+
+        share_ids = [item["share_id"] for item in items]
+
+        # Aggregate counts per (share_id, emoji)
+        agg_result = await self.db.execute(
+            select(
+                ShareReaction.share_id,
+                ShareReaction.emoji,
+                func.count(ShareReaction.id).label("count"),
+            )
+            .where(ShareReaction.share_id.in_(share_ids))
+            .group_by(ShareReaction.share_id, ShareReaction.emoji)
+        )
+        agg_rows = agg_result.all()
+
+        # Build map: share_id -> [{emoji, count}]
+        reactions_map: dict[str, list[dict]] = {}
+        for row in agg_rows:
+            reactions_map.setdefault(row.share_id, []).append(
+                {"emoji": row.emoji, "count": row.count, "has_reacted": False}
+            )
+
+        # Check current user's own reactions
+        user_reacted: set[tuple[str, str]] = set()
+        if current_user_id:
+            user_result = await self.db.execute(
+                select(ShareReaction.share_id, ShareReaction.emoji).where(
+                    ShareReaction.share_id.in_(share_ids),
+                    ShareReaction.user_id == current_user_id,
+                )
+            )
+            user_reacted = {(row.share_id, row.emoji) for row in user_result.all()}
+
+        for item in items:
+            sid = item["share_id"]
+            item_reactions = reactions_map.get(sid, [])
+            if user_reacted:
+                for r in item_reactions:
+                    r["has_reacted"] = (sid, r["emoji"]) in user_reacted
+            item["reactions"] = item_reactions
 
     # =========================================================================
     # Share Resolution
@@ -144,6 +320,8 @@ class CommunityService:
                 DocumentShare.fork_count,
                 DocumentShare.bookmark_count,
                 DocumentShare.comment_count,
+                DocumentShare.reaction_count,
+                DocumentShare.allow_fork,
                 DocumentShare.user_id,
                 File.name.label("file_name"),
                 File.is_folder,
@@ -154,6 +332,8 @@ class CommunityService:
                 func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                _item_count_subquery(),
+                DocumentShare.file_id,
             )
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
@@ -185,6 +365,7 @@ class CommunityService:
                     + DocumentShare.fork_count * 5
                     + DocumentShare.bookmark_count * 3
                     + DocumentShare.comment_count * 2
+                    + DocumentShare.reaction_count * 2
                 ).desc(),
                 DocumentShare.published_at.desc(),
             )
@@ -222,8 +403,10 @@ class CommunityService:
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,
                 "fork_count": row.fork_count,
+                "allow_fork": row.allow_fork,
                 "bookmark_count": row.bookmark_count,
                 "comment_count": row.comment_count,
+                "reaction_count": row.reaction_count,
                 "published_at": row.published_at.isoformat() if row.published_at else "",
                 "updated_at": row.updated_at.isoformat() if row.updated_at else "",
                 "is_bookmarked": False,
@@ -231,8 +414,14 @@ class CommunityService:
                 "content_preview": content_preview,
                 "word_count": word_count,
                 "reading_time": reading_time,
+                "item_count": row.item_count if row.is_folder else None,
+                "_file_id": row.file_id if row.is_folder else None,
             }
             items.append(item)
+
+        # Batch-fetch folder children previews and reactions
+        await self._attach_folder_children(items)
+        await self._attach_share_reactions(items, current_user_id)
 
         # If user is logged in, check bookmark/fork status
         if current_user_id and items:
@@ -297,6 +486,7 @@ class CommunityService:
             "is_folder": file.is_folder,
             "view_count": share.view_count,
             "fork_count": share.fork_count,
+            "allow_fork": share.allow_fork,
             "bookmark_count": share.bookmark_count,
             "comment_count": share.comment_count,
             "published_at": share.published_at.isoformat() if share.published_at else "",
@@ -322,6 +512,9 @@ class CommunityService:
             if fork:
                 detail["is_forked"] = True
                 detail["fork_id"] = fork.id
+
+        # Attach reactions
+        detail["reactions"] = await self._get_reactions_for_share(share.id, current_user_id)
 
         return detail
 
@@ -399,8 +592,9 @@ class CommunityService:
         title: str | None = None,
         description: str | None = None,
         tags: list[str] | None = None,
+        allow_fork: bool | None = None,
     ) -> DocumentShare:
-        """Update metadata (title, description, tags) on a published share."""
+        """Update metadata (title, description, tags, allow_fork) on a published share."""
         result = await self.db.execute(
             select(DocumentShare).where(
                 DocumentShare.id == share_id, DocumentShare.user_id == user_id
@@ -423,6 +617,8 @@ class CommunityService:
         if tags is not None:
             normalized_tags = list(dict.fromkeys(t.strip().lower() for t in tags if t.strip()))
             share.tags = normalized_tags[:10] if normalized_tags else None
+        if allow_fork is not None:
+            share.allow_fork = allow_fork
 
         await self.db.commit()
         await self.db.refresh(share)
@@ -443,6 +639,10 @@ class CommunityService:
         share = await self._resolve_share_by_token(share_token)
         if not share:
             raise NotFoundError(resource="Share", message="Share not found or expired")
+
+        # Check if forking is allowed
+        if not share.allow_fork:
+            raise BadRequestError(message="The owner has disabled forking for this document")
 
         # Prevent self-fork
         if share.user_id == user_id:
@@ -705,6 +905,8 @@ class CommunityService:
                 DocumentShare.fork_count,
                 DocumentShare.bookmark_count,
                 DocumentShare.comment_count,
+                DocumentShare.reaction_count,
+                DocumentShare.allow_fork,
                 DocumentShare.published_at,
                 File.name.label("file_name"),
                 File.is_folder,
@@ -740,8 +942,10 @@ class CommunityService:
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,
                 "fork_count": row.fork_count,
+                "allow_fork": row.allow_fork,
                 "bookmark_count": row.bookmark_count,
                 "comment_count": row.comment_count,
+                "reaction_count": row.reaction_count,
                 "published_at": row.published_at.isoformat() if row.published_at else "",
                 "bookmarked_at": row.bookmarked_at.isoformat() if row.bookmarked_at else "",
                 "is_bookmarked": True,
@@ -752,11 +956,202 @@ class CommunityService:
         return items, total
 
     # =========================================================================
+    # User Follows
+    # =========================================================================
+
+    async def toggle_follow(self, follower_id: str, following_id: str) -> tuple[bool, int]:
+        """Toggle follow relationship. Returns (is_following, new_follower_count)."""
+        if follower_id == following_id:
+            raise BadRequestError(message="Cannot follow yourself")
+
+        # Verify target user exists
+        target = await self.db.execute(select(User).where(User.id == following_id))
+        target_user = target.scalar_one_or_none()
+        if not target_user:
+            raise NotFoundError(resource="User", resource_id=following_id)
+
+        existing = await self.db.execute(
+            select(UserFollow).where(
+                UserFollow.follower_id == follower_id,
+                UserFollow.following_id == following_id,
+            )
+        )
+        follow = existing.scalar_one_or_none()
+
+        if follow:
+            # Unfollow
+            await self.db.delete(follow)
+            await self.db.execute(
+                update(User)
+                .where(User.id == following_id)
+                .values(follower_count=func.greatest(User.follower_count - 1, 0))
+            )
+            await self.db.execute(
+                update(User)
+                .where(User.id == follower_id)
+                .values(following_count=func.greatest(User.following_count - 1, 0))
+            )
+            await self.db.commit()
+
+            # Refetch count
+            result = await self.db.execute(
+                select(User.follower_count).where(User.id == following_id)
+            )
+            count = result.scalar() or 0
+            return False, count
+        else:
+            # Follow
+            self.db.add(UserFollow(follower_id=follower_id, following_id=following_id))
+            await self.db.execute(
+                update(User)
+                .where(User.id == following_id)
+                .values(follower_count=User.follower_count + 1)
+            )
+            await self.db.execute(
+                update(User)
+                .where(User.id == follower_id)
+                .values(following_count=User.following_count + 1)
+            )
+            await self.db.commit()
+
+            result = await self.db.execute(
+                select(User.follower_count).where(User.id == following_id)
+            )
+            count = result.scalar() or 0
+            return True, count
+
+    async def is_following(self, follower_id: str, following_id: str) -> bool:
+        """Check if follower_id follows following_id."""
+        result = await self.db.execute(
+            select(UserFollow.id).where(
+                UserFollow.follower_id == follower_id,
+                UserFollow.following_id == following_id,
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def get_followed_user_ids(self, user_id: str) -> list[str]:
+        """Get all user IDs that user_id is following."""
+        result = await self.db.execute(
+            select(UserFollow.following_id).where(UserFollow.follower_id == user_id)
+        )
+        return [row[0] for row in result.all()]
+
+    async def get_followers(
+        self,
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        viewer_id: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """Get paginated list of a user's followers."""
+        # Count total
+        count_result = await self.db.execute(
+            select(func.count(UserFollow.id)).where(UserFollow.following_id == user_id)
+        )
+        total = count_result.scalar() or 0
+
+        # Fetch followers
+        result = await self.db.execute(
+            select(
+                User.id,
+                User.username,
+                User.avatar_url,
+                User.bio,
+                UserFollow.created_at.label("followed_at"),
+            )
+            .join(UserFollow, UserFollow.follower_id == User.id)
+            .where(UserFollow.following_id == user_id)
+            .order_by(UserFollow.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = result.all()
+
+        # Check if viewer is following each of these users
+        viewer_following_ids: set[str] = set()
+        if viewer_id and rows:
+            user_ids = [row.id for row in rows]
+            vf_result = await self.db.execute(
+                select(UserFollow.following_id).where(
+                    UserFollow.follower_id == viewer_id,
+                    UserFollow.following_id.in_(user_ids),
+                )
+            )
+            viewer_following_ids = {r[0] for r in vf_result.all()}
+
+        users = [
+            {
+                "id": row.id,
+                "username": row.username,
+                "avatar_url": row.avatar_url,
+                "bio": row.bio,
+                "is_following": row.id in viewer_following_ids,
+            }
+            for row in rows
+        ]
+
+        return users, total
+
+    async def get_following(
+        self,
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        viewer_id: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """Get paginated list of users that user_id is following."""
+        count_result = await self.db.execute(
+            select(func.count(UserFollow.id)).where(UserFollow.follower_id == user_id)
+        )
+        total = count_result.scalar() or 0
+
+        result = await self.db.execute(
+            select(
+                User.id,
+                User.username,
+                User.avatar_url,
+                User.bio,
+                UserFollow.created_at.label("followed_at"),
+            )
+            .join(UserFollow, UserFollow.following_id == User.id)
+            .where(UserFollow.follower_id == user_id)
+            .order_by(UserFollow.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = result.all()
+
+        viewer_following_ids: set[str] = set()
+        if viewer_id and rows:
+            user_ids = [row.id for row in rows]
+            vf_result = await self.db.execute(
+                select(UserFollow.following_id).where(
+                    UserFollow.follower_id == viewer_id,
+                    UserFollow.following_id.in_(user_ids),
+                )
+            )
+            viewer_following_ids = {r[0] for r in vf_result.all()}
+
+        users = [
+            {
+                "id": row.id,
+                "username": row.username,
+                "avatar_url": row.avatar_url,
+                "bio": row.bio,
+                "is_following": row.id in viewer_following_ids,
+            }
+            for row in rows
+        ]
+
+        return users, total
+
+    # =========================================================================
     # User Profile
     # =========================================================================
 
-    async def get_public_profile(self, user_id: str) -> dict | None:
-        """Get user's public profile with stats."""
+    async def get_public_profile(self, user_id: str, viewer_id: str | None = None) -> dict | None:
+        """Get user's public profile with stats and follow info."""
         result = await self.db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
@@ -795,6 +1190,11 @@ class CommunityService:
             )
         )
 
+        # Check if viewer is following this user
+        is_following = False
+        if viewer_id and viewer_id != user_id:
+            is_following = await self.is_following(viewer_id, user_id)
+
         return {
             "id": user.id,
             "username": user.username,
@@ -803,11 +1203,14 @@ class CommunityService:
             "website": user.website,
             "social_links": user.social_links,
             "created_at": user.created_at.isoformat() if user.created_at else "",
+            "is_following": is_following,
             "stats": {
                 "total_published": published_count.scalar() or 0,
                 "total_views": views_total.scalar() or 0,
                 "total_forks_received": forks_received.scalar() or 0,
                 "total_bookmarks_received": bookmarks_received.scalar() or 0,
+                "followers": user.follower_count,
+                "following": user.following_count,
             },
         }
 
@@ -846,6 +1249,8 @@ class CommunityService:
                 DocumentShare.fork_count,
                 DocumentShare.bookmark_count,
                 DocumentShare.comment_count,
+                DocumentShare.reaction_count,
+                DocumentShare.allow_fork,
                 DocumentShare.user_id,
                 File.name.label("file_name"),
                 File.is_folder,
@@ -856,6 +1261,8 @@ class CommunityService:
                 func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                _item_count_subquery(),
+                DocumentShare.file_id,
             )
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
@@ -889,8 +1296,10 @@ class CommunityService:
                     "is_folder": row.is_folder,
                     "view_count": row.view_count,
                     "fork_count": row.fork_count,
+                    "allow_fork": row.allow_fork,
                     "bookmark_count": row.bookmark_count,
                     "comment_count": row.comment_count,
+                    "reaction_count": row.reaction_count,
                     "published_at": row.published_at.isoformat() if row.published_at else "",
                     "updated_at": row.updated_at.isoformat() if row.updated_at else "",
                     "is_bookmarked": False,
@@ -898,8 +1307,144 @@ class CommunityService:
                     "content_preview": content_preview,
                     "word_count": word_count,
                     "reading_time": reading_time,
+                    "item_count": row.item_count if row.is_folder else None,
+                    "_file_id": row.file_id if row.is_folder else None,
                 }
             )
+
+        # Batch-fetch folder children previews and reactions
+        await self._attach_folder_children(items)
+        await self._attach_share_reactions(items, user_id)
+
+        return items, total
+
+    # =========================================================================
+    # Following Feed
+    # =========================================================================
+
+    async def get_following_feed(
+        self,
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Get publications from users that the current user follows."""
+        followed_ids = await self.get_followed_user_ids(user_id)
+        if not followed_ids:
+            return [], 0
+
+        now = datetime.now(UTC)
+        base_filter = and_(
+            DocumentShare.user_id.in_(followed_ids),
+            DocumentShare.is_published == True,  # noqa: E712
+            DocumentShare.is_active == True,  # noqa: E712
+            DocumentShare.visibility == "public",
+            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+        )
+
+        count_result = await self.db.execute(
+            select(func.count(DocumentShare.id)).where(base_filter)
+        )
+        total = count_result.scalar() or 0
+
+        query = (
+            select(
+                DocumentShare.id,
+                DocumentShare.share_token,
+                DocumentShare.title,
+                DocumentShare.description,
+                DocumentShare.tags,
+                DocumentShare.published_at,
+                DocumentShare.updated_at,
+                DocumentShare.view_count,
+                DocumentShare.fork_count,
+                DocumentShare.bookmark_count,
+                DocumentShare.comment_count,
+                DocumentShare.reaction_count,
+                DocumentShare.allow_fork,
+                DocumentShare.user_id,
+                File.name.label("file_name"),
+                File.is_folder,
+                func.safe_substr(File.content_markdown, 1, 350).label("content_markdown_head"),
+                func.length(File.content_markdown).label("content_markdown_length"),
+                func.safe_substr(File.content, 1, 1000).label("content_head"),
+                func.length(File.content).label("content_length"),
+                User.username.label("owner_name"),
+                User.avatar_url.label("owner_avatar_url"),
+                _item_count_subquery(),
+                DocumentShare.file_id,
+            )
+            .join(File, DocumentShare.file_id == File.id)
+            .join(User, DocumentShare.user_id == User.id)
+            .where(base_filter)
+            .order_by(DocumentShare.published_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        items = []
+        for row in rows:
+            content_preview, word_count, reading_time = _compute_preview(row)
+            items.append(
+                {
+                    "share_id": row.id,
+                    "share_token": row.share_token,
+                    "title": row.title or row.file_name,
+                    "description": row.description,
+                    "tags": row.tags or [],
+                    "owner": {
+                        "id": row.user_id,
+                        "username": row.owner_name,
+                        "avatar_url": row.owner_avatar_url,
+                    },
+                    "is_folder": row.is_folder,
+                    "view_count": row.view_count,
+                    "fork_count": row.fork_count,
+                    "allow_fork": row.allow_fork,
+                    "bookmark_count": row.bookmark_count,
+                    "comment_count": row.comment_count,
+                    "reaction_count": row.reaction_count,
+                    "published_at": row.published_at.isoformat() if row.published_at else "",
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+                    "is_bookmarked": False,
+                    "is_forked": False,
+                    "content_preview": content_preview,
+                    "word_count": word_count,
+                    "reading_time": reading_time,
+                    "item_count": row.item_count if row.is_folder else None,
+                    "_file_id": row.file_id if row.is_folder else None,
+                }
+            )
+
+        # Batch-fetch folder children previews and reactions
+        await self._attach_folder_children(items)
+        await self._attach_share_reactions(items, user_id)
+
+        # Annotate bookmark/fork status
+        if items:
+            share_ids = [item["share_id"] for item in items]
+            bm_result = await self.db.execute(
+                select(Bookmark.share_id).where(
+                    Bookmark.user_id == user_id,
+                    Bookmark.share_id.in_(share_ids),
+                )
+            )
+            bookmarked_ids = {row[0] for row in bm_result.all()}
+
+            fk_result = await self.db.execute(
+                select(Fork.source_share_id).where(
+                    Fork.user_id == user_id,
+                    Fork.source_share_id.in_(share_ids),
+                )
+            )
+            forked_ids = {row[0] for row in fk_result.all()}
+
+            for item in items:
+                item["is_bookmarked"] = item["share_id"] in bookmarked_ids
+                item["is_forked"] = item["share_id"] in forked_ids
 
         return items, total
 
@@ -907,23 +1452,80 @@ class CommunityService:
     # Recommendations
     # =========================================================================
 
-    async def get_user_interest_tags(self, user_id: str) -> dict[str, int]:
-        """Collect interest tags from user's bookmarks, forks, and published shares."""
-        tag_counts: dict[str, int] = {}
+    async def get_user_interest_tags(self, user_id: str) -> dict[str, float]:
+        """Collect interest tags from user interactions, weighted by signal strength.
 
-        # From bookmarks
+        Signal weights:
+        - Bookmarks: 3.0 (intentional save = strong signal)
+        - Forks: 3.0 (copied to own space = strong signal)
+        - Comments: 2.5 (engagement via writing = strong signal)
+        - Positive reactions: 2.0 (explicit approval = moderate signal)
+        - Own published shares: 2.0 (content creation = moderate signal)
+        - Views: 1.0 (passive consumption = weak signal, last 90 days only)
+        """
+        from datetime import timedelta
+
+        tag_weights: dict[str, float] = {}
+
+        def _accumulate(tags_list, weight: float):
+            if isinstance(tags_list, list):
+                for tag in tags_list:
+                    if tag:
+                        tag_weights[tag] = tag_weights.get(tag, 0.0) + weight
+
+        # 1. From bookmarks (weight: 3.0)
         bm_result = await self.db.execute(
             select(DocumentShare.tags)
             .join(Bookmark, Bookmark.share_id == DocumentShare.id)
             .where(Bookmark.user_id == user_id, DocumentShare.tags.isnot(None))
         )
-        # From forks
+        for (tags,) in bm_result.all():
+            _accumulate(tags, 3.0)
+
+        # 2. From forks (weight: 3.0)
         fk_result = await self.db.execute(
             select(DocumentShare.tags)
             .join(Fork, Fork.source_share_id == DocumentShare.id)
             .where(Fork.user_id == user_id, DocumentShare.tags.isnot(None))
         )
-        # From own published shares
+        for (tags,) in fk_result.all():
+            _accumulate(tags, 3.0)
+
+        # 3. From commented shares (weight: 2.5)
+        # Use distinct on share_id to avoid duplicate tags from multiple comments on same share
+        comment_share_ids_result = await self.db.execute(
+            select(Comment.share_id)
+            .where(
+                Comment.user_id == user_id,
+                Comment.is_deleted == False,  # noqa: E712
+            )
+            .distinct()
+        )
+        commented_share_ids = [row[0] for row in comment_share_ids_result.all()]
+        if commented_share_ids:
+            comment_result = await self.db.execute(
+                select(DocumentShare.tags).where(
+                    DocumentShare.id.in_(commented_share_ids),
+                    DocumentShare.tags.isnot(None),
+                )
+            )
+            for (tags,) in comment_result.all():
+                _accumulate(tags, 2.5)
+
+        # 4. From positive reactions (weight: 2.0)
+        react_result = await self.db.execute(
+            select(DocumentShare.tags)
+            .join(ShareReaction, ShareReaction.share_id == DocumentShare.id)
+            .where(
+                ShareReaction.user_id == user_id,
+                ShareReaction.emoji.in_(POSITIVE_REACTION_EMOJIS),
+                DocumentShare.tags.isnot(None),
+            )
+        )
+        for (tags,) in react_result.all():
+            _accumulate(tags, 2.0)
+
+        # 5. From own published shares (weight: 2.0)
         own_result = await self.db.execute(
             select(DocumentShare.tags).where(
                 DocumentShare.user_id == user_id,
@@ -931,18 +1533,27 @@ class CommunityService:
                 DocumentShare.tags.isnot(None),
             )
         )
+        for (tags,) in own_result.all():
+            _accumulate(tags, 2.0)
 
-        for result in [bm_result, fk_result, own_result]:
-            for (tags,) in result.all():
-                if isinstance(tags, list):
-                    for tag in tags:
-                        if tag:
-                            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        # 6. From viewed shares (weight: 1.0, last 90 days only)
+        view_cutoff = datetime.now(UTC) - timedelta(days=90)
+        view_result = await self.db.execute(
+            select(DocumentShare.tags)
+            .join(ShareView, ShareView.share_id == DocumentShare.id)
+            .where(
+                ShareView.user_id == user_id,
+                ShareView.created_at >= view_cutoff,
+                DocumentShare.tags.isnot(None),
+            )
+        )
+        for (tags,) in view_result.all():
+            _accumulate(tags, 1.0)
 
-        return tag_counts
+        return tag_weights
 
     async def _recommend_by_tags(
-        self, user_id: str, interest_tags: dict[str, int], limit: int = 50
+        self, user_id: str, interest_tags: dict[str, float], limit: int = 50
     ) -> list[tuple[str, float]]:
         """Find shares matching user's interest tags, scored by overlap count.
 
@@ -977,18 +1588,41 @@ class CommunityService:
         scored.sort(key=lambda x: -x[1])
         return scored[:limit]
 
-    async def _recommend_by_embedding(
-        self,
-        user_id: str,  # noqa: ARG002
-        limit: int = 30,  # noqa: ARG002
-    ) -> list[tuple[str, float]]:
-        """Embedding-based recommendations (disabled — RAG removed)."""
-        return []
+    async def _recommend_by_follows(self, user_id: str, limit: int = 30) -> list[tuple[str, float]]:
+        """Get recent publications from followed users, scored by recency."""
+        followed_ids = await self.get_followed_user_ids(user_id)
+        if not followed_ids:
+            return []
+
+        now = datetime.now(UTC)
+        base_filter = and_(
+            DocumentShare.is_published == True,  # noqa: E712
+            DocumentShare.is_active == True,  # noqa: E712
+            DocumentShare.visibility == "public",
+            DocumentShare.user_id.in_(followed_ids),
+            or_(DocumentShare.expires_at.is_(None), DocumentShare.expires_at > now),
+        )
+
+        result = await self.db.execute(
+            select(DocumentShare.id, DocumentShare.published_at).where(base_filter)
+        )
+        rows = result.all()
+
+        scored: list[tuple[str, float]] = []
+        for row in rows:
+            days_since = (now - row.published_at).total_seconds() / 86400 if row.published_at else 0
+            # Faster decay (7-day half-life) to prioritize fresh content from follows
+            recency_score = 1.0 / (1.0 + days_since / 7.0)
+            scored.append((row.id, recency_score))
+
+        scored.sort(key=lambda x: -x[1])
+        return scored[:limit]
 
     async def _recommend_by_trending(self, limit: int = 30) -> list[tuple[str, float]]:
         """Get trending items with time decay.
 
-        score = (view_count + fork_count*5 + bookmark_count*3 + comment_count*2)
+        score = (view_count + fork_count*5 + bookmark_count*3
+                 + comment_count*2 + reaction_count*2)
                 / (1 + days_since_published / 30)
         """
         now = datetime.now(UTC)
@@ -1006,6 +1640,7 @@ class CommunityService:
                 DocumentShare.fork_count,
                 DocumentShare.bookmark_count,
                 DocumentShare.comment_count,
+                DocumentShare.reaction_count,
                 DocumentShare.published_at,
             ).where(base_filter)
         )
@@ -1014,7 +1649,11 @@ class CommunityService:
         scored: list[tuple[str, float]] = []
         for row in rows:
             raw_score = (
-                row.view_count + row.fork_count * 5 + row.bookmark_count * 3 + row.comment_count * 2
+                row.view_count
+                + row.fork_count * 5
+                + row.bookmark_count * 3
+                + row.comment_count * 2
+                + row.reaction_count * 2
             )
             days_since = (now - row.published_at).total_seconds() / 86400 if row.published_at else 0
             decay = 1.0 / (1.0 + days_since / 30.0)
@@ -1025,16 +1664,20 @@ class CommunityService:
 
     @staticmethod
     def _merge_recommendations(
+        follow_results: list[tuple[str, float]],
         tag_results: list[tuple[str, float]],
-        embedding_results: list[tuple[str, float]],
         trending_results: list[tuple[str, float]],
+        viewed_share_ids: set[str] | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[str]:
         """Merge results from 3 channels using weighted normalized scoring.
 
+        Weights: follow (40%) + tag (30%) + trending (30%).
+        Already-viewed shares receive a 0.7x demotion multiplier.
         Returns ordered list of share_ids after deduplication and pagination.
         """
+        SEEN_DEMOTION = 0.7
 
         def normalize(results: list[tuple[str, float]]) -> dict[str, float]:
             if not results:
@@ -1042,20 +1685,23 @@ class CommunityService:
             max_score = max(s for _, s in results) or 1.0
             return {sid: s / max_score for sid, s in results}
 
+        follow_scores = normalize(follow_results)
         tag_scores = normalize(tag_results)
-        emb_scores = normalize(embedding_results)
         trend_scores = normalize(trending_results)
 
         # Collect all share IDs
-        all_ids = set(tag_scores) | set(emb_scores) | set(trend_scores)
+        all_ids = set(follow_scores) | set(tag_scores) | set(trend_scores)
 
         final_scores: list[tuple[str, float]] = []
         for sid in all_ids:
             score = (
-                0.5 * tag_scores.get(sid, 0.0)
-                + 0.3 * emb_scores.get(sid, 0.0)
-                + 0.2 * trend_scores.get(sid, 0.0)
+                0.40 * follow_scores.get(sid, 0.0)
+                + 0.30 * tag_scores.get(sid, 0.0)
+                + 0.30 * trend_scores.get(sid, 0.0)
             )
+            # Demote already-seen content
+            if viewed_share_ids and sid in viewed_share_ids:
+                score *= SEEN_DEMOTION
             final_scores.append((sid, score))
 
         final_scores.sort(key=lambda x: -x[1])
@@ -1069,7 +1715,7 @@ class CommunityService:
     ) -> tuple[list[dict], int]:
         """Get personalized recommendations for a user.
 
-        Strategy: tag matching (50%) + embedding similarity (30%) + trending (20%).
+        Strategy: follow (40%) + tag (30%) + trending (30%).
         Falls back to trending if user has no interaction history.
         """
         # Get actual total published count (for sidebar display)
@@ -1086,18 +1732,29 @@ class CommunityService:
 
         interest_tags = await self.get_user_interest_tags(user_id)
 
+        # Fetch user's viewed share IDs for already-seen demotion
+        viewed_result = await self.db.execute(
+            select(ShareView.share_id).where(ShareView.user_id == user_id)
+        )
+        viewed_share_ids = {row[0] for row in viewed_result.all()}
+
         # Run 3 recall channels
+        follow_results = await self._recommend_by_follows(user_id)
         tag_results = await self._recommend_by_tags(user_id, interest_tags)
-        embedding_results = await self._recommend_by_embedding(user_id)
         trending_results = await self._recommend_by_trending()
 
         # If user has no personalization signals, fallback to trending only
-        if not tag_results and not embedding_results:
+        if not follow_results and not tag_results:
             ordered_ids = [sid for sid, _ in trending_results[offset : offset + limit]]
         else:
-            # Merge and paginate
+            # Merge and paginate (with seen demotion)
             ordered_ids = self._merge_recommendations(
-                tag_results, embedding_results, trending_results, limit, offset
+                follow_results,
+                tag_results,
+                trending_results,
+                viewed_share_ids=viewed_share_ids,
+                limit=limit,
+                offset=offset,
             )
 
         if not ordered_ids:
@@ -1125,6 +1782,8 @@ class CommunityService:
                 DocumentShare.fork_count,
                 DocumentShare.bookmark_count,
                 DocumentShare.comment_count,
+                DocumentShare.reaction_count,
+                DocumentShare.allow_fork,
                 DocumentShare.user_id,
                 File.name.label("file_name"),
                 File.is_folder,
@@ -1135,6 +1794,8 @@ class CommunityService:
                 func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                _item_count_subquery(),
+                DocumentShare.file_id,
             )
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
@@ -1162,8 +1823,10 @@ class CommunityService:
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,
                 "fork_count": row.fork_count,
+                "allow_fork": row.allow_fork,
                 "bookmark_count": row.bookmark_count,
                 "comment_count": row.comment_count,
+                "reaction_count": row.reaction_count,
                 "published_at": row.published_at.isoformat() if row.published_at else "",
                 "updated_at": row.updated_at.isoformat() if row.updated_at else "",
                 "is_bookmarked": False,
@@ -1171,10 +1834,16 @@ class CommunityService:
                 "content_preview": content_preview,
                 "word_count": word_count,
                 "reading_time": reading_time,
+                "item_count": row.item_count if row.is_folder else None,
+                "_file_id": row.file_id if row.is_folder else None,
             }
 
         # Preserve recommendation order
         items = [items_by_id[sid] for sid in ordered_ids if sid in items_by_id]
+
+        # Batch-fetch folder children previews and reactions
+        await self._attach_folder_children(items)
+        await self._attach_share_reactions(items, user_id)
 
         # Annotate bookmark/fork status
         if items:

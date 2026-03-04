@@ -198,6 +198,8 @@ async def create_comment(
     # Gather data for notifications
     share_owner_email: str | None = None
     parent_author_email: str | None = None
+    parent_author_id: str | None = None
+    mention_ids: list[str] = []
     mention_emails: list[str] = []
 
     try:
@@ -211,18 +213,14 @@ async def create_comment(
 
         if share_row:
             # Get document name
-            file_result = await db.execute(
-                select(File.name).where(File.id == share_row.file_id)
-            )
+            file_result = await db.execute(select(File.name).where(File.id == share_row.file_id))
             file_row = file_result.one_or_none()
             doc_name = file_row.name if file_row else "Untitled"
 
             # Get share owner email (skip if commenter is owner)
             if share_row.user_id != user_id:
                 owner_result = await db.execute(
-                    select(User.email).where(
-                        User.id == share_row.user_id, User.email.isnot(None)
-                    )
+                    select(User.email).where(User.id == share_row.user_id, User.email.isnot(None))
                 )
                 owner_row = owner_result.one_or_none()
                 if owner_row:
@@ -235,6 +233,7 @@ async def create_comment(
                 )
                 parent_row = parent_result.one_or_none()
                 if parent_row and parent_row.user_id != user_id:
+                    parent_author_id = parent_row.user_id
                     pa_result = await db.execute(
                         select(User.email).where(
                             User.id == parent_row.user_id, User.email.isnot(None)
@@ -249,14 +248,14 @@ async def create_comment(
                 mention_ids = [m for m in body.mentions if m != user_id]
                 if mention_ids:
                     m_result = await db.execute(
-                        select(User.email).where(
-                            User.id.in_(mention_ids), User.email.isnot(None)
-                        )
+                        select(User.email).where(User.id.in_(mention_ids), User.email.isnot(None))
                     )
                     mention_emails = [r.email for r in m_result if r.email]
 
+            commenter_name = token.username or "A doXmind user"
             settings = get_settings()
             share_url = f"{settings.frontend_url}/shared/{share_row.share_token}"
+            link = f"/community/{share_row.share_token}"
 
             if share_owner_email or parent_author_email or mention_emails:
                 asyncio.create_task(
@@ -264,11 +263,62 @@ async def create_comment(
                         share_owner_email=share_owner_email,
                         parent_author_email=parent_author_email,
                         mention_emails=mention_emails,
-                        commenter_name=token.username or "A doXmind user",
+                        commenter_name=commenter_name,
                         comment_content=body.content,
                         doc_name=doc_name,
                         share_url=share_url,
                         is_reply=body.parent_id is not None,
+                    )
+                )
+
+            # In-app notifications (with same deduplication as emails)
+            from services.notification_service import create_notification
+
+            notified_user_ids: set[str] = set()
+
+            # 1. Mention notifications (highest priority)
+            for mid in mention_ids:
+                if mid in notified_user_ids:
+                    continue
+                asyncio.create_task(
+                    create_notification(
+                        user_id=mid,
+                        type="mention",
+                        title=commenter_name,
+                        message=f'{commenter_name} mentioned you in "{doc_name}"',
+                        link=link,
+                        actor_id=user_id,
+                        actor_name=commenter_name,
+                    )
+                )
+                notified_user_ids.add(mid)
+
+            # 2. Reply notification
+            if parent_author_id and parent_author_id not in notified_user_ids:
+                asyncio.create_task(
+                    create_notification(
+                        user_id=parent_author_id,
+                        type="reply",
+                        title=commenter_name,
+                        message=f'{commenter_name} replied to your comment on "{doc_name}"',
+                        link=link,
+                        actor_id=user_id,
+                        actor_name=commenter_name,
+                    )
+                )
+                notified_user_ids.add(parent_author_id)
+
+            # 3. Comment notification to share owner
+            if share_row.user_id != user_id and share_row.user_id not in notified_user_ids:
+                asyncio.create_task(
+                    create_notification(
+                        user_id=share_row.user_id,
+                        type="comment",
+                        title=commenter_name,
+                        message=f'{commenter_name} commented on "{doc_name}"',
+                        link=link,
+                        actor_id=user_id,
+                        actor_name=commenter_name,
                     )
                 )
     except Exception:

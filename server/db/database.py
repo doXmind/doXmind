@@ -65,6 +65,10 @@ class User(Base):
     website = Column(String(500), nullable=True)
     social_links = Column(JSON, nullable=True)  # {"github": "...", "twitter": "..."}
 
+    # Follow counts (denormalized for performance)
+    follower_count = Column(Integer, default=0, nullable=False)
+    following_count = Column(Integer, default=0, nullable=False)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -493,6 +497,7 @@ class DocumentShare(Base):
     # Share settings
     expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
+    allow_fork = Column(Boolean, default=True, nullable=False)
 
     # Content strategy: "live" (default) shows current file content
     # Future: "snapshot" freezes content at share creation time
@@ -510,6 +515,7 @@ class DocumentShare(Base):
     fork_count = Column(Integer, default=0, nullable=False)
     bookmark_count = Column(Integer, default=0, nullable=False)
     comment_count = Column(Integer, default=0, nullable=False)
+    reaction_count = Column(Integer, default=0, nullable=False)
 
     # Analytics
     view_count = Column(Integer, default=0, nullable=False)
@@ -651,6 +657,90 @@ class CommentReaction(Base):
     )
 
 
+class ShareReaction(Base):
+    """Emoji reaction on a shared community item."""
+
+    __tablename__ = "share_reactions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    share_id = Column(
+        String(36),
+        ForeignKey("document_shares.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    emoji = Column(String(10), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    share = relationship("DocumentShare", backref="reactions")
+    owner = relationship("User")
+
+    __table_args__ = (
+        Index(
+            "idx_share_reactions_share_user_emoji",
+            "share_id",
+            "user_id",
+            "emoji",
+            unique=True,
+        ),
+    )
+
+
+class ShareView(Base):
+    """Per-user view tracking for shared community items."""
+
+    __tablename__ = "share_views"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    share_id = Column(
+        String(36),
+        ForeignKey("document_shares.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    share = relationship("DocumentShare", backref="share_views")
+    viewer = relationship("User")
+
+    __table_args__ = (
+        Index("idx_share_views_user_share", "user_id", "share_id", unique=True),
+        Index("idx_share_views_user_created", "user_id", "created_at"),
+    )
+
+
+class UserFollow(Base):
+    """Follow relationship between users."""
+
+    __tablename__ = "user_follows"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    follower_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    following_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # Relationships
+    follower = relationship("User", foreign_keys=[follower_id])
+    following = relationship("User", foreign_keys=[following_id])
+
+    __table_args__ = (
+        Index("idx_follows_unique", "follower_id", "following_id", unique=True),
+        Index("idx_follows_following_created", "following_id", "created_at"),
+    )
+
+
 class ShareInvite(Base):
     """Invite granting a specific user access to a private share."""
 
@@ -682,6 +772,30 @@ class ShareInvite(Base):
     inviter = relationship("User", foreign_keys=[invited_by])
 
     __table_args__ = (Index("idx_share_invites_share_user", "share_id", "user_id", unique=True),)
+
+
+class Notification(Base):
+    """In-app notification for a user."""
+
+    __tablename__ = "notifications"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    type = Column(String(32), nullable=False)
+    title = Column(String(200), nullable=False)
+    message = Column(String(500), nullable=False)
+    link = Column(String(500), nullable=True)
+    actor_id = Column(String(36), nullable=True)
+    actor_name = Column(String(100), nullable=True)
+    actor_avatar = Column(String(500), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (Index("idx_notifications_user_unread", "user_id", "is_read", "created_at"),)
 
 
 # ---------------------------------------------------------------------------

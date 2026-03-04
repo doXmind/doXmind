@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Users, ExternalLink, FolderOpen, FileText } from "lucide-react";
 import { type SharedWithMeItem } from "@/lib/api";
 import { useLazyList } from "@/hooks/use-lazy-list";
@@ -12,22 +13,22 @@ interface SharedWithMeSectionProps {
 }
 
 function EmptyState() {
+  const t = useTranslations("home");
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
         <Users className="h-6 w-6 text-muted-foreground/40" />
       </div>
       <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-foreground">
-        Nothing shared with you yet
+        {t("nothingSharedYet")}
       </h3>
-      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">
-        When someone invites you to view their documents, they will appear here.
-      </p>
+      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">{t("sharedWithMeDesc")}</p>
     </div>
   );
 }
 
 export function SharedWithMeSection({ items }: SharedWithMeSectionProps) {
+  const t = useTranslations("home");
   const [page, setPage] = useState(0);
   const pageSize = useGridPageSize();
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
@@ -75,7 +76,7 @@ export function SharedWithMeSection({ items }: SharedWithMeSectionProps) {
             {/* Content */}
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-[14px] font-medium text-foreground">
-                {item.title || "Untitled"}
+                {item.title || t("untitled")}
               </h3>
               <div className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground/60">
                 <span className="flex items-center gap-1">
@@ -84,7 +85,7 @@ export function SharedWithMeSection({ items }: SharedWithMeSectionProps) {
                   ) : (
                     <FileText className="h-3 w-3" />
                   )}
-                  {item.owner.username || "Unknown"}
+                  {item.owner.username || t("unknown")}
                 </span>
                 <span className="text-muted-foreground/30">&middot;</span>
                 <span>
@@ -105,7 +106,7 @@ export function SharedWithMeSection({ items }: SharedWithMeSectionProps) {
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="Open"
+                title={t("open")}
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>

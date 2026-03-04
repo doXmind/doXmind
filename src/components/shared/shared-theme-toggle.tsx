@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Moon, Sun, Monitor } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { cn } from "@/lib/utils";
@@ -72,6 +73,7 @@ function MiniThemeCard({
 }
 
 export function ThemeQuickPicker() {
+  const t = useTranslations("settings");
   const { currentThemeId, selectTheme, isSystemMode, setSystemMode, lightThemes, darkThemes } =
     useThemeManager();
 
@@ -80,7 +82,7 @@ export function ThemeQuickPicker() {
       <PopoverTrigger asChild>
         <button
           className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          aria-label="Choose theme"
+          aria-label={t("chooseTheme")}
         >
           <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -91,7 +93,7 @@ export function ThemeQuickPicker() {
           {/* Light themes */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Light
+              {t("light")}
             </span>
             <div className="grid grid-cols-4 gap-1">
               {lightThemes.map((theme) => (
@@ -108,7 +110,7 @@ export function ThemeQuickPicker() {
           {/* Dark themes */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Dark
+              {t("dark")}
             </span>
             <div className="grid grid-cols-4 gap-1">
               {darkThemes.map((theme) => (
@@ -126,7 +128,7 @@ export function ThemeQuickPicker() {
           <div className="flex items-center justify-between border-t pt-2">
             <div className="flex items-center gap-1.5">
               <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Follow System</span>
+              <span className="text-xs text-muted-foreground">{t("followSystem")}</span>
             </div>
             <button
               onClick={() => setSystemMode(!isSystemMode)}

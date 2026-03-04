@@ -14,6 +14,8 @@ import type {
   InviteEntry,
   SharedWithMeItem,
   UserProfileResponse,
+  FollowResponse,
+  FollowListResponse,
 } from "./types";
 
 declare module "./client" {
@@ -65,6 +67,15 @@ declare module "./client" {
       offset?: number
     ): Promise<{ items: CommunityItem[]; total: number }>;
 
+    // Reactions
+    toggleShareReaction(
+      shareToken: string,
+      emoji: string
+    ): Promise<{
+      reacted: boolean;
+      reactions: { emoji: string; count: number; has_reacted: boolean }[];
+    }>;
+
     // User Profile
     getUserProfile(userId: string): Promise<UserProfileResponse>;
     getUserPublished(
@@ -73,6 +84,12 @@ declare module "./client" {
       limit?: number,
       offset?: number
     ): Promise<CommunityListResponse>;
+
+    // Follow
+    toggleFollow(userId: string): Promise<FollowResponse>;
+    getFollowers(userId: string, limit?: number, offset?: number): Promise<FollowListResponse>;
+    getFollowing(userId: string, limit?: number, offset?: number): Promise<FollowListResponse>;
+    getFollowingFeed(params?: { limit?: number; offset?: number }): Promise<CommunityListResponse>;
 
     // Comments - mention search
     searchMentions(query: string): Promise<{ users: CommunityAuthor[] }>;
@@ -249,6 +266,24 @@ ApiClient.prototype.getBookmarks = async function (
 };
 
 // ==========================================================================
+// Reaction API
+// ==========================================================================
+
+ApiClient.prototype.toggleShareReaction = async function (
+  this: ApiClient,
+  shareToken: string,
+  emoji: string
+): Promise<{
+  reacted: boolean;
+  reactions: { emoji: string; count: number; has_reacted: boolean }[];
+}> {
+  return this.request(`/api/community/${shareToken}/react`, {
+    method: "POST",
+    body: JSON.stringify({ emoji }),
+  });
+};
+
+// ==========================================================================
 // User Profile API
 // ==========================================================================
 
@@ -269,6 +304,52 @@ ApiClient.prototype.getUserPublished = async function (
   return this.request<CommunityListResponse>(
     `/api/community/users/${userId}/published?sort=${sort}&limit=${limit}&offset=${offset}`
   );
+};
+
+// ==========================================================================
+// Follow API
+// ==========================================================================
+
+ApiClient.prototype.toggleFollow = async function (
+  this: ApiClient,
+  userId: string
+): Promise<FollowResponse> {
+  return this.request<FollowResponse>(`/api/community/users/${userId}/follow`, {
+    method: "POST",
+  });
+};
+
+ApiClient.prototype.getFollowers = async function (
+  this: ApiClient,
+  userId: string,
+  limit = 20,
+  offset = 0
+): Promise<FollowListResponse> {
+  return this.request<FollowListResponse>(
+    `/api/community/users/${userId}/followers?limit=${limit}&offset=${offset}`
+  );
+};
+
+ApiClient.prototype.getFollowing = async function (
+  this: ApiClient,
+  userId: string,
+  limit = 20,
+  offset = 0
+): Promise<FollowListResponse> {
+  return this.request<FollowListResponse>(
+    `/api/community/users/${userId}/following?limit=${limit}&offset=${offset}`
+  );
+};
+
+ApiClient.prototype.getFollowingFeed = async function (
+  this: ApiClient,
+  params?: { limit?: number; offset?: number }
+): Promise<CommunityListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set("limit", params.limit.toString());
+  if (params?.offset) searchParams.set("offset", params.offset.toString());
+  const qs = searchParams.toString();
+  return this.request<CommunityListResponse>(`/api/community/following-feed${qs ? `?${qs}` : ""}`);
 };
 
 // ==========================================================================

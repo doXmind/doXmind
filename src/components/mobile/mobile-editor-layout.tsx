@@ -24,7 +24,6 @@ import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useKeyboardState } from "@/hooks/use-mobile-gestures";
 import { FloatingOutline } from "./floating-outline";
-import { MobileGestureHints } from "@/components/onboarding/mobile-gesture-hints";
 
 interface MobileEditorLayoutProps {
   children: React.ReactNode;
@@ -243,9 +242,6 @@ export function MobileEditorLayout({ children }: MobileEditorLayoutProps) {
 
       {/* Floating outline indicator (scroll-triggered) */}
       {currentFileId && <FloatingOutline />}
-
-      {/* Mobile Gesture Hints (first visit) */}
-      <MobileGestureHints />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { MoreHorizontal, Star, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ interface RecentFilesProps {
 export function RecentFiles({ files, favorites = [] }: RecentFilesProps) {
   const router = useRouter();
   const { setCurrentFile } = useFileStore();
+  const t = useTranslations("home");
 
   if (files.length === 0) return null;
 
@@ -51,7 +53,7 @@ export function RecentFiles({ files, favorites = [] }: RecentFilesProps) {
       transition={{ duration: 0.5, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
     >
       <h2 className="mb-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 dark:text-muted-foreground/70 md:mb-3.5">
-        Continue writing
+        {t("continueWriting")}
       </h2>
 
       {/* Mobile: horizontal pill chips */}
@@ -74,7 +76,7 @@ export function RecentFiles({ files, favorites = [] }: RecentFilesProps) {
             onClick={() => handleOpen(file)}
           >
             <span className="max-w-[200px] truncate text-[13px] font-medium text-foreground/80">
-              {file.name?.replace(/\.md$/i, "") || "Untitled"}
+              {file.name?.replace(/\.md$/i, "") || t("untitled")}
             </span>
           </motion.button>
         ))}
@@ -102,6 +104,8 @@ function RecentTile({
   const { toggleFavorite, deleteFile } = useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const isMobile = useIsMobile();
+  const t = useTranslations("home");
+  const tc = useTranslations("common");
   const wordCount = file.wordCount;
   const preview = file.preview;
 
@@ -114,7 +118,7 @@ function RecentTile({
     try {
       await deleteFile(file.id);
     } catch {
-      toast.error("Failed to delete file");
+      toast.error(t("failedToDeleteFile"));
     }
     setShowDeleteModal(false);
   };
@@ -145,7 +149,7 @@ function RecentTile({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/85">
-            {file.name?.replace(/\.md$/i, "") || "Untitled"}
+            {file.name?.replace(/\.md$/i, "") || t("untitled")}
           </h3>
           <span className="hidden flex-shrink-0 text-xs tracking-wide text-foreground/45 dark:text-foreground/55 sm:inline">
             {formatRelativeDate(file.updatedAt)}
@@ -155,7 +159,7 @@ function RecentTile({
           </span>
         </div>
         <p className="mt-1 line-clamp-1 text-[13px] text-foreground/40 dark:text-foreground/50 sm:hidden">
-          {preview || <span className="italic text-foreground/25">Empty document</span>}
+          {preview || <span className="italic text-foreground/25">{t("emptyDocument")}</span>}
         </p>
         <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60 sm:hidden">
           <span>{formatRelativeDate(file.updatedAt)}</span>
@@ -194,14 +198,14 @@ function RecentTile({
                 "flex w-20 items-center justify-center text-white active:opacity-80",
                 file.isFavorite ? "bg-amber-500" : "bg-amber-500/80"
               )}
-              aria-label={file.isFavorite ? "Remove from favorites" : "Add to favorites"}
+              aria-label={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
             >
               <Star className={cn("h-5 w-5", file.isFavorite && "fill-white")} />
             </button>
             <button
               onClick={handleDeleteTap}
               className="flex w-20 items-center justify-center bg-red-500 text-white active:opacity-80"
-              aria-label="Delete"
+              aria-label={tc("delete")}
             >
               <Trash2 className="h-5 w-5" />
             </button>
@@ -242,7 +246,7 @@ function RecentTile({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 rounded-md"
-                  aria-label="File options"
+                  aria-label={t("fileOptions")}
                 >
                   <MoreHorizontal className="h-3.5 w-3.5" />
                 </Button>
@@ -255,7 +259,7 @@ function RecentTile({
                       file.isFavorite && "fill-amber-500 text-amber-500"
                     )}
                   />
-                  {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                  {file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -263,7 +267,7 @@ function RecentTile({
                   className="text-destructive"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
+                  {tc("delete")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -273,17 +277,16 @@ function RecentTile({
 
       {/* Delete confirmation */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Delete File</ModalHeader>
+        <ModalHeader>{t("deleteFile")}</ModalHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{file.name || "Untitled"}&quot;? This action cannot
-          be undone.
+          {t("deleteFileConfirm", { name: file.name || t("untitled") })}
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDelete}>
-            Delete
+            {tc("delete")}
           </Button>
         </ModalFooter>
       </Modal>

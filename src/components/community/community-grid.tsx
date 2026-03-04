@@ -7,7 +7,8 @@ import { CommunityItem } from "@/lib/api";
 import { MarkdownContent } from "@/components/comments/markdown-content";
 import { useTranslations } from "next-intl";
 import { CommunityCard } from "./community-card";
-import { Clock, Eye, FileText, GitFork, MessageSquare, Search } from "lucide-react";
+import { ShareReactions } from "./share-reactions";
+import { Clock, Eye, FileText, Folder, GitFork, MessageSquare, Search } from "lucide-react";
 
 interface CommunityGridProps {
   items: CommunityItem[];
@@ -80,7 +81,10 @@ function FeaturedCard({
           </div>
 
           {/* Title */}
-          <h3 className="line-clamp-2 text-[16px] font-semibold leading-snug tracking-tight text-foreground group-hover:text-foreground">
+          <h3 className="line-clamp-2 flex items-center gap-2 text-[16px] font-semibold leading-snug tracking-tight text-foreground group-hover:text-foreground">
+            {item.is_folder && (
+              <Folder className="h-4 w-4 flex-shrink-0 text-amber-500 dark:text-amber-400" />
+            )}
             {item.title}
           </h3>
 
@@ -99,6 +103,30 @@ function FeaturedCard({
               className="mt-1.5 line-clamp-3 [&_*]:text-[13px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
             />
           )}
+
+          {/* Folder children preview */}
+          {item.is_folder && !(item.content_preview && item.content_preview.trim().length > 0) && (
+            <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground/60">
+              {item.child_previews && item.child_previews.length > 0 ? (
+                <>
+                  {item.child_previews.map((c) => c.name.replace(/\.md$/i, "")).join(" · ")}
+                  {(item.item_count || 0) > 3 && (
+                    <span className="text-muted-foreground/40">
+                      {" "}
+                      · +{(item.item_count || 0) - 3} {t("more")}
+                    </span>
+                  )}
+                </>
+              ) : (
+                t("folderEmpty")
+              )}
+            </p>
+          )}
+
+          {/* Reactions */}
+          <div className="mt-2">
+            <ShareReactions shareToken={item.share_token} reactions={item.reactions} />
+          </div>
 
           <div className="flex-1" />
 

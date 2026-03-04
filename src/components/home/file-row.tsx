@@ -2,6 +2,7 @@
 
 import { useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   MoreHorizontal,
   Pencil,
@@ -9,8 +10,11 @@ import {
   FileDown,
   Trash2,
   Folder,
+  FolderInput,
+  Home,
   Star,
   FileText,
+  Check,
 } from "lucide-react";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { getNameWithoutExtension } from "@/lib/file-utils";
@@ -22,6 +26,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -37,7 +44,10 @@ interface FileRowProps {
 
 export function FileRow({ file }: FileRowProps) {
   const router = useRouter();
+  const t = useTranslations("home");
+  const tc = useTranslations("common");
   const {
+    files,
     setCurrentFile,
     deleteFile,
     renameFile,
@@ -62,6 +72,17 @@ export function FileRow({ file }: FileRowProps) {
   );
   const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
+  const folders = files.filter((f) => f.isFolder && f.id !== file.id);
+
+  const handleMoveTo = async (folderId: string | null) => {
+    if (folderId === file.parentId) return;
+    try {
+      await moveFileToFolder(file.id, folderId);
+      toast.success(folderId ? t("fileMovedToFolder") : t("fileMovedToRoot"));
+    } catch {
+      toast.error(t("failedToMoveFile"));
+    }
+  };
 
   const handleOpen = () => {
     if (file.isFolder) {
@@ -98,9 +119,9 @@ export function FileRow({ file }: FileRowProps) {
     if (draggedFileId && draggedFileId !== file.id) {
       try {
         await moveFileToFolder(draggedFileId, file.id);
-        toast.success("File moved to folder");
+        toast.success(t("fileMovedToFolder"));
       } catch {
-        toast.error("Failed to move file");
+        toast.error(t("failedToMoveFile"));
       }
     }
   };
@@ -122,7 +143,7 @@ export function FileRow({ file }: FileRowProps) {
     try {
       await deleteFile(file.id);
     } catch {
-      toast.error("Failed to delete file");
+      toast.error(t("failedToDeleteFile"));
     }
     setShowDeleteModal(false);
   };
@@ -191,10 +212,10 @@ export function FileRow({ file }: FileRowProps) {
         {file.isFolder ? (
           <span className="hidden min-w-0 flex-1 truncate text-[13px] text-foreground/45 dark:text-foreground/55 md:block">
             {folderFileCount === 0
-              ? "Empty"
+              ? t("empty")
               : folderFileCount === 1
-                ? "1 file"
-                : `${folderFileCount} files`}
+                ? t("oneFile")
+                : t("nFiles", { count: folderFileCount })}
           </span>
         ) : preview ? (
           <span className="hidden min-w-0 flex-1 truncate text-[13px] text-foreground/45 dark:text-foreground/55 md:block">
@@ -236,7 +257,7 @@ export function FileRow({ file }: FileRowProps) {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 rounded-md"
-                aria-label="File options"
+                aria-label={file.isFolder ? t("folderOptions") : t("fileOptions")}
               >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
@@ -244,11 +265,11 @@ export function FileRow({ file }: FileRowProps) {
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={handleRenameOpen}>
                 <Pencil className="mr-2 h-4 w-4" />
-                Rename
+                {t("rename")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
                 <Share2 className="mr-2 h-4 w-4" />
-                Share
+                {t("share")}
               </DropdownMenuItem>
               {!file.isFolder && (
                 <DropdownMenuItem
@@ -263,24 +284,51 @@ export function FileRow({ file }: FileRowProps) {
                       file.isFavorite && "fill-amber-500 text-amber-500"
                     )}
                   />
-                  {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                  {file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
                 </DropdownMenuItem>
+              )}
+              {!file.isFolder && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <FolderInput className="mr-2 h-4 w-4" />
+                    {t("moveTo")}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onClick={() => handleMoveTo(null)}>
+                      <Home className="mr-2 h-4 w-4" />
+                      {t("root")}
+                      {file.parentId === null && (
+                        <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                      )}
+                    </DropdownMenuItem>
+                    {folders.length > 0 && <DropdownMenuSeparator />}
+                    {folders.map((folder) => (
+                      <DropdownMenuItem key={folder.id} onClick={() => handleMoveTo(folder.id)}>
+                        <Folder className="mr-2 h-4 w-4 text-amber-500/70" />
+                        {folder.name}
+                        {file.parentId === folder.id && (
+                          <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Export as
+                {t("exportAs")}
               </DropdownMenuLabel>
               <DropdownMenuItem onClick={() => handleExport("markdown")}>
                 <FileDown className="mr-2 h-4 w-4" />
-                Markdown
+                {t("markdownFormat")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleExport("pdf")}>
                 <FileDown className="mr-2 h-4 w-4" />
-                PDF
+                {t("pdfFormat")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleExport("docx")}>
                 <FileDown className="mr-2 h-4 w-4" />
-                Word
+                {t("wordFormat")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -288,7 +336,7 @@ export function FileRow({ file }: FileRowProps) {
                 className="text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete
+                {tc("delete")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -297,7 +345,7 @@ export function FileRow({ file }: FileRowProps) {
 
       {/* Rename modal */}
       <Modal open={showRenameModal} onClose={() => setShowRenameModal(false)}>
-        <ModalHeader>Rename Document</ModalHeader>
+        <ModalHeader>{t("renameDocument")}</ModalHeader>
         <input
           ref={renameInputRef}
           type="text"
@@ -314,26 +362,26 @@ export function FileRow({ file }: FileRowProps) {
         />
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowRenameModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button onClick={handleRenameSubmit} disabled={!renameDraft.trim()}>
-            Rename
+            {t("rename")}
           </Button>
         </ModalFooter>
       </Modal>
 
       {/* Delete confirmation */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Delete File</ModalHeader>
+        <ModalHeader>{t("deleteFile")}</ModalHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{displayName}&quot;? This action cannot be undone.
+          {t("deleteFileConfirm", { name: displayName || t("untitled") })}
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDelete}>
-            Delete
+            {tc("delete")}
           </Button>
         </ModalFooter>
       </Modal>

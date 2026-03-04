@@ -181,7 +181,10 @@ class UserService:
             last_sent = expires - timedelta(minutes=self.settings.email_verification_expire_minutes)
             elapsed = (datetime.now(UTC) - last_sent).total_seconds()
             if elapsed < 60:
-                return False, f"Please wait {int(60 - elapsed)} seconds before requesting another code"
+                return (
+                    False,
+                    f"Please wait {int(60 - elapsed)} seconds before requesting another code",
+                )
 
         # Generate new code
         code = "".join(random.choices(string.digits, k=6))

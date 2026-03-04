@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -166,29 +166,30 @@ def pytest_sessionfinish(session, exitstatus):
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create a database session for each test.
 
-    Tables are created once at import time (see _setup_schema below).
-    Truncates all tables after each test for clean state.
+    Tables are created once at import time (see _setup_schema above).
+    Uses transaction rollback instead of TRUNCATE for fast cleanup:
+    - A top-level transaction wraps each test
+    - session.commit() creates SAVEPOINTs (nested transactions) instead of real commits
+    - After the test, the outer transaction is rolled back, undoing all changes instantly
     """
-    async with TestingSessionLocal() as session:
-        yield session
+    connection = await test_engine.connect()
+    transaction = await connection.begin()
 
-    # Clean up test data by truncating all tables
-    async with test_engine.begin() as conn:
-        await conn.execute(
-            text("""
-            DO $$
-            DECLARE
-                tbl TEXT;
-            BEGIN
-                FOR tbl IN
-                    SELECT tablename FROM pg_tables
-                    WHERE schemaname = 'public'
-                LOOP
-                    EXECUTE format('TRUNCATE TABLE %I RESTART IDENTITY CASCADE', tbl);
-                END LOOP;
-            END $$;
-        """)
-        )
+    session = AsyncSession(bind=connection, expire_on_commit=False)
+
+    # Use nested transactions so session.commit() doesn't actually commit
+    await connection.begin_nested()
+
+    @event.listens_for(session.sync_session, "after_transaction_end")
+    def restart_savepoint(sync_session, sync_transaction):
+        if sync_transaction.nested and not sync_transaction._parent.nested:
+            connection.sync_connection.begin_nested()
+
+    yield session
+
+    await session.close()
+    await transaction.rollback()
+    await connection.close()
 
 
 @pytest.fixture(scope="function")

@@ -23,7 +23,12 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { type SearchResultItem } from "@/lib/api";
 import { markdownToHtml } from "@/lib/markdown";
 import { useDragPageTransition } from "@/hooks/use-drag-page-transition";
-import { TemplatePicker, type FileTemplate } from "@/components/sidebar/template-picker";
+import { useLocale, useTranslations } from "next-intl";
+import {
+  TemplatePicker,
+  getLocalizedFileName,
+  type FileTemplate,
+} from "@/components/sidebar/template-picker";
 import { TrashPanel } from "@/components/sidebar/trash-panel";
 import { FileCard } from "./file-card";
 import { FileRow } from "./file-row";
@@ -106,6 +111,8 @@ export function FileGrid({
     sortBy,
     setSortBy,
   } = useFileStore();
+  const locale = useLocale();
+  const t = useTranslations("home");
   const router = useRouter();
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
@@ -218,7 +225,7 @@ export function FileGrid({
 
   const handleCreate = async () => {
     try {
-      await createFile(`Untitled-${files.length + 1}.md`, "", currentFolderId);
+      await createFile(`${t("untitled")}-${files.length + 1}.md`, "", currentFolderId);
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
@@ -227,18 +234,16 @@ export function FileGrid({
 
   const handleTemplateSelect = async (template: FileTemplate) => {
     const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+    const localName = getLocalizedFileName(template.id, template.defaultFileName, locale);
     let counter = 0;
     let name: string;
     do {
       counter++;
-      name =
-        counter === 1
-          ? `${template.defaultFileName}.md`
-          : `${template.defaultFileName} ${counter}.md`;
+      name = counter === 1 ? `${localName}.md` : `${localName} ${counter}.md`;
     } while (currentFiles.some((f) => f.name === name));
 
     try {
-      const markdown = template.getContent();
+      const markdown = template.getContent(locale);
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
       const newId = await createFile(name, htmlContent, currentFolderId);
       router.push(`/editor/${newId}`);
@@ -251,7 +256,7 @@ export function FileGrid({
 
   const handleCreateFolder = async () => {
     const folders = getFolders();
-    const name = `New Folder ${folders.length + 1}`;
+    const name = t("newFolderN", { n: folders.length + 1 });
     try {
       await createFolder(name);
     } catch (error) {
@@ -270,10 +275,10 @@ export function FileGrid({
     e.target.value = "";
 
     setIsImporting(true);
-    const toastId = toast.loading(`Importing "${file.name}"...`);
+    const toastId = toast.loading(t("importing", { name: file.name }));
     try {
       await importFile(file, currentFolderId);
-      toast.success(`Imported "${file.name}" successfully`, { id: toastId });
+      toast.success(t("imported", { name: file.name }), { id: toastId });
     } catch (error) {
       const { title, description } = getErrorMessage(error);
       toast.error(title, { id: toastId, description });
@@ -301,9 +306,9 @@ export function FileGrid({
     if (draggedFileId) {
       try {
         await moveFileToFolder(draggedFileId, null);
-        toast.success("File moved to root");
+        toast.success(t("fileMovedToRoot"));
       } catch {
-        toast.error("Failed to move file");
+        toast.error(t("failedToMoveFile"));
       }
     }
   };
@@ -340,7 +345,7 @@ export function FileGrid({
 
   return (
     <motion.div
-      className="mx-auto mt-2 w-full max-w-5xl md:mt-14"
+      className="mx-auto mt-2 w-full max-w-5xl md:mt-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5, delay: 0.4 }}
@@ -348,31 +353,37 @@ export function FileGrid({
       {/* Breadcrumb navigation - only show when in a folder or searching */}
       {(currentFolderId || isSearchActive) && (
         <>
-          {/* Mobile: simple back-arrow + folder name + add button */}
-          <div className="mb-3 flex items-center gap-2 md:hidden">
+          {/* Mobile: back arrow + Home / FolderName breadcrumb */}
+          <div className="mb-3 flex items-center gap-1 md:hidden">
             <button
               onClick={() => setCurrentFolder(null)}
-              className="flex items-center gap-1 rounded-lg py-1.5 pr-2 text-[14px] text-muted-foreground active:opacity-70"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground active:opacity-70"
             >
-              <ChevronLeft className="h-4 w-4" />
-              <span>Back</span>
+              <ChevronLeft className="h-5 w-5" />
             </button>
             {currentFolder && !isSearchActive && (
               <>
-                <span className="flex-1 text-[14px] font-medium text-foreground/80">
+                <button
+                  onClick={() => setCurrentFolder(null)}
+                  className="text-[13px] text-muted-foreground/60 active:opacity-70"
+                >
+                  {t("allFiles")}
+                </button>
+                <span className="text-[13px] text-muted-foreground/30">/</span>
+                <span className="flex-1 truncate text-[13px] font-medium text-foreground/80">
                   {currentFolder.name}
                 </span>
                 <button
                   onClick={handleCreate}
                   className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 active:bg-accent/50"
-                  aria-label="New file in folder"
+                  aria-label={t("newDoc")}
                 >
                   <Plus className="h-4 w-4" />
                 </button>
               </>
             )}
             {isSearchActive && (
-              <span className="text-[14px] text-muted-foreground/70">Search Results</span>
+              <span className="text-[13px] text-muted-foreground/70">{t("searchResults")}</span>
             )}
           </div>
 
@@ -391,7 +402,7 @@ export function FileGrid({
               )}
             >
               <Home className="h-4 w-4" />
-              <span>All Files</span>
+              <span>{t("allFiles")}</span>
             </button>
             {currentFolder && !isSearchActive && (
               <>
@@ -406,7 +417,7 @@ export function FileGrid({
               <>
                 <ChevronRight className="h-4 w-4 text-muted-foreground/50 dark:text-muted-foreground/60" />
                 <span className="text-muted-foreground/70 dark:text-muted-foreground/80">
-                  Search Results
+                  {t("searchResults")}
                 </span>
               </>
             )}
@@ -414,70 +425,68 @@ export function FileGrid({
         </>
       )}
 
-      {/* Section header (hidden on mobile — tabs + compact header provide this) */}
-      <div className="mb-6 hidden items-center justify-between gap-4 md:flex">
-        <div className="flex items-center gap-3">
-          <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 dark:text-muted-foreground/70">
-            {isSearchActive ? "Results" : currentFolder ? currentFolder.name : "All Documents"}
+      {/* Unified toolbar row (hidden on mobile — tabs + compact header provide this) */}
+      <div className="mb-4 hidden items-center justify-between gap-4 md:flex">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[13px] font-medium text-foreground/70">
+            {isSearchActive ? t("results") : currentFolder ? currentFolder.name : t("documents")}
           </h2>
-          <span className="text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60">
+          <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground/60">
             {isSearchActive || currentFolder
               ? displayFiles.length
               : (totalDocs ?? displayFiles.length)}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* View toggle — hide during search */}
+        <div className="flex items-center gap-1.5">
+          {/* View toggle — segmented control style */}
           {!isSearchActive && (
             <>
-              <div className="hidden items-center gap-0.5 rounded-lg p-0.5 md:flex">
-                <Tooltip content="Grid view" side="bottom">
+              <div className="hidden items-center gap-0 rounded-lg bg-muted/40 p-0.5 md:flex">
+                <Tooltip content={t("gridView")} side="bottom">
                   <button
                     onClick={() => setHomeViewMode("grid")}
                     className={cn(
-                      "rounded-md p-1.5 transition-colors",
+                      "rounded-md p-1.5 transition-all",
                       homeViewMode === "grid"
-                        ? "text-foreground"
-                        : "text-muted-foreground/50 hover:text-muted-foreground dark:text-muted-foreground/60"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground/50 hover:text-muted-foreground"
                     )}
-                    aria-label="Grid view"
+                    aria-label={t("gridView")}
                   >
-                    <LayoutGrid className="h-4 w-4" />
+                    <LayoutGrid className="h-3.5 w-3.5" />
                   </button>
                 </Tooltip>
-                <Tooltip content="List view" side="bottom">
+                <Tooltip content={t("listView")} side="bottom">
                   <button
                     onClick={() => setHomeViewMode("list")}
                     className={cn(
-                      "rounded-md p-1.5 transition-colors",
+                      "rounded-md p-1.5 transition-all",
                       homeViewMode === "list"
-                        ? "text-foreground"
-                        : "text-muted-foreground/50 hover:text-muted-foreground dark:text-muted-foreground/60"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground/50 hover:text-muted-foreground"
                     )}
-                    aria-label="List view"
+                    aria-label={t("listView")}
                   >
-                    <List className="h-4 w-4" />
+                    <List className="h-3.5 w-3.5" />
                   </button>
                 </Tooltip>
               </div>
 
               {/* Sort dropdown */}
               <HomeSortDropdown sortBy={sortBy} setSortBy={setSortBy} />
-
-              <div className="hidden h-4 w-px bg-border/50 md:block" />
             </>
           )}
 
           {/* Trash */}
           {!hideActions && (
-            <Tooltip content="Trash" side="bottom">
+            <Tooltip content={t("trash")} side="bottom">
               <button
                 onClick={() => setIsTrashOpen(true)}
-                className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:text-foreground dark:text-muted-foreground/60"
-                aria-label="Trash"
+                className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:text-foreground"
+                aria-label={t("trash")}
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </Tooltip>
           )}
@@ -517,7 +526,7 @@ export function FileGrid({
         >
           <SearchX className="mb-4 h-10 w-10 text-muted-foreground/40 dark:text-muted-foreground/50" />
           <p className="text-sm text-muted-foreground/60 dark:text-muted-foreground/70">
-            No documents match &quot;{searchQuery}&quot;
+            {t("noMatchQuery", { query: searchQuery })}
           </p>
         </motion.div>
       )}
@@ -668,7 +677,7 @@ export function FileGrid({
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
                 className="rounded-md p-2 text-muted-foreground/40 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
-                aria-label="Previous page"
+                aria-label={t("previousPage")}
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -698,7 +707,7 @@ export function FileGrid({
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={page === totalPages - 1}
                 className="rounded-md p-2 text-muted-foreground/40 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
-                aria-label="Next page"
+                aria-label={t("nextPage")}
               >
                 <ChevronRight className="h-4 w-4" />
               </button>

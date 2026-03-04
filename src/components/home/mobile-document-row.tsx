@@ -1,19 +1,22 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Star, Share2, Trash2, Folder, FileText } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { Star, Share2, Trash2, Folder, FileText, FolderInput } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { getNameWithoutExtension } from "@/lib/file-utils";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { ShareDialog } from "@/components/share/share-dialog";
+import { MoveToFolderSheet } from "@/components/home/move-to-folder-sheet";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { haptics } from "@/lib/haptics";
 import { toast } from "sonner";
 import { useSwipeToReveal } from "@/hooks/use-swipe-to-reveal";
 import { MOBILE_V2 } from "@/lib/constants";
+import { MobileContextMenu } from "./mobile-context-menu";
 
 interface MobileDocumentRowProps {
   file: FileItem;
@@ -40,20 +43,55 @@ function highlightQuery(text: string, query: string) {
 
 export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps) {
   const router = useRouter();
+  const t = useTranslations("home");
+  const tc = useTranslations("common");
   const { setCurrentFile, deleteFile, toggleFavorite, setCurrentFolder, getFilesInFolder } =
     useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showMoveSheet, setShowMoveSheet] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+
+  // Long-press detection
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress = useRef(false);
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const handlePointerDown = useCallback(() => {
+    didLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      haptics.light();
+      setShowContextMenu(true);
+    }, 500);
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    clearLongPress();
+  }, [clearLongPress]);
+
+  const handlePointerMove = useCallback(() => {
+    clearLongPress();
+  }, [clearLongPress]);
 
   const displayName = file.isFolder ? file.name : getNameWithoutExtension(file.name);
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
 
   const swipe = useSwipeToReveal({
     id: file.id,
-    rightActionWidth: MOBILE_V2.ROW_SWIPE.TRIPLE_ACTION_WIDTH,
+    rightActionWidth: file.isFolder
+      ? MOBILE_V2.ROW_SWIPE.TRIPLE_ACTION_WIDTH
+      : MOBILE_V2.ROW_SWIPE.QUAD_ACTION_WIDTH,
   });
 
   const handleOpen = useCallback(() => {
+    if (didLongPress.current) return;
     if (swipe.isRevealed) {
       swipe.close();
       return;
@@ -71,7 +109,7 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
       await deleteFile(file.id);
       haptics.success();
     } catch {
-      toast.error("Failed to delete file");
+      toast.error(t("failedToDeleteFile"));
     }
     setShowDeleteModal(false);
   };
@@ -85,6 +123,11 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
   const handleShare = () => {
     swipe.close();
     setShowShareDialog(true);
+  };
+
+  const handleMoveTap = () => {
+    swipe.close();
+    setShowMoveSheet(true);
   };
 
   const handleDeleteTap = () => {
@@ -107,21 +150,30 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
               "flex w-16 items-center justify-center text-white active:opacity-80",
               file.isFavorite ? "bg-amber-500" : "bg-amber-500/80"
             )}
-            aria-label={file.isFavorite ? "Remove from favorites" : "Add to favorites"}
+            aria-label={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
           >
             <Star className={cn("h-5 w-5", file.isFavorite && "fill-white")} />
           </button>
+          {!file.isFolder && (
+            <button
+              onClick={handleMoveTap}
+              className="flex w-16 items-center justify-center bg-violet-500 text-white active:opacity-80"
+              aria-label={t("moveTo")}
+            >
+              <FolderInput className="h-5 w-5" />
+            </button>
+          )}
           <button
             onClick={handleShare}
             className="flex w-16 items-center justify-center bg-blue-500 text-white active:opacity-80"
-            aria-label="Share"
+            aria-label={t("share")}
           >
             <Share2 className="h-5 w-5" />
           </button>
           <button
             onClick={handleDeleteTap}
             className="flex w-16 items-center justify-center bg-red-500 text-white active:opacity-80"
-            aria-label="Delete"
+            aria-label={tc("delete")}
           >
             <Trash2 className="h-5 w-5" />
           </button>
@@ -135,6 +187,10 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
           )}
           {...swipe.dragProps}
           onClick={handleOpen}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onPointerMove={handlePointerMove}
         >
           {/* Icon */}
           {file.isFolder ? (
@@ -181,11 +237,11 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
                     {highlightQuery(searchMatch.snippet, searchMatch.query)}
                   </span>
                 ) : folderFileCount === 0 ? (
-                  "Empty folder"
+                  t("emptyFolder")
                 ) : folderFileCount === 1 ? (
-                  "1 file"
+                  t("oneFile")
                 ) : (
-                  `${folderFileCount} files`
+                  t("nFiles", { count: folderFileCount })
                 )}
               </p>
             )}
@@ -200,18 +256,18 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
 
       {/* Delete confirmation */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Delete {file.isFolder ? "Folder" : "File"}</ModalHeader>
+        <ModalHeader>{file.isFolder ? t("deleteFolder") : t("deleteFile")}</ModalHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{displayName}&quot;?
-          {file.isFolder && " This will also delete all files inside."} This action cannot be
-          undone.
+          {file.isFolder
+            ? t("deleteFolderConfirm", { name: displayName })
+            : t("deleteFileConfirm", { name: displayName })}
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDelete}>
-            Delete
+            {tc("delete")}
           </Button>
         </ModalFooter>
       </Modal>
@@ -223,6 +279,23 @@ export function MobileDocumentRow({ file, searchMatch }: MobileDocumentRowProps)
         fileId={file.id}
         fileName={displayName}
         isFolder={file.isFolder}
+      />
+
+      {/* Move to folder sheet */}
+      {!file.isFolder && (
+        <MoveToFolderSheet
+          open={showMoveSheet}
+          onClose={() => setShowMoveSheet(false)}
+          fileId={file.id}
+          currentParentId={file.parentId}
+        />
+      )}
+
+      {/* Long-press context menu */}
+      <MobileContextMenu
+        file={file}
+        open={showContextMenu}
+        onClose={() => setShowContextMenu(false)}
       />
     </>
   );

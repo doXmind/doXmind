@@ -90,8 +90,12 @@ def upgrade() -> None:
     )
     op.execute("DROP INDEX IF EXISTS ix_reactions_comment_id")
     op.execute("DROP INDEX IF EXISTS ix_reactions_user_id")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_comment_reactions_comment_id ON comment_reactions (comment_id)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_comment_reactions_user_id ON comment_reactions (user_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_comment_reactions_comment_id ON comment_reactions (comment_id)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_comment_reactions_user_id ON comment_reactions (user_id)"
+    )
     op.alter_column(
         "comments",
         "created_at",
@@ -106,7 +110,9 @@ def upgrade() -> None:
         nullable=True,
         existing_server_default=sa.text("now()"),
     )
-    op.execute("CREATE INDEX IF NOT EXISTS ix_document_shares_is_published ON document_shares (is_published)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_document_shares_is_published ON document_shares (is_published)"
+    )
     op.alter_column(
         "files",
         "position",
@@ -152,9 +158,15 @@ def upgrade() -> None:
     op.create_index(
         "idx_telemetry_user_type", "telemetry_events", ["user_id", "event_type"], unique=False
     )
-    op.execute("CREATE INDEX IF NOT EXISTS ix_telemetry_events_created_at ON telemetry_events (created_at)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_telemetry_events_event_type ON telemetry_events (event_type)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_telemetry_events_user_id ON telemetry_events (user_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_telemetry_events_created_at ON telemetry_events (created_at)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_telemetry_events_event_type ON telemetry_events (event_type)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_telemetry_events_user_id ON telemetry_events (user_id)"
+    )
     op.alter_column(
         "user_telemetry_settings",
         "product_improvement_enabled",

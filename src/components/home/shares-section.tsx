@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import {
   Eye,
   Globe,
@@ -29,22 +30,22 @@ interface SharesSectionProps {
 }
 
 function EmptyState() {
+  const t = useTranslations("home");
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
         <Link2 className="h-6 w-6 text-muted-foreground/40" />
       </div>
       <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-foreground">
-        No active shares
+        {t("noActiveShares")}
       </h3>
-      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">
-        Create share links from your documents to see them here.
-      </p>
+      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">{t("sharesDesc")}</p>
     </div>
   );
 }
 
 export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
+  const t = useTranslations("home");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [editingShare, setEditingShare] = useState<EditableShareItem | null>(null);
   const [revokingShareId, setRevokingShareId] = useState<string | null>(null);
@@ -73,17 +74,20 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
   const [shareInvites, setShareInvites] = useState<Record<string, InviteEntry[]>>({});
   const [invitesLoading, setInvitesLoading] = useState<string | null>(null);
 
-  const fetchInvites = useCallback(async (shareId: string) => {
-    setInvitesLoading(shareId);
-    try {
-      const { invites } = await api.listInvites(shareId);
-      setShareInvites((prev) => ({ ...prev, [shareId]: invites }));
-    } catch {
-      toast.error("Failed to load invited users");
-    } finally {
-      setInvitesLoading(null);
-    }
-  }, []);
+  const fetchInvites = useCallback(
+    async (shareId: string) => {
+      setInvitesLoading(shareId);
+      try {
+        const { invites } = await api.listInvites(shareId);
+        setShareInvites((prev) => ({ ...prev, [shareId]: invites }));
+      } catch {
+        toast.error(t("failedToInvite"));
+      } finally {
+        setInvitesLoading(null);
+      }
+    },
+    [t]
+  );
 
   function toggleInvitePanel(shareId: string) {
     if (expandedShareId === shareId) {
@@ -111,9 +115,9 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
         ...prev,
         [shareId]: [...(prev[shareId] || []), newEntry],
       }));
-      toast.success(`${user.username || user.email} invited`);
+      toast.success(t("userInvited", { name: user.username || user.email }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to invite user");
+      toast.error(err instanceof Error ? err.message : t("failedToInvite"));
     }
   }
 
@@ -124,9 +128,9 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
         ...prev,
         [shareId]: (prev[shareId] || []).filter((i) => i.user_id !== userId),
       }));
-      toast.success("User removed");
+      toast.success(t("userRemoved"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove user");
+      toast.error(err instanceof Error ? err.message : t("failedToRemoveUser"));
     }
   }
 
@@ -148,9 +152,9 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
       await api.revokeShare(shareId);
       onSharesChange((prev) => prev.filter((s) => s.id !== shareId));
       if (expandedShareId === shareId) setExpandedShareId(null);
-      toast.success("Share link revoked");
+      toast.success(t("shareLinkRevoked"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to revoke");
+      toast.error(err instanceof Error ? err.message : t("failedToRevoke"));
     }
   };
 
@@ -170,7 +174,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate text-[14px] font-medium text-foreground">
-                    {share.title || share.file_name || "Untitled"}
+                    {share.title || share.file_name || t("untitled")}
                   </h3>
                   <div className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground/60">
                     <span className="flex items-center gap-1">
@@ -179,7 +183,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                       ) : (
                         <Lock className="h-3 w-3" />
                       )}
-                      {share.visibility === "public" ? "Public" : "Private"}
+                      {share.visibility === "public" ? t("publicLabel") : t("privateLabel")}
                     </span>
                     <span className="text-muted-foreground/30">&middot;</span>
                     <span className="flex items-center gap-1">
@@ -207,7 +211,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                           ? "bg-accent text-foreground"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
-                      title="Manage invited users"
+                      title={t("manageInvitedUsers")}
                     >
                       <Users className="h-3.5 w-3.5" />
                     </button>
@@ -217,13 +221,14 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                       onClick={() =>
                         setEditingShare({
                           shareId: share.id,
-                          title: share.title || share.file_name || "Untitled",
+                          title: share.title || share.file_name || t("untitled"),
                           description: share.description ?? null,
                           tags: share.tags ?? [],
+                          allowFork: share.allow_fork,
                         })
                       }
                       className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      title="Edit description & tags"
+                      title={t("editDescriptionTags")}
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
@@ -233,7 +238,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    title="Open share link"
+                    title={t("openShareLink")}
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
@@ -241,7 +246,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                     onClick={() => setRevokingShareId(share.id)}
                     disabled={actionLoading === share.id}
                     className="rounded-lg p-1.5 text-destructive/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    title="Revoke share link"
+                    title={t("revokeShareLink")}
                   >
                     {actionLoading === share.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -258,7 +263,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                   {isLoadingInvites ? (
                     <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Loading users...
+                      {t("loadingUsers")}
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -274,7 +279,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                       />
                       {invites.length === 0 && (
                         <p className="py-1 text-[12px] text-muted-foreground">
-                          No users invited yet.
+                          {t("noUsersInvited")}
                         </p>
                       )}
                     </div>
@@ -303,6 +308,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                       title: updated.title,
                       description: updated.description,
                       tags: updated.tags,
+                      allow_fork: updated.allow_fork,
                     }
                   : s
               )
@@ -318,9 +324,9 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
         onConfirm={() =>
           revokingShareId && handleAction(revokingShareId, () => handleRevoke(revokingShareId))
         }
-        title="Revoke share link?"
-        description="This share link will be permanently deactivated. Anyone with the link will no longer be able to access the document."
-        confirmLabel="Revoke"
+        title={t("revokeConfirm")}
+        description={t("revokeDesc")}
+        confirmLabel={t("revoke")}
       />
     </>
   );

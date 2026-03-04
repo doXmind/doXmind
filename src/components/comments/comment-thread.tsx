@@ -13,14 +13,15 @@ interface CommentThreadProps {
   comment: CommentResponse;
   shareToken: string;
   depth: number;
+  parentUsername?: string;
 }
 
 const MAX_DEPTH = 3;
 
 function CommentSkeleton() {
   return (
-    <div className="flex gap-2.5">
-      <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+    <div className="flex gap-3">
+      <Skeleton className="h-9 w-9 shrink-0 rounded-full sm:h-10 sm:w-10" />
       <div className="flex-1 space-y-2">
         <SkeletonLine className="h-3 w-24" />
         <SkeletonLine className="h-3 w-full" />
@@ -30,7 +31,7 @@ function CommentSkeleton() {
   );
 }
 
-export function CommentThread({ comment, shareToken, depth }: CommentThreadProps) {
+export function CommentThread({ comment, shareToken, depth, parentUsername }: CommentThreadProps) {
   const t = useTranslations("comments");
   const user = useAuthStore((s) => s.user);
   const { addComment, loadReplies, toggleReaction, editComment, deleteComment } =
@@ -78,21 +79,27 @@ export function CommentThread({ comment, shareToken, depth }: CommentThreadProps
 
   const canReply = user && depth < MAX_DEPTH;
 
+  // Thread line shows when replies are expanded and visible
+  const hasVisibleReplies = showReplies && !loadingReplies && replies.length > 0;
+
   return (
-    <div className={depth > 0 ? "ml-6 border-l border-border/40 pl-4" : ""}>
+    <div>
       <CommentItem
         comment={comment}
         onReply={canReply ? () => setIsReplying(!isReplying) : undefined}
         onReact={user ? handleReaction : undefined}
         onEdit={user?.id === comment.author.id ? handleEdit : undefined}
         onDelete={user?.id === comment.author.id ? handleDelete : undefined}
+        showThreadLine={hasVisibleReplies}
+        replyingToUsername={depth > 0 ? parentUsername : undefined}
+        replyCount={comment.reply_count}
       />
 
       {/* Reply count button */}
       {comment.reply_count > 0 && (
         <button
           onClick={handleShowReplies}
-          className="mt-2 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="ml-12 mt-1 text-[13px] font-medium text-muted-foreground/60 transition-colors hover:text-foreground sm:ml-[52px]"
         >
           {showReplies
             ? t("hideReplies")
@@ -104,14 +111,14 @@ export function CommentThread({ comment, shareToken, depth }: CommentThreadProps
 
       {/* Depth limit indicator */}
       {user && depth >= MAX_DEPTH && !comment.is_deleted && (
-        <p className="mt-1.5 pl-8 text-[11px] text-muted-foreground/40">
+        <p className="ml-12 mt-1.5 text-[11px] text-muted-foreground/40 sm:ml-[52px]">
           {t("threadLimitReached")}
         </p>
       )}
 
-      {/* Reply composer */}
+      {/* Reply composer — indented to align with replies */}
       {isReplying && (
-        <div className="ml-6 mt-3">
+        <div className="ml-12 mt-3 sm:ml-[52px]">
           <CommentComposer
             onSubmit={handleReply}
             placeholder={t("replyToUser", { name: comment.author.username || "user" })}
@@ -123,7 +130,7 @@ export function CommentThread({ comment, shareToken, depth }: CommentThreadProps
 
       {/* Reply loading skeletons */}
       {loadingReplies && (
-        <div className="ml-6 mt-4 space-y-4 border-l border-border/40 pl-4">
+        <div className="ml-12 mt-4 space-y-4 sm:ml-[52px]">
           <CommentSkeleton />
           <CommentSkeleton />
         </div>
@@ -131,13 +138,14 @@ export function CommentThread({ comment, shareToken, depth }: CommentThreadProps
 
       {/* Replies */}
       {showReplies && !loadingReplies && (
-        <div className="mt-4 space-y-4">
+        <div className="ml-12 mt-3 space-y-3 sm:ml-[52px]">
           {replies.map((reply) => (
             <CommentThread
               key={reply.id}
               comment={reply}
               shareToken={shareToken}
               depth={depth + 1}
+              parentUsername={comment.author.username || undefined}
             />
           ))}
         </div>

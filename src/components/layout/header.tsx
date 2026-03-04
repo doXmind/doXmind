@@ -8,6 +8,7 @@ import { Logo } from "@/components/ui/logo";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ThemeQuickPicker } from "@/components/shared/shared-theme-toggle";
 import { UserMenu } from "./user-menu";
+import { NotificationBell } from "./notification-bell";
 import { useAuthStore } from "@/stores/auth-store";
 import { useTranslations } from "next-intl";
 
@@ -61,6 +62,7 @@ export function Header() {
       </div>
       <div className="flex items-center gap-1">
         <ThemeQuickPicker />
+        {user && <NotificationBell />}
         {user ? (
           <>
             <div className="mx-1 h-5 w-px bg-border/40" />

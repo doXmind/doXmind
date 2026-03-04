@@ -28,6 +28,7 @@ from api import (
     import_file,
     kb_agent,
     knowledge_base,
+    notifications,
     review,
     shares,
     skills,
@@ -236,7 +237,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     # Restrict to specific HTTP methods
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     # Restrict to specific headers
     allow_headers=[
         "Content-Type",
@@ -285,6 +286,7 @@ app.include_router(data_files.router, tags=["data_files"])
 app.include_router(shares.router, prefix="/api/shares", tags=["shares"])
 app.include_router(community.router, prefix="/api/community", tags=["community"])
 app.include_router(comments.router, prefix="/api/comments", tags=["comments"])
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])

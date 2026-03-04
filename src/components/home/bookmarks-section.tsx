@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { Bookmark, Eye, ExternalLink, FolderOpen, FileText, Trash2 } from "lucide-react";
 import { type CommunityItem, api } from "@/lib/api";
 import { toast } from "sonner";
@@ -15,22 +16,22 @@ interface BookmarksSectionProps {
 }
 
 function EmptyState() {
+  const t = useTranslations("home");
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
         <Bookmark className="h-6 w-6 text-muted-foreground/40" />
       </div>
       <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-foreground">
-        No bookmarks
+        {t("noBookmarks")}
       </h3>
-      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">
-        Save documents from the community to find them here.
-      </p>
+      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">{t("bookmarksSaveDesc")}</p>
     </div>
   );
 }
 
 export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSectionProps) {
+  const t = useTranslations("home");
   const [page, setPage] = useState(0);
   const pageSize = useGridPageSize();
   const totalPages = Math.max(1, Math.ceil(bookmarks.length / pageSize));
@@ -54,12 +55,12 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
       try {
         await api.toggleBookmark(shareToken);
         onBookmarksChange((prev) => prev.filter((b) => b.share_token !== shareToken));
-        toast.success("Bookmark removed");
+        toast.success(t("bookmarkRemoved"));
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to remove bookmark");
+        toast.error(err instanceof Error ? err.message : t("failedToRemoveBookmark"));
       }
     },
-    [onBookmarksChange]
+    [onBookmarksChange, t]
   );
 
   if (bookmarks.length === 0) return <EmptyState />;
@@ -94,7 +95,7 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
             {/* Content */}
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-[14px] font-medium text-foreground">
-                {item.title || "Untitled"}
+                {item.title || t("untitled")}
               </h3>
               <div className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground/60">
                 <span className="flex items-center gap-1">
@@ -103,7 +104,7 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
                   ) : (
                     <FileText className="h-3 w-3" />
                   )}
-                  {item.owner.username || "Unknown"}
+                  {item.owner.username || t("unknown")}
                 </span>
                 <span className="text-muted-foreground/30">&middot;</span>
                 <span className="flex items-center gap-1">
@@ -127,7 +128,7 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
                 href={`/community/${item.share_token}`}
                 onClick={(e) => e.stopPropagation()}
                 className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="Open"
+                title={t("open")}
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
@@ -137,7 +138,7 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
                   setRemovingToken(item.share_token);
                 }}
                 className="rounded-lg p-1.5 text-destructive/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                title="Remove bookmark"
+                title={t("removeBookmark")}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -151,9 +152,9 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
         open={!!removingToken}
         onClose={() => setRemovingToken(null)}
         onConfirm={() => removingToken && handleRemove(removingToken)}
-        title="Remove bookmark?"
-        description="This bookmark will be removed from your saved list."
-        confirmLabel="Remove"
+        title={t("removeBookmarkConfirm")}
+        description={t("removeBookmarkDesc")}
+        confirmLabel={t("remove")}
       />
     </>
   );

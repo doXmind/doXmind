@@ -5,10 +5,11 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { MarkdownContent } from "@/components/comments/markdown-content";
-import { Eye, GitFork, Bookmark, Clock, MessageSquare, Pencil } from "lucide-react";
+import { Eye, Folder, GitFork, Bookmark, Clock, MessageSquare, Pencil } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { ShareReactions } from "./share-reactions";
 
 interface CommunityCardProps {
   item: CommunityItem;
@@ -69,7 +70,7 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
           <button
             onClick={handleBookmarkClick}
             className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground/50 opacity-0 transition-all duration-150 hover:bg-muted hover:text-foreground group-hover:opacity-100"
-            aria-label={isBookmarked ? "Remove bookmark" : "Bookmark"}
+            aria-label={isBookmarked ? t("removeBookmark") : t("bookmark")}
           >
             <Bookmark
               className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
@@ -105,7 +106,10 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
         </div>
 
         {/* Title */}
-        <h3 className="line-clamp-2 pr-6 text-[15px] font-semibold leading-snug text-foreground">
+        <h3 className="line-clamp-2 flex items-center gap-2 pr-6 text-[15px] font-semibold leading-snug text-foreground">
+          {item.is_folder && (
+            <Folder className="h-4 w-4 flex-shrink-0 text-amber-500 dark:text-amber-400" />
+          )}
           {item.title}
         </h3>
 
@@ -124,6 +128,30 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
             className="mt-1.5 line-clamp-3 [&_*]:text-[12px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
           />
         )}
+
+        {/* Folder children preview */}
+        {item.is_folder && !(item.content_preview && item.content_preview.trim().length > 0) && (
+          <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground/60">
+            {item.child_previews && item.child_previews.length > 0 ? (
+              <>
+                {item.child_previews.map((c) => c.name.replace(/\.md$/i, "")).join(" · ")}
+                {(item.item_count || 0) > 3 && (
+                  <span className="text-muted-foreground/40">
+                    {" "}
+                    · +{(item.item_count || 0) - 3} {t("more")}
+                  </span>
+                )}
+              </>
+            ) : (
+              t("folderEmpty")
+            )}
+          </p>
+        )}
+
+        {/* Reactions */}
+        <div className="mt-2">
+          <ShareReactions shareToken={item.share_token} reactions={item.reactions} />
+        </div>
 
         {/* Spacer */}
         <div className="flex-1" />

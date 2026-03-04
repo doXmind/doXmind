@@ -115,7 +115,9 @@ export function TocNodeView({ editor }: NodeViewProps) {
                   heading.level === 1 && "font-medium text-foreground",
                   heading.level === 2 && "pl-6 text-foreground/80",
                   heading.level === 3 && "pl-10 text-muted-foreground",
-                  heading.level === 4 && "pl-14 text-xs text-muted-foreground"
+                  heading.level === 4 && "pl-14 text-xs text-muted-foreground",
+                  heading.level === 5 && "pl-[4.5rem] text-xs text-muted-foreground",
+                  heading.level === 6 && "pl-20 text-xs text-muted-foreground"
                 )}
               >
                 {heading.text}

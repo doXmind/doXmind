@@ -2,6 +2,7 @@
 
 import { useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   MoreHorizontal,
   Pencil,
@@ -10,7 +11,10 @@ import {
   Trash2,
   Folder,
   FolderOpen,
+  FolderInput,
+  Home,
   Star,
+  Check,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn, formatRelativeDate } from "@/lib/utils";
@@ -23,6 +27,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -58,7 +65,10 @@ function highlightQuery(text: string, query: string) {
 
 export function FileCard({ file, index, searchMatch, onResultClick }: FileCardProps) {
   const router = useRouter();
+  const t = useTranslations("home");
+  const tc = useTranslations("common");
   const {
+    files,
     setCurrentFile,
     deleteFile,
     renameFile,
@@ -84,6 +94,17 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
   );
   const wordCount = file.wordCount;
   const folderFileCount = file.isFolder ? getFilesInFolder(file.id).length : 0;
+  const folders = files.filter((f) => f.isFolder && f.id !== file.id);
+
+  const handleMoveTo = async (folderId: string | null) => {
+    if (folderId === file.parentId) return;
+    try {
+      await moveFileToFolder(file.id, folderId);
+      toast.success(folderId ? t("fileMovedToFolder") : t("fileMovedToRoot"));
+    } catch {
+      toast.error(t("failedToMoveFile"));
+    }
+  };
 
   const handleOpen = () => {
     if (file.isFolder) {
@@ -118,7 +139,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     try {
       await deleteFile(file.id);
     } catch {
-      toast.error("Failed to delete file");
+      toast.error(t("failedToDeleteFile"));
     }
     setShowDeleteModal(false);
   };
@@ -171,9 +192,9 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     if (draggedFileId && draggedFileId !== file.id) {
       try {
         await moveFileToFolder(draggedFileId, file.id);
-        toast.success("File moved to folder");
+        toast.success(t("fileMovedToFolder"));
       } catch {
-        toast.error("Failed to move file");
+        toast.error(t("failedToMoveFile"));
       }
     }
   };
@@ -201,16 +222,17 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
         >
           <div
             className={cn(
-              "relative flex min-h-[200px] flex-col rounded-2xl border bg-card p-5",
+              "relative flex min-h-[200px] flex-col overflow-hidden rounded-2xl border bg-card",
               "border-border/50 transition-all duration-300",
               "hover:border-border hover:shadow-lg hover:shadow-black/[0.04]",
               "dark:hover:shadow-black/[0.15]",
-              isDragOver && "border-amber-400/50 ring-2 ring-amber-400/30 dark:ring-amber-500/25"
+              isDragOver &&
+                "border-amber-400/50 bg-amber-50/30 ring-2 ring-amber-400/30 dark:bg-amber-900/10 dark:ring-amber-500/25"
             )}
           >
             {/* Menu - top right */}
             <div
-              className="absolute right-2 top-2 z-[2] flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+              className="absolute right-2 top-3 z-[2] flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
               onClick={(e) => e.stopPropagation()}
             >
               <DropdownMenu
@@ -226,7 +248,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 rounded-md"
-                    aria-label="Folder options"
+                    aria-label={t("folderOptions")}
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
@@ -234,11 +256,11 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
                     <Share2 className="mr-2 h-4 w-4" />
-                    Share
+                    {t("share")}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleRenameOpen}>
                     <Pencil className="mr-2 h-4 w-4" />
-                    Rename
+                    {t("rename")}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -246,42 +268,49 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
                     className="text-destructive"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
+                    {tc("delete")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
 
             {/* Folder icon - large and centered */}
-            <div className="flex flex-1 items-center justify-center pb-4 pt-6">
-              {isHovering ? (
-                <FolderOpen
-                  className="h-16 w-16 text-amber-500/70 transition-all dark:text-amber-400/60"
-                  strokeWidth={1.5}
-                />
-              ) : (
-                <Folder
-                  className="h-16 w-16 text-amber-500/70 transition-all dark:text-amber-400/60"
-                  strokeWidth={1.5}
-                />
-              )}
+            <div className="flex flex-1 items-center justify-center pb-4 pt-4">
+              <div className="relative">
+                {isHovering ? (
+                  <FolderOpen
+                    className="h-14 w-14 text-amber-500/70 transition-all dark:text-amber-400/60"
+                    strokeWidth={1.5}
+                  />
+                ) : (
+                  <Folder
+                    className="h-14 w-14 text-amber-500/70 transition-all dark:text-amber-400/60"
+                    strokeWidth={1.5}
+                  />
+                )}
+                {folderFileCount > 0 && (
+                  <span className="absolute -right-1 -top-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-400">
+                    {folderFileCount}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Content area */}
-            <div className="flex flex-col">
+            <div className="flex flex-col px-5 pb-4">
               {/* Title */}
               <h3 className="line-clamp-2 text-sm font-semibold leading-snug tracking-tight text-foreground/90">
                 {displayName}
               </h3>
 
               {/* Footer: file count + date */}
-              <div className="mt-auto flex items-center justify-between pt-4">
+              <div className="mt-2 flex items-center justify-between">
                 <span className="text-xs tracking-wide text-foreground/45 dark:text-foreground/55">
                   {folderFileCount === 0
-                    ? "Empty"
+                    ? t("empty")
                     : folderFileCount === 1
-                      ? "1 file"
-                      : `${folderFileCount} files`}
+                      ? t("oneFile")
+                      : t("nFiles", { count: folderFileCount })}
                 </span>
                 <span className="text-xs text-foreground/40 dark:text-foreground/50">
                   {formatRelativeDate(file.updatedAt)}
@@ -293,7 +322,7 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
 
         {/* Rename modal */}
         <Modal open={showRenameModal} onClose={() => setShowRenameModal(false)}>
-          <ModalHeader>Rename Folder</ModalHeader>
+          <ModalHeader>{t("renameFolder")}</ModalHeader>
           <input
             ref={renameInputRef}
             type="text"
@@ -310,27 +339,26 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
           />
           <ModalFooter>
             <Button variant="ghost" onClick={() => setShowRenameModal(false)}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button onClick={handleRenameSubmit} disabled={!renameDraft.trim()}>
-              Rename
+              {t("rename")}
             </Button>
           </ModalFooter>
         </Modal>
 
         {/* Delete confirmation */}
         <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-          <ModalHeader>Delete Folder</ModalHeader>
+          <ModalHeader>{t("deleteFolder")}</ModalHeader>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete &quot;{displayName}&quot;? This will also delete all
-            files inside. This action cannot be undone.
+            {t("deleteFolderConfirm", { name: displayName })}
           </p>
           <ModalFooter>
             <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button variant="destructive" onClick={handleDelete}>
-              Delete
+              {tc("delete")}
             </Button>
           </ModalFooter>
         </Modal>
@@ -367,136 +395,186 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
       >
         <div
           className={cn(
-            "relative flex h-full min-h-[200px] flex-col rounded-2xl border bg-card p-5",
+            "relative flex h-full min-h-[200px] flex-col overflow-hidden rounded-2xl border bg-card",
             "border-border/50 transition-all duration-300",
             "hover:border-border hover:shadow-lg hover:shadow-black/[0.04]",
             "dark:hover:shadow-black/[0.15]"
           )}
         >
-          {/* Relevance badge — search mode only */}
-          {searchMatch && (
-            <div className="absolute left-3 top-3 z-[2]">
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide",
-                  searchMatch.score >= 70
-                    ? "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                    : searchMatch.score >= 40
-                      ? "bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                      : "bg-muted text-muted-foreground dark:bg-neutral-800/50 dark:text-neutral-400"
-                )}
-              >
-                {searchMatch.score}%
-              </span>
+          {/* Accent bar — amber for favorites, subtle for regular */}
+          <div
+            className={cn(
+              "h-[1px] w-full",
+              file.isFavorite ? "bg-amber-400/60 dark:bg-amber-500/40" : "bg-border/30"
+            )}
+          />
+
+          {/* Favorite star badge */}
+          {file.isFavorite && !searchMatch && (
+            <div className="absolute right-2.5 top-2.5 z-[1]">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
             </div>
           )}
 
-          {/* Title + menu */}
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-foreground">
-              {displayName}
-            </h3>
+          {/* Inner content with padding */}
+          <div className="flex flex-1 flex-col p-5 pt-4">
+            {/* Relevance badge — search mode only */}
+            {searchMatch && (
+              <div className="mb-1.5">
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide",
+                    searchMatch.score >= 70
+                      ? "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                      : searchMatch.score >= 40
+                        ? "bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                        : "bg-muted text-muted-foreground dark:bg-neutral-800/50 dark:text-neutral-400"
+                  )}
+                >
+                  {searchMatch.score}%
+                </span>
+              </div>
+            )}
+            {/* Title + menu */}
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-foreground">
+                {displayName}
+              </h3>
 
-            <div
-              className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <DropdownMenu
-                open={dropdownOpen}
-                onOpenChange={(v) => {
-                  setDropdownOpen(v);
-                  if (!v) setContextMenuPos(null);
-                }}
-                anchorPoint={contextMenuPos}
+              <div
+                className="flex-shrink-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+                onClick={(e) => e.stopPropagation()}
               >
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 rounded-md"
-                    aria-label="File options"
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={handleRenameOpen}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
-                    <Share2 className="mr-2 h-4 w-4" />
-                    Share
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite(file.id);
-                    }}
-                  >
-                    <Star
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        file.isFavorite && "fill-amber-500 text-amber-500"
-                      )}
-                    />
-                    {file.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    Export as
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Markdown
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
-                    <FileDown className="mr-2 h-4 w-4" />
-                    PDF
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport("docx")}>
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Word
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setShowDeleteModal(true)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                <DropdownMenu
+                  open={dropdownOpen}
+                  onOpenChange={(v) => {
+                    setDropdownOpen(v);
+                    if (!v) setContextMenuPos(null);
+                  }}
+                  anchorPoint={contextMenuPos}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-md"
+                      aria-label={t("fileOptions")}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleRenameOpen}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      {t("rename")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
+                      <Share2 className="mr-2 h-4 w-4" />
+                      {t("share")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(file.id);
+                      }}
+                    >
+                      <Star
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          file.isFavorite && "fill-amber-500 text-amber-500"
+                        )}
+                      />
+                      {file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
+                    </DropdownMenuItem>
+                    {!file.isFolder && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <FolderInput className="mr-2 h-4 w-4" />
+                          {t("moveTo")}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => handleMoveTo(null)}>
+                            <Home className="mr-2 h-4 w-4" />
+                            {t("root")}
+                            {file.parentId === null && (
+                              <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                            )}
+                          </DropdownMenuItem>
+                          {folders.length > 0 && <DropdownMenuSeparator />}
+                          {folders.map((folder) => (
+                            <DropdownMenuItem
+                              key={folder.id}
+                              onClick={() => handleMoveTo(folder.id)}
+                            >
+                              <Folder className="mr-2 h-4 w-4 text-amber-500/70" />
+                              {folder.name}
+                              {file.parentId === folder.id && (
+                                <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                              )}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      {t("exportAs")}
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                      <FileDown className="mr-2 h-4 w-4" />
+                      {t("markdownFormat")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                      <FileDown className="mr-2 h-4 w-4" />
+                      {t("pdfFormat")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExport("docx")}>
+                      <FileDown className="mr-2 h-4 w-4" />
+                      {t("wordFormat")}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setShowDeleteModal(true)}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {tc("delete")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+
+            {/* Preview text */}
+            <p className="mt-2 line-clamp-5 flex-1 text-[13px] leading-relaxed text-muted-foreground">
+              {searchMatch?.snippet ? (
+                <span className="text-foreground/55 dark:text-foreground/65">
+                  {highlightQuery(searchMatch.snippet, searchMatch.query)}
+                </span>
+              ) : preview ? (
+                preview
+              ) : (
+                <span className="italic text-muted-foreground/50">{t("emptyDocument")}</span>
+              )}
+            </p>
+
+            {/* Footer: date + word count */}
+            <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-3">
+              <span className="text-[11px] text-muted-foreground/55">
+                {formatRelativeDate(file.updatedAt)}
+              </span>
+              <span className="text-[11px] text-muted-foreground/55">
+                {formatWordCount(wordCount)}
+              </span>
             </div>
           </div>
-
-          {/* Preview text */}
-          <p className="mt-2 line-clamp-4 flex-1 text-[13px] leading-relaxed text-muted-foreground">
-            {searchMatch?.snippet ? (
-              <span className="text-foreground/55 dark:text-foreground/65">
-                {highlightQuery(searchMatch.snippet, searchMatch.query)}
-              </span>
-            ) : preview ? (
-              preview
-            ) : (
-              <span className="italic text-muted-foreground/50">Empty document</span>
-            )}
-          </p>
-
-          {/* Footer: date + word count */}
-          <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-4">
-            <span className="text-xs text-muted-foreground/60">
-              {formatRelativeDate(file.updatedAt)}
-            </span>
-            <span className="text-xs text-muted-foreground/60">{formatWordCount(wordCount)}</span>
-          </div>
+          {/* end inner padding */}
         </div>
       </motion.div>
 
       {/* Rename modal */}
       <Modal open={showRenameModal} onClose={() => setShowRenameModal(false)}>
-        <ModalHeader>Rename Document</ModalHeader>
+        <ModalHeader>{t("renameDocument")}</ModalHeader>
         <input
           ref={renameInputRef}
           type="text"
@@ -513,26 +591,26 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
         />
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowRenameModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button onClick={handleRenameSubmit} disabled={!renameDraft.trim()}>
-            Rename
+            {t("rename")}
           </Button>
         </ModalFooter>
       </Modal>
 
       {/* Delete confirmation */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Delete File</ModalHeader>
+        <ModalHeader>{t("deleteFile")}</ModalHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{displayName}&quot;? This action cannot be undone.
+          {t("deleteFileConfirm", { name: displayName })}
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDelete}>
-            Delete
+            {tc("delete")}
           </Button>
         </ModalFooter>
       </Modal>

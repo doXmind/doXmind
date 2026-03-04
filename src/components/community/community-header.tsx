@@ -10,7 +10,7 @@ import { useAuthStore } from "@/stores/auth-store";
 interface CommunityHeaderProps {
   sortBy: string;
   searchQuery: string;
-  onSortChange: (sort: "newest" | "popular" | "most_viewed" | "for_you") => void;
+  onSortChange: (sort: "newest" | "popular" | "most_viewed" | "for_you" | "following") => void;
   onSearchChange: (query: string) => void;
 }
 
@@ -33,7 +33,11 @@ export function CommunityHeader({
   const sortOptions = useMemo(
     () =>
       user
-        ? [{ value: "for_you" as const, labelKey: "forYou" }, ...BASE_SORT_OPTIONS]
+        ? [
+            { value: "for_you" as const, labelKey: "forYou" },
+            { value: "following" as const, labelKey: "following" },
+            ...BASE_SORT_OPTIONS,
+          ]
         : BASE_SORT_OPTIONS,
     [user]
   );

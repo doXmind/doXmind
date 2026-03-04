@@ -27,9 +27,9 @@ export function EmojiReactionPicker({ onSelect }: EmojiReactionPickerProps) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="flex items-center gap-1 rounded-full px-2 py-1 text-muted-foreground/60 transition-colors hover:bg-amber-500/10 hover:text-amber-500"
       >
-        <SmilePlus className="h-3 w-3" />
+        <SmilePlus className="h-3.5 w-3.5" />
       </button>
 
       {open && (

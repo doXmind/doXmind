@@ -23,7 +23,7 @@ export function useHeadings(editor: Editor | null) {
     const updateHeadings = () => {
       const found: Heading[] = [];
       editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "heading" && node.attrs.level <= 3) {
+        if (node.type.name === "heading" && node.attrs.level <= 6) {
           found.push({
             id: `h-${pos}`,
             level: node.attrs.level,

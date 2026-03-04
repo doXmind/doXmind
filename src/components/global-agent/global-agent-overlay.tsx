@@ -17,7 +17,9 @@ import { AgentSheet } from "./agent-sheet";
 export function GlobalAgentOverlay() {
   const pathname = usePathname();
 
+  const isHomePage = pathname === "/" || pathname === "";
   const hideFAB =
+    isHomePage ||
     pathname.startsWith("/editor") ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/demo") ||

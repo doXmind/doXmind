@@ -94,6 +94,42 @@ export const turnIntoOptions: TurnIntoEntry[] = [
     },
     isActive: (editor: Editor) => editor.isActive("heading", { level: 3 }),
   },
+  {
+    label: "Heading 4",
+    iconName: "Heading4",
+    action: (editor: Editor) => {
+      if (editor.isActive("heading", { level: 4 })) {
+        editor.chain().focus().clearNodes().run();
+      } else {
+        editor.chain().focus().clearNodes().setHeading({ level: 4 }).run();
+      }
+    },
+    isActive: (editor: Editor) => editor.isActive("heading", { level: 4 }),
+  },
+  {
+    label: "Heading 5",
+    iconName: "Heading5",
+    action: (editor: Editor) => {
+      if (editor.isActive("heading", { level: 5 })) {
+        editor.chain().focus().clearNodes().run();
+      } else {
+        editor.chain().focus().clearNodes().setHeading({ level: 5 }).run();
+      }
+    },
+    isActive: (editor: Editor) => editor.isActive("heading", { level: 5 }),
+  },
+  {
+    label: "Heading 6",
+    iconName: "Heading6",
+    action: (editor: Editor) => {
+      if (editor.isActive("heading", { level: 6 })) {
+        editor.chain().focus().clearNodes().run();
+      } else {
+        editor.chain().focus().clearNodes().setHeading({ level: 6 }).run();
+      }
+    },
+    isActive: (editor: Editor) => editor.isActive("heading", { level: 6 }),
+  },
   { separator: true },
   {
     label: "Bullet List",

@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import Image from "next/image";
 import { UserProfileResponse } from "@/lib/api";
-import { ExternalLink, Pencil, FileText, Eye, GitFork, Bookmark } from "lucide-react";
+import { ExternalLink, Pencil, FileText, Eye, GitFork, Bookmark, Users } from "lucide-react";
 import { ProfileEditModal } from "./profile-edit-modal";
+import { FollowButton } from "@/components/community/follow-button";
+import { FollowListModal } from "./follow-list-modal";
 
 interface ProfileHeaderProps {
   profile: UserProfileResponse;
   isOwnProfile: boolean;
+  onFollowChange?: (isFollowing: boolean, followerCount: number) => void;
 }
 
 function formatNumber(n: number): string {
@@ -18,9 +21,11 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
-export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
+export function ProfileHeader({ profile, isOwnProfile, onFollowChange }: ProfileHeaderProps) {
   const t = useTranslations("profile");
+  const locale = useLocale();
   const [isEditing, setIsEditing] = useState(false);
+  const [followListTab, setFollowListTab] = useState<"followers" | "following" | null>(null);
 
   return (
     <>
@@ -42,12 +47,12 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
         )}
 
         <div className="min-w-0 flex-1 text-center sm:text-left">
-          {/* Name + Edit */}
-          <div className="flex items-center justify-center gap-3 sm:justify-start">
+          {/* Name + Edit/Follow */}
+          <div className="flex items-baseline justify-center gap-3 sm:justify-start">
             <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               {profile.username || t("anonymous")}
             </h1>
-            {isOwnProfile && (
+            {isOwnProfile ? (
               <button
                 onClick={() => setIsEditing(true)}
                 className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground sm:px-3"
@@ -56,6 +61,13 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
                 <span className="hidden sm:inline">{t("editProfile")}</span>
                 <span className="sm:hidden">{t("editShort")}</span>
               </button>
+            ) : (
+              <FollowButton
+                userId={profile.id}
+                isFollowing={profile.is_following}
+                onChange={onFollowChange}
+                size="sm"
+              />
             )}
           </div>
 
@@ -108,16 +120,38 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
 
             <span className="text-muted-foreground/50">
               {t("joinedOn", {
-                date: new Date(profile.created_at).toLocaleDateString(undefined, {
-                  year: "numeric",
-                  month: "long",
-                }),
+                date: new Date(profile.created_at).toLocaleDateString(
+                  locale === "zh" ? "zh-CN" : "en-US",
+                  {
+                    year: "numeric",
+                    month: "long",
+                  }
+                ),
               })}
             </span>
           </div>
 
           {/* Stats row */}
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[13px] sm:flex sm:items-center sm:gap-5">
+          <div className="mt-4 grid grid-cols-3 gap-x-4 gap-y-2 text-[13px] sm:flex sm:items-center sm:gap-5">
+            <button
+              onClick={() => setFollowListTab("followers")}
+              className="flex items-center justify-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground sm:justify-start"
+            >
+              <Users className="h-3.5 w-3.5 opacity-50" />
+              <span className="font-medium text-foreground">
+                {formatNumber(profile.stats.followers)}
+              </span>
+              {t("followers")}
+            </button>
+            <button
+              onClick={() => setFollowListTab("following")}
+              className="flex items-center justify-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground sm:justify-start"
+            >
+              <span className="font-medium text-foreground">
+                {formatNumber(profile.stats.following)}
+              </span>
+              {t("followingLabel")}
+            </button>
             <span className="flex items-center justify-center gap-1.5 text-muted-foreground sm:justify-start">
               <FileText className="h-3.5 w-3.5 opacity-50" />
               <span className="font-medium text-foreground">
@@ -151,6 +185,15 @@ export function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
       </div>
 
       {isEditing && <ProfileEditModal open={isEditing} onClose={() => setIsEditing(false)} />}
+
+      {followListTab && (
+        <FollowListModal
+          userId={profile.id}
+          initialTab={followListTab}
+          open={!!followListTab}
+          onClose={() => setFollowListTab(null)}
+        />
+      )}
     </>
   );
 }

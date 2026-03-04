@@ -113,7 +113,8 @@ export function StickyActionBar({
           {/* Community actions */}
           <button
             onClick={handleFork}
-            disabled={isForking || detail.is_forked}
+            disabled={isForking || detail.is_forked || !detail.allow_fork}
+            title={!detail.allow_fork ? t("forkDisabled") : undefined}
             className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
           >
             {isForking ? (

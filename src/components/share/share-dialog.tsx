@@ -15,10 +15,12 @@ import {
   ChevronDown,
   X,
   Plus,
+  GitFork,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Modal, ModalHeader } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -69,6 +71,8 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
+  // Fork permission
+  const [allowFork, setAllowFork] = useState(true);
   // Private fields
   const [invitedUsers, setInvitedUsers] = useState<SearchUserResult[]>([]);
 
@@ -86,6 +90,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
       setDescription("");
       setTags("");
       setInvitedUsers([]);
+      setAllowFork(true);
       setError(null);
       setExpandedShareId(null);
       setShareInvites({});
@@ -203,6 +208,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
         expires_in_days: expiresInDays,
         content_mode: "live",
         visibility,
+        allow_fork: allowFork,
         ...(visibility === "public"
           ? {
               title: title || undefined,
@@ -229,6 +235,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
 
       // Reset form
       setInvitedUsers([]);
+      setAllowFork(true);
       setTitle(fileName.replace(/\.md$/, ""));
       setDescription("");
       setTags("");
@@ -597,6 +604,18 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
                 </DropdownMenu>
               </div>
             )}
+
+            {/* Fork Permission */}
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <GitFork className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-[13px] font-medium text-foreground">{t("allowFork")}</p>
+                  <p className="text-[11px] text-muted-foreground">{t("allowForkDescription")}</p>
+                </div>
+              </div>
+              <Switch checked={allowFork} onCheckedChange={setAllowFork} />
+            </div>
 
             {/* Create Button */}
             <Button

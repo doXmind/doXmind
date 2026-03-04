@@ -11,11 +11,13 @@ import { CommunityGrid } from "@/components/community/community-grid";
 import { EditShareModal } from "@/components/community/edit-share-modal";
 import { AlertCircle, ArrowLeft, Globe } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
+import { useTranslations } from "next-intl";
 
 export default function ProfilePage() {
   const params = useParams();
   const userId = params.userId as string;
   const currentUser = useAuthStore((s) => s.user);
+  const t = useTranslations("profile");
 
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [published, setPublished] = useState<CommunityItem[]>([]);
@@ -24,6 +26,13 @@ export default function ProfilePage() {
   const [editingItem, setEditingItem] = useState<CommunityItem | null>(null);
 
   const isOwnProfile = currentUser?.id === userId;
+
+  // Update browser tab title
+  useEffect(() => {
+    if (profile) {
+      document.title = profile.username || "Profile";
+    }
+  }, [profile]);
 
   useEffect(() => {
     async function load() {
@@ -64,16 +73,16 @@ export default function ProfilePage() {
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/10">
               <AlertCircle className="h-7 w-7 text-destructive" />
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">User Not Found</h1>
-            <p className="text-sm text-muted-foreground">
-              {error || "This user profile could not be found."}
-            </p>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              {t("userNotFound")}
+            </h1>
+            <p className="text-sm text-muted-foreground">{error || t("userNotFoundDesc")}</p>
             <Link
               href="/community"
               className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-foreground/80"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back to Community
+              {t("backToCommunity")}
             </Link>
           </div>
         </div>
@@ -87,7 +96,21 @@ export default function ProfilePage() {
         {/* Header area */}
         <div className="border-b border-border/40">
           <div className="mx-auto max-w-5xl px-4 pb-5 pt-6 sm:px-8 sm:pb-6 sm:pt-10 lg:px-10">
-            <ProfileHeader profile={profile} isOwnProfile={isOwnProfile} />
+            <ProfileHeader
+              profile={profile}
+              isOwnProfile={isOwnProfile}
+              onFollowChange={(isFollowing, followerCount) => {
+                setProfile((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        is_following: isFollowing,
+                        stats: { ...prev.stats, followers: followerCount },
+                      }
+                    : prev
+                );
+              }}
+            />
           </div>
         </div>
 
@@ -95,7 +118,7 @@ export default function ProfilePage() {
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10 lg:px-10">
           <h2 className="mb-6 flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
             <Globe className="h-3.5 w-3.5" />
-            Published
+            {t("publishedSection")}
             <span className="text-muted-foreground/50">{published.length}</span>
           </h2>
 
@@ -105,12 +128,10 @@ export default function ProfilePage() {
                 <Globe className="h-6 w-6 text-muted-foreground/40" />
               </div>
               <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-foreground">
-                No published documents
+                {t("noPublishedDocs")}
               </h3>
               <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">
-                {isOwnProfile
-                  ? "Share your work with the community by publishing a document."
-                  : "This user hasn't published any documents yet."}
+                {isOwnProfile ? t("noPublishedDocsOwnDesc") : t("noPublishedDocsDesc")}
               </p>
             </div>
           ) : (
@@ -132,6 +153,7 @@ export default function ProfilePage() {
             title: editingItem.title,
             description: editingItem.description,
             tags: editingItem.tags,
+            allowFork: editingItem.allow_fork,
           }}
           onSave={(updated) => {
             setPublished((prev) =>
@@ -142,6 +164,7 @@ export default function ProfilePage() {
                       title: updated.title,
                       description: updated.description,
                       tags: updated.tags,
+                      allow_fork: updated.allow_fork,
                     }
                   : p
               )

@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/layout/app-shell";
 import { CommunityHeader } from "@/components/community/community-header";
@@ -12,6 +13,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { AlertCircle, Loader2 } from "lucide-react";
 
 function CommunityContent() {
+  const t = useTranslations("community");
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -37,6 +39,10 @@ function CommunityContent() {
   const loadItemsRef = useRef(loadItems);
   loadItemsRef.current = loadItems;
 
+  useEffect(() => {
+    document.title = "Community";
+  }, []);
+
   // Initialize store from URL params on mount
   useEffect(() => {
     if (initializedRef.current) return;
@@ -46,9 +52,9 @@ function CommunityContent() {
     const urlSearch = searchParams.get("q");
     const urlTag = searchParams.get("tag");
 
-    if (urlSort && ["newest", "popular", "most_viewed", "for_you"].includes(urlSort)) {
+    if (urlSort && ["newest", "popular", "most_viewed", "for_you", "following"].includes(urlSort)) {
       useCommunityStore.setState({
-        sortBy: urlSort as "newest" | "popular" | "most_viewed" | "for_you",
+        sortBy: urlSort as "newest" | "popular" | "most_viewed" | "for_you" | "following",
       });
     } else if (useAuthStore.getState().user) {
       useCommunityStore.setState({ sortBy: "for_you" });
@@ -101,7 +107,7 @@ function CommunityContent() {
   );
 
   const handleSortChange = useCallback(
-    (sort: "newest" | "popular" | "most_viewed" | "for_you") => {
+    (sort: "newest" | "popular" | "most_viewed" | "for_you" | "following") => {
       setSortBy(sort);
       updateUrl({ sort });
     },
@@ -234,14 +240,13 @@ function CommunityContent() {
               <div className="sticky top-6 space-y-6">
                 {/* About */}
                 <div className="rounded-xl border border-border bg-card p-4">
-                  <h2 className="text-[13px] font-semibold text-foreground">Community</h2>
+                  <h2 className="text-[13px] font-semibold text-foreground">{t("community")}</h2>
                   <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-                    Discover, fork, and build on documents shared by writers.
+                    {t("sidebarDesc")}
                   </p>
                   {total > 0 && (
                     <div className="mt-3 border-t border-border pt-3 text-[12px] text-muted-foreground">
-                      <span className="font-medium text-foreground">{total}</span> documents
-                      published
+                      {t("documentsPublished", { count: total })}
                     </div>
                   )}
                 </div>

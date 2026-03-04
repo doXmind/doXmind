@@ -134,7 +134,8 @@ function OutlineItem({
             "line-clamp-2 min-w-0 flex-1 break-words text-sm leading-snug",
             node.level === 1 && "font-semibold",
             node.level === 2 && "font-medium",
-            node.level === 3 && "text-muted-foreground"
+            node.level === 3 && "text-muted-foreground",
+            node.level >= 4 && "text-xs text-muted-foreground"
           )}
         >
           {node.text || "Untitled"}

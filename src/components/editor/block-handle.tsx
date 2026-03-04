@@ -194,6 +194,9 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
 
     const handleMouseMove = (event: MouseEvent) => {
       if (isDragging) return;
+      // Don't update hovered block while a menu is open — changing
+      // hoveredBlockPos would cause BlockActionMenu to target a different block.
+      if (isMenuOpenRef.current) return;
       // Hide block handle during AI streaming to prevent accidental edits
       if (useStreamingStore.getState().isStreaming) return;
 
