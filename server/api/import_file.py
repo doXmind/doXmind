@@ -47,6 +47,13 @@ def markdown_to_html(md_content: str) -> str:
     return markdown.markdown(md_content, extensions=["tables", "fenced_code"])
 
 
+def _normalize_conversion_result(result: tuple[str, dict | None] | str) -> tuple[str, dict | None]:
+    """Normalize conversion result for backwards compatibility in tests/mocks."""
+    if isinstance(result, tuple):
+        return result
+    return result, None
+
+
 @router.post("/")
 async def import_file(
     file: UploadFile = File(...),
@@ -65,7 +72,7 @@ async def import_file(
     user_id = get_user_id(token)
 
     # Resolve user's API key for file conversion and indexing
-    user_api_key = await resolve_user_api_key(user_id, db)
+    user_api_key = await resolve_user_api_key(user_id, db) if user_id else None
 
     # Validate parent folder if provided
     if parent_id:
@@ -109,26 +116,26 @@ async def import_file(
                     message="File conversion requires OPENROUTER_API_KEY to be configured"
                 )
             # Use LLM API for PDF and DOCX conversion
-            md_content = await convert_file_to_markdown(
-                content, file.filename, ext, api_key=user_api_key
+            conversion_result = await convert_file_to_markdown(
+                content, file.filename or "unknown", ext, api_key=user_api_key
             )
+            md_content, conversion_usage = _normalize_conversion_result(conversion_result)
 
             # Track file conversion usage
             import asyncio
 
-            from services.gemini_converter import _last_conversion_usage
             from services.usage_tracker import track_usage
 
-            if _last_conversion_usage:
+            if conversion_usage:
                 asyncio.create_task(
                     track_usage(
                         service="file_conversion",
-                        model=_last_conversion_usage.get("model"),
-                        input_tokens=_last_conversion_usage.get("input_tokens"),
-                        output_tokens=_last_conversion_usage.get("output_tokens"),
-                        cost=_last_conversion_usage.get("cost"),
+                        model=conversion_usage.get("model"),
+                        input_tokens=conversion_usage.get("input_tokens"),
+                        output_tokens=conversion_usage.get("output_tokens"),
+                        cost=conversion_usage.get("cost"),
                         user_id=user_id,
-                        is_byok=_last_conversion_usage.get("is_byok", False),
+                        is_byok=conversion_usage.get("is_byok", False),
                     )
                 )
     except AppException:

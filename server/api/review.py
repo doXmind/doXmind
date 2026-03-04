@@ -10,12 +10,16 @@ Provides Grammarly-like text analysis using Claude to identify:
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_cors_headers, get_settings
+from db.database import get_db
+from dependencies import resolve_user_api_key
 from prompts.domains.review import REVIEW_JSON_SCHEMA, REVIEW_SYSTEM_PROMPT
+from services.auth_service import TokenData, require_auth
 from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -31,14 +35,20 @@ class TextReviewRequest(BaseModel):
 
 
 @router.post("")
-async def review_text(request: TextReviewRequest, http_request: Request):
+async def review_text(
+    request: TextReviewRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
+):
     """Stream text review suggestions from Claude."""
     origin = http_request.headers.get("origin")
 
     async def generate():
         try:
             settings = get_settings()
-            llm = LLMService(model=settings.review_model)
+            user_api_key = await resolve_user_api_key(auth.sub, db)
+            llm = LLMService(model=settings.review_model, api_key=user_api_key)
 
             content = request.content
 
@@ -82,6 +92,8 @@ Analyze the entire document and return your suggestions. Remember to:
                     track_usage(
                         service="review",
                         model=llm.model,
+                        user_id=auth.sub,
+                        is_byok=bool(user_api_key),
                         **llm.last_usage,
                     )
                 )

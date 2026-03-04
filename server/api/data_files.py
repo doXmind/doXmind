@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.database import ConversationDataFile, get_db
+from api.files import get_user_id
 from dependencies import get_conversation_by_file_id
 from exceptions import (
     ConversationNotFoundError,
@@ -29,6 +30,7 @@ from exceptions import (
     UnsupportedFileTypeError,
 )
 from services.data_parser_service import get_data_parser_service
+from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,7 @@ async def upload_data_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Upload a data file for code execution analysis.
 
@@ -104,7 +107,12 @@ async def upload_data_file(
         raise FileTooLargeError(max_size=DATA_FILE_MAX_SIZE, actual_size=file_size)
 
     # Verify conversation exists (supports both conversation.id and file_id)
-    conversation = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
+    conversation = await get_conversation_by_file_id(
+        conversation_id,
+        db,
+        create_if_missing=True,
+        user_id=get_user_id(auth),
+    )
     if not conversation:
         raise ConversationNotFoundError(conversation_id=conversation_id)
 
@@ -167,10 +175,16 @@ async def upload_data_file(
 async def list_data_files(
     conversation_id: str,
     db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """List all data files for a conversation."""
     # Verify conversation exists (supports both conversation.id and file_id)
-    conversation = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
+    conversation = await get_conversation_by_file_id(
+        conversation_id,
+        db,
+        create_if_missing=True,
+        user_id=get_user_id(auth),
+    )
     if not conversation:
         raise ConversationNotFoundError(conversation_id=conversation_id)
 
@@ -205,10 +219,15 @@ async def get_data_file(
     conversation_id: str,
     file_id: str,
     db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Get a specific data file."""
     # Resolve conversation (supports both conversation.id and file_id)
-    conversation = await get_conversation_by_file_id(conversation_id, db)
+    conversation = await get_conversation_by_file_id(
+        conversation_id,
+        db,
+        user_id=get_user_id(auth),
+    )
     if not conversation:
         raise ConversationNotFoundError(conversation_id=conversation_id)
 
@@ -240,10 +259,15 @@ async def delete_data_file(
     conversation_id: str,
     file_id: str,
     db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Delete a data file."""
     # Resolve conversation (supports both conversation.id and file_id)
-    conversation = await get_conversation_by_file_id(conversation_id, db)
+    conversation = await get_conversation_by_file_id(
+        conversation_id,
+        db,
+        user_id=get_user_id(auth),
+    )
     if not conversation:
         raise ConversationNotFoundError(conversation_id=conversation_id)
 

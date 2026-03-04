@@ -101,6 +101,7 @@ class TestGetConversationByFileId:
         """Should return conversation when found by ID."""
         mock_conv = MagicMock()
         mock_conv.id = "conv-123"
+        mock_conv.user_id = None
         mock_db.get = AsyncMock(return_value=mock_conv)
 
         result = await get_conversation_by_file_id("conv-123", mock_db)

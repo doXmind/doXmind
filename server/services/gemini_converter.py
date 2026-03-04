@@ -15,9 +15,6 @@ from config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Last conversion usage data (read by API callers for tracking)
-_last_conversion_usage: dict = {}
-
 # MIME types for formats supported natively via multimodal input
 NATIVE_MIME_TYPES = {
     ".pdf": "application/pdf",
@@ -134,7 +131,7 @@ async def convert_file_to_markdown(
     extension: str,
     model: str | None = None,
     api_key: str | None = None,
-) -> str:
+) -> tuple[str, dict | None]:
     """Convert file content to Markdown via OpenRouter API.
 
     Args:
@@ -145,7 +142,9 @@ async def convert_file_to_markdown(
         api_key: Optional user API key (falls back to server key)
 
     Returns:
-        Converted Markdown content
+        Tuple of:
+        - Converted Markdown content
+        - Usage dict: {model, input_tokens, output_tokens, cost, is_byok}
 
     Raises:
         ValueError: If file type is not supported or API key not configured
@@ -198,9 +197,9 @@ async def convert_file_to_markdown(
 
         from services.usage_tracker import extract_usage
 
-        _last_conversion_usage.update(extract_usage(response))
-        _last_conversion_usage["model"] = effective_model
-        _last_conversion_usage["is_byok"] = bool(api_key)
+        usage = extract_usage(response)
+        usage["model"] = effective_model
+        usage["is_byok"] = bool(api_key)
 
         markdown_content = response.choices[0].message.content
 
@@ -208,7 +207,7 @@ async def convert_file_to_markdown(
             raise ValueError("LLM returned empty response")
 
         logger.info(f"Successfully converted {filename} to Markdown")
-        return markdown_content
+        return markdown_content, usage
 
     except Exception as e:
         logger.error(f"File conversion failed for {filename}: {e}")
@@ -217,7 +216,7 @@ async def convert_file_to_markdown(
 
 async def _convert_docx_to_markdown(
     content: bytes, filename: str, model: str, api_key: str | None = None
-) -> str:
+) -> tuple[str, dict | None]:
     """Convert DOCX file to Markdown by extracting text and formatting with LLM.
 
     Args:
@@ -250,9 +249,9 @@ async def _convert_docx_to_markdown(
 
         from services.usage_tracker import extract_usage
 
-        _last_conversion_usage.update(extract_usage(response))
-        _last_conversion_usage["model"] = model
-        _last_conversion_usage["is_byok"] = bool(api_key)
+        usage = extract_usage(response)
+        usage["model"] = model
+        usage["is_byok"] = bool(api_key)
 
         markdown_content = response.choices[0].message.content
 
@@ -260,7 +259,7 @@ async def _convert_docx_to_markdown(
             raise ValueError("LLM returned empty response")
 
         logger.info(f"Successfully converted {filename} to Markdown")
-        return markdown_content
+        return markdown_content, usage
 
     except Exception as e:
         logger.error(f"File conversion formatting failed for {filename}: {e}")

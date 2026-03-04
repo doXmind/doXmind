@@ -291,9 +291,10 @@ class TestGeminiConverter:
             mock_client.chat.completions.create.return_value = mock_response
             mock_get_client.return_value = mock_client
 
-            result = await convert_file_to_markdown(content, "test.pdf", ".pdf")
+            markdown, usage = await convert_file_to_markdown(content, "test.pdf", ".pdf")
 
-            assert result == "# Converted PDF Content"
+            assert markdown == "# Converted PDF Content"
+            assert usage is not None
 
     @pytest.mark.asyncio
     async def test_handles_conversion_error(self):

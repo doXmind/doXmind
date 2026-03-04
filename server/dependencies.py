@@ -74,7 +74,10 @@ def normalize_file_id(file_id: str | None) -> str | None:
 
 
 async def get_conversation_by_file_id(
-    file_id: str, db: AsyncSession, create_if_missing: bool = False
+    file_id: str,
+    db: AsyncSession,
+    create_if_missing: bool = False,
+    user_id: str | None = None,
 ):
     """Get or optionally create a conversation by file_id.
 
@@ -84,6 +87,7 @@ async def get_conversation_by_file_id(
         file_id: The file ID to find conversation for
         db: Database session
         create_if_missing: If True, create conversation if not found
+        user_id: Conversation owner ID. None means shared/system scope.
 
     Returns:
         Conversation or None
@@ -92,31 +96,29 @@ async def get_conversation_by_file_id(
 
     # First try to find by conversation ID directly (UUID)
     conv = await db.get(Conversation, file_id)
-    if conv:
+    if conv and conv.user_id == user_id:
         return conv
 
     # Try to find by file_id (handle NULL for global conversations)
     if normalized_file_id is None:
-        result = await db.execute(
-            select(Conversation)
-            .where(Conversation.file_id.is_(None))
-            .order_by(Conversation.created_at.desc())
-            .limit(1)
-        )
+        query = select(Conversation).where(Conversation.file_id.is_(None))
     else:
-        result = await db.execute(
-            select(Conversation)
-            .where(Conversation.file_id == normalized_file_id)
-            .order_by(Conversation.created_at.desc())
-            .limit(1)
-        )
+        query = select(Conversation).where(Conversation.file_id == normalized_file_id)
+
+    if user_id is None:
+        query = query.where(Conversation.user_id.is_(None))
+    else:
+        query = query.where(Conversation.user_id == user_id)
+
+    query = query.order_by(Conversation.created_at.desc()).limit(1)
+    result = await db.execute(query)
     conv = result.scalar_one_or_none()
     if conv:
         return conv
 
     # Create if requested
     if create_if_missing:
-        conv = Conversation(id=str(uuid.uuid4()), file_id=normalized_file_id)
+        conv = Conversation(id=str(uuid.uuid4()), file_id=normalized_file_id, user_id=user_id)
         db.add(conv)
         await db.commit()
         await db.refresh(conv)

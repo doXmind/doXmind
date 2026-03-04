@@ -78,13 +78,15 @@ async def get_usage_summary(
     # (columns may still be VARCHAR in the database)
     input_col = cast(Message.input_tokens, Integer)
     output_col = cast(Message.output_tokens, Integer)
+    message_model_col = func.coalesce(Message.model, "unknown")
+    api_model_col = func.coalesce(ApiUsage.model, "unknown")
 
     # Build query — cost column may not exist if migration hasn't run
     has_cost_column = True
     try:
         stmt = (
             select(
-                Message.model,
+                message_model_col.label("model"),
                 func.coalesce(func.sum(input_col), 0).label("input_tokens"),
                 func.coalesce(func.sum(output_col), 0).label("output_tokens"),
                 func.sum(Message.cost).label("cost"),
@@ -94,11 +96,9 @@ async def get_usage_summary(
             .where(
                 Conversation.user_id == user_id,
                 Message.role == "assistant",
-                Message.model.isnot(None),
                 Message.created_at >= since,
-                Message.deleted_at.is_(None),
             )
-            .group_by(Message.model)
+            .group_by(message_model_col)
             .order_by(func.sum(output_col).desc())
         )
         if byok is not None:
@@ -110,7 +110,7 @@ async def get_usage_summary(
         await db.rollback()
         stmt = (
             select(
-                Message.model,
+                message_model_col.label("model"),
                 func.coalesce(func.sum(input_col), 0).label("input_tokens"),
                 func.coalesce(func.sum(output_col), 0).label("output_tokens"),
                 func.count(Message.id).label("request_count"),
@@ -119,11 +119,9 @@ async def get_usage_summary(
             .where(
                 Conversation.user_id == user_id,
                 Message.role == "assistant",
-                Message.model.isnot(None),
                 Message.created_at >= since,
-                Message.deleted_at.is_(None),
             )
-            .group_by(Message.model)
+            .group_by(message_model_col)
             .order_by(func.sum(output_col).desc())
         )
         if byok is not None:
@@ -167,7 +165,7 @@ async def get_usage_summary(
     try:
         api_stmt = (
             select(
-                ApiUsage.model,
+                api_model_col.label("model"),
                 func.coalesce(func.sum(ApiUsage.input_tokens), 0).label("input_tokens"),
                 func.coalesce(func.sum(ApiUsage.output_tokens), 0).label("output_tokens"),
                 func.sum(ApiUsage.cost).label("cost"),
@@ -175,10 +173,9 @@ async def get_usage_summary(
             )
             .where(
                 ApiUsage.user_id == user_id,
-                ApiUsage.model.isnot(None),
                 ApiUsage.created_at >= since,
             )
-            .group_by(ApiUsage.model)
+            .group_by(api_model_col)
         )
         if byok is not None:
             api_stmt = api_stmt.where(ApiUsage.is_byok == byok)
@@ -337,7 +334,6 @@ async def get_usage_by_service(
                 Conversation.user_id == user_id,
                 Message.role == "assistant",
                 Message.created_at >= since,
-                Message.deleted_at.is_(None),
             )
         )
         if byok is not None:
@@ -357,7 +353,6 @@ async def get_usage_by_service(
                 Conversation.user_id == user_id,
                 Message.role == "assistant",
                 Message.created_at >= since,
-                Message.deleted_at.is_(None),
             )
         )
         if byok is not None:

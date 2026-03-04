@@ -10,9 +10,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.files import get_user_id
 from config import get_settings
 from db.database import ConversationAttachment, async_session
-from dependencies import get_conversation_by_file_id, get_db
+from dependencies import get_conversation_by_file_id, get_db, resolve_user_api_key
 from exceptions import (
     AttachmentNotFoundError,
     ConversationNotFoundError,
@@ -21,6 +22,7 @@ from exceptions import (
     UnsupportedFileTypeError,
 )
 from services.gemini_converter import convert_file_to_markdown, is_converter_configured
+from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -75,16 +77,33 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename)[1].lower()
 
 
-async def extract_text_content(content: bytes, filename: str, ext: str) -> str:
+async def extract_text_content(
+    content: bytes,
+    filename: str,
+    ext: str,
+    api_key: str | None = None,
+) -> tuple[str, dict | None]:
     """Extract text content from uploaded file via OpenRouter API."""
     if not is_converter_configured():
         raise ValueError("File conversion requires OPENROUTER_API_KEY to be configured")
+    if api_key:
+        return await convert_file_to_markdown(content, filename, ext, api_key=api_key)
     return await convert_file_to_markdown(content, filename, ext)
+
+
+def _normalize_conversion_result(result: tuple[str, dict | None] | str) -> tuple[str, dict | None]:
+    """Normalize conversion result for backwards compatibility in tests/mocks."""
+    if isinstance(result, tuple):
+        return result
+    return result, None
 
 
 @router.post("/{conversation_id}/attachments", response_model=AttachmentResponse)
 async def upload_attachment(
-    conversation_id: str, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+    conversation_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Upload a document to the conversation's knowledge base.
 
@@ -92,8 +111,16 @@ async def upload_attachment(
     - Max size: 50MB (configurable)
     - Extracts text and indexes in vector store
     """
+    user_id = get_user_id(auth)
+    user_api_key = await resolve_user_api_key(user_id, db) if user_id else None
+
     # Get or create conversation
-    conv = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
+    conv = await get_conversation_by_file_id(
+        conversation_id,
+        db,
+        create_if_missing=True,
+        user_id=user_id,
+    )
 
     # Validate file extension
     ext = get_file_extension(file.filename or "")
@@ -122,22 +149,29 @@ async def upload_attachment(
 
     # Process file
     try:
-        extracted_text = await extract_text_content(content, file.filename or "", ext)
+        conversion_result = await extract_text_content(
+            content,
+            file.filename or "",
+            ext,
+            api_key=user_api_key,
+        )
+        extracted_text, usage = _normalize_conversion_result(conversion_result)
 
         # Track file conversion usage
         import asyncio
 
-        from services.gemini_converter import _last_conversion_usage
         from services.usage_tracker import track_usage
 
-        if _last_conversion_usage:
+        if usage:
             asyncio.create_task(
                 track_usage(
                     service="file_conversion",
-                    model=_last_conversion_usage.get("model"),
-                    input_tokens=_last_conversion_usage.get("input_tokens"),
-                    output_tokens=_last_conversion_usage.get("output_tokens"),
-                    cost=_last_conversion_usage.get("cost"),
+                    model=usage.get("model"),
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                    cost=usage.get("cost"),
+                    user_id=user_id,
+                    is_byok=usage.get("is_byok", False),
                 )
             )
 
@@ -172,6 +206,7 @@ async def upload_attachments_batch(
     conversation_id: str,
     files: Annotated[list[UploadFile], File(...)],
     db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Upload multiple documents to the conversation's knowledge base.
 
@@ -186,8 +221,16 @@ async def upload_attachments_batch(
     if len(files) > MAX_FILES:
         raise FileTooLargeError(max_size=MAX_FILES, actual_size=len(files))
 
+    user_id = get_user_id(auth)
+    user_api_key = await resolve_user_api_key(user_id, db) if user_id else None
+
     # Get or create conversation
-    conv = await get_conversation_by_file_id(conversation_id, db, create_if_missing=True)
+    conv = await get_conversation_by_file_id(
+        conversation_id,
+        db,
+        create_if_missing=True,
+        user_id=user_id,
+    )
     conv_db_id = conv.id
 
     results: list[AttachmentResponse] = []
@@ -262,7 +305,14 @@ async def upload_attachments_batch(
 
     # Start background processing for valid files
     if file_data:
-        asyncio.create_task(_process_files_background(conv_db_id, file_data))
+        asyncio.create_task(
+            _process_files_background(
+                conv_db_id,
+                file_data,
+                user_id=user_id,
+                user_api_key=user_api_key,
+            )
+        )
 
     successful = sum(1 for r in results if r.status == "processing")
     failed = sum(1 for r in results if r.status == "error")
@@ -271,7 +321,10 @@ async def upload_attachments_batch(
 
 
 async def _process_files_background(
-    conv_db_id: str, file_data: list[tuple[str, bytes, str]]
+    conv_db_id: str,
+    file_data: list[tuple[str, bytes, str]],
+    user_id: str | None,
+    user_api_key: str | None,
 ) -> None:
     """Process files in the background after the API has returned.
 
@@ -291,10 +344,31 @@ async def _process_files_background(
                 return
 
             try:
-                extracted_text = await extract_text_content(content, filename, ext)
+                conversion_result = await extract_text_content(
+                    content,
+                    filename,
+                    ext,
+                    api_key=user_api_key,
+                )
+                extracted_text, usage = _normalize_conversion_result(conversion_result)
                 attachment.extracted_text = extracted_text
                 attachment.status = "indexed"
                 await file_db.commit()
+
+                if usage:
+                    from services.usage_tracker import track_usage
+
+                    asyncio.create_task(
+                        track_usage(
+                            service="file_conversion",
+                            model=usage.get("model"),
+                            input_tokens=usage.get("input_tokens"),
+                            output_tokens=usage.get("output_tokens"),
+                            cost=usage.get("cost"),
+                            user_id=user_id,
+                            is_byok=usage.get("is_byok", False),
+                        )
+                    )
 
                 logger.info(f"Successfully processed KB attachment: {filename}")
 
@@ -314,9 +388,13 @@ async def _process_files_background(
 
 
 @router.get("/{conversation_id}/attachments", response_model=AttachmentListResponse)
-async def list_attachments(conversation_id: str, db: AsyncSession = Depends(get_db)):
+async def list_attachments(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
+):
     """List all attachments in a conversation's knowledge base."""
-    conv = await get_conversation_by_file_id(conversation_id, db)
+    conv = await get_conversation_by_file_id(conversation_id, db, user_id=get_user_id(auth))
     if not conv:
         return AttachmentListResponse(attachments=[], total_size=0, count=0)
 
@@ -350,10 +428,13 @@ async def list_attachments(conversation_id: str, db: AsyncSession = Depends(get_
 
 @router.delete("/{conversation_id}/attachments/{attachment_id}")
 async def delete_attachment(
-    conversation_id: str, attachment_id: str, db: AsyncSession = Depends(get_db)
+    conversation_id: str,
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Delete an attachment from the knowledge base."""
-    conv = await get_conversation_by_file_id(conversation_id, db)
+    conv = await get_conversation_by_file_id(conversation_id, db, user_id=get_user_id(auth))
     if not conv:
         raise ConversationNotFoundError(conversation_id)
 
@@ -369,10 +450,13 @@ async def delete_attachment(
 
 @router.post("/{conversation_id}/search", response_model=KBSearchResponse)
 async def search_knowledge_base(
-    conversation_id: str, request: KBSearchRequest, db: AsyncSession = Depends(get_db)
+    conversation_id: str,
+    request: KBSearchRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Search within the conversation's knowledge base."""
-    conv = await get_conversation_by_file_id(conversation_id, db)
+    conv = await get_conversation_by_file_id(conversation_id, db, user_id=get_user_id(auth))
     if not conv:
         raise ConversationNotFoundError(conversation_id)
 
@@ -421,10 +505,13 @@ async def search_knowledge_base(
 
 @router.get("/{conversation_id}/attachments/{attachment_id}/content")
 async def get_attachment_content(
-    conversation_id: str, attachment_id: str, db: AsyncSession = Depends(get_db)
+    conversation_id: str,
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
 ):
     """Get the extracted text content of an attachment."""
-    conv = await get_conversation_by_file_id(conversation_id, db)
+    conv = await get_conversation_by_file_id(conversation_id, db, user_id=get_user_id(auth))
     if not conv:
         raise ConversationNotFoundError(conversation_id)
 

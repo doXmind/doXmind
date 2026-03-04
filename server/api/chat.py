@@ -19,10 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.writing_agent import WritingAgent
 from config import get_cors_headers, get_settings
 from db.database import Conversation, ConversationAttachment, ConversationDataFile, Message, get_db
-from dependencies import normalize_file_id
+from api.files import get_user_id
+from dependencies import normalize_file_id, resolve_user_api_key
 from exceptions import InternalError
 from services.api_key_service import APIKeyService
-from services.auth_service import TokenData, optional_auth
+from services.auth_service import TokenData, optional_auth, require_auth
 from services.history_compressor import HistoryCompressor
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ async def _resolve_user_api_settings(
 
 
 async def _load_conversation_context(
-    conversation_id: str | None, db: AsyncSession
+    conversation_id: str | None, db: AsyncSession, user_id: str | None
 ) -> tuple[Conversation | None, list, list[dict], list[dict], list[dict]]:
     """Load conversation, history, KB attachments, and data files.
 
@@ -120,6 +121,7 @@ async def _load_conversation_context(
         conv_result = await db.execute(
             select(Conversation)
             .where(Conversation.file_id.is_(None))
+            .where(Conversation.user_id == user_id)
             .order_by(desc(Conversation.created_at))
             .limit(1)
         )
@@ -127,6 +129,7 @@ async def _load_conversation_context(
         conv_result = await db.execute(
             select(Conversation)
             .where(Conversation.file_id == normalized_file_id)
+            .where(Conversation.user_id == user_id)
             .order_by(desc(Conversation.created_at))
             .limit(1)
         )
@@ -257,7 +260,7 @@ async def chat_stream(
         kb_attachments,
         data_files_metadata,
         data_files_content,
-    ) = await _load_conversation_context(request.conversationId, db)
+    ) = await _load_conversation_context(request.conversationId, db, get_user_id(auth) if auth else None)
 
     # Collector for building the complete response
     collected_text = []
@@ -563,7 +566,11 @@ class SimpleChatRequest(BaseModel):
 
 
 @router.post("/simple")
-async def simple_chat(request: SimpleChatRequest):
+async def simple_chat(
+    request: SimpleChatRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
+):
     """Simple non-streaming chat for quick responses.
 
     Uses fast_model by default for speed-critical operations like slides generation.
@@ -574,7 +581,9 @@ async def simple_chat(request: SimpleChatRequest):
         settings = get_settings()
         # Use fast_model as default for simple chat (quick operations)
         model = request.model or settings.fast_model
-        llm = LLMService(model=model)
+        user_id = get_user_id(auth)
+        user_api_key = await resolve_user_api_key(user_id, db) if user_id else None
+        llm = LLMService(model=model, api_key=user_api_key)
         response = await llm.complete(prompt=request.message, system=request.system)
 
         # Track usage
@@ -587,6 +596,8 @@ async def simple_chat(request: SimpleChatRequest):
                 track_usage(
                     service="simple_chat",
                     model=llm.model,
+                    user_id=user_id,
+                    is_byok=bool(user_api_key),
                     **llm.last_usage,
                 )
             )
