@@ -141,10 +141,10 @@ class Settings(BaseSettings):
     # =========================================================================
     # AI Models (OpenRouter format)
     # =========================================================================
-    default_model: str = "minimax/minimax-m2.5"
+    default_model: str = "google/gemini-3.1-flash-lite-preview"  # Instant mode (no thinking)
+    thinking_model: str = "minimax/minimax-m2.5"  # Thinking/deep reasoning mode
     fast_model: str = "google/gemini-2.5-flash-lite"  # For quick operations (autocomplete, quick edits, simplified slides)
-    smart_model: str = "minimax/minimax-m2.5"  # For complex operations (chat, analysis)
-    review_model: str = "minimax/minimax-m2.5"  # For text review (needs JSON mode support)
+    review_model: str = "google/gemini-3.1-flash-lite-preview"  # For text review (needs JSON mode support)
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
     stt_model: str = "openai/whisper-1"  # For speech-to-text via OpenRouter
 
@@ -157,7 +157,7 @@ class Settings(BaseSettings):
 
     # Models available when user has their own API key
     available_models: list[str] = [
-        "minimax/minimax-m2.5",
+        "google/gemini-3.1-flash-lite-preview",
         "z-ai/glm-5",
         "z-ai/glm-4.7-flash",
     ]
@@ -165,7 +165,7 @@ class Settings(BaseSettings):
     # =========================================================================
     # Web Tools Settings (client-side tools via Brave Search)
     # =========================================================================
-    web_search_enabled: bool = False  # Default off, user can enable
+    web_search_enabled: bool = True  # Default on
     web_fetch_enabled: bool = True  # Web fetch is always available
 
     # =========================================================================

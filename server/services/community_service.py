@@ -604,11 +604,13 @@ class CommunityService:
         if not share:
             raise NotFoundError(resource="Share", resource_id=share_id)
 
-        if not share.is_published:
-            raise BadRequestError(message="Cannot update metadata on an unpublished share")
-
         if not share.is_active:
             raise BadRequestError(message="Cannot update metadata on an inactive share")
+
+        # Title/description/tags require published share (community metadata)
+        has_community_fields = any(v is not None for v in [title, description, tags])
+        if has_community_fields and not share.is_published:
+            raise BadRequestError(message="Cannot update metadata on an unpublished share")
 
         if title is not None:
             share.title = title

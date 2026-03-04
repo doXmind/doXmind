@@ -10,8 +10,10 @@ import {
   ExternalLink,
   Link2,
   Loader2,
-  Users,
   Pencil,
+  Copy,
+  Check,
+  GitFork,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLazyList } from "@/hooks/use-lazy-list";
@@ -20,6 +22,7 @@ import { GridPagination } from "./grid-pagination";
 
 import { type Share, type InviteEntry, type SearchUserResult, api } from "@/lib/api";
 import { EditShareModal, type EditableShareItem } from "@/components/community/edit-share-modal";
+import { Switch } from "@/components/ui/switch";
 import { UserSearchInput } from "@/components/share/user-search-input";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
@@ -49,6 +52,7 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [editingShare, setEditingShare] = useState<EditableShareItem | null>(null);
   const [revokingShareId, setRevokingShareId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -202,37 +206,44 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                 </div>
 
                 <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100">
-                  {share.visibility === "private" && (
-                    <button
-                      onClick={() => toggleInvitePanel(share.id)}
-                      className={cn(
-                        "rounded-lg p-1.5 transition-colors",
-                        isExpanded
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                      title={t("manageInvitedUsers")}
-                    >
-                      <Users className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {share.visibility === "public" && (
-                    <button
-                      onClick={() =>
-                        setEditingShare({
-                          shareId: share.id,
-                          title: share.title || share.file_name || t("untitled"),
-                          description: share.description ?? null,
-                          tags: share.tags ?? [],
-                          allowFork: share.allow_fork,
-                        })
-                      }
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      title={t("editDescriptionTags")}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() =>
+                      share.visibility === "public"
+                        ? setEditingShare({
+                            shareId: share.id,
+                            title: share.title || share.file_name || t("untitled"),
+                            description: share.description ?? null,
+                            tags: share.tags ?? [],
+                            allowFork: share.allow_fork,
+                          })
+                        : toggleInvitePanel(share.id)
+                    }
+                    className={cn(
+                      "rounded-lg p-1.5 transition-colors",
+                      share.visibility === "private" && isExpanded
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                    title={t("editShare")}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(share.share_url);
+                      setCopiedId(share.id);
+                      setTimeout(() => setCopiedId(null), 2000);
+                      toast.success(t("linkCopied"));
+                    }}
+                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    title={t("copyShareLink")}
+                  >
+                    {copiedId === share.id ? (
+                      <Check className="h-3.5 w-3.5 text-green-500" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                   <a
                     href={share.share_url}
                     target="_blank"
@@ -257,9 +268,10 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                 </div>
               </div>
 
-              {/* Invite management panel (private shares) */}
+              {/* Edit panel (private shares) */}
               {share.visibility === "private" && isExpanded && (
-                <div className="mt-3 rounded-lg border border-border bg-background/50 p-3">
+                <div className="mt-3 space-y-3 rounded-lg border border-border bg-background/50 p-3">
+                  {/* Invited users */}
                   {isLoadingInvites ? (
                     <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -284,6 +296,29 @@ export function SharesSection({ shares, onSharesChange }: SharesSectionProps) {
                       )}
                     </div>
                   )}
+
+                  {/* Fork permission */}
+                  <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <GitFork className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-[12px] font-medium text-foreground">
+                        {t("allowFork")}
+                      </span>
+                    </div>
+                    <Switch
+                      checked={share.allow_fork}
+                      onCheckedChange={async (checked) => {
+                        try {
+                          await api.updateShareMetadata(share.id, { allow_fork: checked });
+                          onSharesChange((prev) =>
+                            prev.map((s) => (s.id === share.id ? { ...s, allow_fork: checked } : s))
+                          );
+                        } catch {
+                          toast.error(t("failedToUpdate"));
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               )}
             </div>

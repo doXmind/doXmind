@@ -4,6 +4,7 @@ import asyncio
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
@@ -37,6 +38,30 @@ def get_user_id(token: TokenData) -> str | None:
         return None
 
     return token.sub
+
+
+# Allowed frontend origins for share link generation
+_ALLOWED_ORIGINS = {
+    "https://beta.doxmind.com",
+    "https://cn.doxmind.com",
+    "http://localhost:3000",
+}
+
+
+def get_frontend_url(request: Request) -> str:
+    """Resolve frontend URL from request origin, falling back to config."""
+    origin = request.headers.get("origin")
+    if origin and origin.rstrip("/") in _ALLOWED_ORIGINS:
+        return origin.rstrip("/")
+
+    referer = request.headers.get("referer")
+    if referer:
+        parsed = urlparse(referer)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        if base in _ALLOWED_ORIGINS:
+            return base
+
+    return get_settings().frontend_url
 
 
 async def _send_invite_notifications(
@@ -265,11 +290,11 @@ async def create_share(
     await db.commit()
     await db.refresh(share)
 
-    settings = get_settings()
+    frontend_url = get_frontend_url(request)
     if share.visibility == "public":
-        share_url = f"{settings.frontend_url}/community/{share_token}"
+        share_url = f"{frontend_url}/community/{share_token}"
     else:
-        share_url = f"{settings.frontend_url}/shared/{share_token}"
+        share_url = f"{frontend_url}/shared/{share_token}"
 
     # Send email notifications for private share invites
     sender_name = token.username or "A doXmind user"
@@ -323,6 +348,7 @@ async def create_share(
 
 @router.get("/file/{file_id}", response_model=ShareListResponse)
 async def list_file_shares(
+    request: Request,
     file_id: str,
     include_expired: bool = Query(False),
     db: AsyncSession = Depends(get_db),
@@ -359,16 +385,16 @@ async def list_file_shares(
     result = await db.execute(query)
     shares = result.scalars().all()
 
-    settings = get_settings()
+    frontend_url = get_frontend_url(request)
     share_responses = [
         ShareResponse(
             id=s.id,
             file_id=s.file_id,
             share_token=s.share_token,
             share_url=(
-                f"{settings.frontend_url}/community/{s.share_token}"
+                f"{frontend_url}/community/{s.share_token}"
                 if s.visibility == "public"
-                else f"{settings.frontend_url}/shared/{s.share_token}"
+                else f"{frontend_url}/shared/{s.share_token}"
             ),
             expires_at=s.expires_at.isoformat() if s.expires_at else None,
             is_active=s.is_active,
@@ -387,6 +413,7 @@ async def list_file_shares(
 
 @router.get("/my", response_model=ShareListResponse)
 async def list_my_shares(
+    request: Request,
     offset: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -426,7 +453,7 @@ async def list_my_shares(
         file_result = await db.execute(select(File.id, File.name).where(File.id.in_(file_ids)))
         file_names = {row.id: row.name for row in file_result}
 
-    settings = get_settings()
+    frontend_url = get_frontend_url(request)
     share_responses = [
         ShareResponse(
             id=s.id,
@@ -434,9 +461,9 @@ async def list_my_shares(
             file_name=file_names.get(s.file_id, "Unknown"),
             share_token=s.share_token,
             share_url=(
-                f"{settings.frontend_url}/community/{s.share_token}"
+                f"{frontend_url}/community/{s.share_token}"
                 if s.visibility == "public"
-                else f"{settings.frontend_url}/shared/{s.share_token}"
+                else f"{frontend_url}/shared/{s.share_token}"
             ),
             expires_at=s.expires_at.isoformat() if s.expires_at else None,
             is_active=s.is_active,
@@ -506,6 +533,7 @@ async def search_users_for_invite(
 
 @router.get("/shared-with-me")
 async def list_shared_with_me(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     token: TokenData = Depends(require_auth),
 ):
@@ -547,13 +575,13 @@ async def list_shared_with_me(
     result = await db.execute(query)
     rows = result.all()
 
-    settings = get_settings()
+    frontend_url = get_frontend_url(request)
     shares = [
         {
             "share_id": row.id,
             "share_token": row.share_token,
             "title": row.title or row.file_name,
-            "share_url": f"{settings.frontend_url}/shared/{row.share_token}",
+            "share_url": f"{frontend_url}/shared/{row.share_token}",
             "is_folder": row.is_folder,
             "view_count": row.view_count,
             "owner": {
@@ -640,8 +668,8 @@ async def publish_share(
         tags=body.tags,
     )
 
-    settings = get_settings()
-    share_url = f"{settings.frontend_url}/community/{share.share_token}"
+    frontend_url = get_frontend_url(request)
+    share_url = f"{frontend_url}/community/{share.share_token}"
 
     # Notify followers of the new publication (fire-and-forget)
     asyncio.create_task(
@@ -1064,8 +1092,8 @@ async def invite_users(
     # Send email notifications to newly invited users
     sender_name = token.username or "A doXmind user"
     if recipient_emails and file_info:
-        settings = get_settings()
-        share_url = f"{settings.frontend_url}/shared/{share.share_token}"
+        frontend_url = get_frontend_url(request)
+        share_url = f"{frontend_url}/shared/{share.share_token}"
         asyncio.create_task(
             _send_invite_notifications(
                 recipient_emails=recipient_emails,

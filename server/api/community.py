@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.shares import get_frontend_url
 from config import get_settings
 from db.database import DocumentShare, File, User, get_db
 from exceptions import NotFoundError
@@ -212,8 +213,8 @@ async def fork_share(
             doc_name = file_row.name if file_row else "Untitled"
 
             if owner_row and owner_row.email and file_row:
-                settings = get_settings()
-                share_url = f"{settings.frontend_url}/community/{share_token}"
+                frontend_url = get_frontend_url(request)
+                share_url = f"{frontend_url}/community/{share_token}"
 
                 async def _send_fork_email() -> None:
                     try:
@@ -452,10 +453,12 @@ async def toggle_follow(
     # Send notifications on follow (fire-and-forget)
     if is_following:
         follower_name = token.username or "A doXmind user"
+        frontend_url = get_frontend_url(request)
         asyncio.create_task(
             _send_follow_notification(
                 follower_name=follower_name,
                 followed_user_id=user_id,
+                frontend_url=frontend_url,
             )
         )
         # In-app notification
@@ -532,6 +535,7 @@ async def get_following_feed(
 async def _send_follow_notification(
     follower_name: str,
     followed_user_id: str,
+    frontend_url: str = "",
 ) -> None:
     """Send email notification when someone follows a user."""
     try:
@@ -547,9 +551,9 @@ async def _send_follow_notification(
 
             from services.email_service import get_email_service
 
-            settings = get_settings()
+            base_url = frontend_url or get_settings().frontend_url
             email_service = get_email_service()
-            profile_url = f"{settings.frontend_url}/profile/{followed_user_id}"
+            profile_url = f"{base_url}/profile/{followed_user_id}"
             await email_service.send_new_follower_notification(
                 to_email=row.email,
                 follower_name=follower_name,

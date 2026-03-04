@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Plus, ImageIcon, FileText, FolderOpen, ChevronRight, X, Globe, Check } from "lucide-react";
+import { Plus, ImageIcon, FileText, FolderOpen, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,6 @@ import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { useKBStore, formatFileSize } from "@/stores/kb-store";
 import { useDataFilesStore, isKBFile, isDataFile } from "@/stores/data-files-store";
-import { useSettingsStore } from "@/stores/settings-store";
 import { KBAttachmentItem } from "@/components/kb/kb-attachment-item";
 import { DataFileItem } from "@/components/data-files/data-file-item";
 
@@ -76,8 +75,6 @@ export function AttachmentMenu({
     deleteDataFile,
     getDataFiles,
   } = useDataFilesStore();
-
-  const { webSearchEnabled, setWebSearchEnabled } = useSettingsStore();
 
   // Get both KB attachments and data files
   const kbAttachments = conversationId ? getAttachments(conversationId) : [];
@@ -289,27 +286,6 @@ export function AttachmentMenu({
           {view === "main" ? (
             // Main menu view
             <div className="py-1">
-              {/* Web Search toggle */}
-              <button
-                type="button"
-                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent"
-              >
-                <div
-                  className={cn(
-                    "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg",
-                    webSearchEnabled ? "bg-blue-500 text-white" : "bg-muted"
-                  )}
-                >
-                  <Globe className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{t("webSearchOption")}</div>
-                  <div className="text-xs text-muted-foreground">{t("findRealtimeInfo")}</div>
-                </div>
-                {webSearchEnabled && <Check className="h-4 w-4 text-blue-500" />}
-              </button>
-
               {/* Attach Image option */}
               <button
                 type="button"

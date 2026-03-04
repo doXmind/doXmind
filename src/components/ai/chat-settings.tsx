@@ -1,28 +1,24 @@
 "use client";
 
-import { Globe } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { useSettingsStore } from "@/stores/settings-store";
 
 export function ChatSettings() {
   const t = useTranslations("chat");
-  const { webSearchEnabled, setWebSearchEnabled } = useSettingsStore();
+  const { thinkingEnabled, setThinkingEnabled } = useSettingsStore();
 
   return (
-    <div className="flex items-center gap-1">
-      <Tooltip content={webSearchEnabled ? t("webSearchEnabled") : t("enableWebSearch")} side="top">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-          className={`h-8 w-8 rounded-full ${webSearchEnabled ? "bg-blue-500/10 text-blue-500" : "text-muted-foreground"}`}
-          aria-label={webSearchEnabled ? t("disableWebSearch") : t("enableWebSearch")}
-        >
-          <Globe className="h-4 w-4" />
-        </Button>
-      </Tooltip>
-    </div>
+    <button
+      type="button"
+      onClick={() => setThinkingEnabled(!thinkingEnabled)}
+      className={`flex items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+        thinkingEnabled
+          ? "border-purple-500/30 bg-purple-500/10 text-purple-500"
+          : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
+      }`}
+      aria-label={thinkingEnabled ? t("disableThinking") : t("enableThinking")}
+    >
+      <span className={thinkingEnabled ? "" : "line-through"}>{t("thinkingLabel")}</span>
+    </button>
   );
 }

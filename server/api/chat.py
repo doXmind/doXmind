@@ -61,7 +61,9 @@ class ChatRequest(BaseModel):
     conversationId: str | None = None
     fileId: str | None = None  # For associating conversation with a file
     # Web search toggle (web fetch is always enabled)
-    webSearchEnabled: bool = False
+    webSearchEnabled: bool = True
+    # Thinking mode toggle - uses thinking model for deep reasoning
+    thinkingEnabled: bool = False
     # Data file IDs to pass to code execution sandbox
     dataFileIds: list[str] = []
     # Quick edit flag - optimizes agent for direct text editing
@@ -355,6 +357,11 @@ async def chat_stream(
             # Create agent with KB attachments, data files metadata, and web tools
             # Skills are auto-detected by the agent based on context
             # Code execution is always enabled (useful for calculations even without data files)
+            # Select model based on thinking toggle (only for server-default users)
+            effective_model = user_model
+            if not user_model and request.thinkingEnabled:
+                effective_model = settings.thinking_model
+
             agent = WritingAgent(
                 mode=request.mode,
                 kb_attachments=kb_attachments if kb_attachments else None,
@@ -362,7 +369,7 @@ async def chat_stream(
                 web_search_enabled=request.webSearchEnabled,
                 db=db,
                 api_key=user_api_key,
-                model=user_model,
+                model=effective_model,
                 is_quick_edit=request.isQuickEdit,
             )
 
