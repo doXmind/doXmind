@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { CommunityActionBar } from "@/components/community/community-action-bar";
 import { StickyActionBar } from "@/components/community/sticky-action-bar";
+import { ShareReactions } from "@/components/community/share-reactions";
 import { CommentsSection } from "@/components/comments/comments-section";
 import { SharedDocumentView } from "@/components/shared/shared-document-view";
 import { ReadingToolbar } from "@/components/shared/reading-toolbar";
@@ -24,6 +25,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { EditShareModal } from "@/components/community/edit-share-modal";
 import { useAuthStore } from "@/stores/auth-store";
+import { useTranslations, useLocale } from "next-intl";
 import {
   AlertCircle,
   ArrowLeft,
@@ -41,6 +43,7 @@ export default function CommunityDetailPage() {
   const router = useRouter();
   const token = params.token as string;
 
+  const t = useTranslations("community");
   const currentUser = useAuthStore((s) => s.user);
 
   const [detail, setDetail] = useState<CommunityDetailResponse | null>(null);
@@ -72,6 +75,13 @@ export default function CommunityDetailPage() {
 
     load();
   }, [token]);
+
+  // Update browser tab title
+  useEffect(() => {
+    if (detail) {
+      document.title = detail.title;
+    }
+  }, [detail]);
 
   // Keyboard shortcut: Ctrl+F / Cmd+F to open search
   useEffect(() => {
@@ -170,7 +180,7 @@ export default function CommunityDetailPage() {
               className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-foreground/80"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back to Community
+              {t("community")}
             </Link>
           </div>
         </div>
@@ -200,7 +210,7 @@ export default function CommunityDetailPage() {
                   className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground/70 transition-colors hover:text-foreground"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
-                  Community
+                  {t("community")}
                 </Link>
                 {showDocumentChrome && <ReadingToolbar />}
               </div>
@@ -271,7 +281,7 @@ export default function CommunityDetailPage() {
               )}
 
               {/* Action buttons */}
-              <div ref={actionBarRef} className="flex items-center gap-3">
+              <div ref={actionBarRef} className="mt-8 flex flex-wrap items-center gap-3">
                 <CommunityActionBar
                   detail={detail}
                   shareToken={token}
@@ -280,12 +290,17 @@ export default function CommunityDetailPage() {
                 {currentUser?.id === detail.owner.id && (
                   <button
                     onClick={() => setIsEditingMeta(true)}
-                    className="mt-6 inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-2 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-2 text-[13px] font-medium text-muted-foreground transition-all hover:border-foreground/20 hover:text-foreground"
                   >
                     <Pencil className="h-3.5 w-3.5" />
-                    Edit
+                    {t("editPost")}
                   </button>
                 )}
+              </div>
+
+              {/* Reactions */}
+              <div className="mt-4">
+                <ShareReactions shareToken={token} reactions={detail.reactions} />
               </div>
             </div>
           </div>
@@ -400,6 +415,7 @@ export default function CommunityDetailPage() {
             title: detail.title,
             description: detail.description,
             tags: detail.tags,
+            allowFork: detail.allow_fork,
           }}
           onSave={(updated) => {
             setDetail((prev) =>
@@ -409,6 +425,7 @@ export default function CommunityDetailPage() {
                     title: updated.title,
                     description: updated.description,
                     tags: updated.tags,
+                    allow_fork: updated.allow_fork,
                   }
                 : prev
             );
@@ -422,8 +439,8 @@ export default function CommunityDetailPage() {
 
 /* ── Helpers ─────────────────────────────────────────── */
 
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("en-US", {
+function formatDate(dateString: string, locale = "en"): string {
+  return new Date(dateString).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -437,11 +454,14 @@ function FolderItemsList({
   items: SharedFolderItem[];
   onItemClick: (id: string) => void;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("community");
+
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
         <Folder className="h-12 w-12 text-muted-foreground/20" />
-        <p className="text-sm text-muted-foreground">This folder is empty</p>
+        <p className="text-sm text-muted-foreground">{t("emptyFolder")}</p>
       </div>
     );
   }
@@ -456,7 +476,6 @@ function FolderItemsList({
             index !== items.length - 1 ? "border-b border-border" : ""
           }`}
         >
-          {/* Icon */}
           {item.is_folder ? (
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-amber-500/10 dark:bg-amber-500/15">
               <Folder className="h-[18px] w-[18px] text-amber-600 dark:text-amber-400" />
@@ -470,20 +489,14 @@ function FolderItemsList({
               )}
             </div>
           )}
-
-          {/* Name */}
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-foreground">
               {item.is_folder ? item.name : item.name.replace(/\.md$/, "")}
             </p>
           </div>
-
-          {/* Date */}
           <span className="flex-shrink-0 text-xs text-muted-foreground">
-            {formatDate(item.updated_at)}
+            {formatDate(item.updated_at, locale)}
           </span>
-
-          {/* Arrow for folders */}
           {item.is_folder && (
             <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
           )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import { useTranslations } from "next-intl";
@@ -15,6 +15,9 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
+  Heading5,
+  Heading6,
   List,
   ListOrdered,
   ListTodo,
@@ -54,6 +57,9 @@ const iconMap: Record<string, React.ReactNode> = {
   Heading1: <Heading1 className="h-3.5 w-3.5" />,
   Heading2: <Heading2 className="h-3.5 w-3.5" />,
   Heading3: <Heading3 className="h-3.5 w-3.5" />,
+  Heading4: <Heading4 className="h-3.5 w-3.5" />,
+  Heading5: <Heading5 className="h-3.5 w-3.5" />,
+  Heading6: <Heading6 className="h-3.5 w-3.5" />,
   List: <List className="h-3.5 w-3.5" />,
   ListOrdered: <ListOrdered className="h-3.5 w-3.5" />,
   ListTodo: <ListTodo className="h-3.5 w-3.5" />,
@@ -95,12 +101,76 @@ const COLOR_TYPES = new Set([
 
 export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockActionMenuProps) {
   const t = useTranslations("editor");
+  // Freeze blockPos at mount time — parent may update hoveredBlockPos
+  // via mousemove, but our target block must never change while open.
+  const [stableBlockPos] = useState(blockPos);
   const [focusIndex, setFocusIndex] = useState(0);
   const [activeSubmenu, setActiveSubmenu] = useState<SubmenuType>(null);
   const [submenuFocusIndex, setSubmenuFocusIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
+  const turnIntoRef = useRef<HTMLDivElement>(null);
+  const colorRef = useRef<HTMLDivElement>(null);
+  const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({});
+  const submenuCloseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const block = getBlockAtPos(editor, blockPos);
+  // Delayed close for submenus — allows mouse to travel from trigger to fixed submenu
+  const scheduleSubmenuClose = useCallback(() => {
+    submenuCloseTimer.current = setTimeout(() => setActiveSubmenu(null), 150);
+  }, []);
+  const cancelSubmenuClose = useCallback(() => {
+    clearTimeout(submenuCloseTimer.current);
+  }, []);
+
+  // Compute fixed position for submenus so they stay within the viewport.
+  // useLayoutEffect runs after DOM commit but before paint, so the submenu
+  // is positioned correctly on the very first frame (no flash).
+  useLayoutEffect(() => {
+    if (!activeSubmenu || !menuRef.current) {
+      setSubmenuStyle({});
+      return;
+    }
+
+    const submenuEl = activeSubmenu === "turnInto" ? turnIntoRef.current : colorRef.current;
+    const triggerEl = menuRef.current?.querySelector(
+      `[data-submenu-trigger="${activeSubmenu}"]`
+    ) as HTMLElement | null;
+    if (!submenuEl || !triggerEl) return;
+
+    const menuRect = menuRef.current!.getBoundingClientRect();
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const submenuRect = submenuEl.getBoundingClientRect();
+    const padding = 10;
+
+    // Anchor horizontally to the main menu's right edge
+    let left = menuRect.right + 4;
+    let top = triggerRect.top;
+    let maxHeight: number | undefined;
+
+    // Vertical overflow — shift up so bottom stays within viewport
+    if (top + submenuRect.height > window.innerHeight - padding) {
+      top = window.innerHeight - submenuRect.height - padding;
+    }
+
+    // If shifted above viewport, clamp to top and constrain height
+    if (top < padding) {
+      top = padding;
+      maxHeight = window.innerHeight - 2 * padding;
+    }
+
+    // Horizontal overflow — show to the left of the main menu instead
+    if (left + submenuRect.width > window.innerWidth - padding) {
+      left = menuRect.left - submenuRect.width - 4;
+    }
+
+    setSubmenuStyle({
+      position: "fixed",
+      left,
+      top,
+      ...(maxHeight ? { maxHeight, overflowY: "auto" as const } : {}),
+    });
+  }, [activeSubmenu]);
+
+  const block = getBlockAtPos(editor, stableBlockPos);
   const blockType = block?.node.type.name ?? "";
   const showTurnInto = TURN_INTO_TYPES.has(blockType);
   const showColor = COLOR_TYPES.has(blockType);
@@ -122,17 +192,27 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Clean up submenu close timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(submenuCloseTimer.current);
+  }, []);
+
   // Close on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
+      const target = e.target as Node;
+      // Check if click is inside the main menu or any fixed submenu
+      if (menuRef.current?.contains(target)) return;
+      if (turnIntoRef.current?.contains(target)) return;
+      if (colorRef.current?.contains(target)) return;
+      onClose();
     };
     const handleScroll = (e: Event) => {
-      // Ignore scroll events from within the menu itself (e.g. scrolling
-      // the "Turn Into" submenu list)
-      if (menuRef.current && menuRef.current.contains(e.target as Node)) return;
+      // Ignore scroll events from within the menu or submenus
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target)) return;
+      if (turnIntoRef.current?.contains(target)) return;
+      if (colorRef.current?.contains(target)) return;
       onClose();
     };
 
@@ -240,24 +320,17 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         }
       }
 
-      // Focus into the block so updateAttributes works
-      editor
-        .chain()
-        .focus()
-        .setTextSelection(targetPos + 1)
-        .run();
+      // Use direct ProseMirror transaction to set attributes at the exact position
+      // instead of selection-dependent updateAttributes which can target the wrong block
+      const node = editor.state.doc.nodeAt(targetPos);
+      if (!node) return;
 
-      if (type === "text") {
-        editor
-          .chain()
-          .updateAttributes(targetNodeType, { textColor: colorValue || null })
-          .run();
-      } else {
-        editor
-          .chain()
-          .updateAttributes(targetNodeType, { backgroundColor: colorValue || null })
-          .run();
-      }
+      const attrKey = type === "text" ? "textColor" : "backgroundColor";
+      const tr = editor.state.tr.setNodeMarkup(targetPos, undefined, {
+        ...node.attrs,
+        [attrKey]: colorValue || null,
+      });
+      editor.view.dispatch(tr);
       onClose();
     },
     [editor, block, onClose]
@@ -436,12 +509,14 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       {showTurnInto && (
         <div
           className="relative"
+          data-submenu-trigger="turnInto"
           onMouseEnter={() => {
+            cancelSubmenuClose();
             setFocusIndex(menuItems.indexOf("turnInto"));
             setActiveSubmenu("turnInto");
             setSubmenuFocusIndex(0);
           }}
-          onMouseLeave={() => setActiveSubmenu(null)}
+          onMouseLeave={scheduleSubmenuClose}
         >
           <div
             className={cn(
@@ -462,10 +537,14 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
 
           {activeSubmenu === "turnInto" && (
             <div
+              ref={turnIntoRef}
               className={cn(
-                "absolute left-full top-0 z-[101] max-h-[320px] min-w-[180px] overflow-y-auto rounded-lg border border-border bg-popover p-1.5 shadow-xl",
+                "fixed z-[101] max-h-[320px] min-w-[180px] overflow-y-auto rounded-lg border border-border bg-popover p-1.5 shadow-xl",
                 "animate-in fade-in-0 slide-in-from-left-1"
               )}
+              style={submenuStyle}
+              onMouseEnter={cancelSubmenuClose}
+              onMouseLeave={scheduleSubmenuClose}
               role="menu"
             >
               {turnIntoItems.map((option, idx) => {
@@ -545,12 +624,14 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
           <div className="my-1.5 h-px bg-border" />
           <div
             className="relative"
+            data-submenu-trigger="color"
             onMouseEnter={() => {
+              cancelSubmenuClose();
               setFocusIndex(menuItems.indexOf("color"));
               setActiveSubmenu("color");
               setSubmenuFocusIndex(0);
             }}
-            onMouseLeave={() => setActiveSubmenu(null)}
+            onMouseLeave={scheduleSubmenuClose}
           >
             <div
               className={cn(
@@ -571,10 +652,14 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
 
             {activeSubmenu === "color" && (
               <div
+                ref={colorRef}
                 className={cn(
-                  "absolute left-full top-0 z-[101] min-w-[240px] rounded-lg border border-border bg-popover shadow-xl",
+                  "fixed z-[101] min-w-[240px] rounded-lg border border-border bg-popover shadow-xl",
                   "animate-in fade-in-0 slide-in-from-left-1"
                 )}
+                style={submenuStyle}
+                onMouseEnter={cancelSubmenuClose}
+                onMouseLeave={scheduleSubmenuClose}
                 role="menu"
               >
                 <ColorPicker

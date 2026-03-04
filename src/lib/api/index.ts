@@ -15,6 +15,7 @@ import "./community";
 import "./comments";
 import "./data-files";
 import "./global-agent";
+import "./notifications";
 
 // Re-export the client class and singleton
 export { ApiClient } from "./client";
@@ -43,9 +44,14 @@ export type {
   ForkResponse,
   ForkInfo,
   UserProfileResponse,
+  FollowResponse,
+  FollowUser,
+  FollowListResponse,
   InviteEntry,
   SearchUserResult,
   SharedWithMeItem,
+  NotificationItem,
+  NotificationListResponse,
 } from "./types";
 export type { GlobalConversationItem, GlobalConversationMessages } from "./global-agent";
 

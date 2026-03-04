@@ -12,6 +12,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Underline from "@tiptap/extension-underline";
 import Typography from "@tiptap/extension-typography";
+import TextAlign from "@tiptap/extension-text-align";
 import Link from "@tiptap/extension-link";
 import { ResizableImage } from "@/extensions/resizable-image";
 import TaskList from "@tiptap/extension-task-list";
@@ -57,7 +58,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     StarterKit.configure({
       codeBlock: false, // We use CodeBlockLowlight instead
       heading: {
-        levels: [1, 2, 3, 4],
+        levels: [1, 2, 3, 4, 5, 6],
       },
       // Disable extensions bundled by StarterKit v3 that we configure manually below
       link: false,
@@ -76,6 +77,11 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
       multicolor: true,
     }),
     Typography,
+    TextAlign.configure({
+      types: ["heading", "paragraph"],
+      alignments: ["left", "center", "right"],
+      defaultAlignment: "left",
+    }),
 
     // Links
     Link.configure({

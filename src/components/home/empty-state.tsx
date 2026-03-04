@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Loader2, PenLine, FileText, ClipboardList, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -13,7 +13,12 @@ import { markdownToHtml } from "@/lib/markdown";
 import {
   getWelcomeDocumentMarkdown,
   WELCOME_DOCUMENT_FILENAME,
+  WELCOME_DOCUMENT_FILENAME_ZH,
 } from "@/components/onboarding/welcome-document";
+import {
+  zhEmptyStateContent,
+  zhEmptyStateFileNames,
+} from "@/components/sidebar/template-content-zh";
 
 interface TemplateCard {
   id: string;
@@ -21,7 +26,7 @@ interface TemplateCard {
   descKey: string;
   icon: React.ReactNode;
   highlight?: boolean;
-  getMarkdown: () => string;
+  getMarkdown: (locale?: string) => string;
   fileName: string;
 }
 
@@ -48,22 +53,34 @@ const TEMPLATE_CARDS: TemplateCard[] = [
     nameKey: "blogPost",
     descKey: "blogPostDesc",
     icon: <PenLine className="h-5 w-5" />,
-    getMarkdown: () => `*A one-line hook that draws readers in.*
+    getMarkdown: (locale) => {
+      if (locale === "zh" && zhEmptyStateContent["blog-post"])
+        return zhEmptyStateContent["blog-post"]();
+      return `*The problem isn't your willpower — it's your system.*
 
 ---
 
 ## Introduction
 
-Set the context: what problem are you addressing, and why should readers care?
+You've tried every to-do app. You've written lists on paper, on sticky notes, on your phone. And yet, by 3 PM, your carefully crafted list feels more like a guilt trip than a productivity tool.
 
-## Main Argument
+## The Real Problem
 
-Present your core ideas with supporting evidence, examples, or data.
+Traditional to-do lists have three fatal flaws:
 
-## Conclusion
+1. **No distinction between urgency and importance.**
+2. **No time awareness.**
+3. **No energy matching.**
 
-Summarize the key insights and end with a call to action or open question.
-`,
+## A Better Approach
+
+Instead of an endless list, limit yourself each day: **1** big thing, **3** medium things, **5** small things.
+
+## Try It Tomorrow
+
+Write down your 1-3-5. Just those 9 items. Nothing else.
+`;
+    },
     fileName: "Blog Post.md",
   },
   {
@@ -71,30 +88,33 @@ Summarize the key insights and end with a call to action or open question.
     nameKey: "meetingNotes",
     descKey: "meetingNotesDesc",
     icon: <ClipboardList className="h-5 w-5" />,
-    getMarkdown: () => {
+    getMarkdown: (locale) => {
+      if (locale === "zh" && zhEmptyStateContent["meeting-notes"])
+        return zhEmptyStateContent["meeting-notes"]();
       const date = new Date().toISOString().split("T")[0];
       const time = new Date().toTimeString().slice(0, 5);
       return `**Date:** ${date} ${time}
-**Location:**
-**Attendees:**
+**Attendees:** @Alice, @Bob, @Charlie
 
 ---
 
 ### Agenda
 
-1. Opening and introductions
-2.
-3.
+1. Sprint review — what shipped this week
+2. Blocker discussion
+3. Next sprint priorities
 
-### Discussion Notes
+### Discussion
 
-
+- Shipped the new onboarding flow (Alice). Conversion up 12%.
+- Search indexing migration complete (Bob). Latency down from 800ms → 120ms.
 
 ### Action Items
 
-| Owner | Task | Deadline |
-|-------|------|----------|
-|  |  |  |
+| Who | What | By when |
+|-----|------|---------|
+| @Charlie | Evaluate caching options | ${date} |
+| @Alice | Write implementation spec | ${date} |
 `;
     },
     fileName: "Meeting Notes.md",
@@ -104,6 +124,7 @@ Summarize the key insights and end with a call to action or open question.
 export function EmptyState() {
   const t = useTranslations("home");
   const tc = useTranslations("common");
+  const locale = useLocale();
   const router = useRouter();
   const { files, createFile, importFile, currentFolderId } = useFileStore();
   const { startOnboarding, onboardingCompleted } = useOnboardingStore();
@@ -116,7 +137,11 @@ export function EmptyState() {
     try {
       // For the welcome template, reuse existing tutorial document
       if (template.id === "welcome") {
-        const existing = files.find((f) => f.name.startsWith("Getting Started with doXmind"));
+        const existing = files.find(
+          (f) =>
+            f.name.startsWith("Getting Started with doXmind") ||
+            f.name.startsWith("doXmind 使用指南")
+        );
         if (existing) {
           if (!onboardingCompleted) startOnboarding(existing.id);
           router.push(`/editor/${existing.id}`);
@@ -126,7 +151,15 @@ export function EmptyState() {
 
       // Generate unique filename
       const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
-      let fileName = template.fileName;
+      let fileName: string;
+      if (template.id === "welcome") {
+        fileName = locale === "zh" ? WELCOME_DOCUMENT_FILENAME_ZH : template.fileName;
+      } else {
+        fileName =
+          locale === "zh" && zhEmptyStateFileNames[template.id]
+            ? zhEmptyStateFileNames[template.id]
+            : template.fileName;
+      }
       if (currentFiles.some((f) => f.name === fileName)) {
         const base = fileName.replace(/\.md$/, "");
         let counter = 2;
@@ -136,7 +169,7 @@ export function EmptyState() {
         fileName = `${base} ${counter}.md`;
       }
 
-      const markdown = template.getMarkdown();
+      const markdown = template.getMarkdown(locale);
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
       const newId = await createFile(fileName, htmlContent, currentFolderId);
       // Start onboarding when creating the tutorial document

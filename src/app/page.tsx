@@ -20,6 +20,10 @@ export default function HomePage() {
   });
 
   useEffect(() => {
+    document.title = "Home";
+  }, []);
+
+  useEffect(() => {
     initialize();
   }, [initialize]);
 

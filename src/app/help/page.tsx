@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -19,19 +20,16 @@ import {
   Layout,
   Home,
   ChevronDown,
-  Star,
-  Plus,
   LayoutTemplate,
   ChevronRight,
   MousePointerClick,
-  Mic,
-  Image as ImageIcon,
   FileText,
   CheckCircle,
   ArrowUp,
   ArrowDown,
   Languages,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/ui/logo";
 import { FeatureCard } from "@/components/help/feature-card";
@@ -54,27 +52,27 @@ import {
   HomeDashboardIllustration,
 } from "@/components/help/help-illustrations";
 
-const TOC_ITEMS = [
-  { id: "getting-started", label: "Getting Started", icon: Layout },
-  { id: "home-dashboard", label: "Home Dashboard", icon: Home },
-  { id: "editor", label: "Editor Basics", icon: Type },
-  { id: "quick-edit", label: "AI Quick Edit", icon: Sparkles },
-  { id: "autocomplete", label: "AI Autocomplete", icon: Zap },
-  { id: "chat", label: "AI Chat", icon: MessageSquare },
-  { id: "diff-review", label: "Diff Review", icon: GitCompare },
-  { id: "knowledge-base", label: "Knowledge Base", icon: BookOpen },
-  { id: "search", label: "Search & Navigation", icon: Search },
-  { id: "documents", label: "Document Management", icon: FolderOpen },
-  { id: "presentation", label: "Presentation Mode", icon: Presentation },
-  { id: "outline", label: "Outline & Mindlines", icon: List },
-  { id: "customization", label: "Customization", icon: Settings },
-  { id: "sharing", label: "Sharing", icon: Share2 },
-  { id: "shortcuts", label: "Keyboard Shortcuts", icon: Keyboard },
+const TOC_CONFIG = [
+  { id: "getting-started", labelKey: "gettingStarted" as const, icon: Layout },
+  { id: "home-dashboard", labelKey: "homeDashboard" as const, icon: Home },
+  { id: "editor", labelKey: "editorBasics" as const, icon: Type },
+  { id: "quick-edit", labelKey: "aiQuickEdit" as const, icon: Sparkles },
+  { id: "autocomplete", labelKey: "aiAutocomplete" as const, icon: Zap },
+  { id: "chat", labelKey: "aiChat" as const, icon: MessageSquare },
+  { id: "diff-review", labelKey: "diffReview" as const, icon: GitCompare },
+  { id: "knowledge-base", labelKey: "knowledgeBase" as const, icon: BookOpen },
+  { id: "search", labelKey: "searchNav" as const, icon: Search },
+  { id: "documents", labelKey: "docManagement" as const, icon: FolderOpen },
+  { id: "presentation", labelKey: "presentationMode" as const, icon: Presentation },
+  { id: "outline", labelKey: "outlineMindlines" as const, icon: List },
+  { id: "customization", labelKey: "customization" as const, icon: Settings },
+  { id: "sharing", labelKey: "sharing" as const, icon: Share2 },
+  { id: "shortcuts", labelKey: "keyboardShortcuts" as const, icon: Keyboard },
 ] as const;
 
 function useActiveSection() {
   const [activeId, setActiveId] = useState<string>("");
-  const headingIds = useRef(TOC_ITEMS.map((item) => item.id));
+  const headingIds = useRef(TOC_CONFIG.map((item) => item.id));
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -111,16 +109,17 @@ function useActiveSection() {
 function TocNav() {
   const [open, setOpen] = useState(false);
   const activeId = useActiveSection();
+  const t = useTranslations("help");
 
   return (
     <>
       {/* Desktop: sticky sidebar */}
-      <nav className="fixed right-8 top-24 hidden w-48 xl:block" aria-label="Table of contents">
+      <nav className="fixed right-8 top-24 hidden w-48 xl:block" aria-label={t("tableOfContents")}>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          On this page
+          {t("onThisPage")}
         </p>
         <ul className="space-y-1">
-          {TOC_ITEMS.map((item) => (
+          {TOC_CONFIG.map((item) => (
             <li key={item.id}>
               <a
                 href={`#${item.id}`}
@@ -132,7 +131,7 @@ function TocNav() {
                 )}
               >
                 <item.icon className="h-3 w-3 shrink-0" />
-                {item.label}
+                {t(item.labelKey)}
               </a>
             </li>
           ))}
@@ -148,14 +147,16 @@ function TocNav() {
           <span className="flex items-center gap-2">
             <List className="h-4 w-4" />
             {activeId
-              ? (TOC_ITEMS.find((item) => item.id === activeId)?.label ?? "Table of Contents")
-              : "Table of Contents"}
+              ? TOC_CONFIG.find((item) => item.id === activeId)
+                ? t(TOC_CONFIG.find((item) => item.id === activeId)!.labelKey)
+                : t("tableOfContents")
+              : t("tableOfContents")}
           </span>
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
         {open && (
           <ul className="max-h-60 overflow-y-auto border-t border-border px-4 pb-3 pt-2">
-            {TOC_ITEMS.map((item) => (
+            {TOC_CONFIG.map((item) => (
               <li key={item.id}>
                 <a
                   href={`#${item.id}`}
@@ -168,7 +169,7 @@ function TocNav() {
                   )}
                 >
                   <item.icon className="h-3 w-3 shrink-0" />
-                  {item.label}
+                  {t(item.labelKey)}
                 </a>
               </li>
             ))}
@@ -199,9 +200,10 @@ function SectionHeading({
 }
 
 function Tip({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("help");
   return (
     <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
-      <span className="mr-2 font-semibold text-primary">Tip:</span>
+      <span className="mr-2 font-semibold text-primary">{t("tipLabel")}</span>
       {children}
     </div>
   );
@@ -209,6 +211,14 @@ function Tip({ children }: { children: React.ReactNode }) {
 
 export default function HelpPage() {
   const isMac = useIsMac();
+  const t = useTranslations("help");
+
+  const rich = {
+    b: (chunks: ReactNode) => <strong className="text-foreground">{chunks}</strong>,
+    code: (chunks: ReactNode) => (
+      <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{chunks}</code>
+    ),
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -222,189 +232,123 @@ export default function HelpPage() {
           </Link>
         </div>
 
-        <h1 className="mb-2 text-3xl font-bold">Help & Feature Guide</h1>
-        <p className="mb-12 text-muted-foreground">
-          Everything you need to know about using doXmind, the AI-powered writing assistant.
-        </p>
+        <h1 className="mb-2 text-3xl font-bold">{t("pageTitle")}</h1>
+        <p className="mb-12 text-muted-foreground">{t("pageSubtitle")}</p>
 
         <div className="space-y-16">
           {/* ─── 1. Getting Started ──────────────────────────────────────── */}
           <section>
             <SectionHeading id="getting-started" icon={Layout}>
-              Getting Started
+              {t("gettingStarted")}
             </SectionHeading>
             <p className="mb-6 leading-relaxed text-muted-foreground">
-              doXmind has three main areas. The{" "}
-              <strong className="text-foreground">Outline Sidebar</strong> (left) shows your
-              document structure. The <strong className="text-foreground">Editor</strong> (center)
-              is where you write. The <strong className="text-foreground">AI Chat</strong> (right)
-              lets you interact with AI.
+              {t.rich("gettingStartedIntro", rich)}
             </p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <LayoutIllustration />
             </div>
             <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">Create your first document:</strong> Click the{" "}
-                <strong className="text-foreground">+ New Document</strong> button on the home
-                dashboard, or use the Command Palette (<ShortcutCombo keys={["Ctrl", "K"]} />) and
-                type &quot;New Document&quot;.
+                {t.rich("createFirstDocDesc", {
+                  ...rich,
+                  ctrlK: () => <ShortcutCombo keys={["Ctrl", "K"]} />,
+                })}
               </p>
-              <p>
-                <strong className="text-foreground">Onboarding tour:</strong> When you first sign
-                in, an interactive tour walks you through the key features. You can restart it
-                anytime from the user menu →{" "}
-                <strong className="text-foreground">Restart Tour</strong>.
-              </p>
+              <p>{t.rich("onboardingTourDesc", rich)}</p>
             </div>
           </section>
 
           {/* ─── Home Dashboard ─────────────────────────────────────────── */}
           <section>
             <SectionHeading id="home-dashboard" icon={Home}>
-              Home Dashboard
+              {t("homeDashboard")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              The home dashboard is your central hub for finding, creating, and managing documents.
-              It features a dual-mode search bar, recent files, favorites, and quick actions.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("homeDashboardIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <HomeDashboardIllustration />
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Search & Ask AI</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("searchAskAI")}</h3>
             <div className="mb-6 space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>{t("searchBarIntro")}</p>
               <p>
-                The search bar at the top has two modes, toggled by the pill buttons on the left:
+                {t.rich("askAIMode", {
+                  ...rich,
+                  enter: () => <ShortcutKey>Enter</ShortcutKey>,
+                })}
               </p>
-              <p>
-                <strong className="text-foreground">Ask AI mode</strong> (default): Type a question
-                about your writing and press <ShortcutKey>Enter</ShortcutKey>. The AI searches
-                across all your documents and returns an answer with source citations. You can ask
-                follow-up questions in the answer card for a multi-turn conversation.
-              </p>
-              <p>
-                <strong className="text-foreground">Search mode:</strong> Type to search documents
-                by title or content. Results appear instantly as you type (300ms debounce). Each
-                result shows a relevance score and a highlighted snippet matching your query.
-              </p>
+              <p>{t.rich("searchMode", rich)}</p>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Recent Files & Favorites</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("recentFavorites")}</h3>
             <div className="mb-6 space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Continue writing:</strong> Your 3 most recently
-                edited documents appear at the top for quick access. Click any tile to open it in
-                the editor.
-              </p>
-              <p>
-                <strong className="text-foreground">Favorites:</strong> Star important documents by
-                clicking the <Star className="inline h-3.5 w-3.5" /> star icon in the file menu.
-                Starred documents are pinned in a dedicated Favorites section on the dashboard.
-              </p>
+              <p>{t.rich("continueWriting", rich)}</p>
+              <p>{t.rich("favorites", rich)}</p>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Creating Documents</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("creatingDocuments")}</h3>
             <div className="mb-6 space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                Click the <Plus className="inline h-3.5 w-3.5" /> button in the top-right corner of
-                the file grid. A dropdown offers four options:
-              </p>
+              <p>{t("creatingDocumentsIntro")}</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="rounded-lg border border-border px-3 py-2.5">
-                  <p className="text-sm font-medium text-foreground">New Document</p>
-                  <p className="text-xs">Creates a blank document and opens it in the editor.</p>
+                  <p className="text-sm font-medium text-foreground">{t("newDocument")}</p>
+                  <p className="text-xs">{t("newDocumentDesc")}</p>
                 </div>
                 <div className="rounded-lg border border-border px-3 py-2.5">
-                  <p className="text-sm font-medium text-foreground">New Folder</p>
-                  <p className="text-xs">Creates a folder at the root level to organize files.</p>
+                  <p className="text-sm font-medium text-foreground">{t("newFolder")}</p>
+                  <p className="text-xs">{t("newFolderDesc")}</p>
                 </div>
                 <div className="rounded-lg border border-border px-3 py-2.5">
-                  <p className="text-sm font-medium text-foreground">From Template</p>
-                  <p className="text-xs">
-                    Pick from 4 templates: Welcome tutorial, Blank, Blog Post, or Meeting Notes.
-                  </p>
+                  <p className="text-sm font-medium text-foreground">{t("fromTemplate")}</p>
+                  <p className="text-xs">{t("fromTemplateDesc")}</p>
                 </div>
                 <div className="rounded-lg border border-border px-3 py-2.5">
-                  <p className="text-sm font-medium text-foreground">Import File</p>
-                  <p className="text-xs">
-                    Upload a PDF, DOCX, or Markdown file to convert into a document.
-                  </p>
+                  <p className="text-sm font-medium text-foreground">{t("importFile")}</p>
+                  <p className="text-xs">{t("importFileDesc")}</p>
                 </div>
               </div>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">File Actions</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("fileActions")}</h3>
             <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                Hover over any file card (or tap the three-dot menu on mobile) to access actions:
-              </p>
+              <p>{t("fileActionsIntro")}</p>
               <ul className="ml-4 list-disc space-y-1">
-                <li>
-                  <strong className="text-foreground">Rename</strong> — Change the file or folder
-                  name
-                </li>
-                <li>
-                  <strong className="text-foreground">Share</strong> — Generate a read-only share
-                  link
-                </li>
-                <li>
-                  <strong className="text-foreground">Add to Favorites</strong> — Pin to the
-                  Favorites section
-                </li>
-                <li>
-                  <strong className="text-foreground">Export As</strong> — Download as Markdown,
-                  PDF, or Word
-                </li>
-                <li>
-                  <strong className="text-foreground">Delete</strong> — Move to trash (recoverable)
-                </li>
+                <li>{t.rich("fileActionRename", rich)}</li>
+                <li>{t.rich("fileActionShare", rich)}</li>
+                <li>{t.rich("fileActionFavorite", rich)}</li>
+                <li>{t.rich("fileActionExport", rich)}</li>
+                <li>{t.rich("fileActionDelete", rich)}</li>
               </ul>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">View & Sort</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("viewSort")}</h3>
             <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Grid / List view:</strong> Toggle between card
-                grid and compact list using the view icons in the top-right corner. On mobile,
-                documents display as a horizontal swipeable carousel.
-              </p>
-              <p>
-                <strong className="text-foreground">Sort:</strong> Click the sort icon to order
-                files by name (A–Z / Z–A), modified date, or created date. Folders always appear
-                first.
-              </p>
-              <p>
-                <strong className="text-foreground">Drag & drop:</strong> Drag files onto folder
-                cards to move them into that folder. Drag files to the &quot;All Files&quot;
-                breadcrumb to move them back to the root.
-              </p>
+              <p>{t.rich("gridListView", rich)}</p>
+              <p>{t.rich("sort", rich)}</p>
+              <p>{t.rich("dragDrop", rich)}</p>
             </div>
           </section>
 
           {/* ─── 2. Editor Basics ────────────────────────────────────────── */}
           <section>
             <SectionHeading id="editor" icon={Type}>
-              Editor Basics
+              {t("editorBasics")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              The editor supports rich markdown with a what-you-see-is-what-you-get experience.
-              Format text using the toolbar, keyboard shortcuts, or markdown syntax.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("editorBasicsIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <ToolbarIllustration />
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Text Formatting</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("textFormatting")}</h3>
             <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
-                { label: "Bold", keys: ["Ctrl", "B"] },
-                { label: "Italic", keys: ["Ctrl", "I"] },
-                { label: "Underline", keys: ["Ctrl", "U"] },
-                { label: "Strikethrough", keys: ["Ctrl", "Shift", "S"] },
-                { label: "Highlight", keys: ["Ctrl", "Shift", "H"] },
-                { label: "Inline Code", keys: ["Ctrl", "E"] },
-                { label: "Add Link", keys: ["Ctrl", "K"] },
+                { label: t("bold"), keys: ["Ctrl", "B"] },
+                { label: t("italic"), keys: ["Ctrl", "I"] },
+                { label: t("underline"), keys: ["Ctrl", "U"] },
+                { label: t("strikethrough"), keys: ["Ctrl", "Shift", "S"] },
+                { label: t("highlight"), keys: ["Ctrl", "Shift", "H"] },
+                { label: t("inlineCode"), keys: ["Ctrl", "E"] },
+                { label: t("addLink"), keys: ["Ctrl", "K"] },
               ].map((item) => (
                 <div
                   key={item.label}
@@ -416,69 +360,46 @@ export default function HelpPage() {
               ))}
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Block Types</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("blockTypes")}</h3>
             <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">Headings:</strong> Three levels (H1–H3) via{" "}
-                <ShortcutCombo keys={["Ctrl", "Alt", "1"]} /> / <ShortcutKey>2</ShortcutKey> /{" "}
-                <ShortcutKey>3</ShortcutKey>, or type{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">#</code>,{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">##</code>,{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">###</code> followed by a
-                space.
+                {t.rich("headingsDesc", {
+                  ...rich,
+                  ctrlAlt1: () => <ShortcutCombo keys={["Ctrl", "Alt", "1"]} />,
+                  key2: () => <ShortcutKey>2</ShortcutKey>,
+                  key3: () => <ShortcutKey>3</ShortcutKey>,
+                })}
               </p>
               <p>
-                <strong className="text-foreground">Lists:</strong> Bullet (
-                <ShortcutCombo keys={["Ctrl", "Shift", "8"]} />
-                ), Numbered (
-                <ShortcutCombo keys={["Ctrl", "Shift", "7"]} />
-                ), and Task lists (
-                <ShortcutCombo keys={["Ctrl", "Shift", "9"]} />) with checkboxes.
+                {t.rich("listsDesc", {
+                  ...rich,
+                  ctrlShift8: () => <ShortcutCombo keys={["Ctrl", "Shift", "8"]} />,
+                  ctrlShift7: () => <ShortcutCombo keys={["Ctrl", "Shift", "7"]} />,
+                  ctrlShift9: () => <ShortcutCombo keys={["Ctrl", "Shift", "9"]} />,
+                })}
               </p>
-              <p>
-                <strong className="text-foreground">Code Blocks:</strong> Fenced with{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">```</code>. Supports syntax
-                highlighting with a language selector and line numbers.
-              </p>
-              <p>
-                <strong className="text-foreground">Math Blocks:</strong> Inline math with{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">$...$</code> and display
-                math with <code className="rounded bg-muted px-1.5 py-0.5 text-xs">$$...$$</code>.
-                Supports full LaTeX syntax.
-              </p>
-              <p>
-                <strong className="text-foreground">Tables:</strong> Insert via slash command. Use
-                the column/row menus to add, remove, or reorder rows and columns.
-              </p>
-              <p>
-                <strong className="text-foreground">Other blocks:</strong> Callouts (info, warning,
-                error, success), Toggle/collapsible sections, Images (with resize handles), and
-                Horizontal dividers.
-              </p>
+              <p>{t.rich("codeBlocksDesc", rich)}</p>
+              <p>{t.rich("mathBlocksDesc", rich)}</p>
+              <p>{t.rich("tablesDesc", rich)}</p>
+              <p>{t.rich("otherBlocksDesc", rich)}</p>
             </div>
 
-            <Tip>
-              Type <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/</code> at the start of
-              a new line to open the slash command menu and quickly insert any block type.
-            </Tip>
+            <Tip>{t.rich("slashCommandTip", rich)}</Tip>
           </section>
 
           {/* ─── 3. AI Quick Edit ────────────────────────────────────────── */}
           <section>
             <SectionHeading id="quick-edit" icon={Sparkles}>
-              AI Quick Edit
+              {t("aiQuickEdit")}
             </SectionHeading>
-            <p className="mb-4 leading-relaxed text-muted-foreground">
-              Select any text in the editor to see a floating AI menu with instant editing options.
-              The AI processes your selection and shows a visual diff you can accept or reject.
-            </p>
+            <p className="mb-4 leading-relaxed text-muted-foreground">{t("aiQuickEditIntro")}</p>
 
             <StepGuide
               steps={[
-                { label: "Select text", icon: <MousePointerClick className="h-4 w-4" /> },
-                { label: "Menu appears", icon: <Sparkles className="h-4 w-4" /> },
-                { label: "Choose action", icon: <CheckCircle className="h-4 w-4" /> },
-                { label: "Review diff", icon: <GitCompare className="h-4 w-4" /> },
+                { label: t("stepSelectText"), icon: <MousePointerClick className="h-4 w-4" /> },
+                { label: t("stepMenuAppears"), icon: <Sparkles className="h-4 w-4" /> },
+                { label: t("stepChooseAction"), icon: <CheckCircle className="h-4 w-4" /> },
+                { label: t("stepReviewDiff"), icon: <GitCompare className="h-4 w-4" /> },
               ]}
             />
 
@@ -486,43 +407,43 @@ export default function HelpPage() {
               <QuickEditIllustration />
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Available Actions</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("availableActions")}</h3>
             <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {[
                 {
                   icon: <CheckCircle className="h-4 w-4" />,
-                  label: "Fix Grammar",
-                  desc: "Correct spelling and grammar errors",
+                  label: t("fixGrammar"),
+                  desc: t("fixGrammarDesc"),
                 },
                 {
                   icon: <Sparkles className="h-4 w-4" />,
-                  label: "Improve Writing",
-                  desc: "Enhance clarity and style",
+                  label: t("improveWriting"),
+                  desc: t("improveWritingDesc"),
                 },
                 {
                   icon: <FileText className="h-4 w-4" />,
-                  label: "Simplify",
-                  desc: "Make text more concise",
+                  label: t("simplify"),
+                  desc: t("simplifyDesc"),
                 },
                 {
                   icon: <ArrowUp className="h-4 w-4" />,
-                  label: "Make Longer",
-                  desc: "Expand with more detail",
+                  label: t("makeLonger"),
+                  desc: t("makeLongerDesc"),
                 },
                 {
                   icon: <ArrowDown className="h-4 w-4" />,
-                  label: "Make Shorter",
-                  desc: "Condense the content",
+                  label: t("makeShorter"),
+                  desc: t("makeShorterDesc"),
                 },
                 {
                   icon: <MessageSquare className="h-4 w-4" />,
-                  label: "Change Tone",
-                  desc: "Professional, Casual, Friendly, or Confident",
+                  label: t("changeTone"),
+                  desc: t("changeToneDesc"),
                 },
                 {
                   icon: <Languages className="h-4 w-4" />,
-                  label: "Translate",
-                  desc: "EN, ZH, ES, FR, DE, JA",
+                  label: t("translate"),
+                  desc: t("translateDesc"),
                 },
               ].map((item) => (
                 <div
@@ -538,50 +459,48 @@ export default function HelpPage() {
               ))}
             </div>
 
-            <Tip>
-              Choose <strong>Ask in Chat</strong> at the bottom of the menu to send your selection
-              to the AI chat with a custom instruction.
-            </Tip>
+            <Tip>{t.rich("askInChatTip", rich)}</Tip>
           </section>
 
           {/* ─── 4. AI Autocomplete ──────────────────────────────────────── */}
           <section>
             <SectionHeading id="autocomplete" icon={Zap}>
-              AI Autocomplete
+              {t("aiAutocomplete")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              As you type, the AI suggests continuations displayed as ghost text after your cursor.
-              Suggestions appear automatically after a brief pause, or trigger them manually.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("aiAutocompleteIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <AutocompleteIllustration />
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">How to Use</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("howToUse")}</h3>
             <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">Auto trigger:</strong> Pause typing for ~750ms
-                and a suggestion appears. Press <ShortcutKey>Tab</ShortcutKey> to accept, or{" "}
-                <ShortcutKey>Esc</ShortcutKey> to dismiss.
+                {t.rich("autoTriggerDesc", {
+                  ...rich,
+                  tab: () => <ShortcutKey>Tab</ShortcutKey>,
+                  esc: () => <ShortcutKey>Esc</ShortcutKey>,
+                })}
               </p>
               <p>
-                <strong className="text-foreground">Manual trigger:</strong> Press{" "}
-                <ShortcutCombo keys={["Alt", "/"]} /> at any time to request a suggestion
-                immediately.
+                {t.rich("manualTriggerDesc", {
+                  ...rich,
+                  altSlash: () => <ShortcutCombo keys={["Alt", "/"]} />,
+                })}
               </p>
               <p>
-                <strong className="text-foreground">Long mode:</strong> Press{" "}
-                <ShortcutCombo keys={["Ctrl", "Shift", "Space"]} /> to get a multi-sentence
-                suggestion instead of a short one.
+                {t.rich("longModeDesc", {
+                  ...rich,
+                  ctrlShiftSpace: () => <ShortcutCombo keys={["Ctrl", "Shift", "Space"]} />,
+                })}
               </p>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Modes</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("autocompleteModes")}</h3>
             <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
-                { mode: "Adaptive", desc: "AI picks short or long based on context" },
-                { mode: "Short", desc: "One word + at most one more" },
-                { mode: "Long", desc: "Multi-sentence completions" },
+                { mode: t("adaptiveMode"), desc: t("adaptiveModeDesc") },
+                { mode: t("shortMode"), desc: t("shortModeDesc") },
+                { mode: t("longMode"), desc: t("longModeDesc") },
               ].map((item) => (
                 <div
                   key={item.mode}
@@ -593,151 +512,87 @@ export default function HelpPage() {
               ))}
             </div>
 
-            <Tip>
-              Autocomplete is disabled inside code blocks, tables, headings, and math blocks to
-              avoid unwanted suggestions. Configure modes in Settings → Typography.
-            </Tip>
+            <Tip>{t("autocompleteTip")}</Tip>
           </section>
 
           {/* ─── 5. AI Chat ──────────────────────────────────────────────── */}
           <section>
             <SectionHeading id="chat" icon={MessageSquare}>
-              AI Chat
+              {t("aiChat")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              The AI chat panel lets you have a conversation with Claude about your document. Ask
-              questions, request edits, brainstorm ideas, or have the AI rewrite entire sections.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("aiChatIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <ChatIllustration />
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Chat Modes</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("chatModes")}</h3>
             <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="rounded-lg border border-border px-4 py-3">
-                <p className="text-sm font-medium">Sidebar Mode</p>
-                <p className="text-xs text-muted-foreground">
-                  Chat panel sits to the right of the editor. Drag the border to resize.
-                </p>
+                <p className="text-sm font-medium">{t("sidebarMode")}</p>
+                <p className="text-xs text-muted-foreground">{t("sidebarModeDesc")}</p>
               </div>
               <div className="rounded-lg border border-border px-4 py-3">
-                <p className="text-sm font-medium">Floating Mode</p>
-                <p className="text-xs text-muted-foreground">
-                  Chat window overlays the editor. Move it anywhere on screen.
-                </p>
+                <p className="text-sm font-medium">{t("floatingMode")}</p>
+                <p className="text-xs text-muted-foreground">{t("floatingModeDesc")}</p>
               </div>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Features</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("chatFeatures")}</h3>
             <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">Send messages:</strong> Type in the input box
-                and press <ShortcutKey>Enter</ShortcutKey>. Use{" "}
-                <ShortcutCombo keys={["Shift", "Enter"]} /> for a new line.
+                {t.rich("sendMessagesDesc", {
+                  ...rich,
+                  enter: () => <ShortcutKey>Enter</ShortcutKey>,
+                  shiftEnter: () => <ShortcutCombo keys={["Shift", "Enter"]} />,
+                })}
               </p>
-              <p>
-                <strong className="text-foreground">Voice input:</strong> Press and hold the{" "}
-                <Mic className="inline h-3.5 w-3.5" /> microphone button for at least 1 second, then
-                release to send your transcribed speech.
-              </p>
-              <p>
-                <strong className="text-foreground">Image attachments:</strong> Click the{" "}
-                <ImageIcon className="inline h-3.5 w-3.5" /> image button or paste an image. Up to
-                10 images per message (5MB each).
-              </p>
-              <p>
-                <strong className="text-foreground">Quick suggestions:</strong> Click the suggestion
-                chips (e.g., &quot;Summarize document&quot;, &quot;Brainstorm ideas&quot;) for
-                instant prompts.
-              </p>
-              <p>
-                <strong className="text-foreground">Document editing:</strong> The AI can directly
-                edit your document during chat. Changes appear as a visual diff you can accept or
-                reject.
-              </p>
-              <p>
-                <strong className="text-foreground">Extended thinking:</strong> Enable deep
-                reasoning mode for complex requests that require multi-step analysis.
-              </p>
+              <p>{t.rich("voiceInputDesc", rich)}</p>
+              <p>{t.rich("imageAttachmentsDesc", rich)}</p>
+              <p>{t.rich("quickSuggestionsDesc", rich)}</p>
+              <p>{t.rich("documentEditingDesc", rich)}</p>
+              <p>{t.rich("extendedThinkingDesc", rich)}</p>
             </div>
           </section>
 
           {/* ─── 6. Diff Review ──────────────────────────────────────────── */}
           <section>
             <SectionHeading id="diff-review" icon={GitCompare}>
-              Diff Review
+              {t("diffReview")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              When the AI edits your document (via Quick Edit or Chat), changes are shown as a
-              visual diff. Green highlights indicate additions; red highlights indicate removals.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("diffReviewIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <DiffReviewIllustration />
             </div>
             <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Accept or reject individually:</strong> Each
-                change (hunk) has its own <strong className="text-foreground">Accept</strong> and{" "}
-                <strong className="text-foreground">Reject</strong> buttons. Click to apply or
-                discard that specific change.
-              </p>
-              <p>
-                <strong className="text-foreground">Bulk actions:</strong> Use{" "}
-                <strong className="text-foreground">Accept All</strong> or{" "}
-                <strong className="text-foreground">Reject All</strong> in the toolbar to process
-                all changes at once.
-              </p>
-              <p>
-                <strong className="text-foreground">Version snapshots:</strong> When you accept
-                edits, a version snapshot is automatically saved. You can always restore to a
-                previous version from the version history panel.
-              </p>
+              <p>{t.rich("acceptRejectIndividually", rich)}</p>
+              <p>{t.rich("bulkActions", rich)}</p>
+              <p>{t.rich("versionSnapshots", rich)}</p>
             </div>
           </section>
 
           {/* ─── 7. Knowledge Base ───────────────────────────────────────── */}
           <section>
             <SectionHeading id="knowledge-base" icon={BookOpen}>
-              Knowledge Base
+              {t("knowledgeBase")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              Upload reference documents so the AI can search and cite them when answering your
-              questions. Perfect for research papers, specifications, or reference material.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("knowledgeBaseIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <KnowledgeBaseIllustration />
             </div>
             <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Supported formats:</strong> PDF, DOCX, and PPTX
-                files. Upload multiple files at once via drag-and-drop or the file picker.
-              </p>
-              <p>
-                <strong className="text-foreground">Processing:</strong> After upload, files are
-                chunked and indexed for vector search. Status indicators show: uploading →
-                processing → indexed.
-              </p>
-              <p>
-                <strong className="text-foreground">How it works:</strong> When you ask the AI a
-                question, it automatically searches your uploaded documents and references relevant
-                passages in its response, with source citations.
-              </p>
-              <p>
-                <strong className="text-foreground">Per-conversation:</strong> Each chat
-                conversation has its own set of attachments. Different conversations can reference
-                different documents.
-              </p>
+              <p>{t.rich("supportedFormats", rich)}</p>
+              <p>{t.rich("processing", rich)}</p>
+              <p>{t.rich("howItWorks", rich)}</p>
+              <p>{t.rich("perConversation", rich)}</p>
             </div>
           </section>
 
           {/* ─── 8. Search & Navigation ──────────────────────────────────── */}
           <section>
             <SectionHeading id="search" icon={Search}>
-              Search & Navigation
+              {t("searchNav")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              Quickly find anything in your documents and navigate your workspace.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("searchNavIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <CommandPaletteIllustration />
             </div>
@@ -745,54 +600,55 @@ export default function HelpPage() {
             <div className="space-y-4">
               <FeatureCard
                 icon={<Search className="h-5 w-5" />}
-                title="Semantic Search"
+                title={t("semanticSearch")}
                 className="border-0 bg-transparent p-0"
               >
                 <p>
-                  Press <ShortcutCombo keys={["Ctrl", "Shift", "F"]} /> to open AI-powered semantic
-                  search. Unlike plain text search, this understands meaning — search for
-                  &quot;budget discussion&quot; to find paragraphs about financial planning even if
-                  they don&apos;t contain those exact words. Results are ranked by relevance with
-                  highlighting.
+                  {t.rich("semanticSearchDesc", {
+                    ...rich,
+                    ctrlShiftF: () => <ShortcutCombo keys={["Ctrl", "Shift", "F"]} />,
+                  })}
                 </p>
               </FeatureCard>
 
               <FeatureCard
                 icon={<Search className="h-5 w-5" />}
-                title="Find & Replace"
+                title={t("findReplace")}
                 className="border-0 bg-transparent p-0"
               >
                 <p>
-                  Press <ShortcutCombo keys={["Ctrl", "F"]} /> for traditional text search within
-                  your document. Supports{" "}
-                  <strong className="text-foreground">case-sensitive</strong>,{" "}
-                  <strong className="text-foreground">whole word</strong>, and{" "}
-                  <strong className="text-foreground">regex</strong> modes. Navigate matches with
-                  arrow buttons or <ShortcutKey>Enter</ShortcutKey> /{" "}
-                  <ShortcutCombo keys={["Shift", "Enter"]} />.
+                  {t.rich("findReplaceDesc", {
+                    ...rich,
+                    ctrlF: () => <ShortcutCombo keys={["Ctrl", "F"]} />,
+                    enter: () => <ShortcutKey>Enter</ShortcutKey>,
+                    shiftEnter: () => <ShortcutCombo keys={["Shift", "Enter"]} />,
+                  })}
                 </p>
               </FeatureCard>
 
               <FeatureCard
                 icon={<Zap className="h-5 w-5" />}
-                title="Command Palette"
+                title={t("commandPalette")}
                 className="border-0 bg-transparent p-0"
               >
                 <p>
-                  Press <ShortcutCombo keys={["Ctrl", "K"]} /> to open the command palette. Quickly
-                  access any action: create documents, toggle panels, change themes, search files,
-                  and more. Start typing to filter results.
+                  {t.rich("commandPaletteDesc", {
+                    ...rich,
+                    ctrlK: () => <ShortcutCombo keys={["Ctrl", "K"]} />,
+                  })}
                 </p>
               </FeatureCard>
 
               <FeatureCard
                 icon={<FolderOpen className="h-5 w-5" />}
-                title="Quick File Switcher"
+                title={t("quickFileSwitcher")}
                 className="border-0 bg-transparent p-0"
               >
                 <p>
-                  Press <ShortcutCombo keys={["Ctrl", "Tab"]} /> to quickly switch between your open
-                  and recent documents.
+                  {t.rich("quickFileSwitcherDesc", {
+                    ...rich,
+                    ctrlTab: () => <ShortcutCombo keys={["Ctrl", "Tab"]} />,
+                  })}
                 </p>
               </FeatureCard>
             </div>
@@ -801,96 +657,64 @@ export default function HelpPage() {
           {/* ─── 9. Document Management ──────────────────────────────────── */}
           <section>
             <SectionHeading id="documents" icon={FolderOpen}>
-              Document Management
+              {t("docManagement")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              Organize your documents with folders, manage versions, and export to multiple formats.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("docManagementIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <FileTreeIllustration />
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Organization</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("organization")}</h3>
             <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Folders:</strong> Create folders at the root
-                level to organize your documents hierarchically. Drag and drop files between
-                folders, or drag to the &quot;All Files&quot; breadcrumb to move files back to the
-                root.
-              </p>
-              <p>
-                <strong className="text-foreground">Bulk actions:</strong> Select multiple files to
-                delete or move them together.
-              </p>
-              <p>
-                <strong className="text-foreground">Trash:</strong> Deleted files go to the trash
-                first. Open the trash panel (trash icon in the top-right corner of the file grid) to
-                recover or permanently delete files.
-              </p>
+              <p>{t.rich("foldersDesc", rich)}</p>
+              <p>{t.rich("bulkActionsDoc", rich)}</p>
+              <p>{t.rich("trashDesc", rich)}</p>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Import & Templates</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("importTemplates")}</h3>
             <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Import:</strong> Click the{" "}
-                <Plus className="inline h-3.5 w-3.5" /> button →{" "}
-                <strong className="text-foreground">Import File</strong> to upload a PDF, DOCX, or
-                Markdown file. The file is converted and opened in the editor automatically.
-              </p>
-              <p>
-                <strong className="text-foreground">Templates:</strong> Click{" "}
-                <Plus className="inline h-3.5 w-3.5" /> →{" "}
-                <strong className="text-foreground">From Template</strong> to start from a pre-built
-                structure:
-              </p>
+              <p>{t.rich("importDesc", rich)}</p>
+              <p>{t.rich("templatesDesc", rich)}</p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg border border-border px-3 py-2">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Welcome Tutorial
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> {t("welcomeTutorial")}
                   </p>
-                  <p className="text-xs">Interactive guide to all features</p>
+                  <p className="text-xs">{t("welcomeTutorialDesc")}</p>
                 </div>
                 <div className="rounded-lg border border-border px-3 py-2">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <FileText className="h-3.5 w-3.5 text-primary" /> Blank Document
+                    <FileText className="h-3.5 w-3.5 text-primary" /> {t("blankDocument")}
                   </p>
-                  <p className="text-xs">Empty canvas to start from scratch</p>
+                  <p className="text-xs">{t("blankDocumentDesc")}</p>
                 </div>
                 <div className="rounded-lg border border-border px-3 py-2">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <LayoutTemplate className="h-3.5 w-3.5 text-primary" /> Blog Post
+                    <LayoutTemplate className="h-3.5 w-3.5 text-primary" /> {t("blogPost")}
                   </p>
-                  <p className="text-xs">Article with intro, body, and conclusion</p>
+                  <p className="text-xs">{t("blogPostDesc")}</p>
                 </div>
                 <div className="rounded-lg border border-border px-3 py-2">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <FileText className="h-3.5 w-3.5 text-primary" /> Meeting Notes
+                    <FileText className="h-3.5 w-3.5 text-primary" /> {t("meetingNotes")}
                   </p>
-                  <p className="text-xs">Agenda, notes, and action items table</p>
+                  <p className="text-xs">{t("meetingNotesDesc")}</p>
                 </div>
               </div>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Version History</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("versionHistory")}</h3>
             <div className="mb-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                Every change is tracked. Open the version history panel to browse all saved
-                versions. Each version is tagged with its type: manual save, AI edit, quick edit, or
-                restored.
-              </p>
-              <p>
-                Click any version to preview it. Use{" "}
-                <strong className="text-foreground">Restore</strong> to revert your document to that
-                point.
-              </p>
+              <p>{t("versionHistoryDesc")}</p>
+              <p>{t.rich("versionHistoryRestore", rich)}</p>
             </div>
 
-            <h3 className="mb-3 text-lg font-semibold">Export</h3>
+            <h3 className="mb-3 text-lg font-semibold">{t("export")}</h3>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { format: "Markdown", ext: ".md" },
-                { format: "PDF", ext: ".pdf" },
-                { format: "Word", ext: ".docx" },
+                { format: t("markdown"), ext: t("markdownExt") },
+                { format: t("pdf"), ext: t("pdfExt") },
+                { format: t("word"), ext: t("wordExt") },
               ].map((item) => (
                 <div
                   key={item.format}
@@ -906,112 +730,88 @@ export default function HelpPage() {
           {/* ─── 10. Presentation Mode ───────────────────────────────────── */}
           <section>
             <SectionHeading id="presentation" icon={Presentation}>
-              Presentation Mode
+              {t("presentationMode")}
             </SectionHeading>
             <p className="mb-6 leading-relaxed text-muted-foreground">
-              Turn your document into a full-screen slideshow. Present directly from your writing
-              without exporting to a separate presentation tool.
+              {t("presentationModeIntro")}
             </p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <PresentationIllustration />
             </div>
             <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">Activate:</strong> Press{" "}
-                <ShortcutKey>F5</ShortcutKey> or click the presentation button in the header
-                toolbar.
+                {t.rich("activate", {
+                  ...rich,
+                  f5: () => <ShortcutKey>F5</ShortcutKey>,
+                })}
+              </p>
+              <p>{t.rich("slideSplitting", rich)}</p>
+              <p>
+                {t.rich("navigate", {
+                  ...rich,
+                  leftArrow: () => <ShortcutKey>←</ShortcutKey>,
+                  rightArrow: () => <ShortcutKey>→</ShortcutKey>,
+                })}
               </p>
               <p>
-                <strong className="text-foreground">Slide splitting:</strong> Slides are created
-                from horizontal dividers (
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">---</code>) in your
-                document. If none are found, the document splits at H1/H2 headings.
-              </p>
-              <p>
-                <strong className="text-foreground">Navigate:</strong> Use{" "}
-                <ShortcutKey>←</ShortcutKey> <ShortcutKey>→</ShortcutKey> arrow keys or click the
-                on-screen navigation buttons. Dot indicators show your current position.
-              </p>
-              <p>
-                <strong className="text-foreground">Exit:</strong> Press{" "}
-                <ShortcutKey>Esc</ShortcutKey> or click the exit button.
+                {t.rich("exit", {
+                  ...rich,
+                  esc: () => <ShortcutKey>Esc</ShortcutKey>,
+                })}
               </p>
             </div>
 
-            <Tip>
-              The first slide automatically becomes a cover slide with your document title. Add{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">---</code> between sections
-              to control exactly where slides break.
-            </Tip>
+            <Tip>{t.rich("presentationTip", rich)}</Tip>
           </section>
 
           {/* ─── 11. Outline & Mindlines ─────────────────────────────────── */}
           <section>
             <SectionHeading id="outline" icon={List}>
-              Outline & Mindlines
+              {t("outlineMindlines")}
             </SectionHeading>
             <p className="mb-6 leading-relaxed text-muted-foreground">
-              Navigate your document structure at a glance with the outline sidebar and the visual
-              mindlines map.
+              {t("outlineMindlinesIntro")}
             </p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <OutlineIllustration />
             </div>
             <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">Outline sidebar:</strong> Toggle with{" "}
-                <ShortcutCombo keys={["Ctrl", "Shift", "O"]} />. Shows all headings (H1–H6) in a
-                nested tree. Click any heading to scroll directly to that section. Drag the border
-                to resize.
+                {t.rich("outlineSidebar", {
+                  ...rich,
+                  ctrlShiftO: () => <ShortcutCombo keys={["Ctrl", "Shift", "O"]} />,
+                })}
               </p>
-              <p>
-                <strong className="text-foreground">Mindlines:</strong> A visual node-based map of
-                your document headings. Click nodes to navigate. Toggle between expanded and
-                collapsed views for a minimal, line-indicator mode.
-              </p>
+              <p>{t.rich("mindlines", rich)}</p>
             </div>
           </section>
 
           {/* ─── 12. Customization ───────────────────────────────────────── */}
           <section>
             <SectionHeading id="customization" icon={Settings}>
-              Customization
+              {t("customization")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              Personalize your writing environment to match your preferences.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("customizationIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <CustomizationIllustration />
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="rounded-lg border border-border px-4 py-3">
-                <p className="mb-1 text-sm font-medium">Typography</p>
-                <p className="text-xs text-muted-foreground">
-                  Font family (Sans / Serif / Mono), font size (Small / Normal / Large), and line
-                  height (Compact / Normal / Relaxed). Access via user menu → Settings → Typography.
-                </p>
+                <p className="mb-1 text-sm font-medium">{t("typography")}</p>
+                <p className="text-xs text-muted-foreground">{t("typographyDesc")}</p>
               </div>
               <div className="rounded-lg border border-border px-4 py-3">
-                <p className="mb-1 text-sm font-medium">Editor Width</p>
-                <p className="text-xs text-muted-foreground">
-                  Switch between Narrow, Normal, Wide, and Full width. Cycle through options via the
-                  Command Palette.
-                </p>
+                <p className="mb-1 text-sm font-medium">{t("editorWidth")}</p>
+                <p className="text-xs text-muted-foreground">{t("editorWidthDesc")}</p>
               </div>
               <div className="rounded-lg border border-border px-4 py-3">
-                <p className="mb-1 text-sm font-medium">Themes</p>
-                <p className="text-xs text-muted-foreground">
-                  Light, Dark, or System (follows your OS). Plus a High Contrast mode for
-                  accessibility. Toggle in the header with the sun/moon icon.
-                </p>
+                <p className="mb-1 text-sm font-medium">{t("themes")}</p>
+                <p className="text-xs text-muted-foreground">{t("themesDesc")}</p>
               </div>
               <div className="rounded-lg border border-border px-4 py-3">
-                <p className="mb-1 text-sm font-medium">Spellcheck</p>
-                <p className="text-xs text-muted-foreground">
-                  Real-time spell and grammar checking. Toggle on/off in the header toolbar. Click
-                  underlined words to see correction suggestions.
-                </p>
+                <p className="mb-1 text-sm font-medium">{t("spellcheck")}</p>
+                <p className="text-xs text-muted-foreground">{t("spellcheckDesc")}</p>
               </div>
             </div>
           </section>
@@ -1019,55 +819,46 @@ export default function HelpPage() {
           {/* ─── 13. Sharing ─────────────────────────────────────────────── */}
           <section>
             <SectionHeading id="sharing" icon={Share2}>
-              Sharing
+              {t("sharing")}
             </SectionHeading>
-            <p className="mb-6 leading-relaxed text-muted-foreground">
-              Share your documents with anyone via a read-only link. No sign-up required for
-              viewers.
-            </p>
+            <p className="mb-6 leading-relaxed text-muted-foreground">{t("sharingIntro")}</p>
             <div className="mb-6 flex justify-center rounded-lg bg-muted/50 p-6">
               <SharingIllustration />
             </div>
             <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Generate a link:</strong> Click the{" "}
-                <Share2 className="inline h-3.5 w-3.5" /> Share button in the header. A unique URL
-                is generated for your document. Copy it to share with others.
-              </p>
-              <p>
-                <strong className="text-foreground">Viewer experience:</strong> Viewers see a clean,
-                read-only version of your document with the outline sidebar for navigation. They can
-                also enter presentation mode.
-              </p>
+              <p>{t.rich("generateLink", rich)}</p>
+              <p>{t.rich("viewerExperience", rich)}</p>
             </div>
           </section>
 
           {/* ─── 14. Keyboard Shortcuts ──────────────────────────────────── */}
           <section>
             <SectionHeading id="shortcuts" icon={Keyboard}>
-              Keyboard Shortcuts
+              {t("keyboardShortcuts")}
             </SectionHeading>
             <p className="mb-6 leading-relaxed text-muted-foreground">
-              Press <ShortcutCombo keys={["Ctrl", "?"]} /> anywhere in the app to see this
-              reference.
-              {isMac ? " Showing macOS keys." : " Showing Windows/Linux keys."}
+              {t.rich("keyboardShortcutsIntro", {
+                ...rich,
+                ctrlQuestion: () => <ShortcutCombo keys={["Ctrl", "?"]} />,
+              })}
+              {isMac ? t("showingMacKeys") : t("showingWinKeys")}
             </p>
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               {/* Text Formatting */}
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
-                  Text Formatting
+                  {t("textFormattingGroup")}
                 </h3>
                 <div className="space-y-2">
                   {[
-                    { keys: ["Ctrl", "B"], desc: "Bold" },
-                    { keys: ["Ctrl", "I"], desc: "Italic" },
-                    { keys: ["Ctrl", "U"], desc: "Underline" },
-                    { keys: ["Ctrl", "Shift", "S"], desc: "Strikethrough" },
-                    { keys: ["Ctrl", "E"], desc: "Inline code" },
-                    { keys: ["Ctrl", "Shift", "H"], desc: "Highlight" },
-                    { keys: ["Ctrl", "K"], desc: "Add link" },
+                    { keys: ["Ctrl", "B"], desc: t("shortcutBold") },
+                    { keys: ["Ctrl", "I"], desc: t("shortcutItalic") },
+                    { keys: ["Ctrl", "U"], desc: t("shortcutUnderline") },
+                    { keys: ["Ctrl", "Shift", "S"], desc: t("shortcutStrikethrough") },
+                    { keys: ["Ctrl", "E"], desc: t("shortcutInlineCode") },
+                    { keys: ["Ctrl", "Shift", "H"], desc: t("shortcutHighlight") },
+                    { keys: ["Ctrl", "K"], desc: t("shortcutAddLink") },
                   ].map((s) => (
                     <div key={s.desc} className="flex items-center justify-between py-1">
                       <span className="text-sm">{s.desc}</span>
@@ -1080,16 +871,16 @@ export default function HelpPage() {
               {/* Headings & Blocks */}
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
-                  Headings & Blocks
+                  {t("headingsBlocksGroup")}
                 </h3>
                 <div className="space-y-2">
                   {[
-                    { keys: ["Ctrl", "Alt", "1"], desc: "Heading 1" },
-                    { keys: ["Ctrl", "Alt", "2"], desc: "Heading 2" },
-                    { keys: ["Ctrl", "Alt", "3"], desc: "Heading 3" },
-                    { keys: ["Ctrl", "Shift", "8"], desc: "Bullet list" },
-                    { keys: ["Ctrl", "Shift", "7"], desc: "Numbered list" },
-                    { keys: ["Ctrl", "Shift", "9"], desc: "Task list" },
+                    { keys: ["Ctrl", "Alt", "1"], desc: t("heading1") },
+                    { keys: ["Ctrl", "Alt", "2"], desc: t("heading2") },
+                    { keys: ["Ctrl", "Alt", "3"], desc: t("heading3") },
+                    { keys: ["Ctrl", "Shift", "8"], desc: t("bulletList") },
+                    { keys: ["Ctrl", "Shift", "7"], desc: t("numberedList") },
+                    { keys: ["Ctrl", "Shift", "9"], desc: t("taskList") },
                   ].map((s) => (
                     <div key={s.desc} className="flex items-center justify-between py-1">
                       <span className="text-sm">{s.desc}</span>
@@ -1102,16 +893,16 @@ export default function HelpPage() {
               {/* Navigation & View */}
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
-                  Navigation & View
+                  {t("navigationViewGroup")}
                 </h3>
                 <div className="space-y-2">
                   {[
-                    { keys: ["Ctrl", "K"], desc: "Command palette" },
-                    { keys: ["Ctrl", "F"], desc: "Find in document" },
-                    { keys: ["Ctrl", "Shift", "F"], desc: "Semantic search" },
-                    { keys: ["Ctrl", "Shift", "O"], desc: "Toggle outline" },
-                    { keys: ["Ctrl", "Tab"], desc: "Quick file switcher" },
-                    { keys: ["Ctrl", "?"], desc: "Keyboard shortcuts" },
+                    { keys: ["Ctrl", "K"], desc: t("commandPaletteShortcut") },
+                    { keys: ["Ctrl", "F"], desc: t("findInDocument") },
+                    { keys: ["Ctrl", "Shift", "F"], desc: t("semanticSearchShortcut") },
+                    { keys: ["Ctrl", "Shift", "O"], desc: t("toggleOutline") },
+                    { keys: ["Ctrl", "Tab"], desc: t("quickFileSwitcherShortcut") },
+                    { keys: ["Ctrl", "?"], desc: t("keyboardShortcutsShortcut") },
                   ].map((s) => (
                     <div key={s.desc} className="flex items-center justify-between py-1">
                       <span className="text-sm">{s.desc}</span>
@@ -1123,13 +914,15 @@ export default function HelpPage() {
 
               {/* AI & Editing */}
               <div>
-                <h3 className="mb-3 text-sm font-semibold text-muted-foreground">AI & Editing</h3>
+                <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+                  {t("aiEditingGroup")}
+                </h3>
                 <div className="space-y-2">
                   {[
-                    { keys: ["Alt", "/"], desc: "Trigger autocomplete" },
-                    { keys: ["Ctrl", "Shift", "Space"], desc: "Force long autocomplete" },
-                    { keys: ["Ctrl", "Z"], desc: "Undo" },
-                    { keys: ["Ctrl", "Y"], desc: "Redo" },
+                    { keys: ["Alt", "/"], desc: t("triggerAutocomplete") },
+                    { keys: ["Ctrl", "Shift", "Space"], desc: t("forceLongAutocomplete") },
+                    { keys: ["Ctrl", "Z"], desc: t("undo") },
+                    { keys: ["Ctrl", "Y"], desc: t("redo") },
                   ].map((s) => (
                     <div key={s.desc} className="flex items-center justify-between py-1">
                       <span className="text-sm">{s.desc}</span>
@@ -1137,26 +930,28 @@ export default function HelpPage() {
                     </div>
                   ))}
                   <div className="flex items-center justify-between py-1">
-                    <span className="text-sm">Accept autocomplete</span>
+                    <span className="text-sm">{t("acceptAutocomplete")}</span>
                     <ShortcutKey>Tab</ShortcutKey>
                   </div>
                   <div className="flex items-center justify-between py-1">
-                    <span className="text-sm">Show quick edit menu</span>
-                    <span className="text-xs text-muted-foreground">Select text</span>
+                    <span className="text-sm">{t("showQuickEditMenu")}</span>
+                    <span className="text-xs text-muted-foreground">{t("selectText")}</span>
                   </div>
                 </div>
               </div>
 
               {/* Chat */}
               <div>
-                <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Chat</h3>
+                <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+                  {t("chatGroup")}
+                </h3>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between py-1">
-                    <span className="text-sm">Send message</span>
+                    <span className="text-sm">{t("sendMessage")}</span>
                     <ShortcutKey>Enter</ShortcutKey>
                   </div>
                   <div className="flex items-center justify-between py-1">
-                    <span className="text-sm">New line in chat</span>
+                    <span className="text-sm">{t("newLineInChat")}</span>
                     <ShortcutCombo keys={["Shift", "Enter"]} />
                   </div>
                 </div>
@@ -1164,21 +959,23 @@ export default function HelpPage() {
 
               {/* Presentation */}
               <div>
-                <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Presentation</h3>
+                <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+                  {t("presentationGroup")}
+                </h3>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between py-1">
-                    <span className="text-sm">Start presentation</span>
+                    <span className="text-sm">{t("startPresentation")}</span>
                     <ShortcutKey>F5</ShortcutKey>
                   </div>
                   <div className="flex items-center justify-between py-1">
-                    <span className="text-sm">Navigate slides</span>
+                    <span className="text-sm">{t("navigateSlides")}</span>
                     <span className="inline-flex gap-1">
                       <ShortcutKey>←</ShortcutKey>
                       <ShortcutKey>→</ShortcutKey>
                     </span>
                   </div>
                   <div className="flex items-center justify-between py-1">
-                    <span className="text-sm">Exit presentation</span>
+                    <span className="text-sm">{t("exitPresentation")}</span>
                     <ShortcutKey>Esc</ShortcutKey>
                   </div>
                 </div>
@@ -1190,7 +987,7 @@ export default function HelpPage() {
         {/* Footer */}
         <div className="mt-16 border-t border-border pt-8">
           <Link href="/" className="text-primary hover:underline">
-            ← Back to Home
+            {t("backToHome")}
           </Link>
         </div>
       </div>

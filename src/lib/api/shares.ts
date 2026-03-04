@@ -13,13 +13,14 @@ declare module "./client" {
     revokeShare(shareId: string): Promise<{ status: string; share_id: string }>;
     updateShareMetadata(
       shareId: string,
-      metadata: { title?: string; description?: string; tags?: string[] }
+      metadata: { title?: string; description?: string; tags?: string[]; allow_fork?: boolean }
     ): Promise<{
       id: string;
       share_token: string;
       title: string;
       description: string | null;
       tags: string[] | null;
+      allow_fork: boolean;
       updated_at: string | null;
     }>;
     getSharedDocument(shareToken: string, path?: string): Promise<SharedItemResponse>;
@@ -86,13 +87,14 @@ ApiClient.prototype.revokeShare = async function (
 ApiClient.prototype.updateShareMetadata = async function (
   this: ApiClient,
   shareId: string,
-  metadata: { title?: string; description?: string; tags?: string[] }
+  metadata: { title?: string; description?: string; tags?: string[]; allow_fork?: boolean }
 ): Promise<{
   id: string;
   share_token: string;
   title: string;
   description: string | null;
   tags: string[] | null;
+  allow_fork: boolean;
   updated_at: string | null;
 }> {
   return this.request(`/api/shares/${shareId}/metadata`, {

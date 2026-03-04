@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { GitFork, ExternalLink, RefreshCw, Loader2, Trash2 } from "lucide-react";
 import { type ForkInfo, api } from "@/lib/api";
@@ -16,22 +17,22 @@ interface ForksSectionProps {
 }
 
 function EmptyState() {
+  const t = useTranslations("home");
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
         <GitFork className="h-6 w-6 text-muted-foreground/40" />
       </div>
       <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-foreground">
-        No forked documents
+        {t("noForkedDocuments")}
       </h3>
-      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">
-        Fork documents from the community to see them here.
-      </p>
+      <p className="mt-1.5 max-w-sm text-[13px] text-muted-foreground">{t("forksDesc")}</p>
     </div>
   );
 }
 
 export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
+  const t = useTranslations("home");
   const router = useRouter();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [deletingForkId, setDeletingForkId] = useState<string | null>(null);
@@ -60,9 +61,9 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
     try {
       await api.deleteFork(forkId);
       onForksChange((prev) => prev.filter((f) => f.id !== forkId));
-      toast.success("Fork removed");
+      toast.success(t("forkRemoved"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove fork");
+      toast.error(err instanceof Error ? err.message : t("failedToRemoveFork"));
     }
   };
 
@@ -76,7 +77,7 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
             f.id === forkId ? { ...f, last_synced_at: new Date().toISOString() } : f
           )
         );
-        toast.success("Synced with original");
+        toast.success(t("syncedWithOriginal"));
       } else if (result.status === "conflict") {
         const forceResult = await api.syncFork(forkId, { force: true, create_backup: true });
         if (forceResult.status === "synced") {
@@ -85,11 +86,7 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
               f.id === forkId ? { ...f, last_synced_at: new Date().toISOString() } : f
             )
           );
-          toast.success(
-            forceResult.backup_file_id
-              ? "Synced! A backup of your version was saved."
-              : "Synced with original"
-          );
+          toast.success(forceResult.backup_file_id ? t("syncedBackup") : t("syncedWithOriginal"));
         } else {
           toast.info(forceResult.message);
         }
@@ -97,7 +94,7 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
         toast.info(result.message);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to sync");
+      toast.error(err instanceof Error ? err.message : t("failedToSync"));
     } finally {
       setSyncingId(null);
     }
@@ -142,7 +139,7 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
                 <button
                   onClick={() => router.push(`/editor/${fork.forked_file_id}`)}
                   className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title="Open in editor"
+                  title={t("openInEditor")}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </button>
@@ -151,7 +148,7 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
                     onClick={() => handleSync(fork.id)}
                     disabled={syncingId === fork.id}
                     className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    title="Sync from original"
+                    title={t("syncFromOriginal")}
                   >
                     {syncingId === fork.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -163,7 +160,7 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
                 <button
                   onClick={() => setDeletingForkId(fork.id)}
                   className="rounded-lg p-1.5 text-destructive/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                  title="Remove fork"
+                  title={t("removeFork")}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -178,9 +175,9 @@ export function ForksSection({ forks, onForksChange }: ForksSectionProps) {
         open={!!deletingForkId}
         onClose={() => setDeletingForkId(null)}
         onConfirm={() => deletingForkId && handleDelete(deletingForkId)}
-        title="Remove fork?"
-        description="This will remove the fork link. The forked document will remain in your files."
-        confirmLabel="Remove"
+        title={t("removeForkConfirm")}
+        description={t("removeForkDesc")}
+        confirmLabel={t("remove")}
       />
     </>
   );

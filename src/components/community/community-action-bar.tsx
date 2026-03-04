@@ -63,13 +63,14 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
   };
 
   return (
-    <div className="mt-8 flex flex-wrap items-center gap-2.5">
+    <div className="flex flex-wrap items-center gap-2.5">
       {/* Fork */}
       <Button
         variant="outline"
         size="sm"
         onClick={handleFork}
-        disabled={isForking || detail.is_forked}
+        disabled={isForking || detail.is_forked || !detail.allow_fork}
+        title={!detail.allow_fork ? t("forkDisabled") : undefined}
         className="h-9 gap-2 rounded-lg border-border/60 px-4 text-[13px] font-medium transition-all hover:border-foreground/20"
       >
         {isForking ? (

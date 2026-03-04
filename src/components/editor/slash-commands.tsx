@@ -8,6 +8,9 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
+  Heading5,
+  Heading6,
   List,
   ListOrdered,
   ListTodo,
@@ -85,6 +88,36 @@ const commands: CommandItem[] = [
     shortcut: "Ctrl+Alt+3",
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
+    },
+  },
+  {
+    title: "Heading 4",
+    description: "Extra small heading",
+    icon: <Heading4 className="h-4 w-4" />,
+    category: "basic",
+    shortcut: "Ctrl+Alt+4",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 4 }).run();
+    },
+  },
+  {
+    title: "Heading 5",
+    description: "Minor heading",
+    icon: <Heading5 className="h-4 w-4" />,
+    category: "basic",
+    shortcut: "Ctrl+Alt+5",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 5 }).run();
+    },
+  },
+  {
+    title: "Heading 6",
+    description: "Smallest heading",
+    icon: <Heading6 className="h-4 w-4" />,
+    category: "basic",
+    shortcut: "Ctrl+Alt+6",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 6 }).run();
     },
   },
   {
@@ -315,6 +348,33 @@ const commands: CommandItem[] = [
     category: "turninto",
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
+    },
+  },
+  {
+    title: "Turn into Heading 4",
+    description: "Convert to extra small heading",
+    icon: <Heading4 className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 4 }).run();
+    },
+  },
+  {
+    title: "Turn into Heading 5",
+    description: "Convert to minor heading",
+    icon: <Heading5 className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 5 }).run();
+    },
+  },
+  {
+    title: "Turn into Heading 6",
+    description: "Convert to smallest heading",
+    icon: <Heading6 className="h-4 w-4" />,
+    category: "turninto",
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 6 }).run();
     },
   },
   {

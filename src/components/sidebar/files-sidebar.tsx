@@ -10,19 +10,20 @@ import { FolderTree } from "./folder-tree";
 import { SortDropdown } from "./sort-dropdown";
 import { BulkActionBar } from "./bulk-action-bar";
 import { TrashPanel } from "./trash-panel";
-import { TemplatePicker, type FileTemplate } from "./template-picker";
+import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
 import { NewButton } from "@/components/home/new-button";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage, formatShortcut } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 
 const log = storeLogger.child("FilesSidebar");
 
 export function FilesSidebar() {
   const t = useTranslations("sidebar");
+  const locale = useLocale();
   const router = useRouter();
   const { files, createFile, createFolder, importFile, currentFolderId, getFolders } =
     useFileStore();
@@ -57,19 +58,17 @@ export function FilesSidebar() {
 
   const handleTemplateSelect = async (template: FileTemplate) => {
     const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+    const localName = getLocalizedFileName(template.id, template.defaultFileName, locale);
 
     let counter = 0;
     let name: string;
     do {
       counter++;
-      name =
-        counter === 1
-          ? `${template.defaultFileName}.md`
-          : `${template.defaultFileName} ${counter}.md`;
+      name = counter === 1 ? `${localName}.md` : `${localName} ${counter}.md`;
     } while (currentFiles.some((f) => f.name === name));
 
     try {
-      const markdown = template.getContent();
+      const markdown = template.getContent(locale);
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
       const newId = await createFile(name, htmlContent, currentFolderId);
       router.push(`/editor/${newId}`);

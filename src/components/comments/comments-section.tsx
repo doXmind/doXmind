@@ -79,14 +79,14 @@ export function CommentsSection({ shareToken, commentCount }: CommentsSectionPro
       {/* Composer */}
       {user ? (
         <div className="mt-5">
-          <CommentComposer onSubmit={handleSubmit} placeholder={t("writeAComment")} />
+          <CommentComposer onSubmit={handleSubmit} placeholder={t("writeAComment")} showAvatar />
         </div>
       ) : (
         <p className="mt-4 text-[13px] text-muted-foreground">{t("signInToComment")}</p>
       )}
 
-      {/* Comments list */}
-      <div className="mt-8 space-y-5">
+      {/* Comments list — dividers between top-level comments */}
+      <div className="mt-8 divide-y divide-border/30">
         {isLoading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/50" />
@@ -97,7 +97,9 @@ export function CommentsSection({ shareToken, commentCount }: CommentsSectionPro
           </p>
         ) : (
           comments.map((comment) => (
-            <CommentThread key={comment.id} comment={comment} shareToken={shareToken} depth={0} />
+            <div key={comment.id} className="py-5 first:pt-0">
+              <CommentThread comment={comment} shareToken={shareToken} depth={0} />
+            </div>
           ))
         )}
       </div>

@@ -14,6 +14,9 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
+  Heading5,
+  Heading6,
   List,
   ListOrdered,
   ListTodo,
@@ -22,6 +25,9 @@ import {
   ChevronRight as ChevronRightIcon,
   ChevronDown,
   Wand2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -51,6 +57,9 @@ const turnIntoIconMap: Record<string, React.ReactNode> = {
   Heading1: <Heading1 className="h-4 w-4" />,
   Heading2: <Heading2 className="h-4 w-4" />,
   Heading3: <Heading3 className="h-4 w-4" />,
+  Heading4: <Heading4 className="h-4 w-4" />,
+  Heading5: <Heading5 className="h-4 w-4" />,
+  Heading6: <Heading6 className="h-4 w-4" />,
   List: <List className="h-4 w-4" />,
   ListOrdered: <ListOrdered className="h-4 w-4" />,
   ListTodo: <ListTodo className="h-4 w-4" />,
@@ -81,6 +90,9 @@ function getCurrentBlockLabel(editor: Editor): string {
   if (editor.isActive("heading", { level: 1 })) return "H1";
   if (editor.isActive("heading", { level: 2 })) return "H2";
   if (editor.isActive("heading", { level: 3 })) return "H3";
+  if (editor.isActive("heading", { level: 4 })) return "H4";
+  if (editor.isActive("heading", { level: 5 })) return "H5";
+  if (editor.isActive("heading", { level: 6 })) return "H6";
   if (editor.isActive("bulletList")) return "List";
   if (editor.isActive("orderedList")) return "Num";
   if (editor.isActive("taskList")) return "Task";
@@ -339,6 +351,27 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
                 />
                 {/* Color dropdown (replaces standalone Highlight button) */}
                 <ColorDropdown editor={editor} onColorChange={handleColorChange} />
+
+                {/* Text alignment */}
+                <div className="mx-0.5 h-5 w-px bg-border" />
+                <BubbleButton
+                  icon={<AlignLeft className="h-4 w-4" />}
+                  onClick={() => editor.chain().focus().setTextAlign("left").run()}
+                  isActive={editor.isActive({ textAlign: "left" })}
+                  tooltip={t("bubbleMenu.alignLeft")}
+                />
+                <BubbleButton
+                  icon={<AlignCenter className="h-4 w-4" />}
+                  onClick={() => editor.chain().focus().setTextAlign("center").run()}
+                  isActive={editor.isActive({ textAlign: "center" })}
+                  tooltip={t("bubbleMenu.alignCenter")}
+                />
+                <BubbleButton
+                  icon={<AlignRight className="h-4 w-4" />}
+                  onClick={() => editor.chain().focus().setTextAlign("right").run()}
+                  isActive={editor.isActive({ textAlign: "right" })}
+                  tooltip={t("bubbleMenu.alignRight")}
+                />
               </>
             )}
 

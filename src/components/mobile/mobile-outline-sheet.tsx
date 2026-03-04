@@ -48,7 +48,7 @@ function OutlineItem({ heading, isActive, onClick }: OutlineItemProps) {
         isActive && "active",
         heading.level === 1 && "notion-heading-h1",
         heading.level === 2 && "notion-heading-h2",
-        heading.level === 3 && "notion-heading-h3"
+        heading.level >= 3 && "notion-heading-h3"
       )}
     >
       <span className="line-clamp-2">{heading.text}</span>

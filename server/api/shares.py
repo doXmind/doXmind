@@ -11,7 +11,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.database import DocumentShare, File, ShareInvite, User, get_db, utcnow
+from db.database import DocumentShare, File, ShareInvite, ShareView, User, get_db, utcnow
 from exceptions import (
     BadRequestError,
     DocumentNotFoundError,
@@ -75,6 +75,7 @@ class CreateShareRequest(BaseModel):
     expires_in_days: int | None = Field(None, ge=1, le=365)  # 1-365 days or None
     content_mode: str = Field("live", pattern="^(live|snapshot)$")
     visibility: str = Field("public", pattern="^(public|private)$")
+    allow_fork: bool = True
     # Public mode — community metadata (auto-published)
     title: str | None = None
     description: str | None = Field(None, max_length=500)
@@ -96,6 +97,7 @@ class ShareResponse(BaseModel):
     is_active: bool
     is_published: bool
     visibility: str = "public"
+    allow_fork: bool = True
     title: str | None = None
     description: str | None = None
     tags: list[str] | None = None
@@ -203,6 +205,7 @@ async def create_share(
         expires_at=expires_at,
         content_mode=share_request.content_mode,
         visibility=share_request.visibility,
+        allow_fork=share_request.allow_fork,
     )
 
     if share_request.visibility == "public":
@@ -269,16 +272,35 @@ async def create_share(
         share_url = f"{settings.frontend_url}/shared/{share_token}"
 
     # Send email notifications for private share invites
+    sender_name = token.username or "A doXmind user"
     if share_request.visibility == "private" and _recipient_emails:
         asyncio.create_task(
             _send_invite_notifications(
                 recipient_emails=_recipient_emails,
-                sender_name=token.username or "A doXmind user",
+                sender_name=sender_name,
                 item_name=file.name,
                 item_type="folder" if file.is_folder else "file",
                 share_url=share_url,
             )
         )
+
+    # In-app notifications for private share invites
+    if share_request.visibility == "private":
+        from services.notification_service import create_notification
+
+        notif_ids = invited_ids - {user_id}
+        for uid in notif_ids:
+            asyncio.create_task(
+                create_notification(
+                    user_id=uid,
+                    type="share_invite",
+                    title=sender_name,
+                    message=f'{sender_name} shared "{file.name}" with you',
+                    link=f"/shared/{share_token}",
+                    actor_id=user_id,
+                    actor_name=sender_name,
+                )
+            )
 
     return ShareResponse(
         id=share.id,
@@ -289,6 +311,7 @@ async def create_share(
         is_active=share.is_active,
         is_published=share.is_published,
         visibility=share.visibility,
+        allow_fork=share.allow_fork,
         title=share.title,
         description=share.description,
         tags=share.tags,
@@ -351,6 +374,7 @@ async def list_file_shares(
             is_active=s.is_active,
             is_published=s.is_published,
             visibility=s.visibility or "public",
+            allow_fork=s.allow_fork,
             content_mode=s.content_mode,
             view_count=s.view_count,
             created_at=s.created_at.isoformat(),
@@ -421,6 +445,7 @@ async def list_my_shares(
             title=s.title,
             description=s.description,
             tags=s.tags,
+            allow_fork=s.allow_fork,
             content_mode=s.content_mode,
             view_count=s.view_count,
             created_at=s.created_at.isoformat(),
@@ -616,11 +641,23 @@ async def publish_share(
     )
 
     settings = get_settings()
+    share_url = f"{settings.frontend_url}/community/{share.share_token}"
+
+    # Notify followers of the new publication (fire-and-forget)
+    asyncio.create_task(
+        _notify_followers_of_publish(
+            publisher_id=user_id,
+            publisher_name=token.username or "A doXmind user",
+            share_title=share.title or "Untitled",
+            share_url=share_url,
+        )
+    )
+
     return {
         "id": share.id,
         "file_id": share.file_id,
         "share_token": share.share_token,
-        "share_url": f"{settings.frontend_url}/community/{share.share_token}",
+        "share_url": share_url,
         "is_published": share.is_published,
         "visibility": share.visibility,
         "title": share.title,
@@ -657,6 +694,7 @@ class UpdateShareMetadataRequest(BaseModel):
     title: str | None = None
     description: str | None = Field(None, max_length=500)
     tags: list[str] | None = Field(None, max_length=10)
+    allow_fork: bool | None = None
 
 
 @router.patch("/{share_id}/metadata")
@@ -682,6 +720,7 @@ async def update_share_metadata(
         title=body.title,
         description=body.description,
         tags=body.tags,
+        allow_fork=body.allow_fork,
     )
 
     return {
@@ -690,6 +729,7 @@ async def update_share_metadata(
         "title": share.title,
         "description": share.description,
         "tags": share.tags,
+        "allow_fork": share.allow_fork,
         "updated_at": share.updated_at.isoformat() if share.updated_at else None,
     }
 
@@ -808,6 +848,19 @@ async def view_shared_item(
     # Update view analytics
     share.view_count += 1
     share.last_viewed_at = now
+
+    # Record per-user view for authenticated users (for recommendations)
+    viewer_id = token.sub if token else None
+    if viewer_id and viewer_id != share.user_id:
+        existing_view = await db.execute(
+            select(ShareView).where(ShareView.user_id == viewer_id, ShareView.share_id == share.id)
+        )
+        view_record = existing_view.scalar_one_or_none()
+        if view_record:
+            view_record.created_at = now
+        else:
+            db.add(ShareView(share_id=share.id, user_id=viewer_id))
+
     await db.commit()
 
     # Load the shared root item
@@ -1009,18 +1062,36 @@ async def invite_users(
     await db.commit()
 
     # Send email notifications to newly invited users
+    sender_name = token.username or "A doXmind user"
     if recipient_emails and file_info:
         settings = get_settings()
         share_url = f"{settings.frontend_url}/shared/{share.share_token}"
         asyncio.create_task(
             _send_invite_notifications(
                 recipient_emails=recipient_emails,
-                sender_name=token.username or "A doXmind user",
+                sender_name=sender_name,
                 item_name=file_info.name,
                 item_type="folder" if file_info.is_folder else "file",
                 share_url=share_url,
             )
         )
+
+    # In-app notifications for newly invited users
+    if new_invite_ids and file_info:
+        from services.notification_service import create_notification
+
+        for uid in new_invite_ids:
+            asyncio.create_task(
+                create_notification(
+                    user_id=uid,
+                    type="share_invite",
+                    title=sender_name,
+                    message=f'{sender_name} shared "{file_info.name}" with you',
+                    link=f"/shared/{share.share_token}",
+                    actor_id=user_id,
+                    actor_name=sender_name,
+                )
+            )
 
     return {"status": "ok", "added": added}
 
@@ -1105,3 +1176,71 @@ async def list_invites(
     ]
 
     return {"invites": invites, "count": len(invites)}
+
+
+# =============================================================================
+# Follow Notification Helpers
+# =============================================================================
+
+
+async def _notify_followers_of_publish(
+    publisher_id: str,
+    publisher_name: str,
+    share_title: str,
+    share_url: str,
+) -> None:
+    """Send email and in-app notifications to all followers when a user publishes."""
+    try:
+        from db.database import UserFollow, async_session
+
+        async with async_session() as session:
+            # Get all followers' emails and IDs
+            result = await session.execute(
+                select(User.id, User.email)
+                .join(UserFollow, UserFollow.follower_id == User.id)
+                .where(
+                    UserFollow.following_id == publisher_id,
+                )
+            )
+            followers = result.all()
+
+            if not followers:
+                return
+
+            # Extract share_token from share_url for the link
+            share_token = share_url.rsplit("/", 1)[-1] if share_url else ""
+
+            # Create in-app notifications for all followers
+            from services.notification_service import NotificationService
+
+            notif_service = NotificationService(session)
+            for row in followers:
+                await notif_service.create(
+                    user_id=row.id,
+                    type="publication",
+                    title=publisher_name,
+                    message=f'{publisher_name} published "{share_title}"',
+                    link=f"/community/{share_token}",
+                    actor_id=publisher_id,
+                    actor_name=publisher_name,
+                )
+
+            emails = [row.email for row in followers if row.email]
+            if not emails:
+                return
+
+            from services.email_service import get_email_service
+
+            email_service = get_email_service()
+            for email in emails:
+                try:
+                    await email_service.send_new_publication_notification(
+                        to_email=email,
+                        author_name=publisher_name,
+                        doc_title=share_title,
+                        share_url=share_url,
+                    )
+                except Exception:
+                    logger.exception(f"Failed to send publish notification to {email}")
+    except Exception:
+        logger.exception("Failed to send follower publish notifications")

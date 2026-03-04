@@ -515,6 +515,104 @@ This email was sent by doXmind. Please do not reply to this email.
 
         return await self.send_email(to_email, subject, html_content, text_content)
 
+    async def send_new_follower_notification(
+        self,
+        to_email: str,
+        follower_name: str,
+        profile_url: str,
+    ) -> bool:
+        """Send notification when someone follows a user."""
+        safe_follower = html_mod.escape(follower_name)
+        subject = f"{follower_name} is now following you on doXmind"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .button {{ display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 20px 0; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>New follower!</h2>
+                <p><strong>{safe_follower}</strong> is now following you on doXmind. Keep publishing great content!</p>
+                <a href="{profile_url}" class="button">View Your Profile</a>
+                <div class="footer">
+                    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all;">{profile_url}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+{follower_name} is now following you on doXmind
+
+Keep publishing great content!
+
+View your profile: {profile_url}
+
+---
+This email was sent by doXmind. Please do not reply to this email.
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
+
+    async def send_new_publication_notification(
+        self,
+        to_email: str,
+        author_name: str,
+        doc_title: str,
+        share_url: str,
+    ) -> bool:
+        """Send notification when a followed user publishes new content."""
+        safe_author = html_mod.escape(author_name)
+        safe_title = html_mod.escape(doc_title)
+        subject = f'{author_name} published "{doc_title}" on doXmind'
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .button {{ display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 20px 0; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>{safe_author} published a new document</h2>
+                <p>&ldquo;{safe_title}&rdquo; is now available on doXmind. Check it out!</p>
+                <a href="{share_url}" class="button">Read Now</a>
+                <div class="footer">
+                    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all;">{share_url}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+{author_name} published "{doc_title}" on doXmind
+
+Check it out: {share_url}
+
+---
+This email was sent by doXmind. Please do not reply to this email.
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
+
 
 # Singleton instance
 _email_service: EmailService | None = None

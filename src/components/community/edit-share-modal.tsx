@@ -4,22 +4,29 @@ import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, GitFork } from "lucide-react";
 
 export interface EditableShareItem {
   shareId: string;
   title: string;
   description: string | null;
   tags: string[];
+  allowFork: boolean;
 }
 
 interface EditShareModalProps {
   open: boolean;
   onClose: () => void;
   item: EditableShareItem;
-  onSave: (updated: { title: string; description: string | null; tags: string[] }) => void;
+  onSave: (updated: {
+    title: string;
+    description: string | null;
+    tags: string[];
+    allow_fork: boolean;
+  }) => void;
 }
 
 export function EditShareModal({ open, onClose, item, onSave }: EditShareModalProps) {
@@ -29,6 +36,7 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
   const [title, setTitle] = useState(item.title);
   const [description, setDescription] = useState(item.description || "");
   const [tagsInput, setTagsInput] = useState(item.tags.join(", "));
+  const [allowFork, setAllowFork] = useState(item.allowFork);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -36,6 +44,7 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
       setTitle(item.title);
       setDescription(item.description || "");
       setTagsInput(item.tags.join(", "));
+      setAllowFork(item.allowFork);
     }
   }, [open, item]);
 
@@ -56,12 +65,14 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
         title: title.trim(),
         description: description.trim() || undefined,
         tags: tagList.length > 0 ? tagList : [],
+        allow_fork: allowFork,
       });
 
       onSave({
         title: result.title,
         description: result.description,
         tags: result.tags || [],
+        allow_fork: result.allow_fork,
       });
 
       toast.success(t("postUpdated"));
@@ -121,6 +132,18 @@ export function EditShareModal({ open, onClose, item, onSave }: EditShareModalPr
             placeholder={ts("tagsPlaceholder")}
             className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
           />
+        </div>
+
+        {/* Fork Permission */}
+        <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+          <div className="flex items-center gap-2">
+            <GitFork className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-[13px] font-medium text-foreground">{ts("allowFork")}</p>
+              <p className="text-[11px] text-muted-foreground">{ts("allowForkDescription")}</p>
+            </div>
+          </div>
+          <Switch checked={allowFork} onCheckedChange={setAllowFork} />
         </div>
       </div>
 

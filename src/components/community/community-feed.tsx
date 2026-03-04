@@ -12,6 +12,7 @@ import {
   Clock,
   Eye,
   FileText,
+  Folder,
   GitFork,
   MessageSquare,
   Pencil,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { ShareReactions } from "./share-reactions";
 
 interface CommunityFeedProps {
   items: CommunityItem[];
@@ -181,7 +183,10 @@ function FeedCard({
           </div>
 
           {/* Title */}
-          <h3 className="mt-3 text-[15px] font-semibold leading-snug text-foreground">
+          <h3 className="mt-3 flex items-center gap-2 text-[15px] font-semibold leading-snug text-foreground">
+            {item.is_folder && (
+              <Folder className="h-4 w-4 flex-shrink-0 text-amber-500 dark:text-amber-400" />
+            )}
             {item.title}
           </h3>
 
@@ -199,6 +204,25 @@ function FeedCard({
               baseClassName="text-[13px] leading-relaxed text-muted-foreground"
               className="mt-2 line-clamp-3 [&_*]:text-[13px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
             />
+          )}
+
+          {/* Folder children preview */}
+          {item.is_folder && !hasPreview && (
+            <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground/60">
+              {item.child_previews && item.child_previews.length > 0 ? (
+                <>
+                  {item.child_previews.map((c) => c.name.replace(/\.md$/i, "")).join(" · ")}
+                  {(item.item_count || 0) > 3 && (
+                    <span className="text-muted-foreground/40">
+                      {" "}
+                      · +{(item.item_count || 0) - 3} {t("more")}
+                    </span>
+                  )}
+                </>
+              ) : (
+                t("folderEmpty")
+              )}
+            </p>
           )}
 
           {/* Tags + word count */}
@@ -232,6 +256,11 @@ function FeedCard({
             </div>
           )}
 
+          {/* Reactions */}
+          <div className="mt-3">
+            <ShareReactions shareToken={item.share_token} reactions={item.reactions} />
+          </div>
+
           {/* Engagement bar */}
           <div className="mt-3 flex items-center gap-1 border-t border-border/40 pt-3">
             <span className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60">
@@ -244,13 +273,10 @@ function FeedCard({
               {formatCount(item.fork_count)}
             </span>
 
-            <Link
-              href={`/community/${item.share_token}#comments`}
-              className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-            >
+            <span className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60">
               <MessageSquare className="h-3.5 w-3.5" />
-              {item.comment_count > 0 ? formatCount(item.comment_count) : ""}
-            </Link>
+              {formatCount(item.comment_count)}
+            </span>
 
             <div className="flex-1" />
 

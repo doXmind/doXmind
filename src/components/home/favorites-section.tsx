@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Star, MoreHorizontal, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ interface FavoritesSectionProps {
 export function FavoritesSection({ favorites }: FavoritesSectionProps) {
   const router = useRouter();
   const { setCurrentFile } = useFileStore();
+  const t = useTranslations("home");
 
   if (favorites.length === 0) return null;
 
@@ -46,12 +48,14 @@ export function FavoritesSection({ favorites }: FavoritesSectionProps) {
     >
       <h2 className="mb-3.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 dark:text-muted-foreground/70">
         <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-        Favorites
+        {t("favorites")}
       </h2>
 
-      <div className="grid gap-2.5 sm:grid-cols-3">
+      <div className="scrollbar-none flex gap-2.5 overflow-x-auto pb-1">
         {favorites.map((file, index) => (
-          <FavoriteTile key={file.id} file={file} index={index} onOpen={handleOpen} />
+          <div key={file.id} className="min-w-[280px] max-w-[360px] flex-shrink-0">
+            <FavoriteTile file={file} index={index} onOpen={handleOpen} />
+          </div>
         ))}
       </div>
     </motion.div>
@@ -70,6 +74,8 @@ function FavoriteTile({
   const { toggleFavorite, deleteFile } = useFileStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const isMobile = useIsMobile();
+  const t = useTranslations("home");
+  const tc = useTranslations("common");
   const wordCount = file.wordCount;
   const preview = file.preview;
 
@@ -82,7 +88,7 @@ function FavoriteTile({
     try {
       await deleteFile(file.id);
     } catch {
-      toast.error("Failed to delete file");
+      toast.error(t("failedToDeleteFile"));
     }
     setShowDeleteModal(false);
   };
@@ -113,7 +119,7 @@ function FavoriteTile({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/85">
-            {file.name?.replace(/\.md$/i, "") || "Untitled"}
+            {file.name?.replace(/\.md$/i, "") || t("untitled")}
           </h3>
           <span className="hidden flex-shrink-0 text-xs tracking-wide text-foreground/45 dark:text-foreground/55 sm:inline">
             {formatRelativeDate(file.updatedAt)}
@@ -123,7 +129,7 @@ function FavoriteTile({
           </span>
         </div>
         <p className="mt-1 line-clamp-1 text-[13px] text-foreground/40 dark:text-foreground/50 sm:hidden">
-          {preview || <span className="italic text-foreground/25">Empty document</span>}
+          {preview || <span className="italic text-foreground/25">{t("emptyDocument")}</span>}
         </p>
         <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground/50 dark:text-muted-foreground/60 sm:hidden">
           <span>{formatRelativeDate(file.updatedAt)}</span>
@@ -159,14 +165,14 @@ function FavoriteTile({
             <button
               onClick={handleFavoriteTap}
               className="flex w-20 items-center justify-center bg-amber-500 text-white active:opacity-80"
-              aria-label="Remove from favorites"
+              aria-label={t("removeFromFavorites")}
             >
               <Star className="h-5 w-5 fill-white" />
             </button>
             <button
               onClick={handleDeleteTap}
               className="flex w-20 items-center justify-center bg-red-500 text-white active:opacity-80"
-              aria-label="Delete"
+              aria-label={tc("delete")}
             >
               <Trash2 className="h-5 w-5" />
             </button>
@@ -207,7 +213,7 @@ function FavoriteTile({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 rounded-md"
-                  aria-label="File options"
+                  aria-label={t("fileOptions")}
                 >
                   <MoreHorizontal className="h-3.5 w-3.5" />
                 </Button>
@@ -215,7 +221,7 @@ function FavoriteTile({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => toggleFavorite(file.id)}>
                   <Star className={cn("mr-2 h-4 w-4 fill-amber-500 text-amber-500")} />
-                  Remove from Favorites
+                  {t("removeFromFavorites")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -223,7 +229,7 @@ function FavoriteTile({
                   className="text-destructive"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
+                  {tc("delete")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -233,17 +239,16 @@ function FavoriteTile({
 
       {/* Delete confirmation */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <ModalHeader>Delete File</ModalHeader>
+        <ModalHeader>{t("deleteFile")}</ModalHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{file.name || "Untitled"}&quot;? This action cannot
-          be undone.
+          {t("deleteFileConfirm", { name: file.name || t("untitled") })}
         </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
-            Cancel
+            {tc("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDelete}>
-            Delete
+            {tc("delete")}
           </Button>
         </ModalFooter>
       </Modal>

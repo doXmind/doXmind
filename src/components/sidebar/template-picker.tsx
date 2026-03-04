@@ -1,20 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import {
-  FileText,
-  ClipboardList,
-  Calendar,
-  BookOpen,
-  Code2,
-  Presentation,
-  PenLine,
-  GraduationCap,
-  Loader2,
-} from "lucide-react";
+import { FileText, ClipboardList, BookOpen, PenLine, GraduationCap, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Modal, ModalHeader } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
+import { zhTemplateContent, zhFileNames } from "./template-content-zh";
 
 export interface FileTemplate {
   id: string;
@@ -22,7 +13,21 @@ export interface FileTemplate {
   description: string;
   icon: React.ReactNode;
   defaultFileName: string;
-  getContent: () => string;
+  getContent: (locale?: string) => string;
+}
+
+/**
+ * Returns the localized filename for a template (without .md extension).
+ */
+export function getLocalizedFileName(
+  templateId: string,
+  defaultName: string,
+  locale?: string
+): string {
+  if (locale === "zh" && zhFileNames[templateId]) {
+    return zhFileNames[templateId];
+  }
+  return defaultName;
 }
 
 /**
@@ -47,7 +52,7 @@ function formatTime(date: Date = new Date()): string {
   return date.toTimeString().slice(0, 5);
 }
 
-const templates: FileTemplate[] = [
+export const templates: FileTemplate[] = [
   {
     id: "blank",
     name: "Blank Document",
@@ -63,67 +68,39 @@ const templates: FileTemplate[] = [
     icon: <ClipboardList className="h-5 w-5" />,
     defaultFileName: "Meeting Notes",
     getContent: () => `**Date:** ${formatDate()} ${formatTime()}
-**Location:**
-**Attendees:**
+**Attendees:** @Alice, @Bob, @Charlie
 
 ---
 
 ### Agenda
 
-1. Opening and introductions
-2.
-3.
+1. Sprint review — what shipped this week
+2. Blocker discussion — API rate limiting issue
+3. Next sprint priorities
 
-### Discussion Notes
+### Discussion
 
+**Sprint review**
 
+- Shipped the new onboarding flow (Alice). Conversion up 12% in early testing.
+- Search indexing migration complete (Bob). Query latency down from 800ms → 120ms.
 
-### Decisions Made
+**Blockers**
 
--
+- API rate limiting hitting 429s during peak hours. Charlie to investigate caching options by Friday.
+
+### Decisions
+
+- Go with Redis for caching (over in-memory) — more scalable.
+- Push dark mode launch to next release cycle.
 
 ### Action Items
 
-| Owner | Task | Deadline |
-|-------|------|----------|
-|  |  |  |
-
-### Next Meeting
-
-`,
-  },
-  {
-    id: "weekly-report",
-    name: "Weekly Report",
-    description: "Weekly progress and planning",
-    icon: <Calendar className="h-5 w-5" />,
-    defaultFileName: "Weekly Report",
-    getContent: () => `**Week of:** ${formatDate()}
-
----
-
-### Completed
-
--
-
-### In Progress
-
--
-
-### Blocked / At Risk
-
--
-
-### Key Metrics
-
-| Metric | Target | Actual |
-|--------|--------|--------|
-|  |  |  |
-
-### Plan for Next Week
-
--
-
+| Who | What | By when |
+|-----|------|---------|
+| @Charlie | Evaluate Redis vs Memcached for caching | ${formatDate(new Date(Date.now() + 4 * 86400000))} |
+| @Alice | Write dark mode implementation spec | ${formatDate(new Date(Date.now() + 4 * 86400000))} |
+| @Bob | Set up performance monitoring alerts | ${formatDate(new Date(Date.now() + 2 * 86400000))} |
 `,
   },
   {
@@ -132,165 +109,43 @@ const templates: FileTemplate[] = [
     description: "Article or blog post template",
     icon: <PenLine className="h-5 w-5" />,
     defaultFileName: "Blog Post",
-    getContent: () => `*A one-line hook that draws readers in.*
+    getContent: () => `*The problem isn't your willpower — it's your system.*
 
 ---
 
 ## Introduction
 
-Set the context: what problem are you addressing, and why should readers care?
+You've tried every to-do app. You've written lists on paper, on sticky notes, on your phone. And yet, by 3 PM, your carefully crafted list feels more like a guilt trip than a productivity tool.
 
-## Background
+The truth is, most to-do lists fail not because we're lazy, but because they treat all tasks as equal — when they're not.
 
-Provide necessary background or define key terms for your audience.
+## The Real Problem
 
-## Main Argument
+Traditional to-do lists have three fatal flaws:
 
-Present your core ideas with supporting evidence, examples, or data.
+1. **No distinction between urgency and importance.** "Reply to email" sits next to "Plan Q2 strategy" as if they carry the same weight.
+2. **No time awareness.** A list of 20 items looks manageable until you realize you only have 4 hours.
+3. **No energy matching.** Your hardest tasks need your freshest brain, but lists don't account for that.
 
-### Key Point 1
+## A Better Approach
 
+Instead of an endless list, limit yourself each day:
 
+- **1** big thing — the task that would make today a success
+- **3** medium things — important but not as demanding
+- **5** small things — quick wins, emails, admin tasks
 
-### Key Point 2
+This forces prioritization and creates a realistic daily plan.
 
+### Why It Works
 
+Constraints create clarity. When you can only pick 9 tasks, you're forced to ask: *"What actually matters today?"*
 
-## Practical Takeaways
+## Try It Tomorrow
 
-What can the reader do with this information?
+Before you open your to-do app tomorrow morning, write down your 1-3-5. Just those 9 items. Nothing else.
 
--
-
-## Conclusion
-
-Summarize the key insights and end with a call to action or open question.
-
-`,
-  },
-  {
-    id: "technical-doc",
-    name: "Technical Document",
-    description: "API docs, architecture, or specs",
-    icon: <Code2 className="h-5 w-5" />,
-    defaultFileName: "Technical Doc",
-    getContent: () => `## Overview
-
-Brief description of the system, feature, or API.
-
-## Architecture
-
-Describe the high-level architecture, components, and data flow.
-
-## API Reference
-
-### \`GET /api/resource\`
-
-Retrieves a resource by ID.
-
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| id | string | Yes | Resource identifier |
-
-**Response:**
-
-\`\`\`json
-{
-  "id": "abc-123",
-  "status": "active",
-  "created_at": "2026-01-01T00:00:00Z"
-}
-\`\`\`
-
-**Error Codes:**
-
-| Code | Description |
-|------|-------------|
-| 400 | Invalid request parameters |
-| 404 | Resource not found |
-
-## Setup & Installation
-
-\`\`\`bash
-# Prerequisites and installation steps
-\`\`\`
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-|  |  |  |
-
-## Known Limitations
-
--
-
-`,
-  },
-  {
-    id: "project-brief",
-    name: "Project Brief",
-    description: "Project overview and requirements",
-    icon: <Presentation className="h-5 w-5" />,
-    defaultFileName: "Project Brief",
-    getContent: () => `## Problem Statement
-
-What problem are we solving, and who does it affect?
-
-## Objective
-
-Define the desired outcome in one or two sentences.
-
-## Scope
-
-**In Scope:**
-
--
-
-**Out of Scope:**
-
--
-
-## Requirements
-
-### Functional Requirements
-
-1.
-
-### Non-Functional Requirements
-
-1.
-
-## Timeline
-
-| Phase | Duration | Deliverable |
-|-------|----------|-------------|
-| Discovery |  |  |
-| Design |  |  |
-| Development |  |  |
-| Testing |  |  |
-| Launch |  |  |
-
-## Success Metrics
-
-| Metric | Baseline | Target |
-|--------|----------|--------|
-|  |  |  |
-
-## Risks & Mitigations
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-|  |  |  |
-
-## Stakeholders
-
-| Name | Role | Responsibility |
-|------|------|----------------|
-|  |  |  |
-
+You might be surprised how much more you accomplish — and how much less stressed you feel.
 `,
   },
   {
@@ -299,42 +154,46 @@ Define the desired outcome in one or two sentences.
     description: "Lecture or study session notes",
     icon: <GraduationCap className="h-5 w-5" />,
     defaultFileName: "Study Notes",
-    getContent: () => `**Subject:**
+    getContent: () => `**Subject:** Cognitive Psychology — Working Memory
 **Date:** ${formatDate()}
-**Source:**
+**Source:** Lecture 5 + Baddeley (2000) "The episodic buffer"
 
 ---
 
 ## Key Concepts
 
-### Concept 1
+### Working Memory Model (Baddeley & Hitch, 1974)
 
-**Definition:**
+**What it is:** A multi-component system for temporarily holding and manipulating information. Not just a passive "short-term store" — it's an active workspace.
 
-**Why it matters:**
+**Components:**
 
-### Concept 2
+- **Central executive** — Directs attention, coordinates information
+- **Phonological loop** — Holds verbal/acoustic info (~2 sec without rehearsal)
+- **Visuospatial sketchpad** — Handles visual and spatial info
+- **Episodic buffer** (added 2000) — Integrates info from different sources into coherent episodes
 
-**Definition:**
+**Why it matters:** Explains why you can listen to a lecture and take notes simultaneously (different subsystems), but can't listen to a podcast and read an article (both compete for the phonological loop).
 
-**Why it matters:**
+### Cognitive Load Theory (Sweller, 1988)
 
-## Important Details
+**What it is:** Learning fails when working memory is overloaded. Three types:
 
--
+- *Intrinsic* — complexity of the material itself
+- *Extraneous* — caused by poor instruction design
+- *Germane* — effort spent building mental models (the good kind)
 
-## Connections & Insights
+**Why it matters:** Design learning materials to minimize extraneous load. Example: diagrams with integrated labels > diagrams with a separate legend.
 
-How does this relate to what I already know?
+## Questions
 
-## Open Questions
-
--
+- How does the episodic buffer interact with long-term memory? Is retrieval also limited by WM capacity?
+- If WM capacity is ~4 chunks (Cowan, 2001), does expertise increase chunk size or chunk count?
+- Practical: How can I use spacing + interleaving to reduce intrinsic load?
 
 ## Summary
 
-Write a 2-3 sentence summary in your own words.
-
+*Working memory is a limited-capacity active workspace, not a passive store. Baddeley's model explains why multitasking with similar information types fails. Cognitive load theory applies this to learning — good instruction minimizes wasted mental effort so learners can focus on building understanding.*
 `,
   },
   {
@@ -347,27 +206,42 @@ Write a 2-3 sentence summary in your own words.
 
 ---
 
-### What happened today
+### Today
 
+Had a productive morning — finished the quarterly report before lunch, which I'd been putting off all week. The trick was closing Slack and working in 45-minute blocks.
 
+Afternoon was trickier. Got pulled into two unplanned meetings. Need to protect deep work time better — maybe block 9–12 on my calendar as "Focus Time."
 
-### What I learned
+Had a good conversation with Sarah about the redesign project. She suggested we prototype first instead of jumping straight to code. Smart move.
 
--
+### Learned
 
-### What I'm grateful for
+- The 45-minute work block works better for me than the classic Pomodoro (25 min). Enough time to get into flow, short enough to stay sharp.
+- "Prototype first, code second" — this applies to writing too. Outline before drafting.
 
-1.
-2.
-3.
+### Grateful for
 
-### What I want to focus on tomorrow
+1. Morning coffee ritual — small but grounding
+2. Sarah's honest feedback on the project timeline
+3. The quiet hour before everyone else logs on
 
--
+### Tomorrow
 
+Focus on the design review prep. Block the morning. Say no to any meeting that doesn't need me.
 `,
   },
 ];
+
+// Wrap each template's getContent with locale-aware dispatch
+for (const tmpl of templates) {
+  const originalContent = tmpl.getContent;
+  tmpl.getContent = (locale?: string) => {
+    if (locale === "zh" && zhTemplateContent[tmpl.id]) {
+      return zhTemplateContent[tmpl.id]();
+    }
+    return originalContent();
+  };
+}
 
 interface TemplatePickerProps {
   open: boolean;
@@ -385,19 +259,7 @@ export function TemplatePicker({ open, onClose, onSelect }: TemplatePickerProps)
       name: t("templateMeetingNotes"),
       description: t("templateMeetingNotesDesc"),
     },
-    "weekly-report": {
-      name: t("templateWeeklyReport"),
-      description: t("templateWeeklyReportDesc"),
-    },
     "blog-post": { name: t("templateBlogPost"), description: t("templateBlogPostDesc") },
-    "technical-doc": {
-      name: t("templateTechnicalDoc"),
-      description: t("templateTechnicalDocDesc"),
-    },
-    "project-brief": {
-      name: t("templateProjectBrief"),
-      description: t("templateProjectBriefDesc"),
-    },
     "study-notes": { name: t("templateStudyNotes"), description: t("templateStudyNotesDesc") },
     journal: { name: t("templateJournal"), description: t("templateJournalDesc") },
   };

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
@@ -52,56 +52,17 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { TemplatePicker, type FileTemplate } from "@/components/sidebar/template-picker";
+import {
+  TemplatePicker,
+  getLocalizedFileName,
+  type FileTemplate,
+} from "@/components/sidebar/template-picker";
 import { markdownToHtml } from "@/lib/markdown";
 import { haptics } from "@/lib/haptics";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
-
-function TypewriterText({
-  text,
-  speed = 80,
-  delay = 0,
-}: {
-  text: string;
-  speed?: number;
-  delay?: number;
-}) {
-  const [displayed, setDisplayed] = useState("");
-  const [done, setDone] = useState(false);
-
-  useEffect(() => {
-    setDisplayed("");
-    setDone(false);
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const timeout = setTimeout(() => {
-      let i = 0;
-      interval = setInterval(() => {
-        i++;
-        setDisplayed(text.slice(0, i));
-        if (i >= text.length) {
-          clearInterval(interval!);
-          setDone(true);
-        }
-      }, speed);
-    }, delay);
-
-    return () => {
-      clearTimeout(timeout);
-      if (interval) clearInterval(interval);
-    };
-  }, [text, speed, delay]);
-
-  return (
-    <>
-      {displayed}
-      {!done && (
-        <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse bg-foreground/60 align-middle" />
-      )}
-    </>
-  );
-}
+import { MobileAgentFab } from "./mobile-agent-fab";
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 
 function CollapsibleSection({
   icon: Icon,
@@ -169,6 +130,7 @@ function CollapsibleSection({
 export function HomeDashboard() {
   const t = useTranslations("home");
   const ts = useTranslations("sidebar");
+  const locale = useLocale();
   const router = useRouter();
   const {
     files,
@@ -193,6 +155,13 @@ export function HomeDashboard() {
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Pull-to-refresh
+  const { isPulling, isRefreshing, pullDistance, touchHandlers } = usePullToRefresh({
+    onRefresh: async () => {
+      await loadFiles();
+    },
+  });
 
   function getGreeting(): { title: string; subtitle: string } {
     const hour = new Date().getHours();
@@ -367,18 +336,16 @@ export function HomeDashboard() {
 
   const handleMobileTemplateSelect = async (template: FileTemplate) => {
     const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+    const localName = getLocalizedFileName(template.id, template.defaultFileName, locale);
     let counter = 0;
     let name: string;
     do {
       counter++;
-      name =
-        counter === 1
-          ? `${template.defaultFileName}.md`
-          : `${template.defaultFileName} ${counter}.md`;
+      name = counter === 1 ? `${localName}.md` : `${localName} ${counter}.md`;
     } while (currentFiles.some((f) => f.name === name));
 
     try {
-      const markdown = template.getContent();
+      const markdown = template.getContent(locale);
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
       const newId = await createFile(name, htmlContent, currentFolderId);
       router.push(`/editor/${newId}`);
@@ -389,7 +356,7 @@ export function HomeDashboard() {
     }
   };
 
-  const { title: greeting, subtitle: greetingSubtitle } = getGreeting();
+  const { title: greeting } = getGreeting();
   const firstName = user?.username?.split(" ")[0];
 
   // Derived data for new sections
@@ -408,9 +375,34 @@ export function HomeDashboard() {
     forks: forks.length,
     bookmarks: bookmarks.length,
   };
+  const hasAnyTabContent = Object.values(tabCounts).some((c) => c > 0);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-background"
+      {...touchHandlers}
+    >
+      {/* Pull-to-refresh indicator */}
+      <AnimatePresence>
+        {(isPulling || isRefreshing) && (
+          <motion.div
+            className="flex items-center justify-center py-2"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: pullDistance > 0 ? pullDistance : 40, opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          >
+            <Loader2
+              className={cn("h-5 w-5 text-muted-foreground", isRefreshing && "animate-spin")}
+              style={{
+                opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1),
+                transform: `rotate(${pullDistance * 3}deg)`,
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Subtle dot grid background */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.025] dark:opacity-[0.04]"
@@ -495,24 +487,18 @@ export function HomeDashboard() {
       <SwipeCoordinatorProvider>
         <main className="relative flex-1 px-4 pb-4 md:px-10 md:pb-16">
           {/* Desktop hero section (hidden on mobile) */}
-          <div className="mx-auto hidden max-w-xl pt-8 md:block md:pt-20">
-            {/* Greeting */}
+          <div className="mx-auto hidden max-w-xl pt-8 md:block md:pt-10">
+            {/* Greeting — instant fade-in, no typewriter */}
             <motion.div
-              className="mb-6 text-center md:mb-10"
+              className="mb-4 text-center md:mb-6"
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
             >
               <h1 className="text-2xl font-semibold tracking-tight md:text-[28px]">
-                <TypewriterText text={firstName ? `${greeting}, ${firstName}` : greeting} />
+                {firstName ? `${greeting}, ${firstName}` : greeting}
               </h1>
-              <p className="mt-2.5 text-[13px] text-muted-foreground/60 dark:text-muted-foreground/70">
-                <TypewriterText
-                  text={files.length > 0 ? greetingSubtitle : t("startWritingBrilliant")}
-                  speed={30}
-                  delay={300}
-                />
-              </p>
+              <p className="mt-2 text-sm text-muted-foreground/60">{t("startWritingBrilliant")}</p>
             </motion.div>
 
             {/* Desktop Search */}
@@ -521,21 +507,21 @@ export function HomeDashboard() {
 
           {/* Continue writing — recent files (with favorites merged on mobile) */}
           {showRecent && (
-            <div className="mx-auto mt-3 max-w-5xl md:mt-10">
+            <div className="mx-auto mt-3 max-w-5xl md:mt-8">
               <RecentFiles files={recentFiles} favorites={favorites} />
             </div>
           )}
 
           {/* Favorites (desktop only — merged into carousel on mobile) */}
           {showFavorites && (
-            <div className="mx-auto mt-6 hidden max-w-5xl md:mt-8 md:block">
+            <div className="mx-auto mt-6 hidden max-w-5xl md:mt-6 md:block">
               <FavoritesSection favorites={favorites} />
             </div>
           )}
 
-          {/* Desktop: Tab navigation */}
-          {!isSearchActive && (
-            <div className="mx-auto mt-3 hidden max-w-5xl md:mt-10 md:block">
+          {/* Desktop: Tab navigation — hidden when all counts are 0 */}
+          {!isSearchActive && hasAnyTabContent && (
+            <div className="mx-auto mt-3 hidden max-w-5xl md:mt-8 md:block">
               <HomeTabs counts={tabCounts} />
             </div>
           )}
@@ -573,7 +559,7 @@ export function HomeDashboard() {
               ) : null}
             </div>
 
-            {/* Mobile: Notion-style collapsible sections (all visible) */}
+            {/* Mobile: Documents always visible + collapsible secondary sections */}
             <div className="md:hidden">
               {isSearchActive ? (
                 <FileGrid
@@ -586,13 +572,17 @@ export function HomeDashboard() {
                 />
               ) : (
                 <>
-                  {/* Documents section — expanded by default */}
-                  <CollapsibleSection
-                    icon={FileText}
-                    title={t("documentsTab")}
-                    count={totalDocs}
-                    defaultExpanded
-                  >
+                  {/* Documents section — always visible */}
+                  <div className="mt-2">
+                    <div className="flex items-center gap-2 py-2">
+                      <FileText className="h-4 w-4 text-muted-foreground/70" />
+                      <span className="text-[14px] font-medium text-foreground/80">
+                        {t("documentsTab")}
+                      </span>
+                      <span className="text-[12px] tabular-nums text-muted-foreground/50">
+                        {totalDocs}
+                      </span>
+                    </div>
                     <FileGrid
                       files={files}
                       isLoading={isLoading}
@@ -601,18 +591,20 @@ export function HomeDashboard() {
                       isSearching={false}
                       totalDocs={totalDocs}
                     />
-                  </CollapsibleSection>
+                  </div>
 
-                  {/* Shared with me section — always visible for discoverability */}
-                  <CollapsibleSection
-                    icon={Users}
-                    title={t("sharedWithMeTab")}
-                    count={sharedWithMe.length}
-                  >
-                    <div className="mt-2">
-                      <SharedWithMeSection items={sharedWithMe} />
-                    </div>
-                  </CollapsibleSection>
+                  {/* Shared with me section */}
+                  {sharedWithMe.length > 0 && (
+                    <CollapsibleSection
+                      icon={Users}
+                      title={t("sharedWithMeTab")}
+                      count={sharedWithMe.length}
+                    >
+                      <div className="mt-2">
+                        <SharedWithMeSection items={sharedWithMe} />
+                      </div>
+                    </CollapsibleSection>
+                  )}
 
                   {/* My Links section */}
                   {shares.length > 0 && (
@@ -666,6 +658,9 @@ export function HomeDashboard() {
         onClose={() => setIsTemplatePickerOpen(false)}
         onSelect={handleMobileTemplateSelect}
       />
+
+      {/* Mobile AI Agent FAB */}
+      <MobileAgentFab />
     </div>
   );
 }

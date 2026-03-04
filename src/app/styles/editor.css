@@ -306,6 +306,14 @@
   @apply mb-2 mt-4 text-lg font-semibold;
 }
 
+.ProseMirror h5 {
+  @apply mb-1.5 mt-3 text-base font-semibold;
+}
+
+.ProseMirror h6 {
+  @apply mb-1 mt-2 text-sm font-semibold;
+}
+
 .ProseMirror a {
   @apply text-primary underline underline-offset-2 hover:opacity-80;
 }

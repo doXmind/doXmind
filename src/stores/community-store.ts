@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 import { api, CommunityItem } from "@/lib/api";
 
-type SortOption = "newest" | "popular" | "most_viewed" | "for_you";
+type SortOption = "newest" | "popular" | "most_viewed" | "for_you" | "following";
 
 interface CommunityState {
   items: CommunityItem[];
@@ -49,19 +49,23 @@ export const useCommunityStore = create<CommunityState>()(
 
         try {
           const hasFilters = !!(searchQuery || tagFilter);
-          const result =
-            sortBy === "for_you" && !hasFilters
-              ? await api.getCommunityRecommendations({
-                  limit: PAGE_SIZE,
-                  offset: 0,
-                })
-              : await api.getCommunityItems({
-                  sort: sortBy === "for_you" ? "newest" : sortBy,
-                  search: searchQuery || undefined,
-                  tag: tagFilter || undefined,
-                  limit: PAGE_SIZE,
-                  offset: 0,
-                });
+          let result;
+          if (sortBy === "following" && !hasFilters) {
+            result = await api.getFollowingFeed({ limit: PAGE_SIZE, offset: 0 });
+          } else if (sortBy === "for_you" && !hasFilters) {
+            result = await api.getCommunityRecommendations({
+              limit: PAGE_SIZE,
+              offset: 0,
+            });
+          } else {
+            result = await api.getCommunityItems({
+              sort: sortBy === "for_you" || sortBy === "following" ? "newest" : sortBy,
+              search: searchQuery || undefined,
+              tag: tagFilter || undefined,
+              limit: PAGE_SIZE,
+              offset: 0,
+            });
+          }
 
           set({
             items: result.items,
@@ -86,19 +90,23 @@ export const useCommunityStore = create<CommunityState>()(
 
         try {
           const hasFilters = !!(searchQuery || tagFilter);
-          const result =
-            sortBy === "for_you" && !hasFilters
-              ? await api.getCommunityRecommendations({
-                  limit: PAGE_SIZE,
-                  offset,
-                })
-              : await api.getCommunityItems({
-                  sort: sortBy === "for_you" ? "newest" : sortBy,
-                  search: searchQuery || undefined,
-                  tag: tagFilter || undefined,
-                  limit: PAGE_SIZE,
-                  offset,
-                });
+          let result;
+          if (sortBy === "following" && !hasFilters) {
+            result = await api.getFollowingFeed({ limit: PAGE_SIZE, offset });
+          } else if (sortBy === "for_you" && !hasFilters) {
+            result = await api.getCommunityRecommendations({
+              limit: PAGE_SIZE,
+              offset,
+            });
+          } else {
+            result = await api.getCommunityItems({
+              sort: sortBy === "for_you" || sortBy === "following" ? "newest" : sortBy,
+              search: searchQuery || undefined,
+              tag: tagFilter || undefined,
+              limit: PAGE_SIZE,
+              offset,
+            });
+          }
 
           set((state) => ({
             items: [...state.items, ...result.items],

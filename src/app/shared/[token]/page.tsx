@@ -22,6 +22,7 @@ import { ReadingStatsBar } from "@/components/shared/reading-stats-bar";
 import { PresentationMode } from "@/components/editor/presentation-mode";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useTranslations, useLocale } from "next-intl";
 import {
   AlertCircle,
   ArrowLeft,
@@ -90,6 +91,14 @@ export default function SharedPage() {
 
     loadSharedItem();
   }, [token, path, router]);
+
+  // Update browser tab title
+  useEffect(() => {
+    if (data) {
+      const title = detail?.title || data.name.replace(/\.md$/, "");
+      document.title = title;
+    }
+  }, [data, detail]);
 
   // Keyboard shortcut: Ctrl+F / Cmd+F to open search
   useEffect(() => {
@@ -318,7 +327,7 @@ export default function SharedPage() {
 
               {/* Action buttons (only if we have community detail) */}
               {detail && (
-                <div ref={actionBarRef}>
+                <div ref={actionBarRef} className="mt-8">
                   <CommunityActionBar
                     detail={detail}
                     shareToken={token}
@@ -430,8 +439,8 @@ export default function SharedPage() {
 
 /* ── Helpers ─────────────────────────────────────────── */
 
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("en-US", {
+function formatDate(dateString: string, locale = "en"): string {
+  return new Date(dateString).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -445,11 +454,14 @@ function FolderItemsList({
   items: SharedFolderItem[];
   onItemClick: (id: string) => void;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("community");
+
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
         <Folder className="h-12 w-12 text-muted-foreground/20" />
-        <p className="text-sm text-muted-foreground">This folder is empty</p>
+        <p className="text-sm text-muted-foreground">{t("emptyFolder")}</p>
       </div>
     );
   }
@@ -483,7 +495,7 @@ function FolderItemsList({
             </p>
           </div>
           <span className="flex-shrink-0 text-xs text-muted-foreground">
-            {formatDate(item.updated_at)}
+            {formatDate(item.updated_at, locale)}
           </span>
           {item.is_folder && (
             <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />

@@ -74,6 +74,7 @@ export interface Share {
   is_active: boolean;
   is_published: boolean;
   visibility: "public" | "private";
+  allow_fork: boolean;
   title?: string | null;
   description?: string | null;
   tags?: string[] | null;
@@ -93,6 +94,7 @@ export interface CreateShareRequest {
   expires_in_days: number | null;
   content_mode: "live";
   visibility: "public" | "private";
+  allow_fork?: boolean;
   // Public mode fields
   title?: string;
   description?: string;
@@ -155,6 +157,7 @@ export interface CommunityItem {
   is_folder: boolean;
   view_count: number;
   fork_count: number;
+  allow_fork: boolean;
   bookmark_count: number;
   comment_count: number;
   published_at: string;
@@ -164,6 +167,9 @@ export interface CommunityItem {
   content_preview: string | null;
   word_count: number;
   reading_time: number;
+  item_count?: number | null;
+  child_previews?: { name: string; icon: string | null; is_folder: boolean }[] | null;
+  reactions: { emoji: string; count: number; has_reacted: boolean }[];
 }
 
 export interface CommunityListResponse {
@@ -230,12 +236,34 @@ export interface UserProfileResponse {
   website: string | null;
   social_links: { github?: string; twitter?: string; linkedin?: string } | null;
   created_at: string;
+  is_following: boolean;
   stats: {
     total_published: number;
     total_views: number;
     total_forks_received: number;
     total_bookmarks_received: number;
+    followers: number;
+    following: number;
   };
+}
+
+export interface FollowResponse {
+  is_following: boolean;
+  follower_count: number;
+}
+
+export interface FollowUser {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  is_following: boolean;
+}
+
+export interface FollowListResponse {
+  users: FollowUser[];
+  total: number;
+  has_more: boolean;
 }
 
 export interface InviteEntry {
@@ -265,4 +293,24 @@ export interface SharedWithMeItem {
   invited_at: string;
   created_at: string;
   updated_at: string;
+}
+
+// Notification types
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  link: string | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  actor_avatar: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  notifications: NotificationItem[];
+  total: number;
+  has_more: boolean;
 }
