@@ -9,9 +9,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_cors_headers, get_settings
-from db.database import get_db
+from db.database import async_session, get_db
 from middleware.rate_limit import limiter
-from services.auth_service import TokenData, require_auth
+from services.auth_service import TokenData, require_auth, require_auth_light
 from services.notification_broadcaster import notification_broadcaster
 from services.notification_service import NotificationService
 
@@ -71,8 +71,7 @@ async def get_unread_count(
 @router.get("/stream")
 async def notification_stream(
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
+    token: TokenData = Depends(require_auth_light),
 ):
     """SSE stream for real-time notification push."""
     user_id = get_user_id(token)
@@ -86,8 +85,12 @@ async def notification_stream(
     origin = request.headers.get("origin")
     heartbeat_interval = settings.streaming_heartbeat_interval
 
-    service = NotificationService(db)
-    initial_count = await service.unread_count(user_id)
+    # Use a short-lived session for the initial query only.
+    # Do NOT use Depends(get_db) here — it would hold the DB connection
+    # for the entire SSE stream duration (hours), exhausting the pool.
+    async with async_session() as db:
+        service = NotificationService(db)
+        initial_count = await service.unread_count(user_id)
 
     queue = notification_broadcaster.subscribe(user_id)
 

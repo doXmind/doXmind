@@ -12,7 +12,6 @@ const authRoutes = ["/login", "/register", "/forgot-password", "/reset-password"
 const skipAuth = process.env.NEXT_PUBLIC_SKIP_AUTH === "true";
 
 // i18n locale detection
-const SUPPORTED_LOCALES = ["en", "zh"];
 const DEFAULT_LOCALE = process.env.NEXT_PUBLIC_DEFAULT_LOCALE || "en";
 
 export function middleware(request: NextRequest) {
@@ -57,12 +56,17 @@ export function middleware(request: NextRequest) {
     response = NextResponse.next();
   }
 
-  // Set locale cookie if missing (for i18n)
-  if (!request.cookies.get("NEXT_LOCALE")) {
-    const acceptLang = request.headers.get("accept-language") || "";
-    const preferred = acceptLang.split(",").map((s) => s.split(";")[0].trim().split("-")[0]);
-    const detected = preferred.find((l) => SUPPORTED_LOCALES.includes(l)) || DEFAULT_LOCALE;
-    response.cookies.set("NEXT_LOCALE", detected, {
+  // Set locale cookie for i18n
+  // CN deployment: always force zh (no language switching — mainland users only read Chinese)
+  // Main site: set default locale cookie if missing, allow user switching
+  if (DEFAULT_LOCALE === "zh") {
+    response.cookies.set("NEXT_LOCALE", "zh", {
+      path: "/",
+      maxAge: 365 * 24 * 60 * 60,
+      sameSite: "lax",
+    });
+  } else if (!request.cookies.get("NEXT_LOCALE")) {
+    response.cookies.set("NEXT_LOCALE", DEFAULT_LOCALE, {
       path: "/",
       maxAge: 365 * 24 * 60 * 60,
       sameSite: "lax",

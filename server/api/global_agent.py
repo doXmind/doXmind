@@ -52,7 +52,8 @@ class GlobalAgentRequest(BaseModel):
     mode: str = "edit"
     conversationId: str | None = None
     fileId: str | None = None
-    webSearchEnabled: bool = False
+    webSearchEnabled: bool = True
+    thinkingEnabled: bool = False
     dataFileIds: list[str] = []
     isQuickEdit: bool = False
 
@@ -314,6 +315,11 @@ async def global_agent_stream(
             return events_to_send
 
         try:
+            # Select model based on thinking toggle (only for server-default users)
+            effective_model = user_model
+            if not user_model and request.thinkingEnabled:
+                effective_model = settings.thinking_model
+
             agent = GlobalAgent(
                 user_id=user_id,
                 mode=request.mode,
@@ -322,7 +328,7 @@ async def global_agent_stream(
                 web_search_enabled=request.webSearchEnabled,
                 db=db,
                 api_key=user_api_key,
-                model=user_model,
+                model=effective_model,
                 is_quick_edit=request.isQuickEdit,
             )
 

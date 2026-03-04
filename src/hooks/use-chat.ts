@@ -227,6 +227,8 @@ export function useChat() {
             conversationId,
             // Web search toggle (web fetch is always enabled)
             webSearchEnabled: webToolsSettings.webSearchEnabled,
+            // Thinking mode toggle (deep reasoning model)
+            thinkingEnabled: webToolsSettings.thinkingEnabled,
             // Data files for code execution sandbox
             dataFileIds: dataFileIds || [],
             // Quick edit mode flag for backend optimization

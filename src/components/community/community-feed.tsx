@@ -3,12 +3,14 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { MarkdownContent } from "@/components/comments/markdown-content";
 import {
   Bookmark,
+  Check,
   Clock,
   Eye,
   FileText,
@@ -19,6 +21,7 @@ import {
   Search,
   Share2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { ShareReactions } from "./share-reactions";
@@ -88,10 +91,21 @@ function FeedCard({
 
   const router = useRouter();
 
+  const [copied, setCopied] = useState(false);
+
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    await navigator.clipboard.writeText(`${window.location.origin}/community/${item.share_token}`);
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/community/${item.share_token}`
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success(t("linkCopied"));
+    } catch {
+      toast.error(t("failedToCopyLink"));
+    }
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -297,7 +311,11 @@ function FeedCard({
               className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
               title={t("copyLink")}
             >
-              <Share2 className="h-3.5 w-3.5" />
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Share2 className="h-3.5 w-3.5" />
+              )}
             </button>
           </div>
         </div>

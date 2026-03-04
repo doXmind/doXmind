@@ -1,7 +1,14 @@
-"""S3 storage service for image uploads."""
+"""File storage service for image uploads.
+
+Supports two backends:
+- S3: AWS S3 or S3-compatible services (Alibaba OSS, Cloudflare R2)
+- Local: Server filesystem (for development or lightweight deployments)
+"""
 
 import logging
+import mimetypes
 from functools import lru_cache
+from pathlib import Path
 
 from config import get_settings
 
@@ -80,7 +87,68 @@ class StorageService:
         logger.info(f"Batch deleted {len(keys)} objects from S3")
 
 
+class LocalStorageService:
+    """Service for local filesystem storage operations."""
+
+    def __init__(self):
+        settings = get_settings()
+        self.base_path = Path(settings.local_storage_path)
+        self.base_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Local storage initialized at {self.base_path}")
+
+    def _resolve(self, key: str) -> Path:
+        """Resolve a storage key to an absolute file path."""
+        return self.base_path / key
+
+    def upload(self, key: str, data: bytes, content_type: str) -> None:  # noqa: ARG002
+        """Upload bytes to local filesystem."""
+        path = self._resolve(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        logger.info(f"Saved locally: {path} ({len(data)} bytes)")
+
+    def download(self, key: str) -> tuple[bytes, str]:
+        """Download a file from local filesystem.
+
+        Returns:
+            Tuple of (file_bytes, content_type)
+
+        Raises:
+            FileNotFoundError: If the key does not exist
+        """
+        path = self._resolve(key)
+        if not path.is_file():
+            raise FileNotFoundError(f"Local file not found: {key}")
+
+        data = path.read_bytes()
+        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        return data, content_type
+
+    def delete(self, key: str) -> None:
+        """Delete a single file. No-op if file doesn't exist."""
+        path = self._resolve(key)
+        if path.is_file():
+            path.unlink()
+            logger.info(f"Deleted locally: {path}")
+
+    def delete_many(self, keys: list[str]) -> None:
+        """Delete multiple files."""
+        if not keys:
+            return
+
+        deleted = 0
+        for key in keys:
+            path = self._resolve(key)
+            if path.is_file():
+                path.unlink()
+                deleted += 1
+        logger.info(f"Batch deleted {deleted}/{len(keys)} local files")
+
+
 @lru_cache
-def get_storage_service() -> StorageService:
-    """Get cached storage service instance."""
+def get_storage_service() -> StorageService | LocalStorageService:
+    """Get cached storage service instance based on configuration."""
+    settings = get_settings()
+    if settings.storage_backend == "local":
+        return LocalStorageService()
     return StorageService()

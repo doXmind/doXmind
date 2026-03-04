@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_settings
+from api.shares import get_frontend_url
 from db.database import Comment, DocumentShare, File, User, get_db
 from middleware.rate_limit import limiter
 from services.auth_service import TokenData, optional_auth, require_auth
@@ -253,8 +253,8 @@ async def create_comment(
                     mention_emails = [r.email for r in m_result if r.email]
 
             commenter_name = token.username or "A doXmind user"
-            settings = get_settings()
-            share_url = f"{settings.frontend_url}/shared/{share_row.share_token}"
+            frontend_url = get_frontend_url(request)
+            share_url = f"{frontend_url}/shared/{share_row.share_token}"
             link = f"/community/{share_row.share_token}"
 
             if share_owner_email or parent_author_email or mention_emails:

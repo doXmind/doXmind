@@ -21,11 +21,12 @@ export function useThemeManager() {
   } = useLayoutStore();
 
   // Wait for Zustand persist to hydrate before applying theme
-  const [hydrated, setHydrated] = useState(useLayoutStore.persist.hasHydrated());
+  // Guard against SSR where .persist may be undefined
+  const [hydrated, setHydrated] = useState(() => useLayoutStore.persist?.hasHydrated?.() ?? false);
 
   useEffect(() => {
     if (hydrated) return;
-    const unsub = useLayoutStore.persist.onFinishHydration(() => setHydrated(true));
+    const unsub = useLayoutStore.persist?.onFinishHydration?.(() => setHydrated(true));
     return unsub;
   }, [hydrated]);
 

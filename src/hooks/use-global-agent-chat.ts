@@ -5,6 +5,7 @@ import { useGlobalAgentStore } from "@/stores/global-agent-store";
 import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { api } from "@/lib/api";
+import { useSettingsStore } from "@/stores/settings-store";
 import type { ChatStreamEvent } from "@/types/stream-events";
 import type { AffectedFile } from "@/types";
 
@@ -105,6 +106,8 @@ export function useGlobalAgentChat() {
             conversationId,
             files: [],
             images: [],
+            webSearchEnabled: useSettingsStore.getState().webSearchEnabled,
+            thinkingEnabled: useSettingsStore.getState().thinkingEnabled,
           }),
           signal,
         });

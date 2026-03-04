@@ -36,7 +36,7 @@ interface ChatComposerProps {
 
 /**
  * Shared rounded-card input composer.
- * ChatGPT-inspired: rounded-2xl card with context pills, textarea, and circular send button.
+ * GPT-inspired two-row layout: textarea on top, action buttons on bottom.
  */
 export function ChatComposer({
   value,
@@ -127,23 +127,26 @@ export function ChatComposer({
         {/* Context pills row */}
         {contextSlot}
 
-        {/* Input row */}
-        <div className="flex items-end gap-1.5">
+        {/* Top row: Textarea */}
+        <Textarea
+          ref={textareaRef}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onPaste={onPaste}
+          placeholder={placeholder}
+          className="max-h-[200px] min-h-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
+          disabled={disabled || isStreaming}
+          rows={1}
+        />
+
+        {/* Bottom row: Actions */}
+        <div className="flex items-center gap-1.5 pt-1">
           {/* Left action buttons */}
           {leftActions}
 
-          {/* Textarea */}
-          <Textarea
-            ref={textareaRef}
-            value={value}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={onPaste}
-            placeholder={placeholder}
-            className="max-h-[200px] min-h-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
-            disabled={disabled || isStreaming}
-            rows={1}
-          />
+          {/* Spacer */}
+          <div className="flex-1" />
 
           {/* Extra actions (mic, clear, etc.) */}
           {extraActions}

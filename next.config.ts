@@ -4,6 +4,7 @@ import createNextIntlPlugin from "next-intl/plugin";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+const publicApiUrl = process.env.NEXT_PUBLIC_API_URL || "";
 
 const nextConfig: NextConfig = {
   // Enable standalone output for Docker deployment
@@ -41,7 +42,10 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              `connect-src 'self' ${backendUrl} https://api.anthropic.com https://api.languagetool.org`,
+              `connect-src 'self' ${backendUrl} ${publicApiUrl} https://api.anthropic.com https://api.languagetool.org`.replace(
+                /\s+/g,
+                " "
+              ),
               "frame-ancestors 'none'",
             ].join("; "),
           },

@@ -215,6 +215,44 @@ async def get_api_key(api_key: str | None = Depends(api_key_header)) -> str | No
     return None
 
 
+async def require_auth_light(
+    request: Request,
+    token: TokenData | None = Depends(get_current_token),
+    api_key: str | None = Depends(get_api_key),
+) -> TokenData:
+    """Lightweight auth that validates JWT/API key without DB access.
+
+    Use this for SSE/streaming endpoints to avoid holding a DB connection
+    for the entire stream duration. Skips user auto-creation and refresh
+    token migration (those happen on normal endpoints).
+
+    Raises:
+        UnauthorizedError: 401 if no valid authentication provided
+    """
+    settings = get_settings()
+
+    if token is not None:
+        return token
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        raise UnauthorizedError(message="Invalid or expired token. Please log in again.")
+
+    if api_key is not None:
+        return TokenData(
+            sub="api-key-user", exp=datetime.now(UTC) + timedelta(days=1), token_type="api_key"
+        )
+
+    if settings.debug:
+        return TokenData(
+            sub="dev-user", exp=datetime.now(UTC) + timedelta(days=1), token_type="dev"
+        )
+
+    raise UnauthorizedError(
+        message="Authentication required. Provide a valid JWT token or API key."
+    )
+
+
 async def require_auth(
     request: Request,
     token: TokenData | None = Depends(get_current_token),

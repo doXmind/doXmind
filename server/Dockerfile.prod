@@ -47,8 +47,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy application code
 COPY --chown=appuser:appgroup . .
 
-# Create data directory
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app/data
+# Create data directories (uploads dir must exist for Docker volume ownership)
+RUN mkdir -p /app/data/uploads && chown -R appuser:appgroup /app/data
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
