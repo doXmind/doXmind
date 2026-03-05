@@ -49,24 +49,6 @@ export const SELECTABLE_BLOCK_TYPES = [
 export type SelectableBlockType = (typeof SELECTABLE_BLOCK_TYPES)[number];
 
 /**
- * Voice recording state for the mobile voice input
- */
-export interface VoiceRecordingState {
-  /** Whether currently recording */
-  isRecording: boolean;
-  /** Recording duration in milliseconds */
-  duration: number;
-  /** Recorded audio blob (null until recording stops) */
-  audioBlob: Blob | null;
-  /** Transcription result from STT (null until transcribed) */
-  transcription: string | null;
-  /** Current audio level (0-1) for waveform visualization */
-  audioLevel: number;
-  /** Error message if recording failed */
-  error: string | null;
-}
-
-/**
  * AI edit preview state
  */
 export interface AIEditPreview {
@@ -110,8 +92,6 @@ export interface BlockSelectionState {
   selectedBlocks: SelectableBlock[];
   /** Whether selection mode is active (at least one block selected) */
   isSelectionActive: boolean;
-  /** Voice recording state */
-  voiceRecording: VoiceRecordingState;
   /** AI edit preview (shown after AI generates edit) */
   editPreview: AIEditPreview | null;
   /** Whether AI is processing an edit request */
@@ -134,21 +114,6 @@ export interface BlockSelectionActions {
   clearSelection: () => void;
   /** Get combined text of all selected blocks */
   getSelectedText: () => string;
-
-  /** Start voice recording */
-  startRecording: () => void;
-  /** Stop voice recording */
-  stopRecording: (blob: Blob) => void;
-  /** Cancel voice recording */
-  cancelRecording: () => void;
-  /** Set audio level for waveform */
-  setAudioLevel: (level: number) => void;
-  /** Set transcription result */
-  setTranscription: (text: string) => void;
-  /** Set recording error */
-  setRecordingError: (error: string | null) => void;
-  /** Reset voice recording state */
-  resetVoiceRecording: () => void;
 
   /** Set AI edit preview */
   setEditPreview: (preview: AIEditPreview | null) => void;

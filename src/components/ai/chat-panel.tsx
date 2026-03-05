@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Trash2,
   Loader2,
-  Mic,
   AlertTriangle,
   SquarePen,
   PanelRight,
@@ -45,7 +44,6 @@ import { useKBStore } from "@/stores/kb-store";
 import { useChat } from "@/hooks/use-chat";
 import { useKBPollingCleanup } from "@/hooks/use-kb-polling-cleanup";
 import { useDataFilePollingCleanup } from "@/hooks/use-data-file-polling-cleanup";
-import { useVoiceRecording, useSpeechToText } from "@/hooks/use-voice-recording";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { haptics } from "@/lib/haptics";
 import { useTranslations } from "next-intl";
@@ -76,8 +74,6 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   ];
 
   const [input, setInput] = useState("");
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
-  const [isPressing, setIsPressing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
@@ -89,44 +85,6 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
   const onboardingCompleted = useOnboardingStore((s) => s.onboardingCompleted);
   const chatSuggestions = onboardingCompleted ? SUGGESTIONS : ONBOARDING_SUGGESTIONS;
-
-  // Speech-to-text hook
-  const {
-    isTranscribing,
-    transcribe,
-    reset: resetTranscription,
-  } = useSpeechToText({
-    onComplete: (text) => {
-      if (text) {
-        setInput((prev) => (prev ? `${prev} ${text}` : text));
-        setIsVoiceMode(false);
-      }
-    },
-  });
-
-  // Voice recording hook
-  const handleRecordingStop = useCallback(
-    async (blob: Blob) => {
-      await transcribe(blob);
-    },
-    [transcribe]
-  );
-
-  const {
-    isRecording,
-    duration,
-    error: recordingError,
-    start: startRecording,
-    stop: stopRecording,
-    cancel: cancelRecording,
-  } = useVoiceRecording({
-    maxDuration: 60000,
-    onStop: handleRecordingStop,
-    onCancel: () => {
-      resetTranscription();
-      setIsVoiceMode(false);
-    },
-  });
 
   // Chat context store for "Ask in Chat" feature (Context Pills)
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
@@ -220,30 +178,6 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     clearConversation(conversationKey);
     setShowClearModal(false);
   };
-
-  // Voice recording handlers
-  const handleVoiceStart = useCallback(async () => {
-    setIsVoiceMode(true);
-    setIsPressing(true);
-    haptics.medium();
-    await startRecording();
-  }, [startRecording]);
-
-  const handleVoiceEnd = useCallback(() => {
-    setIsPressing(false);
-    if (isRecording) {
-      haptics.light();
-      stopRecording();
-    }
-  }, [isRecording, stopRecording]);
-
-  const handleVoiceCancel = useCallback(() => {
-    setIsPressing(false);
-    setIsVoiceMode(false);
-    cancelRecording();
-  }, [cancelRecording]);
-
-  const formatDuration = (ms: number) => `${Math.floor(ms / 1000)}s`;
 
   const currentImageCount = chatContexts.filter((c) => c.type === "image").length;
 
@@ -514,136 +448,58 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
 
       {/* Input area */}
       <div className="p-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-        {/* Voice recording mode */}
-        {isVoiceMode ? (
-          <div className="flex flex-col items-center gap-3 py-2">
-            <div className="flex items-center gap-2 text-sm">
-              {isRecording && (
-                <>
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
-                  <span className="text-muted-foreground">{formatDuration(duration)}</span>
-                </>
-              )}
-              {isTranscribing && (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-muted-foreground">{t("transcribing")}</span>
-                </>
-              )}
-              {recordingError && <span className="text-xs text-destructive">{recordingError}</span>}
-            </div>
-
-            {!isTranscribing && (
-              <motion.button
-                type="button"
-                className={cn(
-                  "flex w-full items-center justify-center gap-2 rounded-full px-6 py-3",
-                  "touch-none select-none transition-all duration-150",
-                  isRecording || isPressing
-                    ? "bg-destructive text-destructive-foreground"
-                    : "bg-muted text-muted-foreground"
-                )}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  if (!isRecording) handleVoiceStart();
-                }}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  handleVoiceEnd();
-                }}
-                onTouchCancel={handleVoiceCancel}
-                onMouseDown={() => {
-                  if (!isRecording) handleVoiceStart();
-                }}
-                onMouseUp={handleVoiceEnd}
-                onMouseLeave={() => {
-                  if (isRecording || isPressing) handleVoiceCancel();
-                }}
-                animate={{ scale: isRecording || isPressing ? 0.98 : 1 }}
-                transition={{ duration: 0.1 }}
-              >
-                <Mic className={cn("h-5 w-5", isRecording && "animate-pulse")} />
-                <span className="text-sm font-medium">
-                  {isRecording ? t("releaseToSend") : t("holdToTalk")}
-                </span>
-              </motion.button>
-            )}
-
-            <button
-              type="button"
-              onClick={handleVoiceCancel}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              {tc("cancel")}
-            </button>
-          </div>
-        ) : (
-          <ChatComposer
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            onStop={stopStreaming}
-            isStreaming={isStreaming}
-            placeholder={t("placeholder")}
-            showHint
-            onPaste={handlePaste}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            isDragging={isDragging}
-            contextSlot={
-              chatContexts.length > 0 ? (
-                <div className="mb-2 space-y-1">
-                  {chatContexts.map((ctx) => (
-                    <ContextPill
-                      key={ctx.id}
-                      context={ctx}
-                      onRemove={() => removeChatContext(ctx.id)}
-                    />
-                  ))}
-                </div>
-              ) : undefined
-            }
-            leftActions={
-              <>
-                <AttachmentMenu
-                  conversationId={conversation.isLoaded ? conversation.id : null}
-                  onImageSelect={handleImageFilesFromMenu}
-                  imageCount={currentImageCount}
-                  maxImages={CHAT_MAX_IMAGES}
-                  disabled={isStreaming}
-                />
-                <ChatSettings />
-                {/* Mobile-only: Clear conversation */}
-                {conversation.messages.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleClear}
-                    className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
-                    aria-label="Clear conversation"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </>
-            }
-            extraActions={
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => setIsVoiceMode(true)}
+        <ChatComposer
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          onStop={stopStreaming}
+          isStreaming={isStreaming}
+          placeholder={t("placeholder")}
+          showHint
+          onPaste={handlePaste}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          isDragging={isDragging}
+          contextSlot={
+            chatContexts.length > 0 ? (
+              <div className="mb-2 space-y-1">
+                {chatContexts.map((ctx) => (
+                  <ContextPill
+                    key={ctx.id}
+                    context={ctx}
+                    onRemove={() => removeChatContext(ctx.id)}
+                  />
+                ))}
+              </div>
+            ) : undefined
+          }
+          leftActions={
+            <>
+              <AttachmentMenu
+                conversationId={conversation.isLoaded ? conversation.id : null}
+                onImageSelect={handleImageFilesFromMenu}
+                imageCount={currentImageCount}
+                maxImages={CHAT_MAX_IMAGES}
                 disabled={isStreaming}
-                className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
-                aria-label="Voice input"
-              >
-                <Mic className="h-4 w-4" />
-              </Button>
-            }
-          />
-        )}
+              />
+              <ChatSettings />
+              {/* Mobile-only: Clear conversation */}
+              {conversation.messages.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleClear}
+                  className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground md:hidden"
+                  aria-label="Clear conversation"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </>
+          }
+        />
       </div>
 
       {/* Clear Conversation Confirmation Modal */}

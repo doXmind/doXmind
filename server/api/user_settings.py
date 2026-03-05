@@ -92,21 +92,18 @@ _CURATED_MODELS: list[tuple[str, str]] = [
     ("minimax/minimax-m2.5", "MiniMax M2.5"),
     ("moonshotai/kimi-k2.5", "Kimi K2.5"),
     ("z-ai/glm-5", "GLM 5"),
-    ("google/gemini-3-flash-preview", "Gemini 3 Flash Preview"),
+    ("google/gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash Lite"),
+    ("google/gemini-3-flash-preview", "Gemini 3 Flash"),
     ("deepseek/deepseek-v3.2", "DeepSeek V3.2"),
     ("x-ai/grok-4.1-fast", "Grok 4.1 Fast"),
     ("anthropic/claude-opus-4.6", "Claude Opus 4.6"),
-    ("anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5"),
-    ("google/gemini-2.5-flash", "Gemini 2.5 Flash"),
-    ("google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite"),
-    ("openai/gpt-5-nano", "GPT-5 Nano"),
+    ("openai/gpt-5.1", "GPT-5.1"),
     ("openai/gpt-oss-120b", "gpt-oss-120b"),
     ("anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6"),
-    ("anthropic/claude-opus-4.5", "Claude Opus 4.5"),
-    ("openai/gpt-5.2-chat", "GPT-5.2"),
-    ("google/gemini-2.0-flash-001", "Gemini 2.0 Flash"),
-    ("google/gemini-3-pro-preview", "Gemini 3 Pro Preview"),
+    ("openai/gpt-5.3-chat", "GPT-5.3"),
+    ("google/gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5"),
+    ("arcee-ai/trinity-large-preview:free", "trinity-large")
 ]
 
 _CURATED_IDS: set[str] = {model_id for model_id, _ in _CURATED_MODELS}

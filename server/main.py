@@ -32,7 +32,6 @@ from api import (
     review,
     shares,
     skills,
-    speech,
     telemetry,
     usage,
     user_settings,
@@ -131,7 +130,6 @@ Most endpoints require authentication via JWT Bearer token or API Key.
         {"name": "autocomplete", "description": "AI autocomplete suggestions"},
         {"name": "review", "description": "AI document review"},
         {"name": "shares", "description": "Document sharing and public access"},
-        {"name": "speech", "description": "Speech-to-text transcription"},
     ],
     contact={
         "name": "doXmind Team",
@@ -288,7 +286,6 @@ app.include_router(community.router, prefix="/api/community", tags=["community"]
 app.include_router(comments.router, prefix="/api/comments", tags=["comments"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
-app.include_router(speech.router, prefix="/api/speech", tags=["speech"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])
 app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])

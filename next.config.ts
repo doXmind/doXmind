@@ -177,11 +177,6 @@ const nextConfig: NextConfig = {
         source: "/api/comments/:path*",
         destination: `${backendUrl}/api/comments/:path*`,
       },
-      // Speech routes (voice transcription)
-      {
-        source: "/api/speech/:path*",
-        destination: `${backendUrl}/api/speech/:path*`,
-      },
       // Health check
       {
         source: "/health",

@@ -2,7 +2,7 @@
  * Block Selection Store
  *
  * Zustand store for managing mobile block-based selection,
- * voice recording, and AI edit preview state.
+ * and AI edit preview state.
  */
 
 import { create } from "zustand";
@@ -10,19 +10,9 @@ import type {
   SelectableBlock,
   BlockSelectionState,
   BlockSelectionActions,
-  VoiceRecordingState,
   AIEditPreview,
   BlockDragState,
 } from "@/types/block-selection";
-
-const initialVoiceRecordingState: VoiceRecordingState = {
-  isRecording: false,
-  duration: 0,
-  audioBlob: null,
-  transcription: null,
-  audioLevel: 0,
-  error: null,
-};
 
 const initialDragState: BlockDragState = {
   isDragging: false,
@@ -36,7 +26,6 @@ export const useBlockSelectionStore = create<BlockSelectionStore>((set, get) => 
   // State
   selectedBlocks: [],
   isSelectionActive: false,
-  voiceRecording: initialVoiceRecordingState,
   editPreview: null,
   isProcessingAI: false,
   drag: initialDragState,
@@ -121,66 +110,6 @@ export const useBlockSelectionStore = create<BlockSelectionStore>((set, get) => 
   getSelectedText: () => {
     const { selectedBlocks } = get();
     return selectedBlocks.map((b) => b.text).join("\n\n");
-  },
-
-  // Voice Recording Actions
-  startRecording: () => {
-    set({
-      voiceRecording: {
-        ...initialVoiceRecordingState,
-        isRecording: true,
-      },
-    });
-  },
-
-  stopRecording: (blob: Blob) => {
-    set((state) => ({
-      voiceRecording: {
-        ...state.voiceRecording,
-        isRecording: false,
-        audioBlob: blob,
-      },
-    }));
-  },
-
-  cancelRecording: () => {
-    set({
-      voiceRecording: initialVoiceRecordingState,
-    });
-  },
-
-  setAudioLevel: (level: number) => {
-    set((state) => ({
-      voiceRecording: {
-        ...state.voiceRecording,
-        audioLevel: level,
-      },
-    }));
-  },
-
-  setTranscription: (text: string) => {
-    set((state) => ({
-      voiceRecording: {
-        ...state.voiceRecording,
-        transcription: text,
-      },
-    }));
-  },
-
-  setRecordingError: (error: string | null) => {
-    set((state) => ({
-      voiceRecording: {
-        ...state.voiceRecording,
-        error,
-        isRecording: false,
-      },
-    }));
-  },
-
-  resetVoiceRecording: () => {
-    set({
-      voiceRecording: initialVoiceRecordingState,
-    });
   },
 
   // AI Edit Preview Actions

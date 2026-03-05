@@ -146,7 +146,6 @@ class Settings(BaseSettings):
     fast_model: str = "google/gemini-2.5-flash-lite"  # For quick operations (autocomplete, quick edits, simplified slides)
     review_model: str = "google/gemini-3.1-flash-lite-preview"  # For text review (needs JSON mode support)
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
-    stt_model: str = "openai/whisper-1"  # For speech-to-text via OpenRouter
 
     # =========================================================================
     # User API Key Settings
