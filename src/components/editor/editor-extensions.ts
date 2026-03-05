@@ -173,7 +173,8 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
   if (!isMobile) {
     extensions.push(
       Placeholder.configure({
-        placeholder: "Start writing, or press '/' for commands...",
+        placeholder: "Type '/' for commands",
+        showOnlyCurrent: true,
       })
     );
   }

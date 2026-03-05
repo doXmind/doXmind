@@ -422,6 +422,7 @@
       "copy": "复制",
       "moveUp": "上移",
       "moveDown": "下移",
+      "align": "对齐",
       "color": "颜色",
       "askAI": "问 AI"
     },

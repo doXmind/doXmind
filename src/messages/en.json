@@ -422,6 +422,7 @@
       "copy": "Copy",
       "moveUp": "Move up",
       "moveDown": "Move down",
+      "align": "Align",
       "color": "Color",
       "askAI": "Ask AI"
     },

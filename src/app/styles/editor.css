@@ -33,14 +33,14 @@
   line-height: 1.9;
 }
 
-.ProseMirror p.is-editor-empty:first-child::before {
-  @apply pointer-events-none float-left h-0 text-muted-foreground;
+.ProseMirror p.is-empty::before {
+  @apply pointer-events-none float-left h-0 select-none text-muted-foreground;
   content: attr(data-placeholder);
 }
 
 /* Hide placeholder when diff blocks are present */
-.ProseMirror:has(.diff-inserted-wrapper) p.is-editor-empty:first-child::before,
-.ProseMirror:has(.diff-deleted) p.is-editor-empty:first-child::before {
+.ProseMirror:has(.diff-inserted-wrapper) p.is-empty::before,
+.ProseMirror:has(.diff-deleted) p.is-empty::before {
   content: none;
 }
 
@@ -655,4 +655,18 @@
   animation:
     fadeIn 0.15s ease-out,
     zoomIn 0.15s ease-out;
+}
+
+/* Slash command inline query hint (Notion-like) */
+.ProseMirror .slash-command-query {
+  position: relative;
+}
+
+.ProseMirror .slash-command-query-empty::after {
+  content: "Type to filter...";
+  display: inline;
+  color: hsl(var(--muted-foreground) / 0.55);
+  margin-left: 0.08rem;
+  white-space: nowrap;
+  pointer-events: none;
 }

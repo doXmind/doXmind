@@ -9,7 +9,6 @@ import { findBlockAtCoords } from "@/extensions/block-handle-extension";
 import { useStreamingStore } from "@/stores/streaming-store";
 import { useTranslations } from "next-intl";
 import { BlockActionMenu } from "./block-action-menu";
-import { BlockInsertMenu } from "./block-insert-menu";
 
 interface BlockHandleProps {
   editor: Editor;
@@ -76,9 +75,8 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
   // Action menu state (grip click)
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [actionMenuAnchor, setActionMenuAnchor] = useState<{ x: number; y: number } | null>(null);
-  // Insert menu state (plus click)
-  const [isInsertMenuOpen, setIsInsertMenuOpen] = useState(false);
-  const [insertMenuAnchor, setInsertMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  // + click opens slash command directly (no separate insert menu state)
+  const isInsertMenuOpen = false;
   // Whether a drag is in progress
   const [isDragging, setIsDragging] = useState(false);
 
@@ -215,6 +213,9 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
 
         // Place handle to the left of block content with a small gap
         left = left - 6;
+
+        // Keep handle visible near viewport edges (especially bottom).
+        top = Math.max(8, Math.min(top, window.innerHeight - 36));
 
         return { top, left };
       } catch {
@@ -361,7 +362,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
     }
   }, [isActionMenuOpen, isInsertMenuOpen, scheduleHide]);
 
-  // --- + button: open block insert menu ---
+  // --- + button: open slash command at insertion point ---
   const handlePlusClick = useCallback(
     (e: React.MouseEvent) => {
       const blockPos = resolveListItemAtCoords(e.clientX, e.clientY, hoveredBlockPosRef.current);
@@ -369,15 +370,33 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       hoveredBlockPosRef.current = blockPos;
       setHoveredBlockPos(blockPos);
 
-      // Position menu to the left of content (Notion-style)
-      const target = e.currentTarget as HTMLElement;
-      const rect = target.getBoundingClientRect();
-      const x = computeMenuAnchorX(editor, blockPos, 280, rect.right);
-      setInsertMenuAnchor({ x, y: rect.bottom + 4 });
-      setIsInsertMenuOpen(true);
-      isMenuOpenRef.current = true;
+      const blockNode = editor.state.doc.nodeAt(blockPos);
+      if (!blockNode) return;
+
+      const isEmptyParagraph = blockNode.type.name === "paragraph" && blockNode.content.size === 0;
+
+      if (isEmptyParagraph) {
+        editor
+          .chain()
+          .focus()
+          .setTextSelection(blockPos + 1)
+          .insertContent("/")
+          .run();
+      } else {
+        const insertPos = blockPos + blockNode.nodeSize;
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(insertPos, { type: "paragraph" })
+          .setTextSelection(insertPos + 1)
+          .insertContent("/")
+          .run();
+      }
+
+      isMenuOpenRef.current = false;
+      scheduleHide();
     },
-    [editor, resolveListItemAtCoords]
+    [editor, resolveListItemAtCoords, scheduleHide]
   );
 
   // --- Grip click: open action menu ---
@@ -678,13 +697,6 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
     scheduleHide();
   }, [scheduleHide, clearBlockHighlight]);
 
-  const closeInsertMenu = useCallback(() => {
-    setIsInsertMenuOpen(false);
-    isMenuOpenRef.current = false;
-    setInsertMenuAnchor(null);
-    scheduleHide();
-  }, [scheduleHide]);
-
   const isVisible = position !== null && !isDragging;
 
   return createPortal(
@@ -745,15 +757,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
         />
       )}
 
-      {/* Block Insert Menu (plus click) */}
-      {isInsertMenuOpen && insertMenuAnchor && hoveredBlockPos !== null && (
-        <BlockInsertMenu
-          editor={editor}
-          insertAfterPos={hoveredBlockPos}
-          anchor={insertMenuAnchor}
-          onClose={closeInsertMenu}
-        />
-      )}
+      {/* + click now uses slash command menu rendered by SlashCommands extension */}
     </>,
     document.body
   );

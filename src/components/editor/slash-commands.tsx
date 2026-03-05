@@ -569,49 +569,56 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
   });
 
   return (
-    <div
-      ref={scrollContainerRef}
-      className="max-h-[320px] overflow-y-auto overflow-x-hidden rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
-    >
-      {groupedItems.map((group, groupIndex) => (
-        <div key={group.category}>
-          {/* Category separator */}
-          {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
+    <div className="w-[420px] overflow-hidden rounded-xl border border-border/70 bg-popover shadow-xl">
+      <div
+        ref={scrollContainerRef}
+        className="max-h-[360px] overflow-y-auto overflow-x-hidden p-1.5"
+      >
+        {groupedItems.map((group, groupIndex) => (
+          <div key={group.category}>
+            {/* Category separator */}
+            {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
 
-          {/* Category header */}
-          <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            {categoryLabels[group.category] ?? group.category}
+            {/* Category header */}
+            <div className="px-2 pb-0.5 pt-1 text-[12px] font-semibold text-muted-foreground/80">
+              {categoryLabels[group.category] ?? group.category}
+            </div>
+
+            <div className="mx-1 my-1 h-px bg-border" />
+
+            {/* Items */}
+            {group.items.map(({ item, globalIndex }) => (
+              <button
+                key={item.title}
+                data-command-item
+                onClick={() => selectItem(globalIndex)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-2 py-1 text-left text-base",
+                  globalIndex === selectedIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground">
+                  {item.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{item.title}</p>
+                </div>
+                {item.shortcut && (
+                  <span className="shrink-0 text-xs text-muted-foreground/65">
+                    {formatShortcut(item.shortcut)}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
-
-          {/* Items */}
-          {group.items.map(({ item, globalIndex }) => (
-            <button
-              key={item.title}
-              data-command-item
-              onClick={() => selectItem(globalIndex)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm",
-                globalIndex === selectedIndex
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-accent/50"
-              )}
-            >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background">
-                {item.icon}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-medium">{item.title}</p>
-                <p className="text-xs text-muted-foreground">{item.description}</p>
-              </div>
-              {item.shortcut && (
-                <span className="shrink-0 text-[10px] text-muted-foreground/60">
-                  {formatShortcut(item.shortcut)}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      ))}
+        ))}
+      </div>
+      <div className="flex items-center justify-between border-t border-border px-3 py-2 text-sm text-muted-foreground/85">
+        <span>Close menu</span>
+        <span>esc</span>
+      </div>
     </div>
   );
 });
@@ -645,6 +652,10 @@ export const SlashCommands = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
+        decorationContent: "/",
+        decorationTag: "span",
+        decorationClass: "slash-command-query",
+        decorationEmptyClass: "slash-command-query-empty",
         items: ({ query }: { query: string }) => {
           const q = query.toLowerCase();
           return commands.filter((item) => {

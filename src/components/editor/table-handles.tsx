@@ -46,6 +46,8 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [colHandleHover, setColHandleHover] = useState<number | null>(null);
   const [rowHandleHover, setRowHandleHover] = useState<number | null>(null);
+  const [isColControlHover, setIsColControlHover] = useState(false);
+  const [isRowControlHover, setIsRowControlHover] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   // Force re-render on geometry changes
   const [, setTick] = useState(0);
@@ -111,6 +113,8 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
       setActiveColIndex(null);
       setColHandleHover(null);
       setRowHandleHover(null);
+      setIsColControlHover(false);
+      setIsRowControlHover(false);
     }
   }, [editor]);
 
@@ -129,6 +133,8 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
         setActiveColIndex(null);
         setColHandleHover(null);
         setRowHandleHover(null);
+        setIsColControlHover(false);
+        setIsRowControlHover(false);
       }
     };
 
@@ -205,7 +211,7 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
       setContextMenu({
         type: "column",
         index: colIndex,
-        anchor: { x: rect.left, y: rect.bottom + 4 },
+        anchor: { x: rect.right, y: rect.bottom },
       });
       isMenuOpenRef.current = true;
     },
@@ -222,7 +228,7 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
         selectRow(editor, activeTable.pos, rowIndex);
       }
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setContextMenu({ type: "row", index: rowIndex, anchor: { x: rect.right + 4, y: rect.top } });
+      setContextMenu({ type: "row", index: rowIndex, anchor: { x: rect.right, y: rect.bottom } });
       isMenuOpenRef.current = true;
     },
     [editor, activeTable]
@@ -333,49 +339,99 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
   // Active column/row handle data
   const activeColHandle = activeColIndex !== null ? colHandles[activeColIndex] : null;
   const activeRowHandle = activeRowIndex !== null ? rowHandles[activeRowIndex] : null;
+  const colLineWidth = 28;
+  const rowLineHeight = 28;
 
   return createPortal(
     <div>
-      {/* Column handle — only for the selected cell's column */}
+      {/* Column control — subtle border line, button on hover (Notion-like) */}
       {activeColHandle && activeColIndex !== null && (
-        <button
-          type="button"
-          className="table-col-handle fixed z-30 flex items-center justify-center rounded-[3px] border border-transparent text-muted-foreground/50 transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground dark:text-muted-foreground/70"
+        <div
+          className="fixed z-30"
           style={{
-            left: activeColHandle.left - 12,
-            top: tableRect.top - 24,
-            width: 24,
-            height: 20,
+            left: activeColHandle.left - 16,
+            top: tableRect.top - 12,
+            width: 32,
+            height: 16,
           }}
-          onClick={(e) => handleColumnHandleClick(e, activeColIndex)}
-          onMouseEnter={() => setColHandleHover(activeColIndex)}
-          onMouseLeave={() => setColHandleHover(null)}
-          onMouseDown={(e) => e.preventDefault()}
-          title={`Column ${activeColIndex + 1}`}
+          onMouseEnter={() => {
+            setIsColControlHover(true);
+            setColHandleHover(activeColIndex);
+          }}
+          onMouseLeave={() => {
+            setIsColControlHover(false);
+            setColHandleHover(null);
+          }}
         >
-          <GripVertical className="h-3.5 w-3.5 rotate-90" />
-        </button>
+          <div
+            className="absolute left-1/2 top-[10px] h-[2px] -translate-x-1/2 rounded-full bg-muted-foreground/35"
+            style={{
+              width: colLineWidth,
+              opacity: isColControlHover ? 0 : 1,
+              transition: "opacity 100ms ease",
+            }}
+          />
+          <button
+            type="button"
+            className="table-col-handle absolute left-1/2 top-0 z-10 flex h-5 w-7 -translate-x-1/2 items-center justify-center rounded-[6px] border border-border/60 bg-background/95 text-muted-foreground/70 shadow-sm transition-all duration-100 hover:bg-muted hover:text-muted-foreground"
+            style={{
+              opacity: isColControlHover ? 1 : 0,
+              pointerEvents: isColControlHover ? "auto" : "none",
+              transform: `translateX(-50%) scale(${isColControlHover ? 1 : 0.96})`,
+              transformOrigin: "center",
+            }}
+            onClick={(e) => handleColumnHandleClick(e, activeColIndex)}
+            onMouseDown={(e) => e.preventDefault()}
+            title={`Column ${activeColIndex + 1}`}
+          >
+            <GripVertical className="h-3.5 w-3.5 rotate-90" />
+          </button>
+        </div>
       )}
 
-      {/* Row handle — only for the selected cell's row */}
+      {/* Row control — subtle border line, button on hover (Notion-like) */}
       {activeRowHandle && activeRowIndex !== null && (
-        <button
-          type="button"
-          className="table-row-handle fixed z-30 flex items-center justify-center rounded-[3px] border border-transparent text-muted-foreground/50 transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground dark:text-muted-foreground/70"
+        <div
+          className="fixed z-30"
           style={{
-            left: tableRect.left - 28,
-            top: activeRowHandle.top - 10,
-            width: 24,
-            height: 20,
+            left: tableRect.left - 14,
+            top: activeRowHandle.top - 16,
+            width: 16,
+            height: 32,
           }}
-          onClick={(e) => handleRowHandleClick(e, activeRowIndex)}
-          onMouseEnter={() => setRowHandleHover(activeRowIndex)}
-          onMouseLeave={() => setRowHandleHover(null)}
-          onMouseDown={(e) => e.preventDefault()}
-          title={`Row ${activeRowIndex + 1}`}
+          onMouseEnter={() => {
+            setIsRowControlHover(true);
+            setRowHandleHover(activeRowIndex);
+          }}
+          onMouseLeave={() => {
+            setIsRowControlHover(false);
+            setRowHandleHover(null);
+          }}
         >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
+          <div
+            className="absolute left-[10px] top-1/2 w-[2px] -translate-y-1/2 rounded-full bg-muted-foreground/35"
+            style={{
+              height: rowLineHeight,
+              opacity: isRowControlHover ? 0 : 1,
+              transition: "opacity 100ms ease",
+            }}
+          />
+          <button
+            type="button"
+            className="table-row-handle absolute left-0 top-1/2 z-10 flex h-7 w-5 -translate-y-1/2 items-center justify-center rounded-[6px] border border-border/60 bg-background/95 text-muted-foreground/70 shadow-sm transition-all duration-100 hover:bg-muted hover:text-muted-foreground"
+            style={{
+              opacity: isRowControlHover ? 1 : 0,
+              pointerEvents: isRowControlHover ? "auto" : "none",
+              transform: `translateY(-50%) scale(${isRowControlHover ? 1 : 0.96})`,
+              transformOrigin: "center",
+            }}
+            onClick={(e) => handleRowHandleClick(e, activeRowIndex)}
+            onMouseDown={(e) => e.preventDefault()}
+            title={`Row ${activeRowIndex + 1}`}
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        </div>
       )}
 
       {/* Edge + button: add column (right edge) */}

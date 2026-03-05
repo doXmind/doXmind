@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import { useTranslations } from "next-intl";
@@ -354,6 +354,7 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [query, setQuery] = useState("");
   const [subView, setSubView] = useState<"table-size" | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ x: anchor.x, y: anchor.y });
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -520,11 +521,47 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
     }
   }, [selectedIndex]);
 
-  // Position: ensure it stays in viewport
-  const adjustedPosition = {
-    x: Math.max(8, Math.min(anchor.x, window.innerWidth - 280)),
-    y: Math.min(anchor.y, window.innerHeight - 400),
-  };
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+
+    const menuRect = menuRef.current.getBoundingClientRect();
+    const padding = 20;
+    const gap = 8;
+
+    let blockDom = editor.view.nodeDOM(insertAfterPos) as HTMLElement | null;
+    const blockNode = editor.state.doc.nodeAt(insertAfterPos);
+    if (
+      blockDom &&
+      blockNode &&
+      (blockNode.type.name === "listItem" || blockNode.type.name === "taskItem")
+    ) {
+      try {
+        const $pos = editor.state.doc.resolve(insertAfterPos);
+        if ($pos.depth >= 1) {
+          const parentDom = editor.view.nodeDOM($pos.before($pos.depth)) as HTMLElement | null;
+          if (parentDom) blockDom = parentDom;
+        }
+      } catch {
+        // keep list item dom
+      }
+    }
+
+    const contentLeft = blockDom?.getBoundingClientRect().left ?? anchor.x + menuRect.width + gap;
+    const preferredX = contentLeft - menuRect.width - gap;
+    const x = Math.max(padding, Math.min(preferredX, window.innerWidth - menuRect.width - padding));
+    let y = anchor.y;
+
+    const spaceBelow = window.innerHeight - anchor.y - padding;
+    const spaceAbove = anchor.y - padding;
+
+    if (menuRect.height > spaceBelow && spaceAbove > spaceBelow) {
+      y = anchor.y - menuRect.height - gap;
+    }
+
+    y = Math.max(padding, Math.min(y, window.innerHeight - menuRect.height - padding));
+
+    setMenuPosition({ x, y });
+  }, [anchor, query, subView, filteredItems.length, editor, insertAfterPos]);
 
   // Group items by category
   const groupedItems: { category: string; items: { item: InsertItem; globalIndex: number }[] }[] =
@@ -545,7 +582,7 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
         "fixed z-[100] w-[260px] rounded-lg border border-border bg-popover shadow-xl",
         "animate-in fade-in-0 zoom-in-95"
       )}
-      style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
+      style={{ left: menuPosition.x, top: menuPosition.y }}
       role="menu"
       aria-label="Insert block"
     >
@@ -565,66 +602,66 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
           <TableSizePicker onSelect={handleTableSizeSelect} />
         </div>
       ) : (
-        /* Scrollable command list */
-        <div ref={scrollRef} className="max-h-[320px] overflow-y-auto p-1">
-          {filteredItems.length === 0 && (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              {t("blockMenu.noResults")}
-            </div>
-          )}
+        <>
+          {/* Filter input at top (Notion-style) */}
+          <div className="border-b border-border px-2 py-1.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("blockMenu.filterPlaceholder")}
+              className="w-full rounded-md bg-transparent px-1.5 py-1 text-xs text-muted-foreground placeholder:text-muted-foreground/55 focus:outline-none"
+            />
+          </div>
 
-          {groupedItems.map((group, groupIndex) => (
-            <div key={group.category}>
-              {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
-              <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                {t(categoryLabelKeys[group.category] as TKey)}
+          {/* Scrollable command list */}
+          <div ref={scrollRef} className="max-h-[320px] overflow-y-auto p-1">
+            {filteredItems.length === 0 && (
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                {t("blockMenu.noResults")}
               </div>
-              {group.items.map(({ item, globalIndex }) => (
-                <button
-                  key={item.titleKey}
-                  data-insert-item
-                  type="button"
-                  onClick={() => selectItem(globalIndex)}
-                  onMouseEnter={() => setSelectedIndex(globalIndex)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm",
-                    globalIndex === selectedIndex
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/50"
-                  )}
-                  role="menuitem"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
-                    {item.icon}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{t(item.titleKey as TKey)}</p>
-                    <p className="text-xs text-muted-foreground">{t(item.descKey as TKey)}</p>
-                  </div>
-                  {item.shortcut && (
-                    <span className="shrink-0 text-[10px] text-muted-foreground/60">
-                      {formatShortcut(item.shortcut)}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+            )}
 
-      {/* Filter input at bottom (like Notion) — hidden in sub-views */}
-      {!subView && (
-        <div className="border-t border-border px-2 py-1.5">
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("blockMenu.filterPlaceholder")}
-            className="w-full bg-transparent text-xs text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-          />
-        </div>
+            {groupedItems.map((group, groupIndex) => (
+              <div key={group.category}>
+                {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
+                <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  {t(categoryLabelKeys[group.category] as TKey)}
+                </div>
+                {group.items.map(({ item, globalIndex }) => (
+                  <button
+                    key={item.titleKey}
+                    data-insert-item
+                    type="button"
+                    onClick={() => selectItem(globalIndex)}
+                    onMouseEnter={() => setSelectedIndex(globalIndex)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm",
+                      globalIndex === selectedIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent/50"
+                    )}
+                    role="menuitem"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
+                      {item.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">{t(item.titleKey as TKey)}</p>
+                      <p className="text-xs text-muted-foreground">{t(item.descKey as TKey)}</p>
+                    </div>
+                    {item.shortcut && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                        {formatShortcut(item.shortcut)}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>,
     document.body

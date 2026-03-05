@@ -24,6 +24,9 @@ import {
   Quote,
   Code,
   MessageSquareQuote,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
   ChevronRight,
   Palette,
   ArrowRightLeft,
@@ -69,7 +72,7 @@ const iconMap: Record<string, React.ReactNode> = {
   ChevronRight: <ChevronRight className="h-3.5 w-3.5" />,
 };
 
-type SubmenuType = "turnInto" | "color" | null;
+type SubmenuType = "turnInto" | "align" | "color" | null;
 
 /** Block types that support "Turn Into" conversion */
 const TURN_INTO_TYPES = new Set([
@@ -99,6 +102,17 @@ const COLOR_TYPES = new Set([
   "toggle",
 ]);
 
+/** Block types that support text alignment */
+const ALIGN_TYPES = new Set([
+  "paragraph",
+  "heading",
+  "bulletList",
+  "orderedList",
+  "taskList",
+  "listItem",
+  "taskItem",
+]);
+
 export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockActionMenuProps) {
   const t = useTranslations("editor");
   // Freeze blockPos at mount time — parent may update hoveredBlockPos
@@ -109,9 +123,66 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
   const [submenuFocusIndex, setSubmenuFocusIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const turnIntoRef = useRef<HTMLDivElement>(null);
+  const alignRef = useRef<HTMLDivElement>(null);
   const colorRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({
+    left: position.x,
+    top: position.y,
+  });
   const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({});
   const submenuCloseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useLayoutEffect(() => {
+    if (!menuRef.current) {
+      setMenuStyle({});
+      return;
+    }
+
+    const menuRect = menuRef.current.getBoundingClientRect();
+    const padding = 20;
+    const gap = 8;
+
+    let contentLeft: number | null = null;
+    const targetBlock = getBlockAtPos(editor, stableBlockPos);
+    if (targetBlock) {
+      let blockDom = editor.view.nodeDOM(targetBlock.from) as HTMLElement | null;
+
+      if (
+        blockDom &&
+        (targetBlock.node.type.name === "listItem" || targetBlock.node.type.name === "taskItem")
+      ) {
+        try {
+          const $pos = editor.state.doc.resolve(targetBlock.from);
+          if ($pos.depth >= 1) {
+            const parentDom = editor.view.nodeDOM($pos.before($pos.depth)) as HTMLElement | null;
+            if (parentDom) blockDom = parentDom;
+          }
+        } catch {
+          // Fallback to list item DOM
+        }
+      }
+
+      contentLeft = blockDom?.getBoundingClientRect().left ?? null;
+    }
+
+    const preferredLeft = (contentLeft ?? position.x + menuRect.width + gap) - menuRect.width - gap;
+    const left = Math.max(
+      padding,
+      Math.min(preferredLeft, window.innerWidth - menuRect.width - padding)
+    );
+    let top = position.y;
+
+    const spaceBelow = window.innerHeight - position.y - padding;
+    const spaceAbove = position.y - padding;
+
+    if (menuRect.height > spaceBelow && spaceAbove > spaceBelow) {
+      top = position.y - menuRect.height - gap;
+    }
+
+    top = Math.max(padding, Math.min(top, window.innerHeight - menuRect.height - padding));
+
+    setMenuStyle({ left, top });
+  }, [position, editor, stableBlockPos]);
 
   // Delayed close for submenus — allows mouse to travel from trigger to fixed submenu
   const scheduleSubmenuClose = useCallback(() => {
@@ -130,7 +201,12 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       return;
     }
 
-    const submenuEl = activeSubmenu === "turnInto" ? turnIntoRef.current : colorRef.current;
+    const submenuEl =
+      activeSubmenu === "turnInto"
+        ? turnIntoRef.current
+        : activeSubmenu === "align"
+          ? alignRef.current
+          : colorRef.current;
     const triggerEl = menuRef.current?.querySelector(
       `[data-submenu-trigger="${activeSubmenu}"]`
     ) as HTMLElement | null;
@@ -173,6 +249,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
   const block = getBlockAtPos(editor, stableBlockPos);
   const blockType = block?.node.type.name ?? "";
   const showTurnInto = TURN_INTO_TYPES.has(blockType);
+  const showAlign = ALIGN_TYPES.has(blockType);
   const showColor = COLOR_TYPES.has(blockType);
   const resolveColorTarget = useCallback(
     (type: "text" | "background") => {
@@ -226,6 +303,63 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     [editor, block]
   );
 
+  const resolveAlignTarget = useCallback(() => {
+    if (!block) return null;
+
+    const targetPos = block.from;
+    const targetNode = block.node;
+
+    const resolveItemContent = (itemPos: number) => {
+      const contentPos = itemPos + 1;
+      const contentNode = editor.state.doc.nodeAt(contentPos);
+      if (!contentNode) return null;
+      if (contentNode.type.name === "paragraph" || contentNode.type.name === "heading") {
+        return { targetPos: contentPos, targetNode: contentNode };
+      }
+      return null;
+    };
+
+    if (targetNode.type.name === "paragraph" || targetNode.type.name === "heading") {
+      return { targetPos, targetNode };
+    }
+
+    if (targetNode.type.name === "listItem" || targetNode.type.name === "taskItem") {
+      return resolveItemContent(targetPos);
+    }
+
+    if (
+      targetNode.type.name === "bulletList" ||
+      targetNode.type.name === "orderedList" ||
+      targetNode.type.name === "taskList"
+    ) {
+      try {
+        const { $from } = editor.state.selection;
+        for (let depth = $from.depth; depth >= 1; depth--) {
+          const typeName = $from.node(depth).type.name;
+          if (typeName === "listItem" || typeName === "taskItem") {
+            const itemPos = $from.before(depth);
+            const itemContent = resolveItemContent(itemPos);
+            if (itemContent) return itemContent;
+            break;
+          }
+        }
+      } catch {
+        // Fall through to list first-item fallback.
+      }
+
+      const firstItemPos = targetPos + 1;
+      const firstItemNode = editor.state.doc.nodeAt(firstItemPos);
+      if (
+        firstItemNode &&
+        (firstItemNode.type.name === "listItem" || firstItemNode.type.name === "taskItem")
+      ) {
+        return resolveItemContent(firstItemPos);
+      }
+    }
+
+    return null;
+  }, [editor, block]);
+
   const colorTargetNode = (() => {
     const target = resolveColorTarget("text");
     if (!target) return null;
@@ -235,6 +369,8 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     if (!block) return null;
     return target.targetNode;
   })();
+  const alignTarget = resolveAlignTarget();
+  const currentAlign = (alignTarget?.targetNode.attrs.textAlign as string | null) || "left";
 
   // Move editor selection into the target block on mount so that
   // editor.isActive() checks (used by Turn Into options) reference
@@ -265,6 +401,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       // Check if click is inside the main menu or any fixed submenu
       if (menuRef.current?.contains(target)) return;
       if (turnIntoRef.current?.contains(target)) return;
+      if (alignRef.current?.contains(target)) return;
       if (colorRef.current?.contains(target)) return;
       onClose();
     };
@@ -273,6 +410,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       const target = e.target as Node;
       if (menuRef.current?.contains(target)) return;
       if (turnIntoRef.current?.contains(target)) return;
+      if (alignRef.current?.contains(target)) return;
       if (colorRef.current?.contains(target)) return;
       onClose();
     };
@@ -380,6 +518,21 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     [editor, onClose, resolveColorTarget]
   );
 
+  const handleAlignChange = useCallback(
+    (align: "left" | "center" | "right") => {
+      const target = resolveAlignTarget();
+      if (!target) return;
+
+      const tr = editor.state.tr.setNodeMarkup(target.targetPos, undefined, {
+        ...target.targetNode.attrs,
+        textAlign: align === "left" ? null : align,
+      });
+      editor.view.dispatch(tr);
+      onClose();
+    },
+    [editor, onClose, resolveAlignTarget]
+  );
+
   const handleAskAI = useCallback(() => {
     if (block) {
       // Serialize block node to markdown — matches the format backend operates on
@@ -406,6 +559,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     | "copy"
     | "moveUp"
     | "moveDown"
+    | "align"
     | "color"
     | "askAI";
   const menuItems: MenuItemId[] = [
@@ -415,6 +569,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     "copy",
     "moveUp",
     "moveDown",
+    ...(showAlign ? ["align" as const] : []),
     ...(showColor ? ["color" as const] : []),
     "askAI",
   ];
@@ -453,6 +608,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         case "ArrowRight":
           e.preventDefault();
           if (currentItemId === "turnInto") setActiveSubmenu("turnInto");
+          if (currentItemId === "align") setActiveSubmenu("align");
           if (currentItemId === "color") setActiveSubmenu("color");
           break;
         case "Enter":
@@ -480,6 +636,9 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
               case "color":
                 setActiveSubmenu("color");
                 break;
+              case "align":
+                setActiveSubmenu("align");
+                break;
               case "askAI":
                 handleAskAI();
                 break;
@@ -504,13 +663,27 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     handleAskAI,
   ]);
 
-  // Position adjustment to stay in viewport
-  const adjustedPosition = {
-    x: Math.max(8, Math.min(position.x, window.innerWidth - 220)),
-    y: Math.min(position.y, window.innerHeight - 320),
-  };
-
   const turnIntoItems = turnIntoOptions.filter((o) => !isTurnIntoSeparator(o));
+  const alignItems = [
+    {
+      label: t("bubbleMenu.alignLeft"),
+      icon: <AlignLeft className="h-3.5 w-3.5" />,
+      isActive: currentAlign === "left",
+      action: () => handleAlignChange("left"),
+    },
+    {
+      label: t("bubbleMenu.alignCenter"),
+      icon: <AlignCenter className="h-3.5 w-3.5" />,
+      isActive: currentAlign === "center",
+      action: () => handleAlignChange("center"),
+    },
+    {
+      label: t("bubbleMenu.alignRight"),
+      icon: <AlignRight className="h-3.5 w-3.5" />,
+      isActive: currentAlign === "right",
+      action: () => handleAlignChange("right"),
+    },
+  ];
 
   return createPortal(
     <div
@@ -519,7 +692,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
         "fixed z-[100] min-w-[200px] rounded-lg border border-border bg-popover p-1.5 shadow-xl",
         "animate-in fade-in-0 zoom-in-95"
       )}
-      style={{ left: adjustedPosition.x, top: adjustedPosition.y }}
+      style={menuStyle}
       role="menu"
       aria-label={t("blockAction.blockActionsAria")}
     >
@@ -663,58 +836,130 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
       />
 
       {/* Color → submenu (only for text-like blocks) */}
-      {showColor && (
+      {(showAlign || showColor) && (
         <>
           <div className="my-1.5 h-px bg-border" />
-          <div
-            className="relative"
-            data-submenu-trigger="color"
-            onMouseEnter={() => {
-              cancelSubmenuClose();
-              setFocusIndex(menuItems.indexOf("color"));
-              setActiveSubmenu("color");
-              setSubmenuFocusIndex(0);
-            }}
-            onMouseLeave={scheduleSubmenuClose}
-          >
+          {showAlign && (
             <div
-              className={cn(
-                "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
-                currentItemId === "color" || activeSubmenu === "color"
-                  ? "bg-accent text-accent-foreground"
-                  : "text-foreground"
-              )}
-              role="menuitem"
-              aria-haspopup="true"
+              className="relative"
+              data-submenu-trigger="align"
+              onMouseEnter={() => {
+                cancelSubmenuClose();
+                setFocusIndex(menuItems.indexOf("align"));
+                setActiveSubmenu("align");
+                setSubmenuFocusIndex(0);
+              }}
+              onMouseLeave={scheduleSubmenuClose}
             >
-              <span className="text-muted-foreground">
-                <Palette className="h-3.5 w-3.5" />
-              </span>
-              <span className="flex-1">{t("blockAction.color")}</span>
-              <ChevronRight className="h-3 w-3 text-muted-foreground" />
-            </div>
-
-            {activeSubmenu === "color" && (
               <div
-                ref={colorRef}
                 className={cn(
-                  "fixed z-[101] min-w-[240px] rounded-lg border border-border bg-popover shadow-xl",
-                  "animate-in fade-in-0 slide-in-from-left-1"
+                  "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
+                  currentItemId === "align" || activeSubmenu === "align"
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground"
                 )}
-                style={submenuStyle}
-                onMouseEnter={cancelSubmenuClose}
-                onMouseLeave={scheduleSubmenuClose}
-                role="menu"
+                role="menuitem"
+                aria-haspopup="true"
               >
-                <ColorPicker
-                  activeTextColor={colorTargetNode?.attrs.textColor || null}
-                  activeBackgroundColor={colorTargetNode?.attrs.backgroundColor || null}
-                  onTextColorChange={(color) => handleColorChange(color, "text")}
-                  onBackgroundColorChange={(color) => handleColorChange(color, "background")}
-                />
+                <span className="text-muted-foreground">
+                  <AlignLeft className="h-3.5 w-3.5" />
+                </span>
+                <span className="flex-1">{t("blockAction.align")}</span>
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
               </div>
-            )}
-          </div>
+
+              {activeSubmenu === "align" && (
+                <div
+                  ref={alignRef}
+                  className={cn(
+                    "fixed z-[101] min-w-[180px] rounded-lg border border-border bg-popover p-1.5 shadow-xl",
+                    "animate-in fade-in-0 slide-in-from-left-1"
+                  )}
+                  style={submenuStyle}
+                  onMouseEnter={cancelSubmenuClose}
+                  onMouseLeave={scheduleSubmenuClose}
+                  role="menu"
+                >
+                  {alignItems.map((item, idx) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
+                        "transition-colors duration-75",
+                        idx === submenuFocusIndex
+                          ? "bg-accent text-accent-foreground"
+                          : "text-foreground hover:bg-accent/50",
+                        item.isActive && "font-medium"
+                      )}
+                      onClick={() => {
+                        item.action();
+                        onClose();
+                      }}
+                      onMouseEnter={() => setSubmenuFocusIndex(idx)}
+                      role="menuitem"
+                    >
+                      <span className="text-muted-foreground">{item.icon}</span>
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {item.isActive && <span className="text-xs text-primary">●</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {showColor && (
+            <div
+              className="relative"
+              data-submenu-trigger="color"
+              onMouseEnter={() => {
+                cancelSubmenuClose();
+                setFocusIndex(menuItems.indexOf("color"));
+                setActiveSubmenu("color");
+                setSubmenuFocusIndex(0);
+              }}
+              onMouseLeave={scheduleSubmenuClose}
+            >
+              <div
+                className={cn(
+                  "flex cursor-default items-center gap-2 rounded-sm px-3 py-1.5 text-sm",
+                  currentItemId === "color" || activeSubmenu === "color"
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground"
+                )}
+                role="menuitem"
+                aria-haspopup="true"
+              >
+                <span className="text-muted-foreground">
+                  <Palette className="h-3.5 w-3.5" />
+                </span>
+                <span className="flex-1">{t("blockAction.color")}</span>
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              </div>
+
+              {activeSubmenu === "color" && (
+                <div
+                  ref={colorRef}
+                  className={cn(
+                    "fixed z-[101] min-w-[240px] rounded-lg border border-border bg-popover shadow-xl",
+                    "animate-in fade-in-0 slide-in-from-left-1"
+                  )}
+                  style={submenuStyle}
+                  onMouseEnter={cancelSubmenuClose}
+                  onMouseLeave={scheduleSubmenuClose}
+                  role="menu"
+                >
+                  <ColorPicker
+                    activeTextColor={colorTargetNode?.attrs.textColor || null}
+                    activeBackgroundColor={colorTargetNode?.attrs.backgroundColor || null}
+                    onTextColorChange={(color) => handleColorChange(color, "text")}
+                    onBackgroundColorChange={(color) => handleColorChange(color, "background")}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 
