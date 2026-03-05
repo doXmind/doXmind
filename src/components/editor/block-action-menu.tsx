@@ -174,6 +174,67 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
   const blockType = block?.node.type.name ?? "";
   const showTurnInto = TURN_INTO_TYPES.has(blockType);
   const showColor = COLOR_TYPES.has(blockType);
+  const resolveColorTarget = useCallback(
+    (type: "text" | "background") => {
+      if (!block) return null;
+
+      let targetPos = block.from;
+      let targetNode = block.node;
+
+      if (
+        targetNode.type.name === "bulletList" ||
+        targetNode.type.name === "orderedList" ||
+        targetNode.type.name === "taskList"
+      ) {
+        try {
+          const { $from } = editor.state.selection;
+          for (let depth = $from.depth; depth >= 1; depth--) {
+            const typeName = $from.node(depth).type.name;
+            if (typeName === "listItem" || typeName === "taskItem") {
+              targetPos = $from.before(depth);
+              const itemNode = editor.state.doc.nodeAt(targetPos);
+              if (itemNode) {
+                targetNode = itemNode;
+              }
+              break;
+            }
+          }
+        } catch {
+          // Fall back to the original target block.
+        }
+      }
+
+      // For list item text colors, write to the inner text block so color
+      // wins over paragraph defaults and behaves like Notion's per-item text color.
+      if (
+        type === "text" &&
+        (targetNode.type.name === "listItem" || targetNode.type.name === "taskItem")
+      ) {
+        const contentPos = targetPos + 1;
+        const contentNode = editor.state.doc.nodeAt(contentPos);
+        if (
+          contentNode &&
+          (contentNode.type.name === "paragraph" || contentNode.type.name === "heading")
+        ) {
+          targetPos = contentPos;
+          targetNode = contentNode;
+        }
+      }
+
+      return { targetPos, targetNode };
+    },
+    [editor, block]
+  );
+
+  const colorTargetNode = (() => {
+    const target = resolveColorTarget("text");
+    if (!target) return null;
+    if (target.targetNode.type.name === "paragraph" || target.targetNode.type.name === "heading") {
+      return target.targetNode;
+    }
+    if (!block) return null;
+    return target.targetNode;
+  })();
 
   // Move editor selection into the target block on mount so that
   // editor.isActive() checks (used by Turn Into options) reference
@@ -303,37 +364,20 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
 
   const handleColorChange = useCallback(
     (colorValue: string, type: "text" | "background") => {
-      if (!block) return;
-
-      // For list items, apply color to the parent list node
-      let targetNodeType = block.node.type.name;
-      let targetPos = block.from;
-      if (targetNodeType === "listItem" || targetNodeType === "taskItem") {
-        try {
-          const $pos = editor.state.doc.resolve(block.from);
-          if ($pos.depth >= 1) {
-            targetNodeType = $pos.node($pos.depth).type.name;
-            targetPos = $pos.before($pos.depth);
-          }
-        } catch {
-          // Fall back to original
-        }
-      }
+      const target = resolveColorTarget(type);
+      if (!target) return;
 
       // Use direct ProseMirror transaction to set attributes at the exact position
       // instead of selection-dependent updateAttributes which can target the wrong block
-      const node = editor.state.doc.nodeAt(targetPos);
-      if (!node) return;
-
       const attrKey = type === "text" ? "textColor" : "backgroundColor";
-      const tr = editor.state.tr.setNodeMarkup(targetPos, undefined, {
-        ...node.attrs,
+      const tr = editor.state.tr.setNodeMarkup(target.targetPos, undefined, {
+        ...target.targetNode.attrs,
         [attrKey]: colorValue || null,
       });
       editor.view.dispatch(tr);
       onClose();
     },
-    [editor, block, onClose]
+    [editor, onClose, resolveColorTarget]
   );
 
   const handleAskAI = useCallback(() => {
@@ -663,8 +707,8 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
                 role="menu"
               >
                 <ColorPicker
-                  activeTextColor={block?.node.attrs.textColor || null}
-                  activeBackgroundColor={block?.node.attrs.backgroundColor || null}
+                  activeTextColor={colorTargetNode?.attrs.textColor || null}
+                  activeBackgroundColor={colorTargetNode?.attrs.backgroundColor || null}
                   onTextColorChange={(color) => handleColorChange(color, "text")}
                   onBackgroundColorChange={(color) => handleColorChange(color, "background")}
                 />

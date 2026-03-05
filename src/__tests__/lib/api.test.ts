@@ -423,7 +423,7 @@ describe("ApiClient", () => {
 
       expect(result).toEqual(files);
       expect(global.fetch).toHaveBeenCalledWith(
-        "http://test-api.com/api/files/",
+        "http://test-api.com/api/files",
         expect.any(Object)
       );
     });
@@ -460,7 +460,7 @@ describe("ApiClient", () => {
       await client.createFile("New File", "Initial content");
 
       expect(global.fetch).toHaveBeenCalledWith(
-        "http://test-api.com/api/files/",
+        "http://test-api.com/api/files",
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ name: "New File", content: "Initial content", parent_id: null }),

@@ -211,6 +211,7 @@ class FileResponse(BaseModel):
         from_attributes = True
 
 
+@router.get("", response_model=list[FileResponse], include_in_schema=False)
 @router.get("/", response_model=list[FileResponse])
 async def list_files(
     parent_id: str | None = Query(None),
@@ -344,6 +345,7 @@ async def list_files(
     )
 
 
+@router.post("", response_model=FileResponse, include_in_schema=False)
 @router.post("/", response_model=FileResponse)
 async def create_file(
     file: FileCreate, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)

@@ -20,6 +20,8 @@ export const BlockColorExtension = Extension.create({
           "bulletList",
           "orderedList",
           "taskList",
+          "listItem",
+          "taskItem",
           "callout",
           "toggle",
         ],

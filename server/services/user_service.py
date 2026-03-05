@@ -22,6 +22,9 @@ from db.database import (
     Fork,
     Message,
     PasswordReset,
+    TelemetryEvent,
+    UserAPISettings,
+    UserTelemetrySettings,
     User,
 )
 from services.auth_service import create_access_token, hash_password, verify_password
@@ -537,6 +540,7 @@ class UserService:
         - All files owned by the user
         - All conversations and messages
         - All conversation attachments
+        - Telemetry events and user settings
         - Email verifications and password resets
 
         Args:
@@ -589,6 +593,13 @@ class UserService:
             await self.db.execute(delete(Comment).where(Comment.user_id == user_id))
             await self.db.execute(delete(Bookmark).where(Bookmark.user_id == user_id))
             await self.db.execute(delete(Fork).where(Fork.user_id == user_id))
+
+            # Delete telemetry/settings data
+            await self.db.execute(delete(TelemetryEvent).where(TelemetryEvent.user_id == user_id))
+            await self.db.execute(
+                delete(UserTelemetrySettings).where(UserTelemetrySettings.user_id == user_id)
+            )
+            await self.db.execute(delete(UserAPISettings).where(UserAPISettings.user_id == user_id))
 
             # Unpublish all user's shares
             from sqlalchemy import update

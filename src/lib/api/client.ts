@@ -14,6 +14,7 @@ export class ApiClient {
   // Dual-token authentication support
   private refreshPromise: Promise<void> | null = null; // Prevent concurrent refreshes
   private autoRefreshTimer: NodeJS.Timeout | null = null; // Auto-refresh before expiry
+  private refreshBlockedUntil: number | null = null; // Backoff after refresh rate-limit
 
   constructor(baseUrl: string = API_BASE) {
     this.baseUrl = baseUrl;
@@ -108,6 +109,10 @@ export class ApiClient {
    * For manual refresh, use the public refreshToken() method from auth.ts.
    */
   private async autoRefreshToken(): Promise<void> {
+    if (this.refreshBlockedUntil && this.refreshBlockedUntil > Date.now()) {
+      throw new Error("Refresh temporarily blocked due to rate limiting");
+    }
+
     // Prevent concurrent refresh requests
     if (this.refreshPromise) {
       return this.refreshPromise;
@@ -124,10 +129,15 @@ export class ApiClient {
         });
 
         if (!response.ok) {
+          if (response.status === 429) {
+            this.refreshBlockedUntil = Date.now() + 60_000;
+            throw new Error("Refresh rate limited");
+          }
           throw new Error("Refresh token expired or invalid");
         }
 
         const data: { access_token: string; expires_in: number } = await response.json();
+        this.refreshBlockedUntil = null;
         this.saveToken(data.access_token, data.expires_in);
       } finally {
         this.refreshPromise = null;

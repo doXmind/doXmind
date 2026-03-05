@@ -88,6 +88,11 @@
   @apply m-0;
 }
 
+.ProseMirror strong,
+.ProseMirror b {
+  color: inherit;
+}
+
 .ProseMirror blockquote {
   @apply border-l-[3px] border-foreground/15 pl-4 italic text-muted-foreground;
 }
@@ -375,11 +380,15 @@
 }
 
 .ProseMirror ul[data-type="taskList"] li > label {
-  @apply flex items-center;
+  @apply flex flex-none items-center pt-1;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  @apply min-w-0 flex-1;
 }
 
 .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
-  @apply h-4 w-4 rounded border-border;
+  @apply m-0 h-4 w-4 rounded border-border align-middle;
 }
 
 /* Table */

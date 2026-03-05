@@ -9,7 +9,15 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import EmailVerification, PasswordReset, RefreshToken, User
+from db.database import (
+    EmailVerification,
+    PasswordReset,
+    RefreshToken,
+    TelemetryEvent,
+    User,
+    UserAPISettings,
+    UserTelemetrySettings,
+)
 from services.auth_service import (
     create_access_token,
     create_refresh_token,
@@ -978,6 +986,22 @@ class TestDeleteAccountEndpoint:
             is_active=True,
         )
         db_session.add(user)
+        await db_session.commit()
+
+        db_session.add(
+            TelemetryEvent(
+                user_id="delete-user-id",
+                event_type="chat_message_sent",
+                event_data={"source": "test"},
+            )
+        )
+        db_session.add(
+            UserTelemetrySettings(
+                user_id="delete-user-id",
+                product_improvement_enabled=True,
+            )
+        )
+        db_session.add(UserAPISettings(user_id="delete-user-id"))
         await db_session.commit()
 
         token = create_access_token(subject="delete-user-id")

@@ -388,7 +388,7 @@
 }
 
 .presentation-content strong {
-  color: var(--pres-text-strong);
+  color: inherit;
   font-weight: 600;
 }
 
@@ -439,6 +439,23 @@
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
+}
+
+.presentation-content ul[data-type="taskList"] li > label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-top: 0.25rem;
+}
+
+.presentation-content ul[data-type="taskList"] li > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.presentation-content ul[data-type="taskList"] li > label input[type="checkbox"] {
+  margin: 0;
+  vertical-align: middle;
 }
 
 /* ---- Read-only TipTap editor inside presentation ---- */

@@ -101,6 +101,10 @@ const nextConfig: NextConfig = {
         destination: `${backendUrl}/api/autocomplete/:path*`,
       },
       {
+        source: "/api/files",
+        destination: `${backendUrl}/api/files/`,
+      },
+      {
         source: "/api/files/:path*",
         destination: `${backendUrl}/api/files/:path*`,
       },

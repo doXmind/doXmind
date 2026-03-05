@@ -92,6 +92,42 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
   const lastScrollTimeRef = useRef(0);
   const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
 
+  const resolveListItemAtCoords = useCallback(
+    (clientX: number, clientY: number, fallbackBlockPos: number | null): number | null => {
+      if (fallbackBlockPos === null) return null;
+
+      try {
+        const fallbackNode = editor.state.doc.nodeAt(fallbackBlockPos);
+        if (!fallbackNode) return fallbackBlockPos;
+
+        const isListContainer =
+          fallbackNode.type.name === "bulletList" ||
+          fallbackNode.type.name === "orderedList" ||
+          fallbackNode.type.name === "taskList";
+        if (!isListContainer) return fallbackBlockPos;
+
+        const probePoints = [clientX, clientX + 24, clientX - 24];
+        for (const probeX of probePoints) {
+          const posInfo = editor.view.posAtCoords({ left: probeX, top: clientY });
+          if (!posInfo) continue;
+
+          const $pos = editor.state.doc.resolve(posInfo.pos);
+          for (let depth = $pos.depth; depth >= 1; depth--) {
+            const typeName = $pos.node(depth).type.name;
+            if (typeName === "listItem" || typeName === "taskItem") {
+              return $pos.before(depth);
+            }
+          }
+        }
+      } catch {
+        // Fall through to fallback position
+      }
+
+      return fallbackBlockPos;
+    },
+    [editor]
+  );
+
   // --- Drag state refs (not React state to avoid re-renders during drag) ---
   const dragStateRef = useRef<{
     active: boolean; // true once drag threshold exceeded
@@ -215,37 +251,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       }
 
       let blockPos = findBlockAtCoords(editor.view, clientX, clientY);
-
-      // For lists, resolve to the individual list item instead of the list wrapper.
-      // This makes the block handle and action menu work per-item (like Notion).
-      if (blockPos !== null) {
-        try {
-          const node = editor.state.doc.nodeAt(blockPos);
-          if (
-            node &&
-            (node.type.name === "bulletList" ||
-              node.type.name === "orderedList" ||
-              node.type.name === "taskList")
-          ) {
-            const posInfo = editor.view.posAtCoords({ left: clientX, top: clientY });
-            if (posInfo) {
-              const $pos = editor.state.doc.resolve(posInfo.pos);
-              if ($pos.depth >= 2) {
-                const depth1Name = $pos.node(1).type.name;
-                if (
-                  depth1Name === "bulletList" ||
-                  depth1Name === "orderedList" ||
-                  depth1Name === "taskList"
-                ) {
-                  blockPos = $pos.before(2);
-                }
-              }
-            }
-          }
-        } catch {
-          // Keep the original blockPos
-        }
-      }
+      blockPos = resolveListItemAtCoords(clientX, clientY, blockPos);
 
       if (blockPos !== null && blockPos !== hoveredBlockPosRef.current) {
         // New block hovered
@@ -304,7 +310,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       document.removeEventListener("wheel", handleWheel);
       cancelHide();
     };
-  }, [editor, isDragging, cancelHide, scheduleHide, computePosition]);
+  }, [editor, isDragging, cancelHide, scheduleHide, computePosition, resolveListItemAtCoords]);
 
   // Recompute position when the document changes (blocks may shift)
   useEffect(() => {
@@ -358,8 +364,10 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
   // --- + button: open block insert menu ---
   const handlePlusClick = useCallback(
     (e: React.MouseEvent) => {
-      const blockPos = hoveredBlockPosRef.current;
+      const blockPos = resolveListItemAtCoords(e.clientX, e.clientY, hoveredBlockPosRef.current);
       if (blockPos === null) return;
+      hoveredBlockPosRef.current = blockPos;
+      setHoveredBlockPos(blockPos);
 
       // Position menu to the left of content (Notion-style)
       const target = e.currentTarget as HTMLElement;
@@ -369,7 +377,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       setIsInsertMenuOpen(true);
       isMenuOpenRef.current = true;
     },
-    [editor]
+    [editor, resolveListItemAtCoords]
   );
 
   // --- Grip click: open action menu ---
@@ -378,7 +386,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       e.preventDefault();
       if (!gripRef.current) return;
       const rect = gripRef.current.getBoundingClientRect();
-      const blockPos = hoveredBlockPosRef.current;
+      const blockPos = resolveListItemAtCoords(e.clientX, e.clientY, hoveredBlockPosRef.current);
       // Position menu to the left of content (Notion-style)
       const x =
         blockPos !== null ? computeMenuAnchorX(editor, blockPos, 220, rect.right) : rect.left;
@@ -387,6 +395,8 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       isMenuOpenRef.current = true;
       // Highlight the block that the menu applies to
       if (blockPos !== null) {
+        hoveredBlockPosRef.current = blockPos;
+        setHoveredBlockPos(blockPos);
         highlightBlock(blockPos);
       }
       // Dismiss any active autocomplete ghost text
@@ -394,7 +404,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       // Clear cursor focus so the caret doesn't show alongside the block highlight
       editor.commands.blur();
     },
-    [editor, highlightBlock]
+    [editor, highlightBlock, resolveListItemAtCoords]
   );
 
   // --- Custom drag implementation (mousedown/mousemove/mouseup) ---
@@ -479,8 +489,11 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       if (e.button !== 0) return;
       e.preventDefault(); // prevent text selection and editor blur
 
-      let blockPos = hoveredBlockPosRef.current;
+      let blockPos = resolveListItemAtCoords(e.clientX, e.clientY, hoveredBlockPosRef.current);
       if (blockPos === null) return;
+
+      hoveredBlockPosRef.current = blockPos;
+      setHoveredBlockPos(blockPos);
 
       let node = editor.state.doc.nodeAt(blockPos);
       if (!node) return;
@@ -513,7 +526,7 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
         ghostEl: null,
       };
     },
-    [editor]
+    [editor, resolveListItemAtCoords]
   );
 
   // Document-level mousemove/mouseup during drag

@@ -207,7 +207,7 @@ ApiClient.prototype.listFiles = async function (this: ApiClient) {
       forked_from_title: string | null;
       forked_from_author: string | null;
     }>
-  >("/api/files/", { cache: "no-store" });
+  >("/api/files", { cache: "no-store" });
 };
 
 ApiClient.prototype.getFile = async function (this: ApiClient, id: string) {
@@ -248,7 +248,7 @@ ApiClient.prototype.createFile = async function (
     icon: string | null;
     created_at: string;
     updated_at: string;
-  }>("/api/files/", {
+  }>("/api/files", {
     method: "POST",
     body: JSON.stringify({ name, content, parent_id: parentId }),
   });
