@@ -115,6 +115,11 @@ describe("ApiClient", () => {
       client.setAccessToken("token-to-clear", 3600);
       expect(client.isLoggedIn()).toBe(true);
 
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      });
+
       await client.logout();
 
       expect(client.isLoggedIn()).toBe(false);
@@ -123,6 +128,12 @@ describe("ApiClient", () => {
 
     it("logout clears auth cookie", async () => {
       client.setAccessToken("token", 3600);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      });
+
       await client.logout();
 
       expect(cookieStore).toContain("max-age=0");
