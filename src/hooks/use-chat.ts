@@ -111,6 +111,9 @@ export function useChat() {
           })
           .join("\n\n");
         messageForAI = `${message}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
+
+        messageForAI +=
+          "\n\n<selection_scope_rule>For edits, modify ONLY selected_content. Do NOT change any text outside selected_content.</selection_scope_rule>";
       }
 
       if (inlineReference) {
@@ -231,16 +234,29 @@ export function useChat() {
       try {
         // Get file contents and convert HTML to markdown for AI
         // Support demo mode by checking demoFile for "demo-file" id
+        const liveEditor = useEditorRefStore.getState().editor;
+        const currentFileId = useFileStore.getState().currentFileId;
         const files = fileIds
           .map((id) => (id === "demo-file" ? demoFile : getFile(id)))
           .filter((f): f is NonNullable<typeof f> => f != null)
-          .map((f) => ({
-            id: f.id,
-            name: f.name,
-            // Use cached markdown from editor.getMarkdown() on save.
-            // Falls back to raw content for files not yet re-saved since upgrade.
-            content: f.contentMarkdown || f.content,
-          }));
+          .map((f) => {
+            let liveMarkdown: string | null = null;
+            try {
+              if (liveEditor && currentFileId === f.id) {
+                liveMarkdown = liveEditor.getMarkdown();
+              }
+            } catch {
+              liveMarkdown = null;
+            }
+
+            return {
+              id: f.id,
+              name: f.name,
+              // Prefer live editor markdown for the active file to avoid
+              // debounce lag causing str_replace old_str mismatches.
+              content: liveMarkdown !== null ? liveMarkdown : f.contentMarkdown || f.content,
+            };
+          });
 
         // Get web tools settings
         const webToolsSettings = useSettingsStore.getState().getWebToolsSettings();

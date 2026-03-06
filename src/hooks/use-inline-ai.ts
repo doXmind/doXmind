@@ -8,6 +8,8 @@ import { useEditOperations } from "@/hooks/use-edit-operations";
 import { useFileStore } from "@/stores/file-store";
 import { useDemoStore } from "@/stores/demo-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import type { ChatStreamEvent } from "@/types/stream-events";
 import type { EditOperation } from "@/types";
 
@@ -36,6 +38,7 @@ export function useInlineAI() {
 
   const { getFile } = useFileStore();
   const demoFile = useDemoStore((s) => s.demoFile);
+  const thinkingEnabled = useSettingsStore((s) => s.thinkingEnabled);
   const { applyEdits } = useEditOperations();
   const streamControllerRef = useRef(createStreamController());
 
@@ -62,6 +65,20 @@ export function useInlineAI() {
         throw new Error("File not found");
       }
 
+      let liveMarkdown: string | null = null;
+      try {
+        const liveEditor = useEditorRefStore.getState().editor;
+        const currentFileId = useFileStore.getState().currentFileId;
+        if (liveEditor && currentFileId === file.id) {
+          liveMarkdown = liveEditor.getMarkdown();
+        }
+      } catch {
+        liveMarkdown = null;
+      }
+
+      const effectiveFileContent =
+        liveMarkdown !== null ? liveMarkdown : file.contentMarkdown || file.content;
+
       startInlineAIResponse(requestId, intent === "insert" ? "write" : intent);
       setIsStreaming(true);
 
@@ -83,7 +100,7 @@ export function useInlineAI() {
             file: {
               id: file.id,
               name: file.name,
-              content: file.contentMarkdown || file.content,
+              content: effectiveFileContent,
             },
             selection: selection
               ? {
@@ -95,7 +112,7 @@ export function useInlineAI() {
             anchor: anchor || null,
             options: {
               toolProfile: intent === "ask" ? "inline_ask" : "inline_edit",
-              thinkingEnabled: false,
+              thinkingEnabled,
               persistHistory: false,
             },
             conversationId: null,
@@ -113,6 +130,12 @@ export function useInlineAI() {
               break;
             case "thinking":
               setInlineAIResponseStatus(requestId, "thinking");
+              break;
+            case "thinking_end":
+              break;
+            case "tool_start":
+              break;
+            case "tool_end":
               break;
             case "text":
               setInlineAIResponseStatus(requestId, "streaming");
@@ -170,6 +193,7 @@ export function useInlineAI() {
     [
       demoFile,
       getFile,
+      thinkingEnabled,
       startInlineAIResponse,
       setInlineAIResponseStatus,
       appendInlineAIResponse,

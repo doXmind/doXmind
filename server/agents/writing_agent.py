@@ -476,6 +476,13 @@ class WritingAgent:
         continuation_attempts = 0
         MAX_CONTINUATION_ATTEMPTS = 2
 
+        # Recover from strict str_replace exact-match failures.
+        # If this guard is active, the assistant must continue with:
+        # read_content -> retry str_replace_editor, instead of ending with text only.
+        exact_match_recovery_pending = False
+        exact_match_recovery_attempts = 0
+        MAX_EXACT_MATCH_RECOVERY_ATTEMPTS = 2
+
         while iteration < self.MAX_ITERATIONS:
             iteration += 1
 
@@ -556,6 +563,31 @@ class WritingAgent:
 
             # If no tool uses, check for incomplete todos before exiting
             if not tool_uses:
+                if (
+                    exact_match_recovery_pending
+                    and iteration < self.MAX_ITERATIONS
+                    and exact_match_recovery_attempts < MAX_EXACT_MATCH_RECOVERY_ATTEMPTS
+                ):
+                    exact_match_recovery_attempts += 1
+                    logger.info(
+                        "Exact-match recovery guard: forcing read_content -> str_replace retry "
+                        f"({exact_match_recovery_attempts}/{MAX_EXACT_MATCH_RECOVERY_ATTEMPTS})"
+                    )
+                    messages.append(full_response)
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[System: Your previous str_replace_editor failed because old_str did not "
+                                "exactly match the document. Do NOT end with explanation text. "
+                                "You MUST now: (1) call read_content on the target section to copy exact "
+                                "source text including markdown and line breaks; (2) call str_replace_editor "
+                                "again using the exact old_str; (3) keep changes scoped to selected_content.]"
+                            ),
+                        }
+                    )
+                    continue
+
                 incomplete = [
                     t for t in current_todos if t.get("status") in ("pending", "in_progress")
                 ]
@@ -592,6 +624,7 @@ class WritingAgent:
 
             # Execute tools and collect results
             tool_result_messages = []
+            successful_edit_this_round = False
             for tool_use in tool_uses:
                 async for event in self.tool_executor.execute(
                     tool_use,
@@ -600,7 +633,7 @@ class WritingAgent:
                     kb_context,
                     data_files_context,
                     collected_edits,
-                    current_todos,
+                    current_todos=current_todos,
                     global_kb_context=global_kb_context,
                     file_mgmt_context=file_mgmt_context,
                     community_context=community_context,
@@ -614,7 +647,20 @@ class WritingAgent:
                             }
                         )
                     else:
+                        if event.get("type") == "edit":
+                            successful_edit_this_round = True
+                        elif (
+                            event.get("type") == "tool_end"
+                            and event.get("tool") == "str_replace_editor"
+                            and event.get("success") is False
+                            and "No exact match for old_str" in (event.get("output") or "")
+                        ):
+                            exact_match_recovery_pending = True
                         yield event
+
+            if successful_edit_this_round:
+                exact_match_recovery_pending = False
+                exact_match_recovery_attempts = 0
 
             # Add tool results to messages
             messages.extend(tool_result_messages)

@@ -362,7 +362,8 @@ async def chat_stream(
             # Create agent with KB attachments, data files metadata, and web tools
             # Skills are auto-detected by the agent based on context
             # Code execution is always enabled (useful for calculations even without data files)
-            # Select model based on thinking toggle (only for server-default users)
+            # Respect BYOK preference: if user has own API key/model, use it.
+            # Otherwise, thinking mode uses backend-configured thinking model.
             effective_model = user_model
             if not user_model and request.thinkingEnabled:
                 effective_model = settings.thinking_model

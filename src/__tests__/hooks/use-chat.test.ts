@@ -38,11 +38,20 @@ vi.mock("@/stores/chat-store", () => ({
   }),
 }));
 
-vi.mock("@/stores/file-store", () => ({
-  useFileStore: () => ({
-    getFile: (...args: unknown[]) => mockGetFile(...args),
-  }),
-}));
+vi.mock("@/stores/file-store", () => {
+  const useFileStore = Object.assign(
+    () => ({
+      getFile: (...args: unknown[]) => mockGetFile(...args),
+    }),
+    {
+      getState: () => ({
+        currentFileId: null,
+      }),
+    }
+  );
+
+  return { useFileStore };
+});
 
 vi.mock("@/hooks/use-edit-operations", () => ({
   useEditOperations: () => ({

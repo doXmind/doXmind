@@ -416,14 +416,14 @@
   padding: 0;
 }
 
-/* Accept button — tinted blue */
-.ProseMirror .diff-accept {
-  background-color: var(--diff-btn-accept-bg);
-  color: var(--diff-btn-accept-fg);
+/* Accept button — blue (aligned with Accept All) */
+.ProseMirror .diff-actions .diff-accept {
+  background-color: rgba(59, 130, 246, 0.14);
+  color: rgb(29, 78, 216);
 }
 
-.ProseMirror .diff-accept:hover {
-  background-color: var(--diff-btn-accept-hover);
+.ProseMirror .diff-actions .diff-accept:hover {
+  background-color: rgba(59, 130, 246, 0.22);
   transform: scale(1.05);
 }
 
@@ -431,19 +431,37 @@
   transform: scale(0.95);
 }
 
-/* Reject button — tinted gray */
-.ProseMirror .diff-reject {
-  background-color: var(--diff-btn-reject-bg);
-  color: var(--diff-btn-reject-fg);
+/* Reject button — gray (aligned with Reject All) */
+.ProseMirror .diff-actions .diff-reject {
+  background-color: rgba(148, 163, 184, 0.24);
+  color: rgb(51, 65, 85);
 }
 
-.ProseMirror .diff-reject:hover {
-  background-color: var(--diff-btn-reject-hover);
+.ProseMirror .diff-actions .diff-reject:hover {
+  background-color: rgba(148, 163, 184, 0.34);
   transform: scale(1.05);
 }
 
 .ProseMirror .diff-reject:active {
   transform: scale(0.95);
+}
+
+.dark .ProseMirror .diff-actions .diff-accept {
+  background-color: rgba(59, 130, 246, 0.22);
+  color: rgb(147, 197, 253);
+}
+
+.dark .ProseMirror .diff-actions .diff-accept:hover {
+  background-color: rgba(59, 130, 246, 0.32);
+}
+
+.dark .ProseMirror .diff-actions .diff-reject {
+  background-color: rgba(100, 116, 139, 0.24);
+  color: rgb(226, 232, 240);
+}
+
+.dark .ProseMirror .diff-actions .diff-reject:hover {
+  background-color: rgba(100, 116, 139, 0.34);
 }
 
 /* ---- Focused hunk highlight ---- */

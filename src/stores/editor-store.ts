@@ -10,6 +10,7 @@ interface Selection {
 interface InlineAIReference {
   from: number;
   to: number;
+  selectedText?: string;
   beforeText: string;
   afterText: string;
 }

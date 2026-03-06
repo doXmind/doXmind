@@ -22,8 +22,7 @@ import { useIsMobile } from "@/hooks/use-device-type";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useChatContextStore } from "@/stores/chat-context-store";
-import { useLayoutStore } from "@/stores/layout-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 
 interface ResizeState {
@@ -202,16 +201,43 @@ export function ImageNodeView({
     document.body.removeChild(a);
   }, [src, alt]);
 
-  const handleAskInChat = useCallback(() => {
-    if (src) {
-      useChatContextStore.getState().addChatContext({
-        type: "image",
-        src,
-        alt: alt || undefined,
+  const handleAskInline = useCallback(() => {
+    if (src && nodePos !== undefined) {
+      const escapedAlt = (alt || "").replace(/\]/g, "\\]");
+      const escapedTitle = (title || "").replace(/"/g, '\\"');
+      const markdown = title
+        ? `![${escapedAlt}](${src} \"${escapedTitle}\")`
+        : `![${escapedAlt}](${src})`;
+
+      useEditorStore.getState().setSelection({
+        from: nodePos,
+        to: nodePos + node.nodeSize,
+        text: markdown,
       });
-      useLayoutStore.getState().setChatOpen(true);
+
+      const from = nodePos;
+      const to = nodePos + node.nodeSize;
+      const beforeStart = Math.max(0, from - 220);
+      const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
+      const rect = containerRef.current?.getBoundingClientRect();
+
+      useEditorStore.getState().openInlineAI(
+        {
+          x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+          y: rect ? rect.bottom : window.innerHeight / 2,
+        },
+        "ask",
+        {
+          from,
+          to,
+          selectedText: markdown,
+          beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
+          afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
+        },
+        rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right } : null
+      );
     }
-  }, [src, alt]);
+  }, [src, alt, title, nodePos, node.nodeSize, editor]);
 
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -300,10 +326,10 @@ export function ImageNodeView({
             )}
 
             {/* Ask AI */}
-            <Tooltip content={t("blockAction.askInSidebar")} side="top">
-              <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
+            <Tooltip content={t("blockAction.askInline")} side="top">
+              <button type="button" className="image-toolbar-btn" onClick={handleAskInline}>
                 <AiLogoIcon className="h-3.5 w-3.5" />
-                <span className="text-xs">{t("blockAction.askInSidebar")}</span>
+                <span className="text-xs">{t("blockAction.askInline")}</span>
               </button>
             </Tooltip>
 

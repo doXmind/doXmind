@@ -162,6 +162,9 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
     const fromContext = firstSelectionContext?.text?.trim();
     if (fromContext) return fromContext;
 
+    const fromReference = inlineAIReference?.selectedText?.trim();
+    if (fromReference) return fromReference;
+
     if (inlineAIReference && editor) {
       try {
         return editor.state.doc
@@ -309,10 +312,18 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
         : 0;
     const listHeight = Math.min(measuredListHeight || estimatedListHeight, 420);
 
-    // Always prefer live coordinates from current document positions so
-    // the inline panel follows block movement after edits/reflow.
+    // For rich atom blocks (math/image/mermaid), prefer the captured node rect.
+    // ProseMirror position coords on atom ranges can collapse to text-like points
+    // and cause overlay placement that appears to cover the edited block.
     let computedAnchorRect = inlineAIAnchorRect;
-    if (inlineAIReference && editor) {
+    const selectedText = inlineAIReference?.selectedText?.trim() || "";
+    const isStructuredBlockSelection =
+      selectedText.startsWith("```mermaid") ||
+      selectedText.startsWith("![") ||
+      selectedText.startsWith("$$") ||
+      (selectedText.startsWith("$") && selectedText.endsWith("$"));
+
+    if (inlineAIReference && editor && (!inlineAIAnchorRect || !isStructuredBlockSelection)) {
       try {
         const fromCoords = editor.view.coordsAtPos(inlineAIReference.from);
         const toCoords = editor.view.coordsAtPos(inlineAIReference.to);
@@ -331,15 +342,34 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
     const anchorTop = computedAnchorRect?.top ?? inlineAIPosition.y;
     const anchorBottom = computedAnchorRect?.bottom ?? inlineAIPosition.y;
     const listGap = 12;
+    const isEditFlow = inlineAIMode === "edit" || inlineAIResponse?.intent === "edit";
+    const protectedTop = anchorTop - 120;
+    const protectedBottom = anchorBottom + 120;
+    const overlapPx = (top: number, bottom: number, zoneTop: number, zoneBottom: number) =>
+      Math.max(0, Math.min(bottom, zoneBottom) - Math.max(top, zoneTop));
 
     const belowTop = anchorBottom + 10;
     const aboveTop = anchorTop - 10 - barHeight;
     const canPlaceBarBelow = belowTop + barHeight <= window.innerHeight - viewportPadding;
     const canPlaceBarAbove = aboveTop >= viewportPadding;
 
-    // Keep inline input below selection by default.
-    // Only flip above when below cannot fit the bar itself.
-    const placeBarAbove = !canPlaceBarBelow && canPlaceBarAbove;
+    // Keep input below selection by default, but account for response list space
+    // so the panel does not heavily cover nearby content.
+    let placeBarAbove = !canPlaceBarBelow && canPlaceBarAbove;
+    if (!placeBarAbove && canPlaceBarBelow && canPlaceBarAbove && listHeight > 0) {
+      const belowListRoom = window.innerHeight - viewportPadding - (belowTop + barHeight + listGap);
+      const aboveListRoom = aboveTop - viewportPadding - listGap;
+      if (belowListRoom < 160 && aboveListRoom > belowListRoom) {
+        placeBarAbove = true;
+      }
+    }
+
+    if (isEditFlow && canPlaceBarAbove && canPlaceBarBelow) {
+      const belowOverlap = overlapPx(belowTop, belowTop + barHeight, protectedTop, protectedBottom);
+      const aboveOverlap = overlapPx(aboveTop, aboveTop + barHeight, protectedTop, protectedBottom);
+      if (aboveOverlap < belowOverlap) placeBarAbove = true;
+      if (belowOverlap < aboveOverlap) placeBarAbove = false;
+    }
 
     let barTop = belowTop;
     if (placeBarAbove) {
@@ -361,12 +391,43 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
       window.innerHeight - viewportPadding - (barTop + barHeight + listGap)
     );
     const listAvailableAbove = Math.max(0, barTop - viewportPadding - listGap);
-    const listMaxHeight = Math.max(
-      0,
-      Math.min(420, Math.floor(placeBarAbove ? listAvailableAbove : listAvailableBelow))
+
+    let listOnTop = placeBarAbove;
+    if (listHeight > 0) {
+      const preferredSpace = placeBarAbove ? listAvailableAbove : listAvailableBelow;
+      const oppositeSpace = placeBarAbove ? listAvailableBelow : listAvailableAbove;
+      if (preferredSpace < 140 && oppositeSpace > preferredSpace) {
+        listOnTop = !placeBarAbove;
+      }
+    }
+
+    const topMaxHeight = Math.max(0, Math.min(420, Math.floor(listAvailableAbove)));
+    const topRenderedHeight = Math.min(listHeight, topMaxHeight);
+    const topListTop = barTop - listGap - topRenderedHeight;
+    const topOverlap = overlapPx(
+      topListTop,
+      topListTop + topRenderedHeight,
+      protectedTop,
+      protectedBottom
     );
-    const renderedListHeight = Math.min(listHeight, listMaxHeight || listHeight);
-    const listTop = placeBarAbove ? barTop - listGap - renderedListHeight : defaultListTop;
+
+    const bottomMaxHeight = Math.max(0, Math.min(420, Math.floor(listAvailableBelow)));
+    const bottomRenderedHeight = Math.min(listHeight, bottomMaxHeight);
+    const bottomListTop = defaultListTop;
+    const bottomOverlap = overlapPx(
+      bottomListTop,
+      bottomListTop + bottomRenderedHeight,
+      protectedTop,
+      protectedBottom
+    );
+
+    if (isEditFlow && listHeight > 0) {
+      if (topOverlap < bottomOverlap) listOnTop = true;
+      if (bottomOverlap < topOverlap) listOnTop = false;
+    }
+
+    const listMaxHeight = listOnTop ? topMaxHeight : bottomMaxHeight;
+    const listTop = listOnTop ? topListTop : bottomListTop;
 
     setLayout({ barLeft, barTop, barWidth, listLeft, listTop, listWidth, listMaxHeight });
   }, [
@@ -374,6 +435,7 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
     inlineAIPosition,
     inlineAIAnchorRect,
     inlineAIReference,
+    inlineAIMode,
     inlineAIResponse,
     isStreaming,
     measuredListHeight,
@@ -456,10 +518,13 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
   }, [inlineAIMode, hasInlineSelection, setInlineAIMode]);
 
   useEffect(() => {
-    if (inlineAIMode === "write" && hasInlineSelection) {
+    // Only auto-switch to edit when there is actual editable text context.
+    // Some selections (e.g. non-text nodes) have a range but no text payload,
+    // which would otherwise cause write <-> edit oscillation.
+    if (inlineAIMode === "write" && hasEditSelectionContext) {
       setInlineAIMode("edit");
     }
-  }, [inlineAIMode, hasInlineSelection, setInlineAIMode]);
+  }, [inlineAIMode, hasEditSelectionContext, setInlineAIMode]);
 
   useEffect(() => {
     if (inlineAIMode !== "edit") setExpandedEditOption(null);
@@ -775,21 +840,13 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
     clearInlineAIResponse();
   }, [editor, diffSession, rejectAllHunks, endDiffReview, clearInlineAIResponse]);
 
-  const handleSendSelectionToStudio = useCallback(() => {
-    pushInlineSelectionToChat();
-    setChatOpen(true);
-    closeInlineAI();
-  }, [pushInlineSelectionToChat, setChatOpen, closeInlineAI]);
-
   const handleSubmit = useCallback(async () => {
     const prompt = input.trim();
     if (!prompt || isStreaming) return;
 
-    const inferredIntent: "ask" | "edit" | "insert" = hasInlineSelection
-      ? "edit"
-      : inlineAIMode === "write"
-        ? "insert"
-        : "ask";
+    // Freeform input is treated as an edit/insert instruction.
+    // Ask-mode remains available via predefined ask actions.
+    const inferredIntent: "ask" | "edit" | "insert" = hasEditSelectionContext ? "edit" : "insert";
     const nextMode = inferredIntent === "insert" ? "write" : inferredIntent;
     if (inlineAIMode !== nextMode) {
       setInlineAIMode(nextMode);
@@ -798,7 +855,7 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
     setLastInlineRequest({ type: "prompt", value: prompt });
     await submitPrompt(prompt, false, inferredIntent);
     setInput("");
-  }, [input, isStreaming, hasInlineSelection, inlineAIMode, setInlineAIMode, submitPrompt]);
+  }, [input, isStreaming, hasEditSelectionContext, inlineAIMode, setInlineAIMode, submitPrompt]);
 
   const handleInsertInlineResponse = useCallback(() => {
     const content = inlineAIResponse?.content.trim();
@@ -951,7 +1008,7 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
   return createPortal(
     <div
       ref={panelRef}
-      className="fixed inset-0 z-[140]"
+      className="pointer-events-none fixed inset-0 z-[140]"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -989,7 +1046,7 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
       }}
     >
       <div
-        className="absolute"
+        className="pointer-events-none absolute"
         style={{ left: layout.barLeft - 56, top: layout.barTop + 4 }}
         aria-hidden="true"
       >
@@ -999,7 +1056,7 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
       </div>
 
       <div
-        className="absolute rounded-2xl border border-border/60 bg-popover/95 shadow-2xl backdrop-blur"
+        className="pointer-events-auto absolute rounded-2xl border border-border/60 bg-popover/95 shadow-2xl backdrop-blur"
         style={{ left: layout.barLeft, top: layout.barTop, width: layout.barWidth }}
       >
         <div className="flex h-12 items-center gap-2 px-3">
@@ -1057,7 +1114,7 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
       {!isStreaming && !inlineAIResponse && (
         <div
           ref={listRef}
-          className="absolute max-h-[420px] overflow-auto rounded-2xl border border-border/60 bg-popover/95 p-3 shadow-2xl backdrop-blur"
+          className="pointer-events-auto absolute max-h-[420px] overflow-auto rounded-2xl border border-border/60 bg-popover/95 p-3 shadow-2xl backdrop-blur"
           style={{
             left: layout.listLeft,
             top: layout.listTop,
@@ -1097,16 +1154,6 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
                 <Bot className="h-3.5 w-3.5" />
                 {tInline("inlineAI.openStudio")}
               </button>
-              {selection?.text ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 rounded-md border border-transparent px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border/70 hover:bg-accent/70 hover:text-foreground"
-                  onClick={handleSendSelectionToStudio}
-                >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  {tInline("inlineAI.sendSelection")}
-                </button>
-              ) : null}
             </div>
           </div>
 
@@ -1281,7 +1328,7 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
         (inlineAIResponse.status === "ready" || inlineAIResponse.status === "error") && (
           <div
             ref={listRef}
-            className="absolute overflow-auto rounded-2xl border border-border/60 bg-popover/95 p-3 shadow-2xl backdrop-blur"
+            className="pointer-events-auto absolute overflow-auto rounded-2xl border border-border/60 bg-popover/95 p-3 shadow-2xl backdrop-blur"
             style={{
               left: layout.listLeft,
               top: layout.listTop,

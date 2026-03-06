@@ -163,28 +163,39 @@ export function MathNodeView({
     }
   }, [latex]);
 
-  // Ask AI about this equation
-  const handleAskInChat = useCallback(() => {
+  const handleAskInline = useCallback(() => {
     if (latex && nodePos !== undefined) {
+      const equationText = isBlock ? `$$\n${latex}\n$$` : `$${latex}$`;
+
       useEditorStore.getState().setSelection({
         from: nodePos,
         to: nodePos + node.nodeSize,
-        text: latex,
+        text: equationText,
       });
+
       const from = nodePos;
       const to = nodePos + node.nodeSize;
       const beforeStart = Math.max(0, from - 220);
       const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
-      useEditorStore
-        .getState()
-        .openInlineAI({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, "ask", {
+      const rect = renderedRef.current?.getBoundingClientRect();
+
+      useEditorStore.getState().openInlineAI(
+        {
+          x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+          y: rect ? rect.bottom : window.innerHeight / 2,
+        },
+        "ask",
+        {
           from,
           to,
+          selectedText: equationText,
           beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
           afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
-        });
+        },
+        rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right } : null
+      );
     }
-  }, [latex, nodePos, node.nodeSize, editor]);
+  }, [latex, nodePos, node.nodeSize, editor, isBlock]);
 
   // Overlay toolbar content (shared between block and inline)
   const renderToolbar = () => (
@@ -204,7 +215,7 @@ export function MathNodeView({
         </>
       )}
       <Tooltip content={t("blockAction.askInline")} side="top">
-        <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
+        <button type="button" className="image-toolbar-btn" onClick={handleAskInline}>
           <AiLogoIcon className="h-3.5 w-3.5" />
           <span className="text-xs">{t("blockAction.askInline")}</span>
         </button>

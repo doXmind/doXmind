@@ -315,7 +315,8 @@ async def global_agent_stream(
             return events_to_send
 
         try:
-            # Select model based on thinking toggle (only for server-default users)
+            # Respect BYOK preference: if user has own API key/model, use it.
+            # Otherwise, thinking mode uses backend-configured thinking model.
             effective_model = user_model
             if not user_model and request.thinkingEnabled:
                 effective_model = settings.thinking_model

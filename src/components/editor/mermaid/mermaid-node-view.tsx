@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { Pencil, Copy, Trash2, ArrowUpFromLine } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ export function MermaidNodeView({
   editor,
   getPos,
 }: NodeViewProps) {
+  const t = useTranslations("editor");
   const { code } = node.attrs;
   const isMobile = useIsMobile();
 
@@ -210,26 +212,35 @@ export function MermaidNodeView({
     }
   }, [code]);
 
-  // Ask AI about this chart — wrap in mermaid code fence so AI knows it's a chart
-  const handleAskInChat = useCallback(() => {
+  const handleAskInline = useCallback(() => {
     if (code && nodePos !== undefined) {
       useEditorStore.getState().setSelection({
         from: nodePos,
         to: nodePos + node.nodeSize,
         text: "```mermaid\n" + code + "\n```",
       });
+
       const from = nodePos;
       const to = nodePos + node.nodeSize;
       const beforeStart = Math.max(0, from - 220);
       const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
-      useEditorStore
-        .getState()
-        .openInlineAI({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, "ask", {
+      const rect = renderedRef.current?.getBoundingClientRect();
+
+      useEditorStore.getState().openInlineAI(
+        {
+          x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+          y: rect ? rect.bottom : window.innerHeight / 2,
+        },
+        "ask",
+        {
           from,
           to,
+          selectedText: "```mermaid\n" + code + "\n```",
           beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
           afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
-        });
+        },
+        rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right } : null
+      );
     }
   }, [code, nodePos, node.nodeSize, editor]);
 
@@ -276,10 +287,10 @@ export function MermaidNodeView({
                 <div className="image-toolbar-sep" />
               </>
             )}
-            <Tooltip content="Ask AI" side="top">
-              <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
+            <Tooltip content={t("blockAction.askInline")} side="top">
+              <button type="button" className="image-toolbar-btn" onClick={handleAskInline}>
                 <AiLogoIcon className="h-3.5 w-3.5" />
-                <span className="text-xs">Ask AI</span>
+                <span className="text-xs">{t("blockAction.askInline")}</span>
               </button>
             </Tooltip>
             <div className="image-toolbar-sep" />

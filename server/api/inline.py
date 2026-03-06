@@ -70,6 +70,13 @@ def _build_inline_message(request: InlineStreamRequest) -> str:
             f'<reference index="1">\n{request.selection.text}\n</reference>\n'
             "</selected_content>"
         )
+        if request.intent != "ask":
+            message += (
+                "\n\n<selection_scope_rule>\n"
+                "For edits, you MUST modify only the selected_content region. "
+                "Do NOT edit any text outside selected_content."
+                "\n</selection_scope_rule>"
+            )
 
     if request.anchor:
         message += (
@@ -116,6 +123,8 @@ async def inline_stream(
         agent = None
 
         try:
+            # Respect BYOK preference: if user has own API key/model, use it.
+            # Otherwise, thinking mode uses backend-configured thinking model.
             effective_model = user_model
             if not user_model and request.options.thinkingEnabled:
                 effective_model = settings.thinking_model
