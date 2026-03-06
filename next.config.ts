@@ -93,6 +93,10 @@ const nextConfig: NextConfig = {
         destination: `${backendUrl}/api/chat/messages`,
       },
       {
+        source: "/api/chat/messages/:path*",
+        destination: `${backendUrl}/api/chat/messages/:path*`,
+      },
+      {
         source: "/api/edit/:path*",
         destination: `${backendUrl}/api/edit/:path*`,
       },

@@ -3,7 +3,18 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, ChevronLeft, ChevronRight, Sun, Moon, Loader2, RefreshCw } from "lucide-react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Sun,
+  Moon,
+  Loader2,
+  RefreshCw,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+} from "lucide-react";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { useTranslations } from "next-intl";
@@ -256,8 +267,15 @@ export function PresentationMode({
   author: authorProp,
   date: dateProp,
 }: PresentationModeProps = {}) {
-  const { isPresentationMode, setPresentationMode, fontFamily, fontSize, lineHeight } =
-    useLayoutStore();
+  const {
+    isPresentationMode,
+    setPresentationMode,
+    fontFamily,
+    fontSize,
+    lineHeight,
+    presentationTextAlign,
+    setPresentationTextAlign,
+  } = useLayoutStore();
   const editor = useEditorRefStore((s) => s.editor);
   const { currentFileId, files } = useFileStore();
   const user = useAuthStore((s) => s.user);
@@ -569,7 +587,9 @@ export function PresentationMode({
     fontSize === "small" && "pres-size-small",
     fontSize === "large" && "pres-size-large",
     lineHeight === "compact" && "pres-leading-compact",
-    lineHeight === "relaxed" && "pres-leading-relaxed"
+    lineHeight === "relaxed" && "pres-leading-relaxed",
+    presentationTextAlign === "left" && "pres-align-left",
+    presentationTextAlign === "right" && "pres-align-right"
   );
 
   return createPortal(
@@ -673,6 +693,40 @@ export function PresentationMode({
             </div>
           )}
         </div>
+        <button
+          onClick={() => {
+            const next =
+              presentationTextAlign === "left"
+                ? "center"
+                : presentationTextAlign === "center"
+                  ? "right"
+                  : "left";
+            setPresentationTextAlign(next);
+          }}
+          className="presentation-control-btn"
+          aria-label={
+            presentationTextAlign === "left"
+              ? t("presentation.alignLeft")
+              : presentationTextAlign === "right"
+                ? t("presentation.alignRight")
+                : t("presentation.alignCenter")
+          }
+          title={
+            presentationTextAlign === "left"
+              ? t("presentation.alignLeft")
+              : presentationTextAlign === "right"
+                ? t("presentation.alignRight")
+                : t("presentation.alignCenter")
+          }
+        >
+          {presentationTextAlign === "left" ? (
+            <AlignLeft className="h-4 w-4" />
+          ) : presentationTextAlign === "right" ? (
+            <AlignRight className="h-4 w-4" />
+          ) : (
+            <AlignCenter className="h-4 w-4" />
+          )}
+        </button>
         <button
           onClick={() => setIsDark((d) => !d)}
           className="presentation-control-btn"

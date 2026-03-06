@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   User,
   ChevronDown,
@@ -9,6 +9,9 @@ import {
   FileText,
   Sparkles,
   BarChart3,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
@@ -85,6 +88,10 @@ interface ChatMessageProps {
   quickEdit?: { action: string; originalText: string } | null;
   /** Slot for feedback toolbar, sources, etc. below the message */
   children?: React.ReactNode;
+  /** Whether this user message can be edited */
+  isEditable?: boolean;
+  /** Callback when user saves an edited message */
+  onEdit?: (newContent: string) => void;
   className?: string;
 }
 
@@ -157,10 +164,42 @@ export function ChatMessage({
   contexts,
   quickEdit,
   children,
+  isEditable,
+  onEdit,
   className,
 }: ChatMessageProps) {
   const t = useTranslations("chat");
   const isUser = role === "user";
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(content);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus and resize textarea when entering edit mode
+  useEffect(() => {
+    if (isEditing && editTextareaRef.current) {
+      editTextareaRef.current.focus();
+      editTextareaRef.current.style.height = "auto";
+      editTextareaRef.current.style.height = editTextareaRef.current.scrollHeight + "px";
+    }
+  }, [isEditing]);
+
+  const handleStartEdit = () => {
+    setEditContent(content);
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = () => {
+    const trimmed = editContent.trim();
+    if (trimmed && onEdit) {
+      onEdit(trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditContent(content);
+  };
 
   // Parse markdown for AI messages
   const htmlContent = useMemo(() => {
@@ -227,8 +266,64 @@ export function ChatMessage({
         )}
 
         {isUser ? (
-          <div className="rounded-xl bg-accent/40 px-4 py-3">
-            <p className="whitespace-pre-wrap text-sm">{content}</p>
+          <div className="group/user-msg relative rounded-xl bg-accent/40 px-4 py-3">
+            {isEditing ? (
+              <div className="space-y-2">
+                <textarea
+                  ref={editTextareaRef}
+                  value={editContent}
+                  onChange={(e) => {
+                    setEditContent(e.target.value);
+                    e.target.style.height = "auto";
+                    e.target.style.height = e.target.scrollHeight + "px";
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSaveEdit();
+                    }
+                    if (e.key === "Escape") {
+                      handleCancelEdit();
+                    }
+                  }}
+                  className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={1}
+                />
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    disabled={!editContent.trim()}
+                    className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    <Check className="h-3 w-3" />
+                    {t("sendMessage")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="whitespace-pre-wrap text-sm">{content}</p>
+                {isEditable && onEdit && (
+                  <button
+                    type="button"
+                    onClick={handleStartEdit}
+                    className="absolute -right-1 -top-1 rounded-md border border-border bg-background p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-hover/user-msg:opacity-100"
+                    title={t("editMessage")}
+                    aria-label={t("editMessage")}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                )}
+              </>
+            )}
           </div>
         ) : isStreaming && !content ? (
           <div className="flex items-center gap-2 py-1">

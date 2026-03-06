@@ -28,6 +28,13 @@ interface ChatRequestOptions {
   requestId?: string;
 }
 
+interface ImageContextForApi {
+  src?: string;
+  alt?: string;
+  base64: string;
+  mediaType: string;
+}
+
 // Re-export types for convenience
 export type { EditOperation } from "./use-edit-operations";
 export type { ToolStatus, ThinkingStatus } from "@/stores/streaming-store";
@@ -67,135 +74,30 @@ export function useChat() {
     setMessageStreaming,
     updateMessageFull,
     saveMessageToBackend,
+    removeMessagesAfter,
   } = useChatStore();
   const { getFile } = useFileStore();
   const { demoFile } = useDemoStore();
   const { applyEdits } = useEditOperations();
 
-  const sendMessage = useCallback(
+  /**
+   * Core streaming helper: creates an assistant placeholder, streams SSE,
+   * and handles all event processing. Extracted from sendMessage so that
+   * regenerate/resend/editAndResend can reuse the same streaming logic.
+   */
+  const streamResponse = useCallback(
     async (
-      message: string,
+      conversationId: string,
+      messageForAI: string,
       fileIds: string[],
-      contexts?: MessageContextItem[] | null,
-      dataFileIds?: string[],
-      quickEdit?: { action: string; originalText: string } | null,
-      inlineReference?: {
-        from: number;
-        to: number;
-        beforeText: string;
-        afterText: string;
-      } | null,
-      options?: ChatRequestOptions
+      imageContexts: ImageContextForApi[],
+      dataFileIds: string[],
+      isQuickEdit: boolean,
+      options?: ChatRequestOptions,
+      hasSelectionContexts?: boolean
     ) => {
-      const hasSelectionContexts = !!contexts?.some((c) => c.type === "selection");
       const isInlineOrigin = options?.origin === "inline";
       const inlineRequestId = options?.requestId || crypto.randomUUID();
-      const inlineIntent = options?.intent || "ask";
-
-      if (isInlineOrigin) {
-        useEditorStore.getState().startInlineAIResponse(inlineRequestId, inlineIntent);
-      }
-
-      const conversationId = ensureConversation(fileIds[0] || null);
-
-      // Build the full message for AI (include text contexts with XML tags)
-      let messageForAI = message;
-      const textContexts = contexts?.filter((c) => c.type === "selection") || [];
-      if (textContexts.length > 0) {
-        const contextTexts = textContexts
-          .map((c, i) => {
-            if (textContexts.length > 1) {
-              return `<reference index="${i + 1}">\n${c.text}\n</reference>`;
-            }
-            return c.text;
-          })
-          .join("\n\n");
-        messageForAI = `${message}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
-
-        messageForAI +=
-          "\n\n<selection_scope_rule>For edits, modify ONLY selected_content. Do NOT change any text outside selected_content.</selection_scope_rule>";
-      }
-
-      if (inlineReference) {
-        const beforeText = inlineReference.beforeText.trim();
-        const afterText = inlineReference.afterText.trim();
-        const anchorBlock =
-          "<cursor_anchor>\n" +
-          `  <before>${beforeText}</before>\n` +
-          `  <after>${afterText}</after>\n` +
-          `  <range from=\"${inlineReference.from}\" to=\"${inlineReference.to}\" />\n` +
-          "</cursor_anchor>\n\n" +
-          "Important: If the user asks to continue/add/insert, use this anchor as the primary insertion location.";
-        messageForAI = `${messageForAI}\n\n${anchorBlock}`;
-      }
-
-      // Inject edit feedback from previous diff review session
-      const editFeedback = useDiffReviewStore.getState().consumePendingFeedback();
-      if (editFeedback.length > 0) {
-        const feedbackLines = editFeedback
-          .map((f, i) => {
-            const oldSnippet = f.oldContent ? `"${f.oldContent}"` : "(empty)";
-            const newSnippet = f.newContent ? `"${f.newContent}"` : "(delete)";
-            const status = f.decision === "accepted" ? "ACCEPTED" : "REJECTED";
-            return `${i + 1}. ${f.editType} ${oldSnippet} → ${newSnippet}: ${status}`;
-          })
-          .join("\n");
-
-        const feedbackContext =
-          "[Edit review results from your previous response:]\n" +
-          feedbackLines +
-          "\n\nNote: Rejected changes were NOT applied. The document still contains the original text.\n\n";
-
-        messageForAI = feedbackContext + messageForAI;
-      }
-
-      // Extract image contexts with base64 data for multimodal API
-      const imageContexts =
-        contexts
-          ?.filter(
-            (c): c is MessageContextItem & { type: "image"; base64: string; mediaType: string } =>
-              c.type === "image" &&
-              !!(c as { base64?: string }).base64 &&
-              !!(c as { mediaType?: string }).mediaType
-          )
-          .map((c) => ({
-            src: c.src,
-            alt: (c as { alt?: string }).alt,
-            base64: c.base64,
-            mediaType: c.mediaType,
-          })) || [];
-
-      // Add user message
-      const userMessageId = addMessage(conversationId, {
-        role: "user",
-        content: message,
-        fileIds,
-        contexts,
-        quickEdit: quickEdit || null,
-      });
-
-      // Save user message to backend
-      // Strip base64 data from contexts before saving (too large for DB storage)
-      // The src URL is preserved so images can still be displayed
-      const contextsForStorage =
-        contexts?.map((ctx) => {
-          if (ctx.type === "image") {
-            // Keep src and alt, remove base64 and mediaType (only needed for AI API)
-            return { type: ctx.type, src: ctx.src, alt: (ctx as { alt?: string }).alt };
-          }
-          return ctx;
-        }) || null;
-
-      const userMessage: ChatMessage = {
-        id: userMessageId,
-        role: "user",
-        content: message,
-        fileIds,
-        contexts: contextsForStorage,
-        quickEdit: quickEdit || null,
-        createdAt: new Date().toISOString(),
-      };
-      saveMessageToBackend(conversationId, userMessage);
 
       // Add assistant message placeholder
       const assistantMessageId = addMessage(conversationId, {
@@ -279,7 +181,7 @@ export function useChat() {
             // Data files for code execution sandbox
             dataFileIds: dataFileIds || [],
             // Quick edit mode flag for backend optimization
-            isQuickEdit: !!quickEdit,
+            isQuickEdit,
           }),
           signal,
         });
@@ -667,7 +569,6 @@ export function useChat() {
       }
     },
     [
-      ensureConversation,
       addMessage,
       appendToMessage,
       setMessageStreaming,
@@ -680,9 +581,152 @@ export function useChat() {
       setThinking,
       setTodos,
       demoFile,
-      saveMessageToBackend,
       clearTodos,
     ]
+  );
+
+  const sendMessage = useCallback(
+    async (
+      message: string,
+      fileIds: string[],
+      contexts?: MessageContextItem[] | null,
+      dataFileIds?: string[],
+      quickEdit?: { action: string; originalText: string } | null,
+      inlineReference?: {
+        from: number;
+        to: number;
+        beforeText: string;
+        afterText: string;
+      } | null,
+      options?: ChatRequestOptions
+    ) => {
+      const hasSelectionContexts = !!contexts?.some((c) => c.type === "selection");
+      const isInlineOrigin = options?.origin === "inline";
+      const inlineRequestId = options?.requestId || crypto.randomUUID();
+      const inlineIntent = options?.intent || "ask";
+
+      if (isInlineOrigin) {
+        useEditorStore.getState().startInlineAIResponse(inlineRequestId, inlineIntent);
+      }
+
+      const conversationId = ensureConversation(fileIds[0] || null);
+
+      // Build the full message for AI (include text contexts with XML tags)
+      let messageForAI = message;
+      const textContexts = contexts?.filter((c) => c.type === "selection") || [];
+      if (textContexts.length > 0) {
+        const contextTexts = textContexts
+          .map((c, i) => {
+            if (textContexts.length > 1) {
+              return `<reference index="${i + 1}">\n${c.text}\n</reference>`;
+            }
+            return c.text;
+          })
+          .join("\n\n");
+        messageForAI = `${message}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
+
+        messageForAI +=
+          "\n\n<selection_scope_rule>For edits, modify ONLY selected_content. Do NOT change any text outside selected_content.</selection_scope_rule>";
+      }
+
+      if (inlineReference) {
+        const beforeText = inlineReference.beforeText.trim();
+        const afterText = inlineReference.afterText.trim();
+        const anchorBlock =
+          "<cursor_anchor>\n" +
+          `  <before>${beforeText}</before>\n` +
+          `  <after>${afterText}</after>\n` +
+          `  <range from=\"${inlineReference.from}\" to=\"${inlineReference.to}\" />\n` +
+          "</cursor_anchor>\n\n" +
+          "Important: If the user asks to continue/add/insert, use this anchor as the primary insertion location.";
+        messageForAI = `${messageForAI}\n\n${anchorBlock}`;
+      }
+
+      // Inject edit feedback from previous diff review session
+      const editFeedback = useDiffReviewStore.getState().consumePendingFeedback();
+      if (editFeedback.length > 0) {
+        const feedbackLines = editFeedback
+          .map((f, i) => {
+            const oldSnippet = f.oldContent ? `"${f.oldContent}"` : "(empty)";
+            const newSnippet = f.newContent ? `"${f.newContent}"` : "(delete)";
+            const status = f.decision === "accepted" ? "ACCEPTED" : "REJECTED";
+            return `${i + 1}. ${f.editType} ${oldSnippet} → ${newSnippet}: ${status}`;
+          })
+          .join("\n");
+
+        const feedbackContext =
+          "[Edit review results from your previous response:]\n" +
+          feedbackLines +
+          "\n\nNote: Rejected changes were NOT applied. The document still contains the original text.\n\n";
+
+        messageForAI = feedbackContext + messageForAI;
+      }
+
+      // Extract image contexts with base64 data for multimodal API
+      const imageContexts: ImageContextForApi[] =
+        contexts
+          ?.filter(
+            (c): c is MessageContextItem & { type: "image"; base64: string; mediaType: string } =>
+              c.type === "image" &&
+              !!(c as { base64?: string }).base64 &&
+              !!(c as { mediaType?: string }).mediaType
+          )
+          .map((c) => ({
+            src: c.src,
+            alt: (c as { alt?: string }).alt,
+            base64: c.base64,
+            mediaType: c.mediaType,
+          })) || [];
+
+      // Add user message
+      const userMessageId = addMessage(conversationId, {
+        role: "user",
+        content: message,
+        fileIds,
+        contexts,
+        quickEdit: quickEdit || null,
+      });
+
+      // Save user message to backend
+      // Strip base64 data from contexts before saving (too large for DB storage)
+      // The src URL is preserved so images can still be displayed
+      const contextsForStorage =
+        contexts?.map((ctx) => {
+          if (ctx.type === "image") {
+            // Keep src and alt, remove base64 and mediaType (only needed for AI API)
+            return { type: ctx.type, src: ctx.src, alt: (ctx as { alt?: string }).alt };
+          }
+          return ctx;
+        }) || null;
+
+      const userMessage: ChatMessage = {
+        id: userMessageId,
+        role: "user",
+        content: message,
+        fileIds,
+        contexts: contextsForStorage,
+        quickEdit: quickEdit || null,
+        createdAt: new Date().toISOString(),
+      };
+      saveMessageToBackend(conversationId, userMessage);
+
+      // Pass inline options through to streamResponse
+      const streamOptions: ChatRequestOptions | undefined = isInlineOrigin
+        ? { origin: "inline", intent: inlineIntent, requestId: inlineRequestId }
+        : options;
+
+      await streamResponse(
+        conversationId,
+        messageForAI,
+        fileIds,
+        imageContexts,
+        dataFileIds || [],
+        !!quickEdit,
+        streamOptions,
+        hasSelectionContexts
+      );
+    },
+    [ensureConversation, addMessage, saveMessageToBackend, streamResponse]
   );
 
   const stopStreaming = useCallback(() => {
@@ -709,9 +753,294 @@ export function useChat() {
     [sendMessage]
   );
 
+  /** Regenerate the last AI response */
+  const regenerateLastResponse = useCallback(
+    async (fileIds: string[]) => {
+      const conversationId = fileIds[0] || null;
+      if (!conversationId) return;
+
+      const conversation = useChatStore.getState().conversations[conversationId];
+      if (!conversation || conversation.messages.length === 0) return;
+
+      const messages = conversation.messages;
+      const lastMessage = messages[messages.length - 1];
+
+      // Find the last user message
+      let userMessage: ChatMessage | undefined;
+      if (lastMessage.role === "assistant") {
+        userMessage = [...messages].reverse().find((m) => m.role === "user");
+      } else {
+        userMessage = lastMessage;
+      }
+
+      if (!userMessage) return;
+
+      // Remove the user message and everything after it locally
+      // (this removes the assistant response too)
+      removeMessagesAfter(conversationId, userMessage.id, true);
+
+      // Soft-delete user message + assistant response on backend (inclusive)
+      // Use relative fetch (through Next.js proxy) for reliable routing
+      if (conversationId !== "demo-file") {
+        try {
+          const backendConvId = conversation.id || conversationId;
+          await fetch("/api/chat/messages/truncate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...api.getAuthorizationHeaders(),
+            },
+            body: JSON.stringify({
+              conversationId: backendConvId,
+              afterMessageId: userMessage.id,
+              inclusive: true,
+            }),
+          });
+        } catch (error) {
+          console.warn("Failed to truncate messages on backend:", error);
+        }
+      }
+
+      // Re-add the user message locally (fresh copy)
+      const newUserMessageId = addMessage(conversationId, {
+        role: "user",
+        content: userMessage.content,
+        fileIds: userMessage.fileIds || fileIds,
+        contexts: userMessage.contexts,
+        quickEdit: userMessage.quickEdit || null,
+      });
+
+      // Save the re-added user message to backend
+      const newUserMessage: ChatMessage = {
+        id: newUserMessageId,
+        role: "user",
+        content: userMessage.content,
+        fileIds: userMessage.fileIds || fileIds,
+        contexts: userMessage.contexts,
+        quickEdit: userMessage.quickEdit || null,
+        createdAt: new Date().toISOString(),
+      };
+      saveMessageToBackend(conversationId, newUserMessage);
+
+      // Rebuild messageForAI from the stored user message content
+      let messageForAI = userMessage.content;
+      const textContexts = userMessage.contexts?.filter((c) => c.type === "selection") || [];
+      if (textContexts.length > 0) {
+        const contextTexts = textContexts
+          .map((c, i) => {
+            if (textContexts.length > 1) {
+              return `<reference index="${i + 1}">\n${c.text}\n</reference>`;
+            }
+            return c.text;
+          })
+          .join("\n\n");
+        messageForAI = `${userMessage.content}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
+        messageForAI +=
+          "\n\n<selection_scope_rule>For edits, modify ONLY selected_content. Do NOT change any text outside selected_content.</selection_scope_rule>";
+      }
+
+      await streamResponse(
+        conversationId,
+        messageForAI,
+        userMessage.fileIds || fileIds,
+        [],
+        [],
+        !!userMessage.quickEdit,
+        undefined,
+        false
+      );
+    },
+    [removeMessagesAfter, addMessage, saveMessageToBackend, streamResponse]
+  );
+
+  /** Resend the last user message (retry after error/stop) */
+  const resendLastUserMessage = useCallback(
+    async (fileIds: string[]) => {
+      const conversationId = fileIds[0] || null;
+      if (!conversationId) return;
+
+      const conversation = useChatStore.getState().conversations[conversationId];
+      if (!conversation || conversation.messages.length === 0) return;
+
+      const messages = conversation.messages;
+
+      // Find the last user message (before any failed assistant message)
+      const userMessage = [...messages].reverse().find((m) => m.role === "user");
+      if (!userMessage) return;
+
+      // Remove user message and everything after it (including failed assistant)
+      removeMessagesAfter(conversationId, userMessage.id, true);
+
+      // Soft-delete user message + partial responses on backend (inclusive)
+      // Use relative fetch (through Next.js proxy) for reliable routing
+      if (conversationId !== "demo-file") {
+        try {
+          const backendConvId = conversation.id || conversationId;
+          await fetch("/api/chat/messages/truncate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...api.getAuthorizationHeaders(),
+            },
+            body: JSON.stringify({
+              conversationId: backendConvId,
+              afterMessageId: userMessage.id,
+              inclusive: true,
+            }),
+          });
+        } catch (error) {
+          console.warn("Failed to truncate messages on backend:", error);
+        }
+      }
+
+      // Re-add the user message locally (fresh copy)
+      const newUserMessageId = addMessage(conversationId, {
+        role: "user",
+        content: userMessage.content,
+        fileIds: userMessage.fileIds || fileIds,
+        contexts: userMessage.contexts,
+        quickEdit: userMessage.quickEdit || null,
+      });
+
+      // Save the re-added user message to backend
+      const newUserMessage: ChatMessage = {
+        id: newUserMessageId,
+        role: "user",
+        content: userMessage.content,
+        fileIds: userMessage.fileIds || fileIds,
+        contexts: userMessage.contexts,
+        quickEdit: userMessage.quickEdit || null,
+        createdAt: new Date().toISOString(),
+      };
+      saveMessageToBackend(conversationId, newUserMessage);
+
+      // Rebuild messageForAI
+      let messageForAI = userMessage.content;
+      const textContexts = userMessage.contexts?.filter((c) => c.type === "selection") || [];
+      if (textContexts.length > 0) {
+        const contextTexts = textContexts
+          .map((c, i) => {
+            if (textContexts.length > 1) {
+              return `<reference index="${i + 1}">\n${c.text}\n</reference>`;
+            }
+            return c.text;
+          })
+          .join("\n\n");
+        messageForAI = `${userMessage.content}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
+        messageForAI +=
+          "\n\n<selection_scope_rule>For edits, modify ONLY selected_content. Do NOT change any text outside selected_content.</selection_scope_rule>";
+      }
+
+      await streamResponse(
+        conversationId,
+        messageForAI,
+        userMessage.fileIds || fileIds,
+        [],
+        [],
+        !!userMessage.quickEdit,
+        undefined,
+        false
+      );
+    },
+    [removeMessagesAfter, addMessage, saveMessageToBackend, streamResponse]
+  );
+
+  /** Edit a past user message and resend (removes all messages after it) */
+  const editAndResend = useCallback(
+    async (messageId: string, newContent: string, fileIds: string[]) => {
+      const conversationId = fileIds[0] || null;
+      if (!conversationId) return;
+
+      const conversation = useChatStore.getState().conversations[conversationId];
+      if (!conversation) return;
+
+      // Find the original message to preserve its contexts
+      const originalMessage = conversation.messages.find((m) => m.id === messageId);
+      if (!originalMessage || originalMessage.role !== "user") return;
+
+      // Optimistically remove the edited message and everything after it
+      removeMessagesAfter(conversationId, messageId, true);
+
+      // Add new user message with edited content (preserve original contexts)
+      const newUserMessageId = addMessage(conversationId, {
+        role: "user",
+        content: newContent,
+        fileIds: originalMessage.fileIds || fileIds,
+        contexts: originalMessage.contexts,
+        quickEdit: originalMessage.quickEdit || null,
+      });
+
+      // Soft-delete on backend (skip for demo mode)
+      // Use relative fetch (through Next.js proxy) for reliable routing
+      if (conversationId !== "demo-file") {
+        try {
+          const backendConvId = conversation.id || conversationId;
+          await fetch("/api/chat/messages/truncate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...api.getAuthorizationHeaders(),
+            },
+            body: JSON.stringify({
+              conversationId: backendConvId,
+              afterMessageId: messageId,
+              inclusive: true,
+            }),
+          });
+        } catch (error) {
+          console.warn("Failed to truncate messages on backend:", error);
+        }
+      }
+
+      // Save new user message to backend
+      const newUserMessage: ChatMessage = {
+        id: newUserMessageId,
+        role: "user",
+        content: newContent,
+        fileIds: originalMessage.fileIds || fileIds,
+        contexts: originalMessage.contexts,
+        quickEdit: originalMessage.quickEdit || null,
+        createdAt: new Date().toISOString(),
+      };
+      saveMessageToBackend(conversationId, newUserMessage);
+
+      // Rebuild messageForAI
+      let messageForAI = newContent;
+      const textContexts = originalMessage.contexts?.filter((c) => c.type === "selection") || [];
+      if (textContexts.length > 0) {
+        const contextTexts = textContexts
+          .map((c, i) => {
+            if (textContexts.length > 1) {
+              return `<reference index="${i + 1}">\n${c.text}\n</reference>`;
+            }
+            return c.text;
+          })
+          .join("\n\n");
+        messageForAI = `${newContent}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
+        messageForAI +=
+          "\n\n<selection_scope_rule>For edits, modify ONLY selected_content. Do NOT change any text outside selected_content.</selection_scope_rule>";
+      }
+
+      await streamResponse(
+        conversationId,
+        messageForAI,
+        originalMessage.fileIds || fileIds,
+        [],
+        [],
+        !!originalMessage.quickEdit,
+        undefined,
+        false
+      );
+    },
+    [removeMessagesAfter, addMessage, saveMessageToBackend, streamResponse]
+  );
+
   return {
     sendMessage,
     sendQuickEditMessage,
+    regenerateLastResponse,
+    resendLastUserMessage,
+    editAndResend,
     isStreaming,
     stopStreaming,
     currentTool,

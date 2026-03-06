@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Copy, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
 import { telemetry } from "@/lib/telemetry";
@@ -21,6 +21,12 @@ interface ChatFeedbackToolbarProps {
   turnIndex?: number;
   /** Always show (mobile) vs hover-only (desktop) */
   alwaysVisible?: boolean;
+  /** Callback to regenerate this AI response */
+  onRegenerate?: () => void;
+  /** Whether this is the last assistant message (show regenerate button) */
+  isLastMessage?: boolean;
+  /** Whether a stream is currently active (disable regenerate) */
+  isStreaming?: boolean;
   className?: string;
 }
 
@@ -40,6 +46,9 @@ export function ChatFeedbackToolbar({
   eventType = "chat_feedback",
   turnIndex,
   alwaysVisible = false,
+  onRegenerate,
+  isLastMessage = false,
+  isStreaming = false,
   className,
 }: ChatFeedbackToolbarProps) {
   const t = useTranslations("chat");
@@ -104,6 +113,20 @@ export function ChatFeedbackToolbar({
           <Copy className="h-3.5 w-3.5" />
         )}
       </button>
+
+      {/* Regenerate */}
+      {isLastMessage && onRegenerate && (
+        <button
+          type="button"
+          onClick={onRegenerate}
+          disabled={isStreaming}
+          className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 dark:text-muted-foreground/70"
+          title={t("regenerate")}
+          aria-label={t("regenerate")}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       {/* Thumbs up */}
       <button

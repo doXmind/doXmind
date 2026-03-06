@@ -24,6 +24,11 @@ declare module "./client" {
       createdAt: string;
     }>;
     simpleChat(message: string, system?: string, model?: string): Promise<{ response: string }>;
+    truncateMessages(
+      conversationId: string,
+      afterMessageId: string,
+      inclusive?: boolean
+    ): Promise<{ success: boolean; deleted: number }>;
     healthCheck(): Promise<{ status: string }>;
   }
 }
@@ -61,6 +66,19 @@ ApiClient.prototype.simpleChat = async function (
   return this.request<{ response: string }>("/api/chat/simple", {
     method: "POST",
     body: JSON.stringify({ message, system, model }),
+  });
+};
+
+// Truncate messages (for regenerate/resend/edit-and-resend)
+ApiClient.prototype.truncateMessages = async function (
+  this: ApiClient,
+  conversationId: string,
+  afterMessageId: string,
+  inclusive: boolean = false
+) {
+  return this.request<{ success: boolean; deleted: number }>("/api/chat/messages/truncate", {
+    method: "POST",
+    body: JSON.stringify({ conversationId, afterMessageId, inclusive }),
   });
 };
 

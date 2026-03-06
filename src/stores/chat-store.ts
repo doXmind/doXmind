@@ -39,6 +39,12 @@ interface ChatState {
   ) => void;
   appendToMessage: (conversationId: string, messageId: string, chunk: string) => void;
   setMessageStreaming: (conversationId: string, messageId: string, isStreaming: boolean) => void;
+  removeMessagesAfter: (
+    conversationId: string,
+    messageId: string,
+    inclusive: boolean
+  ) => ChatMessage[];
+  removeLastMessage: (conversationId: string) => ChatMessage | null;
   clearConversation: (conversationId: string) => Promise<void>;
   deleteConversation: (fileId: string) => Promise<void>;
   setActiveConversation: (id: string | null) => void;
@@ -218,6 +224,29 @@ export const useChatStore = create<ChatState>()(
       });
     },
 
+    removeMessagesAfter: (conversationId, messageId, inclusive) => {
+      let removed: ChatMessage[] = [];
+      set((draft) => {
+        const conversation = draft.conversations[conversationId];
+        if (!conversation) return;
+        const idx = conversation.messages.findIndex((m) => m.id === messageId);
+        if (idx === -1) return;
+        const startIdx = inclusive ? idx : idx + 1;
+        removed = conversation.messages.splice(startIdx) as ChatMessage[];
+      });
+      return removed;
+    },
+
+    removeLastMessage: (conversationId) => {
+      let removed: ChatMessage | null = null;
+      set((draft) => {
+        const conversation = draft.conversations[conversationId];
+        if (!conversation || conversation.messages.length === 0) return;
+        removed = conversation.messages.pop() as ChatMessage;
+      });
+      return removed;
+    },
+
     clearConversation: async (conversationId) => {
       // Clear on backend (skip for demo mode)
       if (conversationId !== "demo-file") {
@@ -284,6 +313,7 @@ export const useChatStore = create<ChatState>()(
             ...api.getAuthorizationHeaders(),
           },
           body: JSON.stringify({
+            id: message.id,
             conversationId,
             role: message.role,
             content: message.content,

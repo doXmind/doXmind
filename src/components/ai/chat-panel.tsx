@@ -10,6 +10,7 @@ import {
   AppWindow,
   Minus,
   Check,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
@@ -120,8 +121,18 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     );
   }, [conversations, conversationKey, effectiveFileId]);
 
-  const { sendMessage, isStreaming, stopStreaming, currentTool, toolHistory, thinking, todos } =
-    useChat();
+  const {
+    sendMessage,
+    regenerateLastResponse,
+    resendLastUserMessage,
+    editAndResend,
+    isStreaming,
+    stopStreaming,
+    currentTool,
+    toolHistory,
+    thinking,
+    todos,
+  } = useChat();
 
   // Clean up polling intervals when chat panel unmounts
   useKBPollingCleanup(conversation.id || null);
@@ -398,6 +409,11 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
         ) : (
           <div className="space-y-1">
             {conversation.messages.map((message, index) => {
+              const isLast = index === conversation.messages.length - 1;
+              const isLastAssistant = isLast && message.role === "assistant";
+              const isLastUserWithNoReply = isLast && message.role === "user" && !isStreaming;
+              const isEditable = message.role === "user" && !isStreaming;
+
               const userPrompt =
                 message.role === "assistant"
                   ? conversation.messages
@@ -414,6 +430,10 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
                   isStreaming={message.isStreaming}
                   contexts={message.contexts ?? undefined}
                   quickEdit={message.quickEdit ?? undefined}
+                  isEditable={isEditable}
+                  onEdit={(newContent) =>
+                    editAndResend(message.id, newContent, effectiveFileId ? [effectiveFileId] : [])
+                  }
                 >
                   {/* Feedback toolbar for completed AI messages */}
                   {message.role === "assistant" &&
@@ -429,8 +449,31 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
                         fileId={message.fileIds?.[0]}
                         model={message.model ?? undefined}
                         hadToolCalls={!!(message.toolCalls && message.toolCalls.length > 0)}
+                        onRegenerate={
+                          isLastAssistant
+                            ? () => regenerateLastResponse(effectiveFileId ? [effectiveFileId] : [])
+                            : undefined
+                        }
+                        isLastMessage={isLastAssistant}
+                        isStreaming={isStreaming}
                       />
                     )}
+
+                  {/* Resend button for last user message (no AI response yet) */}
+                  {isLastUserWithNoReply && (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          resendLastUserMessage(effectiveFileId ? [effectiveFileId] : [])
+                        }
+                        className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        {t("resend")}
+                      </button>
+                    </div>
+                  )}
                 </ChatMessage>
               );
             })}

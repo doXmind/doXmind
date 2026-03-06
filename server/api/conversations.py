@@ -29,6 +29,7 @@ router = APIRouter()
 class MessageCreate(BaseModel):
     """Create a new message."""
 
+    id: str | None = None  # Optional client-generated ID for frontend/backend sync
     conversationId: str
     role: str  # "user" | "assistant"
     content: str
@@ -37,6 +38,14 @@ class MessageCreate(BaseModel):
     toolCalls: list[dict] | None = None
     edits: list[dict] | None = None
     model: str | None = None
+
+
+class TruncateRequest(BaseModel):
+    """Truncate messages after a reference point."""
+
+    conversationId: str
+    afterMessageId: str
+    inclusive: bool = False  # If True, also deletes the reference message
 
 
 class MessageResponse(BaseModel):
@@ -209,7 +218,7 @@ async def create_message(
 
     # Create message using the actual conversation ID (not the passed file_id)
     new_message = Message(
-        id=str(uuid.uuid4()),
+        id=message.id or str(uuid.uuid4()),
         conversation_id=conversation.id,
         role=message.role,
         content=message.content,
@@ -268,6 +277,86 @@ async def clear_conversation(
     messages_result = await db.execute(
         select(Message).where(
             Message.conversation_id == conversation.id, Message.deleted_at.is_(None)
+        )
+    )
+    messages = messages_result.scalars().all()
+
+    now = utcnow()
+    for msg in messages:
+        msg.deleted_at = now
+
+    await db.commit()
+
+    return {"success": True, "deleted": len(messages)}
+
+
+@router.post("/messages/truncate")
+async def truncate_messages(
+    request: TruncateRequest,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Soft-delete messages after (or including) a reference message.
+
+    Used for regenerate, resend, and edit-and-resend flows.
+    """
+    user_id = get_user_id(token)
+
+    # Find conversation by ID, then fallback to file_id (same pattern as create_message)
+    query = select(Conversation).where(Conversation.id == request.conversationId)
+    if user_id:
+        query = query.where(Conversation.user_id == user_id)
+    else:
+        query = query.where(Conversation.user_id.is_(None))
+    query = query.limit(1)
+
+    result = await db.execute(query)
+    conversation = result.scalar_one_or_none()
+
+    if not conversation:
+        normalized_file_id = normalize_file_id(request.conversationId)
+        if normalized_file_id is None:
+            query = select(Conversation).where(Conversation.file_id.is_(None))
+        else:
+            query = select(Conversation).where(Conversation.file_id == normalized_file_id)
+        if user_id:
+            query = query.where(Conversation.user_id == user_id)
+        else:
+            query = query.where(Conversation.user_id.is_(None))
+        query = query.order_by(desc(Conversation.created_at)).limit(1)
+
+        result = await db.execute(query)
+        conversation = result.scalar_one_or_none()
+
+    if not conversation:
+        return {"success": True, "deleted": 0}
+
+    # Find the reference message
+    ref_result = await db.execute(
+        select(Message).where(
+            Message.id == request.afterMessageId,
+            Message.conversation_id == conversation.id,
+            Message.deleted_at.is_(None),
+        )
+    )
+    ref_message = ref_result.scalar_one_or_none()
+
+    if not ref_message:
+        return {"success": True, "deleted": 0}
+
+    # Soft-delete messages after (or including) the reference message
+    from db.database import utcnow
+
+    if request.inclusive:
+        condition = Message.created_at >= ref_message.created_at
+    else:
+        condition = Message.created_at > ref_message.created_at
+
+    messages_result = await db.execute(
+        select(Message).where(
+            Message.conversation_id == conversation.id,
+            Message.deleted_at.is_(None),
+            condition,
         )
     )
     messages = messages_result.scalars().all()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getTheme, getThemesByBaseMode, THEME_LIST } from "@/lib/themes/registry";
@@ -9,6 +9,9 @@ import type { ThemeDefinition } from "@/lib/themes/types";
 
 const THEME_PREFS_KEY = "doxmind-theme-prefs";
 const LAYOUT_STORAGE_KEY = "doxmind-layout";
+
+// Module-level flag: only one useThemeManager instance should perform the fallback sync
+let _fallbackSynced = false;
 
 interface StoredThemePrefs {
   themeId: string;
@@ -102,7 +105,6 @@ export function useThemeManager() {
   // Guard against SSR where .persist may be undefined
   const [hydrated, setHydrated] = useState(() => useLayoutStore.persist?.hasHydrated?.() ?? false);
   const [initialThemeReady, setInitialThemeReady] = useState(false);
-  const fallbackSyncedRef = useRef(false);
 
   useEffect(() => {
     if (hydrated) return;
@@ -145,12 +147,12 @@ export function useThemeManager() {
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (hydrated || typeof window === "undefined") return;
     const domThemeId = document.documentElement.getAttribute("data-theme");
     if (!domThemeId) return;
     const theme = getTheme(domThemeId);
     applyThemeToDOM(theme);
-  }, [applyThemeToDOM]);
+  }, [hydrated, applyThemeToDOM]);
 
   // Select a specific theme
   const selectTheme = useCallback(
@@ -240,8 +242,8 @@ export function useThemeManager() {
   );
 
   useEffect(() => {
-    if (!hydrated || fallbackSyncedRef.current) return;
-    fallbackSyncedRef.current = true;
+    if (!hydrated || _fallbackSynced) return;
+    _fallbackSynced = true;
 
     const stored = readStoredThemePrefs() ?? readLegacyLayoutThemePrefs();
     if (!stored) {
@@ -294,7 +296,7 @@ export function useThemeManager() {
 
   // Listen for system theme changes when systemThemeEnabled is true
   useEffect(() => {
-    if (!hydrated || !systemThemeEnabled || typeof window === "undefined") {
+    if (!hydrated || !initialThemeReady || !systemThemeEnabled || typeof window === "undefined") {
       return;
     }
 
@@ -322,6 +324,7 @@ export function useThemeManager() {
     return () => mq.removeEventListener("change", handler);
   }, [
     hydrated,
+    initialThemeReady,
     systemThemeEnabled,
     preferredLightTheme,
     preferredDarkTheme,

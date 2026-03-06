@@ -201,6 +201,31 @@
   text-align: center;
 }
 
+/* Text alignment overrides */
+.pres-align-left .ProseMirror > *,
+.pres-align-left .ProseMirror h1,
+.pres-align-left .ProseMirror h2,
+.pres-align-left .ProseMirror h3,
+.pres-align-left .ProseMirror h4,
+.pres-align-left .ProseMirror h5,
+.pres-align-left .ProseMirror h6,
+.pres-align-left .ProseMirror p,
+.pres-align-left .ProseMirror blockquote {
+  text-align: left;
+}
+
+.pres-align-right .ProseMirror > *,
+.pres-align-right .ProseMirror h1,
+.pres-align-right .ProseMirror h2,
+.pres-align-right .ProseMirror h3,
+.pres-align-right .ProseMirror h4,
+.pres-align-right .ProseMirror h5,
+.pres-align-right .ProseMirror h6,
+.pres-align-right .ProseMirror p,
+.pres-align-right .ProseMirror blockquote {
+  text-align: right;
+}
+
 /* Editable slide: subtle focus indicator */
 .presentation-content .ProseMirror:focus {
   outline: none;
