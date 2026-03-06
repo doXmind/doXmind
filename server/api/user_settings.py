@@ -103,7 +103,7 @@ _CURATED_MODELS: list[tuple[str, str]] = [
     ("openai/gpt-5.3-chat", "GPT-5.3"),
     ("google/gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5"),
-    ("arcee-ai/trinity-large-preview:free", "trinity-large")
+    ("arcee-ai/trinity-large-preview:free", "trinity-large"),
 ]
 
 _CURATED_IDS: set[str] = {model_id for model_id, _ in _CURATED_MODELS}

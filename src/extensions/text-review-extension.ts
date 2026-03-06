@@ -248,6 +248,8 @@ export const TextReviewExtension = Extension.create<TextReviewExtensionOptions>(
             ...pluginState,
             suggestions: updated,
             isActive: updated.some((s) => s.status === "pending"),
+            activeSuggestionId:
+              pluginState.activeSuggestionId === id ? null : pluginState.activeSuggestionId,
           });
 
           dispatch(tr);
@@ -270,6 +272,8 @@ export const TextReviewExtension = Extension.create<TextReviewExtensionOptions>(
             ...pluginState,
             suggestions: updated,
             isActive: updated.some((s) => s.status === "pending"),
+            activeSuggestionId:
+              pluginState.activeSuggestionId === id ? null : pluginState.activeSuggestionId,
           });
 
           dispatch(tr);
@@ -309,6 +313,7 @@ export const TextReviewExtension = Extension.create<TextReviewExtensionOptions>(
             ...pluginState,
             suggestions: updated,
             isActive: false,
+            activeSuggestionId: null,
           });
 
           dispatch(tr);
@@ -331,6 +336,7 @@ export const TextReviewExtension = Extension.create<TextReviewExtensionOptions>(
             ...pluginState,
             suggestions: updated,
             isActive: false,
+            activeSuggestionId: null,
           });
 
           dispatch(tr);

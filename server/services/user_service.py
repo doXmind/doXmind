@@ -23,11 +23,12 @@ from db.database import (
     Message,
     PasswordReset,
     TelemetryEvent,
+    User,
     UserAPISettings,
     UserTelemetrySettings,
-    User,
 )
 from services.auth_service import create_access_token, hash_password, verify_password
+from services.default_guide import GUIDE_FILENAME, GUIDE_MARKDOWN, guide_markdown_to_html
 from services.email_service import get_email_service
 
 
@@ -38,6 +39,16 @@ class UserService:
         self.db = db
         self.settings = get_settings()
         self.email_service = get_email_service()
+
+    async def _create_default_guide_file(self, user_id: str) -> None:
+        """Create the default doXmind usage guide file for a new user."""
+        guide_file = File(
+            user_id=user_id,
+            name=GUIDE_FILENAME,
+            content=guide_markdown_to_html(),
+            content_markdown=GUIDE_MARKDOWN,
+        )
+        self.db.add(guide_file)
 
     # =========================================================================
     # Registration Flow
@@ -139,6 +150,8 @@ class UserService:
         )
 
         self.db.add(user)
+        await self.db.flush()
+        await self._create_default_guide_file(user.id)
 
         # Mark verification as complete
         verification.verified = True
@@ -438,6 +451,8 @@ class UserService:
         )
 
         self.db.add(user)
+        await self.db.flush()
+        await self._create_default_guide_file(user.id)
         await self.db.commit()
         await self.db.refresh(user)
 

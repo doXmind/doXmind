@@ -122,8 +122,9 @@ export function DiffReviewToolbar({
             transition={{ type: "spring", stiffness: 400, damping: 20 }}
             className={cn(
               "inline-flex items-center rounded-lg font-medium transition-colors",
-              "bg-[var(--diff-btn-reject-bg)] text-[var(--diff-btn-reject-fg)]",
-              "hover:bg-[var(--diff-btn-reject-hover)]",
+              "bg-slate-200 text-slate-700",
+              "hover:bg-slate-300",
+              "dark:bg-slate-500/20 dark:text-slate-200 dark:hover:bg-slate-500/30",
               isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
             )}
           >
@@ -139,8 +140,9 @@ export function DiffReviewToolbar({
             transition={{ type: "spring", stiffness: 400, damping: 20 }}
             className={cn(
               "inline-flex items-center rounded-lg font-medium transition-colors",
-              "bg-[var(--diff-btn-accept-bg)] text-[var(--diff-btn-accept-fg)]",
-              "hover:bg-[var(--diff-btn-accept-hover)]",
+              "bg-blue-100 text-blue-700",
+              "hover:bg-blue-200",
+              "dark:bg-blue-500/20 dark:text-blue-300 dark:hover:bg-blue-500/30",
               isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
             )}
           >

@@ -300,10 +300,10 @@ export function ImageNodeView({
             )}
 
             {/* Ask AI */}
-            <Tooltip content={t("blockAction.askAI")} side="top">
+            <Tooltip content={t("blockAction.askInSidebar")} side="top">
               <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
                 <AiLogoIcon className="h-3.5 w-3.5" />
-                <span className="text-xs">{t("blockAction.askAI")}</span>
+                <span className="text-xs">{t("blockAction.askInSidebar")}</span>
               </button>
             </Tooltip>
 

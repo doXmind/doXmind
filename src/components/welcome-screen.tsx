@@ -6,16 +6,10 @@ import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Upload, Loader2 } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
-import { useOnboardingStore } from "@/stores/onboarding-store";
 import { Button } from "@/components/ui/button";
 import { AnimatedLogo } from "@/components/ui/animated-logo";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
-import { markdownToHtml } from "@/lib/markdown";
-import {
-  getTutorialDocumentMarkdown,
-  TUTORIAL_DOCUMENT_FILENAME,
-} from "@/components/onboarding/tutorial-document";
 import { toast } from "sonner";
 
 const log = storeLogger.child("Welcome");
@@ -47,34 +41,16 @@ const itemVariants = {
 export function WelcomeScreen() {
   const router = useRouter();
   const t = useTranslations("welcome");
-  const { files, createFile, importFile, currentFolderId } = useFileStore();
-  const { onboardingCompleted, startOnboarding } = useOnboardingStore();
+  const { createFile, importFile, currentFolderId } = useFileStore();
   const [isDragging, setIsDragging] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
-  const shouldStartOnboarding = !onboardingCompleted;
-
   const handleCreateFile = async () => {
     setIsCreating(true);
     try {
-      if (shouldStartOnboarding) {
-        // New user: reuse existing tutorial document or create a new one
-        const existing = files.find((f) => f.name.startsWith("Getting Started with doXmind"));
-        let newId: string;
-        if (existing) {
-          newId = existing.id;
-        } else {
-          const markdown = getTutorialDocumentMarkdown();
-          const htmlContent = markdownToHtml(markdown);
-          newId = await createFile(TUTORIAL_DOCUMENT_FILENAME, htmlContent, currentFolderId);
-        }
-        startOnboarding(newId);
-        router.push(`/editor/${newId}`);
-      } else {
-        const newId = await createFile("Untitled.md", "", currentFolderId);
-        router.push(`/editor/${newId}`);
-      }
+      const newId = await createFile("Untitled.md", "", currentFolderId);
+      router.push(`/editor/${newId}`);
     } catch (error) {
       log.error("Failed to create file", error);
       const { title, description } = getErrorMessage(error);

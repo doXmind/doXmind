@@ -484,9 +484,30 @@
   background-color: hsl(var(--primary) / 0.06);
 }
 
-/* Selection - preserve inline text color for colored text */
+/* Selection - keep editor text selection in brand blue */
 .ProseMirror ::selection {
-  background-color: hsl(var(--foreground) / 0.15);
+  background-color: rgba(46, 170, 220, 0.28);
+}
+
+.dark .ProseMirror ::selection {
+  background-color: rgba(46, 170, 220, 0.34);
+}
+
+.ProseMirror ::-moz-selection {
+  background-color: rgba(46, 170, 220, 0.28);
+}
+
+.dark .ProseMirror ::-moz-selection {
+  background-color: rgba(46, 170, 220, 0.34);
+}
+
+/* Persistent highlight for inline AI selected range (independent of focus) */
+.ProseMirror .inline-ai-selection-highlight {
+  background-color: rgba(46, 170, 220, 0.28);
+}
+
+.dark .ProseMirror .inline-ai-selection-highlight {
+  background-color: rgba(46, 170, 220, 0.34);
 }
 
 /* Bubble Menu Animation */

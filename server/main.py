@@ -26,6 +26,7 @@ from api import (
     global_agent,
     images,
     import_file,
+    inline,
     kb_agent,
     knowledge_base,
     notifications,
@@ -38,6 +39,7 @@ from api import (
     versions,
 )
 from config import CORS_ORIGINS, get_cors_headers, get_settings
+from db.database import engine as db_engine
 from db.database import init_db
 from exceptions import AppException
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
@@ -88,6 +90,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down server...")
+    await db_engine.dispose()
 
 
 # Create FastAPI app with OpenAPI documentation
@@ -271,6 +274,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 # Protected API routes
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(conversations.router, prefix="/api/chat", tags=["chat"])
+app.include_router(inline.router, prefix="/api/inline", tags=["chat"])
 app.include_router(autocomplete.router, prefix="/api/autocomplete", tags=["autocomplete"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(versions.router, prefix="/api/versions", tags=["versions"])

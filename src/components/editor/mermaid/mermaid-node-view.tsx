@@ -9,8 +9,7 @@ import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
-import { useChatContextStore } from "@/stores/chat-context-store";
-import { useLayoutStore } from "@/stores/layout-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { MermaidEditorPanel } from "./mermaid-editor-panel";
 
 /**
@@ -214,15 +213,25 @@ export function MermaidNodeView({
   // Ask AI about this chart — wrap in mermaid code fence so AI knows it's a chart
   const handleAskInChat = useCallback(() => {
     if (code && nodePos !== undefined) {
-      useChatContextStore.getState().addChatContext({
-        type: "selection",
-        text: "```mermaid\n" + code + "\n```",
+      useEditorStore.getState().setSelection({
         from: nodePos,
         to: nodePos + node.nodeSize,
+        text: "```mermaid\n" + code + "\n```",
       });
-      useLayoutStore.getState().setChatOpen(true);
+      const from = nodePos;
+      const to = nodePos + node.nodeSize;
+      const beforeStart = Math.max(0, from - 220);
+      const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
+      useEditorStore
+        .getState()
+        .openInlineAI({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, "ask", {
+          from,
+          to,
+          beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
+          afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
+        });
     }
-  }, [code, nodePos, node.nodeSize]);
+  }, [code, nodePos, node.nodeSize, editor]);
 
   // Editing mode
   if (isEditing) {

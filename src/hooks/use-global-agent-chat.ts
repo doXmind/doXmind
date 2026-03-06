@@ -413,8 +413,9 @@ export function useGlobalAgentChat() {
   );
 
   const stop = useCallback(() => {
+    clearTodos();
     streamControllerRef.current.abort();
-  }, []);
+  }, [clearTodos]);
 
   return {
     sendMessage,

@@ -4,6 +4,7 @@ Tests the PDF, DOCX, and Markdown import functionality.
 """
 
 import io
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -144,9 +145,10 @@ class TestImportEndpoint:
         return _create_test_app()
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     def test_rejects_unsupported_extension(self, client):
         """Should reject files with unsupported extensions."""
@@ -354,9 +356,10 @@ class TestIntegration:
         return _create_test_app()
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     @patch("api.import_file.FileModel")
     async def test_full_markdown_import_flow(self, mock_file_model):
@@ -409,9 +412,10 @@ class TestEdgeCases:
         return _create_test_app()
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     def test_empty_filename(self, client):
         """Should handle empty filename."""

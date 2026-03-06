@@ -27,6 +27,12 @@ export default defineConfig({
     },
     reporters: ["default", "html"],
     testTimeout: 10000,
+    onConsoleLog(log, type) {
+      if (type === "stderr" && /^\[ERROR\] \[(Store:File|Chat)\]/.test(log)) {
+        return false;
+      }
+      return true;
+    },
   },
   resolve: {
     alias: {

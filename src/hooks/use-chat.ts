@@ -15,9 +15,18 @@ import { useStreamingStore, type ToolStatus } from "@/stores/streaming-store";
 import { processSSEStream, isAbortError, createStreamController } from "@/lib/streaming";
 import { useEditOperations, type EditOperation } from "./use-edit-operations";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { useEditorStore } from "@/stores/editor-store";
+import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useChatContextStore } from "@/stores/chat-context-store";
 import { api } from "@/lib/api";
 import { QUICK_EDIT_PROMPTS } from "@/lib/quick-edit-prompts";
 import type { ChatStreamEvent } from "@/types/stream-events";
+
+interface ChatRequestOptions {
+  origin?: "inline" | "side";
+  intent?: "write" | "edit" | "ask";
+  requestId?: string;
+}
 
 // Re-export types for convenience
 export type { EditOperation } from "./use-edit-operations";
@@ -69,8 +78,24 @@ export function useChat() {
       fileIds: string[],
       contexts?: MessageContextItem[] | null,
       dataFileIds?: string[],
-      quickEdit?: { action: string; originalText: string } | null
+      quickEdit?: { action: string; originalText: string } | null,
+      inlineReference?: {
+        from: number;
+        to: number;
+        beforeText: string;
+        afterText: string;
+      } | null,
+      options?: ChatRequestOptions
     ) => {
+      const hasSelectionContexts = !!contexts?.some((c) => c.type === "selection");
+      const isInlineOrigin = options?.origin === "inline";
+      const inlineRequestId = options?.requestId || crypto.randomUUID();
+      const inlineIntent = options?.intent || "ask";
+
+      if (isInlineOrigin) {
+        useEditorStore.getState().startInlineAIResponse(inlineRequestId, inlineIntent);
+      }
+
       const conversationId = ensureConversation(fileIds[0] || null);
 
       // Build the full message for AI (include text contexts with XML tags)
@@ -86,6 +111,19 @@ export function useChat() {
           })
           .join("\n\n");
         messageForAI = `${message}\n\n<selected_content>\n${contextTexts}\n</selected_content>`;
+      }
+
+      if (inlineReference) {
+        const beforeText = inlineReference.beforeText.trim();
+        const afterText = inlineReference.afterText.trim();
+        const anchorBlock =
+          "<cursor_anchor>\n" +
+          `  <before>${beforeText}</before>\n` +
+          `  <after>${afterText}</after>\n` +
+          `  <range from=\"${inlineReference.from}\" to=\"${inlineReference.to}\" />\n` +
+          "</cursor_anchor>\n\n" +
+          "Important: If the user asks to continue/add/insert, use this anchor as the primary insertion location.";
+        messageForAI = `${messageForAI}\n\n${anchorBlock}`;
       }
 
       // Inject edit feedback from previous diff review session
@@ -132,13 +170,6 @@ export function useChat() {
         contexts,
         quickEdit: quickEdit || null,
       });
-
-      // Track onboarding step
-      import("@/stores/onboarding-store")
-        .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeStep("ai-chat");
-        })
-        .catch(() => {});
 
       // Save user message to backend
       // Strip base64 data from contexts before saving (too large for DB storage)
@@ -262,11 +293,19 @@ export function useChat() {
             case "text":
               if (parsed.content) {
                 appendToMessage(conversationId, assistantMessageId, parsed.content);
+                if (isInlineOrigin) {
+                  const editorState = useEditorStore.getState();
+                  editorState.setInlineAIResponseStatus(inlineRequestId, "streaming");
+                  editorState.appendInlineAIResponse(inlineRequestId, parsed.content);
+                }
               }
               break;
 
             case "thinking_start":
               setThinking({ isThinking: true, content: "" });
+              if (isInlineOrigin) {
+                useEditorStore.getState().setInlineAIResponseStatus(inlineRequestId, "thinking");
+              }
               break;
 
             case "thinking":
@@ -377,6 +416,9 @@ export function useChat() {
               // Sync final todo state from summary
               if (parsed.todos) {
                 setTodos(parsed.todos);
+              }
+              if (isInlineOrigin) {
+                useEditorStore.getState().setInlineAIResponseStatus(inlineRequestId, "ready");
               }
               break;
 
@@ -547,6 +589,15 @@ export function useChat() {
           errorMessage = "\n\n*Error: Failed to get response.*";
         }
         appendToMessage(conversationId, assistantMessageId, errorMessage);
+        if (isInlineOrigin) {
+          useEditorStore
+            .getState()
+            .setInlineAIResponseStatus(
+              inlineRequestId,
+              "error",
+              errorMessage.replace(/^\n\n\*/, "").replace(/\*$/, "")
+            );
+        }
       } finally {
         setMessageStreaming(conversationId, assistantMessageId, false);
         setStreaming(false);
@@ -566,6 +617,37 @@ export function useChat() {
           }, 3000);
         }
         toolInputRef.current = "";
+        if (isInlineOrigin) {
+          const inlineState = useEditorStore.getState().inlineAIResponse;
+          if (inlineState && inlineState.requestId === inlineRequestId) {
+            if (inlineState.status === "thinking" || inlineState.status === "streaming") {
+              if (!inlineState.content.trim() && collectedEdits.length > 0) {
+                useEditorStore
+                  .getState()
+                  .appendInlineAIResponse(
+                    inlineRequestId,
+                    "Edits are ready in the document. Review and accept them inline."
+                  );
+              }
+              useEditorStore.getState().setInlineAIResponseStatus(inlineRequestId, "ready");
+            }
+          }
+        }
+
+        if (hasSelectionContexts) {
+          const contextStore = useChatContextStore.getState();
+          contextStore.chatContexts
+            .filter((ctx) => ctx.type === "selection")
+            .forEach((ctx) => contextStore.removeChatContext(ctx.id));
+
+          useEditorStore.getState().setSelection(null);
+          const editor = useEditorRefStore.getState().editor;
+          if (editor) {
+            editor.commands.clearInlineAISelectionHighlight();
+            const { to } = editor.state.selection;
+            editor.commands.setTextSelection(to);
+          }
+        }
       }
     },
     [
@@ -588,19 +670,25 @@ export function useChat() {
   );
 
   const stopStreaming = useCallback(() => {
+    clearTodos();
     streamControllerRef.current.abort();
-  }, []);
+  }, [clearTodos]);
 
   /** Send a quick edit action as a chat message with selection context */
   const sendQuickEditMessage = useCallback(
-    async (action: string, selectedText: string, fileIds: string[]) => {
+    async (
+      action: string,
+      selectedText: string,
+      fileIds: string[],
+      options?: ChatRequestOptions
+    ) => {
       const prompt = QUICK_EDIT_PROMPTS[action];
       if (!prompt) return;
 
       const contexts: MessageContextItem[] = [{ type: "selection", text: selectedText }];
       const quickEdit = { action, originalText: selectedText };
 
-      await sendMessage(prompt, fileIds, contexts, [], quickEdit);
+      await sendMessage(prompt, fileIds, contexts, [], quickEdit, null, options);
     },
     [sendMessage]
   );

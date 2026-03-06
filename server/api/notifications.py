@@ -96,16 +96,12 @@ async def notification_stream(
 
     async def event_generator():
         try:
-            connected = json.dumps(
-                {"event": "connected", "unread_count": initial_count}
-            )
+            connected = json.dumps({"event": "connected", "unread_count": initial_count})
             yield f"data: {connected}\n\n".encode()
 
             while True:
                 try:
-                    event = await asyncio.wait_for(
-                        queue.get(), timeout=heartbeat_interval
-                    )
+                    event = await asyncio.wait_for(queue.get(), timeout=heartbeat_interval)
                     data = json.dumps(event, ensure_ascii=False)
                     yield f"data: {data}\n\n".encode()
                 except TimeoutError:
@@ -172,8 +168,6 @@ async def mark_all_read(
     updated = await service.mark_all_read(user_id)
 
     # Broadcast zero count to other tabs
-    await notification_broadcaster.publish(
-        user_id, {"event": "unread_count", "unread_count": 0}
-    )
+    await notification_broadcaster.publish(user_id, {"event": "unread_count", "unread_count": 0})
 
     return {"status": "ok", "updated": updated}

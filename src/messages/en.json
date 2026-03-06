@@ -145,7 +145,7 @@
       "copy": "Copy",
       "paste": "Paste",
       "selectAll": "Select All",
-      "askAI": "Ask AI",
+      "askAI": "Ask Inline AI",
       "quickEdit": "Quick Edit",
       "addComment": "Add Comment",
       "lookUp": "Look Up"
@@ -288,7 +288,9 @@
       "moveUp": "Move Up",
       "moveDown": "Move Down",
       "color": "Color",
-      "askAI": "Ask AI"
+      "askAI": "Ask AI",
+      "askInline": "Ask Inline AI",
+      "askInSidebar": "Send to Side Chat"
     },
     "blockHandle": {
       "addBelow": "Add block below",
@@ -297,6 +299,7 @@
     "bubbleMenu": {
       "inlineImprove": "inline improve",
       "askAIInChat": "ask ai in chat",
+      "askInlineAI": "Ask Inline AI",
       "bold": "Bold",
       "italic": "Italic",
       "underline": "Underline",
@@ -405,7 +408,7 @@
       "copy": "Copy",
       "paste": "Paste",
       "format": "Format",
-      "askAI": "Ask AI"
+      "askAI": "Ask Inline AI"
     },
     "linkMenu": {
       "urlPlaceholder": "Enter URL",
@@ -424,7 +427,9 @@
       "moveDown": "Move down",
       "align": "Align",
       "color": "Color",
-      "askAI": "Ask AI"
+      "askAI": "Ask AI",
+      "askInline": "Ask Inline AI",
+      "askInSidebar": "Send to Side Chat"
     },
     "versionPanel": {
       "manualEdit": "Manual edit",
@@ -436,7 +441,77 @@
       "fileNotFound": "File not found",
       "noChangesIdentical": "No differences — content is already identical",
       "versionsAutoCreated": "Versions are created automatically when AI edits your document.",
-      "preview": "Preview"
+      "preview": "Preview",
+      "inlineAI": {
+        "placeholder": "Ask AI anything...",
+        "writePlaceholder": "Tell AI what to write...",
+        "editPlaceholder": "Tell AI how to revise this...",
+        "followupHint": "Ask one-off follow-ups here; for ongoing discussion, use Sidebar Chat",
+        "thinking": "Thinking",
+        "stop": "Stop",
+        "close": "Close",
+        "dismiss": "Dismiss",
+        "suggested": "Suggested",
+        "rewrite": "Rewrite",
+        "openStudio": "Continue in Sidebar Chat",
+        "sendSelection": "Send Selection",
+        "insertAsBlock": "Insert below",
+        "copy": "Copy",
+        "done": "Done.",
+        "error": "Failed to get response.",
+        "diffReview": {
+          "count": "{count} pending changes",
+          "accept": "Keep",
+          "discard": "Undo",
+          "tryAgain": "Try again"
+        },
+        "tabs": {
+          "write": "Write",
+          "edit": "Edit",
+          "ask": "Ask"
+        },
+        "actions": {
+          "write": {
+            "continue": {
+              "label": "Continue writing",
+              "prompt": "Continue writing naturally from the cursor anchor. Keep the same language, tone, and structure."
+            },
+            "summary": {
+              "label": "Add a summary",
+              "prompt": "Add a concise summary near the cursor anchor and keep it consistent with the document context."
+            },
+            "actions": {
+              "label": "Add action items",
+              "prompt": "Add actionable next steps as bullet points at the cursor anchor. Keep each item short and concrete."
+            },
+            "brainstorm": {
+              "label": "Brainstorm ideas",
+              "prompt": "Brainstorm practical ideas related to this section and insert them near the cursor anchor as bullets."
+            }
+          },
+          "edit": {
+            "improve": { "label": "Improve writing" },
+            "proofread": { "label": "Proofread" },
+            "simplify": { "label": "Simplify language" },
+            "longer": { "label": "Make longer" },
+            "shorter": { "label": "Make shorter" }
+          },
+          "ask": {
+            "explain": {
+              "label": "Explain this",
+              "prompt": "Explain the selected content clearly and briefly."
+            },
+            "check": {
+              "label": "Check issues",
+              "prompt": "Check this section for logic, clarity, and potential issues, then list key findings."
+            },
+            "evaluate": {
+              "label": "Evaluate this",
+              "prompt": "Evaluate this section for clarity, persuasiveness, and completeness, then give a short verdict."
+            }
+          }
+        }
+      }
     },
     "mermaid": {
       "templates": "Templates",
@@ -454,6 +529,10 @@
     "improveStyle": "Improve writing style",
     "summarize": "Summarize document",
     "brainstorm": "Brainstorm ideas",
+    "suggestionPromptWriteReport": "Help me write a report",
+    "suggestionPromptImproveStyle": "Help me improve the writing style",
+    "suggestionPromptSummarize": "Summarize this document",
+    "suggestionPromptBrainstorm": "Help me brainstorm ideas",
     "improveWriting": "Improve my writing",
     "summarizeThis": "Summarize this",
     "continueWriting": "Continue writing",
@@ -537,6 +616,7 @@
     "openAIChat": "Open AI Chat",
     "disableWebSearch": "Disable web search",
     "imageContext": "Image",
+    "inlineResultContext": "Inline AI Result",
     "emptyBlock": "Empty block",
     "selectedTextChars": "Selected Text ({count} chars)",
     "removeContext": "Remove context",
@@ -782,7 +862,6 @@
     "profile": "Profile",
     "settings": "Settings",
     "help": "Help",
-    "restartTour": "Restart Tour",
     "logOut": "Log out",
     "loggingOut": "Logging out...",
     "logoutFailed": "Failed to logout. Please try again.",
@@ -859,7 +938,7 @@
     "everyGreatPiece": "Every great piece of writing starts with a single word.",
     "pickTemplateToStart": "Pick a template to get started.",
     "welcomeToDoXmind": "Welcome to doXmind",
-    "interactiveTutorial": "Interactive tutorial with examples to try",
+    "interactiveTutorial": "Complete doXmind usage guide",
     "startFromScratch": "Start from scratch",
     "blogPost": "Blog Post",
     "blogPostDesc": "Article or blog post template",
@@ -1515,106 +1594,6 @@
     "loginTitle": "Sign In - doXmind",
     "helpTitle": "Help - doXmind"
   },
-  "onboarding": {
-    "groupWelcome": "Welcome",
-    "groupHomeSearch": "Home & Search",
-    "groupAIWriting": "AI Writing",
-    "groupAIEditing": "AI Editing",
-    "groupChatKnowledge": "Chat & Knowledge",
-    "groupNavigation": "Navigation",
-    "groupFileManagement": "File Management",
-    "groupFinishing": "Finishing",
-
-    "hintAutocompleteTitle": "AI Autocomplete",
-    "hintAutocompleteDesc": "Press Tab to accept the full suggestion, Ctrl+Space for word-by-word, or Escape to dismiss.",
-    "hintSlashTitle": "Slash Commands",
-    "hintSlashDesc": "Browse all blocks — headings, tables, code, math, callouts, and more. Type / anywhere to open.",
-    "hintSearchTitle": "Smart Search",
-    "hintSearchDesc": "Switch to the AI tab for semantic search that understands meaning, not just keywords.",
-    "hintQuickEditTitle": "Quick Edit",
-    "hintQuickEditDesc": "Choose an action to apply instantly, or click Ask in Chat for custom instructions.",
-    "hintDiffReviewTitle": "Review Changes",
-    "hintDiffReviewDesc": "Accept or reject each AI edit individually, or use Accept All / Reject All for the entire batch.",
-    "hintTextReviewTitle": "Writing Review",
-    "hintTextReviewDesc": "Color-coded suggestions appear as underlines. Click any underlined text to see details and apply fixes.",
-    "hintKbTitle": "Knowledge Base",
-    "hintKbDesc": "Upload PDFs and documents as references — AI will search and cite them when answering your questions.",
-    "hintFocusModeTitle": "Focus Mode",
-    "hintFocusModeDesc": "Distraction-free writing. Press F11 again or hover the top of the screen to exit.",
-
-    "tourStep1Title": "Welcome to doXmind!",
-    "tourStep1Instruction": "Let's walk through a complete tour of your AI writing workspace. You'll discover every feature hands-on — it only takes about 5 minutes.",
-    "tourStep2Title": "Search & Ask AI",
-    "tourStep2Instruction": "This is your search bar. In Ask AI mode, get AI answers from your knowledge base. Switch to Search mode to find documents by content.",
-    "tourStep3Title": "AI Answers",
-    "tourStep3Instruction": "Ask any question and the AI will search your documents and give a cited answer. Perfect for research and quick lookups.",
-    "tourStep4Title": "AI Autocomplete",
-    "tourStep4Instruction": "Place your cursor at the end of the incomplete paragraph (ending with \"the way we\") and pause. Ghost text will appear — press Tab to accept it.",
-    "tourStep5Title": "Slash Commands",
-    "tourStep5Instruction": "Click on the empty line below the \"Slash Commands\" heading and type / to open the block menu. Pick any block to insert.",
-    "tourStep6Title": "Quick Edit",
-    "tourStep6Instruction": "Select the verbose sentence under \"Quick Edit\" and choose an action (like \"Simplify\" or \"Improve Writing\") from the popup menu.",
-    "tourStep7Title": "Review AI Changes",
-    "tourStep7Instruction": "The AI has suggested changes. Click Accept or Reject on each highlighted change, or use Accept All / Reject All.",
-    "tourStep8Title": "Writing Review",
-    "tourStep8Instruction": "Open the More menu (\u2026) in the toolbar and click \"AI Writing Review\" to get color-coded writing feedback on your document.",
-    "tourStep9Title": "AI Chat",
-    "tourStep9Instruction": "Open the chat panel and send a message like \"Summarize this document\" to see AI streaming in action.",
-    "tourStep10Title": "Knowledge Base",
-    "tourStep10Instruction": "Click the attachment icon in the chat input to see the Knowledge Base. You can upload PDFs and docs as context for AI.",
-    "tourStep11Title": "Outline & Mindlines",
-    "tourStep11Instruction": "Toggle the sidebar to view your document outline. Click any heading to jump to it.",
-    "tourStep12Title": "Version History",
-    "tourStep12Instruction": "Open the More menu (\u2026) in the toolbar, then click Version History. Every AI edit is automatically saved as a version.",
-    "tourStep13Title": "Focus Mode",
-    "tourStep13Instruction": "Press F11 or click the Focus Mode button for distraction-free writing. Press F11 again to exit.",
-    "tourStep14Title": "Export",
-    "tourStep14Instruction": "Open the More menu (\u2026) in the toolbar to export your document as Markdown, PDF, or Word.",
-    "tourStep15Title": "Create New",
-    "tourStep15Instruction": "Click the + button to create a new document, folder, start from a template, or import a file.",
-    "tourStep16Title": "Recent Files",
-    "tourStep16Instruction": "Your most recently edited documents appear here for quick access.",
-    "tourStep17Title": "Favorites",
-    "tourStep17Instruction": "Star important documents to pin them here. Use the menu on any file card to add favorites.",
-    "tourStep18Title": "File Actions",
-    "tourStep18Instruction": "Hover over any document card to see its options — rename, share, export, or delete.",
-    "tourStep19Title": "You're All Set!",
-    "tourStep19Instruction": "You've explored all the key features of doXmind. Time to start writing!",
-
-    "tourWelcomeTitle": "Welcome to doXmind!",
-    "tourWelcomeMessage": "Take a quick 5-minute tour to discover every feature hands-on.",
-    "startTutorial": "Start Tutorial",
-    "skipExplore": "Skip — I'll explore on my own",
-    "featureCount": "{count} features",
-    "featureCountSingular": "{count} feature",
-
-    "youreAllSet": "You're All Set!",
-    "completedFeaturesMessage": "You've explored all {count} key features. You're ready to create amazing content with AI by your side.",
-    "startWritingButton": "Start Writing",
-    "restartTour": "Restart Tour",
-
-    "completedFeatureSearch": "Search & Ask AI",
-    "completedFeatureKBAgent": "KB Agent",
-    "completedFeatureAutocomplete": "Autocomplete",
-    "completedFeatureSlash": "Slash Commands",
-    "completedFeatureQuickEdit": "Quick Edit",
-    "completedFeatureDiff": "Diff Review",
-    "completedFeatureWritingReview": "Writing Review",
-    "completedFeatureChat": "AI Chat",
-    "completedFeatureKB": "Knowledge Base",
-    "completedFeatureMindlines": "Mindlines",
-    "completedFeatureVersionHistory": "Version History",
-    "completedFeatureFocusMode": "Focus Mode",
-    "completedFeatureExport": "Export",
-    "completedFeatureNewButton": "New Button",
-    "completedFeatureRecentFiles": "Recent Files",
-    "completedFeatureFavorites": "Favorites",
-    "completedFeatureFileActions": "File Actions",
-
-    "skipTutorial": "Skip tutorial",
-    "tryIt": "Try it",
-    "skipStep": "Skip step"
-  },
   "help": {
     "pageTitle": "Help & Feature Guide",
     "pageSubtitle": "Everything you need to know about using doXmind, the AI-powered writing assistant.",
@@ -1644,8 +1623,6 @@
     "gettingStartedIntro": "doXmind has three main areas. The <b>Outline Sidebar</b> (left) shows your document structure. The <b>Editor</b> (center) is where you write. The <b>AI Chat</b> (right) lets you interact with AI.",
     "createFirstDoc": "Create your first document:",
     "createFirstDocDesc": "<b>Create your first document:</b> Click the <b>+ New Document</b> button on the home dashboard, or use the Command Palette (<ctrlK />) and type \"New Document\".",
-    "onboardingTour": "Onboarding tour:",
-    "onboardingTourDesc": "<b>Onboarding tour:</b> When you first sign in, an interactive tour walks you through the key features. You can restart it anytime from the user menu → <b>Restart Tour</b>.",
 
     "homeDashboardIntro": "The home dashboard is your central hub for finding, creating, and managing documents. It features a dual-mode search bar, recent files, favorites, and quick actions.",
     "searchAskAI": "Search & Ask AI",
@@ -1662,7 +1639,7 @@
     "newFolder": "New Folder",
     "newFolderDesc": "Creates a folder at the root level to organize files.",
     "fromTemplate": "From Template",
-    "fromTemplateDesc": "Pick from 4 templates: Welcome tutorial, Blank, Blog Post, or Meeting Notes.",
+    "fromTemplateDesc": "Pick from 4 templates: doXmind User Guide, Blank, Blog Post, or Meeting Notes.",
     "importFile": "Import File",
     "importFileDesc": "Upload a PDF, DOCX, or Markdown file to convert into a document.",
     "fileActions": "File Actions",
@@ -1693,7 +1670,7 @@
     "mathBlocksDesc": "<b>Math Blocks:</b> Inline math with <code>$...$</code> and display math with <code>$$...$$</code>. Supports full LaTeX syntax.",
     "tablesDesc": "<b>Tables:</b> Insert via slash command. Use the column/row menus to add, remove, or reorder rows and columns.",
     "otherBlocksDesc": "<b>Other blocks:</b> Callouts (info, warning, error, success), Toggle/collapsible sections, Images (with resize handles), and Horizontal dividers.",
-    "slashCommandTip": "Type <code>/</code> at the start of a new line to open the slash command menu and quickly insert any block type.",
+    "slashCommandTip": "Press <code>Space</code> on an empty new line for Inline AI, or type <code>/</code> to open slash commands and insert blocks.",
 
     "aiQuickEditIntro": "Select any text in the editor to see a floating AI menu with instant editing options. The AI processes your selection and shows a visual diff you can accept or reject.",
     "stepSelectText": "Select text",

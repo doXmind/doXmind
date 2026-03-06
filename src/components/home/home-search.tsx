@@ -59,7 +59,6 @@ export function HomeSearch({ query, onQueryChange, isSearching, onClose }: HomeS
 
       {/* Search input */}
       <div
-        data-onboarding="home-search"
         className={cn(
           "relative flex h-12 items-center gap-3 rounded-2xl border px-4 backdrop-blur-sm transition-all duration-300 md:h-14 md:px-5",
           isFocused

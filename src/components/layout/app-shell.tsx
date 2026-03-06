@@ -3,7 +3,6 @@
 import { cn } from "@/lib/utils";
 import { Header } from "./header";
 import { BottomTabBar } from "./bottom-tab-bar";
-import { InteractiveTour } from "@/components/onboarding/interactive-tour";
 import { LogoutAnimation } from "./logout-animation";
 
 interface AppShellProps {
@@ -29,7 +28,6 @@ export function AppShell({ children, hideHeader = false }: AppShellProps) {
         {children}
       </div>
       {!hideHeader && <BottomTabBar />}
-      <InteractiveTour />
       <LogoutAnimation />
     </div>
   );

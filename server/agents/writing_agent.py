@@ -105,6 +105,7 @@ class WritingAgent:
         api_key: str | None = None,
         model: str | None = None,
         is_quick_edit: bool = False,
+        tool_profile: str | None = None,
     ):
         """Initialize the writing agent.
 
@@ -120,6 +121,7 @@ class WritingAgent:
         """
         self.mode = mode
         self.is_quick_edit = is_quick_edit
+        self.tool_profile = tool_profile
         self.kb_attachments = kb_attachments or []
         self.data_files_metadata = data_files_metadata or []
         self.web_search_enabled = web_search_enabled
@@ -161,6 +163,7 @@ class WritingAgent:
             has_skills=self.has_skills,
             web_search_enabled=web_search_enabled,
             is_quick_edit=self.is_quick_edit,
+            tool_profile=self.tool_profile,
         )
 
         # Create tool executor

@@ -144,7 +144,9 @@ class Settings(BaseSettings):
     default_model: str = "google/gemini-3.1-flash-lite-preview"  # Instant mode (no thinking)
     thinking_model: str = "minimax/minimax-m2.5"  # Thinking/deep reasoning mode
     fast_model: str = "google/gemini-2.5-flash-lite"  # For quick operations (autocomplete, quick edits, simplified slides)
-    review_model: str = "google/gemini-3.1-flash-lite-preview"  # For text review (needs JSON mode support)
+    review_model: str = (
+        "google/gemini-3.1-flash-lite-preview"  # For text review (needs JSON mode support)
+    )
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
 
     # =========================================================================

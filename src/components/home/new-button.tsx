@@ -38,7 +38,6 @@ export const NewButton = memo(function NewButton({
           size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-foreground"
           aria-label={t("newDocument")}
-          data-onboarding="new-button"
         >
           <Plus className="h-4 w-4" />
         </Button>

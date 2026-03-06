@@ -30,14 +30,17 @@ export const ContextPill = memo(function ContextPill({
   const [isExpanded, setIsExpanded] = useState(true);
 
   const isImage = context.type === "image";
-  const isSelection = context.type === "selection";
+  const isSelection = context.type === "selection" || context.type === "inline_result";
+  const isInlineResult = context.type === "inline_result";
   const isEmptySelection = isSelection && !context.text.trim();
   const Icon = isImage ? ImageIcon : FileText;
   const label = isImage
     ? `${t("imageContext")}${context.alt ? `: ${context.alt}` : ""}`
-    : isEmptySelection
-      ? t("emptyBlock")
-      : t("selectedTextChars", { count: context.text.length });
+    : isInlineResult
+      ? t("inlineResultContext")
+      : isEmptySelection
+        ? t("emptyBlock")
+        : t("selectedTextChars", { count: context.text.length });
 
   // Show action buttons for selection contexts when showActions is true
   const shouldShowActions = showActions && isSelection;

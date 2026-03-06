@@ -16,12 +16,10 @@ import { LoadingScreen } from "@/components/loading-screen";
 import { KeyboardShortcutsModal } from "@/components/ui/keyboard-shortcuts-modal";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { QuickSwitcher } from "@/components/ui/quick-switcher";
-import { ONBOARDING_STEPS } from "@/stores/onboarding-store";
 import { NetworkStatusIndicator } from "@/components/ui/network-status-indicator";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useHighContrast } from "@/hooks/use-high-contrast";
@@ -31,7 +29,6 @@ import { useBlockSelection } from "@/hooks/use-block-selection";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
-import { useOnboardingStepDetector } from "@/hooks/use-onboarding-step-detector";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { PanelLeftOpen } from "lucide-react";
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
@@ -63,7 +60,6 @@ function LegacyUrlRedirect() {
 
 export default function EditorPage() {
   const params = useParams();
-  const router = useRouter();
 
   // [[...fileId]] gives params.fileId as string[] | undefined
   // /editor -> undefined, /editor/abc123 -> ["abc123"]
@@ -158,25 +154,6 @@ export default function EditorPage() {
 
   // Apply high contrast mode from persisted settings
   useHighContrast();
-
-  // Interactive onboarding step detection
-  useOnboardingStepDetector();
-
-  // Bind tutorial file when the tour navigates to an editor step
-  const { onboardingCompleted, currentStepIndex } = useOnboardingStore();
-  useEffect(() => {
-    if (onboardingCompleted || currentStepIndex < 0) return;
-    if (isLoading) return;
-    const step = ONBOARDING_STEPS[currentStepIndex];
-    if (!step || step.page !== "editor") return;
-    if (useOnboardingStore.getState().tutorialFileId) return;
-
-    const existingTutorial = files.find((f) => f.name.startsWith("Getting Started with doXmind"));
-    if (existingTutorial) {
-      useOnboardingStore.getState().setTutorialFileId(existingTutorial.id);
-      router.push(`/editor/${existingTutorial.id}`);
-    }
-  }, [onboardingCompleted, currentStepIndex, isLoading, files, router]);
 
   // Load files from server on mount. Skip if already synced to avoid redundant
   // fetches on page remounts (Next.js re-keys the page on param changes).

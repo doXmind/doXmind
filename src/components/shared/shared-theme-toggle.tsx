@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Moon, Sun, Monitor } from "lucide-react";
+import { Check, Monitor, Palette } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useThemeManager } from "@/hooks/use-theme-manager";
@@ -74,8 +74,6 @@ function MiniThemeCard({
 
 export function ThemeQuickPicker() {
   const t = useTranslations("settings");
-  const { currentThemeId, selectTheme, isSystemMode, setSystemMode, lightThemes, darkThemes } =
-    useThemeManager();
 
   return (
     <Popover>
@@ -84,71 +82,77 @@ export function ThemeQuickPicker() {
           className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           aria-label={t("chooseTheme")}
         >
-          <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+          <Palette className="h-4 w-4" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[280px] p-3">
-        <div className="space-y-3">
-          {/* Light themes */}
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t("light")}
-            </span>
-            <div className="grid grid-cols-4 gap-1">
-              {lightThemes.map((theme) => (
-                <MiniThemeCard
-                  key={theme.id}
-                  theme={theme}
-                  isActive={currentThemeId === theme.id}
-                  onSelect={() => selectTheme(theme.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Dark themes */}
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t("dark")}
-            </span>
-            <div className="grid grid-cols-4 gap-1">
-              {darkThemes.map((theme) => (
-                <MiniThemeCard
-                  key={theme.id}
-                  theme={theme}
-                  isActive={currentThemeId === theme.id}
-                  onSelect={() => selectTheme(theme.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Follow system */}
-          <div className="flex items-center justify-between border-t pt-2">
-            <div className="flex items-center gap-1.5">
-              <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{t("followSystem")}</span>
-            </div>
-            <button
-              onClick={() => setSystemMode(!isSystemMode)}
-              className={cn(
-                "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors",
-                isSystemMode ? "bg-primary" : "bg-muted"
-              )}
-            >
-              <span
-                className={cn(
-                  "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-background shadow-sm ring-0 transition-transform",
-                  isSystemMode ? "translate-x-[14px]" : "translate-x-[2px]",
-                  "mt-[2px]"
-                )}
-              />
-            </button>
-          </div>
-        </div>
+        <ThemePickerPanel />
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function ThemePickerPanel() {
+  const t = useTranslations("settings");
+  const { currentThemeId, selectTheme, isSystemMode, setSystemMode, lightThemes, darkThemes } =
+    useThemeManager();
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          {t("light")}
+        </span>
+        <div className="grid grid-cols-4 gap-1">
+          {lightThemes.map((theme) => (
+            <MiniThemeCard
+              key={theme.id}
+              theme={theme}
+              isActive={currentThemeId === theme.id}
+              onSelect={() => selectTheme(theme.id)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          {t("dark")}
+        </span>
+        <div className="grid grid-cols-4 gap-1">
+          {darkThemes.map((theme) => (
+            <MiniThemeCard
+              key={theme.id}
+              theme={theme}
+              isActive={currentThemeId === theme.id}
+              onSelect={() => selectTheme(theme.id)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between border-t pt-2">
+        <div className="flex items-center gap-1.5">
+          <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">{t("followSystem")}</span>
+        </div>
+        <button
+          onClick={() => setSystemMode(!isSystemMode)}
+          className={cn(
+            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors",
+            isSystemMode ? "bg-primary" : "bg-muted"
+          )}
+        >
+          <span
+            className={cn(
+              "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-background shadow-sm ring-0 transition-transform",
+              isSystemMode ? "translate-x-[14px]" : "translate-x-[2px]",
+              "mt-[2px]"
+            )}
+          />
+        </button>
+      </div>
+    </div>
   );
 }
 

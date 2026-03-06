@@ -18,10 +18,19 @@ export type ImageContext = {
   mediaType?: string; // MIME type (image/jpeg, image/png, etc.)
 };
 
-export type ChatContextItem = SelectionContext | ImageContext;
+export type InlineResultContext = {
+  id: string;
+  type: "inline_result";
+  text: string;
+};
+
+export type ChatContextItem = SelectionContext | ImageContext | InlineResultContext;
 
 // Input type for adding context (without id)
-export type ChatContextInput = Omit<SelectionContext, "id"> | Omit<ImageContext, "id">;
+export type ChatContextInput =
+  | Omit<SelectionContext, "id">
+  | Omit<ImageContext, "id">
+  | Omit<InlineResultContext, "id">;
 
 interface ChatContextState {
   chatContexts: ChatContextItem[];

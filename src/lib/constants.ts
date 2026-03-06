@@ -324,13 +324,3 @@ export const REVIEW_POPUP = {
   /** Padding from viewport edges */
   VIEWPORT_PADDING: 16,
 } as const;
-
-// =============================================================================
-// Local Storage Keys
-// =============================================================================
-
-/** Local storage key prefixes */
-export const STORAGE_KEYS = {
-  /** Onboarding completion flag */
-  ONBOARDING_COMPLETED: "doxmind-onboarding-completed",
-} as const;

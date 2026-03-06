@@ -15,12 +15,10 @@ import {
   Clock,
   Download,
   Keyboard,
-  Sun,
-  Moon,
+  Palette,
   SpellCheck,
   Play,
 } from "lucide-react";
-import { useThemeManager } from "@/hooks/use-theme-manager";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -34,6 +32,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
+import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 import { cn, formatShortcut } from "@/lib/utils";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -71,7 +70,7 @@ export function UnifiedHeader() {
     spellcheckEnabled,
     setSpellcheckEnabled,
   } = useEditorStore();
-  const { currentTheme, toggleBaseMode } = useThemeManager();
+  const tSettings = useTranslations("settings");
   const t = useTranslations("editor");
 
   const currentFile = files.find((f) => f.id === currentFileId);
@@ -101,12 +100,6 @@ export function UnifiedHeader() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-
-        import("@/stores/onboarding-store")
-          .then(({ useOnboardingStore }) => {
-            useOnboardingStore.getState().completeStep("export");
-          })
-          .catch(() => {});
       }),
       {
         loading: t("exportingAs", { format: formatLabel }),
@@ -200,7 +193,6 @@ export function UnifiedHeader() {
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     aria-label={t("moreActions")}
-                    data-onboarding="more-menu"
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
@@ -208,11 +200,7 @@ export function UnifiedHeader() {
               </Tooltip>
               <DropdownMenuContent align="end" className="w-56">
                 {/* AI Writing Review */}
-                <DropdownMenuItem
-                  onClick={handleReviewClick}
-                  disabled={isReviewLoading}
-                  data-onboarding="review-button"
-                >
+                <DropdownMenuItem onClick={handleReviewClick} disabled={isReviewLoading}>
                   {isReviewLoading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -239,7 +227,7 @@ export function UnifiedHeader() {
                               : t("autocompleteAdaptive")}
                     </span>
                   </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-56">
+                  <DropdownMenuSubContent side="left" className="w-56">
                     <DropdownMenuItem
                       onClick={() => setAutocomplete("short")}
                       className={cn(
@@ -318,19 +306,20 @@ export function UnifiedHeader() {
                 <DropdownMenuSeparator />
 
                 {/* Theme */}
-                <DropdownMenuItem onClick={toggleBaseMode}>
-                  {currentTheme.baseMode === "dark" ? (
-                    <Sun className="mr-2 h-4 w-4" />
-                  ) : (
-                    <Moon className="mr-2 h-4 w-4" />
-                  )}
-                  {currentTheme.baseMode === "dark" ? t("lightMode") : t("darkMode")}
-                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Palette className="mr-2 h-4 w-4" />
+                    {tSettings("appearance")}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent side="left" className="w-[280px] p-3">
+                    <ThemePickerPanel />
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
 
                 <DropdownMenuSeparator />
 
                 {/* Version History */}
-                <DropdownMenuItem onClick={toggleVersionHistory} data-onboarding="version-history">
+                <DropdownMenuItem onClick={toggleVersionHistory}>
                   <Clock className="mr-2 h-4 w-4" />
                   {t("versionHistory")}
                   {isVersionHistoryOpen && <Check className="ml-auto h-4 w-4" />}
@@ -339,10 +328,7 @@ export function UnifiedHeader() {
                 <DropdownMenuSeparator />
 
                 {/* Export */}
-                <DropdownMenuItem
-                  onClick={() => handleExport("markdown")}
-                  data-onboarding="export-button"
-                >
+                <DropdownMenuItem onClick={() => handleExport("markdown")}>
                   <Download className="mr-2 h-4 w-4" />
                   {t("exportAsMarkdown")}
                 </DropdownMenuItem>

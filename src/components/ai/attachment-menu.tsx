@@ -221,14 +221,6 @@ export function AttachmentMenu({
   // Reset view when closing
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (open) {
-      // Track onboarding step
-      import("@/stores/onboarding-store")
-        .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeStep("knowledge-base");
-        })
-        .catch(() => {});
-    }
     if (!open) {
       setView("main");
       setUploadError(null);
@@ -261,7 +253,6 @@ export function AttachmentMenu({
             type="button"
             size="icon"
             variant="ghost"
-            data-onboarding="kb-button"
             className={cn(
               "relative flex-shrink-0 text-muted-foreground hover:text-foreground",
               "h-8 w-8 rounded-full",

@@ -92,6 +92,68 @@ const jsonLd = {
   },
 };
 
+const themeBootstrapScript = `(function(){
+  try {
+    var d = document.documentElement;
+    var darkIds = { dark: 1, nord: 1, forest: 1, ocean: 1 };
+    var parse = function(raw){
+      if(!raw) return null;
+      try { return JSON.parse(raw); } catch(_) { return null; }
+    };
+
+    var cache = parse(localStorage.getItem('doxmind-theme-cache'));
+    var prefs = parse(localStorage.getItem('doxmind-theme-prefs'));
+    var layout = parse(localStorage.getItem('doxmind-layout'));
+    var state = layout && layout.state ? layout.state : (layout && typeof layout === 'object' ? layout : null);
+
+    var stateThemeId = state && typeof state.themeId === 'string' ? state.themeId : null;
+    var stateLight = state && typeof state.preferredLightTheme === 'string' ? state.preferredLightTheme : 'notion';
+    var stateDark = state && typeof state.preferredDarkTheme === 'string' ? state.preferredDarkTheme : 'dark';
+    var stateSystem = state && typeof state.systemThemeEnabled === 'boolean' ? state.systemThemeEnabled : null;
+
+    var prefThemeId = prefs && typeof prefs.themeId === 'string' ? prefs.themeId : null;
+    var prefLight = prefs && typeof prefs.preferredLightTheme === 'string' ? prefs.preferredLightTheme : stateLight;
+    var prefDark = prefs && typeof prefs.preferredDarkTheme === 'string' ? prefs.preferredDarkTheme : stateDark;
+    var prefSystem = prefs && typeof prefs.systemThemeEnabled === 'boolean' ? prefs.systemThemeEnabled : stateSystem;
+
+    // Canonical source is dedicated theme prefs. Layout state is legacy fallback only.
+    var themeId = prefThemeId || stateThemeId || (cache && cache.id ? cache.id : null);
+    var systemEnabled = prefSystem;
+    var mode = cache && cache.mode ? cache.mode : null;
+
+    if (systemEnabled === true && window.matchMedia) {
+      var isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      mode = isDark ? 'dark' : 'light';
+      themeId = isDark ? prefDark : prefLight;
+    } else if (systemEnabled === false && themeId) {
+      mode = darkIds[themeId] ? 'dark' : 'light';
+    }
+
+    if (mode === 'dark') {
+      d.classList.add('dark');
+      d.style.colorScheme = 'dark';
+    } else if (mode === 'light') {
+      d.classList.remove('dark');
+      d.style.colorScheme = 'light';
+    }
+
+    if (mode) {
+      localStorage.setItem('doxmind-next-theme', mode);
+    }
+    if (themeId) {
+      d.setAttribute('data-theme', themeId);
+    }
+
+    if (cache && cache.vars && typeof cache.vars === 'object') {
+      for (var k in cache.vars) {
+        if (Object.prototype.hasOwnProperty.call(cache.vars, k)) {
+          d.style.setProperty(k, cache.vars[k]);
+        }
+      }
+    }
+  } catch (_) {}
+})();`;
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -102,12 +164,14 @@ export default async function RootLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
+      <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var c=localStorage.getItem('doxmind-theme-cache');if(!c)return;var t=JSON.parse(c);if(!t||!t.vars)return;var d=document.documentElement;if(t.mode==='dark'){d.classList.add('dark');d.style.colorScheme='dark'}else{d.classList.remove('dark');d.style.colorScheme='light'}localStorage.setItem('theme',t.mode);if(t.id)d.setAttribute('data-theme',t.id);var v=t.vars;for(var k in v){if(v.hasOwnProperty(k))d.style.setProperty(k,v[k])}}catch(e){}})();`,
+            __html: themeBootstrapScript,
           }}
         />
+      </head>
+      <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

@@ -7,6 +7,28 @@ interface Selection {
   text: string;
 }
 
+interface InlineAIReference {
+  from: number;
+  to: number;
+  beforeText: string;
+  afterText: string;
+}
+
+interface InlineAIAnchorRect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+interface InlineAIResponse {
+  requestId: string;
+  status: "idle" | "thinking" | "streaming" | "ready" | "error";
+  intent: "write" | "edit" | "ask";
+  content: string;
+  error?: string;
+}
+
 // Pending edit operation that should be applied through the editor (for undo support)
 export interface PendingEdit {
   id: string;
@@ -39,6 +61,14 @@ interface EditorState {
   // Quick Edit State
   quickEditOpen: boolean;
   quickEditPosition: { x: number; y: number } | null;
+
+  // Inline Copilot State
+  inlineAIOpen: boolean;
+  inlineAIPosition: { x: number; y: number } | null;
+  inlineAIMode: "write" | "edit" | "ask";
+  inlineAIReference: InlineAIReference | null;
+  inlineAIAnchorRect: InlineAIAnchorRect | null;
+  inlineAIResponse: InlineAIResponse | null;
 
   // Autocomplete State
   autocompleteEnabled: boolean;
@@ -76,6 +106,24 @@ interface EditorState {
   // Quick Edit Actions
   openQuickEdit: (position: { x: number; y: number }) => void;
   closeQuickEdit: () => void;
+
+  // Inline Copilot Actions
+  openInlineAI: (
+    position: { x: number; y: number },
+    mode?: "write" | "edit" | "ask",
+    reference?: InlineAIReference | null,
+    anchorRect?: InlineAIAnchorRect | null
+  ) => void;
+  closeInlineAI: () => void;
+  setInlineAIMode: (mode: "write" | "edit" | "ask") => void;
+  startInlineAIResponse: (requestId: string, intent: "write" | "edit" | "ask") => void;
+  setInlineAIResponseStatus: (
+    requestId: string,
+    status: "thinking" | "streaming" | "ready" | "error",
+    error?: string
+  ) => void;
+  appendInlineAIResponse: (requestId: string, chunk: string) => void;
+  clearInlineAIResponse: () => void;
 
   // Autocomplete Actions
   setAutocompleteEnabled: (enabled: boolean) => void;
@@ -116,6 +164,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
   lastSavedAt: null,
   quickEditOpen: false,
   quickEditPosition: null,
+  inlineAIOpen: false,
+  inlineAIPosition: null,
+  inlineAIMode: "write",
+  inlineAIReference: null,
+  inlineAIAnchorRect: null,
+  inlineAIResponse: null,
   autocompleteEnabled: true,
   autocompleteSuggestion: null,
   autocompleteTriggerMode: "auto",
@@ -139,6 +193,56 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // Quick Edit Actions
   openQuickEdit: (position) => set({ quickEditOpen: true, quickEditPosition: position }),
   closeQuickEdit: () => set({ quickEditOpen: false, quickEditPosition: null }),
+
+  // Inline Copilot Actions
+  openInlineAI: (position, mode = "write", reference = null, anchorRect = null) =>
+    set({
+      inlineAIOpen: true,
+      inlineAIPosition: position,
+      inlineAIMode: mode,
+      inlineAIReference: reference,
+      inlineAIAnchorRect: anchorRect,
+      inlineAIResponse: null,
+    }),
+  closeInlineAI: () =>
+    set({
+      inlineAIOpen: false,
+      inlineAIPosition: null,
+      inlineAIReference: null,
+      inlineAIAnchorRect: null,
+    }),
+  setInlineAIMode: (mode) => set({ inlineAIMode: mode }),
+  startInlineAIResponse: (requestId, intent) =>
+    set({
+      inlineAIResponse: {
+        requestId,
+        status: "thinking",
+        intent,
+        content: "",
+      },
+    }),
+  setInlineAIResponseStatus: (requestId, status, error) =>
+    set((state) => {
+      if (!state.inlineAIResponse || state.inlineAIResponse.requestId !== requestId) return state;
+      return {
+        inlineAIResponse: {
+          ...state.inlineAIResponse,
+          status,
+          error,
+        },
+      };
+    }),
+  appendInlineAIResponse: (requestId, chunk) =>
+    set((state) => {
+      if (!state.inlineAIResponse || state.inlineAIResponse.requestId !== requestId) return state;
+      return {
+        inlineAIResponse: {
+          ...state.inlineAIResponse,
+          content: state.inlineAIResponse.content + chunk,
+        },
+      };
+    }),
+  clearInlineAIResponse: () => set({ inlineAIResponse: null }),
 
   // Autocomplete Actions
   setAutocompleteEnabled: (enabled) => set({ autocompleteEnabled: enabled }),

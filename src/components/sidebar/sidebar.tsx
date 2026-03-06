@@ -58,7 +58,7 @@ export function Sidebar() {
   };
 
   return (
-    <div className="flex h-full flex-col" data-onboarding="sidebar-toggle">
+    <div className="flex h-full flex-col">
       {/* Outline header */}
       <div className="flex items-center justify-between px-3 py-2">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">

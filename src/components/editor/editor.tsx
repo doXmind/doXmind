@@ -7,7 +7,7 @@ import { LinkBubbleMenu } from "./link-bubble-menu";
 
 import { ImageModal } from "./image-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
-import { QuickEditMenu } from "@/components/ai/quick-edit-menu";
+import { InlineAICopilot } from "@/components/ai/inline-ai-copilot";
 import { EditorContextMenu } from "./editor-context-menu";
 import { DiffReviewToolbar } from "./diff-review-toolbar";
 import { AIWorkingBar } from "./ai-working-bar";
@@ -29,7 +29,6 @@ import { useFileStore, type FileItem } from "@/stores/file-store";
 import { useDemoStore } from "@/stores/demo-store";
 import { useEditorStore, type LastAIOperation } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useChat } from "@/hooks/use-chat";
 import { telemetry, type UndoAfterAIEvent } from "@/lib/telemetry";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
@@ -40,7 +39,6 @@ import { TableHandles } from "./table-handles";
 import { applyPendingEdit } from "./editor-edit-operations";
 import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { rangeToMarkdown } from "@/lib/markdown-selection";
-import { useFeatureHints } from "@/components/onboarding/feature-hints";
 import { useStreamingStore } from "@/stores/streaming-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 
@@ -75,11 +73,12 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     reviewRequested,
     clearReviewRequest,
     setReviewState,
+    openInlineAI,
+    closeInlineAI,
+    inlineAIOpen,
   } = useEditorStore();
 
   // Layout state — use individual selectors to avoid re-renders on unrelated layout changes
-  const isSearchBarOpen = useLayoutStore((s) => s.isSearchBarOpen);
-  const isFocusMode = useLayoutStore((s) => s.isFocusMode);
   const editorWidth = useLayoutStore((s) => s.editorWidth);
   const fontFamily = useLayoutStore((s) => s.fontFamily);
   const fontSize = useLayoutStore((s) => s.fontSize);
@@ -124,7 +123,76 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   const editor = useEditor({
     extensions: getEditorExtensions({ isMobile }),
     content: file.content,
-    editorProps: defaultEditorProps,
+    editorProps: {
+      ...defaultEditorProps,
+      attributes: {
+        ...(defaultEditorProps.attributes || {}),
+        "data-inline-ai-boundary": "true",
+      },
+      handleKeyDown: (view, event) => {
+        if (event.isComposing) return false;
+
+        const buildInlineReference = (from: number, to: number) => {
+          const safeFrom = Math.max(0, from);
+          const safeTo = Math.max(safeFrom, to);
+          const beforeStart = Math.max(0, safeFrom - 220);
+          const afterEnd = Math.min(view.state.doc.content.size, safeTo + 220);
+          return {
+            from: safeFrom,
+            to: safeTo,
+            beforeText: view.state.doc.textBetween(beforeStart, safeFrom, "\n", "\n").slice(-220),
+            afterText: view.state.doc.textBetween(safeTo, afterEnd, "\n", "\n").slice(0, 220),
+          };
+        };
+
+        const isModJ =
+          (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "j";
+        if (isModJ) {
+          event.preventDefault();
+          const { from, to, empty } = view.state.selection;
+          const coords = view.coordsAtPos(to);
+          const domSelection = window.getSelection();
+          const range =
+            domSelection && domSelection.rangeCount > 0 ? domSelection.getRangeAt(0) : null;
+          const rect = range && !range.collapsed ? range.getBoundingClientRect() : null;
+          openInlineAI(
+            { x: coords.left, y: coords.bottom },
+            empty || from === to ? "ask" : "edit",
+            buildInlineReference(from, to),
+            rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right } : null
+          );
+          return true;
+        }
+
+        if (!isMobile && !event.repeat && event.key === " " && !event.shiftKey && !event.altKey) {
+          const { selection } = view.state;
+          if (!selection.empty) return false;
+
+          const { $from } = selection;
+          const parent = $from.parent;
+          const isEmptyParagraph =
+            parent.type.name === "paragraph" && parent.textContent.trim() === "";
+          const isParagraphStart = $from.parentOffset === 0;
+
+          if (isEmptyParagraph && isParagraphStart) {
+            event.preventDefault();
+            const coords = view.coordsAtPos(selection.from);
+            openInlineAI(
+              { x: coords.left, y: coords.bottom },
+              "write",
+              buildInlineReference(selection.from, selection.to)
+            );
+            return true;
+          }
+        }
+
+        if (event.key === "Escape") {
+          closeInlineAI();
+        }
+
+        return false;
+      },
+    },
     editable: !isDemoMode, // Demo mode: read-only to ensure mock scenarios work
     immediatelyRender: false, // Prevent SSR hydration mismatch
     onUpdate: ({ editor }) => {
@@ -352,23 +420,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   // Use keyboard shortcuts hook (Ctrl+Shift+O for outline)
   useEditorShortcuts();
 
-  // Feature hints for first-time feature encounters
-  const { showHint, HintPortal } = useFeatureHints();
-
-  // Show hint when search bar opens for the first time
-  useEffect(() => {
-    if (isSearchBarOpen && editor) {
-      showHint("search-opened", editor.view.dom.parentElement);
-    }
-  }, [isSearchBarOpen, editor, showHint]);
-
-  // Show hint when focus mode is entered for the first time
-  useEffect(() => {
-    if (isFocusMode && editor) {
-      showHint("focus-mode-entered", editor.view.dom.parentElement);
-    }
-  }, [isFocusMode, editor, showHint]);
-
   // Track undo after AI operations
   // We use a ref to store the last AI operation to avoid stale closure issues
   const lastAIOperationRef = useRef<LastAIOperation | null>(null);
@@ -422,12 +473,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       setReviewPanelOpen(!isReviewPanelOpen);
     } else {
       triggerReview();
-      // Track onboarding step
-      import("@/stores/onboarding-store")
-        .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeStep("writing-review");
-        })
-        .catch(() => {});
     }
   }, [isReviewActive, isReviewPanelOpen, setReviewPanelOpen, triggerReview]);
 
@@ -451,24 +496,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       clearReview();
     }
   }, [setReviewPanelOpen, isReviewActive, clearReview]);
-
-  // Quick Edit via chat system
-  const { sendQuickEditMessage } = useChat();
-  const setChatOpen = useLayoutStore((s) => s.setChatOpen);
-
-  const handleQuickEdit = useCallback(
-    (action: string, selectedText: string) => {
-      const effectiveFileId = isDemoMode ? "demo-file" : file.id;
-      sendQuickEditMessage(action, selectedText, [effectiveFileId]);
-      // Auto-open chat panel to show the result
-      setChatOpen(true);
-      // Collapse selection to dismiss bubble menu — text already captured
-      if (editor) {
-        editor.commands.setTextSelection(editor.state.selection.to);
-      }
-    },
-    [sendQuickEditMessage, file.id, isDemoMode, setChatOpen, editor]
-  );
 
   // Handle Image Modal confirm
   const handleImageModalConfirm = useCallback(
@@ -500,7 +527,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       {/* Diff Review Toolbar - shown on both desktop and mobile when active */}
       <DiffReviewToolbar
         editor={editor}
-        isActive={isReviewMode}
+        isActive={isReviewMode && !inlineAIOpen}
         pendingCount={pendingCount}
         currentPendingPosition={currentPendingPosition}
         onAcceptAll={handleAcceptAll}
@@ -587,6 +614,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       {!isMobile && editor && <BlockHandle editor={editor} />}
       {/* Table Handles - Desktop only (column/row grips and edge + buttons) */}
       {!isMobile && editor && <TableHandles editor={editor} />}
+      {!isMobile && editor && <InlineAICopilot fileId={file.id} isDemoMode={isDemoMode} />}
 
       {/* Bubble Menus & Popups */}
       {/* Mobile shows simplified BubbleMenu; desktop shows full menus */}
@@ -599,7 +627,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
           <SpellcheckPopup editor={editor} />
           <ReviewPopup editor={editor} />
           <EditorContextMenu editor={editor} />
-          {!isReviewMode && !isStreaming && <QuickEditMenu onQuickEdit={handleQuickEdit} />}
         </>
       )}
 
@@ -609,9 +636,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         onClose={closeImageModal}
         onConfirm={handleImageModalConfirm}
       />
-
-      {/* Feature hints (contextual first-use tooltips) */}
-      {HintPortal}
     </div>
   );
 }

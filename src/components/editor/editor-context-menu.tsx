@@ -64,7 +64,7 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const [submenuFocusIndex, setSubmenuFocusIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
-  const { openQuickEdit } = useEditorStore();
+  const { openInlineAI } = useEditorStore();
   const t = useTranslations("editor");
 
   const hasSelection = editor.state.selection.from !== editor.state.selection.to;
@@ -256,7 +256,15 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       disabled: !hasSelection,
       action: () => {
         if (position) {
-          openQuickEdit({ x: position.x, y: position.y });
+          const { from, to } = editor.state.selection;
+          const beforeStart = Math.max(0, from - 220);
+          const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
+          openInlineAI({ x: position.x, y: position.y }, "ask", {
+            from,
+            to,
+            beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
+            afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
+          });
         }
         close();
       },

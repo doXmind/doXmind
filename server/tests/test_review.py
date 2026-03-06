@@ -4,6 +4,7 @@ Tests the AI-powered text review functionality.
 """
 
 import json
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -138,9 +139,10 @@ class TestReviewEndpoint:
         return app
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     def test_short_document_returns_empty_suggestions(self, client):
         """Should return empty suggestions for very short documents."""
@@ -502,9 +504,10 @@ class TestEdgeCases:
         return app
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     def test_whitespace_only_content(self, client):
         """Should handle whitespace-only content."""

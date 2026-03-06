@@ -380,7 +380,6 @@ export function FileCard({ file, index, searchMatch, onResultClick }: FileCardPr
     <>
       <motion.div
         className="group relative cursor-pointer"
-        data-onboarding="file-card"
         onClick={handleOpen}
         onContextMenu={(e) => {
           e.preventDefault();

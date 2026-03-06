@@ -7,6 +7,7 @@ Tests cover:
 """
 
 import time
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -412,9 +413,10 @@ class TestAutocompleteEndpoints:
         return app
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     def test_returns_empty_for_short_text(self, client):
         """Should return empty suggestion for very short text."""
@@ -510,9 +512,10 @@ class TestCacheStatsEndpoint:
         return app
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     @patch("api.autocomplete.cache")
     def test_returns_stats(self, mock_cache, client):
@@ -544,9 +547,10 @@ class TestClearCacheEndpoint:
         return app
 
     @pytest.fixture
-    def client(self, app):
+    def client(self, app) -> Generator[TestClient, None, None]:
         """Create test client."""
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     @patch("api.autocomplete.cache")
     def test_clears_cache(self, mock_cache, client):

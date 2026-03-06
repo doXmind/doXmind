@@ -82,7 +82,7 @@ export const templates: FileTemplate[] = [
 
 **Sprint review**
 
-- Shipped the new onboarding flow (Alice). Conversion up 12% in early testing.
+- Shipped the new guided writing workflow (Alice). Conversion up 12% in early testing.
 - Search indexing migration complete (Bob). Query latency down from 800ms → 120ms.
 
 **Blockers**

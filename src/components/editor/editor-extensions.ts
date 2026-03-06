@@ -39,6 +39,7 @@ import { TextReviewExtension } from "@/extensions/text-review-extension";
 import { BlockSelectionExtension } from "@/extensions/block-selection-extension";
 import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
+import { InlineAISelectionHighlightExtension } from "@/extensions/inline-ai-selection-highlight";
 import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
 import type { Extensions } from "@tiptap/react";
 
@@ -148,6 +149,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     SpellcheckExtension,
     DiffReviewExtension,
     TextReviewExtension,
+    InlineAISelectionHighlightExtension,
 
     // Block color support (text and background colors for blocks)
     BlockColorExtension,
@@ -173,7 +175,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
   if (!isMobile) {
     extensions.push(
       Placeholder.configure({
-        placeholder: "Type '/' for commands",
+        placeholder: "Press Space for AI or '/' for commands",
         showOnlyCurrent: true,
       })
     );

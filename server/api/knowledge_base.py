@@ -21,8 +21,8 @@ from exceptions import (
     InternalError,
     UnsupportedFileTypeError,
 )
-from services.gemini_converter import convert_file_to_markdown, is_converter_configured
 from services.auth_service import TokenData, require_auth
+from services.gemini_converter import convert_file_to_markdown, is_converter_configured
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

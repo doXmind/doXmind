@@ -6,14 +6,12 @@ import {
   Search,
   FileText,
   FilePlus,
-  Sun,
-  Moon,
+  Palette,
   Keyboard,
   PanelLeft,
   MessageSquare,
   ArrowRight,
   Contrast,
-  HelpCircle,
   Loader2,
   AlertTriangle,
   RefreshCw,
@@ -169,12 +167,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       {
         id: "toggle-theme",
         label: currentTheme.baseMode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode",
-        icon:
-          currentTheme.baseMode === "dark" ? (
-            <Sun className="h-4 w-4" />
-          ) : (
-            <Moon className="h-4 w-4" />
-          ),
+        icon: <Palette className="h-4 w-4" />,
         category: "view",
         action: () => {
           toggleBaseMode();
@@ -216,19 +209,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           setTimeout(() => setKeyboardShortcutsOpen(true), 100);
         },
         keywords: ["keyboard", "shortcuts", "help", "hotkeys"],
-      },
-      {
-        id: "show-tour",
-        label: "Show Welcome Tour",
-        icon: <HelpCircle className="h-4 w-4" />,
-        category: "action",
-        action: () => {
-          onClose();
-          // Reset onboarding and reload
-          localStorage.removeItem("doxmind-onboarding-completed");
-          window.location.reload();
-        },
-        keywords: ["tour", "onboarding", "help", "guide", "tutorial"],
       },
     ];
 

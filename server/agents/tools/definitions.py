@@ -156,6 +156,12 @@ READONLY_TOOLS = [DOCUMENT_TOOLS[i] for i in (0, 1, 2)]
 # Minimal tools for quick edit mode: str_replace_editor + read_content (for long doc fallback)
 QUICK_EDIT_TOOLS = [DOCUMENT_TOOLS[i] for i in (3, 1)]
 
+# Inline ask tools: read-only and lightweight
+INLINE_ASK_TOOLS = [DOCUMENT_TOOLS[i] for i in (0, 1, 2)]
+
+# Inline edit tools: focused edit + optional section read
+INLINE_EDIT_TOOLS = [DOCUMENT_TOOLS[i] for i in (3, 1)]
+
 
 # ============================================================================
 # Knowledge Base Tools Definition
@@ -312,6 +318,7 @@ def get_tools_for_mode(
     has_skills: bool = False,
     web_search_enabled: bool = False,
     is_quick_edit: bool = False,
+    tool_profile: str | None = None,
 ) -> list[dict]:
     """Get the appropriate tools based on mode and feature flags.
 
@@ -332,6 +339,12 @@ def get_tools_for_mode(
     # Quick edit: minimal tool set for fast, focused edits
     if is_quick_edit:
         return list(QUICK_EDIT_TOOLS)
+
+    if tool_profile == "inline_ask":
+        return list(INLINE_ASK_TOOLS)
+
+    if tool_profile == "inline_edit":
+        return list(INLINE_EDIT_TOOLS)
 
     base_tools = DOCUMENT_TOOLS if mode == "edit" else READONLY_TOOLS
     tools = list(base_tools)  # Make a copy

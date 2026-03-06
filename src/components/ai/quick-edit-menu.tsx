@@ -80,13 +80,6 @@ export function QuickEditMenu({ onQuickEdit }: QuickEditMenuProps) {
       onQuickEdit(action, textToEdit);
       closeQuickEdit();
       setActiveSubmenu(null);
-
-      // Track onboarding step
-      import("@/stores/onboarding-store")
-        .then(({ useOnboardingStore }) => {
-          useOnboardingStore.getState().completeStep("quick-edit");
-        })
-        .catch(() => {});
     },
     [selection, onQuickEdit, closeQuickEdit]
   );

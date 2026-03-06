@@ -145,7 +145,7 @@
       "copy": "复制",
       "paste": "粘贴",
       "selectAll": "全选",
-      "askAI": "询问 AI",
+      "askAI": "就地提问 AI",
       "quickEdit": "快速编辑",
       "addComment": "添加评论",
       "lookUp": "查找"
@@ -288,7 +288,9 @@
       "moveUp": "上移",
       "moveDown": "下移",
       "color": "颜色",
-      "askAI": "询问 AI"
+      "askAI": "询问 AI",
+      "askInline": "就地提问 AI",
+      "askInSidebar": "发送到侧边对话"
     },
     "blockHandle": {
       "addBelow": "在下方添加块",
@@ -297,6 +299,7 @@
     "bubbleMenu": {
       "inlineImprove": "快速改写",
       "askAIInChat": "在对话中询问 AI",
+      "askInlineAI": "就地提问 AI",
       "bold": "粗体",
       "italic": "斜体",
       "underline": "下划线",
@@ -405,7 +408,7 @@
       "copy": "复制",
       "paste": "粘贴",
       "format": "格式",
-      "askAI": "问 AI"
+      "askAI": "就地提问 AI"
     },
     "linkMenu": {
       "urlPlaceholder": "输入链接",
@@ -424,7 +427,9 @@
       "moveDown": "下移",
       "align": "对齐",
       "color": "颜色",
-      "askAI": "问 AI"
+      "askAI": "问 AI",
+      "askInline": "就地提问 AI",
+      "askInSidebar": "发送到侧边对话"
     },
     "versionPanel": {
       "manualEdit": "手动编辑",
@@ -436,7 +441,77 @@
       "fileNotFound": "文件未找到",
       "noChangesIdentical": "无差异 — 内容已完全相同",
       "versionsAutoCreated": "AI 编辑文档时会自动创建版本。",
-      "preview": "预览"
+      "preview": "预览",
+      "inlineAI": {
+        "placeholder": "向 AI 提问...",
+        "writePlaceholder": "告诉 AI 你想写什么...",
+        "editPlaceholder": "告诉 AI 你想怎么修改...",
+        "followupHint": "可继续单次提问；需连续深入请点“在侧边深入对话”",
+        "thinking": "思考中",
+        "stop": "停止",
+        "close": "关闭",
+        "dismiss": "收起",
+        "suggested": "建议",
+        "rewrite": "改写",
+        "openStudio": "在侧边深入对话",
+        "sendSelection": "发送选中内容",
+        "insertAsBlock": "插入下方",
+        "copy": "复制",
+        "done": "完成。",
+        "error": "获取回复失败。",
+        "diffReview": {
+          "count": "还有 {count} 处待确认修改",
+          "accept": "保留",
+          "discard": "撤销",
+          "tryAgain": "重试"
+        },
+        "tabs": {
+          "write": "写作",
+          "edit": "编辑",
+          "ask": "提问"
+        },
+        "actions": {
+          "write": {
+            "continue": {
+              "label": "继续写",
+              "prompt": "从光标锚点自然续写，保持与当前内容一致的语言、语气和结构。"
+            },
+            "summary": {
+              "label": "添加摘要",
+              "prompt": "在光标附近补充一段简洁摘要，并与文档上下文保持一致。"
+            },
+            "actions": {
+              "label": "添加行动项",
+              "prompt": "在光标锚点处添加可执行的下一步，使用项目符号，每条简短具体。"
+            },
+            "brainstorm": {
+              "label": "头脑风暴",
+              "prompt": "围绕当前段落给出实用想法，并在光标附近以项目符号形式插入。"
+            }
+          },
+          "edit": {
+            "improve": { "label": "优化表达" },
+            "proofread": { "label": "校对润色" },
+            "simplify": { "label": "简化语言" },
+            "longer": { "label": "扩写" },
+            "shorter": { "label": "精简" }
+          },
+          "ask": {
+            "explain": {
+              "label": "解释这段",
+              "prompt": "清晰简洁地解释选中内容。"
+            },
+            "check": {
+              "label": "检查问题",
+              "prompt": "检查这段内容的逻辑、表达和潜在问题，并列出要点。"
+            },
+            "evaluate": {
+              "label": "评价这段",
+              "prompt": "从清晰度、说服力和完整性评价这段内容，并给出简短结论。"
+            }
+          }
+        }
+      }
     },
     "mermaid": {
       "templates": "模板",
@@ -454,6 +529,10 @@
     "improveStyle": "改进写作风格",
     "summarize": "总结文档",
     "brainstorm": "头脑风暴",
+    "suggestionPromptWriteReport": "请帮我写一篇报告",
+    "suggestionPromptImproveStyle": "请帮我改进写作风格",
+    "suggestionPromptSummarize": "请总结这篇文档",
+    "suggestionPromptBrainstorm": "请帮我进行头脑风暴",
     "improveWriting": "改进我的写作",
     "summarizeThis": "总结内容",
     "continueWriting": "继续写作",
@@ -537,6 +616,7 @@
     "openAIChat": "打开 AI 聊天",
     "disableWebSearch": "关闭网络搜索",
     "imageContext": "图片",
+    "inlineResultContext": "Inline AI 结果",
     "emptyBlock": "空白块",
     "selectedTextChars": "选中文本（{count} 个字符）",
     "removeContext": "移除上下文",
@@ -782,7 +862,6 @@
     "profile": "个人资料",
     "settings": "设置",
     "help": "帮助",
-    "restartTour": "重新开始引导",
     "logOut": "退出登录",
     "loggingOut": "退出中...",
     "logoutFailed": "退出失败，请重试。",
@@ -859,7 +938,7 @@
     "everyGreatPiece": "每一篇好文章都始于第一个字。",
     "pickTemplateToStart": "选择一个模板开始。",
     "welcomeToDoXmind": "欢迎使用 doXmind",
-    "interactiveTutorial": "包含示例的互动教程",
+    "interactiveTutorial": "完整的 doXmind 使用指南",
     "startFromScratch": "从零开始",
     "blogPost": "博客文章",
     "blogPostDesc": "文章或博客模板",
@@ -1515,106 +1594,6 @@
     "loginTitle": "登录 - doXmind",
     "helpTitle": "帮助 - doXmind"
   },
-  "onboarding": {
-    "groupWelcome": "欢迎",
-    "groupHomeSearch": "主页与搜索",
-    "groupAIWriting": "AI 写作",
-    "groupAIEditing": "AI 编辑",
-    "groupChatKnowledge": "对话与知识库",
-    "groupNavigation": "导航",
-    "groupFileManagement": "文件管理",
-    "groupFinishing": "完成",
-
-    "hintAutocompleteTitle": "AI 自动补全",
-    "hintAutocompleteDesc": "按 Tab 接受完整建议，Ctrl+Space 逐词接受，或 Escape 关闭。",
-    "hintSlashTitle": "斜杠命令",
-    "hintSlashDesc": "浏览所有块类型 — 标题、表格、代码、公式、标注等。在任意位置输入 / 打开。",
-    "hintSearchTitle": "智能搜索",
-    "hintSearchDesc": "切换到 AI 标签页进行语义搜索，理解含义而非仅匹配关键词。",
-    "hintQuickEditTitle": "快速编辑",
-    "hintQuickEditDesc": "选择操作即时应用，或点击「在聊天中提问」输入自定义指令。",
-    "hintDiffReviewTitle": "审阅更改",
-    "hintDiffReviewDesc": "逐一接受或拒绝 AI 编辑，或使用全部接受/全部拒绝处理整批更改。",
-    "hintTextReviewTitle": "写作审阅",
-    "hintTextReviewDesc": "彩色下划线标注建议。点击任意下划线文字查看详情并应用修改。",
-    "hintKbTitle": "知识库",
-    "hintKbDesc": "上传 PDF 和文档作为参考资料 — AI 将在回答问题时搜索和引用它们。",
-    "hintFocusModeTitle": "专注模式",
-    "hintFocusModeDesc": "无干扰写作。再次按 F11 或将鼠标移至屏幕顶部退出。",
-
-    "tourStep1Title": "欢迎使用 doXmind！",
-    "tourStep1Instruction": "让我们一起浏览 AI 写作工作区的完整功能。您将亲身体验每个功能——只需大约 5 分钟。",
-    "tourStep2Title": "搜索与 AI 问答",
-    "tourStep2Instruction": "这是您的搜索栏。在 AI 问答模式下，从知识库获取 AI 回答。切换到搜索模式按内容查找文档。",
-    "tourStep3Title": "AI 回答",
-    "tourStep3Instruction": "提出任何问题，AI 将搜索您的文档并给出带引用的回答。非常适合研究和快速查询。",
-    "tourStep4Title": "AI 自动补全",
-    "tourStep4Instruction": "将光标放在未完成段落的末尾（以「the way we」结尾）并暂停。幽灵文本将出现——按 Tab 接受它。",
-    "tourStep5Title": "斜杠命令",
-    "tourStep5Instruction": "点击「斜杠命令」标题下方的空行，输入 / 打开块菜单。选择任意块进行插入。",
-    "tourStep6Title": "快速编辑",
-    "tourStep6Instruction": "选择「快速编辑」下方的冗长句子，从弹出菜单中选择一个操作（如「简化」或「改善写作」）。",
-    "tourStep7Title": "审查 AI 更改",
-    "tourStep7Instruction": "AI 已建议更改。点击每个高亮更改上的接受或拒绝，或使用全部接受/全部拒绝。",
-    "tourStep8Title": "写作审查",
-    "tourStep8Instruction": "打开工具栏中的更多菜单（\u2026），点击「AI 写作审查」获取文档的彩色编码写作反馈。",
-    "tourStep9Title": "AI 对话",
-    "tourStep9Instruction": "打开对话面板，发送类似「总结这篇文档」的消息，查看 AI 流式响应。",
-    "tourStep10Title": "知识库",
-    "tourStep10Instruction": "点击对话输入框中的附件图标查看知识库。您可以上传 PDF 和文档作为 AI 的上下文。",
-    "tourStep11Title": "大纲与思维线",
-    "tourStep11Instruction": "切换侧边栏查看文档大纲。点击任意标题跳转到该位置。",
-    "tourStep12Title": "版本历史",
-    "tourStep12Instruction": "打开工具栏中的更多菜单（\u2026），然后点击版本历史。每次 AI 编辑都会自动保存为一个版本。",
-    "tourStep13Title": "专注模式",
-    "tourStep13Instruction": "按 F11 或点击专注模式按钮进行无干扰写作。再次按 F11 退出。",
-    "tourStep14Title": "导出",
-    "tourStep14Instruction": "打开工具栏中的更多菜单（\u2026），将文档导出为 Markdown、PDF 或 Word 格式。",
-    "tourStep15Title": "新建",
-    "tourStep15Instruction": "点击 + 按钮创建新文档、文件夹、从模板开始或导入文件。",
-    "tourStep16Title": "最近文件",
-    "tourStep16Instruction": "最近编辑的文档会显示在这里，方便快速访问。",
-    "tourStep17Title": "收藏",
-    "tourStep17Instruction": "为重要文档加星标以固定在这里。使用任意文件卡片上的菜单添加收藏。",
-    "tourStep18Title": "文件操作",
-    "tourStep18Instruction": "将鼠标悬停在任意文档卡片上查看选项——重命名、分享、导出或删除。",
-    "tourStep19Title": "一切就绪！",
-    "tourStep19Instruction": "您已浏览了 doXmind 的所有关键功能。开始写作吧！",
-
-    "tourWelcomeTitle": "欢迎使用 doXmind！",
-    "tourWelcomeMessage": "花 5 分钟快速浏览，亲身体验每个功能。",
-    "startTutorial": "开始教程",
-    "skipExplore": "跳过——我自己探索",
-    "featureCount": "{count} 个功能",
-    "featureCountSingular": "{count} 个功能",
-
-    "youreAllSet": "一切就绪！",
-    "completedFeaturesMessage": "您已浏览了全部 {count} 个关键功能。准备好借助 AI 创作精彩内容了。",
-    "startWritingButton": "开始写作",
-    "restartTour": "重新开始教程",
-
-    "completedFeatureSearch": "搜索与 AI 问答",
-    "completedFeatureKBAgent": "知识库代理",
-    "completedFeatureAutocomplete": "自动补全",
-    "completedFeatureSlash": "斜杠命令",
-    "completedFeatureQuickEdit": "快速编辑",
-    "completedFeatureDiff": "差异审查",
-    "completedFeatureWritingReview": "写作审查",
-    "completedFeatureChat": "AI 对话",
-    "completedFeatureKB": "知识库",
-    "completedFeatureMindlines": "思维线",
-    "completedFeatureVersionHistory": "版本历史",
-    "completedFeatureFocusMode": "专注模式",
-    "completedFeatureExport": "导出",
-    "completedFeatureNewButton": "新建按钮",
-    "completedFeatureRecentFiles": "最近文件",
-    "completedFeatureFavorites": "收藏",
-    "completedFeatureFileActions": "文件操作",
-
-    "skipTutorial": "跳过教程",
-    "tryIt": "试试看",
-    "skipStep": "跳过此步"
-  },
   "help": {
     "pageTitle": "帮助与功能指南",
     "pageSubtitle": "关于使用 doXmind（AI 驱动的写作助手）您需要了解的一切。",
@@ -1644,8 +1623,6 @@
     "gettingStartedIntro": "doXmind 有三个主要区域。<b>大纲侧边栏</b>（左侧）显示文档结构。<b>编辑器</b>（中间）是您写作的地方。<b>AI 对话</b>（右侧）让您与 AI 进行交互。",
     "createFirstDoc": "创建您的第一个文档：",
     "createFirstDocDesc": "<b>创建您的第一个文档：</b>点击首页仪表盘上的 <b>+ 新建文档</b> 按钮，或使用命令面板（<ctrlK />）并输入「新建文档」。",
-    "onboardingTour": "新手引导：",
-    "onboardingTourDesc": "<b>新手引导：</b>首次登录时，交互式引导将带您了解各项关键功能。您可以随时从用户菜单 → <b>重新开始教程</b> 重新启动引导。",
 
     "homeDashboardIntro": "首页仪表盘是您查找、创建和管理文档的中心枢纽。它包含双模式搜索栏、最近文件、收藏夹和快捷操作。",
     "searchAskAI": "搜索与 AI 问答",
@@ -1662,7 +1639,7 @@
     "newFolder": "新建文件夹",
     "newFolderDesc": "在根级别创建文件夹以组织文件。",
     "fromTemplate": "从模板创建",
-    "fromTemplateDesc": "从 4 个模板中选择：欢迎教程、空白文档、博客文章或会议纪要。",
+    "fromTemplateDesc": "从 4 个模板中选择：doXmind 使用指南、空白文档、博客文章或会议纪要。",
     "importFile": "导入文件",
     "importFileDesc": "上传 PDF、DOCX 或 Markdown 文件以转换为文档。",
     "fileActions": "文件操作",
@@ -1693,7 +1670,7 @@
     "mathBlocksDesc": "<b>数学公式：</b>使用 <code>$...$</code> 插入行内公式，使用 <code>$$...$$</code> 插入独立公式块。支持完整的 LaTeX 语法。",
     "tablesDesc": "<b>表格：</b>通过斜杠命令插入。使用列/行菜单添加、删除或重新排列行和列。",
     "otherBlocksDesc": "<b>其他块：</b>标注（信息、警告、错误、成功）、折叠/可收起区域、图片（带调整大小手柄）和水平分隔线。",
-    "slashCommandTip": "在新行开头输入 <code>/</code> 可打开斜杠命令菜单，快速插入任何块类型。",
+    "slashCommandTip": "在空白新行按 <code>Space</code> 可打开内联 AI；输入 <code>/</code> 可打开斜杠命令并快速插入块。",
 
     "aiQuickEditIntro": "在编辑器中选择任意文本即可看到浮动 AI 菜单，提供即时编辑选项。AI 处理您的选中内容后会显示可视化差异，您可以接受或拒绝。",
     "stepSelectText": "选择文本",

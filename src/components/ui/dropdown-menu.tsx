@@ -576,14 +576,17 @@ export function DropdownMenuSubTrigger({
 export function DropdownMenuSubContent({
   children,
   className,
+  side = "auto",
 }: {
   children: React.ReactNode;
   className?: string;
+  side?: "auto" | "left" | "right";
 }) {
   const { open, setOpen, triggerRef, cancelClose, startClose } =
     React.useContext(DropdownMenuSubContext);
   const parentCtx = React.useContext(DropdownMenuContext);
   const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const [isPositionReady, setIsPositionReady] = React.useState(false);
 
   // Independent hover state for sub-menu items
   const [subFocusedId, setSubFocusedId] = React.useState<string | null>(null);
@@ -600,6 +603,13 @@ export function DropdownMenuSubContent({
   // Reset focused item when sub-menu closes
   React.useEffect(() => {
     if (!open) setSubFocusedId(null);
+  }, [open]);
+
+  // Hide submenu until final position is calculated to avoid side-flip flicker
+  React.useEffect(() => {
+    if (open) {
+      setIsPositionReady(false);
+    }
   }, [open]);
 
   const subCtxValue = React.useMemo(
@@ -644,14 +654,13 @@ export function DropdownMenuSubContent({
     const top = rect.top;
 
     if (parentRect) {
-      // Position to the left of the parent dropdown by default
-      left = parentRect.left - 4;
+      left = side === "right" ? parentRect.right + 4 : parentRect.left - 4;
     } else {
-      left = rect.right + 4;
+      left = side === "left" ? rect.left - 4 : rect.right + 4;
     }
 
     setPos({ top, left });
-  }, [open, triggerRef]);
+  }, [open, triggerRef, side]);
 
   // Adjust position after render using actual dimensions
   React.useEffect(() => {
@@ -666,16 +675,27 @@ export function DropdownMenuSubContent({
     let top = pos.top;
 
     if (parentRect) {
-      // Place to the left of parent menu
-      left = parentRect.left - elRect.width - 4;
-      // If overflows left edge, place to the right instead
-      if (left < 8) {
+      if (side === "right") {
         left = parentRect.right + 4;
+      } else if (side === "left") {
+        left = parentRect.left - elRect.width - 4;
+      } else {
+        // Auto mode: prefer left, fallback to right when needed
+        left = parentRect.left - elRect.width - 4;
+        if (left < 8) {
+          left = parentRect.right + 4;
+        }
       }
     } else {
-      // If overflows right edge, place to left of trigger
-      if (left + elRect.width > window.innerWidth - 8) {
+      if (side === "left") {
         left = triggerRect.left - elRect.width - 4;
+      } else if (side === "right") {
+        left = triggerRect.right + 4;
+      } else {
+        // Auto mode: prefer right, fallback to left when needed
+        if (left + elRect.width > window.innerWidth - 8) {
+          left = triggerRect.left - elRect.width - 4;
+        }
       }
     }
 
@@ -686,8 +706,11 @@ export function DropdownMenuSubContent({
 
     if (top !== pos.top || left !== pos.left) {
       setPos({ top, left });
+      return;
     }
-  }, [pos, triggerRef]);
+
+    setIsPositionReady(true);
+  }, [pos, triggerRef, side]);
 
   // Handle Escape key to close submenu
   React.useEffect(() => {
@@ -727,7 +750,7 @@ export function DropdownMenuSubContent({
           "max-h-[65vh] overflow-y-auto",
           className
         )}
-        style={{ top: pos.top, left: pos.left }}
+        style={{ top: pos.top, left: pos.left, visibility: isPositionReady ? "visible" : "hidden" }}
       >
         {children}
       </div>

@@ -47,8 +47,6 @@ import { CellSelection } from "@tiptap/pm/tables";
 import { LinkModal } from "./link-modal";
 import { ColorPicker } from "./color-picker";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
-import { useChatContextStore } from "@/stores/chat-context-store";
-import { useLayoutStore } from "@/stores/layout-store";
 import { useTranslations } from "next-intl";
 
 /** Map icon names to components for the Turn Into dropdown */
@@ -113,8 +111,7 @@ function getSelectionRect(): DOMRect | null {
 export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentProps) {
   const t = useTranslations("editor");
   const [linkModalOpen, setLinkModalOpen] = useState(false);
-  const { openQuickEdit, selection } = useEditorStore();
-  const { addChatContext } = useChatContextStore();
+  const { openInlineAI, selection, inlineAIOpen } = useEditorStore();
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
@@ -122,13 +119,14 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
   const updateTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   const checkShouldShow = useCallback(() => {
+    if (inlineAIOpen) return false;
     if (isDiffReviewActive(editor)) return false;
     if (useStreamingStore.getState().isStreaming) return false;
     if (editor.state.selection instanceof CellSelection) return false;
     if (editor.state.selection instanceof NodeSelection) return false;
     const { from, to } = editor.state.selection;
     return to - from > 0;
-  }, [editor]);
+  }, [editor, inlineAIOpen]);
 
   const updateMenu = useCallback(() => {
     const shouldShow = checkShouldShow();
@@ -149,6 +147,12 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
   }, [checkShouldShow]);
 
   // Listen to editor selection changes, focus/blur, and mouseup
+  useEffect(() => {
+    if (inlineAIOpen) {
+      setVisible(false);
+    }
+  }, [inlineAIOpen]);
+
   useEffect(() => {
     const handleSelectionUpdate = () => {
       // Debounce to avoid rapid updates during drag selection
@@ -188,22 +192,48 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
   }, [editor, updateMenu]);
 
   const handleImproveWritingClick = (event: React.MouseEvent) => {
-    const button = event.currentTarget as HTMLElement;
-    const rect = button.getBoundingClientRect();
-    openQuickEdit({ x: rect.left, y: rect.bottom + 5 });
+    if (!selection) return;
+    const selectionRect = getSelectionRect();
+    const fallbackRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const rect = selectionRect || fallbackRect;
+    const beforeStart = Math.max(0, selection.from - 220);
+    const afterEnd = Math.min(editor.state.doc.content.size, selection.to + 220);
+    openInlineAI(
+      { x: rect.left, y: rect.bottom + 5 },
+      "edit",
+      {
+        from: selection.from,
+        to: selection.to,
+        beforeText: editor.state.doc
+          .textBetween(beforeStart, selection.from, "\n", "\n")
+          .slice(-220),
+        afterText: editor.state.doc.textBetween(selection.to, afterEnd, "\n", "\n").slice(0, 220),
+      },
+      { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right }
+    );
   };
 
   const handleAskAI = () => {
     if (!selection) return;
-    addChatContext({
-      type: "selection",
-      text: selection.text,
-      from: selection.from,
-      to: selection.to,
-    });
-    useLayoutStore.getState().setChatOpen(true);
-    // Collapse selection to dismiss bubble menu — text already captured as context
-    editor.commands.setTextSelection(selection.to);
+    const rect = getSelectionRect();
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const y = rect ? rect.bottom : window.innerHeight / 2;
+
+    const beforeStart = Math.max(0, selection.from - 220);
+    const afterEnd = Math.min(editor.state.doc.content.size, selection.to + 220);
+    openInlineAI(
+      { x, y },
+      "ask",
+      {
+        from: selection.from,
+        to: selection.to,
+        beforeText: editor.state.doc
+          .textBetween(beforeStart, selection.from, "\n", "\n")
+          .slice(-220),
+        afterText: editor.state.doc.textBetween(selection.to, afterEnd, "\n", "\n").slice(0, 220),
+      },
+      rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right } : null
+    );
   };
 
   const handleLinkConfirm = (url: string) => {
@@ -272,7 +302,7 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
             >
               <AiLogoIcon className="h-4 w-4" />
               <span className="hidden text-sm font-medium md:inline">
-                {t("bubbleMenu.askAIInChat")}
+                {t("bubbleMenu.askInlineAI")}
               </span>
             </button>
 

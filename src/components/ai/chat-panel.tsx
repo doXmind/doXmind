@@ -11,7 +11,6 @@ import {
   Minus,
   Check,
 } from "lucide-react";
-import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -45,11 +44,8 @@ import { useChat } from "@/hooks/use-chat";
 import { useKBPollingCleanup } from "@/hooks/use-kb-polling-cleanup";
 import { useDataFilePollingCleanup } from "@/hooks/use-data-file-polling-cleanup";
 import { useIsMobile } from "@/hooks/use-device-type";
-import { haptics } from "@/lib/haptics";
 import { useTranslations } from "next-intl";
-import { cn } from "@/lib/utils";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
-import { useOnboardingStore } from "@/stores/onboarding-store";
 
 interface ChatPanelProps {
   isDemoMode?: boolean;
@@ -58,19 +54,34 @@ interface ChatPanelProps {
 export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const t = useTranslations("chat");
   const tc = useTranslations("common");
+  const tSafe = useCallback(
+    (key: string, fallback: string) => {
+      try {
+        return t(key);
+      } catch {
+        return fallback;
+      }
+    },
+    [t]
+  );
 
   const SUGGESTIONS = [
-    { label: t("writeReport"), prompt: "Help me write a report" },
-    { label: t("improveStyle"), prompt: "Help me improve the writing style" },
-    { label: t("summarize"), prompt: "Summarize this document" },
-    { label: t("brainstorm"), prompt: "Help me brainstorm ideas" },
-  ];
-
-  const ONBOARDING_SUGGESTIONS = [
-    { label: t("improveWriting"), prompt: "Review and improve the current document" },
-    { label: t("summarizeThis"), prompt: "Summarize the key points of this document" },
-    { label: t("continueWriting"), prompt: "Continue writing from where I left off" },
-    { label: t("whatCanYouDo"), prompt: "What are all the things you can help me with?" },
+    {
+      label: t("writeReport"),
+      prompt: tSafe("suggestionPromptWriteReport", "Help me write a report"),
+    },
+    {
+      label: t("improveStyle"),
+      prompt: tSafe("suggestionPromptImproveStyle", "Help me improve the writing style"),
+    },
+    {
+      label: t("summarize"),
+      prompt: tSafe("suggestionPromptSummarize", "Summarize this document"),
+    },
+    {
+      label: t("brainstorm"),
+      prompt: tSafe("suggestionPromptBrainstorm", "Help me brainstorm ideas"),
+    },
   ];
 
   const [input, setInput] = useState("");
@@ -83,8 +94,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const isMobile = useIsMobile();
   const { currentFileId } = useFileStore();
   const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
-  const onboardingCompleted = useOnboardingStore((s) => s.onboardingCompleted);
-  const chatSuggestions = onboardingCompleted ? SUGGESTIONS : ONBOARDING_SUGGESTIONS;
+  const chatSuggestions = SUGGESTIONS;
 
   // Chat context store for "Ask in Chat" feature (Context Pills)
   const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
@@ -146,6 +156,9 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
                 base64: c.base64,
                 mediaType: c.mediaType,
               };
+            }
+            if (c.type === "inline_result") {
+              return { type: "selection" as const, text: c.text };
             }
             return { type: "selection" as const, text: c.text };
           })
@@ -281,7 +294,7 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   );
 
   return (
-    <div className="flex h-full flex-col" data-onboarding="chat-composer">
+    <div className="flex h-full flex-col">
       {/* Header */}
       <PanelSubHeader className="chat-header-desktop hidden justify-between md:flex">
         <span className="text-xs font-medium text-muted-foreground">{t("aiChat")}</span>

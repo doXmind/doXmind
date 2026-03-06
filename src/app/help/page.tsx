@@ -254,7 +254,6 @@ export default function HelpPage() {
                   ctrlK: () => <ShortcutCombo keys={["Ctrl", "K"]} />,
                 })}
               </p>
-              <p>{t.rich("onboardingTourDesc", rich)}</p>
             </div>
           </section>
 

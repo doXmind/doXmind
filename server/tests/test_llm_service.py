@@ -312,7 +312,7 @@ class TestLLMServiceJSONComplete:
 
     @pytest.mark.asyncio
     async def test_json_complete_uses_standard_api(self, llm_service, mock_client):
-        """Test json_complete uses standard chat completions API."""
+        """Test json_complete uses strict json_schema response format."""
         mock_client.chat.completions.create = AsyncMock(
             return_value=MockChatCompletion('{"key": "value"}')
         )
@@ -321,6 +321,10 @@ class TestLLMServiceJSONComplete:
         await llm_service.json_complete("Get JSON", json_schema=schema)
 
         mock_client.chat.completions.create.assert_called_once()
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert kwargs["response_format"]["type"] == "json_schema"
+        assert kwargs["response_format"]["json_schema"]["strict"] is True
+        assert kwargs["response_format"]["json_schema"]["schema"] == schema
 
     @pytest.mark.asyncio
     async def test_json_complete_handles_invalid_json(self, llm_service, mock_client):

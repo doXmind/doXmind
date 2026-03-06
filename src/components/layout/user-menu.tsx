@@ -13,7 +13,6 @@ import {
   Shield,
   BarChart3,
   Palette,
-  GraduationCap,
   HelpCircle,
   Globe,
 } from "lucide-react";
@@ -35,7 +34,6 @@ import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { SessionManager } from "@/components/settings/session-manager";
-import { useOnboardingStore } from "@/stores/onboarding-store";
 import { cn } from "@/lib/utils";
 import { useTranslations, useLocale } from "next-intl";
 
@@ -58,8 +56,6 @@ const LOCALES = [
 export function UserMenu({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const { user, logout, deleteAccount } = useAuthStore();
-  const { onboardingCompleted, resetOnboarding, startOnboarding, tutorialFileId } =
-    useOnboardingStore();
   const t = useTranslations("userMenu");
   const ts = useTranslations("settings");
   const tc = useTranslations("common");
@@ -81,12 +77,6 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       toast.error(t("logoutFailed"));
       setIsLoggingOut(false);
     }
-  };
-
-  const handleRestartTour = () => {
-    resetOnboarding();
-    startOnboarding(tutorialFileId ?? undefined);
-    router.push("/");
   };
 
   const handleDeleteAccount = async () => {
@@ -163,12 +153,6 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           <HelpCircle className="mr-2 h-4 w-4" />
           {t("help")}
         </DropdownMenuItem>
-        {onboardingCompleted && (
-          <DropdownMenuItem onClick={handleRestartTour}>
-            <GraduationCap className="mr-2 h-4 w-4" />
-            {t("restartTour")}
-          </DropdownMenuItem>
-        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={() => {

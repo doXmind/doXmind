@@ -59,7 +59,6 @@ export function FloatingChatButton() {
                   onContextMenu={handleContextMenu}
                   onMouseEnter={() => setIsHovered(true)}
                   onMouseLeave={() => setIsHovered(false)}
-                  data-onboarding="chat-toggle"
                   aria-label={t("openAIChat")}
                   className="flex h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-background shadow-md transition-all duration-200 hover:border-border hover:shadow-lg"
                 >

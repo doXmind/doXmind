@@ -10,8 +10,7 @@ import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
-import { useChatContextStore } from "@/stores/chat-context-store";
-import { useLayoutStore } from "@/stores/layout-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { MathEditorPanel } from "./math-editor-panel";
 
 /**
@@ -167,15 +166,25 @@ export function MathNodeView({
   // Ask AI about this equation
   const handleAskInChat = useCallback(() => {
     if (latex && nodePos !== undefined) {
-      useChatContextStore.getState().addChatContext({
-        type: "selection",
-        text: latex,
+      useEditorStore.getState().setSelection({
         from: nodePos,
         to: nodePos + node.nodeSize,
+        text: latex,
       });
-      useLayoutStore.getState().setChatOpen(true);
+      const from = nodePos;
+      const to = nodePos + node.nodeSize;
+      const beforeStart = Math.max(0, from - 220);
+      const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
+      useEditorStore
+        .getState()
+        .openInlineAI({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, "ask", {
+          from,
+          to,
+          beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
+          afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
+        });
     }
-  }, [latex, nodePos, node.nodeSize]);
+  }, [latex, nodePos, node.nodeSize, editor]);
 
   // Overlay toolbar content (shared between block and inline)
   const renderToolbar = () => (
@@ -194,10 +203,10 @@ export function MathNodeView({
           <div className="image-toolbar-sep" />
         </>
       )}
-      <Tooltip content={t("blockAction.askAI")} side="top">
+      <Tooltip content={t("blockAction.askInline")} side="top">
         <button type="button" className="image-toolbar-btn" onClick={handleAskInChat}>
           <AiLogoIcon className="h-3.5 w-3.5" />
-          <span className="text-xs">{t("blockAction.askAI")}</span>
+          <span className="text-xs">{t("blockAction.askInline")}</span>
         </button>
       </Tooltip>
       <div className="image-toolbar-sep" />

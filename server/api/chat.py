@@ -17,9 +17,9 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.writing_agent import WritingAgent
+from api.files import get_user_id
 from config import get_cors_headers, get_settings
 from db.database import Conversation, ConversationAttachment, ConversationDataFile, Message, get_db
-from api.files import get_user_id
 from dependencies import normalize_file_id, resolve_user_api_key
 from exceptions import InternalError
 from services.api_key_service import APIKeyService
@@ -260,7 +260,9 @@ async def chat_stream(
         kb_attachments,
         data_files_metadata,
         data_files_content,
-    ) = await _load_conversation_context(request.conversationId, db, get_user_id(auth) if auth else None)
+    ) = await _load_conversation_context(
+        request.conversationId, db, get_user_id(auth) if auth else None
+    )
 
     # Collector for building the complete response
     collected_text = []

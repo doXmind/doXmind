@@ -135,7 +135,7 @@ export function ChatComposer({
           onKeyDown={handleKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}
-          className="max-h-[200px] min-h-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
+          className="max-h-[200px] min-h-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
           disabled={disabled || isStreaming}
           rows={1}
         />

@@ -7,10 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import (
     EmailVerification,
+    File,
     PasswordReset,
     RefreshToken,
     TelemetryEvent,
@@ -26,6 +28,7 @@ from services.auth_service import (
     verify_password,
     verify_token,
 )
+from services.default_guide import GUIDE_FILENAME
 
 
 @pytest.mark.unit
@@ -238,6 +241,12 @@ class TestVerifyEmailEndpoint:
         assert "access_token" in data
         assert data["token_type"] == "bearer"
         assert "user" in data
+
+        user_id = data["user"]["id"]
+        guide_file_result = await db_session.execute(
+            select(File).where(File.user_id == user_id, File.name == GUIDE_FILENAME)
+        )
+        assert guide_file_result.scalar_one_or_none() is not None
 
     async def test_verify_email_invalid_code(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error for invalid verification code."""
@@ -662,6 +671,17 @@ class TestGoogleOAuthEndpoints:
             # Should redirect with token
             assert response.status_code == 307
             assert "token=" in response.headers.get("location", "")
+
+            user_result = await db_session.execute(
+                select(User).where(User.email == "googleuser@example.com")
+            )
+            user = user_result.scalar_one_or_none()
+            assert user is not None
+
+            guide_file_result = await db_session.execute(
+                select(File).where(File.user_id == user.id, File.name == GUIDE_FILENAME)
+            )
+            assert guide_file_result.scalar_one_or_none() is not None
 
     async def test_google_callback_no_email(self, client: AsyncClient, db_session: AsyncSession):
         """Should return error if Google doesn't provide email."""

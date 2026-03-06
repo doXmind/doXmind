@@ -21,6 +21,21 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
   const popupRef = useRef<HTMLDivElement>(null);
   const suggestionRectRef = useRef<DOMRect | null>(null);
 
+  const closePopup = useCallback(
+    (syncEditor = true) => {
+      setActiveSuggestion(null);
+      setPosition(null);
+      setFlipped(false);
+      if (syncEditor) {
+        const pluginState = TextReviewPluginKey.getState(editor.state);
+        if (pluginState?.activeSuggestionId) {
+          editor.commands.setActiveSuggestion(null);
+        }
+      }
+    },
+    [editor]
+  );
+
   // Handle click on review suggestion
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -35,8 +50,7 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
       const suggestionEl = target.closest(".review-suggestion");
 
       if (!suggestionEl) {
-        setActiveSuggestion(null);
-        setPosition(null);
+        closePopup();
         return;
       }
 
@@ -78,16 +92,13 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
 
     // Close popup on scroll
     const handleScroll = () => {
-      setActiveSuggestion(null);
-      setPosition(null);
+      closePopup();
     };
 
     // Close popup on escape key
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setActiveSuggestion(null);
-        setPosition(null);
-        editor.commands.setActiveSuggestion(null);
+        closePopup();
       }
     };
 
@@ -101,7 +112,29 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
       window.removeEventListener("scroll", handleScroll, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [editor]);
+  }, [editor, closePopup]);
+
+  // Keep popup synced with editor state (e.g. Accept All / Dismiss All)
+  useEffect(() => {
+    if (!activeSuggestion) return;
+
+    const syncWithReviewState = () => {
+      const pluginState = TextReviewPluginKey.getState(editor.state);
+      const isStillPending = pluginState?.suggestions.some(
+        (s) => s.id === activeSuggestion.id && s.status === "pending"
+      );
+
+      if (!isStillPending) {
+        // Avoid dispatching another transaction here; this listener itself runs on transaction.
+        closePopup(false);
+      }
+    };
+
+    editor.on("transaction", syncWithReviewState);
+    return () => {
+      editor.off("transaction", syncWithReviewState);
+    };
+  }, [editor, activeSuggestion, closePopup]);
 
   // Flip popup above if it overflows viewport bottom
   useEffect(() => {
@@ -121,24 +154,20 @@ export function ReviewPopup({ editor }: ReviewPopupProps) {
   const handleAccept = useCallback(() => {
     if (!activeSuggestion) return;
     editor.commands.acceptSuggestion(activeSuggestion.id);
-    setActiveSuggestion(null);
-    setPosition(null);
-  }, [editor, activeSuggestion]);
+    closePopup();
+  }, [editor, activeSuggestion, closePopup]);
 
   // Handle dismiss
   const handleDismiss = useCallback(() => {
     if (!activeSuggestion) return;
     editor.commands.dismissSuggestion(activeSuggestion.id);
-    setActiveSuggestion(null);
-    setPosition(null);
-  }, [editor, activeSuggestion]);
+    closePopup();
+  }, [editor, activeSuggestion, closePopup]);
 
   // Handle close
   const handleClose = useCallback(() => {
-    setActiveSuggestion(null);
-    setPosition(null);
-    editor.commands.setActiveSuggestion(null);
-  }, [editor]);
+    closePopup();
+  }, [closePopup]);
 
   if (!activeSuggestion || !position) return null;
 

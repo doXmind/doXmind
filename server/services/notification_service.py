@@ -206,9 +206,7 @@ async def create_notification(
                         "actor_avatar": notification.actor_avatar,
                         "is_read": notification.is_read,
                         "created_at": (
-                            notification.created_at.isoformat()
-                            if notification.created_at
-                            else ""
+                            notification.created_at.isoformat() if notification.created_at else ""
                         ),
                     },
                     "unread_count": new_count,

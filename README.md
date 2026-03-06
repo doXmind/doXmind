@@ -1,519 +1,222 @@
 # doXmind
 
-> Think. Write. Publish. — AI-powered writing assistant for markdown editing
+> Think. Write. Publish.  
+> AI-native writing workspace for Markdown creators.
 
-A minimalist, modern AI writing tool that combines a powerful markdown editor with Claude AI assistance. Think of it as "Cursor for Writing".
+doXmind 是一个面向写作场景的 AI 工作台：把结构化文档编辑、对话式协作、知识检索与发布分享放进同一套工作流里。你可以把它理解为「面向写作者的 Cursor」。
 
-<img width="1355" height="859" alt="880c13120803e0339a8c8c2b0105486" src="https://github.com/user-attachments/assets/581ae1e0-b96a-4654-abc3-9fe5e49b2ae3" />
+## 为什么是 doXmind
 
-## Table of Contents
+- AI 写作主链路完整：`Chat -> Tool Call -> Diff Review -> Apply`，支持流式输出和可审阅修改。
+- 编辑器不是“聊天外挂”：基于 TipTap 3 深度集成，支持块级编辑、选区快速改写、自动补全、结构大纲。
+- 文档能力覆盖全生命周期：创建、版本、导入、导出、分享、社区互动一体化。
+- 多源上下文：当前文档、会话附件、图片、数据文件、技能模板可同时参与推理。
+- 工程可扩展：前端 Zustand 模块化状态，后端 FastAPI 分层 + Agent 工具体系。
 
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Environment Variables](#environment-variables)
-- [AI Features](#ai-features)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
-- [API Endpoints](#api-endpoints)
-- [Docker Commands](#docker-commands)
-- [Development](#development)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+## 核心能力
 
-## Features
+### 写作与编辑
 
-### Core Editor
+- TipTap 3 富文本/Markdown 双向编辑
+- Quick Edit（润色、扩写、缩写、改语气、翻译等）
+- AI 自动补全（短上下文/长上下文策略）
+- Diff Review（逐条接受/拒绝 AI 修改）
+- Mindlines（文档大纲与结构导航）
+- 版本历史与回滚
 
-- **Rich Markdown Editor** - TipTap-based WYSIWYG editor with full markdown support
-- **Mindlines** - Document outline panel with toggle view (Ctrl+Shift+O) and mindmap visualization
-- **Version History** - Track changes and restore previous versions
-- **Dark/Light Mode** - Beautiful UI with theme support and high contrast mode
-- **Loading Experience** - Polished loading screen with animated logo and skeleton UI
+### AI 协作
 
-### AI Capabilities
+- 流式对话（SSE）
+- 工具调用可视化（tool start/end、thinking、usage）
+- Skills 领域技能系统（academic/business/content/technical 等）
+- 全局 Agent / KB Agent（跨文档问答与检索）
+- Web Search / Web Fetch 能力（可配置开关）
 
-- **AI Chat** - Conversational AI assistance powered by Claude with smooth animations
-- **Quick Edit** - Select text and instantly improve, translate, or simplify with spring animations
-- **Diff Review** - Review and accept/reject AI-suggested changes with cross-block replacement support
-- **Autocomplete** - GitHub Copilot-style AI text completion
-- **RAG Search** - Semantic search across your documents using pgvector
-- **Skills System** - Domain-specific knowledge for essay writing, research analysis, and content writing
-- **Web Tools** - AI can search the web and fetch pages for up-to-date information
+### 资产与内容流转
 
-### Knowledge Base
+- 导入：`PDF / DOCX / PPTX / MD`
+- 导出：`Markdown / DOCX / PDF`
+- 会话知识库附件（文档转换 + 检索）
+- 数据文件分析入口（CSV/Excel/JSON 等）
+- 分享链接、社区发布、评论、收藏、通知
 
-- **Unified Attachment Menu** - Single menu for images, documents, and KB management
-- **Document Attachments** - Attach PDF, DOCX, PPTX files to conversations
-- **AI Document Analysis** - AI can search and read your attached documents
-- **Vector Search** - Semantic search across your knowledge base
+## 最新架构概览
 
-### Multimodal Support
+### 前端
 
-- **Image Upload** - Paste or upload images in chat (up to 10 images per message)
-- **Vision Analysis** - Claude analyzes images using Anthropic Vision API
-- **Supported Formats** - JPEG, PNG, GIF, WebP (max 5MB per image)
+- **Framework**: Next.js 15 (App Router) + React 19 + TypeScript
+- **Editor**: TipTap 3 + 自定义扩展（diff-review/search/autocomplete/spellcheck/block-selection）
+- **State**: Zustand（按域拆分 store）
+- **UI**: Tailwind CSS + Framer Motion
 
-### File Import
+关键状态域（部分）：
 
-- **PDF Import** - Convert PDF documents to editable Markdown using Gemini API
-- **Word Import** - Import DOCX files with formatting preserved
-- **PowerPoint Import** - Import PPTX presentations as Markdown
-- **Markdown Import** - Direct import of .md files
-- **Auto Indexing** - Imported files are automatically indexed for RAG search
+- `file-store` / `editor-store` / `chat-store`
+- `streaming-store` / `diff-review-store` / `outline-store`
+- `kb-store` / `data-files-store` / `global-agent-store`
+- `auth-store` / `settings-store` / `telemetry-store`
 
-### Mobile Experience
+### 后端
 
-- **Responsive Design** - Optimized UI for phones and tablets
-- **Bottom Navigation** - iOS-style navigation bar on mobile
-- **Swipe Gestures** - Drag-up panels for chat and outline
-- **Touch-Friendly** - Large touch targets (44-48px) for comfortable interaction
+- **Framework**: FastAPI + SQLAlchemy 2.0 (async)
+- **Agent Runtime**: 基于 OpenRouter 的工具调用循环（非黑盒）
+- **AI 接入**: OpenRouter（支持服务端 Key + 用户 BYOK）
+- **Auth**: JWT 双 token（access + refresh）+ OAuth（Google）
+- **Storage**: PostgreSQL + Redis（限流/缓存）+ S3/Local 文件存储
 
-### Accessibility & UX
+关键模块：
 
-- **Command Palette** - Quick actions via Ctrl+K (search, navigate, execute commands)
-- **Keyboard Shortcuts** - Comprehensive shortcuts with help modal (Ctrl+?)
-- **Skip to Content** - Keyboard navigation with skip link for accessibility
-- **High Contrast Mode** - Light and dark high contrast variants
-- **Onboarding Tour** - Guided tour for new users
-- **Network Status** - Offline/online indicator
-- **Unsaved Changes Warning** - Prevent accidental data loss
-- **Dynamic Tab Title** - Browser tab updates based on current file
-- **Framer Motion Animations** - Polished UI transitions throughout
+- `server/api/`：路由层（chat/files/auth/kb/export/import/community...）
+- `server/services/`：业务层（llm/auth/export/skills/data_parser...）
+- `server/agents/`：Agent 与工具执行器（document/kb/web/community/data_files）
+- `server/db/`：模型与连接，`server/alembic/` 负责迁移
 
-## Tech Stack
+## 目录结构
 
-### Frontend
-
-- **Next.js 15** - React framework with App Router
-- **React 19** - Latest React with Server Components
-- **TipTap** - Headless rich text editor
-- **Tailwind CSS** - Utility-first styling
-- **Zustand** - Lightweight state management
-- **React Query** - Data fetching and caching
-- **Framer Motion** - Fluid animations and transitions
-- **ReactFlow** - Mindmap visualization
-
-### Backend
-
-- **FastAPI** - Modern Python web framework
-- **LangGraph** - Agent orchestration framework
-- **Claude API** - Anthropic's AI models (including Vision and Web Tools)
-- **PostgreSQL + pgvector** - Database with vector search extension
-- **OpenAI Embeddings** - text-embedding-3-small for vector search
-- **Gemini API** - PDF/DOCX/PPTX to Markdown conversion
-
-## Quick Start
-
-### Option 1: Docker (Recommended)
-
-The easiest way to run the full stack with PostgreSQL and pgvector.
-
-```bash
-# 1. Copy environment file
-cp .env.example .env
-
-# 2. Add your API keys to .env
-# ANTHROPIC_API_KEY=sk-ant-xxx  (required)
-# OPENAI_API_KEY=sk-xxx         (required for vector search)
-# GOOGLE_API_KEY=xxx            (required for file import)
-
-# 3. Start all services
-docker-compose up -d
-
-# 4. Open the app
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000
+```text
+doxmind/
+├─ src/                      # 前端源码
+│  ├─ app/                   # Next.js 路由
+│  ├─ components/            # UI 与业务组件
+│  ├─ hooks/                 # 业务 hooks
+│  ├─ stores/                # Zustand 状态
+│  ├─ extensions/            # TipTap 扩展
+│  └─ lib/                   # API 客户端与工具函数
+├─ server/                   # 后端源码
+│  ├─ api/                   # FastAPI routers
+│  ├─ agents/                # Agent + tools
+│  ├─ services/              # 业务服务
+│  ├─ db/                    # SQLAlchemy models
+│  └─ alembic/               # DB migrations
+├─ docs/                     # 架构与部署文档
+├─ docker-compose.yml        # 开发容器编排
+└─ docker-compose.prod.yml   # 生产容器编排
 ```
 
-**Docker Services:**
+## 快速开始
 
-- `postgres` - PostgreSQL 16 with pgvector extension
-- `backend` - FastAPI server
-- `frontend` - Next.js app
+### 方式 A：本地开发（推荐）
 
-### Option 2: Local Development
-
-For development without Docker.
-
-#### Prerequisites
-
-- Node.js 20+
-- Python 3.12+
-- PostgreSQL 16+ with pgvector extension
-- Anthropic API Key
-- OpenAI API Key (for embeddings)
-- Google API Key (for file conversion)
-
-#### Installation
-
-1. **Install dependencies**
+1. 安装依赖
 
 ```bash
-cd doxmind-mini
-
-# Frontend
 npm install
 
-# Backend
 cd server
 python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-2. **Configure environment**
+2. 配置后端环境变量
 
 ```bash
-# Create server/.env
-cp server/.env.example server/.env
-# Edit and add ANTHROPIC_API_KEY
+copy server/.env.example server/.env
 ```
 
-3. **Start development servers**
+至少建议设置：
+
+- `DATABASE_URL`
+- `JWT_SECRET_KEY`
+- `OPENROUTER_API_KEY`（若使用服务端 AI）
+- `API_KEY_ENCRYPTION_KEY`（若启用用户 BYOK 存储）
+
+3. 启动服务
 
 ```bash
-# Option A: Run both together
+# 项目根目录（前后端同时）
 npm run dev:all
 
-# Option B: Run separately
-# Terminal 1 - Frontend
+# 或分别启动
 npm run dev
+cd server && python main.py
+```
 
-# Terminal 2 - Backend
-cd server
+4. 访问
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+
+### 方式 B：Docker 开发环境
+
+```bash
+copy .env.example .env
+docker-compose up -d
+```
+
+服务：
+
+- `frontend` (3000)
+- `backend` (8000)
+- `postgres` (5433 -> 5432)
+- `redis` (6379)
+
+## 开发命令
+
+### Frontend（项目根目录）
+
+```bash
+npm run dev
+npm run build
+npm run lint
+npm run lint:fix
+npm run type-check
+npm run test
+npm run test:ci
+npm run test:coverage
+npm run format
+```
+
+### Backend（`server/`）
+
+```bash
 python main.py
+pytest
+pytest --cov
+pytest -v -m unit
+ruff check .
+ruff format .
 ```
 
-4. **Open the app**
+## 数据库迁移（Alembic）
 
-Navigate to [http://localhost:3000](http://localhost:3000)
-
-## Project Structure
-
-```
-doxmind/
-├── src/                      # Frontend source
-│   ├── app/                  # Next.js App Router
-│   ├── components/           # React components
-│   │   ├── editor/          # TipTap editor & mindlines
-│   │   ├── ai/              # AI chat, quick edit & attachments
-│   │   ├── kb/              # Knowledge base components
-│   │   ├── mobile/          # Mobile-responsive components
-│   │   ├── sidebar/         # File management
-│   │   ├── layout/          # App layout
-│   │   ├── onboarding/      # Onboarding tour
-│   │   └── ui/              # Base UI components (command palette, etc.)
-│   ├── extensions/          # TipTap extensions (diff-review, search)
-│   ├── hooks/               # Custom React hooks
-│   ├── stores/              # Zustand stores
-│   ├── lib/                 # Utilities
-│   └── types/               # TypeScript types
-│
-├── server/                   # Backend source
-│   ├── api/                 # API routes
-│   │   ├── knowledge_base.py # KB attachments API
-│   │   └── import_file.py   # File import API
-│   ├── agents/              # LangGraph agents
-│   ├── services/            # Business logic
-│   │   ├── rag_service.py   # pgvector search service
-│   │   ├── gemini_converter.py  # File to Markdown conversion
-│   │   └── skills_service.py    # Skills system
-│   ├── skills/              # Domain-specific skills
-│   │   ├── essay-writing/   # Essay writing templates & knowledge
-│   │   ├── research-analysis/   # Research methods & templates
-│   │   └── content-writing/ # Content creation resources
-│   ├── db/                  # Database (PostgreSQL + pgvector)
-│   ├── main.py              # FastAPI app
-│   └── config.py            # Configuration
-│
-├── docker-compose.yml        # Docker orchestration
-├── Dockerfile.frontend       # Frontend Docker image
-└── server/Dockerfile         # Backend Docker image
-```
-
-## Environment Variables
-
-> **Security Note**: Never commit `.env` files to version control. The `.gitignore` file excludes these by default.
-
-### Docker (.env)
-
-```env
-# Database
-POSTGRES_USER=doxmind
-POSTGRES_PASSWORD=doxmind123
-POSTGRES_DB=doxmind
-
-# API Keys (all required)
-ANTHROPIC_API_KEY=sk-ant-xxx
-OPENAI_API_KEY=sk-xxx
-GOOGLE_API_KEY=xxx
-
-# Debug
-DEBUG=true
-```
-
-### Backend (server/.env)
-
-```env
-# PostgreSQL with pgvector (Docker uses port 5433 externally)
-DATABASE_URL=postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind
-
-# Vector search
-PGVECTOR_ENABLED=true
-
-# API Keys
-ANTHROPIC_API_KEY=sk-ant-xxx
-OPENAI_API_KEY=sk-xxx        # Required for embeddings
-GOOGLE_API_KEY=xxx           # Required for file conversion
-```
-
-## AI Features
-
-### Chat Assistant
-
-- Ask questions about your document
-- Request writing help and suggestions
-- Get summaries and explanations
-- @ mention files for context
-- Attach images for visual analysis
-- Upload documents to knowledge base for reference
-
-### Knowledge Base
-
-Attach documents to your conversation for AI to reference:
-
-- **Supported Formats** - PDF, DOCX, PPTX (max 50MB)
-- **Drag & Drop** - Simply drag files into the chat
-- **AI Tools** - AI can search, read, and list your documents
-- **Status Tracking** - See upload progress and indexing status
-
-### Image Analysis
-
-Send images to Claude for visual understanding:
-
-- **Paste or Upload** - Ctrl+V to paste, or click to upload
-- **Multiple Images** - Up to 10 images per message
-- **Format Support** - JPEG, PNG, GIF, WebP (max 5MB each)
-
-### Quick Edit
-
-Select text and choose from:
-
-- **Fix Grammar** - Correct spelling and grammar
-- **Improve** - Enhance writing quality
-- **Simplify** - Use simpler language
-- **Expand** - Add more detail
-- **Shorten** - Make concise
-- **Translate** - English/Chinese translation
-- **Tone** - Professional or casual
-
-### Autocomplete
-
-Press Tab to accept AI suggestions as you type.
-
-### Skills System
-
-Domain-specific knowledge that enhances AI assistance:
-
-- **Essay Writing** - Academic phrases, citation styles, argumentative templates
-- **Research Analysis** - PRISMA guidelines, literature review templates, research methods
-- **Content Writing** - SEO writing, headline formulas, blog post templates
-
-### File Import
-
-Import external documents directly into the editor using Gemini API:
-
-- **PDF** - Extract text and convert to Markdown
-- **DOCX** - Preserve formatting from Word documents
-- **PPTX** - Convert PowerPoint presentations
-- **Markdown** - Direct import of .md files
-- **Auto-Index** - Imported files are indexed for RAG search
-
-## Keyboard Shortcuts
-
-| Shortcut       | Action                         |
-| -------------- | ------------------------------ |
-| `Ctrl+K`       | Open command palette           |
-| `Ctrl+?`       | Show keyboard shortcuts        |
-| `Ctrl+S`       | Save document                  |
-| `Ctrl+Shift+O` | Toggle outline panel           |
-| `Ctrl+F`       | Find in document               |
-| `Ctrl+Z`       | Undo                           |
-| `Ctrl+Shift+Z` | Redo                           |
-| `Tab`          | Accept autocomplete suggestion |
-| `Escape`       | Cancel/close dialogs           |
-
-## API Endpoints
-
-| Method | Endpoint                                   | Description             |
-| ------ | ------------------------------------------ | ----------------------- |
-| POST   | `/api/chat/stream`                         | Stream AI chat response |
-| POST   | `/api/edit/quick`                          | Quick edit actions      |
-| POST   | `/api/autocomplete/suggest`                | Get text suggestion     |
-| GET    | `/api/files`                               | List files              |
-| POST   | `/api/files`                               | Create file             |
-| PUT    | `/api/files/:id`                           | Update file             |
-| DELETE | `/api/files/:id`                           | Delete file             |
-| POST   | `/api/files/search`                        | RAG search              |
-| POST   | `/api/import`                              | Import PDF/DOCX/MD file |
-| GET    | `/api/versions/:fileId`                    | List versions           |
-| POST   | `/api/versions/:fileId/:versionId/restore` | Restore version         |
-| POST   | `/api/kb/:conversationId/attachments`      | Upload KB attachment    |
-| GET    | `/api/kb/:conversationId/attachments`      | List KB attachments     |
-| DELETE | `/api/kb/:conversationId/attachments/:id`  | Delete KB attachment    |
-| POST   | `/api/kb/:conversationId/search`           | Search knowledge base   |
-
-## Docker Commands
+当你修改数据库结构时，不要只改模型，必须走迁移：
 
 ```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop all services
-docker-compose down
-
-# Rebuild after changes
-docker-compose up -d --build
-
-# Reset database
-docker-compose down -v
-docker-compose up -d
-```
-
-## Development
-
-### Code Quality Tools
-
-This project uses modern code quality tools to ensure consistency:
-
-**Frontend:**
-
-- **ESLint** - JavaScript/TypeScript linting
-- **Prettier** - Code formatting with Tailwind CSS plugin
-- **Vitest** - Fast unit testing with React Testing Library
-- **TypeScript** - Strict type checking
-
-**Backend:**
-
-- **Ruff** - Fast Python linter and formatter
-- **pytest** - Testing framework with async support
-- **pytest-cov** - Code coverage reporting
-
-### Running Tests
-
-```bash
-# Frontend tests
-npm test                 # Run tests in watch mode
-npm run test:ui          # Run tests with UI
-npm run test:coverage    # Generate coverage report
-
-# Backend tests
 cd server
-pytest                   # Run all tests
-pytest --cov             # Run with coverage
-pytest -v -m unit        # Run only unit tests
+alembic revision --autogenerate -m "your migration message"
+alembic upgrade head
+alembic downgrade -1
+alembic upgrade head
 ```
 
-### Pre-commit Hooks
-
-The project uses Husky for pre-commit hooks:
+常用命令：
 
 ```bash
-# Install hooks (automatic on npm install)
-npm run prepare
-
-# Hooks will run:
-# - ESLint (fix mode)
-# - Prettier (format)
-# on staged files
+alembic current
+alembic history
+alembic upgrade head
 ```
 
-### API Documentation
+## API 文档
 
-When running in debug mode, API documentation is available at:
+`DEBUG=true` 时可访问：
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI JSON**: http://localhost:8000/openapi.json
+- Swagger: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
 
-### CI/CD
+## 工程质量
 
-The project includes GitHub Actions workflows:
+- Frontend: ESLint + Prettier + Vitest + TypeScript strict
+- Backend: Ruff + pytest
+- Git hooks: Husky + lint-staged（提交前自动检查/格式化）
 
-- **CI** (`ci.yml`) - Runs on every push/PR
-  - Frontend: lint, type-check, test, build
-  - Backend: lint, test
-  - Security scan with Trivy
-- **Deploy** (`deploy.yml`) - Deploys to production on main branch
+## 部署
 
-### Docker Production Build
-
-For production deployment, use the optimized Dockerfiles:
-
-```bash
-# Build production images
-docker build -f Dockerfile.frontend.prod -t doxmind-frontend:prod .
-docker build -f server/Dockerfile.prod -t doxmind-backend:prod ./server
-
-# Features:
-# - Multi-stage builds (smaller images)
-# - Non-root user (security)
-# - Health checks
-# - Production-optimized settings
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Port already in use**
-
-```bash
-# Check what's using the port
-netstat -ano | findstr :3000  # Windows
-lsof -i :3000                 # macOS/Linux
-
-# Kill the process or use a different port
-```
-
-**API Key errors**
-
-- Ensure `.env` file exists with valid keys
-- Check for extra spaces or quotes around keys
-- Verify API key permissions and quotas
-
-**Database connection failed**
-
-- Check PostgreSQL is running: `docker ps`
-- Verify DATABASE_URL format
-- For local dev, SQLite is used by default
-
-**Vector search not working**
-
-- Ensure OPENAI_API_KEY is set for embeddings
-- Check pgvector extension is installed
-- Verify PGVECTOR_ENABLED=true
+- 开发容器：`docker-compose.yml`
+- 生产容器：`docker-compose.prod.yml`
+- 生产版包含 Nginx / Postgres(pgvector image) / Redis / Backend / Frontend 分层部署
 
 ## License
 
 MIT
-
-## Credits
-
-Built with:
-
-- [Next.js](https://nextjs.org/)
-- [TipTap](https://tiptap.dev/)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [LangGraph](https://langchain-ai.github.io/langgraph/)
-- [Claude](https://anthropic.com/)
-- [PostgreSQL](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector)
-- [OpenAI](https://openai.com/) (Embeddings)
-- [Gemini](https://ai.google.dev/) (File Conversion)
-- [Framer Motion](https://www.framer.com/motion/)
-- [ReactFlow](https://reactflow.dev/)

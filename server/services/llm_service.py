@@ -1,7 +1,9 @@
 """LLM Service for interacting with LLM API via OpenRouter."""
 
+import json
 import logging
 from collections.abc import AsyncIterator
+from typing import Any, cast
 
 from openai import AsyncOpenAI
 
@@ -184,34 +186,39 @@ class LLMService:
     ) -> dict:
         """Generate a structured JSON completion.
 
-        Uses prompt-based JSON enforcement since structured outputs
-        may not be available through all OpenRouter providers.
+        Uses OpenRouter/OpenAI structured output mode with strict JSON schema
+        enforcement to prevent non-JSON or multi-block responses.
         """
-        import json
-
-        # Build a system prompt that enforces JSON output
         json_system = (system or "You are a helpful AI writing assistant.") + (
             "\n\nIMPORTANT: You MUST respond with valid JSON only. "
             "No markdown, no explanations, no code fences. Just raw JSON."
         )
 
-        # Include the schema in the user prompt for guidance
-        enhanced_prompt = (
-            f"{prompt}\n\n"
-            f"Respond with JSON matching this schema:\n{json.dumps(json_schema, indent=2)}"
-        )
+        if "name" in json_schema and "schema" in json_schema:
+            strict_schema = {
+                **json_schema,
+                "strict": json_schema.get("strict", True),
+            }
+        else:
+            strict_schema = {
+                "name": "structured_response",
+                "strict": True,
+                "schema": json_schema,
+            }
 
+        text = ""
         try:
             messages = [
                 {"role": "system", "content": json_system},
-                {"role": "user", "content": enhanced_prompt},
+                {"role": "user", "content": prompt},
             ]
+            response_format: dict[str, Any] = {"type": "json_schema", "json_schema": strict_schema}
             response = await self.client.chat.completions.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature,
-                messages=messages,
-                response_format={"type": "json_object"},
+                messages=cast(Any, messages),
+                response_format=cast(Any, response_format),
                 extra_body=self._build_extra_body(
                     {
                         "provider": {
@@ -223,15 +230,19 @@ class LLMService:
             from services.usage_tracker import extract_usage
 
             self.last_usage = extract_usage(response)
-            text = (response.choices[0].message.content or "").strip()
+
+            content = response.choices[0].message.content
+            text = content.strip() if isinstance(content, str) else str(content or "").strip()
+
             # Strip markdown code fences if present (some models still add them)
             if text.startswith("```"):
                 text = text.split("\n", 1)[1] if "\n" in text else text[3:]
                 if text.endswith("```"):
                     text = text[:-3].strip()
+
             return json.loads(text)
         except json.JSONDecodeError as e:
-            logger.error(f"LLM JSON parse error: {e}")
+            logger.error(f"LLM JSON parse error: {e}. Raw content: {text[:500]}")
             raise
         except Exception as e:
             logger.error(f"LLM JSON completion error: {e}")

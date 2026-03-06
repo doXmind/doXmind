@@ -222,8 +222,8 @@ src/
 │   │   ├── sidebar-skeleton.tsx  # 侧边栏加载骨架
 │   │   └── file-tree/            # 文件树组件
 │   │
-│   ├── onboarding/               # 引导功能
-│   │   └── onboarding-tour.tsx   # 新用户引导教程
+│   ├── guides/                   # 内置使用指南
+│   │   └── tutorial-document.ts  # doXmind 使用指南内容
 │   │
 │   ├── ui/                       # 基础 UI 组件 (shadcn/ui)
 │   │   ├── command-palette.tsx   # 命令面板 (Ctrl+K)

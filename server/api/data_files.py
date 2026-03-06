@@ -19,9 +19,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.files import get_user_id
 from config import get_settings
 from db.database import ConversationDataFile, get_db
-from api.files import get_user_id
 from dependencies import get_conversation_by_file_id
 from exceptions import (
     ConversationNotFoundError,
@@ -29,8 +29,8 @@ from exceptions import (
     NotFoundError,
     UnsupportedFileTypeError,
 )
-from services.data_parser_service import get_data_parser_service
 from services.auth_service import TokenData, require_auth
+from services.data_parser_service import get_data_parser_service
 
 logger = logging.getLogger(__name__)
 

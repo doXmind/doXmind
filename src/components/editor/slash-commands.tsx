@@ -503,12 +503,6 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
       const item = items[index];
       if (item) {
         command(item);
-        // Track onboarding step
-        import("@/stores/onboarding-store")
-          .then(({ useOnboardingStore }) => {
-            useOnboardingStore.getState().completeStep("slash-command");
-          })
-          .catch(() => {});
       }
     },
     [items, command]

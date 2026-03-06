@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -39,6 +39,7 @@ os.environ.setdefault(
     "API_KEY_ENCRYPTION_KEY", "N7rUzNKqpRGSOGKpcErTa4dn1jsdNsM8F0BO5ch2RJE="
 )  # Fernet key for encrypting user API keys
 
+import db.database as db_database
 from db.database import Base, get_db
 from dependencies import get_db as deps_get_db
 from main import app
@@ -67,24 +68,30 @@ def _ensure_test_database():
         return
 
     try:
-        import asyncpg
+        import psycopg2
+        from psycopg2 import sql
 
-        async def _create():
-            conn = await asyncpg.connect(
-                user=user, password=password, host=host, port=int(port), database="doxmind"
-            )
-            try:
-                exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", dbname)
-                if not exists:
-                    await conn.execute(f'CREATE DATABASE "{dbname}" OWNER "{user}"')
-            finally:
-                await conn.close()
+        conn = psycopg2.connect(
+            dbname="doxmind",
+            user=user,
+            password=password,
+            host=host,
+            port=int(port),
+        )
+        conn.autocommit = True
 
-        loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(_create())
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,))
+                exists = cur.fetchone() is not None
+                if not exists:
+                    cur.execute(
+                        sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                            sql.Identifier(dbname), sql.Identifier(user)
+                        )
+                    )
         finally:
-            loop.close()
+            conn.close()
     except Exception as e:
         import warnings
 
@@ -105,6 +112,10 @@ TestingSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+# Force app/database dependencies to use the test engine/session factory.
+db_database.engine = test_engine
+db_database.async_session = TestingSessionLocal
 
 
 def _setup_schema():
@@ -143,23 +154,15 @@ def _setup_schema():
             """)
             )
 
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(_run())
-    finally:
-        loop.close()
+    asyncio.run(_run())
 
 
 _setup_schema()
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Dispose the test database engine to properly close asyncpg connections."""
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(test_engine.dispose())
-    finally:
-        loop.close()
+    """Dispose database engines to properly close asyncpg connections."""
+    asyncio.run(test_engine.dispose())
 
 
 @pytest.fixture(scope="function")
@@ -175,15 +178,11 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     connection = await test_engine.connect()
     transaction = await connection.begin()
 
-    session = AsyncSession(bind=connection, expire_on_commit=False)
-
-    # Use nested transactions so session.commit() doesn't actually commit
-    await connection.begin_nested()
-
-    @event.listens_for(session.sync_session, "after_transaction_end")
-    def restart_savepoint(sync_session, sync_transaction):
-        if sync_transaction.nested and not sync_transaction._parent.nested:
-            connection.sync_connection.begin_nested()
+    session = AsyncSession(
+        bind=connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     yield session
 
@@ -332,9 +331,9 @@ from db.database import Conversation, File, User
 
 async def create_test_user(
     db_session: AsyncSession,
-    user_id: str = None,
-    email: str = None,
-    username: str = None,
+    user_id: str | None = None,
+    email: str | None = None,
+    username: str | None = None,
 ) -> User:
     """Helper function to create a test user in the database.
 

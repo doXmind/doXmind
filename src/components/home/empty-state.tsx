@@ -7,14 +7,13 @@ import { Loader2, PenLine, FileText, ClipboardList, Sparkles } from "lucide-reac
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useFileStore } from "@/stores/file-store";
-import { useOnboardingStore } from "@/stores/onboarding-store";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import {
   getWelcomeDocumentMarkdown,
   WELCOME_DOCUMENT_FILENAME,
   WELCOME_DOCUMENT_FILENAME_ZH,
-} from "@/components/onboarding/welcome-document";
+} from "@/components/guides/welcome-document";
 import {
   zhEmptyStateContent,
   zhEmptyStateFileNames,
@@ -106,7 +105,7 @@ Write down your 1-3-5. Just those 9 items. Nothing else.
 
 ### Discussion
 
-- Shipped the new onboarding flow (Alice). Conversion up 12%.
+- Shipped the new guided writing workflow (Alice). Conversion up 12%.
 - Search indexing migration complete (Bob). Latency down from 800ms → 120ms.
 
 ### Action Items
@@ -127,7 +126,6 @@ export function EmptyState() {
   const locale = useLocale();
   const router = useRouter();
   const { files, createFile, importFile, currentFolderId } = useFileStore();
-  const { startOnboarding, onboardingCompleted } = useOnboardingStore();
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -138,12 +136,9 @@ export function EmptyState() {
       // For the welcome template, reuse existing tutorial document
       if (template.id === "welcome") {
         const existing = files.find(
-          (f) =>
-            f.name.startsWith("Getting Started with doXmind") ||
-            f.name.startsWith("doXmind 使用指南")
+          (f) => f.name.startsWith("doXmind User Guide") || f.name.startsWith("doXmind 使用指南")
         );
         if (existing) {
-          if (!onboardingCompleted) startOnboarding(existing.id);
           router.push(`/editor/${existing.id}`);
           return;
         }
@@ -172,10 +167,6 @@ export function EmptyState() {
       const markdown = template.getMarkdown(locale);
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
       const newId = await createFile(fileName, htmlContent, currentFolderId);
-      // Start onboarding when creating the tutorial document
-      if (template.id === "welcome" && !onboardingCompleted) {
-        startOnboarding(newId);
-      }
 
       router.push(`/editor/${newId}`);
     } catch (error) {
