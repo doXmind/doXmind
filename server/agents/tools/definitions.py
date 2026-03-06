@@ -326,7 +326,7 @@ def get_tools_for_mode(
         mode: "edit" for full editing tools, "analyze" for read-only
         has_kb_attachments: Whether KB attachments exist for this conversation
         has_skills: Whether skills are available
-        web_search_enabled: Whether Brave web search tool is enabled
+        web_search_enabled: Whether Google web search tool is enabled
         is_quick_edit: Quick edit mode - only str_replace_editor + read_content
 
     Returns:
@@ -358,7 +358,7 @@ def get_tools_for_mode(
     if has_skills:
         tools = tools + SKILL_TOOLS
 
-    # Add web tools (client-side tools via Brave Search / httpx)
+    # Add web tools (client-side tools via Google Serper / httpx)
     if web_search_enabled:
         tools.append(WEB_SEARCH_TOOL)
     tools.append(WEB_FETCH_TOOL)
@@ -435,12 +435,12 @@ Fields:
 
 
 # ============================================================================
-# Web Tools Definition (client-side tools via Brave Search / httpx)
+# Web Tools Definition (client-side tools via Google Serper / httpx)
 # ============================================================================
 
 WEB_SEARCH_TOOL = {
     "name": "web_search",
-    "description": "Search the web for information using Brave Search. Returns titles, URLs, and snippets.",
+    "description": "Search the web for information using Google Search. Returns titles, URLs, snippets, and knowledge graph data when available.",
     "input_schema": {
         "type": "object",
         "properties": {

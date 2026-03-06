@@ -1,7 +1,7 @@
 """Web tools and code execution for the writing agent.
 
 Client-side tools that replace Anthropic's server-side tools:
-- web_search: Brave Search API
+- web_search: Google Serper API
 - web_fetch: httpx URL fetching with content extraction
 - code_execution: Python subprocess execution
 """
@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 
 from config import get_settings
-from services.brave_search_service import brave_search
+from services.serper_search_service import serper_search
 
 logger = logging.getLogger(__name__)
 
@@ -102,12 +102,12 @@ async def execute_web_tool(
 
 
 async def _execute_web_search(tool_input: dict[str, Any]) -> dict[str, Any]:
-    """Execute web search using Brave Search API."""
+    """Execute web search using Google Serper API."""
     query = tool_input.get("query", "")
     if not query:
         return {"error": "Search query is required"}
 
-    results = await brave_search(query, count=10)
+    results = await serper_search(query, count=10)
 
     if results and "error" in results[0]:
         return {"error": results[0]["error"]}
@@ -117,8 +117,15 @@ async def _execute_web_search(tool_input: dict[str, Any]) -> dict[str, Any]:
 
     # Format results for the agent
     formatted = []
-    for i, r in enumerate(results, 1):
-        formatted.append(f"## {i}. {r['title']}\nURL: {r['url']}\n{r['snippet']}\n")
+    idx = 1
+    for r in results:
+        if r.get("type") == "knowledgeGraph":
+            formatted.append(
+                f"## Knowledge Graph: {r['title']}\nURL: {r['url']}\n{r['snippet']}\n"
+            )
+        else:
+            formatted.append(f"## {idx}. {r['title']}\nURL: {r['url']}\n{r['snippet']}\n")
+            idx += 1
 
     return {"result": "\n".join(formatted)}
 

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
             "X-Title": self.openrouter_app_name,
         }
 
-    brave_search_api_key: str = ""  # For Brave web search
+    serper_api_key: str = ""  # For Google Serper web search
 
     # =========================================================================
     # Security / JWT (Dual-Token Authentication)
@@ -164,7 +164,7 @@ class Settings(BaseSettings):
     ]
 
     # =========================================================================
-    # Web Tools Settings (client-side tools via Brave Search)
+    # Web Tools Settings (client-side tools via Google Serper)
     # =========================================================================
     web_search_enabled: bool = True  # Default on
     web_fetch_enabled: bool = True  # Web fetch is always available

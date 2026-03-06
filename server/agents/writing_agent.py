@@ -7,7 +7,7 @@ Supports:
 - Real-time text streaming (token by token)
 - Tool use with proper event handling
 - Skill tools for accessing templates and knowledge
-- Web search (Brave Search) and code execution (Python subprocess)
+- Web search (Google Serper) and code execution (Python subprocess)
 """
 
 import json
@@ -113,7 +113,7 @@ class WritingAgent:
             mode: "edit" for full editing tools, "analyze" for read-only
             kb_attachments: List of KB attachments for this conversation
             data_files_metadata: List of data files metadata (for system prompt)
-            web_search_enabled: Enable web search tool (Brave Search)
+            web_search_enabled: Enable web search tool (Google Search)
             db: Database session for RAG operations
             api_key: User's OpenRouter API key (uses server key if not provided)
             model: User's preferred model (uses default if not provided)
