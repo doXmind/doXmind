@@ -270,7 +270,6 @@ def get_settings() -> Settings:
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://beta.doxmind.com",
     "https://doxmind.com",
     "https://www.doxmind.com",
     "https://cn.doxmind.com",

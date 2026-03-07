@@ -334,17 +334,19 @@ export default function CommunityDetailPage() {
                           <ArrowLeft className="h-3.5 w-3.5" />
                           {detail.title}
                         </button>
-                        {folderViewData.breadcrumbs?.map((crumb) => (
-                          <span key={crumb.id} className="flex items-center gap-1">
-                            <span className="text-muted-foreground/50">/</span>
-                            <button
-                              onClick={() => handleFolderNavigate(crumb.id)}
-                              className="truncate text-muted-foreground/70 transition-colors hover:text-foreground"
-                            >
-                              {crumb.name}
-                            </button>
-                          </span>
-                        ))}
+                        {folderViewData.breadcrumbs
+                          ?.filter((c) => c.is_folder)
+                          .map((crumb) => (
+                            <span key={crumb.id} className="flex items-center gap-1">
+                              <span className="text-muted-foreground/50">/</span>
+                              <button
+                                onClick={() => handleFolderNavigate(crumb.id)}
+                                className="truncate text-muted-foreground/70 transition-colors hover:text-foreground"
+                              >
+                                {crumb.name}
+                              </button>
+                            </span>
+                          ))}
                         {!folderViewData.is_folder && (
                           <>
                             <span className="text-muted-foreground/50">/</span>

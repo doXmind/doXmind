@@ -5,4 +5,4 @@ Disallow: /auth/
 Disallow: /reset-password
 Disallow: /api/
 
-Sitemap: https://beta.doxmind.com/sitemap.xml
+Sitemap: https://app.doxmind.com/sitemap.xml

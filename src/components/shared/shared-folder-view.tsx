@@ -171,7 +171,7 @@ export function SharedFolderView({ data, onNavigate }: SharedFolderViewProps) {
             <span>
               {t("sharedWith")}{" "}
               <a
-                href="https://beta.doxmind.com"
+                href="https://app.doxmind.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground/70 underline-offset-2 transition-colors hover:text-foreground hover:underline"

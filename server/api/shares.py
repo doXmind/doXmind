@@ -42,7 +42,7 @@ def get_user_id(token: TokenData) -> str | None:
 
 # Allowed frontend origins for share link generation
 _ALLOWED_ORIGINS = {
-    "https://beta.doxmind.com",
+    "https://app.doxmind.com",
     "https://cn.doxmind.com",
     "http://localhost:3000",
 }

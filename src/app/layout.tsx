@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   keywords: ["AI writing", "markdown editor", "writing assistant", "Claude AI", "content creation"],
   authors: [{ name: "doXmind Team" }],
   creator: "doXmind",
-  metadataBase: new URL("https://beta.doxmind.com"),
+  metadataBase: new URL("https://app.doxmind.com"),
   icons: {
     icon: "/icon.svg",
   },

@@ -141,5 +141,5 @@ jobs:
           fi
 
           echo "All deployments successful!"
-          echo "Frontend: https://beta.doxmind.com"
+          echo "Frontend: https://app.doxmind.com"
           echo "Backend: https://api.doxmind.com"

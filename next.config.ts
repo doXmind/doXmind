@@ -66,7 +66,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "frame-ancestors 'self' https://doxmind.com https://www.doxmind.com https://beta.doxmind.com http://localhost:* http://127.0.0.1:*",
+              "frame-ancestors 'self' https://doxmind.com https://www.doxmind.com https://app.doxmind.com http://localhost:* http://127.0.0.1:*",
           },
         ],
       },
