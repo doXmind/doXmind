@@ -274,6 +274,7 @@ CORS_ORIGINS = [
     "https://doxmind.com",
     "https://www.doxmind.com",
     "https://cn.doxmind.com",
+    "https://app.doxmind.com",
 ]
 
 

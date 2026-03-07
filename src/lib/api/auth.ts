@@ -194,7 +194,10 @@ ApiClient.prototype.changePassword = async function (
 ApiClient.prototype.getGoogleAuthUrl = async function (
   this: ApiClient
 ): Promise<{ authorization_url: string }> {
-  return this.request<{ authorization_url: string }>("/api/auth/google");
+  const redirectUri = window.location.origin;
+  return this.request<{ authorization_url: string }>(
+    `/api/auth/google?redirect_uri=${encodeURIComponent(redirectUri)}`
+  );
 };
 
 /**
