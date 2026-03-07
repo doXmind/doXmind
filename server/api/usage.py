@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.files import get_user_id
 from config import get_settings
-from db.database import ApiUsage, Conversation, Message, get_db
+from db.database import ApiUsage, Conversation, FileVersion, File, Message, get_db
 from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
@@ -51,9 +51,116 @@ class UsageSummaryResponse(BaseModel):
     period_days: int
 
 
+class DailyActivity(BaseModel):
+    """Activity data for a single day."""
+
+    date: str
+    ai_requests: int
+    tokens: int
+    edits: int
+
+
+class DailyActivityResponse(BaseModel):
+    """Daily activity timeline."""
+
+    days: list[DailyActivity]
+    period_days: int
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
+
+
+@router.get("/daily", response_model=DailyActivityResponse)
+async def get_daily_activity(
+    days: int = Query(default=30, ge=1, le=365),
+    auth: TokenData = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get daily activity breakdown combining AI usage and document edits."""
+    user_id = get_user_id(auth)
+    since = datetime.now(UTC) - timedelta(days=days)
+    date_trunc = func.date(Message.created_at)
+
+    # 1) Daily AI requests & tokens from messages
+    msg_stmt = (
+        select(
+            date_trunc.label("day"),
+            func.count(Message.id).label("ai_requests"),
+            func.coalesce(
+                func.sum(cast(Message.input_tokens, Integer))
+                + func.sum(cast(Message.output_tokens, Integer)),
+                0,
+            ).label("tokens"),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.user_id == user_id,
+            Message.role == "assistant",
+            Message.created_at >= since,
+        )
+        .group_by(date_trunc)
+    )
+    msg_rows = {str(r.day): {"ai_requests": int(r.ai_requests), "tokens": int(r.tokens)} for r in (await db.execute(msg_stmt)).all()}
+
+    # 2) Daily AI requests & tokens from api_usage
+    api_date_trunc = func.date(ApiUsage.created_at)
+    try:
+        api_stmt = (
+            select(
+                api_date_trunc.label("day"),
+                func.count(ApiUsage.id).label("ai_requests"),
+                func.coalesce(
+                    func.sum(ApiUsage.input_tokens) + func.sum(ApiUsage.output_tokens),
+                    0,
+                ).label("tokens"),
+            )
+            .where(ApiUsage.user_id == user_id, ApiUsage.created_at >= since)
+            .group_by(api_date_trunc)
+        )
+        for r in (await db.execute(api_stmt)).all():
+            day_str = str(r.day)
+            if day_str in msg_rows:
+                msg_rows[day_str]["ai_requests"] += int(r.ai_requests)
+                msg_rows[day_str]["tokens"] += int(r.tokens)
+            else:
+                msg_rows[day_str] = {"ai_requests": int(r.ai_requests), "tokens": int(r.tokens)}
+    except Exception as e:
+        logger.warning(f"Failed to query api_usage for daily: {e}")
+
+    # 3) Daily document edits from file_versions
+    edit_map: dict[str, int] = {}
+    try:
+        fv_date_trunc = func.date(FileVersion.created_at)
+        fv_stmt = (
+            select(
+                fv_date_trunc.label("day"),
+                func.count(FileVersion.id).label("edits"),
+            )
+            .join(File, FileVersion.file_id == File.id)
+            .where(File.user_id == user_id, FileVersion.created_at >= since)
+            .group_by(fv_date_trunc)
+        )
+        edit_map = {str(r.day): int(r.edits) for r in (await db.execute(fv_stmt)).all()}
+    except Exception as e:
+        logger.warning(f"Failed to query file_versions for daily: {e}")
+
+    # Build complete timeline (fill missing days with zeros)
+    result_days: list[DailyActivity] = []
+    for i in range(days):
+        d = (datetime.now(UTC) - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
+        msg_data = msg_rows.get(d, {"ai_requests": 0, "tokens": 0})
+        result_days.append(
+            DailyActivity(
+                date=d,
+                ai_requests=msg_data["ai_requests"],
+                tokens=msg_data["tokens"],
+                edits=edit_map.get(d, 0),
+            )
+        )
+
+    return DailyActivityResponse(days=result_days, period_days=days)
 
 
 @router.get("/summary", response_model=UsageSummaryResponse)
