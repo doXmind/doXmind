@@ -57,7 +57,7 @@ class DailyActivity(BaseModel):
     date: str
     ai_requests: int
     tokens: int
-    edits: int
+    characters: int
 
 
 class DailyActivityResponse(BaseModel):
@@ -129,22 +129,44 @@ async def get_daily_activity(
     except Exception as e:
         logger.warning(f"Failed to query api_usage for daily: {e}")
 
-    # 3) Daily document edits from file_versions
-    edit_map: dict[str, int] = {}
+    # 3) Daily characters written — user messages (what the user typed)
+    char_map: dict[str, int] = {}
+    try:
+        user_msg_trunc = func.date(Message.created_at)
+        char_stmt = (
+            select(
+                user_msg_trunc.label("day"),
+                func.coalesce(func.sum(func.length(Message.content)), 0).label("chars"),
+            )
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(
+                Conversation.user_id == user_id,
+                Message.role == "user",
+                Message.created_at >= since,
+            )
+            .group_by(user_msg_trunc)
+        )
+        char_map = {str(r.day): int(r.chars) for r in (await db.execute(char_stmt)).all()}
+    except Exception as e:
+        logger.warning(f"Failed to query user message chars for daily: {e}")
+
+    # 4) Daily characters from document edits (FileVersion content length)
     try:
         fv_date_trunc = func.date(FileVersion.created_at)
         fv_stmt = (
             select(
                 fv_date_trunc.label("day"),
-                func.count(FileVersion.id).label("edits"),
+                func.coalesce(func.sum(func.length(FileVersion.content)), 0).label("chars"),
             )
             .join(File, FileVersion.file_id == File.id)
             .where(File.user_id == user_id, FileVersion.created_at >= since)
             .group_by(fv_date_trunc)
         )
-        edit_map = {str(r.day): int(r.edits) for r in (await db.execute(fv_stmt)).all()}
+        for r in (await db.execute(fv_stmt)).all():
+            day_str = str(r.day)
+            char_map[day_str] = char_map.get(day_str, 0) + int(r.chars)
     except Exception as e:
-        logger.warning(f"Failed to query file_versions for daily: {e}")
+        logger.warning(f"Failed to query file_versions chars for daily: {e}")
 
     # Build complete timeline (fill missing days with zeros)
     result_days: list[DailyActivity] = []
@@ -156,7 +178,7 @@ async def get_daily_activity(
                 date=d,
                 ai_requests=msg_data["ai_requests"],
                 tokens=msg_data["tokens"],
-                edits=edit_map.get(d, 0),
+                characters=char_map.get(d, 0),
             )
         )
 
