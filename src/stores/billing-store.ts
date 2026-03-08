@@ -77,8 +77,7 @@ export const useBillingStore = create<BillingState>()(
             isInitialized: true,
           });
         } catch {
-          // Silently fail - billing info is non-critical
-          set({ isInitialized: true });
+          // Don't set isInitialized on failure — allows retry on next call
         } finally {
           set({ isLoading: false });
         }

@@ -1,7 +1,7 @@
 "use client";
 
-import { ExternalLink, Crown, Rocket, Zap, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { ExternalLink, Crown, Rocket, Zap, Loader2, Check } from "lucide-react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useBillingStore } from "@/stores/billing-store";
@@ -9,10 +9,25 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
+const PLAN_FEATURES: Record<string, string[]> = {
+  free: ["freeFeature1", "freeFeature2", "freeFeature3", "freeFeature4", "freeFeature5"],
+  pro: ["proFeature1", "proFeature2", "proFeature3", "proFeature4", "proFeature5", "proFeature6"],
+  max: ["maxFeature1", "maxFeature2", "maxFeature3", "maxFeature4", "maxFeature5"],
+};
+
 export function PlanSettings() {
   const t = useTranslations("billing");
-  const { plan, status, periodEnd, credits, storage, openPricingModal } = useBillingStore();
+  const { plan, status, periodEnd, credits, storage, openPricingModal, refresh } =
+    useBillingStore();
   const [isLoadingPortal, setIsLoadingPortal] = useState(false);
+
+  // Safety refresh: if plan is set (from localStorage) but credits/storage are null,
+  // the initial fetch may have failed. Retry once.
+  useEffect(() => {
+    if (plan && (!credits || !storage)) {
+      refresh();
+    }
+  }, [plan, credits, storage, refresh]);
 
   const creditsPercentage =
     credits && credits.limit > 0 ? (credits.remaining / credits.limit) * 100 : 0;
@@ -125,6 +140,21 @@ export function PlanSettings() {
               style={{ width: `${Math.max(storagePercentage, 1)}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {/* Plan Features */}
+      {plan && PLAN_FEATURES[plan] && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">{t("includedFeatures")}</p>
+          <ul className="space-y-1.5">
+            {PLAN_FEATURES[plan].map((key) => (
+              <li key={key} className="flex items-center gap-2 text-sm">
+                <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                {t(key)}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
