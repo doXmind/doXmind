@@ -127,7 +127,7 @@ class TestConfiguration:
 
     def test_allowed_extensions(self):
         """Should allow correct extensions."""
-        expected = {".pdf", ".docx", ".md", ".markdown"}
+        expected = {".pdf", ".docx", ".pptx", ".md", ".markdown"}
         assert expected == ALLOWED_EXTENSIONS
 
 
@@ -226,17 +226,17 @@ class TestImportEndpoint:
         assert response.status_code == 422  # Validation error
 
     def test_accepts_pdf_extension(self, client):
-        """Should accept PDF files (will fail on conversion but accept extension)."""
+        """Should accept PDF files (may succeed via markitdown fallback)."""
         file_content = b"PDF content"
 
-        # Will fail during conversion, not extension check
+        # May succeed via markitdown fallback or fail on conversion
         response = client.post(
             "/api/import/",
             files={"file": ("test.pdf", io.BytesIO(file_content), "application/pdf")},
         )
 
-        # Should pass extension check, fail on conversion
-        assert response.status_code in [400, 500]
+        # Should pass extension check; may succeed via fallback or fail on conversion
+        assert response.status_code in [200, 400, 500]
 
     def test_accepts_docx_extension(self, client):
         """Should accept DOCX files (will fail on conversion but accept extension)."""
@@ -300,18 +300,26 @@ class TestGeminiConverter:
 
     @pytest.mark.asyncio
     async def test_handles_conversion_error(self):
-        """Should propagate conversion errors."""
+        """Should fall back to markitdown when LLM conversion fails."""
         from services.gemini_converter import convert_file_to_markdown
 
         content = b"invalid content"
 
-        with patch("services.gemini_converter._get_client") as mock_get_client:
+        with (
+            patch("services.gemini_converter._get_client") as mock_get_client,
+            patch(
+                "services.gemini_converter.markitdown_convert", new_callable=AsyncMock
+            ) as mock_fallback,
+        ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create.side_effect = Exception("Conversion failed")
             mock_get_client.return_value = mock_client
+            mock_fallback.return_value = "# Fallback content"
 
-            with pytest.raises(Exception, match="Conversion failed"):
-                await convert_file_to_markdown(content, "test.pdf", ".pdf")
+            result, usage = await convert_file_to_markdown(content, "test.pdf", ".pdf")
+            assert result == "# Fallback content"
+            assert usage is None
+            mock_fallback.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_rejects_unsupported_extension(self):

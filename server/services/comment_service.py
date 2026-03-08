@@ -225,7 +225,9 @@ class CommentService:
         # Get author info
         author_result = await self.db.execute(
             select(
-                User.username, User.avatar_url, User.avatar_frame.label("author_avatar_frame"),
+                User.username,
+                User.avatar_url,
+                User.avatar_frame.label("author_avatar_frame"),
                 UserSubscription.plan.label("author_plan"),
             )
             .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
@@ -285,7 +287,9 @@ class CommentService:
 
         author_result = await self.db.execute(
             select(
-                User.username, User.avatar_url, User.avatar_frame.label("author_avatar_frame"),
+                User.username,
+                User.avatar_url,
+                User.avatar_frame.label("author_avatar_frame"),
                 UserSubscription.plan.label("author_plan"),
             )
             .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
@@ -402,7 +406,9 @@ class CommentService:
 
         result = await self.db.execute(
             select(
-                User.id, User.username, User.avatar_url,
+                User.id,
+                User.username,
+                User.avatar_url,
                 User.avatar_frame.label("user_avatar_frame"),
                 UserSubscription.plan.label("user_plan"),
             )

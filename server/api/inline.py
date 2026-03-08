@@ -111,11 +111,16 @@ async def inline_stream(
         credit_svc = CreditService(db)
         has_credits = await credit_svc.check_credits(user_id)
         if not has_credits:
+
             async def _no_credits():
-                error = {"type": "error", "code": "INSUFFICIENT_CREDITS",
-                         "content": "No credits remaining. Please upgrade your plan."}
+                error = {
+                    "type": "error",
+                    "code": "INSUFFICIENT_CREDITS",
+                    "content": "No credits remaining. Please upgrade your plan.",
+                }
                 yield f"data: {json.dumps(error)}\n\n".encode()
                 yield b"data: [DONE]\n\n"
+
             return StreamingResponse(
                 _no_credits(),
                 media_type="text/event-stream",

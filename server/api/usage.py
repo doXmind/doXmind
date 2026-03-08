@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.files import get_user_id
 from config import get_settings
-from db.database import ApiUsage, Conversation, FileVersion, File, Message, get_db
+from db.database import ApiUsage, Conversation, File, FileVersion, Message, get_db
 from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,10 @@ async def get_daily_activity(
         )
         .group_by(date_trunc)
     )
-    msg_rows = {str(r.day): {"ai_requests": int(r.ai_requests), "tokens": int(r.tokens)} for r in (await db.execute(msg_stmt)).all()}
+    msg_rows = {
+        str(r.day): {"ai_requests": int(r.ai_requests), "tokens": int(r.tokens)}
+        for r in (await db.execute(msg_stmt)).all()
+    }
 
     # 2) Daily AI requests & tokens from api_usage
     api_date_trunc = func.date(ApiUsage.created_at)

@@ -18,9 +18,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from exceptions import InsufficientCreditsError
 from db.database import get_db
 from dependencies import resolve_user_api_key
+from exceptions import InsufficientCreditsError
 from prompts.domains.autocomplete import build_autocomplete_prompt
 from services.auth_service import TokenData, require_auth
 from services.autocomplete_cache import AutocompleteCache

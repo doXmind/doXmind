@@ -509,7 +509,10 @@ async def search_users_for_invite(
 
     result = await db.execute(
         select(
-            User.id, User.username, User.email, User.avatar_url,
+            User.id,
+            User.username,
+            User.email,
+            User.avatar_url,
             User.avatar_frame.label("user_avatar_frame"),
             UserSubscription.plan.label("user_plan"),
         )

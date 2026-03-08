@@ -4,7 +4,6 @@ Handles subscription creation, management, and webhook event processing.
 """
 
 import logging
-import uuid
 from datetime import UTC, datetime
 
 import stripe
@@ -115,9 +114,7 @@ class BillingService:
 
         return session.url
 
-    async def create_portal_session(
-        self, user_id: str, return_url: str
-    ) -> str:
+    async def create_portal_session(self, user_id: str, return_url: str) -> str:
         """Create a Stripe Customer Portal session.
 
         Returns:
@@ -203,9 +200,7 @@ class BillingService:
         sub.current_period_start = datetime.fromtimestamp(
             stripe_sub["current_period_start"], tz=UTC
         )
-        sub.current_period_end = datetime.fromtimestamp(
-            stripe_sub["current_period_end"], tz=UTC
-        )
+        sub.current_period_end = datetime.fromtimestamp(stripe_sub["current_period_end"], tz=UTC)
 
         # Early bird check with row locking to prevent overselling.
         # Lock all existing early bird rows so concurrent checkouts must wait.
@@ -232,7 +227,9 @@ class BillingService:
             user_id, new_limit=new_limit, period_end=sub.current_period_end
         )
 
-        logger.info(f"Checkout completed: user={user_id} plan={plan} early_bird={sub.is_early_bird}")
+        logger.info(
+            f"Checkout completed: user={user_id} plan={plan} early_bird={sub.is_early_bird}"
+        )
 
     async def handle_invoice_paid(self, invoice_data: dict) -> None:
         """Process invoice.paid webhook event.
@@ -247,9 +244,7 @@ class BillingService:
             return
 
         result = await self.db.execute(
-            select(UserSubscription).where(
-                UserSubscription.stripe_customer_id == customer_id
-            )
+            select(UserSubscription).where(UserSubscription.stripe_customer_id == customer_id)
         )
         sub = result.scalar_one_or_none()
         if not sub:
@@ -258,12 +253,8 @@ class BillingService:
 
         # Update billing cycle
         stripe_sub = stripe.Subscription.retrieve(subscription_id)
-        new_period_start = datetime.fromtimestamp(
-            stripe_sub["current_period_start"], tz=UTC
-        )
-        new_period_end = datetime.fromtimestamp(
-            stripe_sub["current_period_end"], tz=UTC
-        )
+        new_period_start = datetime.fromtimestamp(stripe_sub["current_period_start"], tz=UTC)
+        new_period_end = datetime.fromtimestamp(stripe_sub["current_period_end"], tz=UTC)
 
         # Idempotency: skip if period hasn't changed (duplicate webhook)
         if sub.current_period_start and sub.current_period_start == new_period_start:
@@ -287,7 +278,9 @@ class BillingService:
             sub.user_id, new_limit=new_limit, period_end=new_period_end
         )
 
-        logger.info(f"Invoice paid: user={sub.user_id} plan={sub.plan} credits reset to {new_limit}")
+        logger.info(
+            f"Invoice paid: user={sub.user_id} plan={sub.plan} credits reset to {new_limit}"
+        )
 
     async def handle_subscription_updated(self, subscription_data: dict) -> None:
         """Process customer.subscription.updated webhook event.
@@ -295,7 +288,6 @@ class BillingService:
         Handles mid-cycle plan changes (upgrades/downgrades).
         """
         subscription_id = subscription_data.get("id")
-        customer_id = subscription_data.get("customer")
 
         result = await self.db.execute(
             select(UserSubscription).where(
@@ -381,9 +373,7 @@ class BillingService:
         customer_id = invoice_data.get("customer")
 
         result = await self.db.execute(
-            select(UserSubscription).where(
-                UserSubscription.stripe_customer_id == customer_id
-            )
+            select(UserSubscription).where(UserSubscription.stripe_customer_id == customer_id)
         )
         sub = result.scalar_one_or_none()
         if not sub:

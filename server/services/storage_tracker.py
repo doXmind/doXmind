@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 # Plan storage limits in bytes
 PLAN_STORAGE_LIMITS = {
-    "free": 100 * 1024 * 1024,       # 100 MB
-    "pro": 500 * 1024 * 1024,        # 500 MB
-    "max": 2 * 1024 * 1024 * 1024,   # 2 GB
+    "free": 100 * 1024 * 1024,  # 100 MB
+    "pro": 500 * 1024 * 1024,  # 500 MB
+    "max": 2 * 1024 * 1024 * 1024,  # 2 GB
 }
 
 
@@ -70,9 +70,7 @@ class StorageTracker:
             New total storage used in bytes.
         """
         result = await self.db.execute(
-            select(UserSubscription)
-            .where(UserSubscription.user_id == user_id)
-            .with_for_update()
+            select(UserSubscription).where(UserSubscription.user_id == user_id).with_for_update()
         )
         sub = result.scalar_one_or_none()
 

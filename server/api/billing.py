@@ -192,9 +192,7 @@ async def stripe_webhook(
         raise BadRequestError(message="Missing Stripe signature")
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, settings.stripe_webhook_secret
-        )
+        event = stripe.Webhook.construct_event(payload, sig_header, settings.stripe_webhook_secret)
     except stripe.error.SignatureVerificationError:
         logger.warning("Stripe webhook signature verification failed")
         raise BadRequestError(message="Invalid signature")

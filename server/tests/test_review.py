@@ -144,7 +144,8 @@ class TestReviewEndpoint:
         with TestClient(app) as test_client:
             yield test_client
 
-    def test_short_document_returns_empty_suggestions(self, client):
+    @patch("api.review.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
+    def test_short_document_returns_empty_suggestions(self, mock_resolve_key, client):
         """Should return empty suggestions for very short documents."""
         response = client.post("/api/review", json={"content": "Short", "file_id": "file-123"})
 
@@ -164,9 +165,10 @@ class TestReviewEndpoint:
         assert result_events[0]["result"]["suggestions"] == []
         assert "too short" in result_events[0]["result"]["summary"].lower()
 
+    @patch("api.review.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.review.LLMService")
     @patch("api.review.get_settings")
-    def test_successful_review(self, mock_settings, mock_llm_class, client):
+    def test_successful_review(self, mock_settings, mock_llm_class, mock_resolve_key, client):
         """Should return suggestions from LLM."""
         mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
 
@@ -297,9 +299,10 @@ class TestReviewEndpoint:
                 if "result" in data:
                     assert len(data["result"]["suggestions"]) == 0
 
+    @patch("api.review.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.review.LLMService")
     @patch("api.review.get_settings")
-    def test_handles_llm_error(self, mock_settings, mock_llm_class, client):
+    def test_handles_llm_error(self, mock_settings, mock_llm_class, mock_resolve_key, client):
         """Should return error event when LLM fails."""
         mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
 

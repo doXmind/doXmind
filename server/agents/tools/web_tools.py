@@ -120,9 +120,7 @@ async def _execute_web_search(tool_input: dict[str, Any]) -> dict[str, Any]:
     idx = 1
     for r in results:
         if r.get("type") == "knowledgeGraph":
-            formatted.append(
-                f"## Knowledge Graph: {r['title']}\nURL: {r['url']}\n{r['snippet']}\n"
-            )
+            formatted.append(f"## Knowledge Graph: {r['title']}\nURL: {r['url']}\n{r['snippet']}\n")
         else:
             formatted.append(f"## {idx}. {r['title']}\nURL: {r['url']}\n{r['snippet']}\n")
             idx += 1

@@ -130,18 +130,14 @@ async def import_file(
 
             if use_markitdown:
                 # No credits or no LLM configured: use markitdown (zero cost)
-                md_content = await markitdown_convert(
-                    content, file.filename or "unknown", ext
-                )
+                md_content = await markitdown_convert(content, file.filename or "unknown", ext)
                 conversion_usage = None
             else:
                 # Use LLM API for PDF/DOCX/PPTX conversion
                 conversion_result = await convert_file_to_markdown(
                     content, file.filename or "unknown", ext, api_key=user_api_key
                 )
-                md_content, conversion_usage = _normalize_conversion_result(
-                    conversion_result
-                )
+                md_content, conversion_usage = _normalize_conversion_result(conversion_result)
 
             # Track file conversion usage
             import asyncio

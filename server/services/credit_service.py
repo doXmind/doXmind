@@ -58,9 +58,7 @@ class CreditService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_or_create_credits(
-        self, user_id: str, for_update: bool = False
-    ) -> UserCredits:
+    async def get_or_create_credits(self, user_id: str, for_update: bool = False) -> UserCredits:
         """Get user credits row, creating with free tier defaults if missing.
 
         Args:
@@ -89,9 +87,7 @@ class CreditService:
             # Re-fetch with lock if needed
             if for_update:
                 result = await self.db.execute(
-                    select(UserCredits)
-                    .where(UserCredits.user_id == user_id)
-                    .with_for_update()
+                    select(UserCredits).where(UserCredits.user_id == user_id).with_for_update()
                 )
                 credits = result.scalar_one()
             else:
@@ -110,9 +106,7 @@ class CreditService:
 
         # Check subscription status (past_due users are blocked)
         result = await self.db.execute(
-            select(UserSubscription.status).where(
-                UserSubscription.user_id == user_id
-            )
+            select(UserSubscription.status).where(UserSubscription.user_id == user_id)
         )
         status = result.scalar_one_or_none()
         if status == "past_due":
@@ -161,9 +155,7 @@ class CreditService:
         """
         return await self._apply_deduction(user_id, amount, service)
 
-    async def _apply_deduction(
-        self, user_id: str, amount: int, service: str
-    ) -> int:
+    async def _apply_deduction(self, user_id: str, amount: int, service: str) -> int:
         """Apply a credit deduction and record the transaction.
 
         Uses SELECT FOR UPDATE to prevent concurrent deduction race conditions.
@@ -245,9 +237,7 @@ class CreditService:
         if credits.period_end and credits.period_end <= now:
             # Period expired - determine the correct limit from user's plan
             result = await self.db.execute(
-                select(UserSubscription).where(
-                    UserSubscription.user_id == credits.user_id
-                )
+                select(UserSubscription).where(UserSubscription.user_id == credits.user_id)
             )
             sub = result.scalar_one_or_none()
             plan = sub.plan if sub else "free"
@@ -285,9 +275,7 @@ class CreditService:
             return True
         return False
 
-    async def update_plan_limits(
-        self, user_id: str, plan: str, is_upgrade: bool = True
-    ) -> None:
+    async def update_plan_limits(self, user_id: str, plan: str, is_upgrade: bool = True) -> None:
         """Update credit limits when plan changes.
 
         On upgrade: immediately grant the difference.
@@ -375,9 +363,7 @@ async def deduct_credits_for_usage(
 
             # Deduct LLM usage credits
             if cost is not None and cost > 0:
-                remaining = await credit_service.deduct_credits(
-                    user_id, cost, service, is_byok
-                )
+                remaining = await credit_service.deduct_credits(user_id, cost, service, is_byok)
 
             # Deduct web search credits (always charged, even for BYOK)
             if web_search_count > 0:
@@ -399,7 +385,11 @@ async def deduct_credits_for_usage(
                 f"(attempt {_retry_count + 2}/{MAX_RETRIES + 1}): {e}"
             )
             return await deduct_credits_for_usage(
-                user_id, cost, service, is_byok, web_search_count,
+                user_id,
+                cost,
+                service,
+                is_byok,
+                web_search_count,
                 _retry_count=_retry_count + 1,
             )
 

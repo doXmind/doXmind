@@ -2,7 +2,7 @@
 
 import io
 import uuid
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -852,12 +852,15 @@ class TestExtractTextContent:
             mock_convert.assert_called_once_with(b"content", "test.pdf", ".pdf")
 
     @pytest.mark.asyncio
-    async def test_extract_raises_when_converter_not_configured(self):
-        """Should raise ValueError when OPENROUTER_API_KEY is not configured."""
+    async def test_extract_falls_back_to_markitdown_when_converter_not_configured(self):
+        """Should fall back to markitdown when OPENROUTER_API_KEY is not configured."""
         from api.knowledge_base import extract_text_content
 
         with (
             patch("api.knowledge_base.is_converter_configured", return_value=False),
-            pytest.raises(ValueError, match="OPENROUTER_API_KEY"),
+            patch("api.knowledge_base.markitdown_convert", new_callable=AsyncMock) as mock_fallback,
         ):
-            await extract_text_content(b"content", "test.pdf", ".pdf")
+            mock_fallback.return_value = "# Fallback content"
+            result = await extract_text_content(b"content", "test.pdf", ".pdf")
+            assert result == ("# Fallback content", None)
+            mock_fallback.assert_called_once()

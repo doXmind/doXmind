@@ -263,11 +263,16 @@ async def chat_stream(
         credit_svc = CreditService(db)
         has_credits = await credit_svc.check_credits(user_id)
         if not has_credits:
+
             async def _no_credits():
-                error = {"type": "error", "code": "INSUFFICIENT_CREDITS",
-                         "content": "No credits remaining. Please upgrade your plan."}
+                error = {
+                    "type": "error",
+                    "code": "INSUFFICIENT_CREDITS",
+                    "content": "No credits remaining. Please upgrade your plan.",
+                }
                 yield f"data: {json.dumps(error)}\n\n".encode()
                 yield b"data: [DONE]\n\n"
+
             return StreamingResponse(
                 _no_credits(),
                 media_type="text/event-stream",
@@ -284,9 +289,7 @@ async def chat_stream(
         kb_attachments,
         data_files_metadata,
         data_files_content,
-    ) = await _load_conversation_context(
-        request.conversationId, db, user_id
-    )
+    ) = await _load_conversation_context(request.conversationId, db, user_id)
 
     # Collector for building the complete response
     collected_text = []
@@ -371,8 +374,7 @@ async def chat_stream(
 
                     # Count web search tool calls
                     web_search_count = sum(
-                        1 for tc in collected_tool_calls
-                        if tc.get("name") == "web_search"
+                        1 for tc in collected_tool_calls if tc.get("name") == "web_search"
                     )
 
                     credits_remaining = await deduct_credits_for_usage(

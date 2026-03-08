@@ -439,10 +439,13 @@ class TestAutocompleteEndpoints:
         assert response.json()["suggestion"] == "cached value"
         assert response.json()["cached"] is True
 
+    @patch("api.autocomplete.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.autocomplete.LLMService")
     @patch("api.autocomplete.get_settings")
     @patch("api.autocomplete.cache")
-    def test_calls_llm_on_cache_miss(self, mock_cache, mock_settings, mock_llm_class, client):
+    def test_calls_llm_on_cache_miss(
+        self, mock_cache, mock_settings, mock_llm_class, mock_resolve_key, client
+    ):
         """Should call LLM when cache miss."""
         mock_cache.get.return_value = None  # Cache miss
         mock_settings.return_value = MagicMock(fast_model="claude-haiku")
@@ -456,10 +459,13 @@ class TestAutocompleteEndpoints:
         assert response.status_code == 200
         mock_llm.complete.assert_called_once()
 
+    @patch("api.autocomplete.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.autocomplete.LLMService")
     @patch("api.autocomplete.get_settings")
     @patch("api.autocomplete.cache")
-    def test_caches_valid_suggestion(self, mock_cache, mock_settings, mock_llm_class, client):
+    def test_caches_valid_suggestion(
+        self, mock_cache, mock_settings, mock_llm_class, mock_resolve_key, client
+    ):
         """Should cache valid suggestions."""
         mock_cache.get.return_value = None
         mock_settings.return_value = MagicMock(fast_model="claude-haiku")

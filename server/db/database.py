@@ -4,8 +4,8 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    BigInteger,
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -810,9 +810,7 @@ class UserSubscription(Base):
 
     __tablename__ = "user_subscriptions"
 
-    user_id = Column(
-        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
 
     # Stripe integration
     stripe_customer_id = Column(String(255), unique=True, nullable=True, index=True)
@@ -848,9 +846,7 @@ class UserCredits(Base):
 
     __tablename__ = "user_credits"
 
-    user_id = Column(
-        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
 
     # Credit balance (internal units; display = internal * 10)
     credits_remaining = Column(Integer, default=600, nullable=False)

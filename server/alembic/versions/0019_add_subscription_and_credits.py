@@ -30,33 +30,75 @@ def upgrade() -> None:
     if "user_subscriptions" not in existing_tables:
         op.create_table(
             "user_subscriptions",
-            sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column(
+                "user_id",
+                sa.String(36),
+                sa.ForeignKey("users.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
             sa.Column("stripe_customer_id", sa.String(255), unique=True, nullable=True),
             sa.Column("stripe_subscription_id", sa.String(255), unique=True, nullable=True),
             sa.Column("plan", sa.String(20), nullable=False, server_default="free"),
-            sa.Column("is_early_bird", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+            sa.Column(
+                "is_early_bird", sa.Boolean(), nullable=False, server_default=sa.text("false")
+            ),
             sa.Column("status", sa.String(20), nullable=False, server_default="active"),
             sa.Column("current_period_start", sa.DateTime(timezone=True), nullable=True),
             sa.Column("current_period_end", sa.DateTime(timezone=True), nullable=True),
             sa.Column("canceled_at", sa.DateTime(timezone=True), nullable=True),
-            sa.Column("storage_used_bytes", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
-            sa.Column("storage_limit_bytes", sa.BigInteger(), nullable=False, server_default=sa.text("104857600")),
+            sa.Column(
+                "storage_used_bytes", sa.BigInteger(), nullable=False, server_default=sa.text("0")
+            ),
+            sa.Column(
+                "storage_limit_bytes",
+                sa.BigInteger(),
+                nullable=False,
+                server_default=sa.text("104857600"),
+            ),
             sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
             sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         )
-        op.create_index("ix_user_subscriptions_stripe_customer_id", "user_subscriptions", ["stripe_customer_id"])
-        op.create_index("ix_user_subscriptions_stripe_subscription_id", "user_subscriptions", ["stripe_subscription_id"])
+        op.create_index(
+            "ix_user_subscriptions_stripe_customer_id", "user_subscriptions", ["stripe_customer_id"]
+        )
+        op.create_index(
+            "ix_user_subscriptions_stripe_subscription_id",
+            "user_subscriptions",
+            ["stripe_subscription_id"],
+        )
 
     # 2. Create user_credits table
     if "user_credits" not in existing_tables:
         op.create_table(
             "user_credits",
-            sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-            sa.Column("credits_remaining", sa.Integer(), nullable=False, server_default=sa.text("600")),
+            sa.Column(
+                "user_id",
+                sa.String(36),
+                sa.ForeignKey("users.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            sa.Column(
+                "credits_remaining", sa.Integer(), nullable=False, server_default=sa.text("600")
+            ),
             sa.Column("credits_limit", sa.Integer(), nullable=False, server_default=sa.text("600")),
-            sa.Column("period_start", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-            sa.Column("period_end", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW() + INTERVAL '30 days'")),
-            sa.Column("credits_used_this_period", sa.Integer(), nullable=False, server_default=sa.text("0")),
+            sa.Column(
+                "period_start",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+            sa.Column(
+                "period_end",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("NOW() + INTERVAL '30 days'"),
+            ),
+            sa.Column(
+                "credits_used_this_period",
+                sa.Integer(),
+                nullable=False,
+                server_default=sa.text("0"),
+            ),
             sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         )
 
@@ -65,7 +107,12 @@ def upgrade() -> None:
         op.create_table(
             "credit_transactions",
             sa.Column("id", sa.String(36), primary_key=True),
-            sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+            sa.Column(
+                "user_id",
+                sa.String(36),
+                sa.ForeignKey("users.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
             sa.Column("amount", sa.Integer(), nullable=False),
             sa.Column("balance_after", sa.Integer(), nullable=False),
             sa.Column("transaction_type", sa.String(20), nullable=False),

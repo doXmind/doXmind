@@ -214,11 +214,16 @@ async def global_agent_stream(
         credit_svc = CreditService(db)
         has_credits = await credit_svc.check_credits(user_id)
         if not has_credits:
+
             async def _no_credits():
-                error = {"type": "error", "code": "INSUFFICIENT_CREDITS",
-                         "content": "No credits remaining. Please upgrade your plan."}
+                error = {
+                    "type": "error",
+                    "code": "INSUFFICIENT_CREDITS",
+                    "content": "No credits remaining. Please upgrade your plan.",
+                }
                 yield f"data: {json.dumps(error)}\n\n".encode()
                 yield b"data: [DONE]\n\n"
+
             return StreamingResponse(
                 _no_credits(),
                 media_type="text/event-stream",
@@ -323,8 +328,7 @@ async def global_agent_stream(
                 from services.credit_service import deduct_credits_for_usage
 
                 web_search_count = sum(
-                    1 for tc in collected_tool_calls
-                    if tc.get("name") == "web_search"
+                    1 for tc in collected_tool_calls if tc.get("name") == "web_search"
                 )
                 credits_remaining = await deduct_credits_for_usage(
                     user_id=user_id,
