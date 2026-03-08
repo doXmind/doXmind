@@ -41,6 +41,10 @@ import { FloatingChatButton } from "@/components/ai/floating-chat-button";
 import { FloatingChatWindow } from "@/components/ai/floating-chat-window";
 import { PresentationMode } from "@/components/editor/presentation-mode";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
+import { api } from "@/lib/api";
+import { useBillingStore } from "@/stores/billing-store";
+import { PaymentSuccessModal } from "@/components/billing/payment-success-modal";
 
 /**
  * Legacy URL redirect: /editor?id=xxx -> /editor/xxx
@@ -62,30 +66,54 @@ function LegacyUrlRedirect() {
 /**
  * Handle billing callback query params (?billing=success|canceled)
  * after Stripe Checkout redirect.
+ *
+ * On success: verifies the checkout session with the backend to activate
+ * the subscription (doesn't rely on webhook timing), then shows a
+ * confirmation modal.
  */
 function BillingCallback() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const billing = searchParams.get("billing");
+  const sessionId = searchParams.get("session_id");
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const t = useTranslations("billing");
 
   useEffect(() => {
     if (!billing) return;
+
     if (billing === "success") {
-      toast.success("Subscription activated! Your credits have been refreshed.");
-      // Refresh billing data
-      import("@/stores/billing-store").then(({ useBillingStore }) => {
-        useBillingStore.getState().refresh();
-      });
+      const activate = async () => {
+        if (sessionId) {
+          // Primary path: verify checkout session and activate subscription
+          try {
+            await api.verifyCheckout(sessionId);
+            await useBillingStore.getState().refresh();
+            setShowSuccessModal(true);
+          } catch {
+            // Fallback: poll for webhook-based activation
+            await useBillingStore.getState().refreshWithRetry();
+            setShowSuccessModal(true);
+          }
+        } else {
+          // No session_id: fall back to polling
+          await useBillingStore.getState().refreshWithRetry();
+          setShowSuccessModal(true);
+        }
+      };
+      activate();
     } else if (billing === "canceled") {
-      toast.info("Checkout canceled.");
+      toast.info(t("checkoutCanceled"));
     }
+
     // Clean up URL
     const url = new URL(window.location.href);
     url.searchParams.delete("billing");
+    url.searchParams.delete("session_id");
     router.replace(url.pathname + url.search, { scroll: false });
-  }, [billing, router]);
+  }, [billing, sessionId, router, t]);
 
-  return null;
+  return <PaymentSuccessModal open={showSuccessModal} onClose={() => setShowSuccessModal(false)} />;
 }
 
 export default function EditorPage() {
@@ -273,9 +301,10 @@ export default function EditorPage() {
   // Desktop Layout: Three-panel view
   return (
     <LoadingScreen isLoading={isLoading} isMobile={false}>
-      {/* Legacy URL handler — isolated in Suspense to avoid blocking the page */}
+      {/* Legacy URL handler + billing callback — isolated in Suspense */}
       <Suspense fallback={null}>
         <LegacyUrlRedirect />
+        <BillingCallback />
       </Suspense>
       <AppShell hideHeader>
         <div className="flex h-full flex-col">

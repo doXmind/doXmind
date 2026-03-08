@@ -27,6 +27,7 @@ interface BillingState {
   // Actions
   initialize: () => Promise<void>;
   refresh: () => Promise<void>;
+  refreshWithRetry: () => Promise<void>;
   updateCreditsFromStream: (creditsRemaining: number) => void;
   openUpgradeModal: (reason?: string) => void;
   reset: () => void;
@@ -97,6 +98,39 @@ export const useBillingStore = create<BillingState>()(
           });
         } catch {
           // Silently fail
+        }
+      },
+
+      refreshWithRetry: async () => {
+        const MAX_ATTEMPTS = 5;
+        const INTERVAL_MS = 2000;
+        const previousPlan = get().plan;
+
+        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+          try {
+            const data = await api.getBillingStatus();
+            set({
+              plan: data.plan,
+              isEarlyBird: data.is_early_bird,
+              status: data.status,
+              periodEnd: data.period_end,
+              credits: data.credits,
+              storage: data.storage,
+              earlyBirdRemaining: data.early_bird_remaining,
+            });
+
+            // Plan upgraded — stop polling
+            if (data.plan !== previousPlan && data.plan !== "free") {
+              return;
+            }
+          } catch {
+            // Continue retrying on network errors
+          }
+
+          // Wait before next attempt (skip wait on last attempt)
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+          }
         }
       },
 

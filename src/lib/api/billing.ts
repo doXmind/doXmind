@@ -60,6 +60,8 @@ export interface PortalResponse {
   portal_url: string;
 }
 
+export interface VerifyCheckoutResponse extends BillingStatus {}
+
 // =============================================================================
 // Module Augmentation
 // =============================================================================
@@ -74,6 +76,7 @@ declare module "./client" {
       cancelUrl: string
     ): Promise<CheckoutResponse>;
     createPortal(returnUrl: string): Promise<PortalResponse>;
+    verifyCheckout(sessionId: string): Promise<VerifyCheckoutResponse>;
   }
 }
 
@@ -124,5 +127,18 @@ ApiClient.prototype.createPortal = async function (
   return this.request<PortalResponse>("/api/billing/portal", {
     method: "POST",
     body: JSON.stringify({ return_url: returnUrl }),
+  });
+};
+
+/**
+ * Verify a completed Stripe Checkout Session and activate the subscription.
+ */
+ApiClient.prototype.verifyCheckout = async function (
+  this: ApiClient,
+  sessionId: string
+): Promise<VerifyCheckoutResponse> {
+  return this.request<VerifyCheckoutResponse>("/api/billing/verify-checkout", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId }),
   });
 };

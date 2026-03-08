@@ -127,6 +127,38 @@ async def create_portal(
 
 
 # ============================================================================
+# Checkout Verification
+# ============================================================================
+
+
+class VerifyCheckoutRequest(BaseModel):
+    """Request to verify and activate a completed Stripe Checkout Session."""
+
+    session_id: str
+
+
+@router.post("/verify-checkout")
+async def verify_checkout(
+    request: VerifyCheckoutRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: TokenData = Depends(require_auth),
+):
+    """Verify a Stripe Checkout Session and activate the subscription.
+
+    Called by the frontend after redirect from Stripe to ensure the
+    subscription is activated even if the webhook hasn't arrived yet.
+    """
+    billing = BillingService(db)
+    result = await billing.verify_and_activate_checkout(auth.sub, request.session_id)
+
+    # Include early bird availability
+    early_bird_remaining = await billing.get_early_bird_remaining()
+    result["early_bird_remaining"] = early_bird_remaining
+
+    return result
+
+
+# ============================================================================
 # Pricing Info
 # ============================================================================
 

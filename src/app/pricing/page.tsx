@@ -139,7 +139,7 @@ export default function PricingPage() {
       const origin = window.location.origin;
       const { checkout_url } = await api.createCheckout(
         priceId,
-        `${origin}/editor?billing=success`,
+        `${origin}/editor?billing=success&session_id={CHECKOUT_SESSION_ID}`,
         `${origin}/editor?billing=canceled`
       );
       window.location.href = checkout_url;

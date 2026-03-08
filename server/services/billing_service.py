@@ -34,6 +34,37 @@ def _price_id_to_plan(price_id: str) -> str:
     return "free"
 
 
+def _get_subscription_period(stripe_sub: dict) -> tuple[int, int]:
+    """Extract current_period_start/end from a Stripe Subscription object.
+
+    In Stripe API 2026-02-25.clover+, these fields moved from the
+    Subscription top-level to Subscription Items. This helper checks
+    both locations for backwards compatibility.
+    """
+    # Try top-level first (older API versions)
+    period_start = stripe_sub.get("current_period_start")
+    period_end = stripe_sub.get("current_period_end")
+
+    if period_start and period_end:
+        return int(period_start), int(period_end)
+
+    # New API: get from subscription items
+    items = stripe_sub.get("items", {})
+    items_data = items.get("data") if isinstance(items, dict) else getattr(items, "data", None)
+    if items_data and len(items_data) > 0:
+        item = items_data[0]
+        period_start = item.get("current_period_start") if isinstance(item, dict) else getattr(
+            item, "current_period_start", None
+        )
+        period_end = item.get("current_period_end") if isinstance(item, dict) else getattr(
+            item, "current_period_end", None
+        )
+        if period_start and period_end:
+            return int(period_start), int(period_end)
+
+    raise ValueError("Cannot extract billing period from Stripe subscription")
+
+
 class BillingService:
     """Manages Stripe subscriptions and billing."""
 
@@ -155,6 +186,41 @@ class BillingService:
         return max(0, settings.early_bird_limit - early_bird_count)
 
     # =========================================================================
+    # Checkout Verification (called by frontend after Stripe redirect)
+    # =========================================================================
+
+    async def verify_and_activate_checkout(self, user_id: str, session_id: str) -> dict:
+        """Verify a Stripe Checkout Session and activate the subscription.
+
+        Called by the frontend after redirect from Stripe. This ensures
+        the subscription is activated even if the webhook hasn't arrived yet.
+        Idempotent: safe to call multiple times for the same session.
+
+        Returns:
+            The updated billing status dict.
+        """
+        # Retrieve the checkout session from Stripe
+        session = stripe.checkout.Session.retrieve(session_id)
+
+        # Security: verify the session belongs to this user
+        session_user_id = session.get("metadata", {}).get("user_id")
+        if session_user_id != user_id:
+            logger.warning(
+                f"verify_checkout: user_id mismatch session={session_user_id} auth={user_id}"
+            )
+            return await self.get_billing_status(user_id)
+
+        # Only process if payment was successful
+        if session.get("payment_status") != "paid":
+            logger.info(f"verify_checkout: session {session_id} not paid yet")
+            return await self.get_billing_status(user_id)
+
+        # Delegate to the same handler used by the webhook (idempotent)
+        await self.handle_checkout_completed(dict(session))
+
+        return await self.get_billing_status(user_id)
+
+    # =========================================================================
     # Stripe Webhook Handlers
     # =========================================================================
 
@@ -196,11 +262,10 @@ class BillingService:
         sub.plan = plan
         sub.status = "active"
 
-        # Set billing cycle from Stripe
-        sub.current_period_start = datetime.fromtimestamp(
-            stripe_sub["current_period_start"], tz=UTC
-        )
-        sub.current_period_end = datetime.fromtimestamp(stripe_sub["current_period_end"], tz=UTC)
+        # Set billing cycle from Stripe (period fields moved to items in newer API)
+        period_start, period_end = _get_subscription_period(stripe_sub)
+        sub.current_period_start = datetime.fromtimestamp(period_start, tz=UTC)
+        sub.current_period_end = datetime.fromtimestamp(period_end, tz=UTC)
 
         # Early bird check with row locking to prevent overselling.
         # Lock all existing early bird rows so concurrent checkouts must wait.
@@ -251,10 +316,11 @@ class BillingService:
             logger.warning(f"invoice.paid: no subscription found for customer {customer_id}")
             return
 
-        # Update billing cycle
+        # Update billing cycle (period fields moved to items in newer API)
         stripe_sub = stripe.Subscription.retrieve(subscription_id)
-        new_period_start = datetime.fromtimestamp(stripe_sub["current_period_start"], tz=UTC)
-        new_period_end = datetime.fromtimestamp(stripe_sub["current_period_end"], tz=UTC)
+        ps, pe = _get_subscription_period(stripe_sub)
+        new_period_start = datetime.fromtimestamp(ps, tz=UTC)
+        new_period_end = datetime.fromtimestamp(pe, tz=UTC)
 
         # Idempotency: skip if period hasn't changed (duplicate webhook)
         if sub.current_period_start and sub.current_period_start == new_period_start:
@@ -312,13 +378,10 @@ class BillingService:
         sub.plan = new_plan
         sub.status = subscription_data.get("status", "active")
 
-        # Update billing cycle
-        sub.current_period_start = datetime.fromtimestamp(
-            subscription_data["current_period_start"], tz=UTC
-        )
-        sub.current_period_end = datetime.fromtimestamp(
-            subscription_data["current_period_end"], tz=UTC
-        )
+        # Update billing cycle (period fields moved to items in newer API)
+        ps, pe = _get_subscription_period(subscription_data)
+        sub.current_period_start = datetime.fromtimestamp(ps, tz=UTC)
+        sub.current_period_end = datetime.fromtimestamp(pe, tz=UTC)
 
         # Update storage limit
         sub.storage_limit_bytes = PLAN_STORAGE_LIMITS.get(new_plan, PLAN_STORAGE_LIMITS["free"])
