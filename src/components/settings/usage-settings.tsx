@@ -75,13 +75,6 @@ const SERVICE_COLORS: Record<string, string> = {
 
 const FALLBACK_COLOR = "rgba(161, 161, 170, 0.6)";
 
-/** Format token count for display: e.g. 1234 → "1,234", 25682 → "25.7K" */
-function formatTokenCount(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M tokens`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K tokens`;
-  return `${Math.round(tokens)} tokens`;
-}
-
 export function UsageSettings() {
   const t = useTranslations("settings");
   const tc = useTranslations("common");
@@ -126,13 +119,19 @@ export function UsageSettings() {
 
   // Build stacked bar chart data
   const { chartData, totalUsedPct, legendItems } = useMemo(() => {
-    if (!dailyData?.days.length) {
+    if (!dailyData?.days.length || !credits || credits.limit <= 0) {
       return {
         chartData: null,
         totalUsedPct: 0,
         legendItems: [] as { key: string; color: string; label: string }[],
       };
     }
+
+    const creditsUsed = credits.limit - credits.remaining;
+    const totalTokens = dailyData.days.reduce(
+      (sum, d) => sum + Object.values(d.services).reduce((s, v) => s + v, 0),
+      0
+    );
 
     // Collect all services that appear
     const allServices = new Set<string>();
@@ -157,10 +156,15 @@ export function UsageSettings() {
       return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
     });
 
-    // One dataset per service — raw token counts
+    // One dataset per service — percentage of plan usage
     const datasets = serviceKeys.map((svc) => ({
       label: t(SERVICE_LABEL_MAP[svc] ?? "serviceOther"),
-      data: dailyData.days.map((d) => d.services[svc] ?? 0),
+      data: dailyData.days.map((d) => {
+        if (totalTokens === 0) return 0;
+        const svcTokens = d.services[svc] ?? 0;
+        const dayCredits = (svcTokens / totalTokens) * creditsUsed;
+        return (dayCredits / credits.limit) * 100;
+      }),
       backgroundColor: SERVICE_COLORS[svc] ?? FALLBACK_COLOR,
       borderRadius: 0,
       borderSkipped: false as const,
@@ -177,17 +181,12 @@ export function UsageSettings() {
       label: t(SERVICE_LABEL_MAP[svc] ?? "serviceOther"),
     }));
 
-    const totalUsedPct =
-      credits && credits.limit > 0
-        ? Math.round(((credits.limit - credits.remaining) / credits.limit) * 100)
-        : 0;
-
     return {
       chartData: {
         labels,
         datasets,
       },
-      totalUsedPct,
+      totalUsedPct: Math.round((creditsUsed / credits.limit) * 100),
       legendItems: legend,
     };
   }, [dailyData, credits, t]);
@@ -284,16 +283,16 @@ export function UsageSettings() {
                       title: (items) => items[0]?.label ?? "",
                       label: (ctx) => {
                         const val = ctx.parsed.y ?? 0;
-                        if (val === 0) return "";
-                        return ` ${ctx.dataset.label}: ${formatTokenCount(val)}`;
+                        if (val < 0.01) return "";
+                        return ` ${ctx.dataset.label}: ${val.toFixed(1)}%`;
                       },
                       afterBody: (items) => {
                         const total = items.reduce((s, item) => s + (item.parsed.y ?? 0), 0);
-                        if (total === 0) return "";
-                        return `\n Total: ${formatTokenCount(total)}`;
+                        if (total < 0.01) return "";
+                        return `\n Total: ${total.toFixed(1)}%`;
                       },
                     },
-                    filter: (item) => (item.parsed.y ?? 0) > 0,
+                    filter: (item) => (item.parsed.y ?? 0) >= 0.01,
                   },
                 },
               }}
