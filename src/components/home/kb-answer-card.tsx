@@ -15,6 +15,7 @@ import {
 } from "@/components/chat";
 import type { KBSource, KBTurn } from "@/hooks/use-kb-agent";
 import type { ToolStatus, ThinkingStatus } from "@/stores/streaming-store";
+import { useBillingStore } from "@/stores/billing-store";
 
 interface KBAnswerCardProps {
   question: string;
@@ -48,6 +49,7 @@ export function KBAnswerCard({
   toolHistory = [],
 }: KBAnswerCardProps) {
   const router = useRouter();
+  const isAILocked = useBillingStore((s) => s.isAILocked)();
   const [followUp, setFollowUp] = useState("");
   const [followUpFocused, setFollowUpFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -340,8 +342,8 @@ export function KBAnswerCard({
             onFocus={() => setFollowUpFocused(true)}
             onBlur={() => setFollowUpFocused(false)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask a follow-up..."
-            disabled={isAnswering}
+            placeholder={isAILocked ? "Credits exhausted." : "Ask a follow-up..."}
+            disabled={isAnswering || isAILocked}
             className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/40 focus:outline-none disabled:opacity-50"
           />
           <button

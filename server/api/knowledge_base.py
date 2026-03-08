@@ -22,7 +22,11 @@ from exceptions import (
     UnsupportedFileTypeError,
 )
 from services.auth_service import TokenData, require_auth
-from services.gemini_converter import convert_file_to_markdown, is_converter_configured
+from services.gemini_converter import (
+    convert_file_to_markdown,
+    is_converter_configured,
+    markitdown_convert,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -82,10 +86,16 @@ async def extract_text_content(
     filename: str,
     ext: str,
     api_key: str | None = None,
+    use_fallback: bool = False,
 ) -> tuple[str, dict | None]:
-    """Extract text content from uploaded file via OpenRouter API."""
-    if not is_converter_configured():
-        raise ValueError("File conversion requires OPENROUTER_API_KEY to be configured")
+    """Extract text content from uploaded file.
+
+    When use_fallback=True or LLM is not configured, uses markitdown (zero cost).
+    Otherwise uses LLM via OpenRouter for higher quality conversion.
+    """
+    if use_fallback or not is_converter_configured():
+        text = await markitdown_convert(content, filename, ext)
+        return text, None
     if api_key:
         return await convert_file_to_markdown(content, filename, ext, api_key=api_key)
     return await convert_file_to_markdown(content, filename, ext)
@@ -134,6 +144,23 @@ async def upload_attachment(
     if len(content) > MAX_FILE_SIZE:
         raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
 
+    # Check storage quota
+    if user_id:
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.check_storage_limit(user_id, len(content))
+
+    # Check credits: no credits → use markitdown fallback (zero cost)
+    use_fallback = False
+    if not user_api_key and user_id and ext in {".pdf", ".docx", ".pptx"}:
+        from services.credit_service import CreditService
+
+        credit_svc = CreditService(db)
+        has_credits = await credit_svc.check_credits(user_id)
+        if not has_credits:
+            use_fallback = True
+
     # Create attachment record
     file_type = ext[1:]  # Remove the dot
     attachment = ConversationAttachment(
@@ -154,6 +181,7 @@ async def upload_attachment(
             file.filename or "",
             ext,
             api_key=user_api_key,
+            use_fallback=use_fallback,
         )
         extracted_text, usage = _normalize_conversion_result(conversion_result)
 
@@ -175,10 +203,28 @@ async def upload_attachment(
                 )
             )
 
+            from services.credit_service import deduct_credits_for_usage
+
+            asyncio.create_task(
+                deduct_credits_for_usage(
+                    user_id=user_id,
+                    cost=usage.get("cost"),
+                    service="file_conversion",
+                    is_byok=usage.get("is_byok", False),
+                )
+            )
+
         attachment.extracted_text = extracted_text
         attachment.status = "indexed"
         await db.commit()
         await db.refresh(attachment)
+
+        # Atomically check limit and record storage usage (with row lock)
+        if user_id:
+            from services.storage_tracker import StorageTracker
+
+            storage_tracker = StorageTracker(db)
+            await storage_tracker.check_and_add_usage(user_id, len(content))
 
         logger.info(f"Successfully processed KB attachment: {file.filename}")
 
@@ -275,6 +321,28 @@ async def upload_attachments_batch(
             )
             continue
 
+        # Check storage quota
+        if user_id:
+            from services.storage_tracker import StorageTracker
+
+            storage_tracker = StorageTracker(db)
+            try:
+                await storage_tracker.check_storage_limit(user_id, len(content))
+            except Exception as e:
+                results.append(
+                    AttachmentResponse(
+                        id="",
+                        original_filename=file.filename or "unknown",
+                        file_type="unknown",
+                        file_size=len(content),
+                        status="error",
+                        chunk_count=0,
+                        error_message=str(e),
+                        created_at="",
+                    )
+                )
+                continue
+
         # Create attachment record with "processing" status
         file_type = ext[1:]
         attachment = ConversationAttachment(
@@ -303,6 +371,16 @@ async def upload_attachments_batch(
 
         file_data.append((attachment.id, content, file.filename or "unknown"))
 
+    # Check credits for batch: no credits → background uses markitdown fallback
+    batch_use_fallback = False
+    if not user_api_key and user_id:
+        from services.credit_service import CreditService
+
+        credit_svc = CreditService(db)
+        has_credits = await credit_svc.check_credits(user_id)
+        if not has_credits:
+            batch_use_fallback = True
+
     # Start background processing for valid files
     if file_data:
         asyncio.create_task(
@@ -311,6 +389,7 @@ async def upload_attachments_batch(
                 file_data,
                 user_id=user_id,
                 user_api_key=user_api_key,
+                use_fallback=batch_use_fallback,
             )
         )
 
@@ -325,6 +404,7 @@ async def _process_files_background(
     file_data: list[tuple[str, bytes, str]],
     user_id: str | None,
     user_api_key: str | None,
+    use_fallback: bool = False,
 ) -> None:
     """Process files in the background after the API has returned.
 
@@ -349,11 +429,19 @@ async def _process_files_background(
                     filename,
                     ext,
                     api_key=user_api_key,
+                    use_fallback=use_fallback,
                 )
                 extracted_text, usage = _normalize_conversion_result(conversion_result)
                 attachment.extracted_text = extracted_text
                 attachment.status = "indexed"
                 await file_db.commit()
+
+                # Atomically check limit and record storage usage (with row lock)
+                if user_id:
+                    from services.storage_tracker import StorageTracker
+
+                    storage_tracker = StorageTracker(file_db)
+                    await storage_tracker.check_and_add_usage(user_id, len(content))
 
                 if usage:
                     from services.usage_tracker import track_usage
@@ -366,6 +454,17 @@ async def _process_files_background(
                             output_tokens=usage.get("output_tokens"),
                             cost=usage.get("cost"),
                             user_id=user_id,
+                            is_byok=usage.get("is_byok", False),
+                        )
+                    )
+
+                    from services.credit_service import deduct_credits_for_usage
+
+                    asyncio.create_task(
+                        deduct_credits_for_usage(
+                            user_id=user_id,
+                            cost=usage.get("cost"),
+                            service="file_conversion",
                             is_byok=usage.get("is_byok", False),
                         )
                     )
@@ -442,8 +541,17 @@ async def delete_attachment(
     if not attachment or attachment.conversation_id != conv.id:
         raise AttachmentNotFoundError(attachment_id)
 
+    file_size = attachment.file_size
     await db.delete(attachment)
     await db.commit()
+
+    # Reduce storage usage
+    user_id = get_user_id(auth)
+    if user_id and file_size:
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.remove_usage(user_id, file_size)
 
     return {"status": "deleted", "id": attachment_id}
 

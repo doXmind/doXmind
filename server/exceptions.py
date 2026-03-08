@@ -121,6 +121,44 @@ class FileTooLargeError(AppException):
         super().__init__(details=details, **kwargs)
 
 
+class InsufficientCreditsError(AppException):
+    """Credits exhausted (402)."""
+
+    status_code = 402
+    error_code = "INSUFFICIENT_CREDITS"
+    message = "No credits remaining. Please upgrade your plan."
+
+    def __init__(self, credits_remaining: int = 0, **kwargs):
+        details = kwargs.pop("details", {})
+        details["credits_remaining"] = credits_remaining
+        super().__init__(details=details, **kwargs)
+
+
+class StorageLimitExceededError(AppException):
+    """Storage quota exceeded (413)."""
+
+    status_code = 413
+    error_code = "STORAGE_LIMIT_EXCEEDED"
+    message = "Storage limit exceeded. Please upgrade your plan."
+
+    def __init__(
+        self,
+        used_bytes: int = None,
+        limit_bytes: int = None,
+        file_size: int = None,
+        **kwargs,
+    ):
+        details = kwargs.pop("details", {})
+        if used_bytes is not None:
+            details["used_bytes"] = used_bytes
+        if limit_bytes is not None:
+            details["limit_bytes"] = limit_bytes
+            details["limit_mb"] = round(limit_bytes / (1024 * 1024))
+        if file_size is not None:
+            details["file_size"] = file_size
+        super().__init__(details=details, **kwargs)
+
+
 class UnsupportedFileTypeError(AppException):
     """File type not supported (415)."""
 

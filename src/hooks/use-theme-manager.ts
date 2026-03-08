@@ -1,9 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import { useLayoutStore } from "@/stores/layout-store";
-import { getTheme, getThemesByBaseMode, THEME_LIST } from "@/lib/themes/registry";
+import { useBillingStore } from "@/stores/billing-store";
+import {
+  getTheme,
+  getThemesByBaseMode,
+  getFreeThemesByBaseMode,
+  getPremiumThemesByBaseMode,
+  isThemeFree,
+  DEFAULT_LIGHT_THEME,
+  DEFAULT_DARK_THEME,
+  THEME_LIST,
+} from "@/lib/themes/registry";
 import { applyTheme } from "@/lib/themes/apply-theme";
 import type { ThemeDefinition } from "@/lib/themes/types";
 
@@ -334,6 +344,47 @@ export function useThemeManager() {
     applyThemeToDOM,
   ]);
 
+  // Billing-aware theme access
+  const plan = useBillingStore((s) => s.plan);
+  const billingInitialized = useBillingStore((s) => s.isInitialized);
+  const isPremiumUser = plan === "pro" || plan === "max";
+
+  const canAccessTheme = useCallback(
+    (id: string): boolean => {
+      if (isThemeFree(id)) return true;
+      return isPremiumUser;
+    },
+    [isPremiumUser]
+  );
+
+  // Downgrade protection: if user has premium theme but free plan, fallback
+  useEffect(() => {
+    if (!hydrated || !initialThemeReady || !billingInitialized) return;
+    if (isPremiumUser) return;
+
+    const current = getTheme(themeId);
+    if (current.tier === "pro") {
+      const fallbackId = current.baseMode === "dark" ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
+      selectTheme(fallbackId);
+    }
+
+    // Also reset preferred themes if they reference premium themes
+    if (!isThemeFree(preferredLightTheme)) {
+      setPreferredLightTheme(DEFAULT_LIGHT_THEME);
+      persistThemePrefs({ preferredLightTheme: DEFAULT_LIGHT_THEME });
+    }
+    if (!isThemeFree(preferredDarkTheme)) {
+      setPreferredDarkTheme(DEFAULT_DARK_THEME);
+      persistThemePrefs({ preferredDarkTheme: DEFAULT_DARK_THEME });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, initialThemeReady, billingInitialized, isPremiumUser]);
+
+  const freeLightThemes = useMemo(() => getFreeThemesByBaseMode("light"), []);
+  const freeDarkThemes = useMemo(() => getFreeThemesByBaseMode("dark"), []);
+  const premiumLightThemes = useMemo(() => getPremiumThemesByBaseMode("light"), []);
+  const premiumDarkThemes = useMemo(() => getPremiumThemesByBaseMode("dark"), []);
+
   return {
     currentThemeId: themeId,
     currentTheme,
@@ -346,5 +397,11 @@ export function useThemeManager() {
     lightThemes: getThemesByBaseMode("light"),
     darkThemes: getThemesByBaseMode("dark"),
     allThemes: THEME_LIST,
+    canAccessTheme,
+    isPremiumUser,
+    freeLightThemes,
+    freeDarkThemes,
+    premiumLightThemes,
+    premiumDarkThemes,
   };
 }

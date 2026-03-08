@@ -12,6 +12,7 @@ import { useChat } from "@/hooks/use-chat";
 import { MOBILE_SPRINGS, Z_INDEX } from "@/lib/constants";
 import { haptics } from "@/lib/haptics";
 import { useFileStore } from "@/stores/file-store";
+import { useBillingStore } from "@/stores/billing-store";
 
 interface QuickAIAction {
   id: string;
@@ -72,11 +73,12 @@ export function InlineAIActions({ editor, position, visible, onAction }: InlineA
   const { selection } = useEditorStore();
   const { sendQuickEditMessage, isStreaming } = useChat();
   const { currentFileId } = useFileStore();
+  const isAILocked = useBillingStore((s) => s.isAILocked)();
   const setMobileChatOverlayOpen = useLayoutStore((s) => s.setMobileChatOverlayOpen);
 
   const handleAction = useCallback(
     (action: QuickAIAction) => {
-      if (!editor || !selection?.text || isStreaming) return;
+      if (!editor || !selection?.text || isStreaming || isAILocked) return;
 
       haptics.medium();
 
@@ -92,6 +94,7 @@ export function InlineAIActions({ editor, position, visible, onAction }: InlineA
       editor,
       selection,
       isStreaming,
+      isAILocked,
       currentFileId,
       sendQuickEditMessage,
       setMobileChatOverlayOpen,
@@ -125,7 +128,7 @@ export function InlineAIActions({ editor, position, visible, onAction }: InlineA
             key={action.id}
             type="button"
             onClick={() => handleAction(action)}
-            disabled={isStreaming}
+            disabled={isStreaming || isAILocked}
             className={cn(
               "flex items-center gap-1.5 rounded-full px-3 py-2",
               "text-sm font-medium transition-colors",

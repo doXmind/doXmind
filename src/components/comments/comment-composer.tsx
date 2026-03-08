@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { Send, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
+import { useBillingStore } from "@/stores/billing-store";
 
 interface CommentComposerProps {
   onSubmit: (content: string) => Promise<void>;
@@ -25,6 +26,7 @@ export function CommentComposer({
   const t = useTranslations("comments");
   const tc = useTranslations("common");
   const user = useAuthStore((s) => s.user);
+  const plan = useBillingStore((s) => s.plan);
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const resolvedPlaceholder = placeholder ?? t("writeAComment");
@@ -56,20 +58,13 @@ export function CommentComposer({
       {/* Current user's avatar */}
       {showAvatar && user && (
         <div className="flex-shrink-0 pt-1">
-          {user.avatar_url ? (
-            <Image
-              src={user.avatar_url}
-              alt=""
-              width={40}
-              height={40}
-              className="h-9 w-9 rounded-full ring-1 ring-border/50 sm:h-10 sm:w-10"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground ring-1 ring-border/50 sm:h-10 sm:w-10 sm:text-sm">
-              {(user.username || "?")[0].toUpperCase()}
-            </div>
-          )}
+          <UserAvatar
+            avatarUrl={user?.avatar_url}
+            username={user?.username}
+            size={40}
+            frame={user?.avatar_frame}
+            plan={plan}
+          />
         </div>
       )}
 

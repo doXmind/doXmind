@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { CommunityDetailResponse } from "@/lib/api";
 import { Eye, Calendar } from "lucide-react";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 interface CommunityDetailHeaderProps {
   detail: CommunityDetailResponse;
@@ -32,21 +32,14 @@ export function CommunityDetailHeader({ detail }: CommunityDetailHeaderProps) {
           href={`/profile/${detail.owner.id}`}
           className="flex items-center gap-2 transition-colors hover:text-foreground"
         >
-          {detail.owner.avatar_url ? (
-            <Image
-              src={detail.owner.avatar_url}
-              alt=""
-              width={24}
-              height={24}
-              className="h-6 w-6 rounded-full"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
-              {(detail.owner.username || "?")[0].toUpperCase()}
-            </div>
-          )}
-          <span>{detail.owner.username || t("anonymous")}</span>
+          <UserAvatar
+            avatarUrl={detail.owner.avatar_url}
+            username={detail.owner.username}
+            size={32}
+            frame={detail.owner.avatar_frame}
+            plan={detail.owner.plan}
+          />
+          <span className="flex items-center">{detail.owner.username || t("anonymous")}</span>
         </Link>
 
         <span className="flex items-center gap-1">

@@ -60,6 +60,13 @@ export function useInlineAI() {
       selection,
       anchor,
     }: SendInlineRequestOptions) => {
+      // Pre-check: block if AI is locked (credits exhausted)
+      const { useBillingStore } = await import("@/stores/billing-store");
+      if (useBillingStore.getState().isAILocked()) {
+        useBillingStore.getState().openUpgradeModal("Upgrade to use AI editing");
+        return;
+      }
+
       const file = fileId === "demo-file" ? demoFile : getFile(fileId);
       if (!file) {
         throw new Error("File not found");
@@ -157,6 +164,12 @@ export function useInlineAI() {
               setInlineAIResponseStatus(requestId, "ready");
               break;
             case "error":
+              // Handle credit exhaustion
+              if (event.code === "INSUFFICIENT_CREDITS") {
+                import("@/stores/billing-store").then(({ useBillingStore }) => {
+                  useBillingStore.getState().openUpgradeModal(event.content);
+                });
+              }
               setInlineAIResponseStatus(
                 requestId,
                 "error",

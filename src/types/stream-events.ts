@@ -101,12 +101,14 @@ export interface SummaryEvent {
   todos?: TodoItem[] | null;
   model: string;
   usage?: UsageData | null;
+  credits_remaining?: number | null;
 }
 
 /** Error event */
 export interface ErrorEvent {
   type: "error";
   content: string;
+  code?: string;
 }
 
 /** Server-side tool (web_search, web_fetch, code_execution) starts */

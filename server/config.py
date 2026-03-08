@@ -202,6 +202,24 @@ class Settings(BaseSettings):
     autocomplete_cache_size: int = 1000
     autocomplete_cache_ttl_seconds: int = 300  # 5 minutes
 
+    # =========================================================================
+    # Stripe (Billing / Subscriptions)
+    # =========================================================================
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_pro_early_bird: str = ""  # $2.99/month recurring
+    stripe_price_pro_regular: str = ""  # $4.99/month recurring
+    stripe_price_max: str = ""  # $14.99/month recurring
+
+    # =========================================================================
+    # Credits System
+    # =========================================================================
+    credit_cost_usd: float = 0.0008  # 1 internal credit = $0.0008 USD (~25% markup)
+    min_credits_per_request: int = 1  # Floor: at least 1 credit per AI request
+    serper_search_credits: int = 1  # Fixed credits per web search
+    credit_display_multiplier: int = 10  # Display value = internal * 10
+    early_bird_limit: int = 500  # First N paid users get early bird pricing
+
     class Config:
         env_file = str(_BASE_DIR / ".env")
         env_file_encoding = "utf-8"

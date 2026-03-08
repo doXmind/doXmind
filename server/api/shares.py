@@ -12,7 +12,16 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.database import DocumentShare, File, ShareInvite, ShareView, User, get_db, utcnow
+from db.database import (
+    DocumentShare,
+    File,
+    ShareInvite,
+    ShareView,
+    User,
+    UserSubscription,
+    get_db,
+    utcnow,
+)
 from exceptions import (
     BadRequestError,
     DocumentNotFoundError,
@@ -172,6 +181,7 @@ class SharedItemResponse(BaseModel):
     visibility: str | None = None
     owner_name: str | None = None
     owner_avatar_url: str | None = None
+    owner_avatar_frame: str | None = None
     # Document fields (present when is_folder=False)
     content: str | None = None
     # Folder fields (present when is_folder=True)
@@ -498,7 +508,12 @@ async def search_users_for_invite(
     search_term = f"%{q}%"
 
     result = await db.execute(
-        select(User.id, User.username, User.email, User.avatar_url)
+        select(
+            User.id, User.username, User.email, User.avatar_url,
+            User.avatar_frame.label("user_avatar_frame"),
+            UserSubscription.plan.label("user_plan"),
+        )
+        .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
         .where(
             User.is_active == True,  # noqa: E712
             or_(
@@ -518,6 +533,8 @@ async def search_users_for_invite(
             "username": row.username,
             "email": row.email,
             "avatar_url": row.avatar_url,
+            "avatar_frame": row.user_avatar_frame,
+            "plan": row.user_plan or "free",
         }
         for row in rows
         if row.id != current_user_id
@@ -557,6 +574,7 @@ async def list_shared_with_me(
             User.id.label("owner_id"),
             User.username.label("owner_name"),
             User.avatar_url.label("owner_avatar_url"),
+            User.avatar_frame.label("owner_avatar_frame"),
             ShareInvite.created_at.label("invited_at"),
         )
         .join(ShareInvite, ShareInvite.share_id == DocumentShare.id)
@@ -588,6 +606,7 @@ async def list_shared_with_me(
                 "id": row.owner_id,
                 "username": row.owner_name,
                 "avatar_url": row.owner_avatar_url,
+                "avatar_frame": row.owner_avatar_frame,
             },
             "invited_at": row.invited_at.isoformat() if row.invited_at else "",
             "created_at": row.created_at.isoformat() if row.created_at else "",
@@ -901,14 +920,18 @@ async def view_shared_item(
     # Look up owner display name and avatar
     owner_name = None
     owner_avatar_url = None
+    owner_avatar_frame = None
     if share.user_id:
         result = await db.execute(
-            select(User.username, User.avatar_url).where(User.id == share.user_id)
+            select(User.username, User.avatar_url, User.avatar_frame).where(
+                User.id == share.user_id
+            )
         )
         row = result.one_or_none()
         if row:
             owner_name = row.username
             owner_avatar_url = row.avatar_url
+            owner_avatar_frame = row.avatar_frame
 
     # Determine the target item (root or navigated-to child)
     target_file = root_file
@@ -969,6 +992,7 @@ async def view_shared_item(
             visibility=share.visibility,
             owner_name=owner_name,
             owner_avatar_url=owner_avatar_url,
+            owner_avatar_frame=owner_avatar_frame,
             items=items,
             breadcrumbs=breadcrumbs,
             root_folder_name=root_file.name if target_file.id != root_file.id else None,
@@ -990,6 +1014,7 @@ async def view_shared_item(
             visibility=share.visibility,
             owner_name=owner_name,
             owner_avatar_url=owner_avatar_url,
+            owner_avatar_frame=owner_avatar_frame,
             breadcrumbs=breadcrumbs if breadcrumbs else None,
             root_folder_name=root_file.name if path and root_file.is_folder else None,
         )

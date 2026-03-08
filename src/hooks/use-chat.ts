@@ -335,12 +335,24 @@ export function useChat() {
               if (parsed.todos) {
                 setTodos(parsed.todos);
               }
+              // Update credits from stream summary
+              if (parsed.credits_remaining != null) {
+                import("@/stores/billing-store").then(({ useBillingStore }) => {
+                  useBillingStore.getState().updateCreditsFromStream(parsed.credits_remaining!);
+                });
+              }
               if (isInlineOrigin) {
                 useEditorStore.getState().setInlineAIResponseStatus(inlineRequestId, "ready");
               }
               break;
 
             case "error": {
+              // Handle credit exhaustion
+              if (parsed.code === "INSUFFICIENT_CREDITS") {
+                import("@/stores/billing-store").then(({ useBillingStore }) => {
+                  useBillingStore.getState().openUpgradeModal(parsed.content);
+                });
+              }
               const errorTool: ToolStatus = {
                 name: "error",
                 status: "error",

@@ -21,7 +21,7 @@ from api.chat import _load_conversation_context, _resolve_user_api_settings
 from api.files import get_user_id
 from config import get_cors_headers, get_settings
 from db.database import Conversation, Message, get_db
-from services.auth_service import TokenData, optional_auth
+from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -95,18 +95,42 @@ async def inline_stream(
     request: InlineStreamRequest,
     http_request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: TokenData = Depends(optional_auth),
+    auth: TokenData = Depends(require_auth),
 ):
     settings = get_settings()
     origin = http_request.headers.get("origin")
 
     user_api_key, user_model = await _resolve_user_api_settings(auth, db)
 
+    # Pre-flight credit check
+    user_id = get_user_id(auth)
+    is_byok = user_api_key is not None
+    if user_id and not is_byok:
+        from services.credit_service import CreditService
+
+        credit_svc = CreditService(db)
+        has_credits = await credit_svc.check_credits(user_id)
+        if not has_credits:
+            async def _no_credits():
+                error = {"type": "error", "code": "INSUFFICIENT_CREDITS",
+                         "content": "No credits remaining. Please upgrade your plan."}
+                yield f"data: {json.dumps(error)}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+            return StreamingResponse(
+                _no_credits(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                    "Content-Type": "text/event-stream; charset=utf-8",
+                    **get_cors_headers(origin),
+                },
+            )
+
     history: list[dict[str, Any]] = []
     conversation: Conversation | None = None
     if request.options.persistHistory and request.conversationId:
         (conversation, history, _, _, _) = await _load_conversation_context(
-            request.conversationId, db, get_user_id(auth) if auth else None
+            request.conversationId, db, user_id
         )
 
     message_for_ai = _build_inline_message(request)
@@ -203,6 +227,21 @@ async def inline_stream(
                 elif event_type == "error":
                     yield f"data: {json.dumps({'type': 'error', 'content': event.get('content', 'Unknown error')}, ensure_ascii=False)}\n\n".encode()
 
+            # Deduct credits (fire-and-forget)
+            credits_remaining = None
+            if user_id:
+                try:
+                    from services.credit_service import deduct_credits_for_usage
+
+                    credits_remaining = await deduct_credits_for_usage(
+                        user_id=user_id,
+                        cost=collected_usage.get("cost"),
+                        service="inline",
+                        is_byok=is_byok,
+                    )
+                except Exception as credit_err:
+                    logger.warning(f"Credit deduction error: {credit_err}")
+
             summary = {
                 "type": "summary",
                 "requestId": request_id,
@@ -214,6 +253,8 @@ async def inline_stream(
                 "model": agent.model if agent else None,
                 "usage": collected_usage,
             }
+            if credits_remaining is not None:
+                summary["credits_remaining"] = credits_remaining
 
             if request.options.persistHistory and conversation:
                 assistant_message = Message(

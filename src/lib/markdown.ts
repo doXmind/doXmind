@@ -164,6 +164,20 @@ export function markdownToPlainText(markdown: string): string {
       const temp = document.createElement("div");
       temp.innerHTML = html;
 
+      // Extract content from data attributes (mermaid charts, math expressions)
+      // These render as empty elements with content in data-code/data-latex attributes
+      temp.querySelectorAll("[data-code], [data-latex]").forEach((el) => {
+        const attr = el.getAttribute("data-code") || el.getAttribute("data-latex") || "";
+        if (attr) {
+          const decoded = attr
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"');
+          el.textContent = decoded;
+        }
+      });
+
       // Walk through all nodes and build text content
       // ProseMirror preserves newlines in <pre>/<code> but not between blocks
       let result = "";
@@ -213,6 +227,24 @@ export function markdownToPlainText(markdown: string): string {
       }
     );
 
+    // Extract content from data-code/data-latex attributes before stripping tags
+    // Mermaid: <div data-code="..."></div>, Math: <div/span data-latex="...">
+    processed = processed
+      .replace(/<(?:div|span)[^>]*\sdata-code="([^"]*)"[^>]*>(?:<\/(?:div|span)>)?/gi, (_, c) =>
+        c
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+      )
+      .replace(/<(?:div|span)[^>]*\sdata-latex="([^"]*)"[^>]*>(?:<\/(?:div|span)>)?/gi, (_, c) =>
+        c
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+      );
+
     // Process rest of HTML
     processed = processed
       .replace(/<[^>]+>/g, "") // Remove HTML tags
@@ -257,4 +289,23 @@ export function markdownToPlainText(markdown: string): string {
 
     return result.replace(/^\s+|\s+$/g, ""); // Trim start/end
   }
+}
+
+/**
+ * Strip code fences and image references from markdown preview text.
+ * For mermaid blocks, extracts chart titles as meaningful preview text.
+ * Used for card previews where raw code blocks and images aren't useful.
+ */
+export function stripPreviewBlocks(markdown: string): string {
+  if (!markdown) return "";
+  return markdown
+    .replace(/```mermaid\n([\s\S]*?)```\n*/g, (_, content: string) => {
+      // Extract title from mermaid chart for meaningful preview
+      const titleMatch = content.match(/title\s+"([^"]+)"/);
+      return titleMatch ? titleMatch[1] + "\n" : "";
+    })
+    .replace(/```[\w-]*\n[\s\S]*?```\n*/g, "") // Remove other code fences
+    .replace(/```[\w-]*[\s\S]*$/g, "") // Remove trailing unclosed code fence
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1") // Replace images with alt text
+    .trim();
 }

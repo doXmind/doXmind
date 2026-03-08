@@ -23,7 +23,7 @@ from db.database import Conversation, ConversationAttachment, ConversationDataFi
 from dependencies import normalize_file_id, resolve_user_api_key
 from exceptions import InternalError
 from services.api_key_service import APIKeyService
-from services.auth_service import TokenData, optional_auth, require_auth
+from services.auth_service import TokenData, require_auth
 from services.history_compressor import HistoryCompressor
 
 logger = logging.getLogger(__name__)
@@ -242,7 +242,7 @@ async def chat_stream(
     request: ChatRequest,
     http_request: Request,
     db: AsyncSession = Depends(get_db),
-    auth: TokenData = Depends(optional_auth),
+    auth: TokenData = Depends(require_auth),
 ):
     """Stream AI chat response with real-time token output.
 
@@ -254,6 +254,30 @@ async def chat_stream(
 
     user_api_key, user_model = await _resolve_user_api_settings(auth, db)
 
+    # Pre-flight credit check
+    user_id = get_user_id(auth)
+    is_byok = user_api_key is not None
+    if user_id and not is_byok:
+        from services.credit_service import CreditService
+
+        credit_svc = CreditService(db)
+        has_credits = await credit_svc.check_credits(user_id)
+        if not has_credits:
+            async def _no_credits():
+                error = {"type": "error", "code": "INSUFFICIENT_CREDITS",
+                         "content": "No credits remaining. Please upgrade your plan."}
+                yield f"data: {json.dumps(error)}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+            return StreamingResponse(
+                _no_credits(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                    "Content-Type": "text/event-stream; charset=utf-8",
+                    **get_cors_headers(origin),
+                },
+            )
+
     (
         conversation,
         history,
@@ -261,7 +285,7 @@ async def chat_stream(
         data_files_metadata,
         data_files_content,
     ) = await _load_conversation_context(
-        request.conversationId, db, get_user_id(auth) if auth else None
+        request.conversationId, db, user_id
     )
 
     # Collector for building the complete response
@@ -339,6 +363,28 @@ async def chat_stream(
                     except Exception as save_err:
                         logger.error(f"Failed to save message: {save_err}")
 
+            # Deduct credits (fire-and-forget)
+            credits_remaining = None
+            if user_id:
+                try:
+                    from services.credit_service import deduct_credits_for_usage
+
+                    # Count web search tool calls
+                    web_search_count = sum(
+                        1 for tc in collected_tool_calls
+                        if tc.get("name") == "web_search"
+                    )
+
+                    credits_remaining = await deduct_credits_for_usage(
+                        user_id=user_id,
+                        cost=collected_usage.get("cost"),
+                        service="chat",
+                        is_byok=is_byok,
+                        web_search_count=web_search_count,
+                    )
+                except Exception as credit_err:
+                    logger.warning(f"Credit deduction error: {credit_err}")
+
             summary = {
                 "type": "summary",
                 "messageId": message_id,
@@ -354,6 +400,8 @@ async def chat_stream(
                     "cost": collected_usage.get("cost"),
                 },
             }
+            if credits_remaining is not None:
+                summary["credits_remaining"] = credits_remaining
             events_to_send.append(f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode())
 
             return events_to_send
@@ -586,10 +634,22 @@ async def simple_chat(
         model = request.model or settings.fast_model
         user_id = get_user_id(auth)
         user_api_key = await resolve_user_api_key(user_id, db) if user_id else None
+
+        # Pre-flight credit check (skip for BYOK users)
+        if not user_api_key and user_id:
+            from services.credit_service import CreditService
+
+            credit_svc = CreditService(db)
+            has_credits = await credit_svc.check_credits(user_id)
+            if not has_credits:
+                from exceptions import InsufficientCreditsError
+
+                raise InsufficientCreditsError()
+
         llm = LLMService(model=model, api_key=user_api_key)
         response = await llm.complete(prompt=request.message, system=request.system)
 
-        # Track usage
+        # Track usage and deduct credits
         if llm.last_usage:
             import asyncio
 
@@ -604,6 +664,18 @@ async def simple_chat(
                     **llm.last_usage,
                 )
             )
+
+            from services.credit_service import deduct_credits_for_usage
+
+            try:
+                await deduct_credits_for_usage(
+                    user_id=user_id,
+                    cost=llm.last_usage.get("cost"),
+                    service="simple_chat",
+                    is_byok=bool(user_api_key),
+                )
+            except Exception as credit_err:
+                logger.warning(f"Credit deduction error for simple_chat: {credit_err}")
 
         return {"response": response}
     except Exception as e:

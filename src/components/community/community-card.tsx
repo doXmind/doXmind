@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { motion } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { MarkdownContent } from "@/components/comments/markdown-content";
 import { Eye, Folder, GitFork, Bookmark, Clock, MessageSquare, Pencil } from "lucide-react";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { useTranslations } from "next-intl";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { ShareReactions } from "./share-reactions";
+import { stripPreviewBlocks } from "@/lib/markdown";
 
 interface CommunityCardProps {
   item: CommunityItem;
@@ -29,6 +30,7 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
   const toggleBookmark = useBookmarksStore((s) => s.toggleBookmark);
 
   const owner = item.owner || { id: "", username: null, avatar_url: null };
+  const cleanedPreview = item.content_preview ? stripPreviewBlocks(item.content_preview) : "";
 
   const handleBookmarkClick = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -80,21 +82,14 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
 
         {/* Author row */}
         <div className="mb-2.5 flex items-center gap-2">
-          {owner.avatar_url ? (
-            <Image
-              src={owner.avatar_url}
-              alt=""
-              width={18}
-              height={18}
-              className="h-[18px] w-[18px] rounded-full"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-muted text-[8px] font-semibold text-muted-foreground">
-              {(owner.username || "?")[0].toUpperCase()}
-            </div>
-          )}
-          <span className="text-[12px] text-muted-foreground">
+          <UserAvatar
+            avatarUrl={owner.avatar_url}
+            username={owner.username}
+            size={18}
+            frame={owner.avatar_frame}
+            plan={owner.plan}
+          />
+          <span className="flex items-center text-[12px] text-muted-foreground">
             {owner.username || t("anonymous")}
           </span>
           {publishedDate && (
@@ -121,9 +116,9 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
         )}
 
         {/* Content preview */}
-        {item.content_preview && item.content_preview.trim().length > 0 && (
+        {cleanedPreview && (
           <MarkdownContent
-            content={item.content_preview}
+            content={cleanedPreview}
             baseClassName="text-[12px] leading-relaxed text-muted-foreground"
             className="mt-1.5 line-clamp-3 [&_*]:text-[12px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
           />

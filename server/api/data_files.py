@@ -106,15 +106,24 @@ async def upload_data_file(
     if file_size > DATA_FILE_MAX_SIZE:
         raise FileTooLargeError(max_size=DATA_FILE_MAX_SIZE, actual_size=file_size)
 
+    user_id = get_user_id(auth)
+
     # Verify conversation exists (supports both conversation.id and file_id)
     conversation = await get_conversation_by_file_id(
         conversation_id,
         db,
         create_if_missing=True,
-        user_id=get_user_id(auth),
+        user_id=user_id,
     )
     if not conversation:
         raise ConversationNotFoundError(conversation_id=conversation_id)
+
+    # Check storage quota
+    if user_id:
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.check_storage_limit(user_id, file_size)
 
     # Get MIME type
     mime_type = MIME_TYPES.get(ext, file.content_type)
@@ -157,6 +166,13 @@ async def upload_data_file(
     db.add(data_file)
     await db.commit()
     await db.refresh(data_file)
+
+    # Atomically check limit and record storage usage (with row lock)
+    if user_id:
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.check_and_add_usage(user_id, file_size)
 
     return DataFileResponse(
         id=data_file.id,
@@ -281,6 +297,8 @@ async def delete_data_file(
     if not data_file:
         raise NotFoundError(resource="Data file", resource_id=file_id)
 
+    file_size = data_file.file_size
+
     # Delete the physical file
     if data_file.storage_path and os.path.exists(data_file.storage_path):
         try:
@@ -291,6 +309,14 @@ async def delete_data_file(
     # Delete database record
     await db.delete(data_file)
     await db.commit()
+
+    # Reduce storage usage
+    user_id = get_user_id(auth)
+    if user_id and file_size:
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.remove_usage(user_id, file_size)
 
     return {"success": True}
 

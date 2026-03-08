@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import Image from "next/image";
 import { UserProfileResponse } from "@/lib/api";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { ExternalLink, Pencil, FileText, Eye, GitFork, Bookmark, Users } from "lucide-react";
+
 import { ProfileEditModal } from "./profile-edit-modal";
 import { FollowButton } from "@/components/community/follow-button";
 import { FollowListModal } from "./follow-list-modal";
@@ -31,25 +32,19 @@ export function ProfileHeader({ profile, isOwnProfile, onFollowChange }: Profile
     <>
       <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
         {/* Avatar */}
-        {profile.avatar_url ? (
-          <Image
-            src={profile.avatar_url}
-            alt={profile.username || "User"}
-            width={96}
-            height={96}
-            className="h-20 w-20 shrink-0 rounded-full ring-1 ring-border/50 sm:h-24 sm:w-24"
-            unoptimized
-          />
-        ) : (
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-bold text-muted-foreground ring-1 ring-border/50 sm:h-24 sm:w-24">
-            {(profile.username || "?")[0].toUpperCase()}
-          </div>
-        )}
+        <UserAvatar
+          avatarUrl={profile.avatar_url}
+          username={profile.username}
+          size={96}
+          frame={profile.avatar_frame}
+          plan={profile.plan}
+          className="h-20 w-20 shrink-0 sm:h-24 sm:w-24"
+        />
 
         <div className="min-w-0 flex-1 text-center sm:text-left">
           {/* Name + Edit/Follow */}
           <div className="flex items-baseline justify-center gap-3 sm:justify-start">
-            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            <h1 className="flex items-center text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               {profile.username || t("anonymous")}
             </h1>
             {isOwnProfile ? (

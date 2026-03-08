@@ -55,6 +55,13 @@ export function useTextReview({
       return null;
     }
 
+    // Pre-check: block if AI is locked (credits exhausted)
+    const { useBillingStore } = await import("@/stores/billing-store");
+    if (useBillingStore.getState().isAILocked()) {
+      useBillingStore.getState().openUpgradeModal("Upgrade to use writing review");
+      return null;
+    }
+
     // Extract text with position mapping
     const { text, posMap } = extractTextWithPositions(editor.state.doc);
 

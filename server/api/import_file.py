@@ -21,14 +21,18 @@ from exceptions import (
     UnsupportedFileTypeError,
 )
 from services.auth_service import TokenData, require_auth
-from services.gemini_converter import convert_file_to_markdown, is_converter_configured
+from services.gemini_converter import (
+    convert_file_to_markdown,
+    is_converter_configured,
+    markitdown_convert,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Configuration
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".md", ".markdown"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".md", ".markdown"}
 
 
 def get_file_extension(filename: str) -> str:
@@ -110,16 +114,34 @@ async def import_file(
             # Already markdown, just decode
             md_content = content.decode("utf-8")
         else:
-            # Check if file conversion is configured
-            if not is_converter_configured():
-                raise InternalError(
-                    message="File conversion requires OPENROUTER_API_KEY to be configured"
+            # Determine if we can use LLM conversion or must fallback
+            use_markitdown = False
+
+            if not user_api_key and user_id:
+                from services.credit_service import CreditService
+
+                credit_svc = CreditService(db)
+                has_credits = await credit_svc.check_credits(user_id)
+                if not has_credits:
+                    use_markitdown = True
+
+            if not use_markitdown and not is_converter_configured():
+                use_markitdown = True
+
+            if use_markitdown:
+                # No credits or no LLM configured: use markitdown (zero cost)
+                md_content = await markitdown_convert(
+                    content, file.filename or "unknown", ext
                 )
-            # Use LLM API for PDF and DOCX conversion
-            conversion_result = await convert_file_to_markdown(
-                content, file.filename or "unknown", ext, api_key=user_api_key
-            )
-            md_content, conversion_usage = _normalize_conversion_result(conversion_result)
+                conversion_usage = None
+            else:
+                # Use LLM API for PDF/DOCX/PPTX conversion
+                conversion_result = await convert_file_to_markdown(
+                    content, file.filename or "unknown", ext, api_key=user_api_key
+                )
+                md_content, conversion_usage = _normalize_conversion_result(
+                    conversion_result
+                )
 
             # Track file conversion usage
             import asyncio
@@ -135,6 +157,17 @@ async def import_file(
                         output_tokens=conversion_usage.get("output_tokens"),
                         cost=conversion_usage.get("cost"),
                         user_id=user_id,
+                        is_byok=conversion_usage.get("is_byok", False),
+                    )
+                )
+
+                from services.credit_service import deduct_credits_for_usage
+
+                asyncio.create_task(
+                    deduct_credits_for_usage(
+                        user_id=user_id,
+                        cost=conversion_usage.get("cost"),
+                        service="file_conversion",
                         is_byok=conversion_usage.get("is_byok", False),
                     )
                 )

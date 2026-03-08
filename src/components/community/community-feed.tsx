@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { MarkdownContent } from "@/components/comments/markdown-content";
+import { stripPreviewBlocks } from "@/lib/markdown";
 import {
   Bookmark,
   Check,
@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { ShareReactions } from "./share-reactions";
 
 interface CommunityFeedProps {
@@ -115,7 +116,8 @@ function FeedCard({
     router.push(`/community/${item.share_token}`);
   };
 
-  const hasPreview = item.content_preview && item.content_preview.trim().length > 0;
+  const cleanedPreview = item.content_preview ? stripPreviewBlocks(item.content_preview) : "";
+  const hasPreview = cleanedPreview.length > 0;
   const readingTime = item.reading_time || 0;
   const wordCount = item.word_count || 0;
 
@@ -145,25 +147,18 @@ function FeedCard({
           {/* Author row: avatar + name + time + edit */}
           <div className="flex items-center gap-2.5">
             <Link href={`/profile/${owner.id}`} className="shrink-0">
-              {owner.avatar_url ? (
-                <Image
-                  src={owner.avatar_url}
-                  alt=""
-                  width={32}
-                  height={32}
-                  className="h-8 w-8 rounded-full"
-                  unoptimized
-                />
-              ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
-                  {(owner.username || "?")[0].toUpperCase()}
-                </div>
-              )}
+              <UserAvatar
+                avatarUrl={owner.avatar_url}
+                username={owner.username}
+                size={32}
+                frame={owner.avatar_frame}
+                plan={owner.plan}
+              />
             </Link>
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <Link
                 href={`/profile/${owner.id}`}
-                className="truncate text-[13px] font-semibold text-foreground hover:underline"
+                className="inline-flex items-center truncate text-[13px] font-semibold text-foreground hover:underline"
               >
                 {owner.username || t("anonymous")}
               </Link>
@@ -214,7 +209,7 @@ function FeedCard({
           {/* Content preview */}
           {hasPreview && (
             <MarkdownContent
-              content={item.content_preview!}
+              content={cleanedPreview}
               baseClassName="text-[13px] leading-relaxed text-muted-foreground"
               className="mt-2 line-clamp-3 [&_*]:text-[13px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
             />

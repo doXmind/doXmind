@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { AppShell } from "@/components/layout/app-shell";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { LoadingScreen } from "@/components/loading-screen";
 import {
   api,
@@ -233,20 +233,13 @@ export default function CommunityDetailPage() {
                   href={`/profile/${detail.owner.id}`}
                   className="flex items-center gap-2.5 font-medium transition-colors hover:text-foreground"
                 >
-                  {detail.owner.avatar_url ? (
-                    <Image
-                      src={detail.owner.avatar_url}
-                      alt=""
-                      width={28}
-                      height={28}
-                      className="h-7 w-7 rounded-full ring-1 ring-border/50"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground ring-1 ring-border/50">
-                      {(detail.owner.username || "?")[0].toUpperCase()}
-                    </div>
-                  )}
+                  <UserAvatar
+                    avatarUrl={detail.owner.avatar_url}
+                    username={detail.owner.username}
+                    size={32}
+                    frame={detail.owner.avatar_frame}
+                    plan={detail.owner.plan}
+                  />
                   <span className="text-foreground/80">{detail.owner.username || "Anonymous"}</span>
                 </Link>
 

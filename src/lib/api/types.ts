@@ -26,6 +26,7 @@ export interface User {
   email: string;
   username?: string;
   avatar_url?: string;
+  avatar_frame?: string | null;
   bio?: string;
   website?: string;
   social_links?: { github?: string; twitter?: string; linkedin?: string };
@@ -131,6 +132,7 @@ export interface SharedItemResponse {
   visibility?: "public" | "private";
   owner_name?: string;
   owner_avatar_url?: string;
+  owner_avatar_frame?: string | null;
   // Document fields (when is_folder is false)
   content?: string;
   // Folder fields (when is_folder is true)
@@ -144,7 +146,9 @@ export interface CommunityAuthor {
   id: string;
   username: string | null;
   avatar_url: string | null;
+  avatar_frame?: string | null;
   bio?: string | null;
+  plan?: "free" | "pro" | "max" | null;
 }
 
 export interface CommunityItem {
@@ -232,11 +236,13 @@ export interface UserProfileResponse {
   id: string;
   username: string | null;
   avatar_url: string | null;
+  avatar_frame?: string | null;
   bio: string | null;
   website: string | null;
   social_links: { github?: string; twitter?: string; linkedin?: string } | null;
   created_at: string;
   is_following: boolean;
+  plan?: "free" | "pro" | "max" | null;
   stats: {
     total_published: number;
     total_views: number;
@@ -256,8 +262,10 @@ export interface FollowUser {
   id: string;
   username: string | null;
   avatar_url: string | null;
+  avatar_frame?: string | null;
   bio: string | null;
   is_following: boolean;
+  plan?: "free" | "pro" | "max" | null;
 }
 
 export interface FollowListResponse {
@@ -280,6 +288,8 @@ export interface SearchUserResult {
   username: string | null;
   email: string;
   avatar_url: string | null;
+  avatar_frame?: string | null;
+  plan?: "free" | "pro" | "max" | null;
 }
 
 export interface SharedWithMeItem {

@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { Bookmark, Eye, ExternalLink, FolderOpen, FileText, Trash2 } from "lucide-react";
 import { type CommunityItem, api } from "@/lib/api";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { toast } from "sonner";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { useLazyList } from "@/hooks/use-lazy-list";
@@ -77,20 +78,14 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
             }
           >
             {/* Owner avatar */}
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-              {item.owner.avatar_url ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={item.owner.avatar_url}
-                  alt=""
-                  className="h-8 w-8 rounded-full object-cover"
-                />
-              ) : (
-                <span className="text-[11px] font-bold text-muted-foreground">
-                  {(item.owner.username || "?")[0].toUpperCase()}
-                </span>
-              )}
-            </div>
+            <UserAvatar
+              avatarUrl={item.owner.avatar_url}
+              username={item.owner.username}
+              size={32}
+              frame={item.owner.avatar_frame}
+              plan={item.owner.plan}
+              className="shrink-0"
+            />
 
             {/* Content */}
             <div className="min-w-0 flex-1">

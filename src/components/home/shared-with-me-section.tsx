@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Users, ExternalLink, FolderOpen, FileText } from "lucide-react";
 import { type SharedWithMeItem } from "@/lib/api";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { useLazyList } from "@/hooks/use-lazy-list";
 import { useGridPageSize } from "@/hooks/use-grid-page-size";
 import { GridPagination } from "./grid-pagination";
@@ -58,20 +59,14 @@ export function SharedWithMeSection({ items }: SharedWithMeSectionProps) {
             onClick={() => window.innerWidth >= 640 && window.open(item.share_url, "_blank")}
           >
             {/* Owner avatar */}
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-              {item.owner.avatar_url ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={item.owner.avatar_url}
-                  alt=""
-                  className="h-8 w-8 rounded-full object-cover"
-                />
-              ) : (
-                <span className="text-[11px] font-bold text-muted-foreground">
-                  {(item.owner.username || "?")[0].toUpperCase()}
-                </span>
-              )}
-            </div>
+            <UserAvatar
+              avatarUrl={item.owner.avatar_url}
+              username={item.owner.username}
+              size={32}
+              frame={item.owner.avatar_frame}
+              plan={item.owner.plan}
+              className="shrink-0"
+            />
 
             {/* Content */}
             <div className="min-w-0 flex-1">

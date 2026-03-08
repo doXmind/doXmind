@@ -67,6 +67,20 @@ class DailyActivityResponse(BaseModel):
     period_days: int
 
 
+class DailyServiceBreakdown(BaseModel):
+    """Per-day per-service token breakdown."""
+
+    date: str
+    services: dict[str, int]
+
+
+class DailyServiceResponse(BaseModel):
+    """Daily activity with service-level breakdown."""
+
+    days: list[DailyServiceBreakdown]
+    period_days: int
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -183,6 +197,72 @@ async def get_daily_activity(
         )
 
     return DailyActivityResponse(days=result_days, period_days=days)
+
+
+@router.get("/daily-by-service", response_model=DailyServiceResponse)
+async def get_daily_by_service(
+    days: int = Query(default=30, ge=1, le=365),
+    auth: TokenData = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get daily token usage broken down by service type."""
+    user_id = get_user_id(auth)
+    since = datetime.now(UTC) - timedelta(days=days)
+
+    # day_str -> { service -> tokens }
+    day_service: dict[str, dict[str, int]] = {}
+
+    # 1) Chat tokens from Messages table
+    date_trunc = func.date(Message.created_at)
+    input_col = cast(Message.input_tokens, Integer)
+    output_col = cast(Message.output_tokens, Integer)
+    chat_stmt = (
+        select(
+            date_trunc.label("day"),
+            func.coalesce(func.sum(input_col) + func.sum(output_col), 0).label("tokens"),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.user_id == user_id,
+            Message.role == "assistant",
+            Message.created_at >= since,
+        )
+        .group_by(date_trunc)
+    )
+    for r in (await db.execute(chat_stmt)).all():
+        d = str(r.day)
+        day_service.setdefault(d, {})
+        day_service[d]["chat"] = int(r.tokens)
+
+    # 2) Non-chat tokens from ApiUsage table (grouped by day + service)
+    try:
+        api_trunc = func.date(ApiUsage.created_at)
+        api_stmt = (
+            select(
+                api_trunc.label("day"),
+                ApiUsage.service,
+                func.coalesce(
+                    func.sum(ApiUsage.input_tokens) + func.sum(ApiUsage.output_tokens), 0
+                ).label("tokens"),
+            )
+            .where(ApiUsage.user_id == user_id, ApiUsage.created_at >= since)
+            .group_by(api_trunc, ApiUsage.service)
+        )
+        for r in (await db.execute(api_stmt)).all():
+            d = str(r.day)
+            day_service.setdefault(d, {})
+            svc = r.service or "other"
+            day_service[d][svc] = day_service[d].get(svc, 0) + int(r.tokens)
+    except Exception as e:
+        logger.warning(f"Failed to query api_usage for daily-by-service: {e}")
+
+    # Build timeline
+    result: list[DailyServiceBreakdown] = []
+    for i in range(days):
+        d = (datetime.now(UTC) - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
+        result.append(DailyServiceBreakdown(date=d, services=day_service.get(d, {})))
+
+    return DailyServiceResponse(days=result, period_days=days)
 
 
 @router.get("/summary", response_model=UsageSummaryResponse)

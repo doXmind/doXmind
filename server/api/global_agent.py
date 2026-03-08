@@ -205,6 +205,29 @@ async def global_agent_stream(
     user_id = auth.sub
 
     user_api_key, user_model = await _resolve_user_api_settings(auth, db)
+    is_byok = user_api_key is not None
+
+    # Pre-flight credit check
+    if not is_byok:
+        from services.credit_service import CreditService
+
+        credit_svc = CreditService(db)
+        has_credits = await credit_svc.check_credits(user_id)
+        if not has_credits:
+            async def _no_credits():
+                error = {"type": "error", "code": "INSUFFICIENT_CREDITS",
+                         "content": "No credits remaining. Please upgrade your plan."}
+                yield f"data: {json.dumps(error)}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+            return StreamingResponse(
+                _no_credits(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                    "Content-Type": "text/event-stream; charset=utf-8",
+                    **get_cors_headers(origin),
+                },
+            )
 
     (
         conversation,
@@ -294,6 +317,25 @@ async def global_agent_stream(
                     except Exception as save_err:
                         logger.error(f"Failed to save message: {save_err}")
 
+            # Deduct credits (fire-and-forget)
+            credits_remaining = None
+            try:
+                from services.credit_service import deduct_credits_for_usage
+
+                web_search_count = sum(
+                    1 for tc in collected_tool_calls
+                    if tc.get("name") == "web_search"
+                )
+                credits_remaining = await deduct_credits_for_usage(
+                    user_id=user_id,
+                    cost=collected_usage.get("cost"),
+                    service="global_agent",
+                    is_byok=is_byok,
+                    web_search_count=web_search_count,
+                )
+            except Exception as credit_err:
+                logger.warning(f"Credit deduction error: {credit_err}")
+
             summary = {
                 "type": "summary",
                 "conversationId": conversation.id,
@@ -310,6 +352,8 @@ async def global_agent_stream(
                     "cost": collected_usage.get("cost"),
                 },
             }
+            if credits_remaining is not None:
+                summary["credits_remaining"] = credits_remaining
             events_to_send.append(f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode())
 
             return events_to_send

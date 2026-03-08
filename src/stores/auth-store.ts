@@ -24,6 +24,7 @@ interface AuthState {
   updateProfile: (updates: {
     username?: string;
     avatar_url?: string;
+    avatar_frame?: string;
     bio?: string;
     website?: string;
     social_links?: Record<string, string>;
@@ -51,6 +52,10 @@ export const useAuthStore = create<AuthState>()(
             const status = await api.getAuthStatus();
             if (status.authenticated && status.user) {
               set({ user: status.user });
+              // Initialize billing store after auth
+              import("@/stores/billing-store").then(({ useBillingStore }) => {
+                useBillingStore.getState().initialize();
+              });
             } else if (status.debug_mode) {
               // In debug mode, we're "authenticated" without a real user
               set({ user: null });
@@ -70,6 +75,10 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await api.login(email, password);
           set({ user: response.user || null });
+          // Initialize billing after login
+          import("@/stores/billing-store").then(({ useBillingStore }) => {
+            useBillingStore.getState().initialize();
+          });
         } finally {
           set({ isLoading: false });
         }
@@ -109,6 +118,11 @@ export const useAuthStore = create<AuthState>()(
           // Wait minimum display time for animation (1200ms)
           await new Promise((resolve) => setTimeout(resolve, 1200));
 
+          // Reset billing store
+          import("@/stores/billing-store").then(({ useBillingStore }) => {
+            useBillingStore.getState().reset();
+          });
+
           set({ user: null, showLogoutAnimation: false });
         } catch (error) {
           // On error, hide animation and propagate error
@@ -137,6 +151,10 @@ export const useAuthStore = create<AuthState>()(
           // Then fetch user info
           const user = await api.getCurrentUser();
           set({ user });
+          // Initialize billing after OAuth
+          import("@/stores/billing-store").then(({ useBillingStore }) => {
+            useBillingStore.getState().initialize();
+          });
         } finally {
           set({ isLoading: false });
         }

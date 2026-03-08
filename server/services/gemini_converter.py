@@ -163,9 +163,10 @@ async def convert_file_to_markdown(
     if ext_lower == ".docx":
         return await _convert_docx_to_markdown(content, filename, effective_model, api_key)
 
-    # Handle PPTX files (not yet implemented)
+    # Handle PPTX files via markitdown (no native LLM support)
     if ext_lower == ".pptx":
-        raise ValueError("PPTX conversion not yet implemented. Please convert to PDF first.")
+        fallback_text = await markitdown_convert(content, filename, ext_lower)
+        return fallback_text, None
 
     # Handle native formats (PDF) - send as base64 via multimodal message
     mime_type = NATIVE_MIME_TYPES[ext_lower]
@@ -210,8 +211,9 @@ async def convert_file_to_markdown(
         return markdown_content, usage
 
     except Exception as e:
-        logger.error(f"File conversion failed for {filename}: {e}")
-        raise
+        logger.warning(f"LLM conversion failed for {filename}, falling back to markitdown: {e}")
+        fallback_text = await markitdown_convert(content, filename, ext_lower)
+        return fallback_text, None
 
 
 async def _convert_docx_to_markdown(
@@ -262,8 +264,36 @@ async def _convert_docx_to_markdown(
         return markdown_content, usage
 
     except Exception as e:
-        logger.error(f"File conversion formatting failed for {filename}: {e}")
-        raise
+        logger.warning(f"LLM formatting failed for {filename}, falling back to markitdown: {e}")
+        fallback_text = await markitdown_convert(content, filename, ".docx")
+        return fallback_text, None
+
+
+async def markitdown_convert(content: bytes, filename: str, ext: str) -> str:
+    """Fallback conversion via markitdown (no LLM needed).
+
+    Uses Microsoft's markitdown library to convert PDF, DOCX, PPTX to Markdown.
+    Lower quality than LLM conversion but zero cost.
+    """
+    import os
+    import tempfile
+
+    from markitdown import MarkItDown
+
+    md_converter = MarkItDown(enable_plugins=False)
+
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+    try:
+        result = await asyncio.to_thread(md_converter.convert, tmp_path)
+        text = result.text_content
+        if not text or not text.strip():
+            raise ValueError(f"markitdown returned empty content for {filename}")
+        logger.info(f"Successfully converted {filename} via markitdown fallback")
+        return text
+    finally:
+        os.unlink(tmp_path)
 
 
 def is_converter_configured() -> bool:

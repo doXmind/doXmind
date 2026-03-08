@@ -95,6 +95,7 @@ class UpdateProfileRequest(BaseModel):
 
     username: str | None = Field(None, min_length=2, max_length=100)
     avatar_url: str | None = None
+    avatar_frame: str | None = None
     bio: str | None = Field(None, max_length=500)
     website: str | None = Field(None, max_length=500)
     social_links: dict[str, str] | None = None
@@ -123,6 +124,7 @@ class UserResponse(BaseModel):
     email: str
     username: str | None
     avatar_url: str | None
+    avatar_frame: str | None = None
     bio: str | None = None
     website: str | None = None
     social_links: dict[str, str] | None = None
@@ -163,6 +165,7 @@ def user_to_response(user: User) -> UserResponse:
         email=user.email,
         username=user.username,
         avatar_url=user.avatar_url,
+        avatar_frame=user.avatar_frame,
         bio=user.bio,
         website=user.website,
         social_links=user.social_links,
@@ -179,6 +182,7 @@ def user_to_dict(user: User) -> dict:
         "email": user.email,
         "username": user.username,
         "avatar_url": user.avatar_url,
+        "avatar_frame": user.avatar_frame,
         "is_verified": user.is_verified,
         "oauth_provider": user.oauth_provider,
     }
@@ -786,6 +790,7 @@ async def update_profile(
         user_id=token_data.sub,
         username=body.username,
         avatar_url=body.avatar_url,
+        avatar_frame=body.avatar_frame,
         bio=body.bio,
         website=body.website,
         social_links=body.social_links,

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import Comment, CommentReaction, DocumentShare, User, utcnow
+from db.database import Comment, CommentReaction, DocumentShare, User, UserSubscription, utcnow
 from exceptions import BadRequestError, ForbiddenError, NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -79,8 +79,11 @@ class CommentService:
                 Comment.user_id,
                 User.username.label("author_name"),
                 User.avatar_url.label("author_avatar"),
+                User.avatar_frame.label("author_avatar_frame"),
+                UserSubscription.plan.label("author_plan"),
             )
             .join(User, Comment.user_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == Comment.user_id)
             .where(count_filter)
             .order_by(Comment.created_at.desc() if sort == "newest" else Comment.created_at.asc())
             .limit(limit)
@@ -148,6 +151,8 @@ class CommentService:
                     "id": row.user_id if not row.is_deleted else None,
                     "username": None if row.is_deleted else row.author_name,
                     "avatar_url": None if row.is_deleted else row.author_avatar,
+                    "avatar_frame": None if row.is_deleted else row.author_avatar_frame,
+                    "plan": None if row.is_deleted else (row.author_plan or "free"),
                 },
                 "parent_id": row.parent_id,
                 "mentions": row.mentions if not row.is_deleted else None,
@@ -219,7 +224,12 @@ class CommentService:
 
         # Get author info
         author_result = await self.db.execute(
-            select(User.username, User.avatar_url).where(User.id == user_id)
+            select(
+                User.username, User.avatar_url, User.avatar_frame.label("author_avatar_frame"),
+                UserSubscription.plan.label("author_plan"),
+            )
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
+            .where(User.id == user_id)
         )
         author = author_result.one_or_none()
 
@@ -230,6 +240,8 @@ class CommentService:
                 "id": user_id,
                 "username": author.username if author else None,
                 "avatar_url": author.avatar_url if author else None,
+                "avatar_frame": author.author_avatar_frame if author else None,
+                "plan": (author.author_plan or "free") if author else "free",
             },
             "parent_id": comment.parent_id,
             "mentions": comment.mentions,
@@ -272,7 +284,12 @@ class CommentService:
         await self.db.refresh(comment)
 
         author_result = await self.db.execute(
-            select(User.username, User.avatar_url).where(User.id == user_id)
+            select(
+                User.username, User.avatar_url, User.avatar_frame.label("author_avatar_frame"),
+                UserSubscription.plan.label("author_plan"),
+            )
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
+            .where(User.id == user_id)
         )
         author = author_result.one_or_none()
         reactions = await self._get_reactions_for_comment(comment.id, user_id)
@@ -284,6 +301,8 @@ class CommentService:
                 "id": user_id,
                 "username": author.username if author else None,
                 "avatar_url": author.avatar_url if author else None,
+                "avatar_frame": author.author_avatar_frame if author else None,
+                "plan": (author.author_plan or "free") if author else "free",
             },
             "parent_id": comment.parent_id,
             "mentions": comment.mentions,
@@ -382,7 +401,12 @@ class CommentService:
             return []
 
         result = await self.db.execute(
-            select(User.id, User.username, User.avatar_url)
+            select(
+                User.id, User.username, User.avatar_url,
+                User.avatar_frame.label("user_avatar_frame"),
+                UserSubscription.plan.label("user_plan"),
+            )
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(
                 User.username.ilike(f"%{query}%"),
                 User.is_active == True,  # noqa: E712
@@ -392,7 +416,14 @@ class CommentService:
         rows = result.all()
 
         return [
-            {"id": row.id, "username": row.username, "avatar_url": row.avatar_url} for row in rows
+            {
+                "id": row.id,
+                "username": row.username,
+                "avatar_url": row.avatar_url,
+                "avatar_frame": row.user_avatar_frame,
+                "plan": row.user_plan or "free",
+            }
+            for row in rows
         ]
 
     # =========================================================================

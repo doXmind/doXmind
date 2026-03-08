@@ -29,6 +29,7 @@ import {
 } from "@/components/chat";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { cn } from "@/lib/utils";
+import { useBillingStore } from "@/stores/billing-store";
 import { MOBILE_SPRINGS, Z_INDEX } from "@/lib/constants";
 import type { AffectedFile } from "@/types";
 import type { GlobalConversationItem } from "@/lib/api/global-agent";
@@ -418,6 +419,7 @@ export function AgentSheet() {
   } = useGlobalAgentStore();
 
   const { sendMessage, stop, isStreaming, toolHistory, thinking } = useGlobalAgentChat();
+  const isAILocked = useBillingStore((s) => s.isAILocked)();
 
   const activeConversation = activeConversationId ? conversations[activeConversationId] : null;
   const messages = activeConversation?.messages || [];
@@ -667,8 +669,12 @@ export function AgentSheet() {
                 onSubmit={handleSend}
                 onStop={stop}
                 isStreaming={isStreaming}
-                placeholder="Ask the agent anything..."
-                disabled={isLoadingMessages}
+                placeholder={
+                  isAILocked
+                    ? "Credits exhausted. Upgrade to continue."
+                    : "Ask the agent anything..."
+                }
+                disabled={isAILocked || isLoadingMessages}
               />
             </div>
 

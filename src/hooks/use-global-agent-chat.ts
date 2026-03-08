@@ -224,6 +224,12 @@ export function useGlobalAgentChat() {
               break;
 
             case "error": {
+              // Handle credit exhaustion
+              if (parsed.code === "INSUFFICIENT_CREDITS") {
+                import("@/stores/billing-store").then(({ useBillingStore }) => {
+                  useBillingStore.getState().openUpgradeModal(parsed.content);
+                });
+              }
               const errorTool: ToolStatus = {
                 name: "error",
                 status: "error",

@@ -133,6 +133,13 @@ async def upload_image(
             message=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
         )
 
+    # Check storage quota (pre-flight, non-locking — catches obvious overages early)
+    if user_id != "shared":
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.check_storage_limit(user_id, len(content))
+
     # Generate unique filename and S3 key
     filename = f"{uuid.uuid4().hex}{ext}"
     s3_key = f"images/{user_id}/{filename}"
@@ -142,6 +149,13 @@ async def upload_image(
     storage = get_storage_service()
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, storage.upload, s3_key, content, content_type)
+
+    # Atomically check limit and record storage usage (with row lock)
+    if user_id != "shared":
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.check_and_add_usage(user_id, len(content))
 
     # Return URL path (proxy approach — same URL format as before)
     url = f"/api/images/{user_id}/{filename}"
@@ -183,6 +197,7 @@ async def delete_image(
     user_id: str,
     filename: str,
     token: TokenData = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
 ):
     """Delete a single image from S3.
 
@@ -204,7 +219,18 @@ async def delete_image(
 
     storage = get_storage_service()
     loop = asyncio.get_event_loop()
+
+    # Get file size before deletion for storage tracking
+    file_size = await loop.run_in_executor(None, storage.get_size, s3_key)
+
     await loop.run_in_executor(None, storage.delete, s3_key)
+
+    # Reduce storage usage
+    if user_id != "shared" and file_size:
+        from services.storage_tracker import StorageTracker
+
+        storage_tracker = StorageTracker(db)
+        await storage_tracker.remove_usage(user_id, file_size)
 
     logger.info(f"Image deleted from S3: {s3_key}")
     return {"status": "deleted"}

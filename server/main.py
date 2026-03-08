@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from api import (
     auth,
     autocomplete,
+    billing,
     chat,
     comments,
     community,
@@ -294,6 +295,7 @@ app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"]
 app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(usage.router, prefix="/api/usage", tags=["usage"])
+app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 
 
 # ============================================================================

@@ -22,6 +22,7 @@ import {
 import { BlockSelectionPluginKey } from "@/extensions/block-selection-extension";
 import { api } from "@/lib/api";
 import { editorLogger } from "@/lib/logger";
+import { useBillingStore } from "@/stores/billing-store";
 import type { AutocompleteMode } from "@/types";
 
 const log = editorLogger.child("Autocomplete");
@@ -219,8 +220,9 @@ export function useAutocomplete({
   // Memoize open file IDs to prevent infinite loops
   const openFileIds = useMemo(() => files.filter((f) => !f.isFolder).map((f) => f.id), [files]);
 
-  // Combine store setting with prop (both must be true)
-  const isEnabled = enabled && autocompleteEnabled;
+  // Combine store setting with prop (both must be true), and disable if AI locked
+  const isAILocked = useBillingStore((s) => s.isAILocked)();
+  const isEnabled = enabled && autocompleteEnabled && !isAILocked;
 
   // Track file switches to prevent autocomplete from triggering on file open.
   // setContent() dispatches a docChanged transaction which would otherwise

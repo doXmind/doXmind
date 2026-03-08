@@ -13,8 +13,8 @@ import { ReadingToolbar } from "@/components/shared/reading-toolbar";
 import { ReadingStatsBar } from "@/components/shared/reading-stats-bar";
 import { StickyReadingBar } from "@/components/shared/sticky-reading-bar";
 import { PresentationMode } from "@/components/editor/presentation-mode";
-import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import type { SharedItemResponse, SharedFolderItem } from "@/lib/api";
 
 interface SharedDocumentViewProps {
@@ -181,19 +181,12 @@ export function SharedDocumentView({
               {data.owner_name && (
                 <>
                   <span className="flex items-center gap-2.5 font-medium">
-                    {data.owner_avatar_url ? (
-                      <Image
-                        src={data.owner_avatar_url}
-                        alt=""
-                        width={28}
-                        height={28}
-                        className="h-7 w-7 rounded-full ring-1 ring-border/50"
-                      />
-                    ) : (
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground ring-1 ring-border/50">
-                        {data.owner_name[0].toUpperCase()}
-                      </span>
-                    )}
+                    <UserAvatar
+                      avatarUrl={data.owner_avatar_url}
+                      username={data.owner_name}
+                      size={28}
+                      frame={data.owner_avatar_frame}
+                    />
                     <span className="text-foreground/80">{data.owner_name}</span>
                   </span>
                   <span className="text-border/60">&middot;</span>

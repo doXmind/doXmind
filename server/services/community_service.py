@@ -20,6 +20,7 @@ from db.database import (
     ShareView,
     User,
     UserFollow,
+    UserSubscription,
     utcnow,
 )
 from exceptions import BadRequestError, NotFoundError
@@ -332,11 +333,14 @@ class CommunityService:
                 func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                User.avatar_frame.label("owner_avatar_frame"),
+                UserSubscription.plan.label("owner_plan"),
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(base_filter)
         )
 
@@ -399,6 +403,8 @@ class CommunityService:
                     "id": row.user_id,
                     "username": row.owner_name,
                     "avatar_url": row.owner_avatar_url,
+                    "avatar_frame": row.owner_avatar_frame,
+                    "plan": row.owner_plan or "free",
                 },
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,
@@ -471,6 +477,13 @@ class CommunityService:
         owner_result = await self.db.execute(select(User).where(User.id == share.user_id))
         owner = owner_result.scalar_one_or_none()
 
+        owner_plan = "free"
+        if owner:
+            sub_result = await self.db.execute(
+                select(UserSubscription.plan).where(UserSubscription.user_id == owner.id)
+            )
+            owner_plan = sub_result.scalar() or "free"
+
         detail = {
             "share_id": share.id,
             "share_token": share.share_token,
@@ -481,7 +494,9 @@ class CommunityService:
                 "id": owner.id if owner else None,
                 "username": owner.username if owner else None,
                 "avatar_url": owner.avatar_url if owner else None,
+                "avatar_frame": owner.avatar_frame if owner else None,
                 "bio": owner.bio if owner else None,
+                "plan": owner_plan,
             },
             "is_folder": file.is_folder,
             "view_count": share.view_count,
@@ -915,10 +930,13 @@ class CommunityService:
                 User.id.label("owner_id"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                User.avatar_frame.label("owner_avatar_frame"),
+                UserSubscription.plan.label("owner_plan"),
             )
             .join(DocumentShare, Bookmark.share_id == DocumentShare.id)
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(base_filter)
             .order_by(Bookmark.created_at.desc())
             .limit(limit)
@@ -940,6 +958,8 @@ class CommunityService:
                     "id": row.owner_id,
                     "username": row.owner_name,
                     "avatar_url": row.owner_avatar_url,
+                    "avatar_frame": row.owner_avatar_frame,
+                    "plan": row.owner_plan or "free",
                 },
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,
@@ -1059,10 +1079,13 @@ class CommunityService:
                 User.id,
                 User.username,
                 User.avatar_url,
+                User.avatar_frame,
                 User.bio,
                 UserFollow.created_at.label("followed_at"),
+                UserSubscription.plan.label("user_plan"),
             )
             .join(UserFollow, UserFollow.follower_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(UserFollow.following_id == user_id)
             .order_by(UserFollow.created_at.desc())
             .limit(limit)
@@ -1087,8 +1110,10 @@ class CommunityService:
                 "id": row.id,
                 "username": row.username,
                 "avatar_url": row.avatar_url,
+                "avatar_frame": row.avatar_frame,
                 "bio": row.bio,
                 "is_following": row.id in viewer_following_ids,
+                "plan": row.user_plan or "free",
             }
             for row in rows
         ]
@@ -1113,10 +1138,13 @@ class CommunityService:
                 User.id,
                 User.username,
                 User.avatar_url,
+                User.avatar_frame,
                 User.bio,
                 UserFollow.created_at.label("followed_at"),
+                UserSubscription.plan.label("user_plan"),
             )
             .join(UserFollow, UserFollow.following_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(UserFollow.follower_id == user_id)
             .order_by(UserFollow.created_at.desc())
             .limit(limit)
@@ -1140,8 +1168,10 @@ class CommunityService:
                 "id": row.id,
                 "username": row.username,
                 "avatar_url": row.avatar_url,
+                "avatar_frame": row.avatar_frame,
                 "bio": row.bio,
                 "is_following": row.id in viewer_following_ids,
+                "plan": row.user_plan or "free",
             }
             for row in rows
         ]
@@ -1197,15 +1227,23 @@ class CommunityService:
         if viewer_id and viewer_id != user_id:
             is_following = await self.is_following(viewer_id, user_id)
 
+        # Get subscription plan
+        sub_result = await self.db.execute(
+            select(UserSubscription.plan).where(UserSubscription.user_id == user_id)
+        )
+        user_plan = sub_result.scalar() or "free"
+
         return {
             "id": user.id,
             "username": user.username,
             "avatar_url": user.avatar_url,
+            "avatar_frame": user.avatar_frame,
             "bio": user.bio,
             "website": user.website,
             "social_links": user.social_links,
             "created_at": user.created_at.isoformat() if user.created_at else "",
             "is_following": is_following,
+            "plan": user_plan,
             "stats": {
                 "total_published": published_count.scalar() or 0,
                 "total_views": views_total.scalar() or 0,
@@ -1263,11 +1301,14 @@ class CommunityService:
                 func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                User.avatar_frame.label("owner_avatar_frame"),
+                UserSubscription.plan.label("owner_plan"),
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(base_filter)
         )
 
@@ -1294,6 +1335,7 @@ class CommunityService:
                         "id": row.user_id,
                         "username": row.owner_name,
                         "avatar_url": row.owner_avatar_url,
+                        "avatar_frame": row.owner_avatar_frame,
                     },
                     "is_folder": row.is_folder,
                     "view_count": row.view_count,
@@ -1373,11 +1415,14 @@ class CommunityService:
                 func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                User.avatar_frame.label("owner_avatar_frame"),
+                UserSubscription.plan.label("owner_plan"),
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(base_filter)
             .order_by(DocumentShare.published_at.desc())
             .limit(limit)
@@ -1401,6 +1446,7 @@ class CommunityService:
                         "id": row.user_id,
                         "username": row.owner_name,
                         "avatar_url": row.owner_avatar_url,
+                        "avatar_frame": row.owner_avatar_frame,
                     },
                     "is_folder": row.is_folder,
                     "view_count": row.view_count,
@@ -1796,11 +1842,14 @@ class CommunityService:
                 func.length(File.content).label("content_length"),
                 User.username.label("owner_name"),
                 User.avatar_url.label("owner_avatar_url"),
+                User.avatar_frame.label("owner_avatar_frame"),
+                UserSubscription.plan.label("owner_plan"),
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
             .join(File, DocumentShare.file_id == File.id)
             .join(User, DocumentShare.user_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == User.id)
             .where(base_filter)
         )
 
@@ -1821,6 +1870,8 @@ class CommunityService:
                     "id": row.user_id,
                     "username": row.owner_name,
                     "avatar_url": row.owner_avatar_url,
+                    "avatar_frame": row.owner_avatar_frame,
+                    "plan": row.owner_plan or "free",
                 },
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,

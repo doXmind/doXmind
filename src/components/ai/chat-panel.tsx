@@ -41,6 +41,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useChatContextStore } from "@/stores/chat-context-store";
 import { useDataFilesStore, isDataFile, isKBFile } from "@/stores/data-files-store";
 import { useKBStore } from "@/stores/kb-store";
+import { useBillingStore } from "@/stores/billing-store";
 import { useChat } from "@/hooks/use-chat";
 import { useKBPollingCleanup } from "@/hooks/use-kb-polling-cleanup";
 import { useDataFilePollingCleanup } from "@/hooks/use-data-file-polling-cleanup";
@@ -106,6 +107,9 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
 
   // KB store for document uploads
   const { uploadAttachments: uploadKBFiles } = useKBStore();
+
+  // Credits lock
+  const isAILocked = useBillingStore((s) => s.isAILocked)();
 
   // Get conversation key without triggering store updates during render
   const effectiveFileId = isDemoMode ? "demo-file" : currentFileId;
@@ -510,7 +514,8 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
           onSubmit={handleSubmit}
           onStop={stopStreaming}
           isStreaming={isStreaming}
-          placeholder={t("placeholder")}
+          disabled={isAILocked}
+          placeholder={isAILocked ? t("creditsExhausted") : t("placeholder")}
           showHint
           onPaste={handlePaste}
           onDragEnter={handleDragEnter}

@@ -36,7 +36,7 @@ ApiClient.prototype.createShare = async function (
   this: ApiClient,
   request: CreateShareRequest
 ): Promise<Share> {
-  return this.request<Share>("/api/shares/", {
+  return this.request<Share>("/api/shares", {
     method: "POST",
     body: JSON.stringify(request),
   });

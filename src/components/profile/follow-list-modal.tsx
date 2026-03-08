@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import Image from "next/image";
 import Link from "next/link";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { Loader2 } from "lucide-react";
 import { Modal, ModalHeader } from "@/components/ui/modal";
+
 import { FollowButton } from "@/components/community/follow-button";
 import { api } from "@/lib/api";
 import type { FollowUser } from "@/lib/api/types";
@@ -137,27 +138,20 @@ export function FollowListModal({ userId, initialTab, open, onClose }: FollowLis
                 className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-muted/50"
               >
                 <Link href={`/profile/${user.id}`} onClick={onClose} className="shrink-0">
-                  {user.avatar_url ? (
-                    <Image
-                      src={user.avatar_url}
-                      alt={user.username || "User"}
-                      width={36}
-                      height={36}
-                      className="h-9 w-9 rounded-full ring-1 ring-border/30"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-sm font-medium text-muted-foreground ring-1 ring-border/30">
-                      {(user.username || "?")[0].toUpperCase()}
-                    </div>
-                  )}
+                  <UserAvatar
+                    avatarUrl={user.avatar_url}
+                    username={user.username}
+                    size={36}
+                    frame={user.avatar_frame}
+                    plan={user.plan}
+                  />
                 </Link>
 
                 <div className="min-w-0 flex-1">
                   <Link
                     href={`/profile/${user.id}`}
                     onClick={onClose}
-                    className="block truncate text-sm font-medium text-foreground hover:underline"
+                    className="flex items-center truncate text-sm font-medium text-foreground hover:underline"
                   >
                     {user.username || t("anonymous")}
                   </Link>

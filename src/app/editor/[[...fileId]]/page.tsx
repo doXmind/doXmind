@@ -40,6 +40,7 @@ import { ForkIndicator } from "@/components/editor/fork-indicator";
 import { FloatingChatButton } from "@/components/ai/floating-chat-button";
 import { FloatingChatWindow } from "@/components/ai/floating-chat-window";
 import { PresentationMode } from "@/components/editor/presentation-mode";
+import { toast } from "sonner";
 
 /**
  * Legacy URL redirect: /editor?id=xxx -> /editor/xxx
@@ -55,6 +56,35 @@ function LegacyUrlRedirect() {
       router.replace(`/editor/${legacyId}`);
     }
   }, [legacyId, router]);
+  return null;
+}
+
+/**
+ * Handle billing callback query params (?billing=success|canceled)
+ * after Stripe Checkout redirect.
+ */
+function BillingCallback() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const billing = searchParams.get("billing");
+
+  useEffect(() => {
+    if (!billing) return;
+    if (billing === "success") {
+      toast.success("Subscription activated! Your credits have been refreshed.");
+      // Refresh billing data
+      import("@/stores/billing-store").then(({ useBillingStore }) => {
+        useBillingStore.getState().refresh();
+      });
+    } else if (billing === "canceled") {
+      toast.info("Checkout canceled.");
+    }
+    // Clean up URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete("billing");
+    router.replace(url.pathname + url.search, { scroll: false });
+  }, [billing, router]);
+
   return null;
 }
 
@@ -189,6 +219,7 @@ export default function EditorPage() {
         {/* Legacy URL handler — isolated in Suspense to avoid blocking the page */}
         <Suspense fallback={null}>
           <LegacyUrlRedirect />
+          <BillingCallback />
         </Suspense>
         <AppShell hideHeader>
           <MobileEditorLayout>

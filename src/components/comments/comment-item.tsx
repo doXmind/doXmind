@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
-import Image from "next/image";
 import { CommentResponse } from "@/lib/api";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { Reply, Pencil, Trash2, Heart } from "lucide-react";
+
 import { EmojiReactionPicker } from "./emoji-reaction-picker";
 import { MarkdownContent } from "./markdown-content";
 import { Button } from "@/components/ui/button";
@@ -89,20 +90,13 @@ export function CommentItem({
             href={comment.author.id ? `/profile/${comment.author.id}` : "#"}
             className="flex-shrink-0 transition-opacity hover:opacity-80"
           >
-            {comment.author.avatar_url ? (
-              <Image
-                src={comment.author.avatar_url}
-                alt=""
-                width={40}
-                height={40}
-                className="h-9 w-9 rounded-full ring-1 ring-border/50 sm:h-10 sm:w-10"
-                unoptimized
-              />
-            ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground ring-1 ring-border/50 sm:h-10 sm:w-10 sm:text-sm">
-                {(comment.author.username || "?")[0].toUpperCase()}
-              </div>
-            )}
+            <UserAvatar
+              avatarUrl={comment.author.avatar_url}
+              username={comment.author.username}
+              size={40}
+              frame={comment.author.avatar_frame}
+              plan={comment.author.plan}
+            />
           </Link>
           {showThreadLine && (
             <div className="mt-2 min-h-[20px] w-0.5 flex-1 rounded-full bg-border/40" />
@@ -115,7 +109,7 @@ export function CommentItem({
           <div className="flex items-center gap-1.5">
             <Link
               href={comment.author.id ? `/profile/${comment.author.id}` : "#"}
-              className="text-[14px] font-semibold text-foreground/90 transition-colors hover:underline"
+              className="inline-flex items-center text-[14px] font-semibold text-foreground/90 transition-colors hover:underline"
             >
               {comment.author.username || tCom("anonymous")}
             </Link>

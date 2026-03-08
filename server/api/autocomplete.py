@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
+from exceptions import InsufficientCreditsError
 from db.database import get_db
 from dependencies import resolve_user_api_key
 from prompts.domains.autocomplete import build_autocomplete_prompt
@@ -203,6 +204,16 @@ async def suggest(
     try:
         settings = get_settings()
         user_api_key = await resolve_user_api_key(token.sub, db)
+
+        # Pre-flight credit check (skip for BYOK users)
+        if not user_api_key:
+            from services.credit_service import CreditService
+
+            credit_svc = CreditService(db)
+            has_credits = await credit_svc.check_credits(token.sub)
+            if not has_credits:
+                raise InsufficientCreditsError()
+
         context_service = AutocompleteContextService(db)
 
         # Assemble context based on mode
@@ -257,7 +268,7 @@ async def suggest(
         )
 
         # Get LLM completion (disable reasoning for speed — autocomplete doesn't need it)
-        llm = LLMService(model=model)
+        llm = LLMService(model=model, api_key=user_api_key)
         raw_suggestion = await llm.complete(
             prompt=user_prompt,
             system=system_prompt,
@@ -280,6 +291,18 @@ async def suggest(
                     user_id=token.sub,
                     is_byok=bool(user_api_key),
                     **llm.last_usage,
+                )
+            )
+
+            # Deduct credits
+            from services.credit_service import deduct_credits_for_usage
+
+            asyncio.create_task(
+                deduct_credits_for_usage(
+                    user_id=token.sub,
+                    cost=llm.last_usage.get("cost"),
+                    service="autocomplete",
+                    is_byok=bool(user_api_key),
                 )
             )
 
@@ -312,6 +335,8 @@ async def suggest(
 
         return AutocompleteResponse(suggestion=suggestion, cached=False, latency_ms=latency)
 
+    except InsufficientCreditsError:
+        raise  # Let the global exception handler return 402
     except Exception as e:
         logger.error(f"Autocomplete error ({request.mode} mode): {e}")
         latency = int((time.time() - start_time) * 1000)

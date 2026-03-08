@@ -95,7 +95,7 @@ const jsonLd = {
 const themeBootstrapScript = `(function(){
   try {
     var d = document.documentElement;
-    var darkIds = { dark: 1, nord: 1, forest: 1, ocean: 1 };
+    var darkIds = { dark: 1, nord: 1, forest: 1, ocean: 1, obsidian: 1, cyberpunk: 1, amethyst: 1, carbon: 1 };
     var parse = function(raw){
       if(!raw) return null;
       try { return JSON.parse(raw); } catch(_) { return null; }

@@ -3,80 +3,36 @@
 /**
  * Usage Settings Component
  *
- * Displays token usage breakdown by service with a doughnut chart.
- * Data sourced from /api/usage/by-service and /api/usage/summary.
+ * Displays daily AI usage as a stacked bar chart (by service) + overall usage progress bar.
+ * Data sourced from /api/usage/daily-by-service.
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { Doughnut } from "react-chartjs-2";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import { useBillingStore } from "@/stores/billing-store";
+import { cn } from "@/lib/utils";
+import { Bar } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Tooltip,
+  Filler,
+} from "chart.js";
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Filler);
 
-interface ServiceUsage {
-  service: string;
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  cost: number | null;
-  request_count: number;
+interface DailyServiceBreakdown {
+  date: string;
+  services: Record<string, number>;
 }
 
-interface ServiceUsageResponse {
-  services: ServiceUsage[];
+interface DailyServiceResponse {
+  days: DailyServiceBreakdown[];
   period_days: number;
-}
-
-interface UsageSummary {
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_tokens: number;
-  total_cost: number | null;
-  total_requests: number;
-  period_days: number;
-}
-
-const SERVICE_LABEL_KEYS: Record<string, string> = {
-  chat: "serviceChat",
-  autocomplete: "serviceAutocomplete",
-  quick_edit: "serviceQuickEdit",
-  custom_edit: "serviceCustomEdit",
-  review: "serviceReview",
-  file_conversion: "serviceFileConversion",
-  reranking: "serviceReranking",
-  stt: "serviceStt",
-  simple_chat: "serviceSimpleChat",
-};
-
-const SERVICE_COLORS = [
-  "#6366f1", // indigo
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#f43f5e", // rose
-  "#f97316", // orange
-  "#eab308", // yellow
-  "#22c55e", // green
-  "#06b6d4", // cyan
-];
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toString();
-}
-
-function formatCost(cost: number | null): string {
-  if (cost === null || cost === undefined) return "-";
-  if (cost < 0.01) return `$${cost.toFixed(4)}`;
-  return `$${cost.toFixed(2)}`;
-}
-
-function getServiceLabel(service: string, t: (key: string) => string): string {
-  const key = SERVICE_LABEL_KEYS[service];
-  return key ? t(key) : service.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const PERIOD_OPTIONS = [
@@ -85,11 +41,45 @@ const PERIOD_OPTIONS = [
   { value: 90, labelKey: "days90" },
 ];
 
+/** Map backend service key → i18n key */
+const SERVICE_LABEL_MAP: Record<string, string> = {
+  chat: "serviceChat",
+  simple_chat: "serviceSimpleChat",
+  autocomplete: "serviceAutocomplete",
+  inline: "serviceInline",
+  quick_edit: "serviceQuickEdit",
+  custom_edit: "serviceCustomEdit",
+  review: "serviceReview",
+  file_conversion: "serviceFileConversion",
+  kb_agent: "serviceKbAgent",
+  global_agent: "serviceGlobalAgent",
+  reranking: "serviceReranking",
+  stt: "serviceStt",
+};
+
+/** Distinct colours for each service (stacked segments) */
+const SERVICE_COLORS: Record<string, string> = {
+  chat: "rgba(99, 102, 241, 0.8)", // indigo
+  simple_chat: "rgba(59, 130, 246, 0.8)", // blue
+  autocomplete: "rgba(20, 184, 166, 0.8)", // teal
+  inline: "rgba(139, 92, 246, 0.8)", // violet
+  quick_edit: "rgba(168, 85, 247, 0.8)", // purple
+  custom_edit: "rgba(192, 132, 252, 0.8)", // light purple
+  review: "rgba(245, 158, 11, 0.8)", // amber
+  file_conversion: "rgba(156, 163, 175, 0.7)", // gray
+  kb_agent: "rgba(16, 185, 129, 0.8)", // emerald
+  global_agent: "rgba(6, 182, 212, 0.8)", // cyan
+  reranking: "rgba(100, 116, 139, 0.7)", // slate
+  stt: "rgba(244, 114, 182, 0.8)", // pink
+};
+
+const FALLBACK_COLOR = "rgba(161, 161, 170, 0.6)";
+
 export function UsageSettings() {
   const t = useTranslations("settings");
   const tc = useTranslations("common");
-  const [serviceData, setServiceData] = useState<ServiceUsageResponse | null>(null);
-  const [summaryData, setSummaryData] = useState<UsageSummary | null>(null);
+  const credits = useBillingStore((s) => s.credits);
+  const [dailyData, setDailyData] = useState<DailyServiceResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
@@ -101,18 +91,12 @@ export function UsageSettings() {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const headers = api.getAuthorizationHeaders();
       try {
-        const [serviceRes, summaryRes] = await Promise.all([
-          fetch(`${baseUrl}/api/usage/by-service?days=${period}`, { headers }),
-          fetch(`${baseUrl}/api/usage/summary?days=${period}`, { headers }),
-        ]);
-        if (!serviceRes.ok) throw new Error(`HTTP ${serviceRes.status}`);
-        if (!summaryRes.ok) throw new Error(`HTTP ${summaryRes.status}`);
-        const [services, summary] = await Promise.all([
-          serviceRes.json() as Promise<ServiceUsageResponse>,
-          summaryRes.json() as Promise<UsageSummary>,
-        ]);
-        setServiceData(services);
-        setSummaryData(summary);
+        const res = await fetch(`${baseUrl}/api/usage/daily-by-service?days=${period}`, {
+          headers,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as DailyServiceResponse;
+        setDailyData(data);
       } catch (e) {
         setError(e instanceof Error ? e.message : t("failedToLoadUsageData"));
       } finally {
@@ -126,21 +110,78 @@ export function UsageSettings() {
     fetchUsage(days);
   }, [days, fetchUsage]);
 
-  const chartData = useMemo(() => {
-    if (!serviceData?.services.length) return null;
-    const sorted = [...serviceData.services].sort((a, b) => b.total_tokens - a.total_tokens);
+  // Overall AI usage percentage from billing store
+  const overallPercentage =
+    credits && credits.limit > 0 ? ((credits.limit - credits.remaining) / credits.limit) * 100 : 0;
+  const remainingPercentage = 100 - overallPercentage;
+  const isLow = remainingPercentage < 20;
+  const isMedium = remainingPercentage >= 20 && remainingPercentage < 50;
+
+  // Build stacked bar chart data
+  const { chartData, totalUsedPct, legendItems } = useMemo(() => {
+    if (!dailyData?.days.length || !credits || credits.limit <= 0) {
+      return {
+        chartData: null,
+        totalUsedPct: 0,
+        legendItems: [] as { key: string; color: string; label: string }[],
+      };
+    }
+
+    const creditsUsed = credits.limit - credits.remaining;
+    const totalTokens = dailyData.days.reduce(
+      (sum, d) => sum + Object.values(d.services).reduce((s, v) => s + v, 0),
+      0
+    );
+
+    // Collect all services that appear
+    const allServices = new Set<string>();
+    for (const d of dailyData.days) {
+      for (const svc of Object.keys(d.services)) {
+        allServices.add(svc);
+      }
+    }
+    const serviceKeys = Array.from(allServices);
+
+    const labels = dailyData.days.map((d) => {
+      const date = new Date(d.date + "T00:00:00");
+      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    });
+
+    // One dataset per service
+    const datasets = serviceKeys.map((svc) => ({
+      label: t(SERVICE_LABEL_MAP[svc] ?? "serviceOther"),
+      data: dailyData.days.map((d) => {
+        if (totalTokens === 0) return 0;
+        const svcTokens = d.services[svc] ?? 0;
+        // This service's contribution to plan usage % for this day
+        const dayCredits = (svcTokens / totalTokens) * creditsUsed;
+        return (dayCredits / credits.limit) * 100;
+      }),
+      backgroundColor: SERVICE_COLORS[svc] ?? FALLBACK_COLOR,
+      borderRadius: 0,
+      borderSkipped: false as const,
+    }));
+
+    // Round top corners on the topmost visible dataset
+    if (datasets.length > 0) {
+      datasets[datasets.length - 1].borderRadius = 3;
+    }
+
+    const legend = serviceKeys.map((svc) => ({
+      key: svc,
+      color: SERVICE_COLORS[svc] ?? FALLBACK_COLOR,
+      label: t(SERVICE_LABEL_MAP[svc] ?? "serviceOther"),
+    }));
+
     return {
-      labels: sorted.map((s) => getServiceLabel(s.service, t)),
-      datasets: [
-        {
-          data: sorted.map((s) => s.total_tokens),
-          backgroundColor: sorted.map((_, i) => SERVICE_COLORS[i % SERVICE_COLORS.length]),
-          borderWidth: 0,
-          hoverOffset: 4,
-        },
-      ],
+      chartData: {
+        labels,
+        datasets,
+      },
+      totalUsedPct: Math.round((creditsUsed / credits.limit) * 100),
+      legendItems: legend,
     };
-  }, [serviceData, t]);
+  }, [dailyData, credits, t]);
 
   if (isLoading) {
     return (
@@ -161,130 +202,119 @@ export function UsageSettings() {
     );
   }
 
-  const hasServiceData = serviceData && serviceData.services.length > 0;
-  const hasSummaryData = summaryData && summaryData.total_requests > 0;
-
-  if (!hasServiceData && !hasSummaryData) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{t("tokenUsageByService")}</p>
-          <PeriodSelector value={days} onChange={setDays} t={t} />
-        </div>
-        <p className="py-8 text-center text-sm text-muted-foreground">{t("noUsageData")}</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{t("tokenUsageByService")}</p>
-        <PeriodSelector value={days} onChange={setDays} t={t} />
-      </div>
-
-      {/* Summary totals */}
-      {summaryData && (
-        <div className="grid grid-cols-3 gap-3">
-          <StatCard label={t("input")} value={formatTokens(summaryData.total_input_tokens)} />
-          <StatCard label={t("output")} value={formatTokens(summaryData.total_output_tokens)} />
-          <StatCard label={t("youSaved")} value={formatCost(summaryData.total_cost)} />
-        </div>
-      )}
-
-      {/* Doughnut chart */}
-      {chartData && (
-        <div className="flex items-center justify-center py-2">
-          <div className="h-48 w-48">
-            <Doughnut
-              data={chartData}
-              options={{
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: "60%",
-                plugins: {
-                  legend: { display: false },
-                  tooltip: {
-                    callbacks: {
-                      label: (ctx) => {
-                        const value = ctx.parsed;
-                        const total = ctx.dataset.data.reduce(
-                          (sum: number, v: number) => sum + v,
-                          0
-                        );
-                        const pct = total > 0 ? ((value / total) * 100).toFixed(1) : "0";
-                        return ` ${ctx.label}: ${formatTokens(value)} (${pct}%)`;
-                      },
-                    },
-                  },
-                },
-              }}
+      {/* Overall AI Usage progress bar */}
+      {credits && (
+        <div className="rounded-lg border p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium">{t("aiUsage")}</p>
+            <span
+              className={cn(
+                "text-sm font-semibold tabular-nums",
+                isLow && "text-red-500",
+                isMedium && "text-amber-500",
+                !isLow && !isMedium && "text-emerald-600 dark:text-emerald-400"
+              )}
+            >
+              {Math.round(remainingPercentage)}% {t("remaining")}
+            </span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-border">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                isLow && "bg-red-500",
+                isMedium && "bg-amber-500",
+                !isLow && !isMedium && "bg-emerald-500"
+              )}
+              style={{ width: `${Math.max(remainingPercentage, 1)}%` }}
             />
           </div>
         </div>
       )}
 
-      {/* Service table */}
-      {hasServiceData && (
-        <div className="rounded-lg border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2 font-medium">{t("service")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("input")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("output")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("saved")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("reqs")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...serviceData!.services]
-                .sort((a, b) => b.total_tokens - a.total_tokens)
-                .map((svc, i) => (
-                  <tr key={svc.service} className="border-b last:border-0">
-                    <td className="px-3 py-2 font-medium">
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{
-                            backgroundColor: SERVICE_COLORS[i % SERVICE_COLORS.length],
-                          }}
-                        />
-                        {getServiceLabel(svc.service, t)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {formatTokens(svc.input_tokens)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {formatTokens(svc.output_tokens)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {formatCost(svc.cost)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {svc.request_count}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+      {/* Header + Period selector */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{t("dailyUsage")}</p>
+        <PeriodSelector value={days} onChange={setDays} t={t} />
+      </div>
+
+      {/* Stacked bar chart — daily service breakdown */}
+      {chartData ? (
+        <>
+          <div className="h-52">
+            <Bar
+              data={chartData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                  x: {
+                    stacked: true,
+                    grid: { display: false },
+                    ticks: {
+                      maxRotation: 0,
+                      autoSkip: true,
+                      maxTicksLimit: days <= 7 ? 7 : days <= 30 ? 10 : 12,
+                      font: { size: 10 },
+                      color: "rgb(161, 161, 170)",
+                    },
+                    border: { display: false },
+                  },
+                  y: {
+                    stacked: true,
+                    beginAtZero: true,
+                    display: false,
+                  },
+                },
+                plugins: {
+                  tooltip: {
+                    mode: "index",
+                    callbacks: {
+                      title: (items) => items[0]?.label ?? "",
+                      label: (ctx) => {
+                        const val = ctx.parsed.y ?? 0;
+                        if (val < 0.01) return "";
+                        return ` ${ctx.dataset.label}: ${val.toFixed(1)}%`;
+                      },
+                      afterBody: (items) => {
+                        const total = items.reduce((s, item) => s + (item.parsed.y ?? 0), 0);
+                        if (total < 0.01) return "";
+                        return `\n Total: ${total.toFixed(1)}%`;
+                      },
+                    },
+                    filter: (item) => (item.parsed.y ?? 0) >= 0.01,
+                  },
+                },
+              }}
+            />
+          </div>
+
+          {/* Legend */}
+          {legendItems.length > 0 && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {legendItems.map((item) => (
+                <div key={item.key} className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-sm"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span className="text-[11px] text-muted-foreground">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="py-8 text-center text-sm text-muted-foreground">{t("noUsageData")}</p>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        {t("totalRequestsDays", { count: summaryData?.total_requests ?? 0, days })}
-      </p>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border px-3 py-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-lg font-semibold tabular-nums">{value}</p>
+      {totalUsedPct > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {t("usedInPeriod", { percent: totalUsedPct, days })}
+        </p>
+      )}
     </div>
   );
 }

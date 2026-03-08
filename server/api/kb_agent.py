@@ -72,6 +72,30 @@ async def kb_agent_stream(
             user_api_key = await api_key_service.get_decrypted_key(user_id)
             user_model = user_api_settings.preferred_model
 
+    is_byok = user_api_key is not None
+
+    # Pre-flight credit check
+    if not is_byok:
+        from services.credit_service import CreditService
+
+        credit_svc = CreditService(db)
+        has_credits = await credit_svc.check_credits(user_id)
+        if not has_credits:
+            async def _no_credits():
+                error = {"type": "error", "code": "INSUFFICIENT_CREDITS",
+                         "content": "No credits remaining. Please upgrade your plan."}
+                yield f"data: {json.dumps(error)}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+            return StreamingResponse(
+                _no_credits(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                    "Content-Type": "text/event-stream; charset=utf-8",
+                    **get_cors_headers(origin),
+                },
+            )
+
     # Load or create conversation (KB agent convos have file_id=None)
     conversation = None
     history: list[dict] = []
@@ -230,6 +254,20 @@ async def kb_agent_stream(
             db.add(assistant_message)
             await db.commit()
 
+            # Deduct credits (fire-and-forget)
+            credits_remaining = None
+            try:
+                from services.credit_service import deduct_credits_for_usage
+
+                credits_remaining = await deduct_credits_for_usage(
+                    user_id=user_id,
+                    cost=collected_usage.get("cost"),
+                    service="kb_agent",
+                    is_byok=is_byok,
+                )
+            except Exception as credit_err:
+                logger.warning(f"Credit deduction error: {credit_err}")
+
             # Send summary with conversation ID
             summary = {
                 "type": "summary",
@@ -238,6 +276,8 @@ async def kb_agent_stream(
                 "content": "".join(collected_text),
                 "sources": collected_sources,
             }
+            if credits_remaining is not None:
+                summary["credits_remaining"] = credits_remaining
             yield f"data: {json.dumps(summary, ensure_ascii=False)}\n\n".encode()
             yield b"data: [DONE]\n\n"
 

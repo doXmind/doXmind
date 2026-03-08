@@ -1,4 +1,5 @@
 export type ThemeBaseMode = "light" | "dark";
+export type ThemeTier = "free" | "pro";
 
 export interface ThemeTokens {
   background: string;
@@ -71,6 +72,7 @@ export interface ThemeDefinition {
   name: string;
   description: string;
   baseMode: ThemeBaseMode;
+  tier: ThemeTier;
   preview: ThemePreview;
   tokens: ThemeTokens;
   diff: ThemeDiffTokens;

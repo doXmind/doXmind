@@ -48,6 +48,18 @@ async def review_text(
         try:
             settings = get_settings()
             user_api_key = await resolve_user_api_key(auth.sub, db)
+
+            # Pre-flight credit check
+            if not user_api_key:
+                from services.credit_service import CreditService
+
+                credit_svc = CreditService(db)
+                has_credits = await credit_svc.check_credits(auth.sub)
+                if not has_credits:
+                    yield f"data: {json.dumps({'type': 'error', 'code': 'INSUFFICIENT_CREDITS', 'content': 'No credits remaining. Please upgrade your plan.'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
             llm = LLMService(model=settings.review_model, api_key=user_api_key)
 
             content = request.content
@@ -95,6 +107,18 @@ Analyze the entire document and return your suggestions. Remember to:
                         user_id=auth.sub,
                         is_byok=bool(user_api_key),
                         **llm.last_usage,
+                    )
+                )
+
+                # Deduct credits
+                from services.credit_service import deduct_credits_for_usage
+
+                asyncio.create_task(
+                    deduct_credits_for_usage(
+                        user_id=auth.sub,
+                        cost=llm.last_usage.get("cost"),
+                        service="review",
+                        is_byok=bool(user_api_key),
                     )
                 )
 

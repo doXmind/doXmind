@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    BigInteger,
     JSON,
     Boolean,
     Column,
@@ -61,6 +62,7 @@ class User(Base):
 
     # Profile
     avatar_url = Column(String(500), nullable=True)
+    avatar_frame = Column(String(50), nullable=True)  # Frame ID e.g. "golden-glow"
     bio = Column(Text, nullable=True)
     website = Column(String(500), nullable=True)
     social_links = Column(JSON, nullable=True)  # {"github": "...", "twitter": "..."}
@@ -796,6 +798,102 @@ class Notification(Base):
     user = relationship("User", foreign_keys=[user_id])
 
     __table_args__ = (Index("idx_notifications_user_unread", "user_id", "is_read", "created_at"),)
+
+
+# =============================================================================
+# Billing / Subscription Models
+# =============================================================================
+
+
+class UserSubscription(Base):
+    """User subscription and billing information."""
+
+    __tablename__ = "user_subscriptions"
+
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    # Stripe integration
+    stripe_customer_id = Column(String(255), unique=True, nullable=True, index=True)
+    stripe_subscription_id = Column(String(255), unique=True, nullable=True, index=True)
+
+    # Plan info
+    plan = Column(String(20), default="free", nullable=False)  # free | pro | max
+    is_early_bird = Column(Boolean, default=False, nullable=False)
+
+    # Subscription status
+    status = Column(String(20), default="active", nullable=False)
+    # active | past_due | canceled | incomplete
+
+    # Billing cycle (from Stripe)
+    current_period_start = Column(DateTime(timezone=True), nullable=True)
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Storage quota
+    storage_used_bytes = Column(BigInteger, default=0, nullable=False)
+    storage_limit_bytes = Column(BigInteger, default=100 * 1024 * 1024, nullable=False)  # 100 MB
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationship
+    user = relationship("User", backref="subscription", uselist=False)
+
+
+class UserCredits(Base):
+    """User credit balance for usage-based billing."""
+
+    __tablename__ = "user_credits"
+
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    # Credit balance (internal units; display = internal * 10)
+    credits_remaining = Column(Integer, default=600, nullable=False)
+    credits_limit = Column(Integer, default=600, nullable=False)  # Per-period limit
+
+    # Period tracking
+    period_start = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    period_end = Column(DateTime(timezone=True), nullable=False)
+
+    # Usage tracking
+    credits_used_this_period = Column(Integer, default=0, nullable=False)
+
+    # Timestamps
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationship
+    user = relationship("User", backref="credits", uselist=False)
+
+
+class CreditTransaction(Base):
+    """Audit log of credit deductions and grants."""
+
+    __tablename__ = "credit_transactions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Transaction info
+    amount = Column(Integer, nullable=False)  # Negative=deduction, positive=grant/reset
+    balance_after = Column(Integer, nullable=False)
+    transaction_type = Column(String(20), nullable=False)
+    # deduction | period_reset | plan_change | manual_adjustment
+
+    # Context
+    service = Column(String(50), nullable=True)  # chat, autocomplete, web_search, etc.
+    description = Column(String(255), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 # ---------------------------------------------------------------------------

@@ -470,6 +470,7 @@ class UserService:
         user_id: str,
         username: str | None = None,
         avatar_url: str | None = None,
+        avatar_frame: str | None = None,
         bio: str | None = None,
         website: str | None = None,
         social_links: dict | None = None,
@@ -497,6 +498,9 @@ class UserService:
 
         if avatar_url is not None:
             user.avatar_url = avatar_url
+
+        if avatar_frame is not None:
+            user.avatar_frame = avatar_frame
 
         if bio is not None:
             user.bio = bio

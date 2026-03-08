@@ -202,6 +202,13 @@ export function useSlideSummary(fileId: string | null) {
 
   const generate = useCallback(
     async (doc: JSONContent) => {
+      // Pre-check: block if AI is locked (credits exhausted)
+      const { useBillingStore } = await import("@/stores/billing-store");
+      if (useBillingStore.getState().isAILocked()) {
+        useBillingStore.getState().openUpgradeModal("Upgrade to generate slide summaries");
+        return;
+      }
+
       // Cancel any in-flight request
       abortRef.current?.abort();
 

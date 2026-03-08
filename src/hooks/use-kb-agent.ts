@@ -23,6 +23,7 @@ export interface KBTurn {
 interface KBAgentEvent {
   type: string;
   content?: string;
+  code?: string;
   tool?: string;
   tool_id?: string;
   output?: string;
@@ -181,6 +182,12 @@ export function useKBAgent() {
                 if (event.conversationId) setConversationId(event.conversationId);
                 break;
               case "error":
+                // Handle credit exhaustion
+                if (event.code === "INSUFFICIENT_CREDITS") {
+                  import("@/stores/billing-store").then(({ useBillingStore }) => {
+                    useBillingStore.getState().openUpgradeModal(event.content);
+                  });
+                }
                 setError(event.content || "An error occurred");
                 telemetry.trackFeature("kb_search", "error", Date.now() - startTime, {
                   turn_index: turnIndexRef.current,

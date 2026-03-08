@@ -172,6 +172,10 @@ const nextConfig: NextConfig = {
       },
       // Shares routes
       {
+        source: "/api/shares",
+        destination: `${backendUrl}/api/shares/`,
+      },
+      {
         source: "/api/shares/:path*",
         destination: `${backendUrl}/api/shares/:path*`,
       },
@@ -184,6 +188,26 @@ const nextConfig: NextConfig = {
       {
         source: "/api/comments/:path*",
         destination: `${backendUrl}/api/comments/:path*`,
+      },
+      // Usage analytics
+      {
+        source: "/api/usage/:path*",
+        destination: `${backendUrl}/api/usage/:path*`,
+      },
+      // Billing
+      {
+        source: "/api/billing/:path*",
+        destination: `${backendUrl}/api/billing/:path*`,
+      },
+      // Global agent
+      {
+        source: "/api/global-agent/:path*",
+        destination: `${backendUrl}/api/global-agent/:path*`,
+      },
+      // Notifications
+      {
+        source: "/api/notifications/:path*",
+        destination: `${backendUrl}/api/notifications/:path*`,
       },
       // Health check
       {

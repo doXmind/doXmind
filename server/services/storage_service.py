@@ -62,6 +62,16 @@ class StorageService:
                 raise FileNotFoundError(f"S3 key not found: {key}")
             raise
 
+    def get_size(self, key: str) -> int | None:
+        """Get the size of an object in bytes. Returns None if not found."""
+        from botocore.exceptions import ClientError
+
+        try:
+            response = self.client.head_object(Bucket=self.bucket, Key=key)
+            return response["ContentLength"]
+        except ClientError:
+            return None
+
     def delete(self, key: str) -> None:
         """Delete a single object from S3. No-op if key doesn't exist."""
         self.client.delete_object(Bucket=self.bucket, Key=key)
@@ -123,6 +133,13 @@ class LocalStorageService:
         data = path.read_bytes()
         content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
         return data, content_type
+
+    def get_size(self, key: str) -> int | None:
+        """Get the size of a file in bytes. Returns None if not found."""
+        path = self._resolve(key)
+        if not path.is_file():
+            return None
+        return path.stat().st_size
 
     def delete(self, key: str) -> None:
         """Delete a single file. No-op if file doesn't exist."""

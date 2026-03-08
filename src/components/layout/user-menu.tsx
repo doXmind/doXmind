@@ -11,11 +11,15 @@ import {
   Key,
   Type,
   Shield,
+  EyeOff,
   BarChart3,
   Palette,
   HelpCircle,
   Globe,
+  CreditCard,
+  X,
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-device-type";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,24 +32,29 @@ import {
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth-store";
+import { useBillingStore } from "@/stores/billing-store";
 import { APISettings } from "@/components/settings/api-settings";
 import { TypographySettings } from "@/components/settings/typography-settings";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { TelemetrySettings } from "@/components/settings/telemetry-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { SessionManager } from "@/components/settings/session-manager";
+import { PlanSettings } from "@/components/settings/plan-settings";
+import { PricingModal } from "@/components/billing/pricing-modal";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { useTranslations, useLocale } from "next-intl";
 
-type SettingsTab = "api" | "usage" | "appearance" | "typography" | "privacy" | "security";
+type SettingsTab = "api" | "usage" | "plan" | "appearance" | "typography" | "privacy" | "security";
 
 const SETTINGS_TAB_IDS: { id: SettingsTab; labelKey: string; icon: React.ReactNode }[] = [
-  { id: "api", labelKey: "api", icon: <Key className="h-4 w-4" /> },
-  { id: "usage", labelKey: "usage", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "appearance", labelKey: "appearance", icon: <Palette className="h-4 w-4" /> },
   { id: "typography", labelKey: "typography", icon: <Type className="h-4 w-4" /> },
+  { id: "plan", labelKey: "plan", icon: <CreditCard className="h-4 w-4" /> },
+  { id: "usage", labelKey: "usage", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "security", labelKey: "security", icon: <Shield className="h-4 w-4" /> },
-  { id: "privacy", labelKey: "privacy", icon: <Shield className="h-4 w-4" /> },
+  { id: "privacy", labelKey: "privacy", icon: <EyeOff className="h-4 w-4" /> },
+  { id: "api", labelKey: "api", icon: <Key className="h-4 w-4" /> },
 ];
 
 const LOCALES = [
@@ -60,9 +69,11 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
   const ts = useTranslations("settings");
   const tc = useTranslations("common");
   const locale = useLocale();
+  const plan = useBillingStore((s) => s.plan);
+  const isMobile = useIsMobile();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("api");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -91,17 +102,6 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
     }
   };
 
-  // Get initials for avatar
-  const getInitials = () => {
-    if (user?.username) {
-      return user.username.slice(0, 2).toUpperCase();
-    }
-    if (user?.email) {
-      return user.email.slice(0, 2).toUpperCase();
-    }
-    return "U";
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -111,23 +111,13 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           className={cn("relative rounded-full", compact ? "h-7 w-7" : "h-8 w-8")}
           aria-label={t("userMenu")}
         >
-          {user?.avatar_url ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={user.avatar_url}
-              alt={user.username || user.email}
-              className={cn("rounded-full object-cover", compact ? "h-7 w-7" : "h-8 w-8")}
-            />
-          ) : (
-            <div
-              className={cn(
-                "flex items-center justify-center rounded-full bg-primary/10 font-medium text-primary",
-                compact ? "h-7 w-7 text-xs" : "h-8 w-8 text-xs"
-              )}
-            >
-              {getInitials()}
-            </div>
-          )}
+          <UserAvatar
+            avatarUrl={user?.avatar_url}
+            username={user?.username || user?.email}
+            size={compact ? 28 : 32}
+            frame={user?.avatar_frame}
+            plan={plan}
+          />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -214,54 +204,115 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       <Modal
         open={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        className="max-w-2xl"
+        className="max-w-3xl"
       >
-        <ModalHeader onClose={() => setShowSettingsModal(false)}>
-          <span className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            {t("settings")}
-          </span>
-        </ModalHeader>
-
-        {/* Tab navigation */}
-        <div className="mb-4 flex overflow-x-auto border-b border-border md:-mx-6 md:px-6">
-          {SETTINGS_TAB_IDS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setSettingsTab(tab.id)}
-              className={cn(
-                "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 pb-2 text-sm transition-colors",
-                settingsTab === tab.id
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {tab.icon}
-              <span className="hidden sm:inline">
-                {ts(
-                  tab.labelKey as
-                    | "api"
-                    | "usage"
-                    | "appearance"
-                    | "typography"
-                    | "security"
-                    | "privacy"
-                )}
+        {isMobile ? (
+          <>
+            <ModalHeader onClose={() => setShowSettingsModal(false)}>
+              <span className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                {t("settings")}
               </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        <div className="h-[65vh] overflow-y-auto md:h-[500px]">
-          {settingsTab === "api" && <APISettings />}
-          {settingsTab === "usage" && <UsageSettings />}
-          {settingsTab === "appearance" && <AppearanceSettings />}
-          {settingsTab === "typography" && <TypographySettings />}
-          {settingsTab === "security" && <SessionManager />}
-          {settingsTab === "privacy" && <TelemetrySettings />}
-        </div>
+            </ModalHeader>
+            {/* Mobile: horizontal tab bar */}
+            <div className="mb-4 flex overflow-x-auto border-b border-border">
+              {SETTINGS_TAB_IDS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setSettingsTab(tab.id)}
+                  className={cn(
+                    "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 pb-2 text-sm transition-colors",
+                    settingsTab === tab.id
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {tab.icon}
+                </button>
+              ))}
+            </div>
+            <div className="h-[65vh] overflow-y-auto">
+              {settingsTab === "api" && <APISettings />}
+              {settingsTab === "usage" && <UsageSettings />}
+              {settingsTab === "plan" && <PlanSettings />}
+              {settingsTab === "appearance" && <AppearanceSettings />}
+              {settingsTab === "typography" && <TypographySettings />}
+              {settingsTab === "security" && <SessionManager />}
+              {settingsTab === "privacy" && <TelemetrySettings />}
+            </div>
+          </>
+        ) : (
+          <div className="flex h-[540px]">
+            {/* Desktop: sidebar navigation */}
+            <div className="flex w-[180px] shrink-0 flex-col border-r border-border pr-4">
+              <h2 className="mb-4 text-lg font-semibold">{t("settings")}</h2>
+              <nav className="flex flex-col gap-0.5">
+                {SETTINGS_TAB_IDS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setSettingsTab(tab.id)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                      settingsTab === tab.id
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    )}
+                  >
+                    {tab.icon}
+                    {ts(
+                      tab.labelKey as
+                        | "api"
+                        | "usage"
+                        | "plan"
+                        | "appearance"
+                        | "typography"
+                        | "security"
+                        | "privacy"
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
+            {/* Desktop: content area */}
+            <div className="flex min-w-0 flex-1 flex-col pl-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-base font-medium">
+                  {ts(
+                    settingsTab as
+                      | "api"
+                      | "usage"
+                      | "plan"
+                      | "appearance"
+                      | "typography"
+                      | "security"
+                      | "privacy"
+                  )}
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowSettingsModal(false)}
+                  className="h-8 w-8"
+                  aria-label="Close dialog"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {settingsTab === "api" && <APISettings />}
+                {settingsTab === "usage" && <UsageSettings />}
+                {settingsTab === "plan" && <PlanSettings />}
+                {settingsTab === "appearance" && <AppearanceSettings />}
+                {settingsTab === "typography" && <TypographySettings />}
+                {settingsTab === "security" && <SessionManager />}
+                {settingsTab === "privacy" && <TelemetrySettings />}
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
+
+      <PricingModal />
     </DropdownMenu>
   );
 }

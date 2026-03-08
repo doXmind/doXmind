@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { MarkdownContent } from "@/components/comments/markdown-content";
+import { stripPreviewBlocks } from "@/lib/markdown";
 import { useTranslations } from "next-intl";
 import { CommunityCard } from "./community-card";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { ShareReactions } from "./share-reactions";
 import { Clock, Eye, FileText, Folder, GitFork, MessageSquare, Search } from "lucide-react";
 
@@ -38,6 +39,7 @@ function FeaturedCard({
 }) {
   const t = useTranslations("community");
   const owner = item.owner || { id: "", username: null, avatar_url: null };
+  const cleanedPreview = item.content_preview ? stripPreviewBlocks(item.content_preview) : "";
   const publishedDate = item.published_at
     ? new Date(item.published_at).toLocaleDateString("en-US", {
         month: "short",
@@ -59,21 +61,14 @@ function FeaturedCard({
         <div className="relative flex h-full flex-col rounded-xl border border-border bg-card p-5 transition-colors duration-200 hover:bg-accent/50">
           {/* Author row */}
           <div className="mb-3 flex items-center gap-2">
-            {owner.avatar_url ? (
-              <Image
-                src={owner.avatar_url}
-                alt=""
-                width={20}
-                height={20}
-                className="h-5 w-5 rounded-full"
-                unoptimized
-              />
-            ) : (
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[9px] font-semibold text-muted-foreground">
-                {(owner.username || "?")[0].toUpperCase()}
-              </div>
-            )}
-            <span className="text-[12px] font-medium text-muted-foreground">
+            <UserAvatar
+              avatarUrl={owner.avatar_url}
+              username={owner.username}
+              size={20}
+              frame={owner.avatar_frame}
+              plan={owner.plan}
+            />
+            <span className="flex items-center text-[12px] font-medium text-muted-foreground">
               {owner.username || t("anonymous")}
             </span>
             <span className="text-[12px] text-muted-foreground/50">·</span>
@@ -96,16 +91,16 @@ function FeaturedCard({
           )}
 
           {/* Content preview */}
-          {item.content_preview && item.content_preview.trim().length > 0 && (
+          {cleanedPreview && (
             <MarkdownContent
-              content={item.content_preview}
+              content={cleanedPreview}
               baseClassName="text-[13px] leading-relaxed text-muted-foreground"
               className="mt-1.5 line-clamp-3 [&_*]:text-[13px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_p]:mb-0"
             />
           )}
 
           {/* Folder children preview */}
-          {item.is_folder && !(item.content_preview && item.content_preview.trim().length > 0) && (
+          {item.is_folder && !cleanedPreview && (
             <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground/60">
               {item.child_previews && item.child_previews.length > 0 ? (
                 <>

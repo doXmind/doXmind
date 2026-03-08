@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, Monitor, Palette } from "lucide-react";
+import { Check, Crown, Lock, Monitor, Palette } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { cn } from "@/lib/utils";
@@ -10,10 +11,12 @@ import type { ThemeDefinition } from "@/lib/themes/types";
 function MiniThemeCard({
   theme,
   isActive,
+  isLocked,
   onSelect,
 }: {
   theme: ThemeDefinition;
   isActive: boolean;
+  isLocked: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -27,7 +30,10 @@ function MiniThemeCard({
       )}
     >
       <div
-        className="relative h-[40px] w-full overflow-hidden rounded-sm"
+        className={cn(
+          "relative h-[40px] w-full overflow-hidden rounded-sm",
+          isLocked && "opacity-50 grayscale-[40%]"
+        )}
         style={{ backgroundColor: theme.preview.backgroundColor }}
       >
         {/* Accent strip */}
@@ -54,9 +60,14 @@ function MiniThemeCard({
             style={{ backgroundColor: theme.preview.foregroundColor, opacity: 0.2 }}
           />
         </div>
-        {isActive && (
+        {isActive && !isLocked && (
           <div className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary">
             <Check className="h-2 w-2 text-primary-foreground" />
+          </div>
+        )}
+        {isLocked && (
+          <div className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-muted-foreground/60">
+            <Lock className="h-2 w-2 text-background" />
           </div>
         )}
       </div>
@@ -94,42 +105,75 @@ export function ThemeQuickPicker() {
 
 export function ThemePickerPanel() {
   const t = useTranslations("settings");
-  const { currentThemeId, selectTheme, isSystemMode, setSystemMode, lightThemes, darkThemes } =
-    useThemeManager();
+  const {
+    currentThemeId,
+    selectTheme,
+    canAccessTheme,
+    isSystemMode,
+    setSystemMode,
+    freeLightThemes,
+    freeDarkThemes,
+    premiumLightThemes,
+    premiumDarkThemes,
+  } = useThemeManager();
+
+  const freeThemes = [...freeLightThemes, ...freeDarkThemes];
+  const proThemes = [...premiumLightThemes, ...premiumDarkThemes];
+
+  const handleThemeSelect = (themeId: string) => {
+    if (!canAccessTheme(themeId)) {
+      toast(t("premiumThemeRequired"), {
+        action: {
+          label: t("upgradeNow"),
+          onClick: () => {
+            window.location.href = "/pricing";
+          },
+        },
+      });
+      return;
+    }
+    selectTheme(themeId);
+  };
 
   return (
     <div className="space-y-3">
+      {/* Free themes (Notion + Midnight together) */}
       <div className="space-y-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          {t("light")}
-        </span>
         <div className="grid grid-cols-4 gap-1">
-          {lightThemes.map((theme) => (
+          {freeThemes.map((theme) => (
             <MiniThemeCard
               key={theme.id}
               theme={theme}
               isActive={currentThemeId === theme.id}
-              onSelect={() => selectTheme(theme.id)}
+              isLocked={false}
+              onSelect={() => handleThemeSelect(theme.id)}
             />
           ))}
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          {t("dark")}
-        </span>
-        <div className="grid grid-cols-4 gap-1">
-          {darkThemes.map((theme) => (
-            <MiniThemeCard
-              key={theme.id}
-              theme={theme}
-              isActive={currentThemeId === theme.id}
-              onSelect={() => selectTheme(theme.id)}
-            />
-          ))}
+      {/* Pro themes (light-themed first, then dark-themed) */}
+      {proThemes.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <Crown className="h-3 w-3 text-amber-500" />
+            <span className="text-[10px] font-medium uppercase tracking-wider text-amber-500">
+              {t("proThemes")}
+            </span>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {proThemes.map((theme) => (
+              <MiniThemeCard
+                key={theme.id}
+                theme={theme}
+                isActive={currentThemeId === theme.id}
+                isLocked={!canAccessTheme(theme.id)}
+                onSelect={() => handleThemeSelect(theme.id)}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex items-center justify-between border-t pt-2">
         <div className="flex items-center gap-1.5">
