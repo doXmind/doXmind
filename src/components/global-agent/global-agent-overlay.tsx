@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { MobileFAB } from "@/components/home/mobile-fab";
 import { AgentSheet } from "./agent-sheet";
+import { useAuthStore } from "@/stores/auth-store";
 
 /**
  * Global overlay that renders the MobileFAB and AgentSheet.
@@ -16,6 +17,7 @@ import { AgentSheet } from "./agent-sheet";
  */
 export function GlobalAgentOverlay() {
   const pathname = usePathname();
+  const user = useAuthStore((s) => s.user);
 
   const isHomePage = pathname === "/" || pathname === "";
   const hideFAB =
@@ -29,8 +31,8 @@ export function GlobalAgentOverlay() {
 
   return (
     <>
-      {!hideFAB && <MobileFAB />}
-      <AgentSheet />
+      {!hideFAB && user && <MobileFAB />}
+      {user && <AgentSheet />}
     </>
   );
 }

@@ -64,41 +64,45 @@ export function CommunityActionBar({ detail, shareToken, onForkSuccess }: Commun
 
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      {/* Fork */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleFork}
-        disabled={isForking || detail.is_forked || !detail.allow_fork}
-        title={!detail.allow_fork ? t("forkDisabled") : undefined}
-        className="h-9 gap-2 rounded-lg border-border/60 px-4 text-[13px] font-medium transition-all hover:border-foreground/20"
-      >
-        {isForking ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <GitFork className="h-3.5 w-3.5" />
-        )}
-        {detail.is_forked ? t("forked") : t("fork")}
-        {detail.fork_count > 0 && (
-          <span className="ml-0.5 text-muted-foreground">{detail.fork_count}</span>
-        )}
-      </Button>
+      {/* Fork — authenticated only */}
+      {user && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleFork}
+          disabled={isForking || detail.is_forked || !detail.allow_fork}
+          title={!detail.allow_fork ? t("forkDisabled") : undefined}
+          className="h-9 gap-2 rounded-lg border-border/60 px-4 text-[13px] font-medium transition-all hover:border-foreground/20"
+        >
+          {isForking ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <GitFork className="h-3.5 w-3.5" />
+          )}
+          {detail.is_forked ? t("forked") : t("fork")}
+          {detail.fork_count > 0 && (
+            <span className="ml-0.5 text-muted-foreground">{detail.fork_count}</span>
+          )}
+        </Button>
+      )}
 
-      {/* Bookmark */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleBookmark}
-        className={`h-9 gap-2 rounded-lg border-border/60 px-4 text-[13px] font-medium transition-all hover:border-foreground/20 ${
-          isBookmarked ? "border-foreground/20 bg-muted/50" : ""
-        }`}
-      >
-        <Bookmark className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current" : ""}`} />
-        {isBookmarked ? t("saved") : t("save")}
-        {detail.bookmark_count > 0 && (
-          <span className="ml-0.5 text-muted-foreground">{detail.bookmark_count}</span>
-        )}
-      </Button>
+      {/* Bookmark — authenticated only */}
+      {user && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleBookmark}
+          className={`h-9 gap-2 rounded-lg border-border/60 px-4 text-[13px] font-medium transition-all hover:border-foreground/20 ${
+            isBookmarked ? "border-foreground/20 bg-muted/50" : ""
+          }`}
+        >
+          <Bookmark className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current" : ""}`} />
+          {isBookmarked ? t("saved") : t("save")}
+          {detail.bookmark_count > 0 && (
+            <span className="ml-0.5 text-muted-foreground">{detail.bookmark_count}</span>
+          )}
+        </Button>
+      )}
 
       {/* Share */}
       <Button

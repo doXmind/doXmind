@@ -108,32 +108,36 @@ export function StickyActionBar({
             <Search className="h-3.5 w-3.5" />
           </button>
 
-          <div className="mx-1 h-4 w-px bg-border/40" />
+          {/* Community actions — authenticated only */}
+          {user && (
+            <>
+              <div className="mx-1 h-4 w-px bg-border/40" />
 
-          {/* Community actions */}
-          <button
-            onClick={handleFork}
-            disabled={isForking || detail.is_forked || !detail.allow_fork}
-            title={!detail.allow_fork ? t("forkDisabled") : undefined}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-          >
-            {isForking ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <GitFork className="h-3.5 w-3.5" />
-            )}
-            {detail.is_forked ? t("forked") : t("fork")}
-          </button>
+              <button
+                onClick={handleFork}
+                disabled={isForking || detail.is_forked || !detail.allow_fork}
+                title={!detail.allow_fork ? t("forkDisabled") : undefined}
+                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                {isForking ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <GitFork className="h-3.5 w-3.5" />
+                )}
+                {detail.is_forked ? t("forked") : t("fork")}
+              </button>
 
-          <button
-            onClick={handleBookmark}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Bookmark
-              className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
-            />
-            {isBookmarked ? t("saved") : t("save")}
-          </button>
+              <button
+                onClick={handleBookmark}
+                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Bookmark
+                  className={`h-3.5 w-3.5 ${isBookmarked ? "fill-current text-foreground" : ""}`}
+                />
+                {isBookmarked ? t("saved") : t("save")}
+              </button>
+            </>
+          )}
 
           <button
             onClick={handleShare}

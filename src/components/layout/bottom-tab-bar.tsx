@@ -23,6 +23,8 @@ export function BottomTabBar() {
   const user = useAuthStore((s) => s.user);
   const isVisible = useScrollDirection();
 
+  if (!user) return null;
+
   const tabs: TabItem[] = [
     {
       href: "/",

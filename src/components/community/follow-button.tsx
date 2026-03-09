@@ -27,6 +27,8 @@ export function FollowButton({
   const [isLoading, setIsLoading] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
+  if (!user) return null;
+
   const handleToggle = async () => {
     if (!user) {
       toast.error(t("signInToFollow"));
