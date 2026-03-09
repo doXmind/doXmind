@@ -57,7 +57,7 @@ function FeaturedCard({
         ease: [0.16, 1, 0.3, 1],
       }}
     >
-      <Link href={`/community/${item.share_token}`} className="group block h-full">
+      <Link href={`/s/${item.share_token}`} className="group block h-full">
         <div className="relative flex h-full flex-col rounded-xl border border-border bg-card p-5 transition-colors duration-200 hover:bg-accent/50">
           {/* Author row */}
           <div className="mb-3 flex items-center gap-2">

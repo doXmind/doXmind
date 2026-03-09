@@ -74,7 +74,7 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
             key={item.share_id}
             className="group flex items-center gap-3 rounded-xl border border-border/50 bg-card px-4 py-3.5 transition-all hover:border-border sm:cursor-pointer sm:hover:bg-accent/30"
             onClick={() =>
-              window.innerWidth >= 640 && window.open(`/community/${item.share_token}`, "_self")
+              window.innerWidth >= 640 && window.open(`/s/${item.share_token}`, "_self")
             }
           >
             {/* Owner avatar */}
@@ -120,7 +120,7 @@ export function BookmarksSection({ bookmarks, onBookmarksChange }: BookmarksSect
             {/* Actions */}
             <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100">
               <a
-                href={`/community/${item.share_token}`}
+                href={`/s/${item.share_token}`}
                 onClick={(e) => e.stopPropagation()}
                 className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 title={t("open")}

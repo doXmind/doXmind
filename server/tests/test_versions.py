@@ -31,7 +31,6 @@ class TestVersionResponse:
             id="ver-123",
             file_id="file-456",
             content="<p>Hello</p>",
-            diff=None,
             edit_type="manual",
             summary=None,
             created_at="2024-01-01T00:00:00",
@@ -48,13 +47,11 @@ class TestVersionResponse:
             id="ver-123",
             file_id="file-456",
             content="<p>Hello</p>",
-            diff='["--- a", "+++ b"]',
             edit_type="ai_edit",
             summary="Fixed typo",
             created_at="2024-01-01T00:00:00",
         )
 
-        assert resp.diff == '["--- a", "+++ b"]'
         assert resp.summary == "Fixed typo"
 
 
@@ -116,7 +113,6 @@ class TestListVersionsEndpoint:
         mock_version.id = "ver-1"
         mock_version.file_id = "file-123"
         mock_version.content = "<p>Test</p>"
-        mock_version.diff = None
         mock_version.edit_type = "manual"
         mock_version.summary = None
         mock_version.created_at = datetime(2024, 1, 1, 0, 0, 0)
@@ -177,37 +173,15 @@ class TestCreateVersionEndpoint:
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_creates_first_version(self, mock_db):
-        """Should create version without diff when first version."""
+    async def test_creates_version(self, mock_db):
+        """Should create version when file exists."""
         # Mock file exists
         mock_file = MagicMock()
         mock_file.id = "file-123"
 
-        # Mock version
-        mock_version = MagicMock()
-        mock_version.id = "ver-1"
-        mock_version.file_id = "file-123"
-        mock_version.content = "<p>New content</p>"
-        mock_version.diff = None
-        mock_version.edit_type = "manual"
-        mock_version.summary = None
-        mock_version.created_at = datetime(2024, 1, 1, 0, 0, 0)
-
-        # Setup mock returns
-        call_count = [0]
-
-        def mock_execute(query):
-            result = MagicMock()
-            if call_count[0] == 0:
-                # First call: get file
-                result.scalar_one_or_none.return_value = mock_file
-            else:
-                # Second call: get previous version (none)
-                result.scalar_one_or_none.return_value = None
-            call_count[0] += 1
-            return result
-
-        mock_db.execute = AsyncMock(side_effect=mock_execute)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_file
+        mock_db.execute = AsyncMock(return_value=mock_result)
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
 
@@ -227,28 +201,14 @@ class TestCreateVersionEndpoint:
         mock_db.add.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_creates_version_with_diff(self, mock_db):
-        """Should create version with diff from previous version."""
-        # Mock file
+    async def test_creates_version_with_edit_type(self, mock_db):
+        """Should create version with custom edit_type and summary."""
         mock_file = MagicMock()
         mock_file.id = "file-123"
 
-        # Mock previous version
-        mock_prev_version = MagicMock()
-        mock_prev_version.content = "Old content"
-
-        call_count = [0]
-
-        def mock_execute(query):
-            result = MagicMock()
-            if call_count[0] == 0:
-                result.scalar_one_or_none.return_value = mock_file
-            elif call_count[0] == 1:
-                result.scalar_one_or_none.return_value = mock_prev_version
-            call_count[0] += 1
-            return result
-
-        mock_db.execute = AsyncMock(side_effect=mock_execute)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_file
+        mock_db.execute = AsyncMock(return_value=mock_result)
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
 
@@ -267,7 +227,6 @@ class TestCreateVersionEndpoint:
             result = await create_version(request, mock_db)
 
         assert result.id == "ver-2"
-        # Diff should be created when content differs
         mock_db.add.assert_called_once()
 
 
@@ -305,7 +264,6 @@ class TestGetVersionEndpoint:
         mock_version.id = "ver-123"
         mock_version.file_id = "file-456"
         mock_version.content = "<p>Content</p>"
-        mock_version.diff = None
         mock_version.edit_type = "manual"
         mock_version.summary = None
         mock_version.created_at = datetime(2024, 1, 1, 0, 0, 0)
@@ -547,26 +505,14 @@ class TestEdgeCases:
         return AsyncMock(spec=AsyncSession)
 
     @pytest.mark.asyncio
-    async def test_diff_with_identical_content(self, mock_db):
-        """Should handle identical content (no diff)."""
+    async def test_creates_version_with_identical_content(self, mock_db):
+        """Should create version even with identical content."""
         mock_file = MagicMock()
         mock_file.id = "file-123"
 
-        mock_prev_version = MagicMock()
-        mock_prev_version.content = "Same content"
-
-        call_count = [0]
-
-        def mock_execute(query):
-            result = MagicMock()
-            if call_count[0] == 0:
-                result.scalar_one_or_none.return_value = mock_file
-            elif call_count[0] == 1:
-                result.scalar_one_or_none.return_value = mock_prev_version
-            call_count[0] += 1
-            return result
-
-        mock_db.execute = AsyncMock(side_effect=mock_execute)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_file
+        mock_db.execute = AsyncMock(return_value=mock_result)
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
 
@@ -582,7 +528,6 @@ class TestEdgeCases:
             request = CreateVersionRequest(file_id="file-123", content="Same content")
             result = await create_version(request, mock_db)
 
-        # Diff should be None for identical content
         assert result is not None
 
     @pytest.mark.asyncio
@@ -591,18 +536,9 @@ class TestEdgeCases:
         mock_file = MagicMock()
         mock_file.id = "file-123"
 
-        call_count = [0]
-
-        def mock_execute(query):
-            result = MagicMock()
-            if call_count[0] == 0:
-                result.scalar_one_or_none.return_value = mock_file
-            else:
-                result.scalar_one_or_none.return_value = None
-            call_count[0] += 1
-            return result
-
-        mock_db.execute = AsyncMock(side_effect=mock_execute)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_file
+        mock_db.execute = AsyncMock(return_value=mock_result)
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
 

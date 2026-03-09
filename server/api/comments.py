@@ -88,11 +88,18 @@ async def _send_comment_notifications(
 
 
 class CreateCommentRequest(BaseModel):
-    """Request to create a comment."""
+    """Request to create a comment (document-level or inline)."""
 
     content: str = Field(min_length=1, max_length=5000)
     parent_id: str | None = None
     mentions: list[str] | None = None
+
+    # Inline comment anchor fields (all optional — provide all or none)
+    anchor_from: int | None = Field(None, ge=0)
+    anchor_to: int | None = Field(None, ge=0)
+    anchor_text: str | None = Field(None, max_length=500)
+    anchor_context_before: str | None = Field(None, max_length=100)
+    anchor_context_after: str | None = Field(None, max_length=100)
 
 
 class UpdateCommentRequest(BaseModel):
@@ -192,6 +199,11 @@ async def create_comment(
         content=body.content,
         parent_id=body.parent_id,
         mentions=body.mentions,
+        anchor_from=body.anchor_from,
+        anchor_to=body.anchor_to,
+        anchor_text=body.anchor_text,
+        anchor_context_before=body.anchor_context_before,
+        anchor_context_after=body.anchor_context_after,
     )
 
     # --- Notification logic (fire-and-forget) ---
@@ -215,7 +227,7 @@ async def create_comment(
             # Get document name
             file_result = await db.execute(select(File.name).where(File.id == share_row.file_id))
             file_row = file_result.one_or_none()
-            doc_name = file_row.name if file_row else "Untitled"
+            doc_name = file_row.name.removesuffix(".md") if file_row else "Untitled"
 
             # Get share owner email (skip if commenter is owner)
             if share_row.user_id != user_id:
@@ -254,8 +266,8 @@ async def create_comment(
 
             commenter_name = token.username or "A doXmind user"
             frontend_url = get_frontend_url(request)
-            share_url = f"{frontend_url}/shared/{share_row.share_token}"
-            link = f"/community/{share_row.share_token}"
+            share_url = f"{frontend_url}/s/{share_row.share_token}"
+            link = f"/s/{share_row.share_token}"
 
             if share_owner_email or parent_author_email or mention_emails:
                 asyncio.create_task(
@@ -371,6 +383,81 @@ async def delete_comment(
     )
 
     return {"status": "deleted", "comment_id": comment_id}
+
+
+# =============================================================================
+# Inline Comments
+# =============================================================================
+
+
+@router.get("/{share_token}/inline")
+@limiter.limit("60/minute")
+async def list_inline_comments(
+    request: Request,
+    share_token: str,
+    include_resolved: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    token: TokenData | None = Depends(optional_auth),
+):
+    """Get inline comments (text-anchored annotations) for a shared item."""
+    current_user_id = get_user_id(token) if token else None
+    service = CommentService(db)
+
+    comments, total = await service.list_inline_comments(
+        share_token=share_token,
+        include_resolved=include_resolved,
+        current_user_id=current_user_id,
+    )
+
+    return {"comments": comments, "total": total}
+
+
+@router.post("/{share_token}/{comment_id}/resolve")
+@limiter.limit("30/minute")
+async def resolve_comment(
+    request: Request,
+    share_token: str,
+    comment_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Mark an inline comment as resolved."""
+    user_id = get_user_id(token)
+    if not user_id:
+        return {"error": "Authentication required"}
+
+    service = CommentService(db)
+    result = await service.resolve_comment(
+        share_token=share_token,
+        comment_id=comment_id,
+        user_id=user_id,
+    )
+
+    return result
+
+
+@router.post("/{share_token}/{comment_id}/unresolve")
+@limiter.limit("30/minute")
+async def unresolve_comment(
+    request: Request,
+    share_token: str,
+    comment_id: str,
+    db: AsyncSession = Depends(get_db),
+    token: TokenData = Depends(require_auth),
+):
+    """Re-open a resolved inline comment."""
+    user_id = get_user_id(token)
+    if not user_id:
+        return {"error": "Authentication required"}
+
+    service = CommentService(db)
+    result = await service.unresolve_comment(
+        share_token=share_token,
+        comment_id=comment_id,
+        user_id=user_id,
+    )
+
+    return result
 
 
 # =============================================================================

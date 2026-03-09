@@ -232,6 +232,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
       }
 
       toast.success(visibility === "public" ? t("publishedToCommunity") : t("privateShareCreated"));
+      window.dispatchEvent(new Event("shares-changed"));
 
       // Reset form
       setInvitedUsers([]);
@@ -255,6 +256,7 @@ export function ShareDialog({ open, onClose, fileId, fileName, isFolder }: Share
       setShares(shares.filter((s) => s.id !== shareId));
       if (expandedShareId === shareId) setExpandedShareId(null);
       toast.success(t("shareRevoked"));
+      window.dispatchEvent(new Event("shares-changed"));
     } catch (err) {
       const message = err instanceof Error ? err.message : t("failedToRevokeShare");
       toast.error(message);

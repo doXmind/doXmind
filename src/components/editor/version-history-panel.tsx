@@ -24,7 +24,6 @@ interface Version {
   id: string;
   file_id: string;
   content: string;
-  diff?: string;
   edit_type?: string;
   summary?: string;
   created_at: string;

@@ -210,11 +210,11 @@ async def fork_share(
             file_row = file_result.one_or_none()
 
             forker_name = token.username or "A doXmind user"
-            doc_name = file_row.name if file_row else "Untitled"
+            doc_name = file_row.name.removesuffix(".md") if file_row else "Untitled"
 
             if owner_row and owner_row.email and file_row:
                 frontend_url = get_frontend_url(request)
-                share_url = f"{frontend_url}/community/{share_token}"
+                share_url = f"{frontend_url}/s/{share_token}"
 
                 async def _send_fork_email() -> None:
                     try:
@@ -242,7 +242,7 @@ async def fork_share(
                         type="fork",
                         title=forker_name,
                         message=f'{forker_name} forked your document "{doc_name}"',
-                        link=f"/community/{share_token}",
+                        link=f"/s/{share_token}",
                         actor_id=user_id,
                         actor_name=forker_name,
                     )

@@ -126,7 +126,7 @@ class ShareResponse(BaseModel):
     file_id: str
     file_name: str | None = None
     share_token: str
-    share_url: str  # Frontend URL: /shared/{share_token} or /community/{share_token}
+    share_url: str  # Frontend URL: /s/{share_token}
     expires_at: str | None
     is_active: bool
     is_published: bool
@@ -301,10 +301,7 @@ async def create_share(
     await db.refresh(share)
 
     frontend_url = get_frontend_url(request)
-    if share.visibility == "public":
-        share_url = f"{frontend_url}/community/{share_token}"
-    else:
-        share_url = f"{frontend_url}/shared/{share_token}"
+    share_url = f"{frontend_url}/s/{share_token}"
 
     # Send email notifications for private share invites
     sender_name = token.username or "A doXmind user"
@@ -330,8 +327,8 @@ async def create_share(
                     user_id=uid,
                     type="share_invite",
                     title=sender_name,
-                    message=f'{sender_name} shared "{file.name}" with you',
-                    link=f"/shared/{share_token}",
+                    message=f'{sender_name} shared "{file.name.removesuffix(".md")}" with you',
+                    link=f"/s/{share_token}",
                     actor_id=user_id,
                     actor_name=sender_name,
                 )
@@ -401,11 +398,7 @@ async def list_file_shares(
             id=s.id,
             file_id=s.file_id,
             share_token=s.share_token,
-            share_url=(
-                f"{frontend_url}/community/{s.share_token}"
-                if s.visibility == "public"
-                else f"{frontend_url}/shared/{s.share_token}"
-            ),
+            share_url=f"{frontend_url}/s/{s.share_token}",
             expires_at=s.expires_at.isoformat() if s.expires_at else None,
             is_active=s.is_active,
             is_published=s.is_published,
@@ -470,11 +463,7 @@ async def list_my_shares(
             file_id=s.file_id,
             file_name=file_names.get(s.file_id, "Unknown"),
             share_token=s.share_token,
-            share_url=(
-                f"{frontend_url}/community/{s.share_token}"
-                if s.visibility == "public"
-                else f"{frontend_url}/shared/{s.share_token}"
-            ),
+            share_url=f"{frontend_url}/s/{s.share_token}",
             expires_at=s.expires_at.isoformat() if s.expires_at else None,
             is_active=s.is_active,
             is_published=s.is_published,
@@ -602,7 +591,7 @@ async def list_shared_with_me(
             "share_id": row.id,
             "share_token": row.share_token,
             "title": row.title or row.file_name,
-            "share_url": f"{frontend_url}/shared/{row.share_token}",
+            "share_url": f"{frontend_url}/s/{row.share_token}",
             "is_folder": row.is_folder,
             "view_count": row.view_count,
             "owner": {
@@ -691,7 +680,7 @@ async def publish_share(
     )
 
     frontend_url = get_frontend_url(request)
-    share_url = f"{frontend_url}/community/{share.share_token}"
+    share_url = f"{frontend_url}/s/{share.share_token}"
 
     # Notify followers of the new publication (fire-and-forget)
     asyncio.create_task(
@@ -1121,7 +1110,7 @@ async def invite_users(
     sender_name = token.username or "A doXmind user"
     if recipient_emails and file_info:
         frontend_url = get_frontend_url(request)
-        share_url = f"{frontend_url}/shared/{share.share_token}"
+        share_url = f"{frontend_url}/s/{share.share_token}"
         asyncio.create_task(
             _send_invite_notifications(
                 recipient_emails=recipient_emails,
@@ -1142,8 +1131,8 @@ async def invite_users(
                     user_id=uid,
                     type="share_invite",
                     title=sender_name,
-                    message=f'{sender_name} shared "{file_info.name}" with you',
-                    link=f"/shared/{share.share_token}",
+                    message=f'{sender_name} shared "{file_info.name.removesuffix(".md")}" with you',
+                    link=f"/s/{share.share_token}",
                     actor_id=user_id,
                     actor_name=sender_name,
                 )
@@ -1276,7 +1265,7 @@ async def _notify_followers_of_publish(
                     type="publication",
                     title=publisher_name,
                     message=f'{publisher_name} published "{share_title}"',
-                    link=f"/community/{share_token}",
+                    link=f"/s/{share_token}",
                     actor_id=publisher_id,
                     actor_name=publisher_name,
                 )

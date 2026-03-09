@@ -691,3 +691,46 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* Inline Comment Highlights */
+.ProseMirror .inline-comment-highlight {
+  background-color: rgba(255, 193, 7, 0.15);
+  border-bottom: 2px solid rgba(255, 193, 7, 0.4);
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-radius: 2px;
+}
+
+.ProseMirror .inline-comment-highlight:hover {
+  background-color: rgba(255, 193, 7, 0.28);
+}
+
+.ProseMirror .inline-comment-active {
+  background-color: rgba(255, 193, 7, 0.3);
+  border-bottom-color: rgba(255, 193, 7, 0.7);
+}
+
+.ProseMirror .inline-comment-resolved {
+  background-color: rgba(156, 163, 175, 0.1);
+  border-bottom-color: rgba(156, 163, 175, 0.3);
+  opacity: 0.6;
+}
+
+.dark .ProseMirror .inline-comment-highlight {
+  background-color: rgba(255, 193, 7, 0.12);
+  border-bottom-color: rgba(255, 193, 7, 0.35);
+}
+
+.dark .ProseMirror .inline-comment-highlight:hover {
+  background-color: rgba(255, 193, 7, 0.22);
+}
+
+.dark .ProseMirror .inline-comment-active {
+  background-color: rgba(255, 193, 7, 0.25);
+  border-bottom-color: rgba(255, 193, 7, 0.6);
+}
+
+.dark .ProseMirror .inline-comment-resolved {
+  background-color: rgba(156, 163, 175, 0.08);
+  border-bottom-color: rgba(156, 163, 175, 0.25);
+}

@@ -1447,6 +1447,24 @@
     "deleting": "Deleting...",
     "replyingTo": "Replying to"
   },
+  "inlineComments": {
+    "addComment": "Comment",
+    "newComment": "New Annotation",
+    "commentThread": "Annotation Thread",
+    "writeAnnotation": "Write an annotation...",
+    "writeReply": "Write a reply...",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "resolved": "Resolved",
+    "annotations": "Annotations",
+    "showResolved": "Show resolved",
+    "hideResolved": "Hide resolved",
+    "noAnnotations": "No annotations yet",
+    "selectTextToAnnotate": "Select text to add an annotation",
+    "reply": "reply",
+    "replies": "replies",
+    "loadingReplies": "Loading replies..."
+  },
   "errors": {
     "networkFailed": "Network connection failed",
     "uploadFailed": "Upload failed - check your connection and try again",

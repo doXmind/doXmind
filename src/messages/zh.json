@@ -1447,6 +1447,24 @@
     "deleting": "删除中...",
     "replyingTo": "回复"
   },
+  "inlineComments": {
+    "addComment": "批注",
+    "newComment": "新建批注",
+    "commentThread": "批注线程",
+    "writeAnnotation": "写一条批注...",
+    "writeReply": "写一条回复...",
+    "resolve": "标记解决",
+    "reopen": "重新打开",
+    "resolved": "已解决",
+    "annotations": "批注",
+    "showResolved": "显示已解决",
+    "hideResolved": "隐藏已解决",
+    "noAnnotations": "暂无批注",
+    "selectTextToAnnotate": "选中文字以添加批注",
+    "reply": "条回复",
+    "replies": "条回复",
+    "loadingReplies": "加载回复中..."
+  },
   "errors": {
     "networkFailed": "网络连接失败",
     "uploadFailed": "上传失败 - 请检查网络连接后重试",

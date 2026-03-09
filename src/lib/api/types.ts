@@ -212,6 +212,28 @@ export interface CommentsListResponse {
   has_more: boolean;
 }
 
+// Inline comments (text-anchored annotations)
+
+export interface InlineCommentAnchor {
+  from: number;
+  to: number;
+  text: string;
+  context_before: string | null;
+  context_after: string | null;
+}
+
+export interface InlineCommentResponse extends CommentResponse {
+  anchor: InlineCommentAnchor;
+  is_resolved: boolean;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
+
+export interface InlineCommentsListResponse {
+  comments: InlineCommentResponse[];
+  total: number;
+}
+
 export interface ForkResponse {
   fork_id: string;
   forked_file_id: string;

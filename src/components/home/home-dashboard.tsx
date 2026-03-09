@@ -216,6 +216,18 @@ export function HomeDashboard() {
     });
   }, [user]);
 
+  // Re-fetch shares when they change elsewhere (e.g. ShareDialog create/revoke)
+  useEffect(() => {
+    const handler = () => {
+      api
+        .getMyShares()
+        .then((res) => setShares(res.shares))
+        .catch(() => {});
+    };
+    window.addEventListener("shares-changed", handler);
+    return () => window.removeEventListener("shares-changed", handler);
+  }, []);
+
   const performSearch = useDebouncedCallback(async (q: string) => {
     if (!q.trim()) {
       setSearchResults([]);

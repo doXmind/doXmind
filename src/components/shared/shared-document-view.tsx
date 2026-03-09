@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { SearchBar } from "@/components/editor/search-bar";
@@ -13,9 +13,18 @@ import { ReadingToolbar } from "@/components/shared/reading-toolbar";
 import { ReadingStatsBar } from "@/components/shared/reading-stats-bar";
 import { StickyReadingBar } from "@/components/shared/sticky-reading-bar";
 import { PresentationMode } from "@/components/editor/presentation-mode";
+import { InlineCommentToolbar } from "@/components/shared/inline-comment-toolbar";
+import { InlineCommentPopup } from "@/components/shared/inline-comment-popup";
+import {
+  InlineCommentExtension,
+  type InlineCommentData,
+} from "@/extensions/inline-comment-extension";
+import { useInlineCommentsStore } from "@/stores/inline-comments-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { ArrowLeft } from "lucide-react";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import type { SharedItemResponse, SharedFolderItem } from "@/lib/api";
+import type { InlineCommentResponse } from "@/lib/api/types";
 
 interface SharedDocumentViewProps {
   data: SharedItemResponse;
@@ -23,6 +32,8 @@ interface SharedDocumentViewProps {
   onNavigate?: (path: string | null) => void;
   /** When true, hides headers/outline/stats — just renders the content */
   embedded?: boolean;
+  /** Share token — enables inline comment functionality when provided */
+  shareToken?: string;
 }
 
 export function SharedDocumentView({
@@ -30,14 +41,47 @@ export function SharedDocumentView({
   breadcrumbs,
   onNavigate,
   embedded = false,
+  shareToken,
 }: SharedDocumentViewProps) {
   const t = useTranslations("sharedView");
   const { setEditor } = useEditorRefStore();
   const { setSearchBarOpen } = useLayoutStore();
   const headerRef = useRef<HTMLDivElement>(null);
+  const user = useAuthStore((s) => s.user);
+
+  const enableInlineComments = !!shareToken && !!user;
+
+  // Inline comment state
+  const { threads, activeThreadId, setActiveThread, createComment, loadComments } =
+    useInlineCommentsStore();
+  const [popupState, setPopupState] = useState<{
+    mode: "create" | "view";
+    thread?: InlineCommentResponse;
+    anchorText?: string;
+    position: { top: number; left: number };
+    createFrom?: number;
+    createTo?: number;
+  } | null>(null);
+
+  // Build extensions — include InlineCommentExtension when shareToken is provided
+  const extensions = useMemo(() => {
+    const base = getEditorExtensions({ isMobile: false });
+    if (shareToken) {
+      return [
+        ...base,
+        InlineCommentExtension.configure({
+          onCommentClick: (commentId: string) => {
+            // This is handled via the store-based sync below
+            useInlineCommentsStore.getState().setActiveThread(commentId);
+          },
+        }),
+      ];
+    }
+    return base;
+  }, [shareToken]);
 
   const editor = useEditor({
-    extensions: getEditorExtensions({ isMobile: false }),
+    extensions,
     content: "",
     editable: false,
     immediatelyRender: false,
@@ -105,13 +149,130 @@ export function SharedDocumentView({
     window.document.title = data.name.replace(/\.md$/i, "");
   }, [data.name]);
 
+  // Load inline comments when shareToken is available
+  useEffect(() => {
+    if (shareToken && user) {
+      loadComments(shareToken);
+    }
+  }, [shareToken, user, loadComments]);
+
+  // Sync inline comment decorations with the TipTap editor
+  useEffect(() => {
+    if (!editor || !shareToken || !editor.commands.setInlineComments) return;
+
+    const commentData: InlineCommentData[] = threads.map((t) => ({
+      id: t.id,
+      from: t.anchor.from,
+      to: t.anchor.to,
+      text: t.anchor.text,
+      isResolved: t.is_resolved,
+    }));
+    editor.commands.setInlineComments(commentData);
+  }, [editor, threads, shareToken]);
+
+  // Sync active comment highlight
+  useEffect(() => {
+    if (!editor || !shareToken || !editor.commands.setActiveInlineComment) return;
+    editor.commands.setActiveInlineComment(activeThreadId);
+  }, [editor, activeThreadId, shareToken]);
+
+  // Handle active thread change — open popup
+  useEffect(() => {
+    if (!activeThreadId || !editor) return;
+
+    const thread = threads.find((t) => t.id === activeThreadId);
+    if (!thread) return;
+
+    try {
+      const coords = editor.view.coordsAtPos(thread.anchor.from);
+      setPopupState({
+        mode: "view",
+        thread,
+        position: { top: coords.bottom + 8, left: coords.left },
+      });
+    } catch {
+      // Position out of bounds
+    }
+  }, [activeThreadId, threads, editor]);
+
+  // Handle "Add Comment" from the toolbar
+  const handleAddComment = useCallback(
+    (from: number, to: number, text: string) => {
+      if (!editor) return;
+
+      try {
+        const coords = editor.view.coordsAtPos(from);
+        setPopupState({
+          mode: "create",
+          anchorText: text,
+          position: { top: coords.bottom + 8, left: coords.left },
+          createFrom: from,
+          createTo: to,
+        });
+      } catch {
+        // Position out of bounds
+      }
+    },
+    [editor]
+  );
+
+  const handleClosePopup = useCallback(() => {
+    setPopupState(null);
+    setActiveThread(null);
+  }, [setActiveThread]);
+
+  const handleSubmitCreate = useCallback(
+    async (content: string) => {
+      if (!shareToken || !popupState?.createFrom || !popupState?.createTo) return;
+
+      // Get context before/after from the editor
+      const doc = editor?.state.doc;
+      let contextBefore: string | null = null;
+      let contextAfter: string | null = null;
+      if (doc) {
+        const beforeStart = Math.max(0, popupState.createFrom - 100);
+        contextBefore = doc.textBetween(beforeStart, popupState.createFrom, " ");
+        const afterEnd = Math.min(doc.content.size, popupState.createTo + 100);
+        contextAfter = doc.textBetween(popupState.createTo, afterEnd, " ");
+      }
+
+      await createComment(
+        shareToken,
+        content,
+        popupState.createFrom,
+        popupState.createTo,
+        popupState.anchorText || "",
+        contextBefore,
+        contextAfter
+      );
+      handleClosePopup();
+    },
+    [shareToken, popupState, editor, createComment, handleClosePopup]
+  );
+
   if (embedded) {
     return (
       <div className="bg-background">
-        <div className="mx-auto max-w-none px-0">
+        <div className="relative mx-auto max-w-none px-0">
           <EditorContent editor={editor} />
+          {/* Inline comment toolbar — shows on text selection */}
+          {enableInlineComments && (
+            <InlineCommentToolbar editor={editor} onAddComment={handleAddComment} />
+          )}
         </div>
         <SearchBar />
+        {/* Inline comment popup */}
+        {enableInlineComments && popupState && (
+          <InlineCommentPopup
+            shareToken={shareToken!}
+            mode={popupState.mode}
+            thread={popupState.thread}
+            anchorText={popupState.anchorText}
+            position={popupState.position}
+            onClose={handleClosePopup}
+            onSubmitCreate={handleSubmitCreate}
+          />
+        )}
       </div>
     );
   }
@@ -215,6 +376,10 @@ export function SharedDocumentView({
             {/* Document content */}
             <article className="py-10">
               <EditorContent editor={editor} />
+              {/* Inline comment toolbar — shows on text selection */}
+              {enableInlineComments && (
+                <InlineCommentToolbar editor={editor} onAddComment={handleAddComment} />
+              )}
             </article>
           </div>
         </div>
@@ -231,6 +396,19 @@ export function SharedDocumentView({
 
       {/* Presentation Mode */}
       <PresentationMode title={title} author={data.owner_name || undefined} date={formattedDate} />
+
+      {/* Inline comment popup */}
+      {enableInlineComments && popupState && (
+        <InlineCommentPopup
+          shareToken={shareToken!}
+          mode={popupState.mode}
+          thread={popupState.thread}
+          anchorText={popupState.anchorText}
+          position={popupState.position}
+          onClose={handleClosePopup}
+          onSubmitCreate={handleSubmitCreate}
+        />
+      )}
     </div>
   );
 }

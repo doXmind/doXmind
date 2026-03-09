@@ -219,7 +219,6 @@ class FileVersion(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     file_id = Column(String(36), ForeignKey("files.id"), nullable=False)
     content = Column(Text, nullable=False)
-    diff = Column(Text)  # JSON format diff
     edit_type = Column(String(50))  # "manual" | "ai_edit" | "ai_quick_edit"
     summary = Column(String(500))  # AI-generated change summary
     created_at = Column(DateTime(timezone=True), default=utcnow)
@@ -386,17 +385,6 @@ class ConversationDataFile(Base):
     # Status (local upload)
     status = Column(String(20), default="ready")  # uploading, ready, error
     error_message = Column(Text, nullable=True)
-
-    # Claude Files API integration
-    # For large files, we upload to Claude asynchronously after local upload
-    claude_file_id = Column(String(100), nullable=True)  # Anthropic file ID
-    claude_upload_status = Column(
-        String(20), default="pending"
-    )  # pending, uploading, ready, error, skipped
-    claude_upload_error = Column(Text, nullable=True)
-
-    # Content hash for deduplication (SHA-256)
-    content_hash = Column(String(64), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow)
@@ -627,12 +615,28 @@ class Comment(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
+    # Inline comment anchor fields (NULL = document-level comment)
+    anchor_from = Column(Integer, nullable=True)  # ProseMirror position start
+    anchor_to = Column(Integer, nullable=True)  # ProseMirror position end
+    anchor_text = Column(String(500), nullable=True)  # Selected text for display & fuzzy matching
+    anchor_context_before = Column(String(100), nullable=True)  # 100 chars before selection
+    anchor_context_after = Column(String(100), nullable=True)  # 100 chars after selection
+    is_resolved = Column(Boolean, default=False, nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by = Column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Relationships
     share = relationship("DocumentShare", backref="comments")
-    author = relationship("User", backref="comments")
+    author = relationship("User", foreign_keys=[user_id], backref="comments")
     parent = relationship("Comment", remote_side=[id], backref="replies")
+    resolver = relationship("User", foreign_keys=[resolved_by])
 
-    __table_args__ = (Index("idx_comments_share_created", "share_id", "created_at"),)
+    __table_args__ = (
+        Index("idx_comments_share_created", "share_id", "created_at"),
+        Index("idx_comments_share_anchor", "share_id", "anchor_from"),
+    )
 
 
 class CommentReaction(Base):

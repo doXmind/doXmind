@@ -56,12 +56,16 @@ class CommentService:
         if not share:
             raise NotFoundError(resource="Share", message="Share not found or expired")
 
-        # Count total
+        # Count total (exclude inline comments from document-level listing)
         count_filter = and_(Comment.share_id == share.id)
         if parent_id:
             count_filter = and_(count_filter, Comment.parent_id == parent_id)
         else:
-            count_filter = and_(count_filter, Comment.parent_id.is_(None))
+            count_filter = and_(
+                count_filter,
+                Comment.parent_id.is_(None),
+                Comment.anchor_from.is_(None),  # Exclude inline comments
+            )
 
         count_result = await self.db.execute(select(func.count(Comment.id)).where(count_filter))
         total = count_result.scalar() or 0
@@ -180,11 +184,25 @@ class CommentService:
         content: str,
         parent_id: str | None = None,
         mentions: list[str] | None = None,
+        anchor_from: int | None = None,
+        anchor_to: int | None = None,
+        anchor_text: str | None = None,
+        anchor_context_before: str | None = None,
+        anchor_context_after: str | None = None,
     ) -> dict:
-        """Create a comment."""
+        """Create a comment (document-level or inline)."""
         share = await self._resolve_share_by_token(share_token)
         if not share:
             raise NotFoundError(resource="Share", message="Share not found or expired")
+
+        # Validate anchor fields: all-or-nothing for required fields
+        if anchor_from is not None:
+            if anchor_to is None or anchor_text is None:
+                raise BadRequestError(
+                    message="anchor_to and anchor_text are required when anchor_from is provided"
+                )
+            if anchor_to <= anchor_from:
+                raise BadRequestError(message="anchor_to must be greater than anchor_from")
 
         # Validate parent if threading
         if parent_id:
@@ -209,6 +227,11 @@ class CommentService:
             parent_id=parent_id,
             content=content,
             mentions=validated_mentions,
+            anchor_from=anchor_from,
+            anchor_to=anchor_to,
+            anchor_text=anchor_text,
+            anchor_context_before=anchor_context_before,
+            anchor_context_after=anchor_context_after,
         )
         self.db.add(comment)
 
@@ -235,7 +258,7 @@ class CommentService:
         )
         author = author_result.one_or_none()
 
-        return {
+        result = {
             "id": comment.id,
             "content": comment.content,
             "author": {
@@ -254,6 +277,19 @@ class CommentService:
             "created_at": comment.created_at.isoformat() if comment.created_at else "",
             "updated_at": comment.updated_at.isoformat() if comment.updated_at else "",
         }
+
+        # Include anchor data for inline comments
+        if comment.anchor_from is not None:
+            result["anchor"] = {
+                "from": comment.anchor_from,
+                "to": comment.anchor_to,
+                "text": comment.anchor_text,
+                "context_before": comment.anchor_context_before,
+                "context_after": comment.anchor_context_after,
+            }
+            result["is_resolved"] = comment.is_resolved
+
+        return result
 
     async def update_comment(
         self,
@@ -350,6 +386,219 @@ class CommentService:
 
         await self.db.commit()
         return True
+
+    # =========================================================================
+    # Inline Comments
+    # =========================================================================
+
+    async def list_inline_comments(
+        self,
+        share_token: str,
+        include_resolved: bool = False,
+        current_user_id: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """List inline comments sorted by anchor position."""
+        share = await self._resolve_share_by_token(share_token)
+        if not share:
+            raise NotFoundError(resource="Share", message="Share not found or expired")
+
+        # Base filter: top-level inline comments only (not replies)
+        base_filter = and_(
+            Comment.share_id == share.id,
+            Comment.anchor_from.isnot(None),
+            Comment.parent_id.is_(None),
+        )
+        if not include_resolved:
+            base_filter = and_(base_filter, Comment.is_resolved == False)  # noqa: E712
+
+        # Count
+        count_result = await self.db.execute(
+            select(func.count(Comment.id)).where(base_filter)
+        )
+        total = count_result.scalar() or 0
+
+        # Query inline comments sorted by position
+        query = (
+            select(
+                Comment.id,
+                Comment.content,
+                Comment.parent_id,
+                Comment.mentions,
+                Comment.is_deleted,
+                Comment.created_at,
+                Comment.updated_at,
+                Comment.user_id,
+                Comment.anchor_from,
+                Comment.anchor_to,
+                Comment.anchor_text,
+                Comment.anchor_context_before,
+                Comment.anchor_context_after,
+                Comment.is_resolved,
+                Comment.resolved_at,
+                Comment.resolved_by,
+                User.username.label("author_name"),
+                User.avatar_url.label("author_avatar"),
+                User.avatar_frame.label("author_avatar_frame"),
+                UserSubscription.plan.label("author_plan"),
+            )
+            .join(User, Comment.user_id == User.id)
+            .outerjoin(UserSubscription, UserSubscription.user_id == Comment.user_id)
+            .where(base_filter)
+            .order_by(Comment.anchor_from.asc())
+        )
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        if not rows:
+            return [], total
+
+        comment_ids = [row.id for row in rows]
+
+        # Batch: reply counts
+        reply_counts_result = await self.db.execute(
+            select(
+                Comment.parent_id,
+                func.count(Comment.id).label("reply_count"),
+            )
+            .where(Comment.parent_id.in_(comment_ids))
+            .group_by(Comment.parent_id)
+        )
+        reply_counts = {row.parent_id: row.reply_count for row in reply_counts_result.all()}
+
+        # Batch: reactions
+        reactions_result = await self.db.execute(
+            select(
+                CommentReaction.comment_id,
+                CommentReaction.emoji,
+                func.count(CommentReaction.id).label("count"),
+            )
+            .where(CommentReaction.comment_id.in_(comment_ids))
+            .group_by(CommentReaction.comment_id, CommentReaction.emoji)
+        )
+        reactions_by_comment: dict[str, list[dict]] = {}
+        for r in reactions_result.all():
+            reactions_by_comment.setdefault(r.comment_id, []).append(
+                {"emoji": r.emoji, "count": r.count, "has_reacted": False}
+            )
+
+        if current_user_id:
+            user_reactions_result = await self.db.execute(
+                select(CommentReaction.comment_id, CommentReaction.emoji).where(
+                    CommentReaction.comment_id.in_(comment_ids),
+                    CommentReaction.user_id == current_user_id,
+                )
+            )
+            user_reacted = {
+                (row.comment_id, row.emoji) for row in user_reactions_result.all()
+            }
+            for cid, reaction_list in reactions_by_comment.items():
+                for reaction in reaction_list:
+                    if (cid, reaction["emoji"]) in user_reacted:
+                        reaction["has_reacted"] = True
+
+        # Build response
+        comments = []
+        for row in rows:
+            comment = {
+                "id": row.id,
+                "content": "[deleted]" if row.is_deleted else row.content,
+                "author": {
+                    "id": row.user_id if not row.is_deleted else None,
+                    "username": None if row.is_deleted else row.author_name,
+                    "avatar_url": None if row.is_deleted else row.author_avatar,
+                    "avatar_frame": None if row.is_deleted else row.author_avatar_frame,
+                    "plan": None if row.is_deleted else (row.author_plan or "free"),
+                },
+                "parent_id": row.parent_id,
+                "mentions": row.mentions if not row.is_deleted else None,
+                "reactions": reactions_by_comment.get(row.id, []),
+                "reply_count": reply_counts.get(row.id, 0),
+                "is_deleted": row.is_deleted,
+                "is_edited": (
+                    row.updated_at > row.created_at if row.updated_at and row.created_at else False
+                ),
+                "created_at": row.created_at.isoformat() if row.created_at else "",
+                "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+                "anchor": {
+                    "from": row.anchor_from,
+                    "to": row.anchor_to,
+                    "text": row.anchor_text,
+                    "context_before": row.anchor_context_before,
+                    "context_after": row.anchor_context_after,
+                },
+                "is_resolved": row.is_resolved,
+                "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+                "resolved_by": row.resolved_by,
+            }
+            comments.append(comment)
+
+        return comments, total
+
+    async def resolve_comment(
+        self,
+        share_token: str,
+        comment_id: str,
+        user_id: str,
+    ) -> dict:
+        """Mark an inline comment as resolved."""
+        share = await self._resolve_share_by_token(share_token)
+        if not share:
+            raise NotFoundError(resource="Share", message="Share not found or expired")
+
+        result = await self.db.execute(
+            select(Comment).where(
+                Comment.id == comment_id,
+                Comment.share_id == share.id,
+                Comment.anchor_from.isnot(None),
+            )
+        )
+        comment = result.scalar_one_or_none()
+        if not comment:
+            raise NotFoundError(resource="Comment", message="Inline comment not found")
+
+        # Permission: author or share owner
+        if comment.user_id != user_id and share.user_id != user_id:
+            raise ForbiddenError(message="Only comment author or document owner can resolve")
+
+        comment.is_resolved = True
+        comment.resolved_at = utcnow()
+        comment.resolved_by = user_id
+        await self.db.commit()
+
+        return {"id": comment.id, "is_resolved": True}
+
+    async def unresolve_comment(
+        self,
+        share_token: str,
+        comment_id: str,
+        user_id: str,
+    ) -> dict:
+        """Re-open a resolved inline comment."""
+        share = await self._resolve_share_by_token(share_token)
+        if not share:
+            raise NotFoundError(resource="Share", message="Share not found or expired")
+
+        result = await self.db.execute(
+            select(Comment).where(
+                Comment.id == comment_id,
+                Comment.share_id == share.id,
+                Comment.anchor_from.isnot(None),
+            )
+        )
+        comment = result.scalar_one_or_none()
+        if not comment:
+            raise NotFoundError(resource="Comment", message="Inline comment not found")
+
+        if comment.user_id != user_id and share.user_id != user_id:
+            raise ForbiddenError(message="Only comment author or document owner can unresolve")
+
+        comment.is_resolved = False
+        comment.resolved_at = None
+        comment.resolved_by = None
+        await self.db.commit()
+
+        return {"id": comment.id, "is_resolved": False}
 
     # =========================================================================
     # Reactions

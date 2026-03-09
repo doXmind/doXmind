@@ -13,6 +13,7 @@ import "./kb";
 import "./shares";
 import "./community";
 import "./comments";
+import "./inline-comments";
 import "./data-files";
 import "./global-agent";
 import "./notifications";
@@ -42,6 +43,9 @@ export type {
   CommentReactionSummary,
   CommentResponse,
   CommentsListResponse,
+  InlineCommentAnchor,
+  InlineCommentResponse,
+  InlineCommentsListResponse,
   ForkResponse,
   ForkInfo,
   UserProfileResponse,

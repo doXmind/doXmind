@@ -8,7 +8,7 @@ and passed directly to the API as inline content.
 """
 
 import asyncio
-import hashlib
+
 import logging
 import os
 import tempfile
@@ -128,9 +128,6 @@ async def upload_data_file(
     # Get MIME type
     mime_type = MIME_TYPES.get(ext, file.content_type)
 
-    # Calculate content hash for deduplication
-    content_hash = hashlib.sha256(content).hexdigest()
-
     # Parse file for preview (if applicable)
     parser = get_data_parser_service()
     parse_result = await parser.parse_file(content, filename, mime_type)
@@ -160,7 +157,6 @@ async def upload_data_file(
         column_names=parse_result.get("column_names"),
         row_count=parse_result.get("row_count", 0),
         status="ready",
-        content_hash=content_hash,
     )
 
     db.add(data_file)

@@ -47,7 +47,7 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
     : "";
 
   return (
-    <Link href={`/community/${item.share_token}`} className="group block">
+    <Link href={`/s/${item.share_token}`} className="group block">
       <motion.div
         className="relative flex h-full flex-col rounded-xl border border-border bg-card p-5 transition-colors duration-200 hover:bg-accent/50"
         whileHover={{ y: -2 }}

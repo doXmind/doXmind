@@ -98,9 +98,7 @@ function FeedCard({
     e.preventDefault();
     e.stopPropagation();
     try {
-      await navigator.clipboard.writeText(
-        `${window.location.origin}/community/${item.share_token}`
-      );
+      await navigator.clipboard.writeText(`${window.location.origin}/s/${item.share_token}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success(t("linkCopied"));
@@ -113,7 +111,7 @@ function FeedCard({
     // Don't navigate if user clicked an interactive element inside the card
     const target = e.target as HTMLElement;
     if (target.closest("a, button")) return;
-    router.push(`/community/${item.share_token}`);
+    router.push(`/s/${item.share_token}`);
   };
 
   const cleanedPreview = item.content_preview ? stripPreviewBlocks(item.content_preview) : "";
@@ -141,7 +139,7 @@ function FeedCard({
           role="link"
           tabIndex={0}
           onKeyDown={(e) => {
-            if (e.key === "Enter") router.push(`/community/${item.share_token}`);
+            if (e.key === "Enter") router.push(`/s/${item.share_token}`);
           }}
         >
           {/* Author row: avatar + name + time + edit */}
