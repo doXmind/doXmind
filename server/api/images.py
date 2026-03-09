@@ -164,6 +164,33 @@ async def upload_image(
     return {"url": url, "filename": filename, "size": len(content)}
 
 
+@router.get("/avatars/{user_id}/{filename}")
+async def get_avatar(user_id: str, filename: str):
+    """Serve a user avatar image from S3. Avatars are stored separately from editor images."""
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise BadRequestError(message="Invalid filename")
+
+    if ".." in user_id or "/" in user_id or "\\" in user_id:
+        raise BadRequestError(message="Invalid user ID")
+
+    s3_key = f"avatars/{user_id}/{filename}"
+
+    storage = get_storage_service()
+    loop = asyncio.get_event_loop()
+    try:
+        data, content_type = await loop.run_in_executor(None, storage.download, s3_key)
+    except FileNotFoundError:
+        raise NotFoundError(message="Image not found")
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    )
+
+
 @router.get("/{user_id}/{filename}")
 async def get_image(user_id: str, filename: str):
     """Serve an uploaded image from S3."""

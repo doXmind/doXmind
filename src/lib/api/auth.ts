@@ -27,6 +27,8 @@ declare module "./client" {
       website?: string;
       social_links?: { github?: string; twitter?: string; linkedin?: string };
     }): Promise<User>;
+    uploadAvatar(file: File): Promise<User>;
+    removeAvatar(): Promise<User>;
     logout(): Promise<void>; // Changed from void to Promise<void> (dual-token)
     deleteAccount(): Promise<MessageResponse>;
     isLoggedIn(): boolean;
@@ -223,6 +225,57 @@ ApiClient.prototype.updateProfile = async function (
   return this.request<User>("/api/auth/me", {
     method: "PATCH",
     body: JSON.stringify(updates),
+  });
+};
+
+/**
+ * Upload a new avatar image. Returns updated user with new avatar_url.
+ * Does NOT count against user storage quota.
+ */
+ApiClient.prototype.uploadAvatar = async function (this: ApiClient, file: File): Promise<User> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const authHeaders = this.getAuthHeaders();
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch(`${this.baseUrl}/api/auth/avatar`, {
+      method: "POST",
+      headers: authHeaders,
+      body: formData,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      if (response.status === 413) {
+        throw new Error("Image too large (max 2MB)");
+      }
+      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(error.detail || "Failed to upload avatar");
+    }
+
+    return response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Upload timed out - check your connection");
+    }
+    throw error;
+  }
+};
+
+/**
+ * Remove current avatar. Returns updated user with avatar_url cleared.
+ */
+ApiClient.prototype.removeAvatar = async function (this: ApiClient): Promise<User> {
+  return this.request<User>("/api/auth/me", {
+    method: "PATCH",
+    body: JSON.stringify({ avatar_url: "" }),
   });
 };
 

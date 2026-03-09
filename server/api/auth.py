@@ -3,14 +3,18 @@
 Provides user registration, login, OAuth, and token management.
 """
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
+import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Cookie, Depends, Query, Request
+from fastapi import APIRouter, Cookie, Depends, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -798,6 +802,100 @@ async def update_profile(
 
     if not success or not user:
         raise BadRequestError(message=message)
+
+    return user_to_response(user)
+
+
+# =============================================================================
+# Avatar Upload
+# =============================================================================
+
+_AVATAR_ALLOWED_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+_AVATAR_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+_AVATAR_MAX_SIZE = 2 * 1024 * 1024  # 2MB
+_avatar_logger = logging.getLogger(__name__)
+
+
+@router.post("/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile,
+    token_data: TokenData = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a user avatar image.
+
+    Dedicated endpoint that does NOT count against user storage quota.
+    Automatically deletes the previous avatar from S3 when a new one is uploaded.
+    Max file size: 2MB.
+    """
+    from services.storage_service import get_storage_service
+
+    user_id = token_data.sub
+
+    # Validate content type
+    if file.content_type not in _AVATAR_ALLOWED_TYPES:
+        raise BadRequestError(
+            message=f"Invalid file type: {file.content_type}. "
+            f"Allowed: PNG, JPG, GIF, WebP"
+        )
+
+    # Validate extension
+    if file.filename:
+        ext = Path(file.filename).suffix.lower()
+        if ext not in _AVATAR_ALLOWED_EXTENSIONS:
+            raise BadRequestError(
+                message=f"Invalid file extension: {ext}. Allowed: PNG, JPG, GIF, WebP"
+            )
+    else:
+        ext_map = {
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+        }
+        ext = ext_map.get(file.content_type, ".png")
+
+    # Read and validate size
+    content = await file.read()
+    if len(content) > _AVATAR_MAX_SIZE:
+        raise BadRequestError(
+            message=f"File too large. Maximum avatar size: {_AVATAR_MAX_SIZE // (1024 * 1024)}MB"
+        )
+
+    # Get current user to find old avatar
+    user = await db.get(User, user_id)
+    if not user:
+        raise NotFoundError(resource="User", resource_id=user_id)
+
+    old_avatar_url = user.avatar_url
+
+    # Upload new avatar to S3
+    filename = f"avatar_{uuid.uuid4().hex}{ext}"
+    s3_key = f"avatars/{user_id}/{filename}"
+    content_type = file.content_type or "application/octet-stream"
+
+    storage = get_storage_service()
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, storage.upload, s3_key, content, content_type)
+
+    # Update user avatar_url
+    new_avatar_url = f"/api/images/avatars/{user_id}/{filename}"
+    user.avatar_url = new_avatar_url
+    user.updated_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(user)
+
+    # Delete old avatar from S3 (best-effort, don't fail if it errors)
+    if old_avatar_url and old_avatar_url.startswith("/api/images/avatars/"):
+        try:
+            # Extract S3 key from URL: /api/images/avatars/{user_id}/{filename} → avatars/{user_id}/{filename}
+            old_s3_key = old_avatar_url.removeprefix("/api/images/")
+            await loop.run_in_executor(None, storage.delete, old_s3_key)
+            _avatar_logger.info(f"Deleted old avatar: {old_s3_key}")
+        except Exception:
+            _avatar_logger.warning(f"Failed to delete old avatar: {old_avatar_url}", exc_info=True)
+
+    _avatar_logger.info(f"Avatar uploaded for user {user_id}: {new_avatar_url} ({len(content)} bytes)")
 
     return user_to_response(user)
 
