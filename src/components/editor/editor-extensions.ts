@@ -124,7 +124,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Mermaid diagram blocks
     MermaidChart,
 
-    // Auto-lift atom blocks (mermaid, math, image) out of list items
+    // Auto-lift atom blocks (mermaid, math, image, hr, toc) out of list items
     AtomBlockLiftPlugin,
 
     // Callout blocks (info, warning, error, tip)

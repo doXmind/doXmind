@@ -497,6 +497,25 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       }
 
       editor.view.dispatch(tr);
+
+      // Flash highlight on the moved block
+      requestAnimationFrame(() => {
+        try {
+          const movedDom = editor.view.nodeDOM(newBlockPos) as HTMLElement | null;
+          if (movedDom) {
+            movedDom.classList.add("block-just-moved");
+            movedDom.addEventListener(
+              "animationend",
+              () => {
+                movedDom.classList.remove("block-just-moved");
+              },
+              { once: true }
+            );
+          }
+        } catch {
+          // Block DOM not available
+        }
+      });
     },
     [editor]
   );
@@ -574,13 +593,12 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
           const dom = editor.view.nodeDOM(ds.sourceFrom) as HTMLElement | null;
           if (dom) {
             const ghost = dom.cloneNode(true) as HTMLElement;
+            ghost.className = "block-drag-ghost";
             ghost.style.position = "fixed";
             ghost.style.zIndex = "9999";
-            ghost.style.opacity = "0.7";
             ghost.style.pointerEvents = "none";
             ghost.style.maxWidth = "400px";
             ghost.style.width = `${dom.getBoundingClientRect().width}px`;
-            ghost.style.transform = "rotate(1deg)";
             ghost.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)";
             ghost.style.borderRadius = "4px";
             ghost.style.background = "var(--popover, #fff)";

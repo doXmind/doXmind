@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion, useAnimationControls } from "framer-motion";
+import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface AnimatedLogoProps {
@@ -36,6 +36,7 @@ const GlitchContext = React.createContext<{
 export function GlitchProvider({ children }: { children: React.ReactNode }) {
   const subscribersRef = React.useRef<Set<() => void>>(new Set());
   const isMounted = React.useRef(false);
+  const shouldReduceMotion = useReducedMotion();
 
   const subscribe = React.useCallback((callback: () => void) => {
     subscribersRef.current.add(callback);
@@ -45,6 +46,8 @@ export function GlitchProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => {
+    if (shouldReduceMotion) return;
+
     isMounted.current = true;
 
     const runGlitchLoop = async () => {
@@ -65,7 +68,7 @@ export function GlitchProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted.current = false;
     };
-  }, []);
+  }, [shouldReduceMotion]);
 
   return <GlitchContext.Provider value={{ subscribe }}>{children}</GlitchContext.Provider>;
 }

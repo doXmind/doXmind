@@ -10,6 +10,7 @@ import { useDemoStore } from "@/stores/demo-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useEditSnapshotStore } from "@/stores/edit-snapshot-store";
 import type { ChatStreamEvent } from "@/types/stream-events";
 import type { EditOperation } from "@/types";
 
@@ -85,6 +86,9 @@ export function useInlineAI() {
 
       const effectiveFileContent =
         liveMarkdown !== null ? liveMarkdown : file.contentMarkdown || file.content;
+
+      // Preserve the exact markdown sent to the server for diff-review matching
+      useEditSnapshotStore.getState().setSnapshot(file.id, effectiveFileContent);
 
       startInlineAIResponse(requestId, intent === "insert" ? "write" : intent);
       setIsStreaming(true);

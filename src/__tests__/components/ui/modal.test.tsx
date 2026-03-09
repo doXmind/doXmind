@@ -2,7 +2,7 @@
  * Tests for Modal components
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { useState } from "react";
@@ -158,7 +158,9 @@ describe("Modal", () => {
         </Modal>
       );
 
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
     });
 
     it("calls onClose when backdrop is clicked", async () => {

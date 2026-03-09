@@ -18,6 +18,7 @@ import {
   findTextInDocument,
   findTextViaMarkdown,
   findAtomNode,
+  findTextFuzzy,
   clearMarkdownCache,
 } from "./position-mapping";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -129,6 +130,23 @@ export const DiffReviewExtension = Extension.create({
             // We replicate this on the frontend so we can find old_str in the correct state.
             let cumulativeMarkdown = originalMarkdown;
 
+            // Advance cumulative base past accepted hunks.
+            // After accepting hunks (which modifies the document), the plugin state
+            // only contains pending hunks. But cumulativeMarkdown must reflect accepted
+            // changes so remaining pending hunks can be correctly matched.
+            const allSessionHunks = useDiffReviewStore.getState().diffSession?.hunks || [];
+            for (const sh of allSessionHunks) {
+              if (sh.status === "accepted" && sh.oldContent && cumulativeMarkdown) {
+                const idx = findInMarkdown(cumulativeMarkdown, sh.oldContent, sh.markdownOffset);
+                if (idx !== -1) {
+                  cumulativeMarkdown =
+                    cumulativeMarkdown.slice(0, idx) +
+                    (sh.newContent || "") +
+                    cumulativeMarkdown.slice(idx + sh.oldContent.length);
+                }
+              }
+            }
+
             for (const hunk of pluginState.hunks) {
               // Skip non-pending hunks but still advance cumulative markdown
               if (hunk.status !== "pending") {
@@ -208,6 +226,11 @@ export const DiffReviewExtension = Extension.create({
                   }
                 }
 
+                // Tier 4: Fuzzy whitespace-normalised matching
+                if (!found) {
+                  found = findTextFuzzy(state.doc, hunk.oldContent, usedPositions);
+                }
+
                 if (found) {
                   from = found.from;
                   to = found.to;
@@ -216,12 +239,58 @@ export const DiffReviewExtension = Extension.create({
                   hunk.resolvedFrom = from;
                   hunk.resolvedTo = to;
                 } else {
-                  console.error(`[DiffReview] All matching strategies failed for hunk ${hunk.id}`, {
+                  console.warn(`[DiffReview] All matching strategies failed for hunk ${hunk.id}`, {
                     oldContent: hunk.oldContent?.slice(0, 200),
                     docTextLength: state.doc.textContent.length,
                     hasMarkdown: !!originalMarkdown,
                     hasCumulativeMarkdown: cumulativeMarkdown !== originalMarkdown,
                   });
+                  hunk.matchFailed = true;
+
+                  // Show user-visible warning widget at document start
+                  const warningPos = Math.min(1, state.doc.content.size);
+                  const preview = (hunk.oldContent || "").slice(0, 80).replace(/\n/g, " ");
+                  const truncated = hunk.oldContent && hunk.oldContent.length > 80;
+
+                  decorations.push(
+                    Decoration.widget(
+                      warningPos,
+                      () => {
+                        const widget = document.createElement("div");
+                        widget.className = "diff-match-failed-notice";
+                        widget.innerHTML =
+                          '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin:4px 0;' +
+                          "border-radius:6px;border:1px solid var(--amber-200, #fde68a);" +
+                          'background:var(--amber-50, #fffbeb);font-size:13px;">' +
+                          '<span style="color:var(--amber-600, #d97706);flex-shrink:0;">&#9888;</span>' +
+                          '<span style="flex:1;color:var(--amber-800, #92400e);overflow:hidden;' +
+                          'text-overflow:ellipsis;white-space:nowrap;">Could not locate: &quot;' +
+                          preview.replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+                          (truncated ? "\u2026" : "") +
+                          "&quot;</span>" +
+                          '<button type="button" class="diff-match-skip-btn" data-hunk-id="' +
+                          hunk.id +
+                          '" style="padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;' +
+                          "cursor:pointer;border:none;background:var(--amber-200, #fde68a);" +
+                          'color:var(--amber-900, #78350f);">Skip</button>' +
+                          "</div>";
+
+                        const skipBtn = widget.querySelector(".diff-match-skip-btn");
+                        if (skipBtn) {
+                          skipBtn.addEventListener("click", (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            document.dispatchEvent(
+                              new CustomEvent("diff-reject", { detail: { hunkId: hunk.id } })
+                            );
+                          });
+                        }
+                        return widget;
+                      },
+                      { side: -1, key: `match-failed-${hunk.id}` }
+                    )
+                  );
+
                   // Advance cumulative markdown even for failed hunks
                   if (hunk.oldContent && cumulativeMarkdown) {
                     const idx = findInMarkdown(
@@ -538,11 +607,15 @@ export const DiffReviewExtension = Extension.create({
                   )
                 : null;
 
-              // Try cumulative markdown for sequential edits
+              // Try cumulative markdown for sequential edits.
+              // Read full hunk list from Zustand store (includes accepted/rejected hunks
+              // that were removed from plugin state by the useEffect sync).
               if (!found && acceptOriginalMarkdown && diffSession) {
                 let cumMd = acceptOriginalMarkdown;
-                for (const h of pluginState.hunks) {
+                const allHunks = diffSession.hunks;
+                for (const h of allHunks) {
                   if (h.id === hunk.id) break;
+                  if (h.status === "rejected") continue; // rejected = no change applied
                   if (h.oldContent && cumMd) {
                     const idx = findInMarkdown(cumMd, h.oldContent, h.markdownOffset);
                     if (idx !== -1) {
@@ -580,6 +653,10 @@ export const DiffReviewExtension = Extension.create({
                     found = findAtomNode(state.doc, fragmentDoc);
                   }
                 }
+              }
+              // Tier 4: Fuzzy whitespace-normalised matching
+              if (!found) {
+                found = findTextFuzzy(state.doc, hunk.oldContent);
               }
               if (found) {
                 from = found.from;

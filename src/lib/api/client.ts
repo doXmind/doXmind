@@ -37,11 +37,13 @@ export class ApiClient {
           this.accessToken = token;
           this.tokenExpiry = expiry;
         } else {
-          // Token expired, remove it
+          // Token expired, remove it and clear auth cookie to prevent redirect loops
           localStorage.removeItem(TOKEN_STORAGE_KEY);
+          document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
         }
       } catch {
         localStorage.removeItem(TOKEN_STORAGE_KEY);
+        document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
       }
     }
   }

@@ -25,8 +25,16 @@ export function FilesSidebar() {
   const t = useTranslations("sidebar");
   const locale = useLocale();
   const router = useRouter();
-  const { files, createFile, createFolder, importFile, currentFolderId, getFolders } =
-    useFileStore();
+  const {
+    files,
+    createFile,
+    createFolder,
+    importFile,
+    currentFolderId,
+    getFolders,
+    isLoading,
+    isSynced,
+  } = useFileStore();
   const { openCommandPalette } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
@@ -157,7 +165,7 @@ export function FilesSidebar() {
       {/* File List with Folders */}
       <ScrollArea className="flex-1">
         <div className="space-y-1 px-2 pb-2">
-          <FolderTree />
+          {isLoading && !isSynced ? <FileListSkeleton /> : <FolderTree />}
         </div>
       </ScrollArea>
 
@@ -186,6 +194,26 @@ export function FilesSidebar() {
         onClose={() => setIsTemplatePickerOpen(false)}
         onSelect={handleTemplateSelect}
       />
+    </div>
+  );
+}
+
+/** Skeleton placeholder shown while file list loads from backend */
+function FileListSkeleton() {
+  return (
+    <div className="space-y-1">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="flex items-center gap-2 rounded-md px-2 py-2">
+          <div className="h-4 w-4 animate-pulse rounded bg-muted" />
+          <div className="flex flex-1 flex-col gap-1">
+            <div
+              className="h-3.5 animate-pulse rounded bg-muted"
+              style={{ width: `${50 + i * 12}%` }}
+            />
+            <div className="h-2.5 w-16 animate-pulse rounded bg-muted/60" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

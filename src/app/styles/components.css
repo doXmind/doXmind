@@ -164,6 +164,28 @@
   position: relative;
 }
 
+@keyframes dropIndicatorLine {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+@keyframes dropIndicatorDot {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 /* Line ABOVE the target block (cursor in top half) */
 .ProseMirror .block-drop-before::before {
   content: "";
@@ -176,6 +198,8 @@
   border-radius: 2px;
   pointer-events: none;
   z-index: 10;
+  transform-origin: left center;
+  animation: dropIndicatorLine 0.15s ease-out both;
 }
 
 /* Circle on the left end of the "before" line */
@@ -191,6 +215,7 @@
   background: hsl(var(--background));
   pointer-events: none;
   z-index: 10;
+  animation: dropIndicatorDot 0.15s ease-out 0.05s both;
 }
 
 /* Line BELOW the target block (cursor in bottom half) */
@@ -205,6 +230,8 @@
   border-radius: 2px;
   pointer-events: none;
   z-index: 10;
+  transform-origin: left center;
+  animation: dropIndicatorLine 0.15s ease-out both;
 }
 
 /* Circle on the left end of the "after" line */
@@ -220,6 +247,7 @@
   background: hsl(var(--background));
   pointer-events: none;
   z-index: 10;
+  animation: dropIndicatorDot 0.15s ease-out 0.05s both;
 }
 
 /* Active block highlight when action menu is open (like Notion's blue selection) */
@@ -244,6 +272,22 @@
 /* Dragging state - fade source block */
 .ProseMirror.is-block-dragging {
   cursor: grabbing;
+}
+
+/* Ghost element entrance animation */
+@keyframes dragGhostIn {
+  from {
+    opacity: 0;
+    transform: rotate(0deg) scale(0.95);
+  }
+  to {
+    opacity: 0.7;
+    transform: rotate(1deg) scale(1);
+  }
+}
+
+.block-drag-ghost {
+  animation: dragGhostIn 0.15s ease-out both;
 }
 
 /* Highlight flash after block is moved */

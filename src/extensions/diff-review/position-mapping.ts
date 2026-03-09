@@ -86,6 +86,26 @@ function mapOffsetsToPosition(
     if (from !== null && to !== null) break;
   }
 
+  // Boundary fallback: if startOff falls exactly on a text node boundary,
+  // use the start of the matching text node
+  if (from === null && entries.length > 0) {
+    for (const tp of entries) {
+      if (tp.start === startOff) {
+        from = tp.pos;
+        blockStart = tp.blockPos;
+        break;
+      }
+    }
+  }
+
+  // Similarly for endOff at the exact end of the last entry
+  if (to === null && entries.length > 0) {
+    const last = entries[entries.length - 1];
+    if (endOff === last.end) {
+      to = last.pos + (endOff - last.start);
+    }
+  }
+
   if (from !== null && to !== null && blockStart !== null) {
     return { from, to, blockStart };
   }
@@ -359,6 +379,29 @@ export function findTextViaMarkdown(
       // Direct mapping failed (offset at node boundary) — try next occurrence
     }
 
+    // Slow path: reference text differs from actual doc (user edited during streaming,
+    // or previous hunks were accepted). Extract the text identified by the reference
+    // diff and search for it directly in the actual document.
+    if (refOldText !== actualText && start < oldEnd) {
+      const removedText = refOldText.slice(start, oldEnd);
+      if (removedText.length >= 3) {
+        // Resolve block type from reference doc for disambiguation
+        const refEntries = buildTextPositionMap(refCache.doc);
+        const refPos = mapOffsetsToPosition(start, oldEnd, refEntries);
+        let prefBlockType: string | null = null;
+        if (refPos) {
+          resolveBlockInfo(refCache.doc, refPos);
+          prefBlockType = refPos.blockTypeName || null;
+        }
+
+        const textFound = findTextInDocument(doc, removedText, excludePositions, prefBlockType);
+        if (textFound) {
+          resolveBlockInfo(doc, textFound);
+          return textFound;
+        }
+      }
+    }
+
     searchFrom = mdIdx + 1;
   }
 
@@ -467,4 +510,68 @@ function attrsMatch(
     default:
       return JSON.stringify(a) === JSON.stringify(b);
   }
+}
+
+/**
+ * Fuzzy matching fallback (Tier 4).
+ *
+ * When exact matching fails, normalise whitespace (`\s+` → single space) in both
+ * the search text and the document textContent, then attempt a substring match.
+ * Positions are mapped back through the original (un-normalised) document text.
+ */
+export function findTextFuzzy(
+  doc: PMNode,
+  oldContent: string,
+  excludePositions?: Set<number>
+): TextPosition | null {
+  const editor = useEditorRefStore.getState().editor;
+  if (!editor?.markdown) return null;
+
+  let searchText: string;
+  try {
+    const json = editor.markdown.parse(oldContent);
+    const fragmentDoc = doc.type.schema.nodeFromJSON(json);
+    searchText = fragmentDoc.textContent;
+  } catch {
+    return null;
+  }
+
+  if (!searchText || searchText.length < 5) return null;
+
+  const normalizedSearch = searchText.replace(/\s+/g, " ").trim();
+  if (!normalizedSearch) return null;
+
+  const docText = doc.textContent;
+
+  // Build mapping from normalised index → original textContent index.
+  // Runs of whitespace in original text collapse to a single space in normalised.
+  const normToOrig: number[] = [];
+  for (let oi = 0; oi < docText.length; oi++) {
+    if (/\s/.test(docText[oi])) {
+      // Only the first char of a whitespace run maps to the normalised space
+      if (oi === 0 || !/\s/.test(docText[oi - 1])) {
+        normToOrig.push(oi);
+      }
+      // subsequent whitespace chars are skipped in normalised text
+    } else {
+      normToOrig.push(oi);
+    }
+  }
+
+  const normalizedDoc = docText.replace(/\s+/g, " ");
+  const nIdx = normalizedDoc.indexOf(normalizedSearch);
+  if (nIdx === -1) return null;
+
+  const origStart = normToOrig[nIdx] ?? 0;
+  const lastNormIdx = nIdx + normalizedSearch.length - 1;
+  const origEnd = (normToOrig[lastNormIdx] ?? origStart) + 1;
+
+  const entries = buildTextPositionMap(doc);
+  const pos = mapOffsetsToPosition(origStart, origEnd, entries);
+  if (pos && !excludePositions?.has(pos.from)) {
+    resolveBlockInfo(doc, pos);
+    return pos;
+  }
+
+  return null;
 }

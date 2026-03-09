@@ -1,6 +1,7 @@
 import { Node, mergeAttributes, InputRule } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ImageNodeView } from "@/components/editor/image-node-view";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -11,47 +12,111 @@ export interface ResizableImageOptions {
   allowBase64: boolean;
 }
 
+/**
+ * Plugin that manages upload placeholder decorations.
+ * Uses Decoration.widget so the placeholder exists only in the view layer,
+ * never mutating the document. DecorationSet.map() automatically tracks
+ * positions through document changes, fixing the position drift bug.
+ */
+const ImageUploadPlaceholderKey = new PluginKey<DecorationSet>("imageUploadPlaceholder");
+
+function createImageUploadPlaceholderPlugin() {
+  return new Plugin({
+    key: ImageUploadPlaceholderKey,
+    state: {
+      init() {
+        return DecorationSet.empty;
+      },
+      apply(tr, set) {
+        // Map existing decorations through document changes
+        set = set.map(tr.mapping, tr.doc);
+
+        const action = tr.getMeta(ImageUploadPlaceholderKey);
+        if (action?.type === "add") {
+          const deco = Decoration.widget(
+            action.pos,
+            () => {
+              const el = document.createElement("div");
+              el.className =
+                "image-upload-placeholder flex items-center gap-2 py-3 px-4 my-1 " +
+                "rounded-lg bg-muted/50 text-muted-foreground text-sm";
+              el.innerHTML =
+                '<div class="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>' +
+                "Uploading image\u2026";
+              return el;
+            },
+            { id: action.id, side: 0 }
+          );
+          set = set.add(tr.doc, [deco]);
+        } else if (action?.type === "remove") {
+          const toRemove = set.find(undefined, undefined, (spec) => spec.id === action.id);
+          if (toRemove.length > 0) {
+            set = set.remove(toRemove);
+          }
+        }
+        return set;
+      },
+    },
+    props: {
+      decorations(state) {
+        return this.getState(state);
+      },
+    },
+  });
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function uploadAndInsertImage(file: File, view: any, pos?: number) {
   if (!file.type.startsWith("image/")) return false;
 
   const altText = file.name.replace(/\.[^.]+$/, "");
   const { state } = view;
-
-  // Insert loading placeholder immediately
-  const placeholderText = "🔄 Uploading image...";
-  const placeholder = state.schema.text(placeholderText);
   const insertPos = pos !== undefined ? pos : state.selection.from;
+  const uploadId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  let tr = state.tr.insert(insertPos, placeholder);
+  // Add placeholder decoration (no document mutation — position tracks automatically)
+  const tr = state.tr.setMeta(ImageUploadPlaceholderKey, {
+    type: "add",
+    pos: insertPos,
+    id: uploadId,
+  });
   view.dispatch(tr);
-
-  // Calculate the range where placeholder was inserted
-  const placeholderFrom = insertPos;
-  const placeholderTo = insertPos + placeholderText.length;
 
   try {
     const result = await api.uploadImage(file);
 
-    // Remove placeholder and insert actual image
+    // Read the decoration's current tracked position
     const currentState = view.state;
+    const decoSet = ImageUploadPlaceholderKey.getState(currentState);
+    const placeholders = decoSet?.find(undefined, undefined, (spec) => spec.id === uploadId) || [];
+    const trackedPos = placeholders.length > 0 ? placeholders[0].from : insertPos;
+
+    // Insert image at tracked position and remove placeholder decoration
     const imageNode = currentState.schema.nodes.image.create({
       src: result.url,
       alt: altText,
     });
 
-    tr = currentState.tr.delete(placeholderFrom, placeholderTo).insert(placeholderFrom, imageNode);
+    const insertTr = currentState.tr
+      .insert(trackedPos, imageNode)
+      .setMeta(ImageUploadPlaceholderKey, { type: "remove", id: uploadId });
+    view.dispatch(insertTr);
 
-    view.dispatch(tr);
     toast.success("Image uploaded successfully");
     return true;
   } catch (error) {
-    // Remove placeholder on error
-    const currentState = view.state;
-    tr = currentState.tr.delete(placeholderFrom, placeholderTo);
-    view.dispatch(tr);
+    // Remove placeholder decoration only — nothing to clean up in the document
+    try {
+      const currentState = view.state;
+      const removeTr = currentState.tr.setMeta(ImageUploadPlaceholderKey, {
+        type: "remove",
+        id: uploadId,
+      });
+      view.dispatch(removeTr);
+    } catch {
+      // View may have been destroyed during upload
+    }
 
-    // Show error message
     const errorMessage = parseUploadError(error);
     toast.error(errorMessage);
 
@@ -226,6 +291,7 @@ export const ResizableImage = Node.create<ResizableImageOptions>({
 
   addProseMirrorPlugins() {
     return [
+      createImageUploadPlaceholderPlugin(),
       new Plugin({
         key: new PluginKey("imageUpload"),
         props: {

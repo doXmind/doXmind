@@ -491,6 +491,25 @@ export function InlineAICopilot({ fileId, isDemoMode = false }: InlineAICopilotP
     };
   }, [inlineAIOpen, updateLayout, editor]);
 
+  // Auto-scroll editor when inline AI panel appears near the viewport bottom.
+  // This runs once per response (when status becomes "ready") to ensure the
+  // edited content + panel are visible without being clipped.
+  useEffect(() => {
+    if (!inlineAIOpen || !layout || !inlineAIResponse || inlineAIResponse.status !== "ready")
+      return;
+    const panelBottom = layout.barTop + 56 + 12 + 260; // bar + gap + estimated response height
+    if (panelBottom <= window.innerHeight - 40) return; // already visible, no scroll needed
+
+    const scrollEl = document.querySelector<HTMLElement>(
+      "[data-editor-scroll] [data-radix-scroll-area-viewport]"
+    );
+    if (!scrollEl) return;
+
+    const overflow = panelBottom - (window.innerHeight - 40);
+    scrollEl.scrollBy({ top: overflow + 60, behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run once per response
+  }, [inlineAIOpen, inlineAIResponse?.status]);
+
   useEffect(() => {
     if (!inlineAIOpen) return;
     const onPointerDown = (event: MouseEvent) => {

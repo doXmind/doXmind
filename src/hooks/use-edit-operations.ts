@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useFileStore } from "@/stores/file-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { computeDiffHunks, findInMarkdown } from "@/lib/diff-utils";
+import { useEditSnapshotStore } from "@/stores/edit-snapshot-store";
 import { editorLogger } from "@/lib/logger";
 import type { DiffHunk, EditOperation as DiffEditOperation } from "@/types/diff";
 import type { EditOperation } from "@/types";
@@ -56,8 +57,11 @@ export function useEditOperations() {
           continue;
         }
 
-        // Use cached markdown (same format backend uses to validate old_str)
-        const markdown = file.contentMarkdown || file.content;
+        // Prefer the exact markdown snapshot sent to the server — this eliminates
+        // the timing gap between liveEditor.getMarkdown() at send time and the
+        // debounced file.contentMarkdown in the store.
+        const snapshot = useEditSnapshotStore.getState().getSnapshot(fileId);
+        const markdown = snapshot || file.contentMarkdown || file.content;
 
         // Collect all hunks for this file
         const allHunks: DiffHunk[] = [];

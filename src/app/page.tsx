@@ -29,7 +29,12 @@ export default function HomePage() {
 
   useEffect(() => {
     if (isInitialized) {
-      setIsAuthenticated(api.isLoggedIn());
+      const loggedIn = api.isLoggedIn();
+      setIsAuthenticated(loggedIn);
+      // Clear stale auth cookie if token is invalid (prevents /login redirect loop)
+      if (!loggedIn && document.cookie.includes("doxmind_auth=")) {
+        document.cookie = "doxmind_auth=; path=/; max-age=0; SameSite=Lax";
+      }
     }
   }, [isInitialized]);
 

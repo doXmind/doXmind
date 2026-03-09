@@ -1,10 +1,11 @@
 /**
  * Atom Block Lift Plugin
  *
- * Automatically lifts atom block nodes (mermaidChart, blockMath, image)
- * out of list items. These blocks should always be top-level; if one ends
- * up inside a listItem/taskItem (via paste, input rule, slash command, or
- * AI edits), this plugin moves it to just after the parent list.
+ * Automatically lifts atom block nodes (mermaidChart, blockMath, image,
+ * horizontalRule, tableOfContents) out of list items. These blocks should
+ * always be top-level; if one ends up inside a listItem/taskItem (via paste,
+ * input rule, slash command, or AI edits), this plugin moves it to just
+ * after the parent list.
  */
 
 import { Extension } from "@tiptap/core";
@@ -13,7 +14,13 @@ import type { Transaction } from "@tiptap/pm/state";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 
 /** Atom block types that should never be nested inside list items */
-const ATOM_BLOCK_TYPES = new Set(["mermaidChart", "blockMath", "image"]);
+const ATOM_BLOCK_TYPES = new Set([
+  "mermaidChart",
+  "blockMath",
+  "image",
+  "horizontalRule",
+  "tableOfContents",
+]);
 
 /** List item wrapper types */
 const LIST_ITEM_TYPES = new Set(["listItem", "taskItem"]);

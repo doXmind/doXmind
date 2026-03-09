@@ -58,6 +58,9 @@ export interface DiffHunk {
 
   /** Character offset in markdown where old_str was found (from backend, for precise positioning) */
   markdownOffset?: number;
+
+  /** True when all position matching strategies failed to locate this hunk in the document */
+  matchFailed?: boolean;
 }
 
 /**

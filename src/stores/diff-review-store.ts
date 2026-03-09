@@ -12,6 +12,7 @@
 import { create } from "zustand";
 import type { DiffHunk, DiffSession, EditFeedbackItem } from "@/types/diff";
 import { telemetry } from "@/lib/telemetry";
+import { useEditSnapshotStore } from "./edit-snapshot-store";
 import { useEditorStore } from "./editor-store";
 import { splitMarkdownIntoHunks } from "@/lib/diff-utils";
 
@@ -102,13 +103,18 @@ export const useDiffReviewStore = create<DiffReviewState>()((set, get) => ({
     });
   },
 
-  endDiffReview: () =>
+  endDiffReview: () => {
+    const session = get().diffSession;
+    if (session) {
+      useEditSnapshotStore.getState().clearSnapshot(session.fileId);
+    }
     set({
       diffSession: null,
       isReviewMode: false,
       currentHunkIndex: -1,
       navigationSource: null,
-    }),
+    });
+  },
 
   acceptHunk: (hunkId) =>
     set((state) => {

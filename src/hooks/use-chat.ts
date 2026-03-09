@@ -18,6 +18,7 @@ import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useChatContextStore } from "@/stores/chat-context-store";
+import { useEditSnapshotStore } from "@/stores/edit-snapshot-store";
 import { api } from "@/lib/api";
 import { QUICK_EDIT_PROMPTS } from "@/lib/quick-edit-prompts";
 import type { ChatStreamEvent } from "@/types/stream-events";
@@ -159,6 +160,13 @@ export function useChat() {
               content: liveMarkdown !== null ? liveMarkdown : f.contentMarkdown || f.content,
             };
           });
+
+        // Preserve the exact markdown sent to the server so that when edits
+        // arrive back, the diff-review system uses the SAME markdown the server
+        // validated old_str against (eliminates debounce timing gap).
+        for (const f of files) {
+          useEditSnapshotStore.getState().setSnapshot(f.id, f.content);
+        }
 
         // Get web tools settings
         const webToolsSettings = useSettingsStore.getState().getWebToolsSettings();

@@ -9,6 +9,8 @@ import { useIsMobile } from "@/hooks/use-device-type";
 import { MOBILE_SPRINGS, Z_INDEX } from "@/lib/constants";
 import { Button } from "./button";
 
+const ModalTitleIdContext = React.createContext<string>("modal-title");
+
 interface ModalProps {
   open: boolean;
   onClose: () => void;
@@ -36,6 +38,7 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
   const previousActiveElement = React.useRef<HTMLElement | null>(null);
   const isMobile = useIsMobile();
   const dragControls = useDragControls();
+  const modalIdRef = React.useRef(`modal-title-${Math.random().toString(36).slice(2, 8)}`);
 
   React.useEffect(() => {
     setMounted(true);
@@ -159,6 +162,7 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
               ref={modalRef}
               role="dialog"
               aria-modal="true"
+              aria-labelledby={modalIdRef.current}
               tabIndex={-1}
               className={cn(
                 "fixed inset-x-0 bottom-0",
@@ -190,7 +194,11 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
               </div>
 
               {/* Content */}
-              <div className="overflow-y-auto px-6 pb-6">{children}</div>
+              <div className="overflow-y-auto px-6 pb-6">
+                <ModalTitleIdContext.Provider value={modalIdRef.current}>
+                  {children}
+                </ModalTitleIdContext.Provider>
+              </div>
             </motion.div>
           </>
         )}
@@ -199,32 +207,45 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
     );
   }
 
-  // Desktop: centered dialog (unchanged)
-  if (!open) return null;
-
+  // Desktop: centered dialog with enter/exit animations
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      {/* Modal content */}
-      <div
-        ref={modalRef}
-        role="dialog"
-        aria-modal="true"
-        tabIndex={-1}
-        className={cn(
-          "animate-in fade-in-0 zoom-in-95 relative z-50 w-full max-w-md rounded-lg border border-border bg-popover p-6 shadow-lg",
-          "focus:outline-none",
-          className
-        )}
-      >
-        {children}
-      </div>
-    </div>,
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <motion.div
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            onClick={onClose}
+            aria-hidden="true"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          />
+          {/* Modal content */}
+          <motion.div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={modalIdRef.current}
+            tabIndex={-1}
+            className={cn(
+              "relative z-50 w-full max-w-md rounded-lg border border-border bg-popover p-6 shadow-lg",
+              "focus:outline-none",
+              className
+            )}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+          >
+            <ModalTitleIdContext.Provider value={modalIdRef.current}>
+              {children}
+            </ModalTitleIdContext.Provider>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>,
     document.body
   );
 }
@@ -235,9 +256,10 @@ interface ModalHeaderProps {
 }
 
 export function ModalHeader({ children, onClose }: ModalHeaderProps) {
+  const titleId = React.useContext(ModalTitleIdContext);
   return (
     <div className="mb-4 flex items-center justify-between">
-      <h2 id="modal-title" className="text-lg font-semibold">
+      <h2 id={titleId} className="text-lg font-semibold">
         {children}
       </h2>
       {onClose && (

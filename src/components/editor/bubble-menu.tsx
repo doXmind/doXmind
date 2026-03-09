@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import {
@@ -113,7 +113,8 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const { openInlineAI, selection, inlineAIOpen } = useEditorStore();
   const [visible, setVisible] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [rawPosition, setRawPosition] = useState({ x: 0, y: 0, selBottom: 0 });
+  const [adjustedStyle, setAdjustedStyle] = useState<React.CSSProperties>({});
   const menuRef = useRef<HTMLDivElement>(null);
   const preventHideRef = useRef(false);
   const updateTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -142,9 +143,37 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
     // Position above the selection, centered
     const x = rect.left + rect.width / 2;
     const y = rect.top - 8;
-    setPosition({ x, y });
+    setRawPosition({ x, y, selBottom: rect.bottom + 8 });
     setVisible(true);
   }, [checkShouldShow]);
+
+  // After rendering, measure the menu and clamp to viewport
+  useLayoutEffect(() => {
+    if (!visible || !menuRef.current) return;
+    const menuRect = menuRef.current.getBoundingClientRect();
+    const halfWidth = menuRect.width / 2;
+
+    // Horizontal: clamp so menu stays within viewport
+    let x = rawPosition.x;
+    if (x - halfWidth < 8) x = halfWidth + 8;
+    if (x + halfWidth > window.innerWidth - 8) x = window.innerWidth - halfWidth - 8;
+
+    // Vertical: if menu would go above viewport, flip below selection
+    const wouldOverflowTop = rawPosition.y - menuRect.height < 0;
+    if (wouldOverflowTop) {
+      setAdjustedStyle({
+        left: x,
+        top: rawPosition.selBottom,
+        transform: "translate(-50%, 0)",
+      });
+    } else {
+      setAdjustedStyle({
+        left: x,
+        top: rawPosition.y,
+        transform: "translate(-50%, -100%)",
+      });
+    }
+  }, [visible, rawPosition]);
 
   // Listen to editor selection changes, focus/blur, and mouseup
   useEffect(() => {
@@ -270,11 +299,7 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
         <div
           ref={menuRef}
           className="bubble-menu fixed z-50 rounded-lg border border-border/60 bg-popover p-1 shadow-lg"
-          style={{
-            left: position.x,
-            top: position.y,
-            transform: "translate(-50%, -100%)",
-          }}
+          style={adjustedStyle}
           onMouseDown={() => {
             preventHideRef.current = true;
           }}

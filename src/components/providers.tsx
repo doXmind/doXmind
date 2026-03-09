@@ -1,6 +1,7 @@
 "use client";
 
 import { ThemeProvider } from "next-themes";
+import { MotionConfig } from "framer-motion";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 
 function ThemeInitializer() {
@@ -18,8 +19,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
       themes={["light", "dark"]}
     >
-      <ThemeInitializer />
-      {children}
+      <MotionConfig reducedMotion="user">
+        <ThemeInitializer />
+        {children}
+      </MotionConfig>
     </ThemeProvider>
   );
 }
