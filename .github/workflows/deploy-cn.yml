@@ -1,10 +1,6 @@
 name: Deploy CN
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [feature/cn-deployment]
   workflow_dispatch:
     inputs:
       skip_frontend:
@@ -34,14 +30,10 @@ jobs:
     name: Deploy to Alibaba Cloud ECS (CN)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: |
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up SSH
         run: |
