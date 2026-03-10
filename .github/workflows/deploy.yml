@@ -6,35 +6,24 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      skip_frontend:
+        description: "Skip frontend rebuild (backend-only deploy)"
+        required: false
+        default: "false"
+        type: boolean
+      skip_backend:
+        description: "Skip backend rebuild (frontend-only deploy)"
+        required: false
+        default: "false"
+        type: boolean
 
 jobs:
   # ============================================================================
-  # Deploy Frontend to Heroku
+  # Deploy Frontend + Backend to AWS EC2
   # ============================================================================
-  deploy-frontend:
-    name: Deploy Frontend to Heroku
-    runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      github.event_name == 'workflow_dispatch'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Deploy to Heroku
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: |
-          git remote add heroku-frontend https://heroku:$HEROKU_API_KEY@git.heroku.com/${{ secrets.HEROKU_FRONTEND_APP }}.git 2>/dev/null || true
-          git push heroku-frontend main:main --force
-
-  # ============================================================================
-  # Deploy Backend to AWS EC2
-  # ============================================================================
-  deploy-backend:
-    name: Deploy Backend to EC2
+  deploy:
+    name: Deploy to EC2
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
@@ -51,6 +40,7 @@ jobs:
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Sync server code to EC2
+        if: inputs.skip_backend != true
         run: |
           rsync -avz --delete \
             --exclude='__pycache__' \
@@ -59,6 +49,21 @@ jobs:
             --exclude='.env' \
             --exclude='.env.*' \
             ./server/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/server/
+
+      - name: Sync frontend source to EC2
+        if: inputs.skip_frontend != true
+        run: |
+          rsync -avz --delete \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.git/' \
+            --exclude='server/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='coverage/' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/frontend-src/
 
       - name: Sync infrastructure files to EC2
         run: |
@@ -71,43 +76,124 @@ jobs:
           cat > /tmp/deploy.sh << 'SCRIPT'
           #!/bin/bash
           set -euo pipefail
-          cd /opt/doxmind
 
-          echo "=== Tagging current image as rollback ==="
-          docker tag doxmind-backend:latest doxmind-backend:previous 2>/dev/null || true
+          DEPLOY_DIR="/opt/doxmind"
+          COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
+          SKIP_FRONTEND="${SKIP_FRONTEND:-false}"
+          SKIP_BACKEND="${SKIP_BACKEND:-false}"
 
-          echo "=== Building new backend image ==="
-          docker compose --env-file .env.production -f docker-compose.prod.yml build backend
+          cd "$DEPLOY_DIR"
+          echo "=== Deployment started ==="
+          echo "Skip frontend: $SKIP_FRONTEND | Skip backend: $SKIP_BACKEND"
 
-          echo "=== Running database migrations ==="
-          docker compose --env-file .env.production -f docker-compose.prod.yml run --rm backend alembic upgrade head
+          # ================================================================
+          # Phase 1: Backend
+          # ================================================================
+          if [ "$SKIP_BACKEND" = "false" ]; then
+              echo "--- Phase 1: Backend deployment ---"
 
-          echo "=== Restarting backend ==="
-          docker compose --env-file .env.production -f docker-compose.prod.yml up -d --force-recreate backend
+              echo "Tagging current backend image as rollback target..."
+              docker tag doxmind-backend:latest doxmind-backend:previous 2>/dev/null || true
 
-          echo "=== Waiting for health check ==="
-          for i in $(seq 1 30); do
-            if docker exec doxmind-backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-              echo "Backend is healthy!"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "Health check failed after 30 attempts!"
-              echo "=== Backend logs ==="
-              docker logs doxmind-backend --tail 50
-              exit 1
-            fi
-            echo "Waiting for backend... ($i/30)"
-            sleep 2
-          done
+              echo "Building new backend image..."
+              $COMPOSE build backend
 
-          echo "=== Reloading nginx ==="
+              echo "Running database migrations..."
+              if ! $COMPOSE run --rm backend alembic upgrade head; then
+                  echo "ERROR: Database migration failed! Aborting deployment."
+                  docker tag doxmind-backend:previous doxmind-backend:latest 2>/dev/null || true
+                  exit 1
+              fi
+
+              echo "Restarting backend..."
+              $COMPOSE up -d --force-recreate backend
+
+              echo "Waiting for backend health check..."
+              for i in $(seq 1 30); do
+                  if docker exec doxmind-backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                      echo "Backend is healthy! (attempt $i/30)"
+                      break
+                  fi
+                  if [ "$i" -eq 30 ]; then
+                      echo "ERROR: Backend health check failed after 30 attempts!"
+                      docker logs doxmind-backend --tail 50
+                      echo "Rolling back backend..."
+                      docker tag doxmind-backend:previous doxmind-backend:latest 2>/dev/null || true
+                      $COMPOSE up -d --force-recreate backend
+                      exit 1
+                  fi
+                  echo "Waiting for backend... ($i/30)"
+                  sleep 2
+              done
+          else
+              echo "--- Phase 1: Backend SKIPPED ---"
+          fi
+
+          # ================================================================
+          # Phase 2: Frontend
+          # ================================================================
+          if [ "$SKIP_FRONTEND" = "false" ]; then
+              echo "--- Phase 2: Frontend deployment ---"
+
+              echo "Tagging current frontend image as rollback target..."
+              docker tag doxmind-frontend:latest doxmind-frontend:previous 2>/dev/null || true
+
+              echo "Syncing frontend source into build context..."
+              rsync -a --delete \
+                  --exclude='server/' \
+                  --exclude='.env.production' \
+                  --exclude='frontend-src/' \
+                  --exclude='logs/' \
+                  --exclude='backups/' \
+                  --exclude='data/' \
+                  --exclude='deploy.sh' \
+                  "${DEPLOY_DIR}/frontend-src/" "${DEPLOY_DIR}/"
+
+              echo "Building new frontend image (this may take 3-5 minutes)..."
+              $COMPOSE build frontend
+
+              echo "Restarting frontend..."
+              $COMPOSE up -d --force-recreate frontend
+
+              echo "Waiting for frontend health check..."
+              for i in $(seq 1 30); do
+                  STATUS=$(docker inspect --format='{{.State.Health.Status}}' doxmind-frontend 2>/dev/null || echo "unknown")
+                  if [ "$STATUS" = "healthy" ]; then
+                      echo "Frontend is healthy! (attempt $i/30)"
+                      break
+                  fi
+                  if [ "$i" -eq 30 ]; then
+                      echo "ERROR: Frontend health check failed after 30 attempts!"
+                      docker logs doxmind-frontend --tail 50
+                      echo "Rolling back frontend..."
+                      docker tag doxmind-frontend:previous doxmind-frontend:latest 2>/dev/null || true
+                      $COMPOSE up -d --force-recreate frontend
+                      exit 1
+                  fi
+                  echo "Waiting for frontend... ($i/30)"
+                  sleep 3
+              done
+          else
+              echo "--- Phase 2: Frontend SKIPPED ---"
+          fi
+
+          # ================================================================
+          # Phase 3: Finalize
+          # ================================================================
+          echo "--- Phase 3: Finalize ---"
+
+          echo "Reloading nginx..."
           docker exec doxmind-nginx nginx -s reload 2>/dev/null || true
 
-          echo "=== Cleaning up old Docker images ==="
+          echo "Cleaning up..."
           docker image prune -f
+          rm -rf "${DEPLOY_DIR}/frontend-src"
 
           echo "=== Deployment complete ==="
+          echo "Frontend: https://app.doxmind.com"
+          echo "Backend:  https://api.doxmind.com"
+
+          docker ps --format "table {{.Names}}\t{{.Status}}" | grep doxmind
           SCRIPT
           scp /tmp/deploy.sh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/doxmind/deploy.sh
 
@@ -115,7 +201,10 @@ jobs:
         run: |
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "chmod +x /opt/doxmind/deploy.sh && bash /opt/doxmind/deploy.sh"
+            "chmod +x /opt/doxmind/deploy.sh && \
+            SKIP_FRONTEND=${{ inputs.skip_frontend || 'false' }} \
+            SKIP_BACKEND=${{ inputs.skip_backend || 'false' }} \
+            bash /opt/doxmind/deploy.sh"
 
   # ============================================================================
   # Notify on Completion
@@ -123,7 +212,7 @@ jobs:
   notify:
     name: Deployment Status
     runs-on: ubuntu-latest
-    needs: [deploy-frontend, deploy-backend]
+    needs: [deploy]
     if: |
       always() && (
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
@@ -132,14 +221,13 @@ jobs:
     steps:
       - name: Check deployment status
         run: |
-          echo "Frontend deployment: ${{ needs.deploy-frontend.result }}"
-          echo "Backend deployment: ${{ needs.deploy-backend.result }}"
+          echo "Deployment: ${{ needs.deploy.result }}"
 
-          if [ "${{ needs.deploy-frontend.result }}" != "success" ] || [ "${{ needs.deploy-backend.result }}" != "success" ]; then
-            echo "One or more deployments failed!"
+          if [ "${{ needs.deploy.result }}" != "success" ]; then
+            echo "Deployment failed!"
             exit 1
           fi
 
-          echo "All deployments successful!"
+          echo "Deployment successful!"
           echo "Frontend: https://app.doxmind.com"
           echo "Backend: https://api.doxmind.com"

@@ -35,6 +35,7 @@ check_container() {
 ALL_OK=true
 
 check_container "Backend"    "doxmind-backend"  || ALL_OK=false
+check_container "Frontend"   "doxmind-frontend" || ALL_OK=false
 check_container "PostgreSQL" "doxmind-postgres" || ALL_OK=false
 check_container "Redis"      "doxmind-redis"    || ALL_OK=false
 check_container "Nginx"      "doxmind-nginx"    || ALL_OK=false
