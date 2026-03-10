@@ -22,6 +22,7 @@ import {
 import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { eventBus } from "@/lib/events";
 import {
   api,
   type SearchResultItem,
@@ -226,6 +227,26 @@ export function HomeDashboard() {
     };
     window.addEventListener("shares-changed", handler);
     return () => window.removeEventListener("shares-changed", handler);
+  }, []);
+
+  // Re-fetch bookmarks when they change elsewhere (e.g. community feed toggle)
+  useEffect(() => {
+    return eventBus.on("bookmark:changed", () => {
+      api
+        .getBookmarks()
+        .then((res) => setBookmarks(res.items))
+        .catch(() => {});
+    });
+  }, []);
+
+  // Re-fetch forks when a fork is created from share page
+  useEffect(() => {
+    return eventBus.on("fork:created", () => {
+      api
+        .getMyForks()
+        .then((res) => setForks(res.forks))
+        .catch(() => {});
+    });
   }, []);
 
   const performSearch = useDebouncedCallback(async (q: string) => {

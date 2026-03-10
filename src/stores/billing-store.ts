@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
 import { useAPISettingsStore } from "@/stores/api-settings-store";
+import { eventBus } from "@/lib/events";
 import type { BillingStatus, CreditsInfo, StorageInfo } from "@/lib/api/billing";
 
 interface BillingState {
@@ -173,3 +174,25 @@ export const useBillingStore = create<BillingState>()(
     }
   )
 );
+
+// Refresh billing when storage changes (file create/delete) and on window focus
+if (typeof window !== "undefined") {
+  let storageDebounce: ReturnType<typeof setTimeout> | null = null;
+  eventBus.on("storage:changed", () => {
+    if (storageDebounce) clearTimeout(storageDebounce);
+    storageDebounce = setTimeout(() => {
+      if (useBillingStore.getState().isInitialized) {
+        useBillingStore.getState().refresh();
+      }
+    }, 2000);
+  });
+
+  let lastFocusRefresh = 0;
+  window.addEventListener("focus", () => {
+    const now = Date.now();
+    if (now - lastFocusRefresh > 30_000 && useBillingStore.getState().isInitialized) {
+      lastFocusRefresh = now;
+      useBillingStore.getState().refresh();
+    }
+  });
+}

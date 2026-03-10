@@ -133,6 +133,7 @@ export interface SharedItemResponse {
   owner_name?: string;
   owner_avatar_url?: string;
   owner_avatar_frame?: string | null;
+  owner_id?: string;
   // Document fields (when is_folder is false)
   content?: string;
   // Folder fields (when is_folder is true)

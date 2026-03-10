@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
 import { storeLogger } from "@/lib/logger";
+import { eventBus } from "@/lib/events";
 import type { FileItem } from "@/types";
 
 const log = storeLogger.child("File");
@@ -300,6 +301,7 @@ export const useFileStore = create<FileState>()(
             loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
           }));
 
+          eventBus.emit("storage:changed");
           return newFile.id;
         } catch (error) {
           log.error("Failed to create file on server", error);
@@ -334,6 +336,7 @@ export const useFileStore = create<FileState>()(
             loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
           }));
 
+          eventBus.emit("storage:changed");
           return newFile.id;
         } catch (error) {
           log.error("Failed to import file", error);
@@ -414,6 +417,8 @@ export const useFileStore = create<FileState>()(
           await Promise.all(
             filesToDelete.map((fileId) => useChatStore.getState().deleteConversation(fileId))
           );
+
+          eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to delete file(s) on server", error);
           // Revert on error
@@ -686,6 +691,8 @@ export const useFileStore = create<FileState>()(
           await Promise.all(
             fileIds.map((fileId) => useChatStore.getState().deleteConversation(fileId))
           );
+
+          eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to bulk delete files", error);
           // Revert on error
@@ -738,6 +745,7 @@ export const useFileStore = create<FileState>()(
           set((state) => ({
             trashFiles: state.trashFiles.filter((f) => f.id !== id),
           }));
+          eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to permanently delete file", error);
           throw error;
@@ -748,6 +756,7 @@ export const useFileStore = create<FileState>()(
         try {
           await api.emptyTrash();
           set({ trashFiles: [] });
+          eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to empty trash", error);
           throw error;

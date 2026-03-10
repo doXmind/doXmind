@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
@@ -12,6 +12,7 @@ import { EditShareModal } from "@/components/community/edit-share-modal";
 import { AlertCircle, ArrowLeft, Globe } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
 import { useTranslations } from "next-intl";
+import { eventBus } from "@/lib/events";
 
 export default function ProfilePage() {
   const params = useParams();
@@ -34,28 +35,40 @@ export default function ProfilePage() {
     }
   }, [profile]);
 
+  const refreshProfile = useCallback(async () => {
+    try {
+      const [profileData, publishedData] = await Promise.all([
+        api.getUserProfile(userId),
+        api.getUserPublished(userId),
+      ]);
+      setProfile(profileData);
+      setPublished(publishedData.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load profile");
+    }
+  }, [userId]);
+
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
         setError(null);
-
-        const [profileData, publishedData] = await Promise.all([
-          api.getUserProfile(userId),
-          api.getUserPublished(userId),
-        ]);
-
-        setProfile(profileData);
-        setPublished(publishedData.items);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load profile");
+        await refreshProfile();
       } finally {
         setLoading(false);
       }
     }
 
     load();
-  }, [userId]);
+  }, [refreshProfile]);
+
+  // Re-fetch profile data when current user edits their own profile
+  useEffect(() => {
+    if (!isOwnProfile) return;
+    return eventBus.on("profile:updated", () => {
+      refreshProfile();
+    });
+  }, [isOwnProfile, refreshProfile]);
 
   if (loading) {
     return (

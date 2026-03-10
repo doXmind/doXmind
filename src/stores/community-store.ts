@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { api, CommunityItem } from "@/lib/api";
+import { eventBus } from "@/lib/events";
 
 type SortOption = "newest" | "popular" | "most_viewed" | "for_you" | "following";
 
@@ -22,6 +23,14 @@ interface CommunityState {
   setSortBy: (sort: SortOption) => void;
   setSearchQuery: (query: string) => void;
   setTagFilter: (tag: string) => void;
+  updateItemAuthor: (
+    userId: string,
+    updates: { username?: string | null; avatar_url?: string | null; avatar_frame?: string | null }
+  ) => void;
+  updateItemReactions: (
+    shareToken: string,
+    reactions: { emoji: string; count: number; has_reacted: boolean }[]
+  ) => void;
   reset: () => void;
 }
 
@@ -134,6 +143,22 @@ export const useCommunityStore = create<CommunityState>()(
         get().loadItems();
       },
 
+      updateItemAuthor: (userId, updates) => {
+        set((state) => ({
+          items: state.items.map((item) =>
+            item.owner.id === userId ? { ...item, owner: { ...item.owner, ...updates } } : item
+          ),
+        }));
+      },
+
+      updateItemReactions: (shareToken, reactions) => {
+        set((state) => ({
+          items: state.items.map((item) =>
+            item.share_token === shareToken ? { ...item, reactions } : item
+          ),
+        }));
+      },
+
       reset: () => {
         set({
           items: [],
@@ -152,3 +177,17 @@ export const useCommunityStore = create<CommunityState>()(
     }
   )
 );
+
+// Sync community feed author info when a user updates their profile
+if (typeof window !== "undefined") {
+  eventBus.on("profile:updated", ({ user }) => {
+    const { items } = useCommunityStore.getState();
+    if (items.some((item) => item.owner.id === user.id)) {
+      useCommunityStore.getState().updateItemAuthor(user.id, {
+        username: user.username,
+        avatar_url: user.avatar_url,
+        avatar_frame: user.avatar_frame,
+      });
+    }
+  });
+}

@@ -159,7 +159,18 @@ export function FollowListModal({ userId, initialTab, open, onClose }: FollowLis
                 </div>
 
                 {currentUser && currentUser.id !== user.id && (
-                  <FollowButton userId={user.id} isFollowing={user.is_following} size="sm" />
+                  <FollowButton
+                    userId={user.id}
+                    isFollowing={user.is_following}
+                    size="sm"
+                    onChange={(isFollowing) => {
+                      setUsers((prev) =>
+                        prev.map((u) =>
+                          u.id === user.id ? { ...u, is_following: isFollowing } : u
+                        )
+                      );
+                    }}
+                  />
                 )}
               </div>
             ))}

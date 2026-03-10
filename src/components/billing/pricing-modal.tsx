@@ -12,6 +12,7 @@ import { useBillingStore } from "@/stores/billing-store";
 import { useTranslations } from "next-intl";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
+import { Z_INDEX } from "@/lib/constants";
 
 interface PricingCardProps {
   name: string;
@@ -173,7 +174,8 @@ export function PricingModal() {
         <>
           {/* Backdrop */}
           <motion.div
-            className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm"
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm"
+            style={{ zIndex: Z_INDEX.MODAL - 1 }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -184,7 +186,8 @@ export function PricingModal() {
 
           {/* Content */}
           <motion.div
-            className="fixed inset-0 z-50 overflow-y-auto"
+            className="fixed inset-0 overflow-y-auto"
+            style={{ zIndex: Z_INDEX.MODAL }}
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.97 }}

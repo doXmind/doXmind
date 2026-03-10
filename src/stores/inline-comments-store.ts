@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { api } from "@/lib/api";
 import type { InlineCommentResponse, CommentResponse } from "@/lib/api/types";
+import { eventBus } from "@/lib/events";
 
 interface PendingSelection {
   from: number;
@@ -177,3 +178,27 @@ export const useInlineCommentsStore = create<InlineCommentsState>()((set, get) =
     });
   },
 }));
+
+// Sync inline comment author info when a user updates their profile
+if (typeof window !== "undefined") {
+  eventBus.on("profile:updated", ({ user }) => {
+    const { threads } = useInlineCommentsStore.getState();
+    if (threads.some((t) => t.author.id === user.id)) {
+      useInlineCommentsStore.setState({
+        threads: threads.map((t) =>
+          t.author.id === user.id
+            ? {
+                ...t,
+                author: {
+                  ...t.author,
+                  username: user.username ?? t.author.username,
+                  avatar_url: user.avatar_url ?? t.author.avatar_url,
+                  avatar_frame: user.avatar_frame ?? t.author.avatar_frame,
+                },
+              }
+            : t
+        ),
+      });
+    }
+  });
+}

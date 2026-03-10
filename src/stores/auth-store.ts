@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api, type User } from "@/lib/api";
 import { authLogger } from "@/lib/logger";
+import { eventBus } from "@/lib/events";
 
 const log = authLogger;
 
@@ -47,7 +48,17 @@ export const useAuthStore = create<AuthState>()(
 
         set({ isLoading: true });
         try {
-          // Check if we have a valid token
+          // If access token expired, try refreshing using the HttpOnly refresh token cookie.
+          // This handles the case where the user returns after idle (sleep, background tab).
+          if (!api.isLoggedIn()) {
+            try {
+              await api.refreshToken();
+            } catch {
+              // Refresh failed — user will need to log in again
+            }
+          }
+
+          // Check if we have a valid token (either existing or just refreshed)
           if (api.isLoggedIn()) {
             const status = await api.getAuthStatus();
             if (status.authenticated && status.user) {
@@ -79,6 +90,7 @@ export const useAuthStore = create<AuthState>()(
           import("@/stores/billing-store").then(({ useBillingStore }) => {
             useBillingStore.getState().initialize();
           });
+          eventBus.emit("auth:login");
         } finally {
           set({ isLoading: false });
         }
@@ -99,6 +111,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await api.verifyEmail(email, code);
           set({ user: response.user || null });
+          eventBus.emit("auth:login");
         } finally {
           set({ isLoading: false });
         }
@@ -124,6 +137,7 @@ export const useAuthStore = create<AuthState>()(
           });
 
           set({ user: null, showLogoutAnimation: false });
+          eventBus.emit("auth:logout");
         } catch (error) {
           // On error, hide animation and propagate error
           set({ showLogoutAnimation: false });
@@ -155,18 +169,23 @@ export const useAuthStore = create<AuthState>()(
           import("@/stores/billing-store").then(({ useBillingStore }) => {
             useBillingStore.getState().initialize();
           });
+          eventBus.emit("auth:login");
         } finally {
           set({ isLoading: false });
         }
       },
 
-      setUser: (user) => set({ user }),
+      setUser: (user) => {
+        set({ user });
+        eventBus.emit("profile:updated", { user });
+      },
 
       updateProfile: async (updates) => {
         set({ isLoading: true });
         try {
           const user = await api.updateProfile(updates);
           set({ user });
+          eventBus.emit("profile:updated", { user });
         } finally {
           set({ isLoading: false });
         }

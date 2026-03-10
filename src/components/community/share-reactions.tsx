@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuthStore } from "@/stores/auth-store";
+import { useCommunityStore } from "@/stores/community-store";
 import { api } from "@/lib/api";
 import { EmojiReactionPicker } from "@/components/comments/emoji-reaction-picker";
 
@@ -48,6 +49,8 @@ export function ShareReactions({ shareToken, reactions: initial }: ShareReaction
     try {
       const res = await api.toggleShareReaction(shareToken, emoji);
       setReactions(res.reactions);
+      // Sync back to community store so feed cards stay in sync
+      useCommunityStore.getState().updateItemReactions(shareToken, res.reactions);
     } catch {
       // Revert on error
       setReactions(initial);

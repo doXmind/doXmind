@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { api, CommunityItem } from "@/lib/api";
+import { eventBus } from "@/lib/events";
 
 interface BookmarksState {
   bookmarks: CommunityItem[];
@@ -51,6 +52,7 @@ export const useBookmarksStore = create<BookmarksState>()(
 
         try {
           const result = await api.toggleBookmark(shareToken);
+          eventBus.emit("bookmark:changed");
           return result.bookmarked;
         } catch {
           // Revert on error
@@ -84,3 +86,13 @@ export const useBookmarksStore = create<BookmarksState>()(
     }
   )
 );
+
+// Load bookmarks on login, clear on logout
+if (typeof window !== "undefined") {
+  eventBus.on("auth:login", () => {
+    useBookmarksStore.getState().loadBookmarks();
+  });
+  eventBus.on("auth:logout", () => {
+    useBookmarksStore.setState({ bookmarks: [], bookmarkedIds: new Set() });
+  });
+}

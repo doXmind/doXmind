@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { api, type CommentResponse } from "@/lib/api";
+import { eventBus } from "@/lib/events";
 
 type CommentSort = "oldest" | "newest";
 
@@ -192,3 +193,27 @@ export const useCommentsStore = create<CommentsState>()((set, get) => ({
     });
   },
 }));
+
+// Sync comment author info when a user updates their profile
+if (typeof window !== "undefined") {
+  eventBus.on("profile:updated", ({ user }) => {
+    const { comments } = useCommentsStore.getState();
+    if (comments.some((c) => c.author.id === user.id)) {
+      useCommentsStore.setState({
+        comments: comments.map((c) =>
+          c.author.id === user.id
+            ? {
+                ...c,
+                author: {
+                  ...c.author,
+                  username: user.username ?? c.author.username,
+                  avatar_url: user.avatar_url ?? c.author.avatar_url,
+                  avatar_frame: user.avatar_frame ?? c.author.avatar_frame,
+                },
+              }
+            : c
+        ),
+      });
+    }
+  });
+}

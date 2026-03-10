@@ -182,6 +182,7 @@ class SharedItemResponse(BaseModel):
     owner_name: str | None = None
     owner_avatar_url: str | None = None
     owner_avatar_frame: str | None = None
+    owner_id: str | None = None
     # Document fields (present when is_folder=False)
     content: str | None = None
     # Folder fields (present when is_folder=True)
@@ -985,6 +986,7 @@ async def view_shared_item(
             owner_name=owner_name,
             owner_avatar_url=owner_avatar_url,
             owner_avatar_frame=owner_avatar_frame,
+            owner_id=str(share.user_id) if share.user_id else None,
             items=items,
             breadcrumbs=breadcrumbs,
             root_folder_name=root_file.name if target_file.id != root_file.id else None,
@@ -1007,6 +1009,7 @@ async def view_shared_item(
             owner_name=owner_name,
             owner_avatar_url=owner_avatar_url,
             owner_avatar_frame=owner_avatar_frame,
+            owner_id=str(share.user_id) if share.user_id else None,
             breadcrumbs=breadcrumbs if breadcrumbs else None,
             root_folder_name=root_file.name if path and root_file.is_folder else None,
         )

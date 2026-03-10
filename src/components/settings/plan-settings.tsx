@@ -15,7 +15,11 @@ const PLAN_FEATURES: Record<string, string[]> = {
   max: ["maxFeature1", "maxFeature2", "maxFeature3", "maxFeature4", "maxFeature5"],
 };
 
-export function PlanSettings() {
+interface PlanSettingsProps {
+  onOpenPricing?: () => void;
+}
+
+export function PlanSettings({ onOpenPricing }: PlanSettingsProps) {
   const t = useTranslations("billing");
   const { plan, status, periodEnd, credits, storage, openPricingModal, refresh } =
     useBillingStore();
@@ -160,7 +164,7 @@ export function PlanSettings() {
 
       {/* Actions */}
       <div className="flex gap-3">
-        <Button onClick={openPricingModal} className="w-full">
+        <Button onClick={onOpenPricing ?? openPricingModal} className="w-full">
           {plan === "free" ? t("upgradePlan") : t("choosePlan")}
         </Button>
         {plan !== "free" && (

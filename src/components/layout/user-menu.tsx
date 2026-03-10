@@ -69,7 +69,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
   const ts = useTranslations("settings");
   const tc = useTranslations("common");
   const locale = useLocale();
-  const plan = useBillingStore((s) => s.plan);
+  const { plan, openPricingModal } = useBillingStore();
   const isMobile = useIsMobile();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -234,7 +234,14 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
             <div className="h-[65vh] overflow-y-auto">
               {settingsTab === "api" && <APISettings />}
               {settingsTab === "usage" && <UsageSettings />}
-              {settingsTab === "plan" && <PlanSettings />}
+              {settingsTab === "plan" && (
+                <PlanSettings
+                  onOpenPricing={() => {
+                    setShowSettingsModal(false);
+                    openPricingModal();
+                  }}
+                />
+              )}
               {settingsTab === "appearance" && <AppearanceSettings />}
               {settingsTab === "typography" && <TypographySettings />}
               {settingsTab === "security" && <SessionManager />}
@@ -301,7 +308,14 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
               <div className="flex-1 overflow-y-auto">
                 {settingsTab === "api" && <APISettings />}
                 {settingsTab === "usage" && <UsageSettings />}
-                {settingsTab === "plan" && <PlanSettings />}
+                {settingsTab === "plan" && (
+                  <PlanSettings
+                    onOpenPricing={() => {
+                      setShowSettingsModal(false);
+                      openPricingModal();
+                    }}
+                  />
+                )}
                 {settingsTab === "appearance" && <AppearanceSettings />}
                 {settingsTab === "typography" && <TypographySettings />}
                 {settingsTab === "security" && <SessionManager />}

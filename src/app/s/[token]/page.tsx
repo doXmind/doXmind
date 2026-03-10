@@ -12,6 +12,7 @@ import {
   type CommunityDetailResponse,
   type SharedFolderItem,
 } from "@/lib/api";
+import { eventBus } from "@/lib/events";
 import { CommunityActionBar } from "@/components/community/community-action-bar";
 import { StickyActionBar } from "@/components/community/sticky-action-bar";
 import { ShareReactions } from "@/components/community/share-reactions";
@@ -95,6 +96,41 @@ export default function SharePage() {
     load();
   }, [token, path]);
 
+  // Refresh author info when profile is updated
+  const detailOwnerId = detail?.owner.id;
+  const dataOwnerId = data?.owner_id;
+  useEffect(() => {
+    return eventBus.on("profile:updated", ({ user }) => {
+      if (detailOwnerId && detailOwnerId === user.id) {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                owner: {
+                  ...prev.owner,
+                  username: user.username ?? prev.owner.username,
+                  avatar_url: user.avatar_url ?? prev.owner.avatar_url,
+                  avatar_frame: user.avatar_frame ?? prev.owner.avatar_frame,
+                },
+              }
+            : prev
+        );
+      }
+      if (dataOwnerId && dataOwnerId === user.id) {
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                owner_name: user.username ?? prev.owner_name,
+                owner_avatar_url: user.avatar_url ?? prev.owner_avatar_url,
+                owner_avatar_frame: user.avatar_frame ?? prev.owner_avatar_frame,
+              }
+            : prev
+        );
+      }
+    });
+  }, [detailOwnerId, dataOwnerId]);
+
   const isPublic = data?.visibility === "public";
 
   // Update browser tab title
@@ -118,6 +154,11 @@ export default function SharePage() {
   }, []);
 
   const handleForkSuccess = async (fileId: string) => {
+    // Update local detail state so fork button reflects the change immediately
+    setDetail((prev) =>
+      prev ? { ...prev, is_forked: true, fork_count: prev.fork_count + 1 } : prev
+    );
+    eventBus.emit("fork:created", { shareToken: token });
     await useFileStore.getState().loadFiles();
     useFileStore.getState().setCurrentFile(fileId);
     router.push(`/editor/${fileId}`);
@@ -265,7 +306,7 @@ export default function SharePage() {
   const ownerAvatar = detail?.owner?.avatar_url || data.owner_avatar_url;
   const ownerFrame = detail?.owner?.avatar_frame || data.owner_avatar_frame;
   const ownerPlan = detail?.owner?.plan;
-  const ownerId = detail?.owner?.id;
+  const ownerId = detail?.owner?.id || data.owner_id;
   const publishedDate =
     isPublic && detail?.published_at
       ? new Date(detail.published_at).toLocaleDateString("en-US", {
@@ -321,7 +362,7 @@ export default function SharePage() {
 
               {/* Meta row */}
               <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
-                {isPublic && ownerId ? (
+                {ownerId ? (
                   <Link
                     href={`/profile/${ownerId}`}
                     className="flex items-center gap-2.5 font-medium transition-colors hover:text-foreground"

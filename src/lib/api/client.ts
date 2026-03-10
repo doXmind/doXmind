@@ -5,6 +5,9 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const TOKEN_STORAGE_KEY = "doxmind_access_token";
 export const AUTH_COOKIE_NAME = "doxmind_auth";
+// Middleware cookie lifetime: matches refresh token (30 days), NOT access token (15 min).
+// This cookie is only a lightweight gate for Next.js middleware route protection.
+const AUTH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 
 export class ApiClient {
   protected baseUrl: string;
@@ -20,6 +23,18 @@ export class ApiClient {
     this.baseUrl = baseUrl;
     // Load token from storage on initialization
     this.loadToken();
+
+    // Proactively refresh token when tab becomes visible after being backgrounded/sleeping.
+    // setTimeout timers are paused during sleep, so the scheduled auto-refresh may not fire.
+    if (typeof window !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && !this.isTokenValid()) {
+          this.autoRefreshToken().catch(() => {
+            // Silent failure — reactive 401 handling will catch it on the next API call
+          });
+        }
+      });
+    }
   }
 
   // ==========================================================================
@@ -37,13 +52,13 @@ export class ApiClient {
           this.accessToken = token;
           this.tokenExpiry = expiry;
         } else {
-          // Token expired, remove it and clear auth cookie to prevent redirect loops
+          // Access token expired — clear from localStorage but keep the middleware cookie.
+          // The refresh token (HttpOnly, 30 days) may still be valid, and the visibilitychange
+          // handler or auth-store initialize() will attempt a refresh.
           localStorage.removeItem(TOKEN_STORAGE_KEY);
-          document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
         }
       } catch {
         localStorage.removeItem(TOKEN_STORAGE_KEY);
-        document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
       }
     }
   }
@@ -55,8 +70,8 @@ export class ApiClient {
 
     if (typeof window !== "undefined") {
       localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiry: this.tokenExpiry }));
-      // Also set a cookie for middleware auth check
-      document.cookie = `${AUTH_COOKIE_NAME}=1; path=/; max-age=${expiresIn}; SameSite=Lax`;
+      // Also set a cookie for middleware auth check (long-lived, matches refresh token)
+      document.cookie = `${AUTH_COOKIE_NAME}=1; path=/; max-age=${AUTH_COOKIE_MAX_AGE}; SameSite=Lax`;
     }
 
     // Schedule auto-refresh before token expires (1 minute before)
