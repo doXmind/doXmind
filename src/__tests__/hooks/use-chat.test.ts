@@ -27,22 +27,32 @@ const {
   mockGetAuthHeaders: vi.fn(),
 }));
 
-vi.mock("@/stores/chat-store", () => ({
-  useChatStore: () => ({
+vi.mock("@/stores/chat-store", () => {
+  const state = {
     ensureConversation: (...args: unknown[]) => mockEnsureConversation(...args),
     addMessage: (...args: unknown[]) => mockAddMessage(...args),
     appendToMessage: (...args: unknown[]) => mockAppendToMessage(...args),
     setMessageStreaming: (...args: unknown[]) => mockSetMessageStreaming(...args),
     updateMessageFull: (...args: unknown[]) => mockUpdateMessageFull(...args),
     saveMessageToBackend: (...args: unknown[]) => mockSaveMessageToBackend(...args),
-  }),
-}));
+    removeMessagesAfter: vi.fn(),
+  };
+
+  // Support Zustand selector pattern: useChatStore((s) => s.field)
+  const useChatStore = (selector?: (s: typeof state) => unknown) =>
+    selector ? selector(state) : state;
+
+  return { useChatStore };
+});
 
 vi.mock("@/stores/file-store", () => {
+  const state = {
+    getFile: (...args: unknown[]) => mockGetFile(...args),
+  };
+
+  // Support Zustand selector pattern: useFileStore((s) => s.field)
   const useFileStore = Object.assign(
-    () => ({
-      getFile: (...args: unknown[]) => mockGetFile(...args),
-    }),
+    (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
     {
       getState: () => ({
         currentFileId: null,
@@ -236,8 +246,13 @@ describe("useChat", () => {
         await result.current.sendMessage("Hi", ["file-1"]);
       });
 
-      expect(mockAppendToMessage).toHaveBeenCalledWith("conv-123", "msg-2", "Hello ");
-      expect(mockAppendToMessage).toHaveBeenCalledWith("conv-123", "msg-2", "World");
+      // Token batching via RAF may combine chunks into a single flush,
+      // so verify the full text was appended across all calls.
+      const appendedText = mockAppendToMessage.mock.calls
+        .filter(([cId, mId]: [string, string]) => cId === "conv-123" && mId === "msg-2")
+        .map(([, , text]: [string, string, string]) => text)
+        .join("");
+      expect(appendedText).toBe("Hello World");
     });
 
     it("saves user message to backend", async () => {

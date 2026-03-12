@@ -13,6 +13,7 @@ import {
   Trash2,
   Sparkles,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -31,6 +32,7 @@ interface ReviewPanelProps {
 }
 
 export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
+  const t = useTranslations("editor");
   const [expandedCategories, setExpandedCategories] = useState<Set<ReviewCategory>>(
     new Set(["correctness", "clarity", "tone", "engagement"])
   );
@@ -149,7 +151,9 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
           <AiLogoIcon className="h-4 w-4" />
-          <span className="text-xs font-medium text-muted-foreground">Writing Review</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("reviewPanel.title")}
+          </span>
           {pendingSuggestions.length > 0 && (
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
               {pendingSuggestions.length}
@@ -164,7 +168,7 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
                 size="icon"
                 onClick={() => handleNavigateStep("prev")}
                 className="h-7 w-7"
-                title="Previous suggestion"
+                title={t("reviewPanel.previousSuggestion")}
               >
                 <ChevronUp className="h-4 w-4" />
               </Button>
@@ -173,7 +177,7 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
                 size="icon"
                 onClick={() => handleNavigateStep("next")}
                 className="h-7 w-7"
-                title="Next suggestion"
+                title={t("reviewPanel.nextSuggestion")}
               >
                 <ChevronDown className="h-4 w-4" />
               </Button>
@@ -189,8 +193,10 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
       {isLoading && (
         <div className="flex flex-1 flex-col items-center justify-center py-8">
           <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" />
-          <span className="text-sm text-muted-foreground">Analyzing document...</span>
-          <span className="mt-1 text-xs text-muted-foreground">This may take a moment</span>
+          <span className="text-sm text-muted-foreground">{t("reviewPanel.analyzing")}</span>
+          <span className="mt-1 text-xs text-muted-foreground">
+            {t("reviewPanel.analyzingSubtext")}
+          </span>
         </div>
       )}
 
@@ -260,7 +266,7 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="flex-1" onClick={handleDismissAll}>
                 <Trash2 className="mr-1 h-4 w-4" />
-                Dismiss All
+                {t("reviewPanel.dismissAll")}
               </Button>
               <Button
                 size="sm"
@@ -268,7 +274,7 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
                 onClick={handleAcceptAll}
               >
                 <Check className="mr-1 h-4 w-4" />
-                Accept All
+                {t("reviewPanel.acceptAll")}
               </Button>
             </div>
           </div>
@@ -279,14 +285,12 @@ export function ReviewPanel({ editor, isOpen, onClose }: ReviewPanelProps) {
       {!isLoading && pendingSuggestions.length === 0 && (
         <div className="flex flex-1 flex-col items-center justify-center p-4 text-muted-foreground">
           <Sparkles className="mb-3 h-10 w-10 opacity-40" />
-          <p className="text-sm font-medium">No suggestions</p>
+          <p className="text-sm font-medium">{t("reviewPanel.noSuggestions")}</p>
           <p className="mt-1 text-center text-xs">
-            {suggestions.length > 0
-              ? "All suggestions have been reviewed"
-              : "Your writing looks great!"}
+            {suggestions.length > 0 ? t("reviewPanel.allReviewed") : t("reviewPanel.looksGreat")}
           </p>
           <Button variant="outline" size="sm" className="mt-4" onClick={onClose}>
-            Close
+            {t("reviewPanel.close")}
           </Button>
         </div>
       )}
@@ -306,6 +310,7 @@ function SuggestionCard({
   onDismiss: () => void;
   onNavigate: () => void;
 }) {
+  const t = useTranslations("editor");
   const category = REVIEW_CATEGORIES[suggestion.category];
 
   return (
@@ -350,7 +355,7 @@ function SuggestionCard({
         onClick={(e) => e.stopPropagation()}
       >
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onDismiss}>
-          Dismiss
+          {t("reviewPanel.dismiss")}
         </Button>
         <Button
           size="sm"
@@ -358,7 +363,7 @@ function SuggestionCard({
           onClick={onAccept}
         >
           <Check className="mr-1 h-3 w-3" />
-          Accept
+          {t("reviewPanel.accept")}
         </Button>
       </div>
     </div>

@@ -97,41 +97,45 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const dragCounterRef = useRef(0);
 
   const isMobile = useIsMobile();
-  const { currentFileId } = useFileStore();
-  const { conversations, clearConversation, loadConversation, isLoadingHistory } = useChatStore();
+  const currentFileId = useFileStore((s) => s.currentFileId);
+  const clearConversation = useChatStore((s) => s.clearConversation);
+  const loadConversation = useChatStore((s) => s.loadConversation);
+  const isLoadingHistory = useChatStore((s) => s.isLoadingHistory);
   const chatSuggestions = SUGGESTIONS;
 
   // Chat context store for "Ask in Chat" feature (Context Pills)
-  const {
-    chatContexts,
-    removeChatContext,
-    clearAllChatContexts,
-    addChatContext,
-    consumePendingInput,
-  } = useChatContextStore();
+  const chatContexts = useChatContextStore((s) => s.chatContexts);
+  const removeChatContext = useChatContextStore((s) => s.removeChatContext);
+  const clearAllChatContexts = useChatContextStore((s) => s.clearAllChatContexts);
+  const addChatContext = useChatContextStore((s) => s.addChatContext);
+  const consumePendingInput = useChatContextStore((s) => s.consumePendingInput);
 
   // Data files store for code execution
-  const { uploadDataFile, getDataFiles, loadDataFiles } = useDataFilesStore();
+  const uploadDataFile = useDataFilesStore((s) => s.uploadDataFile);
+  const getDataFiles = useDataFilesStore((s) => s.getDataFiles);
+  const loadDataFiles = useDataFilesStore((s) => s.loadDataFiles);
 
   // KB store for document uploads
-  const { uploadAttachments: uploadKBFiles } = useKBStore();
+  const uploadKBFiles = useKBStore((s) => s.uploadAttachments);
 
   // Credits lock
   const isAILocked = useBillingStore((s) => s.isAILocked)();
 
-  // Get conversation key without triggering store updates during render
+  // Subscribe to only the current conversation via selector (immer ensures
+  // other conversations' changes don't create a new reference here).
   const effectiveFileId = isDemoMode ? "demo-file" : currentFileId;
   const conversationKey = effectiveFileId || "global";
-  const conversation = useMemo(() => {
-    return (
-      conversations[conversationKey] || {
+  const storeConversation = useChatStore((s) => s.conversations[conversationKey]);
+  const conversation = useMemo(
+    () =>
+      storeConversation || {
         id: conversationKey,
         fileId: effectiveFileId,
-        messages: [],
+        messages: [] as never[],
         createdAt: new Date().toISOString(),
-      }
-    );
-  }, [conversations, conversationKey, effectiveFileId]);
+      },
+    [storeConversation, conversationKey, effectiveFileId]
+  );
 
   const {
     sendMessage,

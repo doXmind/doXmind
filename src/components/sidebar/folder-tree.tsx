@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import {
   Folder,
@@ -40,23 +40,23 @@ const log = storeLogger.child("FolderTree");
 
 export function FolderTree() {
   const t = useTranslations("sidebar");
-  const {
-    files,
-    currentFolderId,
-    getFolders,
-    getFilesInFolder,
-    getSubPages,
-    getFavorites,
-    getFolderAncestors,
-    setCurrentFolder,
-    moveFileToFolder,
-    renameFile,
-    deleteFile,
-    restoreFile,
-    importFile,
-    justCreatedFileId,
-    clearJustCreatedFileId,
-  } = useFileStore();
+
+  // Fine-grained selectors — actions are stable refs, state values subscribed individually
+  const files = useFileStore((s) => s.files);
+  const currentFolderId = useFileStore((s) => s.currentFolderId);
+  const getFolders = useFileStore((s) => s.getFolders);
+  const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
+  const getSubPages = useFileStore((s) => s.getSubPages);
+  const getFavorites = useFileStore((s) => s.getFavorites);
+  const getFolderAncestors = useFileStore((s) => s.getFolderAncestors);
+  const setCurrentFolder = useFileStore((s) => s.setCurrentFolder);
+  const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
+  const renameFile = useFileStore((s) => s.renameFile);
+  const deleteFile = useFileStore((s) => s.deleteFile);
+  const restoreFile = useFileStore((s) => s.restoreFile);
+  const importFile = useFileStore((s) => s.importFile);
+  const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
+  const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
   const [favoritesExpanded, setFavoritesExpanded] = useState(true);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [isDraggingOverEmptyFolder, setIsDraggingOverEmptyFolder] = useState(false);
@@ -73,13 +73,26 @@ export function FolderTree() {
   const [contextMenuReady, setContextMenuReady] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  // Get folders for the current view (root or inside a folder)
-  const viewFolders = currentFolderId ? getFolders(currentFolderId) : getFolders(null);
-  const rootFiles = getFilesInFolder(null);
-  const currentFolder = currentFolderId ? files.find((f) => f.id === currentFolderId) : null;
-  const breadcrumbAncestors = currentFolderId ? getFolderAncestors(currentFolderId) : [];
-  // All folders (for context menu lookups)
-  const allFolders = files.filter((f) => f.isFolder);
+  // Memoize derived data — recomputed only when files or currentFolderId change.
+  // `files` is intentionally in deps as a change signal even though getFolders/etc.
+  // read it internally (ESLint can't see through the store method indirection).
+  const viewFolders = useMemo(
+    () => (currentFolderId ? getFolders(currentFolderId) : getFolders(null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
+    [files, currentFolderId, getFolders]
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
+  const rootFiles = useMemo(() => getFilesInFolder(null), [files, getFilesInFolder]);
+  const currentFolder = useMemo(
+    () => (currentFolderId ? files.find((f) => f.id === currentFolderId) : null),
+    [files, currentFolderId]
+  );
+  const breadcrumbAncestors = useMemo(
+    () => (currentFolderId ? getFolderAncestors(currentFolderId) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
+    [currentFolderId, getFolderAncestors, files]
+  );
+  const allFolders = useMemo(() => files.filter((f) => f.isFolder), [files]);
 
   // Drag and drop handlers for folders
   const handleDragOver = (e: React.DragEvent, folderId: string) => {
@@ -317,7 +330,11 @@ export function FolderTree() {
   }, [contextMenu, contextMenuFocusIndex]);
 
   // When inside a folder, show only files in that folder
-  const currentFolderFiles = currentFolderId ? getFilesInFolder(currentFolderId) : [];
+  const currentFolderFiles = useMemo(
+    () => (currentFolderId ? getFilesInFolder(currentFolderId) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
+    [currentFolderId, files, getFilesInFolder]
+  );
 
   // Recursive renderer for files and their sub-pages
   const renderFileWithSubPages = (file: FileItemType) => {

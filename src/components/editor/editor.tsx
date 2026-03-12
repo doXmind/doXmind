@@ -63,35 +63,34 @@ interface EditorProps {
 }
 
 export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
-  // Subscribe directly to file store to get real-time updates (for AI edits)
-  const { updateFile, files } = useFileStore();
+  // Subscribe to specific file via selector — avoids re-render when OTHER files change
+  const updateFile = useFileStore((s) => s.updateFile);
+  const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
   const { updateDemoContent, demoFile } = useDemoStore();
   // In demo mode, use demoFile; otherwise use file from store
-  const file = isDemoMode
-    ? demoFile || initialFile
-    : files.find((f) => f.id === initialFile.id) || initialFile;
-  const {
-    setDirty,
-    setSelection,
-    setSaving,
-    setLastSavedAt,
-    pendingEdits,
-    clearPendingEdit,
-    imageModalOpen,
-    imageModalCallback,
-    closeImageModal,
-    isReviewPanelOpen,
-    setReviewPanelOpen,
-    lastAIOperation,
-    clearLastAIOperation,
-    spellcheckEnabled,
-    reviewRequested,
-    clearReviewRequest,
-    setReviewState,
-    openInlineAI,
-    closeInlineAI,
-    inlineAIOpen,
-  } = useEditorStore();
+  const file = isDemoMode ? demoFile || initialFile : storeFile || initialFile;
+
+  // Editor store — actions are stable refs, state values subscribed individually
+  const setDirty = useEditorStore((s) => s.setDirty);
+  const setSelection = useEditorStore((s) => s.setSelection);
+  const setSaving = useEditorStore((s) => s.setSaving);
+  const setLastSavedAt = useEditorStore((s) => s.setLastSavedAt);
+  const pendingEdits = useEditorStore((s) => s.pendingEdits);
+  const clearPendingEdit = useEditorStore((s) => s.clearPendingEdit);
+  const imageModalOpen = useEditorStore((s) => s.imageModalOpen);
+  const imageModalCallback = useEditorStore((s) => s.imageModalCallback);
+  const closeImageModal = useEditorStore((s) => s.closeImageModal);
+  const isReviewPanelOpen = useEditorStore((s) => s.isReviewPanelOpen);
+  const setReviewPanelOpen = useEditorStore((s) => s.setReviewPanelOpen);
+  const lastAIOperation = useEditorStore((s) => s.lastAIOperation);
+  const clearLastAIOperation = useEditorStore((s) => s.clearLastAIOperation);
+  const spellcheckEnabled = useEditorStore((s) => s.spellcheckEnabled);
+  const reviewRequested = useEditorStore((s) => s.reviewRequested);
+  const clearReviewRequest = useEditorStore((s) => s.clearReviewRequest);
+  const setReviewState = useEditorStore((s) => s.setReviewState);
+  const openInlineAI = useEditorStore((s) => s.openInlineAI);
+  const closeInlineAI = useEditorStore((s) => s.closeInlineAI);
+  const inlineAIOpen = useEditorStore((s) => s.inlineAIOpen);
 
   // Layout state — use individual selectors to avoid re-renders on unrelated layout changes
   const editorWidth = useLayoutStore((s) => s.editorWidth);

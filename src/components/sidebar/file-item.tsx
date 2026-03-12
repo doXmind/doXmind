@@ -35,20 +35,19 @@ let lastClickedFileId: string | null = null;
 export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const router = useRouter();
   const t = useTranslations("sidebar");
-  const {
-    currentFileId,
-    setCurrentFile,
-    deleteFile,
-    renameFile,
-    moveFileToFolder,
-    toggleFavorite,
-    justCreatedFileId,
-    clearJustCreatedFileId,
-    selectedFileIds,
-    toggleFileSelection,
-    selectFileRange,
-    clearSelection,
-  } = useFileStore();
+  // Fine-grained selectors — each FileItem only re-renders when its relevant state changes
+  const currentFileId = useFileStore((s) => s.currentFileId);
+  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
+  const deleteFile = useFileStore((s) => s.deleteFile);
+  const renameFile = useFileStore((s) => s.renameFile);
+  const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
+  const toggleFavorite = useFileStore((s) => s.toggleFavorite);
+  const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
+  const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
+  const selectedFileIds = useFileStore((s) => s.selectedFileIds);
+  const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
+  const selectFileRange = useFileStore((s) => s.selectFileRange);
+  const clearSelection = useFileStore((s) => s.clearSelection);
   const [isRenaming, setIsRenaming] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);

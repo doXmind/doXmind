@@ -3,11 +3,13 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { NodeViewWrapper, NodeViewContent, NodeViewProps } from "@tiptap/react";
 import { ChevronRight } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
 export function ToggleNodeView({ node, updateAttributes }: NodeViewProps) {
+  const t = useTranslations("editor");
   const isOpen = node.attrs.open !== false;
-  const summary = node.attrs.summary || "Toggle heading";
+  const summary = node.attrs.summary || t("toggle.defaultSummary");
   const [isEditing, setIsEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 

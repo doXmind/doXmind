@@ -2,20 +2,14 @@
 
 import { useEffect, useCallback, useState, Suspense } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { FilesSidebar } from "@/components/sidebar/files-sidebar";
 import { Editor } from "@/components/editor/editor";
-import { ChatPanel } from "@/components/ai/chat-panel";
-import { VersionHistoryPanel } from "@/components/editor/version-history-panel";
 import { ResizeHandle } from "@/components/ui/resize-handle";
-// Mobile V3 Components (New Design)
-import { MobileEditorLayout } from "@/components/mobile/mobile-editor-layout";
 // Shared Components
 import { LoadingScreen } from "@/components/loading-screen";
-import { KeyboardShortcutsModal } from "@/components/ui/keyboard-shortcuts-modal";
-import { CommandPalette } from "@/components/ui/command-palette";
-import { QuickSwitcher } from "@/components/ui/quick-switcher";
 import { NetworkStatusIndicator } from "@/components/ui/network-status-indicator";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -37,14 +31,73 @@ import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { ForkIndicator } from "@/components/editor/fork-indicator";
-import { FloatingChatButton } from "@/components/ai/floating-chat-button";
-import { FloatingChatWindow } from "@/components/ai/floating-chat-window";
-import { PresentationMode } from "@/components/editor/presentation-mode";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { useBillingStore } from "@/stores/billing-store";
-import { PaymentSuccessModal } from "@/components/billing/payment-success-modal";
+
+// Dynamic imports — cold-path components split into separate chunks
+const ChatPanel = dynamic(
+  () => import("@/components/ai/chat-panel").then((m) => ({ default: m.ChatPanel })),
+  { ssr: false }
+);
+const VersionHistoryPanel = dynamic(
+  () =>
+    import("@/components/editor/version-history-panel").then((m) => ({
+      default: m.VersionHistoryPanel,
+    })),
+  { ssr: false }
+);
+const MobileEditorLayout = dynamic(
+  () =>
+    import("@/components/mobile/mobile-editor-layout").then((m) => ({
+      default: m.MobileEditorLayout,
+    })),
+  { ssr: false }
+);
+const KeyboardShortcutsModal = dynamic(
+  () =>
+    import("@/components/ui/keyboard-shortcuts-modal").then((m) => ({
+      default: m.KeyboardShortcutsModal,
+    })),
+  { ssr: false }
+);
+const CommandPalette = dynamic(
+  () => import("@/components/ui/command-palette").then((m) => ({ default: m.CommandPalette })),
+  { ssr: false }
+);
+const QuickSwitcher = dynamic(
+  () => import("@/components/ui/quick-switcher").then((m) => ({ default: m.QuickSwitcher })),
+  { ssr: false }
+);
+const FloatingChatButton = dynamic(
+  () =>
+    import("@/components/ai/floating-chat-button").then((m) => ({
+      default: m.FloatingChatButton,
+    })),
+  { ssr: false }
+);
+const FloatingChatWindow = dynamic(
+  () =>
+    import("@/components/ai/floating-chat-window").then((m) => ({
+      default: m.FloatingChatWindow,
+    })),
+  { ssr: false }
+);
+const PresentationMode = dynamic(
+  () =>
+    import("@/components/editor/presentation-mode").then((m) => ({
+      default: m.PresentationMode,
+    })),
+  { ssr: false }
+);
+const PaymentSuccessModal = dynamic(
+  () =>
+    import("@/components/billing/payment-success-modal").then((m) => ({
+      default: m.PaymentSuccessModal,
+    })),
+  { ssr: false }
+);
 
 /**
  * Legacy URL redirect: /editor?id=xxx -> /editor/xxx
@@ -123,44 +176,41 @@ export default function EditorPage() {
   // /editor -> undefined, /editor/abc123 -> ["abc123"]
   const fileIdFromUrl = (params.fileId as string[] | undefined)?.[0] ?? null;
 
-  const {
-    currentFileId,
-    files,
-    loadFiles,
-    isLoading,
-    isSynced,
-    loadFileContent,
-    loadedContentIds,
-  } = useFileStore();
+  // Fine-grained Zustand selectors — only re-render when the specific field changes
+  const currentFileId = useFileStore((s) => s.currentFileId);
+  const files = useFileStore((s) => s.files);
+  const loadFiles = useFileStore((s) => s.loadFiles);
+  const isLoading = useFileStore((s) => s.isLoading);
+  const isSynced = useFileStore((s) => s.isSynced);
+  const loadFileContent = useFileStore((s) => s.loadFileContent);
+  const loadedContentIds = useFileStore((s) => s.loadedContentIds);
 
   // Sync URL <-> Zustand store
   useFileUrlSync(fileIdFromUrl);
 
-  const {
-    isChatOpen,
-    chatMode,
-    isSidebarOpen,
-    toggleSidebar,
-    isFilesSidebarOpen,
-    isFocusMode,
-    setFocusMode,
-    isVersionHistoryOpen,
-    setVersionHistoryOpen,
-    isKeyboardShortcutsOpen,
-    setKeyboardShortcutsOpen,
-    isCommandPaletteOpen,
-    setCommandPaletteOpen,
-    setMobileSidebarOpen,
-    setMobileOutlineOpen,
-    sidebarWidth,
-    filesSidebarWidth,
-    chatPanelWidth,
-    setFilesSidebarWidth,
-    setChatPanelWidth,
-    resetPanelWidths,
-  } = useLayoutStore();
+  const isChatOpen = useLayoutStore((s) => s.isChatOpen);
+  const chatMode = useLayoutStore((s) => s.chatMode);
+  const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
+  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
+  const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
+  const isFocusMode = useLayoutStore((s) => s.isFocusMode);
+  const setFocusMode = useLayoutStore((s) => s.setFocusMode);
+  const isVersionHistoryOpen = useLayoutStore((s) => s.isVersionHistoryOpen);
+  const setVersionHistoryOpen = useLayoutStore((s) => s.setVersionHistoryOpen);
+  const isKeyboardShortcutsOpen = useLayoutStore((s) => s.isKeyboardShortcutsOpen);
+  const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
+  const isCommandPaletteOpen = useLayoutStore((s) => s.isCommandPaletteOpen);
+  const setCommandPaletteOpen = useLayoutStore((s) => s.setCommandPaletteOpen);
+  const setMobileSidebarOpen = useLayoutStore((s) => s.setMobileSidebarOpen);
+  const setMobileOutlineOpen = useLayoutStore((s) => s.setMobileOutlineOpen);
+  const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
+  const filesSidebarWidth = useLayoutStore((s) => s.filesSidebarWidth);
+  const chatPanelWidth = useLayoutStore((s) => s.chatPanelWidth);
+  const setFilesSidebarWidth = useLayoutStore((s) => s.setFilesSidebarWidth);
+  const setChatPanelWidth = useLayoutStore((s) => s.setChatPanelWidth);
+  const resetPanelWidths = useLayoutStore((s) => s.resetPanelWidths);
 
-  const { editor } = useEditorRefStore();
+  const editor = useEditorRefStore((s) => s.editor);
   const { headings, activeId, navigateTo } = useHeadings(editor);
   const hasHeadings = headings.length > 0;
   const currentFile = files.find((f) => f.id === currentFileId);

@@ -2,13 +2,22 @@
 
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronsUpDown, GitBranch, FileText, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
 import { OutlineView } from "@/components/editor/mindlines/outline-view";
-import { MindmapFlow } from "@/components/editor/mindlines/mindmap-flow";
+
+// Lazy load MindmapFlow (~100kB @xyflow/react) — only needed on button click
+const MindmapFlow = dynamic(
+  () =>
+    import("@/components/editor/mindlines/mindmap-flow").then((m) => ({
+      default: m.MindmapFlow,
+    })),
+  { ssr: false }
+);
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";

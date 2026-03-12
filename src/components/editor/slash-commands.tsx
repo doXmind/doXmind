@@ -39,30 +39,44 @@ import {
   Bookmark,
   FileText,
   Globe,
+  ChevronLeft,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn, formatShortcut } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 
 import { Palette, Table2, LayoutGrid, GalleryHorizontalEnd } from "lucide-react";
 
-interface CommandItem {
-  title: string;
-  description: string;
+interface CommandSubItem {
+  titleKey: string;
   icon: React.ReactNode;
-  category: "basic" | "lists" | "media" | "database" | "layout" | "advanced" | "turninto" | "color";
-  shortcut?: string;
   command: (props: { editor: Editor; range: Range }) => void;
 }
 
-const categoryLabels: Record<string, string> = {
-  basic: "Basic Blocks",
-  lists: "Lists",
-  media: "Media",
-  database: "Database",
-  layout: "Layout",
-  advanced: "Advanced",
-  turninto: "Turn Into",
-  color: "Color",
+interface CommandItem {
+  title: string;
+  description: string;
+  titleKey: string;
+  descKey: string;
+  icon: React.ReactNode;
+  category: "basic" | "lists" | "media" | "database" | "layout" | "advanced" | "turninto" | "color";
+  shortcut?: string;
+  searchOnly?: boolean;
+  hasSubItems?: boolean;
+  subItems?: CommandSubItem[];
+  searchKeywords?: string[];
+  command: (props: { editor: Editor; range: Range }) => void;
+}
+
+const categoryLabelKeys: Record<string, string> = {
+  basic: "slashMenu.categories.basic",
+  lists: "slashMenu.categories.lists",
+  media: "slashMenu.categories.media",
+  database: "slashMenu.categories.database",
+  layout: "slashMenu.categories.layout",
+  advanced: "slashMenu.categories.advanced",
+  turninto: "slashMenu.categories.turninto",
+  color: "slashMenu.categories.color",
 };
 
 const commands: CommandItem[] = [
@@ -70,8 +84,11 @@ const commands: CommandItem[] = [
   {
     title: "Text",
     description: "Plain text paragraph",
+    titleKey: "blockMenu.text",
+    descKey: "blockMenu.textDesc",
     icon: <Type className="h-4 w-4" />,
     category: "basic",
+    searchKeywords: ["文本", "纯文本", "段落"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setParagraph().run();
     },
@@ -79,9 +96,12 @@ const commands: CommandItem[] = [
   {
     title: "Heading 1",
     description: "Large section heading",
+    titleKey: "blockMenu.heading1",
+    descKey: "blockMenu.heading1Desc",
     icon: <Heading1 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+1",
+    searchKeywords: ["标题", "一级标题", "大标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run();
     },
@@ -89,9 +109,12 @@ const commands: CommandItem[] = [
   {
     title: "Heading 2",
     description: "Medium section heading",
+    titleKey: "blockMenu.heading2",
+    descKey: "blockMenu.heading2Desc",
     icon: <Heading2 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+2",
+    searchKeywords: ["标题", "二级标题", "中标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run();
     },
@@ -99,9 +122,12 @@ const commands: CommandItem[] = [
   {
     title: "Heading 3",
     description: "Small section heading",
+    titleKey: "blockMenu.heading3",
+    descKey: "blockMenu.heading3Desc",
     icon: <Heading3 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+3",
+    searchKeywords: ["标题", "三级标题", "小标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
     },
@@ -109,9 +135,13 @@ const commands: CommandItem[] = [
   {
     title: "Heading 4",
     description: "Extra small heading",
+    titleKey: "blockMenu.heading4",
+    descKey: "blockMenu.heading4Desc",
     icon: <Heading4 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+4",
+    searchOnly: true,
+    searchKeywords: ["标题", "四级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 4 }).run();
     },
@@ -119,9 +149,13 @@ const commands: CommandItem[] = [
   {
     title: "Heading 5",
     description: "Minor heading",
+    titleKey: "blockMenu.heading5",
+    descKey: "blockMenu.heading5Desc",
     icon: <Heading5 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+5",
+    searchOnly: true,
+    searchKeywords: ["标题", "五级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 5 }).run();
     },
@@ -129,9 +163,13 @@ const commands: CommandItem[] = [
   {
     title: "Heading 6",
     description: "Smallest heading",
+    titleKey: "blockMenu.heading6",
+    descKey: "blockMenu.heading6Desc",
     icon: <Heading6 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+6",
+    searchOnly: true,
+    searchKeywords: ["标题", "六级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 6 }).run();
     },
@@ -139,9 +177,12 @@ const commands: CommandItem[] = [
   {
     title: "Quote",
     description: "Create a blockquote",
+    titleKey: "blockMenu.quote",
+    descKey: "blockMenu.quoteDesc",
     icon: <Quote className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Shift+B",
+    searchKeywords: ["引用", "引用块"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleBlockquote().run();
     },
@@ -149,8 +190,11 @@ const commands: CommandItem[] = [
   {
     title: "Callout",
     description: "Highlighted info or warning block",
+    titleKey: "blockMenu.callout",
+    descKey: "blockMenu.calloutDesc",
     icon: <MessageSquareQuote className="h-4 w-4" />,
     category: "basic",
+    searchKeywords: ["提示框", "高亮", "警告"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setCallout({ type: "info" }).run();
     },
@@ -158,8 +202,11 @@ const commands: CommandItem[] = [
   {
     title: "Toggle",
     description: "Collapsible content block",
+    titleKey: "blockMenu.toggle",
+    descKey: "blockMenu.toggleDesc",
     icon: <ChevronRight className="h-4 w-4" />,
     category: "basic",
+    searchKeywords: ["折叠", "可折叠"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setToggle().run();
     },
@@ -167,8 +214,11 @@ const commands: CommandItem[] = [
   {
     title: "Table of Contents",
     description: "Auto-generated from headings",
+    titleKey: "blockMenu.toc",
+    descKey: "blockMenu.tocDesc",
     icon: <TableOfContents className="h-4 w-4" />,
     category: "basic",
+    searchKeywords: ["目录", "大纲"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setTableOfContents().run();
     },
@@ -176,9 +226,12 @@ const commands: CommandItem[] = [
   {
     title: "Divider",
     description: "Insert a horizontal divider",
+    titleKey: "blockMenu.divider",
+    descKey: "blockMenu.dividerDesc",
     icon: <Minus className="h-4 w-4" />,
     category: "basic",
     shortcut: "---",
+    searchKeywords: ["分割线", "水平线"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setHorizontalRule().run();
     },
@@ -186,8 +239,11 @@ const commands: CommandItem[] = [
   {
     title: "Link to Page",
     description: "Link to an existing page",
+    titleKey: "blockMenu.linkToPage",
+    descKey: "blockMenu.linkToPageDesc",
     icon: <FileText className="h-4 w-4" />,
     category: "basic",
+    searchKeywords: ["页面链接", "链接到页面"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const { openPagePicker } = useEditorStore.getState();
@@ -201,9 +257,12 @@ const commands: CommandItem[] = [
   {
     title: "Bullet List",
     description: "Create a simple bullet list",
+    titleKey: "blockMenu.bulletList",
+    descKey: "blockMenu.bulletListDesc",
     icon: <List className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+8",
+    searchKeywords: ["无序列表", "列表"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleBulletList().run();
     },
@@ -211,9 +270,12 @@ const commands: CommandItem[] = [
   {
     title: "Numbered List",
     description: "Create a numbered list",
+    titleKey: "blockMenu.numberedList",
+    descKey: "blockMenu.numberedListDesc",
     icon: <ListOrdered className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+7",
+    searchKeywords: ["有序列表", "编号列表"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleOrderedList().run();
     },
@@ -221,9 +283,12 @@ const commands: CommandItem[] = [
   {
     title: "Task List",
     description: "Create a task list with checkboxes",
+    titleKey: "blockMenu.taskList",
+    descKey: "blockMenu.taskListDesc",
     icon: <ListTodo className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+9",
+    searchKeywords: ["任务列表", "待办", "复选框"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleTaskList().run();
     },
@@ -233,9 +298,12 @@ const commands: CommandItem[] = [
   {
     title: "Image",
     description: "Upload or embed an image",
+    titleKey: "blockMenu.image",
+    descKey: "blockMenu.imageDesc",
     // eslint-disable-next-line jsx-a11y/alt-text -- This is a Lucide icon, not an img element
     icon: <Image className="h-4 w-4" />,
     category: "media",
+    searchKeywords: ["图片", "图像", "上传"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const { openImageModal } = useEditorStore.getState();
@@ -245,7 +313,6 @@ const commands: CommandItem[] = [
           $from.parent.type.name === "paragraph" && $from.parent.content.size === 0;
 
         if (isEmptyParagraph) {
-          // Replace the empty paragraph left by deleteRange
           editor
             .chain()
             .focus()
@@ -267,8 +334,11 @@ const commands: CommandItem[] = [
   {
     title: "Table",
     description: "Insert a table",
+    titleKey: "blockMenu.table",
+    descKey: "blockMenu.tableDesc",
     icon: <Table className="h-4 w-4" />,
     category: "media",
+    searchKeywords: ["表格"],
     command: ({ editor, range }) => {
       editor
         .chain()
@@ -281,8 +351,11 @@ const commands: CommandItem[] = [
   {
     title: "Web Bookmark",
     description: "Save a link as a visual bookmark",
+    titleKey: "blockMenu.webBookmark",
+    descKey: "blockMenu.webBookmarkDesc",
     icon: <Bookmark className="h-4 w-4" />,
     category: "media",
+    searchKeywords: ["网页书签", "书签", "链接"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const { openBookmarkModal } = useEditorStore.getState();
@@ -302,12 +375,58 @@ const commands: CommandItem[] = [
     },
   },
 
-  // Database views
+  // Database - parent entry with sub-items
+  {
+    title: "Database",
+    description: "Add a database with table, board, gallery or list view",
+    titleKey: "blockMenu.database",
+    descKey: "blockMenu.databaseDesc",
+    icon: <Table2 className="h-4 w-4" />,
+    category: "database",
+    searchKeywords: ["数据库"],
+    hasSubItems: true,
+    subItems: [
+      {
+        titleKey: "blockMenu.tableView",
+        icon: <Table2 className="h-4 w-4" />,
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).insertDatabaseBlock().run();
+        },
+      },
+      {
+        titleKey: "blockMenu.boardView",
+        icon: <LayoutGrid className="h-4 w-4" />,
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "board").run();
+        },
+      },
+      {
+        titleKey: "blockMenu.galleryView",
+        icon: <GalleryHorizontalEnd className="h-4 w-4" />,
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "gallery").run();
+        },
+      },
+      {
+        titleKey: "blockMenu.listView",
+        icon: <List className="h-4 w-4" />,
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "list").run();
+        },
+      },
+    ],
+    command: () => {},
+  },
+  // Individual database views (search-only, for direct access via search)
   {
     title: "Table view",
     description: "Add a table view for a new or existing data source",
+    titleKey: "blockMenu.tableView",
+    descKey: "blockMenu.tableViewDesc",
     icon: <Table2 className="h-4 w-4" />,
     category: "database",
+    searchOnly: true,
+    searchKeywords: ["表格视图", "数据库表格"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertDatabaseBlock().run();
     },
@@ -315,8 +434,12 @@ const commands: CommandItem[] = [
   {
     title: "Board view",
     description: "Add a Kanban board view grouped by status",
+    titleKey: "blockMenu.boardView",
+    descKey: "blockMenu.boardViewDesc",
     icon: <LayoutGrid className="h-4 w-4" />,
     category: "database",
+    searchOnly: true,
+    searchKeywords: ["看板视图", "看板"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "board").run();
     },
@@ -324,8 +447,12 @@ const commands: CommandItem[] = [
   {
     title: "Gallery view",
     description: "Add a gallery view with card layout",
+    titleKey: "blockMenu.galleryView",
+    descKey: "blockMenu.galleryViewDesc",
     icon: <GalleryHorizontalEnd className="h-4 w-4" />,
     category: "database",
+    searchOnly: true,
+    searchKeywords: ["画廊视图", "画廊"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "gallery").run();
     },
@@ -333,19 +460,62 @@ const commands: CommandItem[] = [
   {
     title: "List view",
     description: "Add a simple list view",
+    titleKey: "blockMenu.listView",
+    descKey: "blockMenu.listViewDesc",
     icon: <List className="h-4 w-4" />,
     category: "database",
+    searchOnly: true,
+    searchKeywords: ["列表视图"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertDatabaseBlock(undefined, "list").run();
     },
   },
 
-  // Layout
+  // Layout - parent entry with sub-items
+  {
+    title: "Columns",
+    description: "Split content into side-by-side columns",
+    titleKey: "blockMenu.columns",
+    descKey: "blockMenu.columnsDesc",
+    icon: <Columns2 className="h-4 w-4" />,
+    category: "layout",
+    searchKeywords: ["分栏", "列"],
+    hasSubItems: true,
+    subItems: [
+      {
+        titleKey: "blockMenu.twoColumns",
+        icon: <Columns2 className="h-4 w-4" />,
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).setColumns(2).run();
+        },
+      },
+      {
+        titleKey: "blockMenu.threeColumns",
+        icon: <Columns3 className="h-4 w-4" />,
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).setColumns(3).run();
+        },
+      },
+      {
+        titleKey: "blockMenu.fourColumns",
+        icon: <Columns4 className="h-4 w-4" />,
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).setColumns(4).run();
+        },
+      },
+    ],
+    command: () => {},
+  },
+  // Individual column options (search-only)
   {
     title: "2 Columns",
     description: "Split into two side-by-side columns",
+    titleKey: "blockMenu.twoColumns",
+    descKey: "blockMenu.twoColumnsDesc",
     icon: <Columns2 className="h-4 w-4" />,
     category: "layout",
+    searchOnly: true,
+    searchKeywords: ["两栏", "两列"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setColumns(2).run();
     },
@@ -353,8 +523,12 @@ const commands: CommandItem[] = [
   {
     title: "3 Columns",
     description: "Split into three columns",
+    titleKey: "blockMenu.threeColumns",
+    descKey: "blockMenu.threeColumnsDesc",
     icon: <Columns3 className="h-4 w-4" />,
     category: "layout",
+    searchOnly: true,
+    searchKeywords: ["三栏", "三列"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setColumns(3).run();
     },
@@ -362,8 +536,12 @@ const commands: CommandItem[] = [
   {
     title: "4 Columns",
     description: "Split into four columns",
+    titleKey: "blockMenu.fourColumns",
+    descKey: "blockMenu.fourColumnsDesc",
     icon: <Columns4 className="h-4 w-4" />,
     category: "layout",
+    searchOnly: true,
+    searchKeywords: ["四栏", "四列"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setColumns(4).run();
     },
@@ -373,9 +551,12 @@ const commands: CommandItem[] = [
   {
     title: "Code Block",
     description: "Create a code block",
+    titleKey: "blockMenu.codeBlock",
+    descKey: "blockMenu.codeBlockDesc",
     icon: <Code className="h-4 w-4" />,
     category: "advanced",
     shortcut: "Ctrl+Alt+C",
+    searchKeywords: ["代码块", "代码"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
     },
@@ -383,8 +564,11 @@ const commands: CommandItem[] = [
   {
     title: "Math Block",
     description: "Insert a block math equation",
+    titleKey: "blockMenu.mathBlock",
+    descKey: "blockMenu.mathBlockDesc",
     icon: <Sigma className="h-4 w-4" />,
     category: "advanced",
+    searchKeywords: ["数学公式", "公式", "方程"],
     command: ({ editor, range }) => {
       editor
         .chain()
@@ -400,8 +584,11 @@ const commands: CommandItem[] = [
   {
     title: "Mermaid Chart",
     description: "Insert a diagram or chart",
+    titleKey: "blockMenu.mermaidChart",
+    descKey: "blockMenu.mermaidChartDesc",
     icon: <GitBranch className="h-4 w-4" />,
     category: "advanced",
+    searchKeywords: ["图表", "流程图", "Mermaid"],
     command: ({ editor, range }) => {
       editor
         .chain()
@@ -417,8 +604,11 @@ const commands: CommandItem[] = [
   {
     title: "Inline Math",
     description: "Insert inline math expression",
+    titleKey: "blockMenu.inlineMath",
+    descKey: "blockMenu.inlineMathDesc",
     icon: <span className="flex h-4 w-4 items-center justify-center font-serif text-sm">x²</span>,
     category: "advanced",
+    searchKeywords: ["行内公式", "内联公式"],
     command: ({ editor, range }) => {
       editor
         .chain()
@@ -432,12 +622,15 @@ const commands: CommandItem[] = [
     },
   },
 
-  // Turn Into (only shown when query matches "turn")
+  // Turn Into (only shown when query matches)
   {
     title: "Turn into Text",
     description: "Convert to plain text",
+    titleKey: "slashMenu.turnIntoText",
+    descKey: "slashMenu.turnIntoTextDesc",
     icon: <Type className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为文本"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setParagraph().run();
     },
@@ -445,8 +638,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Heading 1",
     description: "Convert to large heading",
+    titleKey: "slashMenu.turnIntoH1",
+    descKey: "slashMenu.turnIntoH1Desc",
     icon: <Heading1 className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为标题", "转换为一级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run();
     },
@@ -454,8 +650,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Heading 2",
     description: "Convert to medium heading",
+    titleKey: "slashMenu.turnIntoH2",
+    descKey: "slashMenu.turnIntoH2Desc",
     icon: <Heading2 className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为标题", "转换为二级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run();
     },
@@ -463,8 +662,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Heading 3",
     description: "Convert to small heading",
+    titleKey: "slashMenu.turnIntoH3",
+    descKey: "slashMenu.turnIntoH3Desc",
     icon: <Heading3 className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为标题", "转换为三级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
     },
@@ -472,8 +674,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Heading 4",
     description: "Convert to extra small heading",
+    titleKey: "slashMenu.turnIntoH4",
+    descKey: "slashMenu.turnIntoH4Desc",
     icon: <Heading4 className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为标题", "转换为四级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 4 }).run();
     },
@@ -481,8 +686,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Heading 5",
     description: "Convert to minor heading",
+    titleKey: "slashMenu.turnIntoH5",
+    descKey: "slashMenu.turnIntoH5Desc",
     icon: <Heading5 className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为标题", "转换为五级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 5 }).run();
     },
@@ -490,8 +698,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Heading 6",
     description: "Convert to smallest heading",
+    titleKey: "slashMenu.turnIntoH6",
+    descKey: "slashMenu.turnIntoH6Desc",
     icon: <Heading6 className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为标题", "转换为六级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 6 }).run();
     },
@@ -499,8 +710,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Quote",
     description: "Convert to blockquote",
+    titleKey: "slashMenu.turnIntoQuote",
+    descKey: "slashMenu.turnIntoQuoteDesc",
     icon: <Quote className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为引用"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleBlockquote().run();
     },
@@ -508,8 +722,11 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Callout",
     description: "Convert to callout block",
+    titleKey: "slashMenu.turnIntoCallout",
+    descKey: "slashMenu.turnIntoCalloutDesc",
     icon: <MessageSquareQuote className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为提示框"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setCallout({ type: "info" }).run();
     },
@@ -517,19 +734,25 @@ const commands: CommandItem[] = [
   {
     title: "Turn into Toggle",
     description: "Convert to collapsible toggle",
+    titleKey: "slashMenu.turnIntoToggle",
+    descKey: "slashMenu.turnIntoToggleDesc",
     icon: <ChevronRight className="h-4 w-4" />,
     category: "turninto",
+    searchKeywords: ["转换为折叠"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setToggle().run();
     },
   },
 
-  // Color (only shown when query matches "color" or specific color names)
+  // Color (only shown when query matches)
   {
     title: "Red background",
     description: "Apply red background to block",
+    titleKey: "slashMenu.redBg",
+    descKey: "slashMenu.redBgDesc",
     icon: <div className="h-4 w-4 rounded-sm border border-red-300 bg-red-200" />,
     category: "color",
+    searchKeywords: ["红色背景", "红色"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
@@ -539,8 +762,11 @@ const commands: CommandItem[] = [
   {
     title: "Blue background",
     description: "Apply blue background to block",
+    titleKey: "slashMenu.blueBg",
+    descKey: "slashMenu.blueBgDesc",
     icon: <div className="h-4 w-4 rounded-sm border border-blue-300 bg-blue-200" />,
     category: "color",
+    searchKeywords: ["蓝色背景", "蓝色"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
@@ -550,8 +776,11 @@ const commands: CommandItem[] = [
   {
     title: "Green background",
     description: "Apply green background to block",
+    titleKey: "slashMenu.greenBg",
+    descKey: "slashMenu.greenBgDesc",
     icon: <div className="h-4 w-4 rounded-sm border border-green-300 bg-green-200" />,
     category: "color",
+    searchKeywords: ["绿色背景", "绿色"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
@@ -561,8 +790,11 @@ const commands: CommandItem[] = [
   {
     title: "Yellow background",
     description: "Apply yellow background to block",
+    titleKey: "slashMenu.yellowBg",
+    descKey: "slashMenu.yellowBgDesc",
     icon: <div className="h-4 w-4 rounded-sm border border-yellow-300 bg-yellow-200" />,
     category: "color",
+    searchKeywords: ["黄色背景", "黄色"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
@@ -572,8 +804,11 @@ const commands: CommandItem[] = [
   {
     title: "Purple background",
     description: "Apply purple background to block",
+    titleKey: "slashMenu.purpleBg",
+    descKey: "slashMenu.purpleBgDesc",
     icon: <div className="h-4 w-4 rounded-sm border border-purple-300 bg-purple-200" />,
     category: "color",
+    searchKeywords: ["紫色背景", "紫色"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
@@ -583,8 +818,11 @@ const commands: CommandItem[] = [
   {
     title: "Gray background",
     description: "Apply gray background to block",
+    titleKey: "slashMenu.grayBg",
+    descKey: "slashMenu.grayBgDesc",
     icon: <div className="h-4 w-4 rounded-sm border border-gray-300 bg-gray-200" />,
     category: "color",
+    searchKeywords: ["灰色背景", "灰色"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
@@ -594,8 +832,11 @@ const commands: CommandItem[] = [
   {
     title: "No background",
     description: "Remove block background color",
+    titleKey: "slashMenu.noBg",
+    descKey: "slashMenu.noBgDesc",
     icon: <Palette className="h-4 w-4" />,
     category: "color",
+    searchKeywords: ["无背景", "移除背景"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const nodeType = editor.state.selection.$from.parent.type.name;
@@ -1037,7 +1278,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
   }
 }
 
-function PreviewCard({ item }: { item: CommandItem }) {
+function PreviewCard({ item, translatedTitle }: { item: CommandItem; translatedTitle: string }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [flipToLeft, setFlipToLeft] = useState(false);
 
@@ -1059,7 +1300,9 @@ function PreviewCard({ item }: { item: CommandItem }) {
         <div className="flex h-5 w-5 items-center justify-center text-muted-foreground">
           {item.icon}
         </div>
-        <span className="text-[12px] font-semibold text-muted-foreground/80">{item.title}</span>
+        <span className="text-[12px] font-semibold text-muted-foreground/80">
+          {translatedTitle}
+        </span>
       </div>
       <div className="mb-2.5 h-px bg-border" />
       <div className="pointer-events-none select-none">{getPreviewContent(item)}</div>
@@ -1077,21 +1320,42 @@ interface CommandListRef {
 }
 
 const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, command }, ref) => {
+  const t = useTranslations("editor");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [subView, setSubView] = useState<CommandItem | null>(null);
+  const [subSelectedIndex, setSubSelectedIndex] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const selectItem = useCallback(
     (index: number) => {
       const item = items[index];
       if (item) {
-        command(item);
+        if (item.hasSubItems && item.subItems) {
+          setSubView(item);
+          setSubSelectedIndex(0);
+        } else {
+          command(item);
+        }
       }
     },
     [items, command]
   );
 
+  const selectSubItem = useCallback(
+    (subItem: CommandSubItem) => {
+      if (!subView) return;
+      const syntheticItem: CommandItem = {
+        ...subView,
+        command: subItem.command,
+      };
+      command(syntheticItem);
+    },
+    [subView, command]
+  );
+
   useEffect(() => {
     setSelectedIndex(0);
+    setSubView(null);
   }, [items]);
 
   // Scroll selected item into view
@@ -1100,14 +1364,39 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
     if (!container) return;
 
     const buttons = container.querySelectorAll("[data-command-item]");
-    const selected = buttons[selectedIndex] as HTMLElement | undefined;
+    const idx = subView ? subSelectedIndex : selectedIndex;
+    const selected = buttons[idx] as HTMLElement | undefined;
     if (selected) {
       selected.scrollIntoView({ block: "nearest" });
     }
-  }, [selectedIndex]);
+  }, [selectedIndex, subSelectedIndex, subView]);
 
   useImperativeHandle(ref, () => ({
     onKeyDown: ({ event }) => {
+      // Sub-view keyboard navigation
+      if (subView && subView.subItems) {
+        if (event.key === "ArrowUp") {
+          setSubSelectedIndex(
+            (prev) => (prev - 1 + subView.subItems!.length) % subView.subItems!.length
+          );
+          return true;
+        }
+        if (event.key === "ArrowDown") {
+          setSubSelectedIndex((prev) => (prev + 1) % subView.subItems!.length);
+          return true;
+        }
+        if (event.key === "Enter") {
+          selectSubItem(subView.subItems[subSelectedIndex]);
+          return true;
+        }
+        if (event.key === "Backspace" || event.key === "ArrowLeft") {
+          setSubView(null);
+          return true;
+        }
+        return false;
+      }
+
+      // Main view keyboard navigation
       if (event.key === "ArrowUp") {
         setSelectedIndex((prev) => (prev - 1 + items.length) % items.length);
         return true;
@@ -1128,7 +1417,50 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
   }));
 
   if (items.length === 0) {
-    return <div className="p-2 text-sm text-muted-foreground">No results</div>;
+    return <div className="p-2 text-sm text-muted-foreground">{t("blockMenu.noResults")}</div>;
+  }
+
+  // Sub-view rendering
+  if (subView && subView.subItems) {
+    return (
+      <div className="relative">
+        <div className="w-[420px] overflow-hidden rounded-xl border border-border/70 bg-popover shadow-xl">
+          <div ref={scrollContainerRef} className="p-1.5">
+            <button
+              onClick={() => setSubView(null)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+            >
+              <ChevronLeft className="h-3 w-3" />
+              {t("blockMenu.back")}
+            </button>
+            <div className="mx-1 my-1 h-px bg-border" />
+            {subView.subItems.map((sub, idx) => (
+              <button
+                key={sub.titleKey}
+                data-command-item
+                onClick={() => selectSubItem(sub)}
+                onMouseEnter={() => setSubSelectedIndex(idx)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-2 py-1 text-left text-base",
+                  idx === subSelectedIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground">
+                  {sub.icon}
+                </div>
+                <p className="font-medium">{t(sub.titleKey)}</p>
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center justify-between border-t border-border px-3 py-2 text-sm text-muted-foreground/85">
+            <span>{t("slashMenu.closeMenu")}</span>
+            <span>esc</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Group items by category while preserving order
@@ -1158,7 +1490,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
 
               {/* Category header */}
               <div className="px-2 pb-0.5 pt-1 text-[12px] font-semibold text-muted-foreground/80">
-                {categoryLabels[group.category] ?? group.category}
+                {t(categoryLabelKeys[group.category] ?? group.category)}
               </div>
 
               <div className="mx-1 my-1 h-px bg-border" />
@@ -1166,7 +1498,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
               {/* Items */}
               {group.items.map(({ item, globalIndex }) => (
                 <button
-                  key={item.title}
+                  key={item.titleKey}
                   data-command-item
                   onClick={() => selectItem(globalIndex)}
                   onMouseEnter={() => setSelectedIndex(globalIndex)}
@@ -1181,9 +1513,12 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
                     {item.icon}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{item.title}</p>
+                    <p className="font-medium">{t(item.titleKey)}</p>
                   </div>
-                  {item.shortcut && (
+                  {item.hasSubItems && (
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+                  )}
+                  {item.shortcut && !item.hasSubItems && (
                     <span className="shrink-0 text-xs text-muted-foreground/65">
                       {formatShortcut(item.shortcut)}
                     </span>
@@ -1194,12 +1529,16 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
           ))}
         </div>
         <div className="flex items-center justify-between border-t border-border px-3 py-2 text-sm text-muted-foreground/85">
-          <span>Close menu</span>
+          <span>{t("slashMenu.closeMenu")}</span>
           <span>esc</span>
         </div>
       </div>
       {items[selectedIndex] && (
-        <PreviewCard key={items[selectedIndex].title} item={items[selectedIndex]} />
+        <PreviewCard
+          key={items[selectedIndex].titleKey}
+          item={items[selectedIndex]}
+          translatedTitle={t(items[selectedIndex].titleKey)}
+        />
       )}
     </div>
   );
@@ -1240,19 +1579,23 @@ export const SlashCommands = Extension.create({
         decorationEmptyClass: "slash-command-query-empty",
         items: ({ query }: { query: string }) => {
           const q = query.toLowerCase();
+
+          const matchesQuery = (item: CommandItem) => {
+            if (!q) return true;
+            if (item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q))
+              return true;
+            if (item.searchKeywords?.some((kw) => kw.toLowerCase().includes(q))) return true;
+            return false;
+          };
+
           return commands.filter((item) => {
-            // Hide "Turn Into" and "Color" categories unless query specifically matches
-            if (item.category === "turninto" || item.category === "color") {
-              if (!q) return false; // Don't show by default
-              // Only show when query starts with relevant keywords
-              return (
-                item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
-              );
+            // Hidden categories: only show when query specifically matches
+            if (item.category === "turninto" || item.category === "color" || item.searchOnly) {
+              if (!q) return false;
+              return matchesQuery(item);
             }
-            // Normal filtering for other categories
-            return (
-              item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
-            );
+            // Normal items
+            return matchesQuery(item);
           });
         },
         render: () => {

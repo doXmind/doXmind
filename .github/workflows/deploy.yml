@@ -147,6 +147,9 @@ jobs:
                   --exclude='backups/' \
                   --exclude='data/' \
                   --exclude='deploy.sh' \
+                  --exclude='nginx/' \
+                  --exclude='scripts/' \
+                  --exclude='docker-compose.prod.yml' \
                   "${DEPLOY_DIR}/frontend-src/" "${DEPLOY_DIR}/"
 
               echo "Building new frontend image (this may take 3-5 minutes)..."

@@ -211,7 +211,7 @@ export function TableColumnMenu({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search actions..."
+          placeholder={t("tableMenu.searchActions")}
           className="h-9 w-full rounded-md border border-border/60 bg-background/50 px-2.5 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
           autoFocus
         />
@@ -237,7 +237,7 @@ export function TableColumnMenu({
           );
         })}
         {filteredItems.length === 0 && (
-          <div className="px-3 py-2 text-sm text-muted-foreground">No actions found</div>
+          <div className="px-3 py-2 text-sm text-muted-foreground">{t("tableMenu.noActions")}</div>
         )}
       </div>
     </div>,

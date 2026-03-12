@@ -10,7 +10,8 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker deployment
   output: "standalone",
   experimental: {
-    // Enable React 19 features
+    // Tree-shake barrel re-exports for commonly used icon/animation libraries
+    optimizePackageImports: ["lucide-react", "framer-motion"],
   },
   async headers() {
     return [

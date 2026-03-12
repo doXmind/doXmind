@@ -42,23 +42,73 @@ export type { ToolStatus, ThinkingStatus } from "@/stores/streaming-store";
 export type { TodoItem } from "@/types/stream-events";
 
 export function useChat() {
-  // Use global streaming store instead of local state
-  const {
-    isStreaming,
-    currentTool,
-    toolHistory,
-    thinking,
-    todos,
-    setStreaming,
-    setCurrentTool,
-    setToolHistory,
-    setThinking,
-    setTodos,
-    clearTodos,
-  } = useStreamingStore();
+  // Fine-grained streaming store subscriptions:
+  // Actions are stable refs (never cause re-renders).
+  // State values subscribed individually so a change to one doesn't force
+  // re-render for components that only read another.
+  const isStreaming = useStreamingStore((s) => s.isStreaming);
+  const currentTool = useStreamingStore((s) => s.currentTool);
+  const toolHistory = useStreamingStore((s) => s.toolHistory);
+  const thinking = useStreamingStore((s) => s.thinking);
+  const todos = useStreamingStore((s) => s.todos);
+  const setStreaming = useStreamingStore((s) => s.setStreaming);
+  const setCurrentTool = useStreamingStore((s) => s.setCurrentTool);
+  const setToolHistory = useStreamingStore((s) => s.setToolHistory);
+  const setThinking = useStreamingStore((s) => s.setThinking);
+  const setTodos = useStreamingStore((s) => s.setTodos);
+  const clearTodos = useStreamingStore((s) => s.clearTodos);
+
+  // Chat store actions (stable refs — no re-renders). Declared before token
+  // batching so appendToMessage is available for flushTokenBuffer.
+  const ensureConversation = useChatStore((s) => s.ensureConversation);
+  const addMessage = useChatStore((s) => s.addMessage);
+  const appendToMessage = useChatStore((s) => s.appendToMessage);
+  const setMessageStreaming = useChatStore((s) => s.setMessageStreaming);
+  const updateMessageFull = useChatStore((s) => s.updateMessageFull);
+  const saveMessageToBackend = useChatStore((s) => s.saveMessageToBackend);
+  const removeMessagesAfter = useChatStore((s) => s.removeMessagesAfter);
+  const getFile = useFileStore((s) => s.getFile);
+  const { demoFile } = useDemoStore();
+  const { applyEdits } = useEditOperations();
 
   const streamControllerRef = useRef(createStreamController());
   const toolInputRef = useRef<string>("");
+
+  // Token batching: accumulate SSE text chunks and flush via RAF (~16ms)
+  // to reduce store updates from ~100/s to ~60/s during streaming.
+  const tokenBufferRef = useRef<{
+    conversationId: string;
+    messageId: string;
+    buffer: string;
+    rafId: number | null;
+  }>({ conversationId: "", messageId: "", buffer: "", rafId: null });
+
+  const flushTokenBuffer = useCallback(() => {
+    const buf = tokenBufferRef.current;
+    if (buf.buffer) {
+      appendToMessage(buf.conversationId, buf.messageId, buf.buffer);
+      buf.buffer = "";
+    }
+    buf.rafId = null;
+  }, [appendToMessage]);
+
+  const appendTokenBatched = useCallback(
+    (conversationId: string, messageId: string, chunk: string) => {
+      const buf = tokenBufferRef.current;
+      // Flush pending buffer if target message changed (defensive — prevents
+      // tokens from one message leaking into another during rapid transitions).
+      if (buf.buffer && (buf.conversationId !== conversationId || buf.messageId !== messageId)) {
+        flushTokenBuffer();
+      }
+      buf.conversationId = conversationId;
+      buf.messageId = messageId;
+      buf.buffer += chunk;
+      if (buf.rafId === null) {
+        buf.rafId = requestAnimationFrame(flushTokenBuffer);
+      }
+    },
+    [flushTokenBuffer]
+  );
 
   // Abort in-flight stream on unmount to prevent memory leaks
   useEffect(() => {
@@ -67,19 +117,6 @@ export function useChat() {
       controller.abort();
     };
   }, []);
-
-  const {
-    ensureConversation,
-    addMessage,
-    appendToMessage,
-    setMessageStreaming,
-    updateMessageFull,
-    saveMessageToBackend,
-    removeMessagesAfter,
-  } = useChatStore();
-  const { getFile } = useFileStore();
-  const { demoFile } = useDemoStore();
-  const { applyEdits } = useEditOperations();
 
   /**
    * Core streaming helper: creates an assistant placeholder, streams SSE,
@@ -218,7 +255,7 @@ export function useChat() {
           switch (parsed.type) {
             case "text":
               if (parsed.content) {
-                appendToMessage(conversationId, assistantMessageId, parsed.content);
+                appendTokenBatched(conversationId, assistantMessageId, parsed.content);
                 if (isInlineOrigin) {
                   const editorState = useEditorStore.getState();
                   editorState.setInlineAIResponseStatus(inlineRequestId, "streaming");
@@ -507,6 +544,9 @@ export function useChat() {
           }
         });
 
+        // Flush any remaining buffered tokens before finalizing
+        flushTokenBuffer();
+
         // Apply any remaining collected edits (only if not already applied incrementally)
         if (collectedEdits.length > 0 && !editsAppliedIncrementally) {
           const applied = applyEdits(collectedEdits);
@@ -531,6 +571,8 @@ export function useChat() {
           });
         }
       } catch (error) {
+        // Flush buffered tokens before appending error message
+        flushTokenBuffer();
         let errorMessage: string;
         if (isAbortError(error)) {
           errorMessage = "\n\n*[Stopped]*";
@@ -550,6 +592,12 @@ export function useChat() {
             );
         }
       } finally {
+        // Cancel any pending RAF and flush remaining buffer
+        if (tokenBufferRef.current.rafId !== null) {
+          cancelAnimationFrame(tokenBufferRef.current.rafId);
+          tokenBufferRef.current.rafId = null;
+        }
+        flushTokenBuffer();
         setMessageStreaming(conversationId, assistantMessageId, false);
         setStreaming(false);
         setCurrentTool(null);
@@ -604,6 +652,8 @@ export function useChat() {
     [
       addMessage,
       appendToMessage,
+      appendTokenBatched,
+      flushTokenBuffer,
       setMessageStreaming,
       getFile,
       applyEdits,

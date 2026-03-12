@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, memo } from "react";
 import {
   User,
   ChevronDown,
@@ -195,202 +195,220 @@ function ContextReference({
 /**
  * Shared full-width chat message component.
  * ChatGPT-inspired layout: small avatar + role label header, full-width content below.
+ *
+ * Wrapped in React.memo to prevent re-renders of historical messages during streaming.
+ * Custom comparator ignores `onEdit` (callback identity) and `children` (derived from
+ * the same props we already compare: content, isStreaming).
  */
-export function ChatMessage({
-  role,
-  content,
-  isStreaming,
-  contexts,
-  quickEdit,
-  children,
-  isEditable,
-  onEdit,
-  className,
-}: ChatMessageProps) {
-  const t = useTranslations("chat");
-  const isUser = role === "user";
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(content);
-  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+export const ChatMessage = memo(
+  function ChatMessage({
+    role,
+    content,
+    isStreaming,
+    contexts,
+    quickEdit,
+    children,
+    isEditable,
+    onEdit,
+    className,
+  }: ChatMessageProps) {
+    const t = useTranslations("chat");
+    const isUser = role === "user";
+    const [isEditing, setIsEditing] = useState(false);
+    const [editContent, setEditContent] = useState(content);
+    const editTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-focus and resize textarea when entering edit mode
-  useEffect(() => {
-    if (isEditing && editTextareaRef.current) {
-      editTextareaRef.current.focus();
-      editTextareaRef.current.style.height = "auto";
-      editTextareaRef.current.style.height = editTextareaRef.current.scrollHeight + "px";
-    }
-  }, [isEditing]);
+    // Auto-focus and resize textarea when entering edit mode
+    useEffect(() => {
+      if (isEditing && editTextareaRef.current) {
+        editTextareaRef.current.focus();
+        editTextareaRef.current.style.height = "auto";
+        editTextareaRef.current.style.height = editTextareaRef.current.scrollHeight + "px";
+      }
+    }, [isEditing]);
 
-  const handleStartEdit = () => {
-    setEditContent(content);
-    setIsEditing(true);
-  };
+    const handleStartEdit = () => {
+      setEditContent(content);
+      setIsEditing(true);
+    };
 
-  const handleSaveEdit = () => {
-    const trimmed = editContent.trim();
-    if (trimmed && onEdit) {
-      onEdit(trimmed);
-    }
-    setIsEditing(false);
-  };
+    const handleSaveEdit = () => {
+      const trimmed = editContent.trim();
+      if (trimmed && onEdit) {
+        onEdit(trimmed);
+      }
+      setIsEditing(false);
+    };
 
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditContent(content);
-  };
+    const handleCancelEdit = () => {
+      setIsEditing(false);
+      setEditContent(content);
+    };
 
-  // Parse markdown for AI messages
-  const htmlContent = useMemo(() => {
-    if (isUser) return null;
+    // Parse markdown for AI messages
+    const htmlContent = useMemo(() => {
+      if (isUser) return null;
 
-    let text = content;
+      let text = content;
 
-    // Replace tool usage markers with styled versions
-    text = text.replace(
-      /🔧 \*Using ([^*]+)\.\.\.\*/g,
-      '<div class="flex items-center gap-2 text-muted-foreground py-1"><span class="text-xs">Using $1...</span></div>'
-    );
-    text = text.replace(
-      /📝 \*Editing document: ([^*]+)\*/g,
-      '<div class="flex items-center gap-2 text-muted-foreground py-1"><span class="text-xs">Editing: $1</span></div>'
-    );
-    text = text.replace(
-      /✅ \*Applied (\d+) edit\(s\) to document\*/g,
-      '<div class="flex items-center gap-2 text-green-600 dark:text-green-400 py-1"><span class="text-xs">Applied $1 edit(s)</span></div>'
-    );
-    text = text.replace(
-      /❌ \*Error: ([^*]+)\*/g,
-      '<div class="flex items-center gap-2 text-red-600 dark:text-red-400 py-1"><span class="text-xs">Error: $1</span></div>'
-    );
+      // Replace tool usage markers with styled versions
+      text = text.replace(
+        /🔧 \*Using ([^*]+)\.\.\.\*/g,
+        '<div class="flex items-center gap-2 text-muted-foreground py-1"><span class="text-xs">Using $1...</span></div>'
+      );
+      text = text.replace(
+        /📝 \*Editing document: ([^*]+)\*/g,
+        '<div class="flex items-center gap-2 text-muted-foreground py-1"><span class="text-xs">Editing: $1</span></div>'
+      );
+      text = text.replace(
+        /✅ \*Applied (\d+) edit\(s\) to document\*/g,
+        '<div class="flex items-center gap-2 text-green-600 dark:text-green-400 py-1"><span class="text-xs">Applied $1 edit(s)</span></div>'
+      );
+      text = text.replace(
+        /❌ \*Error: ([^*]+)\*/g,
+        '<div class="flex items-center gap-2 text-red-600 dark:text-red-400 py-1"><span class="text-xs">Error: $1</span></div>'
+      );
 
-    // Replace @[name](fileid:id) with styled mention tags
-    text = replaceMentionsWithHtml(text);
+      // Replace @[name](fileid:id) with styled mention tags
+      text = replaceMentionsWithHtml(text);
 
-    return parseMarkdownWithMath(text);
-  }, [content, isUser]);
+      return parseMarkdownWithMath(text);
+    }, [content, isUser]);
 
-  return (
-    <div className={cn("group relative py-3", className)}>
-      {/* Role header with avatar */}
-      <div className="mb-1.5 flex items-center gap-2">
-        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-muted">
-          {isUser ? (
-            <User className="h-3 w-3 text-muted-foreground" />
-          ) : (
-            <AiLogoIcon size={12} className="text-muted-foreground" />
-          )}
-        </div>
-        <span className="text-xs font-semibold text-foreground">
-          {isUser ? t("you") : t("aiName")}
-        </span>
-      </div>
-
-      {/* Content area — indented past avatar */}
-      <div className="pl-7">
-        {/* Quick edit badge */}
-        {isUser && quickEdit && (
-          <div className="mb-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              <Sparkles className="h-3 w-3" />
-              {QUICK_EDIT_LABELS[quickEdit.action] || "Quick Edit"}
-            </span>
-          </div>
-        )}
-
-        {/* Contexts above user message (file_mentions shown inline as @tags) */}
-        {isUser && contexts && contexts.filter((c) => c.type !== "file_mention").length > 0 && (
-          <div className="mb-2 space-y-0.5">
-            {contexts
-              .filter((c) => c.type !== "file_mention")
-              .map((ctx, i, arr) => (
-                <ContextReference key={i} context={ctx} index={i} total={arr.length} />
-              ))}
-          </div>
-        )}
-
-        {isUser ? (
-          <div className="group/user-msg relative rounded-xl bg-accent/40 px-4 py-3">
-            {isEditing ? (
-              <div className="space-y-2">
-                <textarea
-                  ref={editTextareaRef}
-                  value={editContent}
-                  onChange={(e) => {
-                    setEditContent(e.target.value);
-                    e.target.style.height = "auto";
-                    e.target.style.height = e.target.scrollHeight + "px";
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSaveEdit();
-                    }
-                    if (e.key === "Escape") {
-                      handleCancelEdit();
-                    }
-                  }}
-                  className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                  rows={1}
-                />
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleSaveEdit}
-                    disabled={!editContent.trim()}
-                    className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    <Check className="h-3 w-3" />
-                    {t("sendMessage")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
+    return (
+      <div className={cn("group relative py-3", className)}>
+        {/* Role header with avatar */}
+        <div className="mb-1.5 flex items-center gap-2">
+          <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-muted">
+            {isUser ? (
+              <User className="h-3 w-3 text-muted-foreground" />
             ) : (
-              <>
-                <p className="whitespace-pre-wrap text-sm">
-                  {renderUserContentWithMentions(content)}
-                </p>
-                {isEditable && onEdit && (
-                  <button
-                    type="button"
-                    onClick={handleStartEdit}
-                    className="absolute -right-1 -top-1 rounded-md border border-border bg-background p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-hover/user-msg:opacity-100"
-                    title={t("editMessage")}
-                    aria-label={t("editMessage")}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                )}
-              </>
+              <AiLogoIcon size={12} className="text-muted-foreground" />
             )}
           </div>
-        ) : isStreaming && !content ? (
-          <div className="flex items-center gap-2 py-1">
-            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40" />
-            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40 [animation-delay:150ms]" />
-            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40 [animation-delay:300ms]" />
-          </div>
-        ) : (
-          <>
-            <div
-              className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-              dangerouslySetInnerHTML={{ __html: htmlContent || "" }}
-            />
-            {/* Streaming cursor */}
-            {isStreaming && content && <span className="chat-streaming-cursor" />}
-          </>
-        )}
+          <span className="text-xs font-semibold text-foreground">
+            {isUser ? t("you") : t("aiName")}
+          </span>
+        </div>
 
-        {/* Slot for feedback toolbar, etc. */}
-        {children}
+        {/* Content area — indented past avatar */}
+        <div className="pl-7">
+          {/* Quick edit badge */}
+          {isUser && quickEdit && (
+            <div className="mb-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                <Sparkles className="h-3 w-3" />
+                {QUICK_EDIT_LABELS[quickEdit.action] || "Quick Edit"}
+              </span>
+            </div>
+          )}
+
+          {/* Contexts above user message (file_mentions shown inline as @tags) */}
+          {isUser && contexts && contexts.filter((c) => c.type !== "file_mention").length > 0 && (
+            <div className="mb-2 space-y-0.5">
+              {contexts
+                .filter((c) => c.type !== "file_mention")
+                .map((ctx, i, arr) => (
+                  <ContextReference key={i} context={ctx} index={i} total={arr.length} />
+                ))}
+            </div>
+          )}
+
+          {isUser ? (
+            <div className="group/user-msg relative rounded-xl bg-accent/40 px-4 py-3">
+              {isEditing ? (
+                <div className="space-y-2">
+                  <textarea
+                    ref={editTextareaRef}
+                    value={editContent}
+                    onChange={(e) => {
+                      setEditContent(e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height = e.target.scrollHeight + "px";
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSaveEdit();
+                      }
+                      if (e.key === "Escape") {
+                        handleCancelEdit();
+                      }
+                    }}
+                    className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    rows={1}
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveEdit}
+                      disabled={!editContent.trim()}
+                      className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      <Check className="h-3 w-3" />
+                      {t("sendMessage")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="whitespace-pre-wrap text-sm">
+                    {renderUserContentWithMentions(content)}
+                  </p>
+                  {isEditable && onEdit && (
+                    <button
+                      type="button"
+                      onClick={handleStartEdit}
+                      className="absolute -right-1 -top-1 rounded-md border border-border bg-background p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-hover/user-msg:opacity-100"
+                      title={t("editMessage")}
+                      aria-label={t("editMessage")}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          ) : isStreaming && !content ? (
+            <div className="flex items-center gap-2 py-1">
+              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40" />
+              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40 [animation-delay:150ms]" />
+              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40 [animation-delay:300ms]" />
+            </div>
+          ) : (
+            <>
+              <div
+                className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                dangerouslySetInnerHTML={{ __html: htmlContent || "" }}
+              />
+              {/* Streaming cursor */}
+              {isStreaming && content && <span className="chat-streaming-cursor" />}
+            </>
+          )}
+
+          {/* Slot for feedback toolbar, etc. */}
+          {children}
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  },
+  (prev, next) => {
+    // Custom comparator: skip onEdit (inline fn) and children (derived from compared props)
+    return (
+      prev.role === next.role &&
+      prev.content === next.content &&
+      prev.isStreaming === next.isStreaming &&
+      prev.isEditable === next.isEditable &&
+      prev.className === next.className &&
+      prev.quickEdit === next.quickEdit &&
+      prev.contexts === next.contexts
+    );
+  }
+);
