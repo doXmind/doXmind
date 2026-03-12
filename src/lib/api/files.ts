@@ -17,6 +17,8 @@ declare module "./client" {
         position: number;
         is_favorite: boolean;
         icon: string | null;
+        cover_image_url: string | null;
+        cover_position: number;
         created_at: string;
         updated_at: string;
         word_count: number;
@@ -38,6 +40,8 @@ declare module "./client" {
       is_favorite: boolean;
       icon: string | null;
       presentation_simplified: string | null;
+      cover_image_url: string | null;
+      cover_position: number;
       created_at: string;
       updated_at: string;
       fork_id: string | null;
@@ -58,6 +62,8 @@ declare module "./client" {
       position: number;
       is_favorite: boolean;
       icon: string | null;
+      cover_image_url: string | null;
+      cover_position: number;
       created_at: string;
       updated_at: string;
     }>;
@@ -70,6 +76,8 @@ declare module "./client" {
         is_favorite?: boolean;
         icon?: string;
         presentation_simplified?: string;
+        cover_image_url?: string;
+        cover_position?: number;
       }
     ): Promise<{
       id: string;
@@ -80,6 +88,8 @@ declare module "./client" {
       position: number;
       is_favorite: boolean;
       icon: string | null;
+      cover_image_url: string | null;
+      cover_position: number;
       created_at: string;
       updated_at: string;
     }>;
@@ -95,6 +105,8 @@ declare module "./client" {
       position: number;
       is_favorite: boolean;
       icon: string | null;
+      cover_image_url: string | null;
+      cover_position: number;
       created_at: string;
       updated_at: string;
     }>;
@@ -110,6 +122,8 @@ declare module "./client" {
       position: number;
       is_favorite: boolean;
       icon: string | null;
+      cover_image_url: string | null;
+      cover_position: number;
       created_at: string;
       updated_at: string;
     }>;
@@ -181,6 +195,8 @@ declare module "./client" {
       position: number;
       is_favorite: boolean;
       icon: string | null;
+      cover_image_url: string | null;
+      cover_position: number;
       created_at: string;
       updated_at: string;
     }>;
@@ -198,6 +214,8 @@ ApiClient.prototype.listFiles = async function (this: ApiClient) {
       position: number;
       is_favorite: boolean;
       icon: string | null;
+      cover_image_url: string | null;
+      cover_position: number;
       created_at: string;
       updated_at: string;
       word_count: number;
@@ -222,6 +240,8 @@ ApiClient.prototype.getFile = async function (this: ApiClient, id: string) {
     is_favorite: boolean;
     icon: string | null;
     presentation_simplified: string | null;
+    cover_image_url: string | null;
+    cover_position: number;
     created_at: string;
     updated_at: string;
     fork_id: string | null;
@@ -246,6 +266,8 @@ ApiClient.prototype.createFile = async function (
     position: number;
     is_favorite: boolean;
     icon: string | null;
+    cover_image_url: string | null;
+    cover_position: number;
     created_at: string;
     updated_at: string;
   }>("/api/files", {
@@ -275,6 +297,8 @@ ApiClient.prototype.updateFile = async function (
     position: number;
     is_favorite: boolean;
     icon: string | null;
+    cover_image_url: string | null;
+    cover_position: number;
     created_at: string;
     updated_at: string;
   }>(`/api/files/${id}`, {
@@ -297,6 +321,8 @@ ApiClient.prototype.createFolder = async function (
     position: number;
     is_favorite: boolean;
     icon: string | null;
+    cover_image_url: string | null;
+    cover_position: number;
     created_at: string;
     updated_at: string;
   }>("/api/files/folders", {
@@ -319,6 +345,8 @@ ApiClient.prototype.moveFile = async function (
     position: number;
     is_favorite: boolean;
     icon: string | null;
+    cover_image_url: string | null;
+    cover_position: number;
     created_at: string;
     updated_at: string;
   }>(`/api/files/${fileId}/move`, {
@@ -580,6 +608,8 @@ ApiClient.prototype.importFile = async function (
     position: number;
     is_favorite: boolean;
     icon: string | null;
+    cover_image_url: string | null;
+    cover_position: number;
     created_at: string;
     updated_at: string;
   }>;

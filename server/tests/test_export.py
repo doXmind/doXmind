@@ -842,6 +842,12 @@ class TestExportAPIEndpoints:
         file.id = "file-123"
         file.name = "document.md"
         file.content = "# Test Document\n\nSome content."
+        file.user_id = None
+        file.icon = None
+        file.cover_image_url = None
+        file.cover_position = 0.5
+        file.created_at = None
+        file.updated_at = None
         return file
 
     @pytest.fixture

@@ -47,7 +47,7 @@ async def resolve_user_api_key(user_id: str, db: AsyncSession) -> str | None:
     """Resolve user's decrypted API key, or None if not configured.
 
     This is a shared helper used by multiple endpoints to pass the user's
-    OpenRouter API key to services (embedding, file conversion, reranking).
+    OpenRouter API key to services (file conversion, LLM calls).
     """
     try:
         from services.api_key_service import APIKeyService

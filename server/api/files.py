@@ -8,7 +8,7 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, insert, select, text, update
+from sqlalchemy import bindparam, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import DocumentShare, File, Fork, User, get_db, utcnow
@@ -167,6 +167,8 @@ class FileUpdate(BaseModel):
     is_favorite: bool | None = None
     icon: str | None = None
     presentation_simplified: str | None = None
+    cover_image_url: str | None = None
+    cover_position: float | None = None
 
 
 class FolderCreate(BaseModel):
@@ -196,6 +198,8 @@ class FileResponse(BaseModel):
     is_favorite: bool = False
     icon: str | None = None
     presentation_simplified: str | None = None
+    cover_image_url: str | None = None
+    cover_position: float = 0.5
     created_at: str
     updated_at: str
     # Lightweight preview fields (populated in list, avoids sending full content)
@@ -246,6 +250,8 @@ async def list_files(
             File.summary,
             File.is_favorite,
             File.icon,
+            File.cover_image_url,
+            File.cover_position,
             File.created_at,
             File.updated_at,
             # Lightweight preview: prefer content_markdown (no HTML, no TOAST issues)
@@ -320,6 +326,8 @@ async def list_files(
                 summary=row.summary,
                 is_favorite=row.is_favorite or False,
                 icon=row.icon,
+                cover_image_url=row.cover_image_url,
+                cover_position=row.cover_position if row.cover_position is not None else 0.5,
                 created_at=row.created_at.isoformat(),
                 updated_at=row.updated_at.isoformat(),
                 word_count=word_count,
@@ -358,7 +366,7 @@ async def create_file(
     sanitized = sanitize_content(file.content)
     content_hash = compute_content_hash(sanitized) if sanitized else None
 
-    # Validate parent_id if provided (must not be in trash)
+    # Validate parent_id if provided (must exist and not be in trash)
     if file.parent_id is not None:
         parent_query = select(File).where(File.id == file.parent_id, File.deleted_at.is_(None))
         parent_query = (
@@ -371,10 +379,7 @@ async def create_file(
         parent = parent_result.scalar_one_or_none()
 
         if not parent:
-            raise NotFoundError(resource="Folder", message="Parent folder not found")
-
-        if not parent.is_folder:
-            raise BadRequestError(message="Parent must be a folder")
+            raise NotFoundError(resource="Parent", message="Parent not found")
 
     try:
         content_md = html_to_markdown(sanitized) if sanitized else None
@@ -485,6 +490,8 @@ async def get_file(
         is_favorite=file.is_favorite or False,
         icon=file.icon,
         presentation_simplified=file.presentation_simplified,
+        cover_image_url=file.cover_image_url,
+        cover_position=file.cover_position if file.cover_position is not None else 0.5,
         created_at=file.created_at.isoformat(),
         updated_at=file.updated_at.isoformat(),
         fork_id=fork_id,
@@ -539,6 +546,12 @@ async def update_file(
             update.presentation_simplified if update.presentation_simplified != "" else None
         )
 
+    if update.cover_image_url is not None:
+        file.cover_image_url = update.cover_image_url if update.cover_image_url != "" else None
+
+    if update.cover_position is not None:
+        file.cover_position = max(0.0, min(1.0, update.cover_position))
+
     await db.commit()
     await db.refresh(file)
 
@@ -551,6 +564,8 @@ async def update_file(
     file_is_favorite = file.is_favorite or False
     file_icon = file.icon
     file_presentation_simplified = file.presentation_simplified
+    file_cover_image_url = file.cover_image_url
+    file_cover_position = file.cover_position if file.cover_position is not None else 0.5
     file_created_at = file.created_at.isoformat()
     file_updated_at = file.updated_at.isoformat()
     file_is_folder = file.is_folder
@@ -569,6 +584,8 @@ async def update_file(
         is_favorite=file_is_favorite,
         icon=file_icon,
         presentation_simplified=file_presentation_simplified,
+        cover_image_url=file_cover_image_url,
+        cover_position=file_cover_position,
         created_at=file_created_at,
         updated_at=file_updated_at,
     )
@@ -854,15 +871,18 @@ async def search_files(
             where_clauses.append("user_id IS NULL")
 
         if request.file_ids:
-            where_clauses.append("id = ANY(:file_ids)")
-            params["file_ids"] = request.file_ids
+            where_clauses.append("id IN :file_ids")
+            params["file_ids"] = list(request.file_ids)
 
         where_clauses.append("(name ILIKE :pattern OR content ILIKE :pattern)")
 
         where_sql = " AND ".join(where_clauses)
         sql = f"SELECT id, name, content FROM files WHERE {where_sql} ORDER BY updated_at DESC LIMIT :limit"
 
-        result = await db.execute(text(sql), params)
+        stmt = text(sql)
+        if request.file_ids:
+            stmt = stmt.bindparams(bindparam("file_ids", expanding=True))
+        result = await db.execute(stmt, params)
         rows = result.fetchall()
 
         results = []

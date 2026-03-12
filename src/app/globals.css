@@ -267,6 +267,38 @@
   }
 }
 
+/* Inline @mention tag in chat messages */
+.mention-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+  padding: 1px 6px;
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: baseline;
+  line-height: 1.4;
+}
+
+/* Mention tag inside the textarea overlay — covers raw @name text underneath */
+.mention-tag-input {
+  font-size: inherit;
+  line-height: inherit;
+  padding: 0 2px;
+  border-radius: 3px;
+  /* Opaque background to hide the raw textarea text underneath */
+  background-color: hsl(var(--accent));
+}
+
+/* Chat message tables: horizontally scrollable in narrow sidebar */
+.prose table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
 .chat-streaming-cursor {
   display: inline-block;
   width: 2px;

@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, Request
@@ -19,8 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.writing_agent import WritingAgent
 from api.files import get_user_id
 from config import get_cors_headers, get_settings
-from db.database import Conversation, ConversationAttachment, ConversationDataFile, Message, get_db
-from dependencies import normalize_file_id, resolve_user_api_key
+from db.database import (
+    Conversation,
+    ConversationAttachment,
+    ConversationDataFile,
+    DatabaseBlock,
+    Message,
+    get_db,
+)
+from dependencies import get_conversation_by_file_id, normalize_file_id, resolve_user_api_key
 from exceptions import InternalError
 from services.api_key_service import APIKeyService
 from services.auth_service import TokenData, require_auth
@@ -233,6 +241,139 @@ async def _load_conversation_context(
 
 
 # ============================================================================
+# Auto-export Database Blocks
+# ============================================================================
+
+DATABASE_BLOCK_RE = re.compile(r"<!-- database:([0-9a-f-]{36}) -->")
+
+
+async def _reload_data_files(
+    conversation_id: str, db: AsyncSession
+) -> tuple[list[dict], list[dict]]:
+    """Load data files metadata and content for a conversation.
+
+    Returns (data_files_metadata, data_files_content).
+    """
+    data_files_result = await db.execute(
+        select(ConversationDataFile)
+        .where(ConversationDataFile.conversation_id == conversation_id)
+        .where(ConversationDataFile.status == "ready")
+    )
+    all_data_files = data_files_result.scalars().all()
+
+    data_files_metadata = [
+        {
+            "id": df.id,
+            "filename": df.original_filename,
+            "file_type": df.file_type,
+            "row_count": df.row_count,
+            "column_names": df.column_names,
+            "storage_path": df.storage_path,
+        }
+        for df in all_data_files
+    ]
+
+    data_files_content = []
+    if all_data_files:
+
+        def _read_file_sync(path: str) -> bytes:
+            with open(path, "rb") as f:
+                return f.read()
+
+        async def _read_data_file(data_file):
+            if data_file.storage_path and os.path.exists(data_file.storage_path):
+                content = await asyncio.to_thread(_read_file_sync, data_file.storage_path)
+                return {
+                    "id": data_file.id,
+                    "filename": data_file.original_filename,
+                    "mime_type": data_file.mime_type,
+                    "content": content,
+                    "file_size": data_file.file_size,
+                }
+            return None
+
+        results = await asyncio.gather(*[_read_data_file(df) for df in all_data_files])
+        data_files_content = [r for r in results if r is not None]
+
+    return data_files_metadata, data_files_content
+
+
+async def _auto_export_database_blocks(
+    file_content: str,
+    conversation_id: str,
+    user_id: str | None,
+    db: AsyncSession,
+) -> bool:
+    """Auto-export database blocks found in file content as data files.
+
+    Parses `<!-- database:uuid -->` markers from the editor content, checks
+    if a fresh ConversationDataFile already exists for each, and creates/
+    refreshes as needed.
+
+    Returns True if any new data files were created or refreshed.
+    """
+    from api.databases import export_database_to_data_file
+
+    database_ids = DATABASE_BLOCK_RE.findall(file_content)
+    if not database_ids:
+        return False
+
+    exported_any = False
+
+    for db_id in database_ids:
+        # Check if a data file already exists for this database
+        existing_result = await db.execute(
+            select(ConversationDataFile).where(
+                ConversationDataFile.conversation_id == conversation_id,
+                ConversationDataFile.source_database_id == db_id,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+
+        if existing:
+            # Check staleness: compare data file creation vs database update time
+            db_block_result = await db.execute(
+                select(DatabaseBlock.updated_at).where(DatabaseBlock.id == db_id)
+            )
+            db_updated_at = db_block_result.scalar_one_or_none()
+
+            if db_updated_at and existing.created_at and db_updated_at <= existing.created_at:
+                # Data file is still fresh, skip
+                continue
+
+            # Stale — delete old data file and re-export
+            if existing.storage_path and os.path.exists(existing.storage_path):
+                try:
+                    os.remove(existing.storage_path)
+                except OSError:
+                    logger.warning(
+                        "Failed to delete stale data file at %s", existing.storage_path,
+                        exc_info=True,
+                    )
+            await db.delete(existing)
+            await db.flush()
+
+        # Export the database as a new data file
+        try:
+            data_file = await export_database_to_data_file(
+                db_id, conversation_id, user_id, db
+            )
+            if data_file:
+                exported_any = True
+                logger.info(
+                    "Auto-exported database %s as data file %s", db_id, data_file.id
+                )
+        except Exception:
+            # Don't fail the chat request if a single database export fails
+            logger.warning("Failed to auto-export database %s", db_id, exc_info=True)
+
+    if exported_any:
+        await db.flush()
+
+    return exported_any
+
+
+# ============================================================================
 # Streaming Chat Endpoint
 # ============================================================================
 
@@ -291,6 +432,33 @@ async def chat_stream(
         data_files_content,
     ) = await _load_conversation_context(request.conversationId, db, user_id)
 
+    # Auto-export database blocks as data files so the agent can analyze them
+    auto_exported_data_files = False
+    if request.files:
+        file_content = request.files[0].content if request.files else ""
+        if file_content and DATABASE_BLOCK_RE.search(file_content):
+            # Ensure conversation exists (needed for data file records)
+            conv_id = conversation.id if conversation else None
+            if not conv_id and request.conversationId:
+                conv = await get_conversation_by_file_id(
+                    request.conversationId, db, create_if_missing=True, user_id=user_id
+                )
+                if conv:
+                    conv_id = conv.id
+                    conversation = conv
+
+            if conv_id:
+                exported = await _auto_export_database_blocks(
+                    file_content, conv_id, user_id, db
+                )
+                if exported:
+                    await db.commit()
+                    # Re-load data files to include newly created ones
+                    data_files_metadata, data_files_content = await _reload_data_files(
+                        conv_id, db
+                    )
+                    auto_exported_data_files = True
+
     # Collector for building the complete response
     collected_text = []
     collected_thinking = []
@@ -307,6 +475,11 @@ async def chat_stream(
             collected_edits, \
             collected_todos, \
             collected_usage
+
+        # Notify frontend about auto-exported data files
+        if auto_exported_data_files:
+            event = {"type": "data_files_updated"}
+            yield f"data: {json.dumps(event)}\n\n".encode()
 
         current_tool = None
         agent = None
@@ -466,6 +639,7 @@ async def chat_stream(
                 data_files=data_files_content if data_files_content else None,
                 history=history,
                 conversation_id=conversation.id if conversation else None,
+                global_kb_context={"db": db, "user_id": user_id, "api_key": user_api_key} if user_id else None,
             ).__aiter__()
 
             # Use a persistent task to avoid cancelling the generator on heartbeat timeout

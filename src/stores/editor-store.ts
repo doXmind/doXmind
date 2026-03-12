@@ -45,6 +45,22 @@ export interface PendingEdit {
 // Image modal callback for slash commands
 export type ImageModalCallback = (url: string, alt?: string) => void;
 
+// Bookmark modal callback for slash commands
+export type BookmarkModalCallback = (attrs: {
+  url: string;
+  title: string;
+  description: string | null;
+  faviconUrl: string | null;
+  imageUrl: string | null;
+}) => void;
+
+// Page picker callback for slash commands
+export type PagePickerCallback = (attrs: {
+  pageId: string;
+  pageTitle: string;
+  pageIcon: string | null;
+}) => void;
+
 // Last AI operation for undo tracking
 export interface LastAIOperation {
   type: "diff_accept" | "autocomplete" | "quick_edit";
@@ -86,6 +102,14 @@ interface EditorState {
   // Image modal state (for slash commands)
   imageModalOpen: boolean;
   imageModalCallback: ImageModalCallback | null;
+
+  // Bookmark modal state (for slash commands)
+  bookmarkModalOpen: boolean;
+  bookmarkModalCallback: BookmarkModalCallback | null;
+
+  // Page picker modal state (for slash commands)
+  pagePickerOpen: boolean;
+  pagePickerCallback: PagePickerCallback | null;
 
   // Text Review Panel State
   isReviewPanelOpen: boolean;
@@ -144,6 +168,14 @@ interface EditorState {
   openImageModal: (callback: ImageModalCallback) => void;
   closeImageModal: () => void;
 
+  // Bookmark Modal Actions (for slash commands)
+  openBookmarkModal: (callback: BookmarkModalCallback) => void;
+  closeBookmarkModal: () => void;
+
+  // Page Picker Modal Actions (for slash commands)
+  openPagePicker: (callback: PagePickerCallback) => void;
+  closePagePicker: () => void;
+
   // Text Review Panel Actions
   setReviewPanelOpen: (open: boolean) => void;
 
@@ -179,6 +211,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
   pendingEdits: [],
   imageModalOpen: false,
   imageModalCallback: null,
+  bookmarkModalOpen: false,
+  bookmarkModalCallback: null,
+  pagePickerOpen: false,
+  pagePickerCallback: null,
   isReviewPanelOpen: false,
   lastAIOperation: null,
   reviewRequested: false,
@@ -265,6 +301,15 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // Image Modal Actions
   openImageModal: (callback) => set({ imageModalOpen: true, imageModalCallback: callback }),
   closeImageModal: () => set({ imageModalOpen: false, imageModalCallback: null }),
+
+  // Bookmark Modal Actions
+  openBookmarkModal: (callback) =>
+    set({ bookmarkModalOpen: true, bookmarkModalCallback: callback }),
+  closeBookmarkModal: () => set({ bookmarkModalOpen: false, bookmarkModalCallback: null }),
+
+  // Page Picker Modal Actions
+  openPagePicker: (callback) => set({ pagePickerOpen: true, pagePickerCallback: callback }),
+  closePagePicker: () => set({ pagePickerOpen: false, pagePickerCallback: null }),
 
   // Text Review Panel Actions
   setReviewPanelOpen: (open) => set({ isReviewPanelOpen: open }),

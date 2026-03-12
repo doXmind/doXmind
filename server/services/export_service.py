@@ -6,15 +6,23 @@ to avoid code duplication between formats.
 
 from __future__ import annotations
 
+import contextlib
 import io
+import logging
+import math
 import os
+import re
+import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from docx.document import Document
     from fpdf import FPDF
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Document Node Model (Intermediate Representation)
@@ -55,6 +63,19 @@ class DocumentNode:
     ordered: bool = False  # For lists
     is_header: bool = False  # For table cells
     url: str = ""  # For links
+
+
+@dataclass
+class ExportMetadata:
+    """Metadata for rendering a title page in exported documents."""
+
+    title: str = ""
+    icon: str | None = None
+    author: str | None = None
+    cover_image_url: str | None = None
+    cover_position: float = 0.5
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 # ============================================================================
@@ -326,7 +347,9 @@ class PDFRenderer:
                             return os.path.join(root, filename)
         return None
 
-    def render(self, nodes: list[DocumentNode]) -> bytes:
+    def render(
+        self, nodes: list[DocumentNode], metadata: ExportMetadata | None = None
+    ) -> bytes:
         """Render document nodes to PDF bytes."""
         from fpdf import FPDF
 
@@ -345,10 +368,190 @@ class PDFRenderer:
         pdf.add_page()
         pdf.set_font(font, size=11)
 
+        # Render title page with cover, title, and metadata
+        if metadata:
+            has_cover = self._render_title_page(pdf, metadata, font)
+            if has_cover:
+                # Cover page: start content on a new page
+                pdf.add_page()
+            else:
+                # No cover: add spacing after title/metadata before content
+                pdf.ln(8)
+
         for node in nodes:
             self._render_node(pdf, node, font)
 
         return pdf.output()
+
+    @staticmethod
+    def _is_css_background(value: str) -> bool:
+        """Check if a cover value is a CSS background (gradient or hex color)."""
+        return value.startswith(("linear-gradient", "radial-gradient", "conic-gradient")) or bool(
+            re.match(r"^#[0-9a-fA-F]{3,8}$", value)
+        )
+
+    @staticmethod
+    def _parse_hex_color(hex_color: str) -> tuple[int, int, int]:
+        """Parse a hex color string to (r, g, b) tuple."""
+        h = hex_color.lstrip("#")
+        if len(h) == 3:
+            h = h[0] * 2 + h[1] * 2 + h[2] * 2
+        elif len(h) < 6:
+            h = h.ljust(6, "0")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    def _parse_gradient_colors(self, gradient: str) -> list[tuple[int, int, int]]:
+        """Extract color values from a CSS gradient string."""
+        colors = []
+        # Match hex colors
+        for match in re.finditer(r"#[0-9a-fA-F]{3,8}", gradient):
+            colors.append(self._parse_hex_color(match.group()))
+        # Match rgb/rgba colors
+        for match in re.finditer(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", gradient):
+            colors.append((int(match.group(1)), int(match.group(2)), int(match.group(3))))
+        return colors if colors else [(200, 200, 200)]
+
+    @staticmethod
+    def _download_image(url: str) -> str | None:
+        """Download an image URL to a temporary file. Returns path or None."""
+        from urllib.parse import urlparse
+
+        from services.bookmark_service import _is_private_host
+
+        # Validate scheme
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            logger.warning("Blocked image download with non-HTTP scheme: %s", parsed.scheme)
+            return None
+
+        # SSRF protection: block private/internal hosts
+        hostname = parsed.hostname or ""
+        if _is_private_host(hostname):
+            logger.warning("Blocked image download to private host: %s", hostname)
+            return None
+
+        try:
+            import httpx
+
+            resp = httpx.get(url, timeout=10, follow_redirects=True, max_redirects=5)
+            if resp.status_code != 200:
+                return None
+
+            # Post-redirect SSRF check
+            final_host = resp.url.host or ""
+            if _is_private_host(final_host):
+                logger.warning("Blocked image download after redirect to private host: %s", final_host)
+                return None
+            # Determine file extension from content type
+            content_type = resp.headers.get("content-type", "")
+            ext = ".jpg"
+            if "png" in content_type:
+                ext = ".png"
+            elif "gif" in content_type:
+                ext = ".gif"
+            elif "webp" in content_type:
+                ext = ".webp"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                tmp.write(resp.content)
+            return tmp.name
+        except Exception as e:
+            logger.warning(f"Failed to download cover image: {e}")
+            return None
+
+    def _render_cover_background(self, pdf: FPDF, cover_url: str, cover_height: float):
+        """Render cover image or CSS background at the top of the page."""
+        page_width = pdf.w
+        x_start = 0
+        y_start = 0
+
+        if self._is_css_background(cover_url):
+            if cover_url.startswith("#"):
+                # Solid color
+                r, g, b = self._parse_hex_color(cover_url)
+                pdf.set_fill_color(r, g, b)
+                pdf.rect(x_start, y_start, page_width, cover_height, "F")
+            else:
+                # CSS gradient — render as interpolated horizontal bands
+                colors = self._parse_gradient_colors(cover_url)
+                if len(colors) < 2:
+                    colors = [colors[0], colors[0]]
+                band_count = int(cover_height * 2)  # 2 bands per mm for smoothness
+                for i in range(band_count):
+                    t = i / max(band_count - 1, 1)
+                    # Interpolate between first and last color
+                    c0, c1 = colors[0], colors[-1]
+                    r = int(c0[0] + (c1[0] - c0[0]) * t)
+                    g = int(c0[1] + (c1[1] - c0[1]) * t)
+                    b = int(c0[2] + (c1[2] - c0[2]) * t)
+                    pdf.set_fill_color(r, g, b)
+                    band_y = y_start + (i * cover_height / band_count)
+                    band_h = cover_height / band_count + 0.1  # tiny overlap to avoid gaps
+                    pdf.rect(x_start, band_y, page_width, band_h, "F")
+        else:
+            # Image URL — download and embed
+            img_path = self._download_image(cover_url)
+            if img_path:
+                try:
+                    pdf.image(img_path, x=x_start, y=y_start, w=page_width, h=cover_height)
+                except Exception as e:
+                    logger.warning(f"Failed to embed cover image in PDF: {e}")
+                finally:
+                    with contextlib.suppress(OSError):
+                        os.unlink(img_path)
+
+    def _render_title_page(self, pdf: FPDF, metadata: ExportMetadata, font: str) -> bool:
+        """Render the title page with cover, title, and metadata.
+
+        Returns True if a cover image was rendered (caller should add a page break).
+        """
+        has_cover = bool(metadata.cover_image_url)
+        cover_height = 100.0  # mm
+
+        if has_cover:
+            self._render_cover_background(pdf, metadata.cover_image_url, cover_height)
+            pdf.set_y(cover_height + 10)
+        else:
+            pdf.set_y(pdf.t_margin)
+
+        # Title with optional icon
+        title_text = metadata.title
+        if metadata.icon:
+            title_text = f"{metadata.icon}  {title_text}"
+
+        pdf.set_font(font, "B", 24)
+        pdf.set_text_color(26, 26, 26)
+        pdf.multi_cell(0, 12, title_text)
+        pdf.ln(4)
+
+        # Separator line
+        pdf.set_draw_color(200, 200, 200)
+        y = pdf.get_y()
+        pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
+        pdf.ln(6)
+
+        # Metadata block
+        pdf.set_font(font, size=10)
+        pdf.set_text_color(120, 120, 120)
+
+        if metadata.author:
+            pdf.cell(0, 5, f"Author: {metadata.author}", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+
+        if metadata.created_at:
+            date_str = metadata.created_at.strftime("%Y-%m-%d")
+            pdf.cell(0, 5, f"Created: {date_str}", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+
+        if metadata.updated_at:
+            date_str = metadata.updated_at.strftime("%Y-%m-%d")
+            pdf.cell(0, 5, f"Last updated: {date_str}", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+
+        # Reset text color
+        pdf.set_text_color(0)
+        pdf.set_font(font, size=11)
+
+        return has_cover
 
     def _render_node(self, pdf: FPDF, node: DocumentNode, font: str, level: int = 0):
         """Render a single node to the PDF."""
@@ -439,7 +642,7 @@ class PDFRenderer:
                         self._render_list(pdf, nested, font, level + 1)
 
     def _render_table(self, pdf: FPDF, node: DocumentNode, font: str):
-        """Render a table to the PDF."""
+        """Render a table to the PDF with auto-wrapping and proportional column widths."""
         if not node.children:
             return
 
@@ -449,31 +652,82 @@ class PDFRenderer:
             return
 
         available_width = pdf.w - pdf.l_margin - pdf.r_margin
-        col_width = available_width / col_count
+        line_height = 5
+        padding = 1.5
+        font_size = 9
 
-        pdf.set_font(font, size=10)
+        pdf.set_font(font, size=font_size)
+
+        # Calculate proportional column widths based on max text width per column
+        col_max_text_w = [0.0] * col_count
+        for row in node.children:
+            for j, cell in enumerate(row.children):
+                if j < col_count:
+                    w = pdf.get_string_width(cell.content or "")
+                    col_max_text_w[j] = max(col_max_text_w[j], w)
+
+        min_col_w = 15.0
+        raw_widths = [max(w + padding * 4, min_col_w) for w in col_max_text_w]
+        total_raw = sum(raw_widths)
+        col_widths = [w * available_width / total_raw for w in raw_widths]
+
+        pdf.set_draw_color(180, 180, 180)
 
         for i, row in enumerate(node.children):
-            for j, cell in enumerate(row.children):
-                if j >= col_count:
-                    break
+            is_header_row = i == 0
 
-                is_header = cell.is_header or i == 0
+            # Collect cell texts for this row
+            cells_text: list[str] = []
+            cells_is_header: list[bool] = []
+            for j in range(col_count):
+                if j < len(row.children):
+                    cells_text.append(row.children[j].content or "")
+                    cells_is_header.append(row.children[j].is_header or is_header_row)
+                else:
+                    cells_text.append("")
+                    cells_is_header.append(is_header_row)
+
+            # First pass: calculate max row height
+            max_cell_h = line_height + padding * 2
+            for j, text in enumerate(cells_text):
+                pdf.set_font(font, "B" if cells_is_header[j] else "", font_size)
+                usable_w = col_widths[j] - padding * 2
+                if usable_w <= 0:
+                    usable_w = 1
+                text_w = pdf.get_string_width(text) if text else 0
+                num_lines = max(1, math.ceil(text_w / usable_w)) if text_w > 0 else 1
+                cell_h = num_lines * line_height + padding * 2
+                max_cell_h = max(max_cell_h, cell_h)
+
+            # Page break check
+            if pdf.get_y() + max_cell_h > pdf.h - pdf.b_margin:
+                pdf.add_page()
+
+            # Second pass: render cells
+            y_start = pdf.get_y()
+            x = pdf.l_margin
+
+            for j, text in enumerate(cells_text):
+                w = col_widths[j]
+                is_header = cells_is_header[j]
+
                 if is_header:
-                    pdf.set_font(font, "B", 10)
+                    pdf.set_font(font, "B", font_size)
                     pdf.set_fill_color(240, 240, 240)
                 else:
-                    pdf.set_font(font, size=10)
+                    pdf.set_font(font, "", font_size)
                     pdf.set_fill_color(255, 255, 255)
 
-                x = pdf.l_margin + (j * col_width)
-                y = pdf.get_y()
-                pdf.set_xy(x, y)
+                # Draw cell background + border
+                pdf.rect(x, y_start, w, max_cell_h, "DF")
 
-                display_text = cell.content[:30] if len(cell.content) > 30 else cell.content
-                pdf.cell(col_width, 6, display_text, border=1, fill=is_header)
+                # Render wrapped text inside cell
+                pdf.set_xy(x + padding, y_start + padding)
+                pdf.multi_cell(w - padding * 2, line_height, text)
 
-            pdf.ln(6)
+                x += w
+
+            pdf.set_y(y_start + max_cell_h)
 
 
 # ============================================================================
@@ -484,7 +738,9 @@ class PDFRenderer:
 class DOCXRenderer:
     """Renders DocumentNodes to DOCX."""
 
-    def render(self, nodes: list[DocumentNode]) -> bytes:
+    def render(
+        self, nodes: list[DocumentNode], metadata: ExportMetadata | None = None
+    ) -> bytes:
         """Render document nodes to DOCX bytes."""
         from docx import Document
         from docx.shared import Pt
@@ -496,6 +752,10 @@ class DOCXRenderer:
         style.font.name = "Calibri"
         style.font.size = Pt(11)
 
+        # Render title page if metadata is provided
+        if metadata:
+            self._render_title_page(doc, metadata)
+
         for node in nodes:
             self._render_node(doc, node)
 
@@ -503,6 +763,61 @@ class DOCXRenderer:
         doc.save(buffer)
         buffer.seek(0)
         return buffer.getvalue()
+
+    def _render_title_page(self, doc: Document, metadata: ExportMetadata):
+        """Render title page with cover image, title, and metadata."""
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Inches, Pt, RGBColor
+
+        # Cover image (only for URL-based images, skip CSS gradients)
+        if metadata.cover_image_url and not metadata.cover_image_url.startswith(
+            ("linear-gradient", "radial-gradient", "conic-gradient", "#")
+        ):
+            img_path = PDFRenderer._download_image(metadata.cover_image_url)
+            if img_path:
+                try:
+                    doc.add_picture(img_path, width=Inches(6.5))
+                except Exception as e:
+                    logger.warning(f"Failed to embed cover image in DOCX: {e}")
+                finally:
+                    with contextlib.suppress(OSError):
+                        os.unlink(img_path)
+
+        # Title
+        title_text = metadata.title
+        if metadata.icon:
+            title_text = f"{metadata.icon}  {title_text}"
+        title_para = doc.add_heading(title_text, level=0)
+        title_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+        # Separator
+        sep = doc.add_paragraph()
+        sep.add_run("_" * 60)
+        sep.runs[0].font.color.rgb = RGBColor(200, 200, 200)
+        sep.runs[0].font.size = Pt(8)
+
+        # Metadata
+        if metadata.author:
+            p = doc.add_paragraph()
+            run = p.add_run(f"Author: {metadata.author}")
+            run.font.size = Pt(10)
+            run.font.color.rgb = RGBColor(120, 120, 120)
+
+        if metadata.created_at:
+            p = doc.add_paragraph()
+            run = p.add_run(f"Created: {metadata.created_at.strftime('%Y-%m-%d')}")
+            run.font.size = Pt(10)
+            run.font.color.rgb = RGBColor(120, 120, 120)
+
+        if metadata.updated_at:
+            p = doc.add_paragraph()
+            run = p.add_run(f"Last updated: {metadata.updated_at.strftime('%Y-%m-%d')}")
+            run.font.size = Pt(10)
+            run.font.color.rgb = RGBColor(120, 120, 120)
+
+        # Page break after title page (only if there's a cover or metadata)
+        if metadata.cover_image_url:
+            doc.add_page_break()
 
     def _render_node(self, doc: Document, node: DocumentNode, level: int = 0):
         """Render a single node to the document."""
@@ -650,19 +965,25 @@ class ExportService:
                 return cls[len("language-") :]
         return None
 
-    def export_pdf(self, content: str, filename: str) -> bytes:  # noqa: ARG002
+    def export_pdf(
+        self, content: str, filename: str, metadata: dict | None = None  # noqa: ARG002
+    ) -> bytes:
         """Export content as PDF."""
         self.md.reset()
         html = self.md.convert(content)
         nodes = self.parser.parse(html)
-        return self.pdf_renderer.render(nodes)
+        meta = ExportMetadata(**metadata) if metadata else None
+        return self.pdf_renderer.render(nodes, metadata=meta)
 
-    def export_docx(self, content: str, filename: str) -> bytes:  # noqa: ARG002
+    def export_docx(
+        self, content: str, filename: str, metadata: dict | None = None  # noqa: ARG002
+    ) -> bytes:
         """Export content as DOCX."""
         self.md.reset()
         html = self.md.convert(content)
         nodes = self.parser.parse(html)
-        return self.docx_renderer.render(nodes)
+        meta = ExportMetadata(**metadata) if metadata else None
+        return self.docx_renderer.render(nodes, metadata=meta)
 
 
 # Lazy singleton — instantiated on first use, not at import time

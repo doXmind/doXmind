@@ -321,9 +321,14 @@ export const DiffReviewExtension = Extension.create({
               const hasOldContent = !!hunk.oldContent && from < to;
               const hasNewContent = !!hunk.newContent;
               const isReplace = hasOldContent && hasNewContent;
+              // Atom block nodes (database, mermaid, math, bookmark, etc.) need
+              // Decoration.node() — Decoration.inline() doesn't work on ReactNodeViewRenderer atoms
+              const nodeAtHunkStart = hasOldContent ? state.doc.nodeAt(from) : null;
+              const coversAtomBlock = !!(nodeAtHunkStart?.isAtom && nodeAtHunkStart?.isBlock);
               // Structured content (tables, mermaid, code blocks, HTML) falls back to
               // block-level rendering to preserve formatting
               const useBlockFallback =
+                coversAtomBlock ||
                 isStructuredContent(hunk.oldContent || "") ||
                 isStructuredContent(hunk.newContent || "");
 
@@ -397,12 +402,11 @@ export const DiffReviewExtension = Extension.create({
                 try {
                   const $to = state.doc.resolve(to);
                   for (let d = $to.depth; d >= 1; d--) {
-                    const nodeName = $to.node(d).type.name;
+                    const ancestorNode = $to.node(d);
                     if (
-                      nodeName === "table" ||
-                      nodeName === "codeBlock" ||
-                      nodeName === "mermaidChart" ||
-                      nodeName === "blockMath"
+                      ancestorNode.type.name === "table" ||
+                      ancestorNode.type.name === "codeBlock" ||
+                      ancestorNode.isAtom // all atom blocks (mermaid, math, database, bookmark, etc.)
                     ) {
                       insertAfterPos = $to.after(d);
                       break;

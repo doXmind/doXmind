@@ -1,7 +1,7 @@
 """Document type detection for optimal chunking strategy selection.
 
 This module provides automatic detection of document types to select
-the most appropriate chunking strategy for RAG indexing.
+the most appropriate chunking strategy for text processing.
 """
 
 import re

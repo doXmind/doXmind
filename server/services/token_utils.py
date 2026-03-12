@@ -1,7 +1,7 @@
-"""Token counting utilities for OpenAI embeddings.
+"""Token counting utilities.
 
-This module provides token counting and validation to ensure chunks
-don't exceed OpenAI's text-embedding-3-small model limit of 8192 tokens.
+This module provides token counting and text truncation helpers
+used by autocomplete context assembly and other services.
 """
 
 import logging
@@ -10,9 +10,9 @@ import tiktoken
 
 logger = logging.getLogger(__name__)
 
-# OpenAI text-embedding-3-small uses cl100k_base encoding
-EMBEDDING_ENCODING = "cl100k_base"
-EMBEDDING_MAX_TOKENS = 8192
+# cl100k_base encoding (used by GPT-4, Claude tokenizer is similar enough)
+TOKEN_ENCODING = "cl100k_base"
+MAX_TOKENS = 8192
 SAFE_TOKEN_LIMIT = 8000  # Leave buffer for safety
 
 # Cache the encoding for performance
@@ -23,7 +23,7 @@ def get_encoding() -> tiktoken.Encoding:
     """Get cached tiktoken encoding."""
     global _encoding
     if _encoding is None:
-        _encoding = tiktoken.get_encoding(EMBEDDING_ENCODING)
+        _encoding = tiktoken.get_encoding(TOKEN_ENCODING)
     return _encoding
 
 

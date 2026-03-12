@@ -678,8 +678,8 @@ class TestExtendedDelete:
     """Extended tests for delete functionality."""
 
     @pytest.mark.asyncio
-    async def test_delete_handles_rag_error(self, client: AsyncClient, db_session, auth_headers):
-        """Should delete attachment even if RAG deletion fails."""
+    async def test_delete_handles_cleanup_error(self, client: AsyncClient, db_session, auth_headers):
+        """Should delete attachment even if cleanup fails."""
         conv_id = str(uuid.uuid4())
         conv = Conversation(id=conv_id, file_id="file-rag-err")
         db_session.add(conv)

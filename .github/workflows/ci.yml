@@ -199,7 +199,7 @@ jobs:
         working-directory: server
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgres:16
         env:
           POSTGRES_USER: doxmind
           POSTGRES_PASSWORD: doxmind123
@@ -214,7 +214,6 @@ jobs:
     env:
       DEBUG: "true"
       DATABASE_URL: "postgresql+asyncpg://doxmind:doxmind123@localhost:5432/doxmind_test"
-      PGVECTOR_ENABLED: "false"
       JWT_SECRET_KEY: "test-secret-key-for-ci"
       OPENROUTER_API_KEY: "test-key"
       OPENAI_API_KEY: "test-openai-key"

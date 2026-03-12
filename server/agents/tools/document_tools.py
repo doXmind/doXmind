@@ -22,6 +22,29 @@ from utils.markdown_validator import validate_markdown
 
 logger = logging.getLogger(__name__)
 
+# Regex for database block markers (<!-- database:uuid -->)
+_DATABASE_MARKER_RE = re.compile(r"<!-- database:[a-f0-9-]+ -->")
+
+
+def _reinject_database_markers(old_str: str, new_str: str) -> str:
+    """Re-inject database markers that were dropped by the agent.
+
+    Compares markers in old_str vs new_str.  Any marker present in old_str
+    but missing from new_str is appended to new_str so it is never lost.
+    """
+    old_markers = _DATABASE_MARKER_RE.findall(old_str)
+    if not old_markers:
+        return new_str
+    new_marker_set = set(_DATABASE_MARKER_RE.findall(new_str))
+    # Deduplicate old_markers to avoid appending the same marker multiple times
+    missing = list(dict.fromkeys(m for m in old_markers if m not in new_marker_set))
+    if not missing:
+        return new_str
+    for marker in missing:
+        new_str = new_str.rstrip() + "\n\n" + marker + "\n"
+    return new_str
+
+
 # Tool name sets for routing
 UNIFIED_TOOL_NAMES = frozenset(["get_outline", "read_content", "search"])
 EDIT_TOOL_NAMES = frozenset(["str_replace_editor", "replace_document"])
@@ -34,7 +57,11 @@ _MAX_FULL_READ_LINES = 300
 def find_target_file(
     files: list[dict[str, Any]], file_id: str | None, current_file_id: str | None
 ) -> dict[str, Any] | None:
-    """Find the target file from the in-memory files list."""
+    """Find the target file from the in-memory files list.
+
+    Returns None when a specific file_id was requested but not found,
+    so callers can fall back to DB fetch or return a clear error.
+    """
     target_file_id = file_id or current_file_id
 
     for f in files:
@@ -43,7 +70,10 @@ def find_target_file(
         if not target_file_id and f.get("is_current"):
             return f
 
-    return files[0] if files else None
+    # Only fallback to first file when no specific file_id was requested.
+    if not file_id:
+        return files[0] if files else None
+    return None
 
 
 # =============================================================================
@@ -66,12 +96,12 @@ def _find_attachment(kb_context: dict[str, Any] | None, document_name: str) -> d
 
 
 async def _fetch_file_from_db(db: AsyncSession, file_id: str, user_id: str) -> dict | None:
-    """Fetch a file from the database by ID."""
+    """Fetch a file from the database by ID (strict tenant isolation)."""
     result = await db.execute(
         text("""
             SELECT id, name, content FROM files
             WHERE id = :file_id AND deleted_at IS NULL AND is_folder = false
-            AND (user_id = :user_id OR user_id IS NULL)
+            AND user_id = :user_id
         """),
         {"file_id": file_id, "user_id": user_id},
     )
@@ -148,18 +178,19 @@ async def _resolve_content(
 
     # --- Specific file_id ---
     if file_id:
-        # Try in-memory first
+        # Try in-memory first (only use if content is non-empty)
         target = find_target_file(files, file_id, None)
-        if target:
-            return target.get("content", ""), target["name"], None
-        # Fetch from DB
+        if target and target.get("content", "").strip():
+            return target["content"], target["name"], None
+        # In-memory file has no content (lazy-loaded) or not found — fetch from DB
         if global_kb_context:
             db_file = await _fetch_file_from_db(
                 global_kb_context["db"], file_id, global_kb_context["user_id"]
             )
             if db_file:
                 return strip_html_tags(db_file["content"]), db_file["name"], None
-            return "", "", f"File not found: {file_id}"
+        if target:
+            return target.get("content", ""), target["name"], None
         return "", "", f"File '{file_id}' not found in current context."
 
     # --- Current document (default) ---
@@ -356,6 +387,12 @@ async def execute_search(
     # --- scope="document" (default): search in current/specified file ---
     target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
     if not target_file:
+        if tool_input.get("file_id"):
+            return {
+                "error": f"File '{tool_input['file_id']}' is not loaded. "
+                "Use read_content(file_id=...) to read it, or search(scope='all') "
+                "for cross-document search."
+            }
         return {"result": "No document is currently open."}
 
     content = target_file.get("content", "")
@@ -656,6 +693,11 @@ def execute_str_replace(
     target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
 
     if not target_file:
+        if tool_input.get("file_id"):
+            return {
+                "error": f"Cannot edit file '{tool_input['file_id']}': "
+                "only the currently open document can be edited."
+            }
         return {"error": "No document is currently open."}
 
     old_str = tool_input.get("old_str", "")
@@ -664,6 +706,9 @@ def execute_str_replace(
 
     if not old_str:
         return {"error": "old_str is required."}
+
+    # Safety net: re-inject database markers the agent may have dropped
+    new_str = _reinject_database_markers(old_str, new_str)
 
     error = _find_exact_match(content, old_str)
     if error:
@@ -719,9 +764,18 @@ def execute_replace_document(
     target_file = find_target_file(files, tool_input.get("file_id"), current_file_id)
 
     if not target_file:
+        if tool_input.get("file_id"):
+            return {
+                "error": f"Cannot edit file '{tool_input['file_id']}': "
+                "only the currently open document can be edited."
+            }
         return {"error": "No document is currently open."}
 
     new_content = tool_input.get("new_content", "")
+
+    # Safety net: re-inject database markers the agent may have dropped
+    original_content = target_file.get("content", "")
+    new_content = _reinject_database_markers(original_content, new_content)
 
     result = {
         "type": "replace_all",

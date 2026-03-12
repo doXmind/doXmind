@@ -209,6 +209,20 @@ const nextConfig: NextConfig = {
         source: "/api/notifications/:path*",
         destination: `${backendUrl}/api/notifications/:path*`,
       },
+      // Databases
+      {
+        source: "/api/databases",
+        destination: `${backendUrl}/api/databases/`,
+      },
+      {
+        source: "/api/databases/:path*",
+        destination: `${backendUrl}/api/databases/:path*`,
+      },
+      // Bookmarks (URL unfurling)
+      {
+        source: "/api/bookmarks/:path*",
+        destination: `${backendUrl}/api/bookmarks/:path*`,
+      },
       // Health check
       {
         source: "/health",

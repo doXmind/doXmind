@@ -26,7 +26,11 @@ import { InlineMath, BlockMath } from "@/extensions/math";
 import { MermaidChart } from "@/extensions/mermaid";
 import { Callout } from "@/extensions/callout";
 import { Toggle } from "@/extensions/toggle";
+import { Columns, Column } from "@/extensions/columns";
 import { TableOfContents } from "@/extensions/toc";
+import { WebBookmark } from "@/extensions/web-bookmark";
+import { DatabaseBlock } from "@/extensions/database";
+import { PageLink } from "@/extensions/page-link";
 import { LinkPaste } from "@/extensions/link-paste";
 import { TrailingNode } from "@/extensions/trailing-node";
 import { SlashCommands } from "./slash-commands";
@@ -133,8 +137,21 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Toggle/collapsible blocks
     Toggle,
 
+    // Multi-column layout (2–5 columns)
+    Columns,
+    Column,
+
     // Table of Contents (auto-generated from headings)
     TableOfContents,
+
+    // Web Bookmark (visual URL card)
+    WebBookmark,
+
+    // Notion-style database block (table + board views)
+    DatabaseBlock,
+
+    // Page Link (link to internal page)
+    PageLink,
 
     // Link paste auto-conversion
     LinkPaste,

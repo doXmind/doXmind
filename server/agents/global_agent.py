@@ -85,7 +85,7 @@ class GlobalAgent(WritingAgent):
             kb_attachments: List of KB attachments for this conversation
             data_files_metadata: List of data files metadata
             web_search_enabled: Enable web search tool
-            db: Database session for RAG and file operations
+            db: Database session for file operations
             api_key: User's API key (uses server key if not provided)
             model: User's preferred model (uses default if not provided)
             is_quick_edit: Quick edit mode (not recommended for GlobalAgent)

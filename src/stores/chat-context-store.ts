@@ -24,24 +24,42 @@ export type InlineResultContext = {
   text: string;
 };
 
-export type ChatContextItem = SelectionContext | ImageContext | InlineResultContext;
+export type FileMentionContext = {
+  id: string;
+  type: "file_mention";
+  fileId: string;
+  fileName: string;
+  fileSource: "document" | "data_file";
+};
+
+export type ChatContextItem =
+  | SelectionContext
+  | ImageContext
+  | InlineResultContext
+  | FileMentionContext;
 
 // Input type for adding context (without id)
 export type ChatContextInput =
   | Omit<SelectionContext, "id">
   | Omit<ImageContext, "id">
-  | Omit<InlineResultContext, "id">;
+  | Omit<InlineResultContext, "id">
+  | Omit<FileMentionContext, "id">;
 
 interface ChatContextState {
   chatContexts: ChatContextItem[];
+  /** Pending input text to prefill in the chat composer (consumed once on read). */
+  pendingInput: string | null;
 
   addChatContext: (context: ChatContextInput) => void;
   removeChatContext: (id: string) => void;
   clearAllChatContexts: () => void;
+  setPendingInput: (text: string) => void;
+  consumePendingInput: () => string | null;
 }
 
-export const useChatContextStore = create<ChatContextState>()((set) => ({
+export const useChatContextStore = create<ChatContextState>()((set, get) => ({
   chatContexts: [],
+  pendingInput: null,
 
   addChatContext: (context) =>
     set((state) => ({
@@ -57,4 +75,12 @@ export const useChatContextStore = create<ChatContextState>()((set) => ({
     })),
 
   clearAllChatContexts: () => set({ chatContexts: [] }),
+
+  setPendingInput: (text) => set({ pendingInput: text }),
+
+  consumePendingInput: () => {
+    const text = get().pendingInput;
+    if (text !== null) set({ pendingInput: null });
+    return text;
+  },
 }));

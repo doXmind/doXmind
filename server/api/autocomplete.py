@@ -5,8 +5,8 @@ Provides AI-powered text completions for Markdown writing,
 optimized for low latency and high-quality suggestions.
 
 Supports two modes:
-- Short mode: Fast 1-line completions with multi-file RAG context
-- Long mode: Multi-line intelligent completions with extensive RAG search
+- Short mode: Fast 1-line completions with multi-file context
+- Long mode: Multi-line intelligent completions with open file context
 """
 
 import logging
@@ -39,7 +39,7 @@ cache = AutocompleteCache(max_size=1000, ttl_seconds=300)
 
 
 class AutocompleteRequest(BaseModel):
-    """Enhanced autocomplete request model with mode and RAG support."""
+    """Autocomplete request model with mode support."""
 
     text_before: str
     text_after: str = ""
@@ -47,9 +47,9 @@ class AutocompleteRequest(BaseModel):
     file_name: str = ""
     cursor_position: int = 0
     max_tokens: int = 60  # Default for short mode
-    mode: Literal["short", "long"] = "short"  # NEW: autocomplete mode
-    open_file_ids: list[str] = []  # NEW: for multi-file context
-    include_rag: bool = True  # NEW: can disable for testing
+    mode: Literal["short", "long"] = "short"
+    open_file_ids: list[str] = []
+    include_context: bool = True  # Can disable for testing
 
 
 class AutocompleteResponse(BaseModel):
@@ -174,7 +174,7 @@ async def suggest(
     Returns a contextually appropriate continuation of the text at the cursor position.
     Supports two modes:
     - Short mode: Fast 1-line completions with multi-file context
-    - Long mode: Multi-line intelligent completions with extensive RAG search
+    - Long mode: Multi-line intelligent completions with open file context
     """
     start_time = time.time()
 
@@ -217,7 +217,7 @@ async def suggest(
         context_service = AutocompleteContextService(db)
 
         # Assemble context based on mode
-        if request.include_rag and request.mode == "short":
+        if request.include_context and request.mode == "short":
             params = ShortContextParams(
                 current_text_before=request.text_before,
                 current_text_after=request.text_after,
@@ -233,7 +233,7 @@ async def suggest(
             model = settings.fast_model
             temperature = 0.5
 
-        elif request.include_rag and request.mode == "long":
+        elif request.include_context and request.mode == "long":
             params = LongContextParams(
                 current_text_before=request.text_before,
                 current_text_after=request.text_after,
@@ -251,7 +251,7 @@ async def suggest(
             temperature = 0.6  # Slightly higher for more creative multi-line suggestions
 
         else:
-            # Fallback: no RAG, just current context
+            # Fallback: no multi-file context, just current text
             context = request.text_before[-1500:]
             if request.text_after:
                 context += f"\n[... cursor position ...]\n{request.text_after[:200]}"

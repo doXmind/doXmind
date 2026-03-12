@@ -19,6 +19,7 @@ import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { QUICK_EDIT_LABELS } from "@/lib/quick-edit-prompts";
 import { marked } from "marked";
 import katex from "katex";
+import { AtSign } from "lucide-react";
 
 /**
  * Render LaTeX math in markdown text.
@@ -70,6 +71,44 @@ function parseMarkdownWithMath(text: string): string {
   }
 
   return html;
+}
+
+/** Regex to match @[displayName](fileid:uuid) mention tokens */
+const MENTION_REGEX = /@\[([^\]]+)\]\(fileid:[a-f0-9-]+\)/g;
+
+/** Replace mention tokens with styled HTML for assistant messages (dangerouslySetInnerHTML) */
+function replaceMentionsWithHtml(text: string): string {
+  return text.replace(
+    MENTION_REGEX,
+    '<span class="mention-tag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-1px;margin-right:2px"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>$1</span>'
+  );
+}
+
+/** Render user message content with styled mention tags (React nodes) */
+function renderUserContentWithMentions(content: string): React.ReactNode {
+  const regex = /@\[([^\]]+)\]\(fileid:[a-f0-9-]+\)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span key={match.index} className="mention-tag">
+        <AtSign className="inline h-3 w-3" style={{ verticalAlign: "-1px", marginRight: "2px" }} />
+        {match[1]}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts.length > 1 ? parts : content;
 }
 
 interface MessageContextItem {
@@ -225,6 +264,9 @@ export function ChatMessage({
       '<div class="flex items-center gap-2 text-red-600 dark:text-red-400 py-1"><span class="text-xs">Error: $1</span></div>'
     );
 
+    // Replace @[name](fileid:id) with styled mention tags
+    text = replaceMentionsWithHtml(text);
+
     return parseMarkdownWithMath(text);
   }, [content, isUser]);
 
@@ -256,12 +298,14 @@ export function ChatMessage({
           </div>
         )}
 
-        {/* Contexts above user message */}
-        {isUser && contexts && contexts.length > 0 && (
+        {/* Contexts above user message (file_mentions shown inline as @tags) */}
+        {isUser && contexts && contexts.filter((c) => c.type !== "file_mention").length > 0 && (
           <div className="mb-2 space-y-0.5">
-            {contexts.map((ctx, i) => (
-              <ContextReference key={i} context={ctx} index={i} total={contexts.length} />
-            ))}
+            {contexts
+              .filter((c) => c.type !== "file_mention")
+              .map((ctx, i, arr) => (
+                <ContextReference key={i} context={ctx} index={i} total={arr.length} />
+              ))}
           </div>
         )}
 
@@ -310,7 +354,9 @@ export function ChatMessage({
               </div>
             ) : (
               <>
-                <p className="whitespace-pre-wrap text-sm">{content}</p>
+                <p className="whitespace-pre-wrap text-sm">
+                  {renderUserContentWithMentions(content)}
+                </p>
                 {isEditable && onEdit && (
                   <button
                     type="button"

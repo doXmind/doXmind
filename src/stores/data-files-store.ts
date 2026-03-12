@@ -31,6 +31,8 @@ export interface DataFile {
   // Claude Files API status
   claudeUploadStatus?: ClaudeUploadStatus;
   claudeFileId?: string;
+  // Source database block ID (for auto-exported data files)
+  sourceDatabaseId?: string;
 }
 
 interface DataFilesState {
@@ -118,6 +120,7 @@ export const useDataFilesStore = create<DataFilesState>()(
           createdAt: new Date().toISOString(), // API doesn't include createdAt in list response
           claudeUploadStatus: f.claudeUploadStatus as ClaudeUploadStatus,
           claudeFileId: f.claudeFileId,
+          sourceDatabaseId: f.sourceDatabaseId,
         }));
 
         set((state) => {
@@ -262,6 +265,11 @@ export const useDataFilesStore = create<DataFilesState>()(
 
       try {
         await api.deleteDataFile(conversationId, fileId);
+
+        // Note: deleting a data file does NOT delete the source database block.
+        // The database block remains in the document; a fresh CSV will be
+        // re-exported automatically on the next chat message.
+
         return true;
       } catch (error) {
         console.error("Failed to delete data file", error);

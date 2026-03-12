@@ -491,6 +491,19 @@ export function useChat() {
                 setTodos(parsed.todos);
               }
               break;
+
+            case "data_files_updated": {
+              // Database blocks were auto-exported as data files — refresh the store.
+              // The data files store is keyed by backend conversation UUID, but
+              // `conversationId` here is the frontend file ID. Look up the real
+              // backend conversation ID from the chat store.
+              const conv = useChatStore.getState().conversations[conversationId];
+              const dataFilesConvId = conv?.id || conversationId;
+              import("@/stores/data-files-store").then(({ useDataFilesStore }) => {
+                useDataFilesStore.getState().loadDataFiles(dataFilesConvId);
+              });
+              break;
+            }
           }
         });
 
@@ -680,6 +693,23 @@ export function useChat() {
           "\n\nNote: Rejected changes were NOT applied. The document still contains the original text.\n\n";
 
         messageForAI = feedbackContext + messageForAI;
+      }
+
+      // Inject referenced files metadata from @ mentions
+      const fileMentionContexts = contexts?.filter((c) => c.type === "file_mention") || [];
+      if (fileMentionContexts.length > 0) {
+        const fileRefs = fileMentionContexts
+          .map((c) => {
+            if (c.type === "file_mention") {
+              return `  <file id="${c.fileId}" name="${c.fileName}" source="${c.fileSource}" />`;
+            }
+            return "";
+          })
+          .filter(Boolean)
+          .join("\n");
+        messageForAI +=
+          `\n\n<referenced_files>\n${fileRefs}\n</referenced_files>` +
+          "\n<file_reference_rule>The user explicitly referenced the files above. Use their file_id with tools (get_outline, read_content, str_replace_editor) to access them.</file_reference_rule>";
       }
 
       // Extract image contexts with base64 data for multimodal API

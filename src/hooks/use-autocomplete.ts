@@ -336,7 +336,7 @@ export function useAutocomplete({
             cursor_position: pos,
             mode,
             open_file_ids: openFileIds,
-            include_rag: true,
+            include_context: true,
           }),
           signal: controller.signal,
         });

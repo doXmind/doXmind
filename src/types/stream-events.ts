@@ -168,6 +168,11 @@ export interface TodoUpdateEvent {
   todos: TodoItem[];
 }
 
+/** Data files updated (auto-exported from database blocks) */
+export interface DataFilesUpdatedEvent {
+  type: "data_files_updated";
+}
+
 // =============================================================================
 // Union Type
 // =============================================================================
@@ -210,7 +215,8 @@ export type ChatStreamEvent =
   | WebSearchResultEvent
   | WebFetchResultEvent
   | CodeExecutionResultEvent
-  | TodoUpdateEvent;
+  | TodoUpdateEvent
+  | DataFilesUpdatedEvent;
 
 // =============================================================================
 // Type Guards

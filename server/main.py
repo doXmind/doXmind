@@ -17,11 +17,13 @@ from api import (
     auth,
     autocomplete,
     billing,
+    bookmarks,
     chat,
     comments,
     community,
     conversations,
     data_files,
+    databases,
     export,
     files,
     global_agent,
@@ -107,7 +109,7 @@ An AI-powered writing assistant that helps you write, edit, and organize documen
 ### Features
 - **AI Chat**: Interactive AI assistant for writing help
 - **Smart Editing**: AI-powered document editing and suggestions
-- **Knowledge Base**: RAG-based document search and retrieval
+- **Knowledge Base**: Document search and retrieval
 - **Version Control**: Document versioning with diff tracking
 - **Export**: Export documents to PDF, DOCX, and Markdown
 
@@ -127,7 +129,7 @@ Most endpoints require authentication via JWT Bearer token or API Key.
         {"name": "chat", "description": "AI chat and conversation management"},
         {"name": "files", "description": "File management (CRUD operations)"},
         {"name": "versions", "description": "Document version control"},
-        {"name": "knowledge_base", "description": "Knowledge base and RAG search"},
+        {"name": "knowledge_base", "description": "Knowledge base search"},
         {"name": "skills", "description": "Writing skills and templates"},
         {"name": "export", "description": "Document export (PDF, DOCX, MD)"},
         {"name": "import", "description": "Document import"},
@@ -294,8 +296,10 @@ app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(telemetry.router, prefix="/api/telemetry", tags=["telemetry"])
 app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
+app.include_router(bookmarks.router, prefix="/api/bookmarks", tags=["bookmarks"])
 app.include_router(usage.router, prefix="/api/usage", tags=["usage"])
 app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
+app.include_router(databases.router, prefix="/api/databases", tags=["databases"])
 
 
 # ============================================================================

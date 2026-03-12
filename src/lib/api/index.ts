@@ -18,6 +18,8 @@ import "./data-files";
 import "./global-agent";
 import "./notifications";
 import "./billing";
+import "./bookmarks";
+import "./databases";
 
 // Re-export the client class and singleton
 export { ApiClient } from "./client";
@@ -60,6 +62,7 @@ export type {
 } from "./types";
 export type { GlobalConversationItem, GlobalConversationMessages } from "./global-agent";
 export type { BillingStatus, CreditsInfo, StorageInfo, PricingInfo, PlanInfo } from "./billing";
+export type { BookmarkMetadata } from "./bookmarks";
 
 // Create and export the default client instance
 import { ApiClient } from "./client";

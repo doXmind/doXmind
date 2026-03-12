@@ -114,7 +114,7 @@ class WritingAgent:
             kb_attachments: List of KB attachments for this conversation
             data_files_metadata: List of data files metadata (for system prompt)
             web_search_enabled: Enable web search tool (Google Search)
-            db: Database session for RAG operations
+            db: Database session for file operations
             api_key: User's OpenRouter API key (uses server key if not provided)
             model: User's preferred model (uses default if not provided)
             is_quick_edit: Quick edit mode - optimizes for direct text editing
@@ -133,7 +133,7 @@ class WritingAgent:
 
         settings = get_settings()
 
-        # Store user API key for passing to sub-services (RAG, etc.)
+        # Store user API key for passing to sub-services
         self._user_api_key = api_key
 
         # Use user's API key if provided, otherwise fall back to server key

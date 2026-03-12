@@ -507,6 +507,12 @@ function attrsMatch(
     case "blockMath":
     case "inlineMath":
       return a.latex === b.latex;
+    case "databaseBlock":
+      return a.databaseId === b.databaseId;
+    case "webBookmark":
+      return a.url === b.url;
+    case "pageLink":
+      return a.pageId === b.pageId;
     default:
       return JSON.stringify(a) === JSON.stringify(b);
   }

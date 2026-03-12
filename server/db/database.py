@@ -187,6 +187,10 @@ class File(Base):
         Text, nullable=True
     )  # AI-simplified presentation content (JSON)
 
+    # Cover image for Notion-style page decoration
+    cover_image_url = Column(Text, nullable=True)  # URL or S3 key of cover image
+    cover_position = Column(Float, default=0.5)  # Vertical offset 0-1 (0.5 = centered)
+
     # Folder hierarchy support (single-level only)
     is_folder = Column(Boolean, default=False, nullable=False, index=True)
     parent_id = Column(
@@ -385,6 +389,9 @@ class ConversationDataFile(Base):
     # Status (local upload)
     status = Column(String(20), default="ready")  # uploading, ready, error
     error_message = Column(Text, nullable=True)
+
+    # Source tracking (auto-exported from database block)
+    source_database_id = Column(String(36), nullable=True, index=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow)
@@ -802,6 +809,102 @@ class Notification(Base):
     user = relationship("User", foreign_keys=[user_id])
 
     __table_args__ = (Index("idx_notifications_user_unread", "user_id", "is_read", "created_at"),)
+
+
+# =============================================================================
+# Database Block Models (Notion-style inline databases)
+# =============================================================================
+
+
+class DatabaseBlock(Base):
+    """Notion-style database block with dynamic properties and multiple views."""
+
+    __tablename__ = "database_blocks"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title = Column(String(255), nullable=False, default="Untitled Database")
+    icon = Column(String(10), nullable=True)
+
+    # Schema: [{id, name, type, position, options}]
+    # type: text|number|select|multi_select|date|checkbox|url
+    properties_schema = Column(JSON, nullable=False, default=list)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationships
+    owner = relationship("User", backref="database_blocks")
+    rows = relationship(
+        "DatabaseRow", back_populates="database", cascade="all, delete-orphan",
+        order_by="DatabaseRow.position",
+    )
+    views = relationship(
+        "DatabaseView", back_populates="database", cascade="all, delete-orphan",
+        order_by="DatabaseView.position",
+    )
+
+
+class DatabaseRow(Base):
+    """A single row in a database block. Each row can optionally be a full page."""
+
+    __tablename__ = "database_rows"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    database_id = Column(
+        String(36),
+        ForeignKey("database_blocks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Dynamic property values: {property_id: value}
+    properties = Column(JSON, nullable=False, default=dict)
+    position = Column(Integer, default=0)
+
+    # Row-as-page: optionally link to a File for rich content
+    page_file_id = Column(
+        String(36), ForeignKey("files.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    database = relationship("DatabaseBlock", back_populates="rows")
+    page_file = relationship("File")
+
+    __table_args__ = (
+        Index("idx_db_rows_database_position", "database_id", "position"),
+    )
+
+
+class DatabaseView(Base):
+    """A saved view configuration (table, board, etc.) for a database block."""
+
+    __tablename__ = "database_views"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    database_id = Column(
+        String(36),
+        ForeignKey("database_blocks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String(255), nullable=False, default="Table View")
+    type = Column(String(20), nullable=False, default="table")  # table | board
+    # {filters, sorts, groups, visibleProperties, propertyWidths, groupByPropertyId, ...}
+    config = Column(JSON, nullable=False, default=dict)
+    position = Column(Integer, default=0)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    database = relationship("DatabaseBlock", back_populates="views")
+
+    __table_args__ = (
+        Index("idx_db_views_database_position", "database_id", "position"),
+    )
 
 
 # =============================================================================

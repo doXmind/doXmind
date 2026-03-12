@@ -1,12 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Smile, Share2 } from "lucide-react";
+import { Smile, Share2, FilePlus } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { ShareDialog } from "@/components/share/share-dialog";
+import { BreadcrumbNav } from "./breadcrumb-nav";
+import { CoverPickerModal } from "./cover-picker-modal";
+import { ImagePlus } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface DocumentTitleProps {
   fileId: string;
@@ -15,16 +19,33 @@ interface DocumentTitleProps {
 }
 
 export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitleProps) {
-  const { renameFile, getFile, setFileIcon } = useFileStore();
+  const { renameFile, getFile, setFileIcon, createFile, setCurrentFile, setCoverImage } =
+    useFileStore();
+  const router = useRouter();
   const file = getFile(fileId);
   const icon = file?.icon ?? null;
+  const hasCover = !!file?.coverImageUrl;
   const displayName = fileName.replace(/\.md$/, "");
   const [value, setValue] = useState(displayName);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showCoverModal, setShowCoverModal] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const iconButtonRef = useRef<HTMLButtonElement>(null);
+  const addIconButtonRef = useRef<HTMLButtonElement>(null);
   const isComposingRef = useRef(false);
+
+  const handleCreateSubPage = useCallback(async () => {
+    try {
+      // Create sub-page nested under the current file
+      const newFileId = await createFile("Untitled.md", "", fileId);
+      setCurrentFile(newFileId);
+      router.push(`/editor/${newFileId}`);
+    } catch {
+      // silently ignore if creation fails
+    }
+  }, [createFile, fileId, setCurrentFile, router]);
 
   // Sync value when file changes
   useEffect(() => {
@@ -77,21 +98,59 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
   );
 
   return (
-    <div className="mb-2 mt-4 px-0">
-      <div className="flex items-start gap-2">
-        {/* Emoji icon button */}
+    <div
+      className="mb-2 mt-4 px-0"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Breadcrumb navigation — only shown when file has a parent */}
+      <BreadcrumbNav fileId={fileId} />
+
+      {/* Action buttons — above title, Notion-style; opacity transition, no layout shift */}
+      <div
+        className="flex h-7 items-center gap-1 transition-opacity duration-150"
+        style={{ opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? "auto" : "none" }}
+      >
+        {!icon && (
+          <button
+            ref={addIconButtonRef}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Smile className="h-3.5 w-3.5" />
+            <span>Add icon</span>
+          </button>
+        )}
+        {!hasCover && (
+          <button
+            onClick={() => setShowCoverModal(true)}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <ImagePlus className="h-3.5 w-3.5" />
+            <span>Add cover</span>
+          </button>
+        )}
         <button
-          ref={iconButtonRef}
-          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          className="mt-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent"
-          title="Set document icon"
+          onClick={handleCreateSubPage}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
         >
-          {icon ? (
-            <span className="text-2xl leading-none">{icon}</span>
-          ) : (
-            <Smile className="h-5 w-5 text-muted-foreground/40 dark:text-muted-foreground/60" />
-          )}
+          <FilePlus className="h-3.5 w-3.5" />
+          <span>New sub-page</span>
         </button>
+      </div>
+
+      <div className="flex items-start gap-2">
+        {/* Emoji icon button — only shown when icon is set */}
+        {icon && (
+          <button
+            ref={iconButtonRef}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="mt-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent"
+            title="Change document icon"
+          >
+            <span className="text-2xl leading-none">{icon}</span>
+          </button>
+        )}
 
         <textarea
           ref={inputRef}
@@ -127,11 +186,11 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
       </div>
 
       {/* Emoji picker */}
-      {showEmojiPicker && iconButtonRef.current && (
+      {showEmojiPicker && (iconButtonRef.current || addIconButtonRef.current) && (
         <EmojiPicker
           onSelect={handleEmojiSelect}
           onClose={() => setShowEmojiPicker(false)}
-          anchorRect={iconButtonRef.current.getBoundingClientRect()}
+          anchorRect={(iconButtonRef.current ?? addIconButtonRef.current)!.getBoundingClientRect()}
         />
       )}
 
@@ -141,6 +200,16 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
         onClose={() => setShowShareDialog(false)}
         fileId={fileId}
         fileName={fileName}
+      />
+
+      {/* Cover picker modal */}
+      <CoverPickerModal
+        open={showCoverModal}
+        onClose={() => setShowCoverModal(false)}
+        onConfirm={(value) => {
+          setCoverImage(fileId, value);
+          setShowCoverModal(false);
+        }}
       />
     </div>
   );

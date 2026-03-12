@@ -12,6 +12,8 @@ export interface FileItem {
   position: number;
   isFavorite: boolean;
   icon: string | null;
+  coverImageUrl: string | null;
+  coverPosition: number;
   presentationSimplified?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -90,6 +92,12 @@ export type MessageContextItem =
       alt?: string;
       base64?: string; // Base64 encoded image data (without data:... prefix)
       mediaType?: string; // MIME type (image/jpeg, image/png, etc.)
+    }
+  | {
+      type: "file_mention";
+      fileId: string;
+      fileName: string;
+      fileSource: "document" | "data_file";
     };
 
 /** Metadata for quick edit operations routed through chat */

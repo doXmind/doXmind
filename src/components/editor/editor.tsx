@@ -6,6 +6,8 @@ import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 
 import { ImageModal } from "./image-modal";
+import { BookmarkModal } from "./bookmark-modal";
+import { PagePickerModal } from "./page-picker-modal";
 import { SpellcheckPopup } from "./spellcheck-popup";
 import { InlineAICopilot } from "@/components/ai/inline-ai-copilot";
 import { EditorContextMenu } from "./editor-context-menu";
@@ -16,6 +18,7 @@ import { ReviewPanel } from "./review-panel";
 import { SearchBar } from "./search-bar";
 import { StatusBar } from "./status-bar";
 import { DocumentTitle } from "./document-title";
+import { PageCover } from "./page-cover";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { getReviewState } from "@/extensions/text-review-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
@@ -41,6 +44,18 @@ import { EDITOR_DEBOUNCE_DELAY } from "@/lib/constants";
 import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useStreamingStore } from "@/stores/streaming-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { useDatabaseStore } from "@/stores/database-store";
+import { eventBus } from "@/lib/events";
+
+/** Extract database block IDs from HTML (data-database-id) or markdown (<!-- database:uuid -->) */
+function extractDatabaseIds(content: string): Set<string> {
+  const ids = new Set<string>();
+  // Match both HTML attribute and markdown comment formats
+  const re = /(?:data-database-id="([a-f0-9-]+)"|<!-- database:([a-f0-9-]+) -->)/g;
+  let m;
+  while ((m = re.exec(content)) !== null) ids.add(m[1] || m[2]);
+  return ids;
+}
 
 interface EditorProps {
   file: FileItem;
@@ -87,6 +102,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   const isMobile = useIsMobile();
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
+  // Track database block IDs in the document to detect removals on save
+  const prevDbIdsRef = useRef<Set<string>>(new Set());
   // Track initial file.id to skip redundant setContent on first editor mount.
   // useEditor already initializes with the correct content; calling setContent
   // again destroys/recreates React node views, triggering flushSync errors.
@@ -115,6 +132,17 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         setLastSavedAt(new Date().toISOString());
         setDirty(false);
         lastContentRef.current = content;
+
+        // Detect removed database blocks and cascade-delete them
+        const currentIds = extractDatabaseIds(contentMarkdown ?? content);
+        for (const id of prevDbIdsRef.current) {
+          if (!currentIds.has(id)) {
+            // deleteDatabase emits "database:deleted" event on success,
+            // which also cascade-deletes linked data files on the backend
+            useDatabaseStore.getState().deleteDatabase(id);
+          }
+        }
+        prevDbIdsRef.current = currentIds;
       }
     }, EDITOR_DEBOUNCE_DELAY),
     [file.id, updateFile, updateDemoContent, isDemoMode, setSaving, setLastSavedAt, setDirty]
@@ -226,6 +254,30 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     return () => setEditor(null);
   }, [editor, setEditor]);
 
+  // Remove stale database block nodes when a database is deleted externally
+  // (e.g., via data file deletion in the knowledge base)
+  useEffect(() => {
+    if (!editor) return;
+    return eventBus.on("database:deleted", ({ databaseId }) => {
+      // Remove from tracking ref so the save-based detection doesn't re-trigger
+      prevDbIdsRef.current.delete(databaseId);
+
+      // Find and remove the matching node from the TipTap document
+      editor.commands.command(({ tr, state }) => {
+        let deleted = false;
+        state.doc.descendants((node, pos) => {
+          if (deleted) return false;
+          if (node.type.name === "databaseBlock" && node.attrs.databaseId === databaseId) {
+            tr.delete(pos, pos + node.nodeSize);
+            deleted = true;
+            return false;
+          }
+        });
+        return deleted;
+      });
+    });
+  }, [editor]);
+
   // Flush pending save on page unload to prevent false "unsaved changes" warnings
   // and ensure content is persisted before the page closes
   useEffect(() => {
@@ -277,6 +329,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     if (initialFileIdRef.current === file.id) {
       initialFileIdRef.current = null;
       lastContentRef.current = editor.getHTML();
+      // Snapshot database block IDs in the initial content
+      prevDbIdsRef.current = extractDatabaseIds(file.content);
       return;
     }
 
@@ -306,6 +360,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
       // to prevent false-positive change detection in debouncedSave.
       lastContentRef.current = editor.getHTML();
+      // Snapshot database block IDs for the new file
+      prevDbIdsRef.current = extractDatabaseIds(file.content);
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       // Restart DOM observer after content is fully replaced
@@ -570,6 +626,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
             </div>
           ) : (
             <ScrollArea className="min-h-0 flex-1" data-editor-scroll>
+              <PageCover fileId={file.id} />
               <div
                 className={cn(
                   "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
@@ -636,6 +693,8 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         onClose={closeImageModal}
         onConfirm={handleImageModalConfirm}
       />
+      <BookmarkModal />
+      <PagePickerModal />
     </div>
   );
 }

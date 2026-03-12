@@ -25,6 +25,8 @@ export const useDemoStore = create<DemoState>((set) => ({
         position: 0,
         isFavorite: false,
         icon: null,
+        coverImageUrl: null,
+        coverPosition: 0.5,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         wordCount: 0,

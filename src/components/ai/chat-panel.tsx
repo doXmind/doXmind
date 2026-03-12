@@ -43,11 +43,14 @@ import { useDataFilesStore, isDataFile, isKBFile } from "@/stores/data-files-sto
 import { useKBStore } from "@/stores/kb-store";
 import { useBillingStore } from "@/stores/billing-store";
 import { useChat } from "@/hooks/use-chat";
+import { useMentionTrigger } from "@/hooks/use-mention-trigger";
+import { MentionDropdown } from "@/components/chat/mention-dropdown";
 import { useKBPollingCleanup } from "@/hooks/use-kb-polling-cleanup";
 import { useDataFilePollingCleanup } from "@/hooks/use-data-file-polling-cleanup";
 import { useIsMobile } from "@/hooks/use-device-type";
 import { useTranslations } from "next-intl";
 import { CHAT_MAX_IMAGES, CHAT_MAX_IMAGE_SIZE } from "@/lib/constants";
+import { eventBus } from "@/lib/events";
 
 interface ChatPanelProps {
   isDemoMode?: boolean;
@@ -99,11 +102,16 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
   const chatSuggestions = SUGGESTIONS;
 
   // Chat context store for "Ask in Chat" feature (Context Pills)
-  const { chatContexts, removeChatContext, clearAllChatContexts, addChatContext } =
-    useChatContextStore();
+  const {
+    chatContexts,
+    removeChatContext,
+    clearAllChatContexts,
+    addChatContext,
+    consumePendingInput,
+  } = useChatContextStore();
 
   // Data files store for code execution
-  const { uploadDataFile, getDataFiles } = useDataFilesStore();
+  const { uploadDataFile, getDataFiles, loadDataFiles } = useDataFilesStore();
 
   // KB store for document uploads
   const { uploadAttachments: uploadKBFiles } = useKBStore();
@@ -138,6 +146,14 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     todos,
   } = useChat();
 
+  // @ mention trigger for referencing files in chat
+  const mention = useMentionTrigger(
+    input,
+    setInput,
+    textareaRef,
+    conversation.isLoaded && conversation.id ? conversation.id : null
+  );
+
   // Clean up polling intervals when chat panel unmounts
   useKBPollingCleanup(conversation.id || null);
   useDataFilePollingCleanup(conversation.id || null);
@@ -156,10 +172,39 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
     }
   }, [chatContexts.length]);
 
+  // Consume pending input (e.g. from "Analyze with AI" database toolbar button)
+  useEffect(() => {
+    const pending = consumePendingInput();
+    if (pending) {
+      setInput(pending);
+      setTimeout(() => textareaRef.current?.focus(), 100);
+    }
+  }, [consumePendingInput]);
+
+  // Refresh data files when a database block is deleted (its data files are cascade-deleted)
+  useEffect(() => {
+    return eventBus.on("database:deleted", () => {
+      if (conversationKey) {
+        loadDataFiles(conversationKey);
+      }
+    });
+  }, [conversationKey, loadDataFiles]);
+
   const handleSubmit = async () => {
     if (!input.trim() || isStreaming) return;
 
-    const message = input.trim();
+    // Replace @displayName with @[displayName](fileid:id) so the backend
+    // receives file IDs inline and the frontend can render styled tags.
+    let message = input.trim();
+    for (const ctx of chatContexts) {
+      if (ctx.type === "file_mention") {
+        message = message.replaceAll(
+          `@${ctx.fileName}`,
+          `@[${ctx.fileName}](fileid:${ctx.fileId})`
+        );
+      }
+    }
+
     const contextsToSend =
       chatContexts.length > 0
         ? chatContexts.map((c) => {
@@ -172,6 +217,14 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
                 mediaType: c.mediaType,
               };
             }
+            if (c.type === "file_mention") {
+              return {
+                type: "file_mention" as const,
+                fileId: c.fileId,
+                fileName: c.fileName,
+                fileSource: c.fileSource,
+              };
+            }
             if (c.type === "inline_result") {
               return { type: "selection" as const, text: c.text };
             }
@@ -179,21 +232,31 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
           })
         : null;
 
+    // Only send the currently-open file. Mentioned documents are communicated
+    // via <referenced_files> XML in the message — the agent reads them from DB.
+    const fileIds = effectiveFileId ? [effectiveFileId] : [];
+
+    // Collect data file IDs: conversation data files + mentioned data files
+    const fileMentions = chatContexts.filter((c) => c.type === "file_mention");
     const dataFilesForConversation =
       conversation.isLoaded && conversation.id ? getDataFiles(conversation.id) : [];
     const dataFileIdsToSend = dataFilesForConversation
       .filter((f) => f.status === "ready")
       .map((f) => f.id);
+    for (const m of fileMentions) {
+      if (
+        m.type === "file_mention" &&
+        m.fileSource === "data_file" &&
+        !dataFileIdsToSend.includes(m.fileId)
+      ) {
+        dataFileIdsToSend.push(m.fileId);
+      }
+    }
 
     setInput("");
     clearAllChatContexts();
 
-    await sendMessage(
-      message,
-      effectiveFileId ? [effectiveFileId] : [],
-      contextsToSend,
-      dataFileIdsToSend
-    );
+    await sendMessage(message, fileIds, contextsToSend, dataFileIdsToSend);
   };
 
   const handleClear = () => {
@@ -523,6 +586,22 @@ export function ChatPanel({ isDemoMode = false }: ChatPanelProps) {
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           isDragging={isDragging}
+          textareaRef={textareaRef}
+          onKeyDownIntercept={mention.handleKeyDown}
+          onCursorChange={mention.trackCursor}
+          mentionNames={chatContexts
+            .filter((c) => c.type === "file_mention")
+            .map((c) => (c as { fileName: string }).fileName)}
+          mentionDropdown={
+            mention.isOpen ? (
+              <MentionDropdown
+                items={mention.filteredItems}
+                selectedIndex={mention.selectedIndex}
+                onSelect={mention.handleSelect}
+                onHover={mention.setSelectedIndex}
+              />
+            ) : undefined
+          }
           contextSlot={
             chatContexts.length > 0 ? (
               <div className="mb-2 space-y-1">

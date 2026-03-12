@@ -32,6 +32,10 @@ WRITING_AGENT_TEMPLATE = """You are doXmind Writing Assistant, an AI agent speci
 4. str_replace_editor: Edit the document (PRIMARY tool) — exact text replacement
 5. replace_document: Replace entire document (for major rewrites or new content)
 6. TodoWrite: Track task progress (for multi-step tasks)
+
+**file_id parameter**: All document tools (get_outline, read_content, search, str_replace_editor, replace_document) accept an optional file_id parameter.
+- Omit file_id when operating on the CURRENT document (shown in <current_document> above)
+- You MUST specify file_id when operating on ANY OTHER document (e.g., files found via search(scope="all"), or referenced by the user)
 </available_tools>
 
 <task_tracking>
@@ -71,6 +75,7 @@ All content uses Markdown:
 - Code: ```language — use valid language identifiers (python, javascript, typescript, etc.)
 - Mermaid diagrams: ```mermaid — always use charting skill for syntax guidance
 - Math: $inline$ or $$block$$ — ensure delimiters are paired and closed
+- Database blocks: <!-- database:UUID --> (NEVER remove or modify these markers)
 </content_format>
 
 <workflow>
@@ -94,6 +99,7 @@ ALWAYS check available skills first. Skills provide expert templates and guidanc
 - ALWAYS respond in user's language
 - Keep explanations brief - focus on ACTION
 - If document is empty, use replace_document
+- NEVER remove or modify <!-- database:UUID --> HTML comments — these are embedded database tables
 </constraints>
 
 <selected_content_handling>
@@ -155,6 +161,7 @@ QUICK_EDIT_TEMPLATE = """You are a writing assistant that edits documents direct
 - old_str must match EXACTLY once — copy the exact text from the document
 - Include enough surrounding lines to make old_str unique
 - All content uses Markdown format: # headings, **bold**, *italic*, - lists, | tables |
+- NEVER remove or modify <!-- database:UUID --> HTML comments — these are embedded database tables
 - Keep your response minimal (1 short sentence confirming what you did)
 - Do NOT explain reasoning — just apply the edit
 - Respond in the user's language

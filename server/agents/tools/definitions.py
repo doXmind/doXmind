@@ -106,7 +106,8 @@ DOCUMENT_TOOLS = [
         "description": (
             "Edit the document by replacing text. Provide old_str (exact text to find) "
             "and new_str (replacement text). old_str must match exactly once in the document. "
-            "Include enough surrounding context to ensure uniqueness."
+            "Include enough surrounding context to ensure uniqueness. "
+            "IMPORTANT: Preserve all <!-- database:UUID --> markers exactly as-is."
         ),
         "input_schema": {
             "type": "object",
@@ -129,7 +130,7 @@ DOCUMENT_TOOLS = [
     },
     {
         "name": "replace_document",
-        "description": "Replace the entire document content. Use this when making major rewrites or creating new content from scratch.",
+        "description": "Replace the entire document content. Use this when making major rewrites or creating new content from scratch. IMPORTANT: Preserve all <!-- database:UUID --> markers from the original document in their original positions.",
         "input_schema": {
             "type": "object",
             "properties": {

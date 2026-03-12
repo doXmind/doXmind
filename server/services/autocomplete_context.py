@@ -1,14 +1,13 @@
 """Autocomplete context assembly service.
 
 Provides methods for assembling context from multiple sources
-(current file, RAG-retrieved chunks, file structure) for autocomplete
+(current file, open files, file structure) for autocomplete
 suggestions in both short and long modes.
 """
 
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,21 +48,6 @@ class AutocompleteContextService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.settings = get_settings()
-
-    async def get_rag_chunks(
-        self,
-        query: str,
-        file_ids: list[str],
-        top_k: int = 5,  # noqa: ARG002
-        user_id: str | None = None,  # noqa: ARG002
-    ) -> list[dict[str, Any]]:
-        """Retrieve relevant chunks from specified files.
-
-        RAG/vector search has been removed. Returns empty list.
-        Autocomplete context relies on open file content instead.
-        """
-        if not file_ids or not query:
-            return []
 
     async def get_open_files_context(
         self,
@@ -191,7 +175,7 @@ class AutocompleteContextService:
 
         Priority order:
         1. Current file prefix (1500 chars) + suffix (200 chars)
-        2. Top 3-5 RAG chunks from open files (500 chars each)
+        2. Snippets from open files
         3. File names of open files (for reference)
 
         Args:
@@ -215,41 +199,17 @@ class AutocompleteContextService:
         context_parts.append(current_context)
         budget_used += count_tokens(current_context)
 
-        # 2. RAG chunks from open files (if there are any other than current)
+        # 2. Context from open files
         other_files = [fid for fid in params.open_file_ids if fid != params.file_id]
         if other_files and budget_used < params.max_tokens * 0.7:
-            # Use last 500 chars as query
-            query = params.current_text_before[-500:] if params.current_text_before else ""
-
-            if query:
-                rag_chunks = await self.get_rag_chunks(
-                    query=query,
-                    file_ids=other_files,
-                    top_k=3,
-                    user_id=user_id,
-                )
-
-                if rag_chunks:
-                    rag_context_parts = [
-                        "\n--- Related context from other files ---",
-                    ]
-
-                    for _i, chunk in enumerate(rag_chunks[:3]):
-                        chunk_text = chunk.get("content", "")
-                        file_id = chunk.get("metadata", {}).get("file_id", "")
-
-                        # Truncate each chunk to 500 chars
-                        if len(chunk_text) > 500:
-                            chunk_text = chunk_text[:500] + "..."
-
-                        rag_context_parts.append(f"\n[File {file_id[:8]}...]\n{chunk_text}")
-
-                        budget_used += count_tokens(chunk_text)
-                        if budget_used >= params.max_tokens * 0.9:
-                            break
-
-                    if len(rag_context_parts) > 1:
-                        context_parts.extend(rag_context_parts)
+            open_context = await self.get_open_files_context(
+                file_ids=other_files,
+                max_chars=1500,
+                user_id=user_id,
+            )
+            if open_context:
+                context_parts.append(f"\n--- Related context from other files ---\n{open_context}")
+                budget_used += count_tokens(open_context)
 
         # 3. Combine and truncate to token budget
         combined = "\n\n".join(context_parts)
@@ -272,9 +232,8 @@ class AutocompleteContextService:
 
         Priority order:
         1. Current file prefix (4000 chars) + suffix (1000 chars)
-        2. Top 10 RAG chunks from all user documents (1000 chars each)
-        3. File structure context (headings, outline)
-        4. Open files list (for reference)
+        2. File structure context (headings, outline)
+        3. Snippets from open files
 
         Args:
             params: Long context parameters
@@ -308,40 +267,19 @@ class AutocompleteContextService:
                 context_parts.insert(0, structure)  # Add at beginning for better context
                 budget_used += count_tokens(structure)
 
-        # 3. RAG chunks from ALL files (not just open ones)
-        # This is the key difference from short mode - we search globally
-        if budget_used < params.max_tokens * 0.5:
-            query = params.current_text_before[-500:] if params.current_text_before else ""
-
-            if query:
-                # Don't filter by file_ids - search all user's documents
-                rag_chunks = await self.get_rag_chunks(
-                    query=query,
-                    file_ids=[],  # Empty list means search all
-                    top_k=10,
-                    user_id=user_id,
+        # 3. Context from open files
+        other_files = [fid for fid in params.open_file_ids if fid != params.file_id]
+        if other_files and budget_used < params.max_tokens * 0.5:
+            open_context = await self.get_open_files_context(
+                file_ids=other_files,
+                max_chars=3000,
+                user_id=user_id,
+            )
+            if open_context:
+                context_parts.append(
+                    f"\n--- Related content from other files ---\n{open_context}"
                 )
-
-                if rag_chunks:
-                    rag_context_parts = [
-                        "\n--- Related content from your documents ---",
-                    ]
-
-                    for chunk in rag_chunks[:10]:
-                        chunk_text = chunk.get("content", "")
-
-                        # Truncate each chunk to 1000 chars for long mode
-                        if len(chunk_text) > 1000:
-                            chunk_text = chunk_text[:1000] + "..."
-
-                        rag_context_parts.append(f"\n{chunk_text}")
-
-                        budget_used += count_tokens(chunk_text)
-                        if budget_used >= params.max_tokens * 0.9:
-                            break
-
-                    if len(rag_context_parts) > 1:
-                        context_parts.extend(rag_context_parts)
+                budget_used += count_tokens(open_context)
 
         # 4. Combine and truncate to token budget
         combined = "\n\n".join(context_parts)
@@ -350,7 +288,7 @@ class AutocompleteContextService:
         tokens = count_tokens(final_context)
         logger.info(
             f"Long context assembled: {tokens}/{params.max_tokens} tokens, "
-            f"RAG search across all documents"
+            f"{len(other_files)} open files checked"
         )
 
         return final_context

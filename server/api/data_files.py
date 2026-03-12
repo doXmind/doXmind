@@ -8,7 +8,6 @@ and passed directly to the API as inline content.
 """
 
 import asyncio
-
 import logging
 import os
 import tempfile
@@ -70,6 +69,7 @@ class DataFileResponse(BaseModel):
     previewData: list | None = None
     columnNames: list | None = None
     rowCount: int = 0
+    sourceDatabaseId: str | None = None
 
 
 class DataFileListResponse(BaseModel):
@@ -180,6 +180,7 @@ async def upload_data_file(
         previewData=data_file.preview_data,
         columnNames=data_file.column_names,
         rowCount=data_file.row_count,
+        sourceDatabaseId=data_file.source_database_id,
     )
 
 
@@ -220,6 +221,7 @@ async def list_data_files(
                 previewData=f.preview_data,
                 columnNames=f.column_names,
                 rowCount=f.row_count,
+                sourceDatabaseId=f.source_database_id,
             )
             for f in files
         ]
@@ -263,6 +265,7 @@ async def get_data_file(
         previewData=data_file.preview_data,
         columnNames=data_file.column_names,
         rowCount=data_file.row_count,
+        sourceDatabaseId=data_file.source_database_id,
     )
 
 
@@ -302,7 +305,8 @@ async def delete_data_file(
         except Exception as e:
             logger.warning(f"Failed to delete file {data_file.storage_path}: {e}")
 
-    # Delete database record
+    # Delete database record (source database block is NOT cascade-deleted;
+    # users may delete a chat data file without intending to lose the database)
     await db.delete(data_file)
     await db.commit()
 

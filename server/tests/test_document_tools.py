@@ -79,14 +79,25 @@ class TestFindTargetFile:
         assert result["id"] == "file-1"
         assert result.get("is_current") is True
 
-    def test_fallback_to_first_file(self):
-        """Should fallback to first file when nothing matched."""
+    def test_returns_none_for_missing_specific_file_id(self):
+        """Should return None when a specific file_id was requested but not found."""
         files = [
             {"id": "file-1", "name": "doc.md", "content": "Content"},
             {"id": "file-2", "name": "doc2.md", "content": "Content 2"},
         ]
 
         result = find_target_file(files, "nonexistent", None)
+
+        assert result is None
+
+    def test_fallback_to_first_file_when_no_file_id(self):
+        """Should fallback to first file when no file_id and current_file_id doesn't match."""
+        files = [
+            {"id": "file-1", "name": "doc.md", "content": "Content"},
+            {"id": "file-2", "name": "doc2.md", "content": "Content 2"},
+        ]
+
+        result = find_target_file(files, None, "nonexistent")
 
         assert result is not None
         assert result["id"] == "file-1"
@@ -586,3 +597,52 @@ class TestSearchMermaidContent:
         ]
         result = await execute_search({"query": "nonexistent"}, files, "file-1")
         assert "No matches" in result["result"]
+
+
+# ============================================================================
+# Cross-Document and Edit Rejection Tests
+# ============================================================================
+
+
+class TestCrossDocumentAccess:
+    """Tests for cross-document read and edit rejection."""
+
+    def test_str_replace_rejects_unknown_file_id(self):
+        """str_replace should error (not silently edit wrong file) for unknown file_id."""
+        files = [
+            {"id": "current-file", "name": "doc.md", "content": "Hello world", "is_current": True}
+        ]
+        result = execute_str_replace(
+            {"file_id": "other-file", "old_str": "Hello", "new_str": "Hi"},
+            files,
+            "current-file",
+        )
+        assert "error" in result
+        assert "other-file" in result["error"]
+
+    def test_replace_document_rejects_unknown_file_id(self):
+        """replace_document should error for unknown file_id."""
+        files = [
+            {"id": "current-file", "name": "doc.md", "content": "Hello world", "is_current": True}
+        ]
+        result = execute_replace_document(
+            {"file_id": "other-file", "new_content": "New stuff"},
+            files,
+            "current-file",
+        )
+        assert "error" in result
+        assert "other-file" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_search_document_scope_errors_for_unknown_file_id(self):
+        """search(scope=document) should error for unknown file_id."""
+        files = [
+            {"id": "current-file", "name": "doc.md", "content": "Hello world", "is_current": True}
+        ]
+        result = await execute_search(
+            {"query": "Hello", "file_id": "other-file"},
+            files,
+            "current-file",
+        )
+        assert "error" in result
+        assert "other-file" in result["error"]

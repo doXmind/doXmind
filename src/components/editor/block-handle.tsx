@@ -180,7 +180,65 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
             node.type.name === "codeBlock");
 
         let top: number;
-        if (isMediaBlock) {
+        if (node?.type.name === "databaseBlock") {
+          // Database blocks have internal padding before the title.
+          // Find the title element and center the handle on it (Notion-style).
+          // Prefer .font-semibold first — it exists in both the creation dialog
+          // header and the loaded database header. Exclude input[type='file']
+          // (hidden CSV upload input whose zero-height rect breaks positioning).
+          const titleEl =
+            dom.querySelector(".font-semibold") ||
+            dom.querySelector("h3") ||
+            dom.querySelector("input:not([type='file'])");
+          if (titleEl) {
+            const titleRect = titleEl.getBoundingClientRect();
+            top =
+              titleRect.height > 0 ? titleRect.top + titleRect.height / 2 - 14 : blockRect.top + 14;
+          } else {
+            top = blockRect.top + 14;
+          }
+        } else if (node?.type.name === "pageLink") {
+          // PageLink has a NodeViewWrapper with margin and inner padding.
+          // Center handle on the visible button row.
+          const buttonEl = dom.querySelector('[role="button"]');
+          if (buttonEl) {
+            const buttonRect = buttonEl.getBoundingClientRect();
+            top = buttonRect.top + buttonRect.height / 2 - 14;
+          } else {
+            top = blockRect.top + 6;
+          }
+        } else if (node?.type.name === "tableOfContents") {
+          // TOC has large wrapper margin (my-4) and inner padding (py-4).
+          // Center handle on the "Table of Contents" header text.
+          const headerEl = dom.querySelector(".font-semibold");
+          if (headerEl) {
+            const headerRect = headerEl.getBoundingClientRect();
+            top = headerRect.top + headerRect.height / 2 - 14;
+          } else {
+            top = blockRect.top + 6;
+          }
+        } else if (node?.type.name === "webBookmark") {
+          // WebBookmark has wrapper margin (my-2). Align with top of card.
+          const cardEl = dom.querySelector("a");
+          if (cardEl) {
+            const cardRect = cardEl.getBoundingClientRect();
+            top = cardRect.top + 6;
+          } else {
+            top = blockRect.top + 6;
+          }
+        } else if (node?.type.name === "horizontalRule") {
+          // HR is very thin (~2px). Center handle on the line itself.
+          top = blockRect.top + blockRect.height / 2 - 14;
+        } else if (node?.type.name === "table") {
+          // Align handle with the table header row text.
+          const headerEl = dom.querySelector("th");
+          if (headerEl) {
+            const headerRect = headerEl.getBoundingClientRect();
+            top = headerRect.top + headerRect.height / 2 - 14;
+          } else {
+            top = blockRect.top + 6;
+          }
+        } else if (isMediaBlock) {
           // Align with the top of the block, vertically centered on first ~28px
           top = blockRect.top + 6;
         } else {
@@ -254,15 +312,111 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       let blockPos = findBlockAtCoords(editor.view, clientX, clientY);
       blockPos = resolveListItemAtCoords(clientX, clientY, blockPos);
 
-      if (blockPos !== null && blockPos !== hoveredBlockPosRef.current) {
-        // New block hovered
-        cancelHide();
-        hoveredBlockPosRef.current = blockPos;
-        setHoveredBlockPos(blockPos);
+      // Validate & correct: posAtCoords can "fall through" contentEditable=false
+      // node views (e.g. databaseBlock) and resolve to an adjacent block.
+      // Also handles the null case (mouse in margin gaps between blocks).
+      {
+        const needsCorrection =
+          blockPos === null ||
+          (() => {
+            const dom = editor.view.nodeDOM(blockPos!) as HTMLElement | null;
+            if (!dom) return false;
+            const rect = dom.getBoundingClientRect();
+            return clientY < rect.top || clientY > rect.bottom;
+          })();
 
+        if (needsCorrection) {
+          const { doc } = editor.state;
+          let correctedPos: number | null = null;
+          let hrFallbackPos: number | null = null;
+
+          doc.forEach((node, offset) => {
+            if (correctedPos !== null) return;
+            const nodeDom = editor.view.nodeDOM(offset) as HTMLElement | null;
+            if (!nodeDom) return;
+
+            const rect = nodeDom.getBoundingClientRect();
+
+            // Mouse is inside this block's actual bounding rect
+            if (
+              clientY >= rect.top &&
+              clientY <= rect.bottom &&
+              clientX >= rect.left &&
+              clientX <= rect.right
+            ) {
+              correctedPos = offset;
+              return;
+            }
+
+            // For atom blocks (database, bookmark, image, etc.) with contentEditable=false,
+            // posAtCoords often misses them entirely. Accept a wider left margin so the
+            // handle can appear when hovering near the block edge.
+            if (
+              correctedPos === null &&
+              node.isAtom &&
+              clientY >= rect.top &&
+              clientY <= rect.bottom &&
+              clientX >= rect.left - 80
+            ) {
+              correctedPos = offset;
+              return;
+            }
+
+            // Track HR for margin-zone fallback (HR is too thin for normal detection)
+            if (hrFallbackPos === null && node.type.name === "horizontalRule") {
+              const margin = 32; // my-8 = 2rem ≈ 32px each side
+              if (clientY >= rect.top - margin && clientY <= rect.bottom + margin) {
+                hrFallbackPos = offset;
+              }
+            }
+          });
+
+          // elementsFromPoint fallback: when the correction loop misses (e.g.
+          // ReactNodeViewRenderer atom blocks where nodeDOM rects don't cover
+          // the full rendered area), use the browser's own hit-test.
+          if (correctedPos === null) {
+            const elements = document.elementsFromPoint(clientX, clientY);
+            for (const el of elements) {
+              if (!editorDOM.contains(el)) continue;
+              const wrapper = el.closest("[data-node-view-wrapper]") as HTMLElement | null;
+              if (!wrapper || !editorDOM.contains(wrapper)) continue;
+              // Match wrapper to a doc-level node
+              doc.forEach((_, offset) => {
+                if (correctedPos !== null) return;
+                const nodeDom = editor.view.nodeDOM(offset) as HTMLElement | null;
+                if (
+                  nodeDom &&
+                  (nodeDom === wrapper || nodeDom.contains(wrapper) || wrapper.contains(nodeDom))
+                ) {
+                  correctedPos = offset;
+                }
+              });
+              if (correctedPos !== null) break;
+            }
+          }
+
+          blockPos = correctedPos ?? hrFallbackPos ?? blockPos;
+        }
+      }
+
+      if (blockPos !== null) {
+        if (blockPos !== hoveredBlockPosRef.current) {
+          // New block hovered
+          cancelHide();
+          hoveredBlockPosRef.current = blockPos;
+          setHoveredBlockPos(blockPos);
+        }
+        // Always recompute position — React node views may mount/resize after
+        // initial detection, so a one-shot calc can produce stale coordinates.
         const pos = computePosition(blockPos);
-        setPosition(pos);
-      } else if (blockPos === null && hoveredBlockPosRef.current !== null) {
+        setPosition((prev) => {
+          if (!pos && !prev) return prev;
+          if (!pos || !prev) return pos;
+          // Skip update if position barely changed (avoids unnecessary re-renders)
+          if (Math.abs(pos.top - prev.top) < 2 && Math.abs(pos.left - prev.left) < 2) return prev;
+          return pos;
+        });
+      } else if (hoveredBlockPosRef.current !== null) {
         // Mouse moved off all blocks (e.g., padding area)
         scheduleHide();
       }

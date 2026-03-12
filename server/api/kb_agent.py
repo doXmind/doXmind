@@ -1,4 +1,4 @@
-"""Knowledge Base Agent API - Global document Q&A with agentic RAG."""
+"""Knowledge Base Agent API - Global document Q&A with text search."""
 
 import asyncio
 import json

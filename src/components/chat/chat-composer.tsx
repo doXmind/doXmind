@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useLayoutEffect } from "react";
+import { useRef, useCallback, useLayoutEffect, useMemo } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -32,6 +32,16 @@ interface ChatComposerProps {
   /** Additional buttons before send (e.g., mic, clear) */
   extraActions?: React.ReactNode;
   className?: string;
+  /** External ref to access the textarea element (for caret position, etc.) */
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
+  /** Intercept keydown before default handling. Return true to consume the event. */
+  onKeyDownIntercept?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  /** Slot for mention dropdown, rendered above the composer card */
+  mentionDropdown?: React.ReactNode;
+  /** Called when cursor position changes (click, arrow keys, typing) */
+  onCursorChange?: (e: React.SyntheticEvent<HTMLTextAreaElement>) => void;
+  /** Active @mention display names (without extension) to highlight in the input */
+  mentionNames?: string[];
 }
 
 /**
@@ -57,9 +67,18 @@ export function ChatComposer({
   showHint = false,
   extraActions,
   className,
+  textareaRef: externalTextareaRef,
+  onKeyDownIntercept,
+  mentionDropdown,
+  onCursorChange,
+  mentionNames,
 }: ChatComposerProps) {
   const t = useTranslations("chat");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = externalTextareaRef || internalTextareaRef;
+
+  // Max textarea height ≈ 3 visible lines; overflow scrolls
+  const MAX_TEXTAREA_HEIGHT = 72;
 
   // Auto-resize textarea to fit content
   const adjustHeight = useCallback(() => {
@@ -68,8 +87,8 @@ export function ChatComposer({
     // Reset to 0 so scrollHeight reflects true content height,
     // not inflated by CSS min-height (base Textarea has min-h-[60px])
     ta.style.height = "0px";
-    ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
-  }, []);
+    ta.style.height = Math.min(ta.scrollHeight, MAX_TEXTAREA_HEIGHT) + "px";
+  }, [textareaRef]);
 
   // Sync height before paint whenever value changes (including external clears)
   useLayoutEffect(() => {
@@ -77,7 +96,8 @@ export function ChatComposer({
   }, [value, adjustHeight]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (onKeyDownIntercept?.(e)) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (value.trim() && !isStreaming) {
@@ -85,19 +105,59 @@ export function ChatComposer({
         }
       }
     },
-    [value, isStreaming, onSubmit]
+    [value, isStreaming, onSubmit, onKeyDownIntercept]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       onChange(e.target.value);
+      onCursorChange?.(e);
       // Resize immediately so height tracks each keystroke without waiting for re-render
       const ta = e.target;
       ta.style.height = "0px";
-      ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+      ta.style.height = Math.min(ta.scrollHeight, MAX_TEXTAREA_HEIGHT) + "px";
     },
-    [onChange]
+    [onChange, onCursorChange]
   );
+
+  // Build overlay that mirrors textarea text exactly, with @mentions styled.
+  // Normal text is transparent (textarea text shows through), mentions have
+  // an opaque background that covers the raw @name underneath.
+  const mentionOverlay = useMemo(() => {
+    if (!mentionNames || mentionNames.length === 0) return null;
+    const escaped = mentionNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const regex = new RegExp(`@(${escaped.join("|")})(?=\\s|$)`, "g");
+    if (!regex.test(value)) return null;
+
+    const parts: React.ReactNode[] = [];
+    let lastIdx = 0;
+    let m: RegExpExecArray | null;
+    regex.lastIndex = 0;
+    while ((m = regex.exec(value)) !== null) {
+      if (m.index > lastIdx) {
+        // Transparent text — preserves layout, textarea text shows through
+        parts.push(
+          <span key={`t${lastIdx}`} className="text-transparent">
+            {value.slice(lastIdx, m.index)}
+          </span>
+        );
+      }
+      parts.push(
+        <span key={`m${m.index}`} className="mention-tag mention-tag-input">
+          {m[0]}
+        </span>
+      );
+      lastIdx = regex.lastIndex;
+    }
+    if (lastIdx < value.length) {
+      parts.push(
+        <span key={`t${lastIdx}`} className="text-transparent">
+          {value.slice(lastIdx)}
+        </span>
+      );
+    }
+    return parts;
+  }, [value, mentionNames]);
 
   const hasContent = value.trim().length > 0;
 
@@ -109,6 +169,11 @@ export function ChatComposer({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {/* Mention dropdown — rendered above the card */}
+      {mentionDropdown && (
+        <div className="absolute bottom-full left-0 right-0 z-20 mb-2">{mentionDropdown}</div>
+      )}
+
       {/* Drag overlay */}
       {isDragging && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-sm">
@@ -127,18 +192,31 @@ export function ChatComposer({
         {/* Context pills row */}
         {contextSlot}
 
-        {/* Top row: Textarea */}
-        <Textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onPaste={onPaste}
-          placeholder={placeholder}
-          className="max-h-[200px] min-h-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-base shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
-          disabled={disabled || isStreaming}
-          rows={1}
-        />
+        {/* Top row: Textarea with mention highlight overlay */}
+        <div className="relative">
+          <Textarea
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onKeyUp={onCursorChange}
+            onClick={onCursorChange}
+            onPaste={onPaste}
+            placeholder={placeholder}
+            className="max-h-[72px] min-h-0 resize-none overflow-y-auto border-0 bg-transparent px-1 py-1.5 text-base shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
+            disabled={disabled || isStreaming}
+            rows={1}
+          />
+          {/* Mirror overlay — shows styled @mentions; pointer events pass through to textarea */}
+          {mentionOverlay && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-1 py-1.5 text-base text-foreground md:text-sm"
+            >
+              {mentionOverlay}
+            </div>
+          )}
+        </div>
 
         {/* Bottom row: Actions */}
         <div className="flex items-center gap-1.5 pt-1">

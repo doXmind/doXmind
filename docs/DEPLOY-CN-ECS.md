@@ -77,7 +77,7 @@ Host doxmind-cn
 | ------------------ | -------------------------- | ----------- | ------------------------ |
 | `doxmind-nginx`    | nginx:1.27-alpine          | 80, 443     | 反向代理 + SSL 终止      |
 | `doxmind-backend`  | doxmind-backend (本地构建) | 8000 (内部) | FastAPI 后端 (4 workers) |
-| `doxmind-postgres` | pgvector/pgvector:pg17     | 5432 (内部) | PostgreSQL + pgvector    |
+| `doxmind-postgres` | postgres:17                | 5432 (内部) | PostgreSQL               |
 | `doxmind-redis`    | redis:7-alpine             | 6379 (内部) | 限流存储                 |
 
 ## 手动部署流程
@@ -91,7 +91,6 @@ tar --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='.env' \
     --exclude='.pytest_cache' \
-    --exclude='chroma_data' \
     --exclude='tests' \
     --exclude='*.db' \
     -czf /tmp/server-deploy.tar.gz server/

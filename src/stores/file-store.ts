@@ -82,6 +82,8 @@ interface FileState {
   // Favorites & Icons
   toggleFavorite: (fileId: string) => Promise<void>;
   setFileIcon: (fileId: string, icon: string | null) => Promise<void>;
+  setCoverImage: (fileId: string, url: string | null) => Promise<void>;
+  setCoverPosition: (fileId: string, position: number) => Promise<void>;
   getFavorites: () => FileItem[];
   getRecentFiles: (limit?: number) => FileItem[];
 
@@ -90,6 +92,7 @@ interface FileState {
   moveFileToFolder: (fileId: string, folderId: string | null) => Promise<void>;
   setCurrentFolder: (folderId: string | null) => void;
   getFilesInFolder: (folderId: string | null) => FileItem[];
+  getSubPages: (fileId: string) => FileItem[];
   getFolders: (parentId?: string | null) => FileItem[];
   getFolderAncestors: (folderId: string) => FileItem[];
 
@@ -187,6 +190,8 @@ export const useFileStore = create<FileState>()(
               position: f.position || 0,
               isFavorite: f.is_favorite || false,
               icon: f.icon || null,
+              coverImageUrl: f.cover_image_url || null,
+              coverPosition: f.cover_position ?? 0.5,
               presentationSimplified: prevSimplifiedMap.get(f.id) ?? null,
               createdAt: f.created_at,
               updatedAt: f.updated_at,
@@ -272,9 +277,9 @@ export const useFileStore = create<FileState>()(
 
       createFile: async (name: string, content: string = "", parentId: string | null = null) => {
         try {
-          // Validate parentId exists as a folder; fall back to root if stale
+          // Validate parentId exists (folder or file for sub-pages); fall back to root if stale
           const validParentId =
-            parentId && get().files.some((f) => f.id === parentId && f.isFolder) ? parentId : null;
+            parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
           // Create on server first
           const serverFile = await api.createFile(name, content, validParentId);
@@ -287,6 +292,8 @@ export const useFileStore = create<FileState>()(
             position: serverFile.position || 0,
             isFavorite: serverFile.is_favorite || false,
             icon: serverFile.icon || null,
+            coverImageUrl: serverFile.cover_image_url || null,
+            coverPosition: serverFile.cover_position ?? 0.5,
             presentationSimplified: null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
@@ -323,6 +330,8 @@ export const useFileStore = create<FileState>()(
             position: serverFile.position || 0,
             isFavorite: serverFile.is_favorite || false,
             icon: serverFile.icon || null,
+            coverImageUrl: serverFile.cover_image_url || null,
+            coverPosition: serverFile.cover_position ?? 0.5,
             presentationSimplified: null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
@@ -483,6 +492,47 @@ export const useFileStore = create<FileState>()(
         }
       },
 
+      setCoverImage: async (fileId: string, url: string | null) => {
+        const file = get().files.find((f) => f.id === fileId);
+        if (!file) return;
+
+        set((state) => ({
+          files: state.files.map((f) => (f.id === fileId ? { ...f, coverImageUrl: url } : f)),
+        }));
+
+        try {
+          await api.updateFile(fileId, { cover_image_url: url ?? "" });
+        } catch (error) {
+          log.error("Failed to set cover image", error);
+          set((state) => ({
+            files: state.files.map((f) =>
+              f.id === fileId ? { ...f, coverImageUrl: file.coverImageUrl } : f
+            ),
+          }));
+        }
+      },
+
+      setCoverPosition: async (fileId: string, position: number) => {
+        const file = get().files.find((f) => f.id === fileId);
+        if (!file) return;
+
+        const clamped = Math.max(0, Math.min(1, position));
+        set((state) => ({
+          files: state.files.map((f) => (f.id === fileId ? { ...f, coverPosition: clamped } : f)),
+        }));
+
+        try {
+          await api.updateFile(fileId, { cover_position: clamped });
+        } catch (error) {
+          log.error("Failed to set cover position", error);
+          set((state) => ({
+            files: state.files.map((f) =>
+              f.id === fileId ? { ...f, coverPosition: file.coverPosition } : f
+            ),
+          }));
+        }
+      },
+
       getFavorites: () => {
         const { files, sortBy } = get();
         const favorites = files.filter((f) => f.isFavorite && !f.isFolder);
@@ -510,6 +560,8 @@ export const useFileStore = create<FileState>()(
             position: serverFolder.position || 0,
             isFavorite: serverFolder.is_favorite || false,
             icon: serverFolder.icon || null,
+            coverImageUrl: serverFolder.cover_image_url || null,
+            coverPosition: serverFolder.cover_position ?? 0.5,
             presentationSimplified: null,
             createdAt: serverFolder.created_at,
             updatedAt: serverFolder.updated_at,
@@ -555,6 +607,12 @@ export const useFileStore = create<FileState>()(
       getFilesInFolder: (folderId: string | null) => {
         const { files, sortBy } = get();
         const filtered = files.filter((f) => !f.isFolder && f.parentId === folderId);
+        return sortFilesByOption(filtered, sortBy);
+      },
+
+      getSubPages: (fileId: string) => {
+        const { files, sortBy } = get();
+        const filtered = files.filter((f) => !f.isFolder && f.parentId === fileId);
         return sortFilesByOption(filtered, sortBy);
       },
 

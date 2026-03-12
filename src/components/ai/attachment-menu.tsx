@@ -15,7 +15,7 @@ import { DataFileItem } from "@/components/data-files/data-file-item";
 
 // All allowed file extensions (KB + Data files)
 const ALLOWED_EXTENSIONS = [
-  // KB files (vectorized for RAG)
+  // KB files (text extracted for search)
   ".pdf",
   ".docx",
   ".pptx",
@@ -163,7 +163,7 @@ export function AttachmentMenu({
     }
 
     try {
-      // Upload KB files (PDF, DOCX, PPTX) -> vectorized for RAG
+      // Upload KB files (PDF, DOCX, PPTX) -> text extracted for search
       if (kbFiles.length > 0) {
         await uploadKBAttachments(conversationId, kbFiles);
       }

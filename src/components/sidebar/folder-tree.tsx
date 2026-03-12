@@ -45,6 +45,7 @@ export function FolderTree() {
     currentFolderId,
     getFolders,
     getFilesInFolder,
+    getSubPages,
     getFavorites,
     getFolderAncestors,
     setCurrentFolder,
@@ -318,6 +319,21 @@ export function FolderTree() {
   // When inside a folder, show only files in that folder
   const currentFolderFiles = currentFolderId ? getFilesInFolder(currentFolderId) : [];
 
+  // Recursive renderer for files and their sub-pages
+  const renderFileWithSubPages = (file: FileItemType) => {
+    const subPages = getSubPages(file.id);
+    return (
+      <div key={file.id}>
+        <FileItem file={file} />
+        {subPages.length > 0 && (
+          <div className="ml-4 space-y-0.5 border-l border-border/50 pl-1">
+            {subPages.map(renderFileWithSubPages)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-2">
       {/* Breadcrumb - Multi-level navigation (hide on mobile to avoid redundancy with header back button) */}
@@ -371,7 +387,7 @@ export function FolderTree() {
           {favoritesExpanded && (
             <div className="space-y-0.5">
               {getFavorites().map((file) => (
-                <FileItem key={`fav-${file.id}`} file={file} />
+                <div key={`fav-${file.id}`}>{renderFileWithSubPages(file)}</div>
               ))}
             </div>
           )}
@@ -523,7 +539,7 @@ export function FolderTree() {
       })}
 
       {/* Root-level files - only show at root */}
-      {!currentFolderId && rootFiles.map((file) => <FileItem key={file.id} file={file} />)}
+      {!currentFolderId && rootFiles.map((file) => renderFileWithSubPages(file))}
 
       {/* Files in current folder - only show when inside a folder */}
       {currentFolderId && (
@@ -581,9 +597,7 @@ export function FolderTree() {
             </div>
           ) : (
             <>
-              {currentFolderFiles.map((file) => (
-                <FileItem key={file.id} file={file} />
-              ))}
+              {currentFolderFiles.map((file) => renderFileWithSubPages(file))}
               {isImporting && (
                 <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-accent/50 px-3 py-2.5 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />

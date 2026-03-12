@@ -21,6 +21,7 @@ declare module "./client" {
       rowCount?: number;
       claudeUploadStatus?: string;
       claudeFileId?: string;
+      sourceDatabaseId?: string;
     }>;
     listDataFiles(conversationId: string): Promise<{
       files: Array<{
@@ -35,6 +36,7 @@ declare module "./client" {
         rowCount?: number;
         claudeUploadStatus?: string;
         claudeFileId?: string;
+        sourceDatabaseId?: string;
       }>;
     }>;
     getDataFile(
@@ -52,6 +54,7 @@ declare module "./client" {
       rowCount?: number;
       claudeUploadStatus?: string;
       claudeFileId?: string;
+      sourceDatabaseId?: string;
     }>;
     deleteDataFile(conversationId: string, fileId: string): Promise<{ status: string; id: string }>;
     kbAgentStream(
@@ -122,6 +125,7 @@ ApiClient.prototype.listDataFiles = async function (this: ApiClient, conversatio
       rowCount?: number;
       claudeUploadStatus?: string;
       claudeFileId?: string;
+      sourceDatabaseId?: string;
     }>;
   }>(`/api/data-files/${conversationId}/files`);
 };

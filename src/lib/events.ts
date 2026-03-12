@@ -18,6 +18,7 @@ type EventMap = {
   "auth:logout": void;
   "fork:created": { shareToken: string };
   "bookmark:changed": void;
+  "database:deleted": { databaseId: string };
 };
 
 type Callback<T> = T extends void ? () => void : (data: T) => void;

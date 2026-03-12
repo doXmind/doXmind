@@ -163,6 +163,14 @@ export function FloatingAIInput({ onViewChat }: FloatingAIInputProps) {
                 mediaType: c.mediaType,
               };
             }
+            if (c.type === "file_mention") {
+              return {
+                type: "file_mention" as const,
+                fileId: c.fileId,
+                fileName: c.fileName,
+                fileSource: c.fileSource,
+              };
+            }
             if (c.type === "inline_result") {
               return { type: "selection" as const, text: c.text };
             }

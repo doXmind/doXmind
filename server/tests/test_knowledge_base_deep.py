@@ -462,7 +462,7 @@ class TestSearchFunctionality:
     async def test_search_respects_top_k_parameter(
         self, client: AsyncClient, db_session: AsyncSession, auth_headers
     ):
-        """Search should pass top_k parameter to RAG service."""
+        """Search should pass top_k parameter to search service."""
         conv = Conversation(id=str(uuid.uuid4()), file_id="topk-test")
         db_session.add(conv)
         await db_session.commit()
