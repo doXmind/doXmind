@@ -18,8 +18,8 @@ export const useSettingsStore = create<SettingsState>()(
     (set, get) => ({
       // Web search is on by default
       webSearchEnabled: true,
-      // Thinking mode off by default (uses minimax model when enabled)
-      thinkingEnabled: false,
+      // Thinking mode on by default (better quality responses)
+      thinkingEnabled: true,
 
       setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
       setThinkingEnabled: (enabled) => set({ thinkingEnabled: enabled }),
