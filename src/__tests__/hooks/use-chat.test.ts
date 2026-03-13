@@ -248,9 +248,9 @@ describe("useChat", () => {
 
       // Token batching via RAF may combine chunks into a single flush,
       // so verify the full text was appended across all calls.
-      const appendedText = mockAppendToMessage.mock.calls
-        .filter(([cId, mId]: [string, string]) => cId === "conv-123" && mId === "msg-2")
-        .map(([, , text]: [string, string, string]) => text)
+      const appendedText = (mockAppendToMessage.mock.calls as [string, string, string][])
+        .filter(([cId, mId]) => cId === "conv-123" && mId === "msg-2")
+        .map(([, , text]) => text)
         .join("");
       expect(appendedText).toBe("Hello World");
     });
