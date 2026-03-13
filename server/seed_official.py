@@ -29,7 +29,7 @@ OFFICIAL_USER = {
     "email": "official@doxmind.com",
     "username": "doXmind",
     "bio": "Official doXmind account. Tutorials, writing tips, and doXmind AI writing guides. | doXmind 官方账号。产品教程、写作技巧与 doXmind AI 写作指南。",
-    "avatar_url": "https://api.dicebear.com/7.x/initials/svg?seed=doXmind&backgroundColor=3b82f6&fontFamily=Arial&fontSize=42&fontWeight=700",
+    "avatar_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Ccircle cx='100' cy='100' r='100' fill='%233b82f6'/%3E%3Cg transform='translate(40,40)scale(1.5)'%3E%3Cpath d='M6 0Q0 0 0 6L0 32 40 40 32 0Z' fill='white'/%3E%3Cpath d='M48 0L40 40 80 32 80 6Q80 0 74 0Z' fill='white'/%3E%3Cpath d='M0 48L40 40 32 80 6 80Q0 80 0 74Z' fill='white'/%3E%3Cpath d='M40 40L80 48 80 74Q80 80 74 80L48 80Z' fill='white'/%3E%3C/g%3E%3C/svg%3E",
 }
 
 # Tags per category folder
