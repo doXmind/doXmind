@@ -165,7 +165,6 @@ def extract_description(content: str) -> str:
 def get_tags(filename: str, category_folder: str, lang: str) -> list[str]:
     """Get tags for an article based on filename and category."""
     # Article-specific tags
-    slug = re.sub(r"^\d+-", "", filename.replace(".md", ""))
     # Try exact match first, then partial
     article_key = filename.replace(".md", "")
     tags = list(ARTICLE_TAGS.get(article_key, {}).get(lang, []))
@@ -247,7 +246,7 @@ async def main():
                 md_files = sorted(f for f in os.listdir(cat_path) if f.endswith(".md"))
                 print(f"\n  Category: {category_folder} ({len(md_files)} articles)")
 
-                for j, md_file in enumerate(md_files):
+                for _j, md_file in enumerate(md_files):
                     file_path = os.path.join(cat_path, md_file)
                     with open(file_path, encoding="utf-8") as f:
                         md_content = f.read()
