@@ -4,8 +4,9 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { CommunityItem } from "@/lib/api";
 import { MarkdownContent } from "@/components/comments/markdown-content";
-import { Eye, Folder, GitFork, Bookmark, Clock, MessageSquare, Pencil } from "lucide-react";
+import { Eye, Folder, GitFork, Bookmark, Clock, MessageSquare, Pencil, Star } from "lucide-react";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { OfficialBadge } from "@/components/ui/official-badge";
 import { useTranslations } from "next-intl";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
@@ -80,6 +81,14 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
           </button>
         )}
 
+        {/* Featured indicator */}
+        {item.is_featured && (
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-primary">
+            <Star className="h-3 w-3 fill-current" />
+            {t("featuredArticle")}
+          </div>
+        )}
+
         {/* Author row */}
         <div className="mb-2.5 flex items-center gap-2">
           <UserAvatar
@@ -89,8 +98,9 @@ export function CommunityCard({ item, onTagClick, onEditItem }: CommunityCardPro
             frame={owner.avatar_frame}
             plan={owner.plan}
           />
-          <span className="flex items-center text-[12px] text-muted-foreground">
+          <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
             {owner.username || t("anonymous")}
+            {owner.is_official && <OfficialBadge size={13} />}
           </span>
           {publishedDate && (
             <>

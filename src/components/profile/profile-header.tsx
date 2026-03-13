@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { UserProfileResponse } from "@/lib/api";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { ExternalLink, Pencil, FileText, Eye, GitFork, Bookmark, Users } from "lucide-react";
+import { OfficialBadge } from "@/components/ui/official-badge";
 
 import { ProfileEditModal } from "./profile-edit-modal";
 import { FollowButton } from "@/components/community/follow-button";
@@ -44,8 +45,9 @@ export function ProfileHeader({ profile, isOwnProfile, onFollowChange }: Profile
         <div className="min-w-0 flex-1 text-center sm:text-left">
           {/* Name + Edit/Follow */}
           <div className="flex items-baseline justify-center gap-3 sm:justify-start">
-            <h1 className="flex items-center text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            <h1 className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               {profile.username || t("anonymous")}
+              {profile.is_official && <OfficialBadge size={20} />}
             </h1>
             {isOwnProfile ? (
               <button

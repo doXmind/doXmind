@@ -20,11 +20,13 @@ import {
   Pencil,
   Search,
   Share2,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useBookmarksStore } from "@/stores/bookmarks-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { OfficialBadge } from "@/components/ui/official-badge";
 import { ShareReactions } from "./share-reactions";
 
 interface CommunityFeedProps {
@@ -134,7 +136,7 @@ function FeedCard({
     >
       <article className="px-1 py-3 sm:px-3">
         <div
-          className="group cursor-pointer rounded-xl border border-border/60 p-4 transition-colors hover:border-border hover:bg-accent/20 sm:p-5"
+          className={`group cursor-pointer rounded-xl border p-4 transition-colors hover:border-border hover:bg-accent/20 sm:p-5 ${item.is_featured ? "border-primary/30 bg-primary/[0.02]" : "border-border/60"}`}
           onClick={handleCardClick}
           role="link"
           tabIndex={0}
@@ -142,6 +144,14 @@ function FeedCard({
             if (e.key === "Enter") router.push(`/s/${item.share_token}`);
           }}
         >
+          {/* Featured indicator */}
+          {item.is_featured && (
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-primary">
+              <Star className="h-3 w-3 fill-current" />
+              {t("featuredArticle")}
+            </div>
+          )}
+
           {/* Author row: avatar + name + time + edit */}
           <div className="flex items-center gap-2.5">
             <Link href={`/profile/${owner.id}`} className="shrink-0">
@@ -156,9 +166,10 @@ function FeedCard({
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <Link
                 href={`/profile/${owner.id}`}
-                className="inline-flex items-center truncate text-[13px] font-semibold text-foreground hover:underline"
+                className="inline-flex items-center gap-1 truncate text-[13px] font-semibold text-foreground hover:underline"
               >
                 {owner.username || t("anonymous")}
+                {owner.is_official && <OfficialBadge size={14} />}
               </Link>
               <span className="text-[12px] text-muted-foreground/50">·</span>
               <span className="shrink-0 text-[12px] text-muted-foreground/50">

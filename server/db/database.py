@@ -59,6 +59,7 @@ class User(Base):
     # Account status
     is_verified = Column(Boolean, default=False)  # Email verified
     is_active = Column(Boolean, default=True)  # Account enabled
+    is_official = Column(Boolean, default=False, nullable=False)  # Official/team account
 
     # Profile
     avatar_url = Column(String(500), nullable=True)
@@ -505,6 +506,7 @@ class DocumentShare(Base):
 
     # Community publishing
     is_published = Column(Boolean, default=False, nullable=False, index=True)
+    is_featured = Column(Boolean, default=False, nullable=False, index=True)  # Featured/pinned
     title = Column(String(255), nullable=True)  # Display title for community
     description = Column(Text, nullable=True)  # Short description for discovery
     tags = Column(JSON, nullable=True)  # ["writing", "tech", "tutorial"]

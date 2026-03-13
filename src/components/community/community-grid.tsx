@@ -9,7 +9,8 @@ import { useTranslations } from "next-intl";
 import { CommunityCard } from "./community-card";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { ShareReactions } from "./share-reactions";
-import { Clock, Eye, FileText, Folder, GitFork, MessageSquare, Search } from "lucide-react";
+import { Clock, Eye, FileText, Folder, GitFork, MessageSquare, Search, Star } from "lucide-react";
+import { OfficialBadge } from "@/components/ui/official-badge";
 
 interface CommunityGridProps {
   items: CommunityItem[];
@@ -68,8 +69,9 @@ function FeaturedCard({
               frame={owner.avatar_frame}
               plan={owner.plan}
             />
-            <span className="flex items-center text-[12px] font-medium text-muted-foreground">
+            <span className="flex items-center gap-1 text-[12px] font-medium text-muted-foreground">
               {owner.username || t("anonymous")}
+              {owner.is_official && <OfficialBadge size={13} />}
             </span>
             <span className="text-[12px] text-muted-foreground/50">·</span>
             <span className="text-[12px] text-muted-foreground/50">{publishedDate}</span>

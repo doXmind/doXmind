@@ -335,6 +335,8 @@ class CommunityService:
                 User.avatar_url.label("owner_avatar_url"),
                 User.avatar_frame.label("owner_avatar_frame"),
                 UserSubscription.plan.label("owner_plan"),
+                User.is_official.label("owner_is_official"),
+                DocumentShare.is_featured,
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
@@ -361,9 +363,10 @@ class CommunityService:
             query = query.where(tag_filter)
             count_query = count_query.where(tag_filter)
 
-        # Apply sort
+        # Apply sort (featured items always first)
         if sort == "popular":
             query = query.order_by(
+                DocumentShare.is_featured.desc(),
                 (
                     DocumentShare.view_count
                     + DocumentShare.fork_count * 5
@@ -375,10 +378,15 @@ class CommunityService:
             )
         elif sort == "most_viewed":
             query = query.order_by(
-                DocumentShare.view_count.desc(), DocumentShare.published_at.desc()
+                DocumentShare.is_featured.desc(),
+                DocumentShare.view_count.desc(),
+                DocumentShare.published_at.desc(),
             )
         else:  # newest
-            query = query.order_by(DocumentShare.published_at.desc())
+            query = query.order_by(
+                DocumentShare.is_featured.desc(),
+                DocumentShare.published_at.desc(),
+            )
 
         # Paginate
         query = query.limit(limit).offset(offset)
@@ -405,8 +413,10 @@ class CommunityService:
                     "avatar_url": row.owner_avatar_url,
                     "avatar_frame": row.owner_avatar_frame,
                     "plan": row.owner_plan or "free",
+                    "is_official": row.owner_is_official,
                 },
                 "is_folder": row.is_folder,
+                "is_featured": row.is_featured,
                 "view_count": row.view_count,
                 "fork_count": row.fork_count,
                 "allow_fork": row.allow_fork,
@@ -497,8 +507,10 @@ class CommunityService:
                 "avatar_frame": owner.avatar_frame if owner else None,
                 "bio": owner.bio if owner else None,
                 "plan": owner_plan,
+                "is_official": owner.is_official if owner else False,
             },
             "is_folder": file.is_folder,
+            "is_featured": share.is_featured,
             "view_count": share.view_count,
             "fork_count": share.fork_count,
             "allow_fork": share.allow_fork,
@@ -932,6 +944,8 @@ class CommunityService:
                 User.avatar_url.label("owner_avatar_url"),
                 User.avatar_frame.label("owner_avatar_frame"),
                 UserSubscription.plan.label("owner_plan"),
+                User.is_official.label("owner_is_official"),
+                DocumentShare.is_featured,
             )
             .join(DocumentShare, Bookmark.share_id == DocumentShare.id)
             .join(File, DocumentShare.file_id == File.id)
@@ -960,7 +974,9 @@ class CommunityService:
                     "avatar_url": row.owner_avatar_url,
                     "avatar_frame": row.owner_avatar_frame,
                     "plan": row.owner_plan or "free",
+                    "is_official": row.owner_is_official,
                 },
+                "is_featured": row.is_featured,
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,
                 "fork_count": row.fork_count,
@@ -1243,6 +1259,7 @@ class CommunityService:
             "social_links": user.social_links,
             "created_at": user.created_at.isoformat() if user.created_at else "",
             "is_following": is_following,
+            "is_official": user.is_official,
             "plan": user_plan,
             "stats": {
                 "total_published": published_count.scalar() or 0,
@@ -1303,6 +1320,8 @@ class CommunityService:
                 User.avatar_url.label("owner_avatar_url"),
                 User.avatar_frame.label("owner_avatar_frame"),
                 UserSubscription.plan.label("owner_plan"),
+                User.is_official.label("owner_is_official"),
+                DocumentShare.is_featured,
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
@@ -1336,7 +1355,9 @@ class CommunityService:
                         "username": row.owner_name,
                         "avatar_url": row.owner_avatar_url,
                         "avatar_frame": row.owner_avatar_frame,
+                        "is_official": row.owner_is_official,
                     },
+                    "is_featured": row.is_featured,
                     "is_folder": row.is_folder,
                     "view_count": row.view_count,
                     "fork_count": row.fork_count,
@@ -1417,6 +1438,8 @@ class CommunityService:
                 User.avatar_url.label("owner_avatar_url"),
                 User.avatar_frame.label("owner_avatar_frame"),
                 UserSubscription.plan.label("owner_plan"),
+                User.is_official.label("owner_is_official"),
+                DocumentShare.is_featured,
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
@@ -1447,8 +1470,10 @@ class CommunityService:
                         "username": row.owner_name,
                         "avatar_url": row.owner_avatar_url,
                         "avatar_frame": row.owner_avatar_frame,
+                        "is_official": row.owner_is_official,
                     },
                     "is_folder": row.is_folder,
+                    "is_featured": row.is_featured,
                     "view_count": row.view_count,
                     "fork_count": row.fork_count,
                     "allow_fork": row.allow_fork,
@@ -1844,6 +1869,8 @@ class CommunityService:
                 User.avatar_url.label("owner_avatar_url"),
                 User.avatar_frame.label("owner_avatar_frame"),
                 UserSubscription.plan.label("owner_plan"),
+                User.is_official.label("owner_is_official"),
+                DocumentShare.is_featured,
                 _item_count_subquery(),
                 DocumentShare.file_id,
             )
@@ -1872,7 +1899,9 @@ class CommunityService:
                     "avatar_url": row.owner_avatar_url,
                     "avatar_frame": row.owner_avatar_frame,
                     "plan": row.owner_plan or "free",
+                    "is_official": row.owner_is_official,
                 },
+                "is_featured": row.is_featured,
                 "is_folder": row.is_folder,
                 "view_count": row.view_count,
                 "fork_count": row.fork_count,

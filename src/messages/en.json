@@ -1485,6 +1485,8 @@
     "hAgo": "{count}h ago",
     "dAgo": "{count}d ago",
     "wAgo": "{count}w ago",
+    "officialAuthor": "Official",
+    "featuredArticle": "Featured",
     "editPost": "Edit post",
     "removeBookmark": "Remove bookmark",
     "bookmark": "Bookmark",

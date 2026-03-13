@@ -150,6 +150,7 @@ export interface CommunityAuthor {
   avatar_frame?: string | null;
   bio?: string | null;
   plan?: "free" | "pro" | "max" | null;
+  is_official?: boolean;
 }
 
 export interface CommunityItem {
@@ -159,6 +160,7 @@ export interface CommunityItem {
   description: string | null;
   tags: string[];
   owner: CommunityAuthor;
+  is_featured?: boolean;
   is_folder: boolean;
   view_count: number;
   fork_count: number;
@@ -265,6 +267,7 @@ export interface UserProfileResponse {
   social_links: { github?: string; twitter?: string; linkedin?: string } | null;
   created_at: string;
   is_following: boolean;
+  is_official?: boolean;
   plan?: "free" | "pro" | "max" | null;
   stats: {
     total_published: number;

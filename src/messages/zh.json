@@ -1485,6 +1485,8 @@
     "hAgo": "{count}小时前",
     "dAgo": "{count}天前",
     "wAgo": "{count}周前",
+    "officialAuthor": "官方",
+    "featuredArticle": "精选",
     "editPost": "编辑帖子",
     "removeBookmark": "取消收藏",
     "bookmark": "收藏",
