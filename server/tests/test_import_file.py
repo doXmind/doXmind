@@ -292,7 +292,7 @@ class TestImportEndpoint:
         assert response.status_code in [200, 400, 500]
 
     def test_accepts_docx_extension(self, client):
-        """Should accept DOCX files (will fail on conversion but accept extension)."""
+        """Should accept DOCX files (converted via markitdown fallback)."""
         file_content = b"DOCX content"
 
         response = client.post(
@@ -306,8 +306,8 @@ class TestImportEndpoint:
             },
         )
 
-        # Should pass extension check, fail on conversion
-        assert response.status_code in [400, 500]
+        # DOCX is now a supported format (LibreOffice + markitdown fallback)
+        assert response.status_code in [200, 400, 500]
 
     def test_accepts_markdown_extension_variant(self, client):
         """Should accept .markdown extension."""
