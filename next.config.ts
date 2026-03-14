@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
   experimental: {
     // Tree-shake barrel re-exports for commonly used icon/animation libraries
     optimizePackageImports: ["lucide-react", "framer-motion"],
+    // Allow file import uploads through proxy (default 10MB; multipart adds overhead)
+    proxyClientMaxBodySize: "15mb",
   },
   async headers() {
     return [
@@ -144,8 +146,17 @@ const nextConfig: NextConfig = {
       },
       // Import routes
       {
+        source: "/api/import",
+        destination: `${backendUrl}/api/import/`,
+      },
+      {
         source: "/api/import/:path*",
         destination: `${backendUrl}/api/import/:path*`,
+      },
+      // Migration routes
+      {
+        source: "/api/migration/:path*",
+        destination: `${backendUrl}/api/migration/:path*`,
       },
       // Skills routes
       {

@@ -20,6 +20,8 @@ import "./notifications";
 import "./billing";
 import "./bookmarks";
 import "./databases";
+import "./migration";
+import "./migration-oauth";
 
 // Re-export the client class and singleton
 export { ApiClient } from "./client";
@@ -63,6 +65,17 @@ export type {
 export type { GlobalConversationItem, GlobalConversationMessages } from "./global-agent";
 export type { BillingStatus, CreditsInfo, StorageInfo, PricingInfo, PlanInfo } from "./billing";
 export type { BookmarkMetadata } from "./bookmarks";
+export type {
+  MigrationPreview,
+  MigrationTreeNode,
+  MigrationSourceFormat,
+  MigrationFormatsResponse,
+  MigrationEvent,
+  MigrationProgressEvent,
+  MigrationWarningEvent,
+  MigrationCompleteEvent,
+} from "./migration";
+export type { RemotePage, OAuthCallbackData } from "./migration-oauth";
 
 // Create and export the default client instance
 import { ApiClient } from "./client";

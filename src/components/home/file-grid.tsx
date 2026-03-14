@@ -34,6 +34,8 @@ import { FileCard } from "./file-card";
 import { FileRow } from "./file-row";
 import { EmptyState } from "./empty-state";
 import { NewButton } from "./new-button";
+import { ImportWizard } from "@/components/migration/import-wizard";
+import { useMigrationStore } from "@/stores/migration-store";
 import { HomeSortDropdown } from "./home-sort-dropdown";
 import { MobileDocumentList } from "./mobile-document-list";
 import { WritingTip } from "./writing-tip";
@@ -115,6 +117,7 @@ export function FileGrid({
   const t = useTranslations("home");
   const router = useRouter();
   const { homeViewMode, setHomeViewMode } = useLayoutStore();
+  const { openWizard: openMigrationWizard } = useMigrationStore();
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
@@ -499,6 +502,7 @@ export function FileGrid({
                 onCreateFolder={handleCreateFolder}
                 onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
                 onImportFile={handleImportClick}
+                onImportWorkspace={openMigrationWizard}
                 isImporting={isImporting}
                 disableFolder={!!currentFolderId}
               />
@@ -728,6 +732,9 @@ export function FileGrid({
 
       {/* Trash Panel Modal */}
       <TrashPanel open={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
+
+      {/* Migration import wizard */}
+      <ImportWizard />
     </motion.div>
   );
 }

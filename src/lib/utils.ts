@@ -123,7 +123,7 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
   // File errors
   "File too large": {
     title: "File Too Large",
-    description: "The file exceeds the maximum allowed size of 5MB.",
+    description: "The file exceeds the maximum allowed size of 10MB.",
   },
   "Unsupported file type": {
     title: "Unsupported File",

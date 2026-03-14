@@ -50,6 +50,7 @@ beautifulsoup4==4.12.3
 
 # Import (file conversion via OpenRouter + markitdown fallback)
 markitdown[all]
+pypdf>=4.0.0  # PDF page splitting for parallel conversion
 
 # Data Analysis (code execution sandbox)
 pandas==2.2.3

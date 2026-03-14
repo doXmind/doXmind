@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 
 import markdown
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -49,6 +50,19 @@ def markdown_to_html(md_content: str) -> str:
     format. Frontend uses lowlight for syntax highlighting instead.
     """
     return markdown.markdown(md_content, extensions=["tables", "fenced_code"])
+
+
+def strip_code_fences(md_content: str) -> str:
+    """Strip wrapping code fences that LLMs sometimes add around markdown output.
+
+    Only removes the outermost fence when the entire content is wrapped in a single
+    code fence block (e.g. ```markdown\\n...\\n```). Internal code fences are preserved.
+    """
+    stripped = md_content.strip()
+    match = re.match(r"^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$", stripped)
+    if match:
+        return match.group(1)
+    return md_content
 
 
 def _normalize_conversion_result(result: tuple[str, dict | None] | str) -> tuple[str, dict | None]:
@@ -173,7 +187,10 @@ async def import_file(
         logger.error(f"Conversion failed: {e}")
         raise InternalError(message=f"Failed to convert file: {str(e)}")
 
-    # Convert markdown to HTML for TipTap editor
+    # Strip wrapping code fences from LLM output
+    md_content = strip_code_fences(md_content)
+
+    # Convert markdown to HTML for TipTap editor (basic backend conversion)
     html_content = markdown_to_html(md_content)
 
     # Generate file name (remove extension, add .md)
@@ -185,6 +202,7 @@ async def import_file(
         new_file = FileModel(
             name=new_name,
             content=html_content,
+            content_markdown=md_content,
             user_id=user_id,
             parent_id=parent_id,
         )
@@ -196,6 +214,7 @@ async def import_file(
             "id": new_file.id,
             "name": new_file.name,
             "content": new_file.content,
+            "content_markdown": md_content,
             "parent_id": new_file.parent_id,
             "is_folder": new_file.is_folder,
             "position": new_file.position,

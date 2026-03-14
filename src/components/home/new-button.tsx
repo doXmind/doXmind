@@ -1,7 +1,15 @@
 "use client";
 
 import { memo } from "react";
-import { FilePlus, FolderPlus, LayoutTemplate, Loader2, Plus, Upload } from "lucide-react";
+import {
+  FileArchive,
+  FilePlus,
+  FolderPlus,
+  LayoutTemplate,
+  Loader2,
+  Plus,
+  Upload,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,6 +25,7 @@ interface NewButtonProps {
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   onImportFile: () => void;
+  onImportWorkspace?: () => void;
   isImporting: boolean;
   disableFolder?: boolean;
 }
@@ -26,6 +35,7 @@ export const NewButton = memo(function NewButton({
   onCreateFolder,
   onOpenTemplatePicker,
   onImportFile,
+  onImportWorkspace,
   isImporting,
   disableFolder,
 }: NewButtonProps) {
@@ -42,7 +52,7 @@ export const NewButton = memo(function NewButton({
           <Plus className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem onClick={onCreateFile}>
           <FilePlus className="mr-2 h-4 w-4" />
           {t("newDocument")}
@@ -64,6 +74,12 @@ export const NewButton = memo(function NewButton({
           )}
           {t("importFile")}
         </DropdownMenuItem>
+        {onImportWorkspace && (
+          <DropdownMenuItem onClick={onImportWorkspace}>
+            <FileArchive className="mr-2 h-4 w-4" />
+            {t("importWorkspace")}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

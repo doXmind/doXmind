@@ -180,7 +180,7 @@ export function Mindlines({ editor }: MindlinesProps) {
             ) : isMindlinesCollapsed ? (
               <motion.div
                 key="outline-collapsed"
-                className="h-full overflow-y-auto"
+                className="scrollbar-none h-full overflow-y-auto"
                 variants={contentVariants}
                 initial="initial"
                 animate="animate"

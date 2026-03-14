@@ -18,6 +18,7 @@ from api.import_file import (
     MAX_FILE_SIZE,
     get_file_extension,
     markdown_to_html,
+    strip_code_fences,
     router,
 )
 from exceptions import AppException
@@ -111,6 +112,58 @@ class TestMarkdownToHtml:
 
         assert "<ul>" in html
         assert "<li>" in html
+
+
+class TestStripCodeFences:
+    """Tests for strip_code_fences function."""
+
+    def test_strips_markdown_fence(self):
+        """Should strip ```markdown wrapper."""
+        content = "```markdown\n# Title\n\nContent here.\n```"
+        result = strip_code_fences(content)
+        assert result == "# Title\n\nContent here."
+
+    def test_strips_md_fence(self):
+        """Should strip ```md wrapper."""
+        content = "```md\n# Title\n```"
+        result = strip_code_fences(content)
+        assert result == "# Title"
+
+    def test_strips_plain_fence(self):
+        """Should strip ``` wrapper without language."""
+        content = "```\n# Title\n\nContent.\n```"
+        result = strip_code_fences(content)
+        assert result == "# Title\n\nContent."
+
+    def test_preserves_internal_fences(self):
+        """Should NOT strip when content has internal code blocks."""
+        content = "# Title\n\n```python\nprint('hello')\n```\n\nMore text."
+        result = strip_code_fences(content)
+        assert result == content
+
+    def test_preserves_no_fence(self):
+        """Should return content unchanged when no wrapping fence."""
+        content = "# Title\n\nContent here."
+        result = strip_code_fences(content)
+        assert result == content
+
+    def test_handles_empty_string(self):
+        """Should handle empty content."""
+        assert strip_code_fences("") == ""
+
+    def test_handles_whitespace_around_fence(self):
+        """Should handle leading/trailing whitespace."""
+        content = "\n  ```markdown\n# Title\n```  \n"
+        result = strip_code_fences(content)
+        assert result == "# Title"
+
+    def test_preserves_math_content(self):
+        """Should preserve math syntax inside stripped fences."""
+        content = "```markdown\n# Math\n\nInline $x^2$ and block:\n\n$$\\int_0^1 f(x) dx$$\n```"
+        result = strip_code_fences(content)
+        assert "$x^2$" in result
+        assert "$$\\int_0^1 f(x) dx$$" in result
+        assert "```" not in result
 
 
 # ============================================================================

@@ -85,6 +85,19 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
 
     # =========================================================================
+    # Notion OAuth (for direct migration import)
+    # =========================================================================
+    notion_client_id: str = ""
+    notion_client_secret: str = ""
+    notion_redirect_uri: str = "http://localhost:8000/api/migration/notion/callback"
+
+    # =========================================================================
+    # Google Drive OAuth (for direct migration import)
+    # Reuses google_client_id / google_client_secret, different scope + redirect
+    # =========================================================================
+    google_drive_redirect_uri: str = "http://localhost:8000/api/migration/google/callback"
+
+    # =========================================================================
     # Frontend URL (for OAuth redirects)
     # =========================================================================
     frontend_url: str = "http://localhost:3000"

@@ -5,10 +5,12 @@ WORKDIR /app
 
 # Install system dependencies
 # fonts-noto-cjk: Required for PDF export with Chinese/Japanese/Korean characters
+# libreoffice: Required for DOCX/PPTX → PDF conversion during import
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     fonts-noto-cjk \
+    libreoffice-core libreoffice-writer libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

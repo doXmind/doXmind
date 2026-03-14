@@ -63,7 +63,7 @@ export function SharedOutline() {
         {collapsed ? (
           <motion.div
             key="collapsed"
-            className="flex-1 overflow-y-auto"
+            className="scrollbar-none flex-1 overflow-y-auto"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

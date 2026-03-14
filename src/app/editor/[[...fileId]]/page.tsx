@@ -432,7 +432,7 @@ export default function EditorPage() {
                         <PanelLeftOpen className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="scrollbar-none flex-1 overflow-y-auto">
                       <OutlineCollapsed
                         headings={headings}
                         activeId={activeId}

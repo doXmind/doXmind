@@ -18,10 +18,12 @@ import {
   LayoutTemplate,
   Upload,
   Loader2,
+  FileArchive,
 } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useMigrationStore } from "@/stores/migration-store";
 import { eventBus } from "@/lib/events";
 import {
   api,
@@ -152,6 +154,7 @@ export function HomeDashboard() {
   const isMobile = useIsMobile();
   const [mobileSearchExpanded, setMobileSearchExpanded] = useState(false);
 
+  const { openWizard: openMigrationWizard } = useMigrationStore();
   // Mobile file creation state
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
@@ -482,6 +485,10 @@ export function HomeDashboard() {
                     <Upload className="mr-2 h-4 w-4" />
                   )}
                   {ts("importFile")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={openMigrationWizard}>
+                  <FileArchive className="mr-2 h-4 w-4" />
+                  {ts("importWorkspace")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

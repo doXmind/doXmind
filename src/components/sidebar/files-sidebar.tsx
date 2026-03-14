@@ -11,9 +11,11 @@ import { SortDropdown } from "./sort-dropdown";
 import { BulkActionBar } from "./bulk-action-bar";
 import { TrashPanel } from "./trash-panel";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
+import { ImportWizard } from "@/components/migration/import-wizard";
 import { NewButton } from "@/components/home/new-button";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
+import { useMigrationStore } from "@/stores/migration-store";
 import { getErrorMessage, formatShortcut } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
@@ -36,6 +38,7 @@ export function FilesSidebar() {
     isSynced,
   } = useFileStore();
   const { openCommandPalette } = useLayoutStore();
+  const { openWizard: openMigrationWizard } = useMigrationStore();
   const [isImporting, setIsImporting] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
@@ -158,6 +161,7 @@ export function FilesSidebar() {
           onCreateFolder={handleCreateFolder}
           onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
           onImportFile={handleImportClick}
+          onImportWorkspace={openMigrationWizard}
           isImporting={isImporting}
         />
       </div>
@@ -194,6 +198,9 @@ export function FilesSidebar() {
         onClose={() => setIsTemplatePickerOpen(false)}
         onSelect={handleTemplateSelect}
       />
+
+      {/* Migration import wizard */}
+      <ImportWizard />
     </div>
   );
 }

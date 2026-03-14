@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
+import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import type { FileItem } from "@/types";
@@ -317,14 +318,29 @@ export const useFileStore = create<FileState>()(
       },
 
       importFile: async (file: File, parentId?: string | null) => {
+        const MAX_IMPORT_SIZE = 10 * 1024 * 1024; // 10MB — must match server MAX_FILE_SIZE
+        if (file.size > MAX_IMPORT_SIZE) {
+          throw new Error("File too large. Maximum size is 10MB");
+        }
+
         try {
           // Import file via API (converts PDF/DOCX/MD to markdown)
           const serverFile = await api.importFile(file, parentId);
-          const plainText = serverFile.content.replace(/<[^>]*>/g, "").trim();
+
+          // Use frontend markdownToHtml for proper math/mermaid/TipTap rendering
+          // The backend's Python markdown library doesn't support math ($...$) or
+          // mermaid blocks, but our frontend's marked config handles them correctly.
+          let htmlContent = serverFile.content;
+          if (serverFile.content_markdown) {
+            htmlContent = markdownToHtml(serverFile.content_markdown);
+          }
+
+          const plainText = htmlContent.replace(/<[^>]*>/g, "").trim();
           const newFile: FileItem = {
             id: serverFile.id,
             name: serverFile.name,
-            content: serverFile.content,
+            content: htmlContent,
+            contentMarkdown: serverFile.content_markdown || null,
             isFolder: serverFile.is_folder || false,
             parentId: serverFile.parent_id || null,
             position: serverFile.position || 0,
@@ -344,6 +360,13 @@ export const useFileStore = create<FileState>()(
             currentFileId: newFile.id,
             loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
           }));
+
+          // Save properly converted HTML back to server so future loads use it
+          if (serverFile.content_markdown && htmlContent !== serverFile.content) {
+            api.updateFile(newFile.id, { content: htmlContent }).catch((err) => {
+              log.error("Failed to save re-converted HTML", err);
+            });
+          }
 
           eventBus.emit("storage:changed");
           return newFile.id;

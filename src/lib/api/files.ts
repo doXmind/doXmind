@@ -190,6 +190,7 @@ declare module "./client" {
       id: string;
       name: string;
       content: string;
+      content_markdown?: string | null;
       is_folder: boolean;
       parent_id: string | null;
       position: number;
@@ -595,14 +596,17 @@ ApiClient.prototype.importFile = async function (
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Import failed" }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    const error = await response.json().catch(() => ({}));
+    const message =
+      error.detail || error.error?.message || `Import failed (HTTP ${response.status})`;
+    throw new Error(message);
   }
 
   return response.json() as Promise<{
     id: string;
     name: string;
     content: string;
+    content_markdown?: string | null;
     is_folder: boolean;
     parent_id: string | null;
     position: number;
