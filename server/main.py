@@ -32,8 +32,6 @@ from api import (
     inline,
     kb_agent,
     knowledge_base,
-    migration,
-    migration_oauth,
     notifications,
     review,
     shares,
@@ -286,8 +284,6 @@ app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
-app.include_router(migration.router, prefix="/api/migration", tags=["migration"])
-app.include_router(migration_oauth.router, prefix="/api/migration", tags=["migration"])
 app.include_router(kb_agent.router, prefix="/api/kb-agent", tags=["kb_agent"])
 app.include_router(global_agent.router, prefix="/api/global-agent", tags=["global_agent"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["knowledge_base"])
