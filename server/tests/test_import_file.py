@@ -290,6 +290,7 @@ class TestGeminiConverter:
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
             mock_response.choices[0].message.content = "# Converted PDF Content"
+            mock_response.choices[0].finish_reason = "stop"
             mock_client.chat.completions.create.return_value = mock_response
             mock_get_client.return_value = mock_client
 
@@ -348,6 +349,67 @@ class TestGeminiConverter:
             mock_settings.return_value.openrouter_api_key = "test-api-key"
 
             assert is_converter_configured() is True
+
+    @pytest.mark.asyncio
+    async def test_falls_back_on_pdf_truncation(self):
+        """Should fall back to markitdown when PDF output is truncated."""
+        from services.gemini_converter import convert_file_to_markdown
+
+        content = b"PDF content"
+
+        with (
+            patch("services.gemini_converter._get_client") as mock_get_client,
+            patch(
+                "services.gemini_converter.markitdown_convert", new_callable=AsyncMock
+            ) as mock_fallback,
+        ):
+            mock_client = AsyncMock()
+            mock_response = MagicMock()
+            mock_choice = MagicMock()
+            mock_choice.message.content = "# Truncated content..."
+            mock_choice.finish_reason = "length"
+            mock_response.choices = [mock_choice]
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_get_client.return_value = mock_client
+            mock_fallback.return_value = "# Complete fallback content"
+
+            result, usage = await convert_file_to_markdown(content, "test.pdf", ".pdf")
+
+            assert result == "# Complete fallback content"
+            assert usage is None
+            mock_fallback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_on_docx_truncation(self):
+        """Should fall back to markitdown when DOCX output is truncated."""
+        from services.gemini_converter import convert_file_to_markdown
+
+        with (
+            patch("services.gemini_converter._get_client") as mock_get_client,
+            patch(
+                "services.gemini_converter.extract_docx_content", return_value="Extracted text"
+            ),
+            patch(
+                "services.gemini_converter.markitdown_convert", new_callable=AsyncMock
+            ) as mock_fallback,
+        ):
+            mock_client = AsyncMock()
+            mock_response = MagicMock()
+            mock_choice = MagicMock()
+            mock_choice.message.content = "# Truncated DOCX..."
+            mock_choice.finish_reason = "length"
+            mock_response.choices = [mock_choice]
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_get_client.return_value = mock_client
+            mock_fallback.return_value = "# Complete DOCX fallback"
+
+            result, usage = await convert_file_to_markdown(
+                b"docx bytes", "test.docx", ".docx"
+            )
+
+            assert result == "# Complete DOCX fallback"
+            assert usage is None
+            mock_fallback.assert_called_once()
 
 
 # ============================================================================

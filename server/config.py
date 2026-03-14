@@ -148,6 +148,7 @@ class Settings(BaseSettings):
         "google/gemini-3.1-flash-lite-preview"  # For text review (needs JSON mode support)
     )
     file_conversion_model: str = "google/gemini-2.5-flash-lite"  # For PDF/DOCX to Markdown
+    file_conversion_max_tokens: int = 65536  # Max output tokens for PDF/DOCX conversion
 
     # =========================================================================
     # User API Key Settings

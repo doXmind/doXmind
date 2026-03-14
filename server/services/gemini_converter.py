@@ -193,7 +193,7 @@ async def convert_file_to_markdown(
                     ],
                 }
             ],
-            max_tokens=16384,
+            max_tokens=settings.file_conversion_max_tokens,
         )
 
         from services.usage_tracker import extract_usage
@@ -203,6 +203,16 @@ async def convert_file_to_markdown(
         usage["is_byok"] = bool(api_key)
 
         markdown_content = response.choices[0].message.content
+
+        # Detect truncation: finish_reason == "length" means output hit max_tokens
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        if finish_reason == "length":
+            logger.warning(
+                f"LLM output truncated for {filename} (finish_reason=length). "
+                f"Falling back to markitdown."
+            )
+            fallback_text = await markitdown_convert(content, filename, ext_lower)
+            return fallback_text, None
 
         if not markdown_content:
             raise ValueError("LLM returned empty response")
@@ -242,11 +252,12 @@ async def _convert_docx_to_markdown(
 
     # Use LLM to format the extracted text as proper Markdown
     try:
+        settings = get_settings()
         client = _get_client(api_key)
         response = await client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": TEXT_CONVERSION_PROMPT + extracted_text}],
-            max_tokens=16384,
+            max_tokens=settings.file_conversion_max_tokens,
         )
 
         from services.usage_tracker import extract_usage
@@ -256,6 +267,16 @@ async def _convert_docx_to_markdown(
         usage["is_byok"] = bool(api_key)
 
         markdown_content = response.choices[0].message.content
+
+        # Detect truncation: finish_reason == "length" means output hit max_tokens
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        if finish_reason == "length":
+            logger.warning(
+                f"LLM output truncated for {filename} (finish_reason=length). "
+                f"Falling back to markitdown."
+            )
+            fallback_text = await markitdown_convert(content, filename, ".docx")
+            return fallback_text, None
 
         if not markdown_content:
             raise ValueError("LLM returned empty response")
