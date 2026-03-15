@@ -97,7 +97,7 @@ class NotificationService:
                 "actor_name": n.actor_name,
                 "actor_avatar": n.actor_avatar,
                 "is_read": n.is_read,
-                "created_at": n.created_at.isoformat() if n.created_at else "",
+                "created_at": n.created_at.isoformat() if n.created_at is not None else "",
             }
             for n in notifications
         ]
@@ -194,7 +194,7 @@ async def create_notification(
             await notification_broadcaster.publish(
                 user_id,
                 {
-                    "event": "notification",
+                    "type": "notification",
                     "notification": {
                         "id": notification.id,
                         "type": notification.type,
@@ -206,10 +206,12 @@ async def create_notification(
                         "actor_avatar": notification.actor_avatar,
                         "is_read": notification.is_read,
                         "created_at": (
-                            notification.created_at.isoformat() if notification.created_at else ""
+                            notification.created_at.isoformat()
+                            if notification.created_at is not None
+                            else ""
                         ),
                     },
-                    "unread_count": new_count,
+                    "count": new_count,
                 },
             )
     except Exception:

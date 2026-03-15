@@ -77,7 +77,7 @@ async def notification_stream(
     user_id = get_user_id(token)
     if not user_id:
         return StreamingResponse(
-            iter([b'data: {"event": "error", "message": "Auth required"}\n\n']),
+            iter([b'data: {"type": "error", "message": "Auth required"}\n\n']),
             media_type="text/event-stream",
         )
 
@@ -96,7 +96,7 @@ async def notification_stream(
 
     async def event_generator():
         try:
-            connected = json.dumps({"event": "connected", "unread_count": initial_count})
+            connected = json.dumps({"type": "connected", "count": initial_count})
             yield f"data: {connected}\n\n".encode()
 
             while True:
@@ -105,7 +105,7 @@ async def notification_stream(
                     data = json.dumps(event, ensure_ascii=False)
                     yield f"data: {data}\n\n".encode()
                 except TimeoutError:
-                    yield b'data: {"event": "heartbeat"}\n\n'
+                    yield b'data: {"type": "heartbeat"}\n\n'
 
                 if await request.is_disconnected():
                     break
@@ -145,9 +145,7 @@ async def mark_read(
 
     # Broadcast updated count to other tabs
     new_count = await service.unread_count(user_id)
-    await notification_broadcaster.publish(
-        user_id, {"event": "unread_count", "unread_count": new_count}
-    )
+    await notification_broadcaster.publish(user_id, {"type": "unread_count", "count": new_count})
 
     return {"status": "ok"}
 
@@ -168,6 +166,6 @@ async def mark_all_read(
     updated = await service.mark_all_read(user_id)
 
     # Broadcast zero count to other tabs
-    await notification_broadcaster.publish(user_id, {"event": "unread_count", "unread_count": 0})
+    await notification_broadcaster.publish(user_id, {"type": "unread_count", "count": 0})
 
     return {"status": "ok", "updated": updated}

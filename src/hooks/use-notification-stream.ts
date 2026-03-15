@@ -8,9 +8,9 @@ import { parseSSELine } from "@/lib/streaming";
 import type { NotificationItem } from "@/lib/api/types";
 
 interface NotificationSSEEvent {
-  event: "connected" | "notification" | "unread_count" | "heartbeat" | "error";
+  type: "connected" | "notification" | "unread_count" | "heartbeat" | "error";
   notification?: NotificationItem;
-  unread_count?: number;
+  count?: number;
   message?: string;
 }
 
@@ -89,11 +89,11 @@ export function useNotificationStream() {
           const parsed = parseSSELine<NotificationSSEEvent>(line);
           if (!parsed) continue;
 
-          switch (parsed.event) {
+          switch (parsed.type) {
             case "connected":
-              if (parsed.unread_count !== undefined) {
+              if (parsed.count !== undefined) {
                 useNotificationStore.setState({
-                  unreadCount: parsed.unread_count,
+                  unreadCount: parsed.count,
                 });
               }
               break;
@@ -103,16 +103,16 @@ export function useNotificationStream() {
                 const notification = parsed.notification;
                 useNotificationStore.setState((state) => ({
                   notifications: [notification, ...state.notifications],
-                  unreadCount: parsed.unread_count ?? state.unreadCount + 1,
+                  unreadCount: parsed.count ?? state.unreadCount + 1,
                   total: state.total + 1,
                 }));
               }
               break;
 
             case "unread_count":
-              if (parsed.unread_count !== undefined) {
+              if (parsed.count !== undefined) {
                 useNotificationStore.setState({
-                  unreadCount: parsed.unread_count,
+                  unreadCount: parsed.count,
                 });
               }
               break;
