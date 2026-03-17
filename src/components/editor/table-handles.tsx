@@ -318,7 +318,6 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
   const rowCount = getRowCount(activeTable.element);
   const rows = activeTable.element.querySelectorAll("tr");
   const firstRow = rows[0];
-  const lastRow = rows[rows.length - 1];
 
   // Build column handle positions from first row cells
   const colHandles: Array<{ left: number; width: number }> = [];
