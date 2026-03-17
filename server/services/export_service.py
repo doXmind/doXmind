@@ -667,9 +667,17 @@ class PDFRenderer:
                     col_max_text_w[j] = max(col_max_text_w[j], w)
 
         min_col_w = 15.0
-        raw_widths = [max(w + padding * 4, min_col_w) for w in col_max_text_w]
+        # Cap each column's contribution so one very long cell can't starve others
+        max_col_w = max(available_width / 2, min_col_w)
+        raw_widths = [max(min(w + padding * 4, max_col_w), min_col_w) for w in col_max_text_w]
         total_raw = sum(raw_widths)
         col_widths = [w * available_width / total_raw for w in raw_widths]
+        # Enforce hard minimum to prevent fpdf2 "not enough horizontal space" error
+        hard_min = padding * 2 + 2  # must be > padding*2 for text to fit
+        col_widths = [max(w, hard_min) for w in col_widths]
+        total_w = sum(col_widths)
+        if total_w > available_width:
+            col_widths = [max(w * available_width / total_w, hard_min) for w in col_widths]
 
         pdf.set_draw_color(180, 180, 180)
 
@@ -723,7 +731,7 @@ class PDFRenderer:
 
                 # Render wrapped text inside cell
                 pdf.set_xy(x + padding, y_start + padding)
-                pdf.multi_cell(w - padding * 2, line_height, text)
+                pdf.multi_cell(max(w - padding * 2, 1.0), line_height, text)
 
                 x += w
 

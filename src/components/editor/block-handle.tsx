@@ -253,6 +253,8 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
 
         // For list items, use the parent list element's left edge so the
         // handle aligns with other top-level blocks instead of being indented.
+        // For tables, the wrapper breaks out to full page width (Notion-style),
+        // so use the ProseMirror content edge instead of the wrapper's edge.
         let left = blockRect.left;
         if (node && (node.type.name === "listItem" || node.type.name === "taskItem")) {
           try {
@@ -267,6 +269,11 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
           } catch {
             // Fall back to list item's own left
           }
+        } else if (node?.type.name === "table") {
+          const pmRect = editor.view.dom.getBoundingClientRect();
+          const pmPaddingLeft =
+            parseFloat(window.getComputedStyle(editor.view.dom).paddingLeft) || 0;
+          left = pmRect.left + pmPaddingLeft;
         }
 
         // Place handle to the left of block content with a small gap

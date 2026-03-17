@@ -314,11 +314,11 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
   // --- Render ---
   if (!activeTable || isScrolling) return null;
 
-  const tableRect = activeTable.element.getBoundingClientRect();
   const colCount = getColumnCount(activeTable.element);
   const rowCount = getRowCount(activeTable.element);
   const rows = activeTable.element.querySelectorAll("tr");
   const firstRow = rows[0];
+  const lastRow = rows[rows.length - 1];
 
   // Build column handle positions from first row cells
   const colHandles: Array<{ left: number; width: number }> = [];
@@ -335,6 +335,36 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
     const rowRect = row.getBoundingClientRect();
     rowHandles.push({ top: rowRect.top + rowRect.height / 2, height: rowRect.height });
   });
+
+  // Use the wrapper's rect for positioning — it represents the VISIBLE scroll
+  // viewport, so buttons stay centered even when the table overflows horizontally.
+  const wrapperRect = activeTable.wrapper.getBoundingClientRect();
+  // For vertical bounds (top/bottom), use actual row positions (always correct).
+  const tableTop =
+    rowHandles.length > 0 ? rowHandles[0].top - rowHandles[0].height / 2 : wrapperRect.top;
+  const tableBottom =
+    rowHandles.length > 0
+      ? rowHandles[rowHandles.length - 1].top + rowHandles[rowHandles.length - 1].height / 2
+      : wrapperRect.bottom;
+  // Horizontal bounds: use actual cell edges for left/right (so add-column
+  // button sits next to the last cell), but use wrapper for centering add-row.
+  const cellsLeft =
+    colHandles.length > 0 ? colHandles[0].left - colHandles[0].width / 2 : wrapperRect.left;
+  const cellsRight =
+    colHandles.length > 0
+      ? colHandles[colHandles.length - 1].left + colHandles[colHandles.length - 1].width / 2
+      : wrapperRect.right;
+  const tableRect = {
+    left: cellsLeft,
+    right: cellsRight,
+    top: tableTop,
+    bottom: tableBottom,
+    width: cellsRight - cellsLeft,
+    height: tableBottom - tableTop,
+    // Wrapper bounds for centering the add-row button in the visible area
+    wrapperLeft: wrapperRect.left,
+    wrapperWidth: wrapperRect.width,
+  };
 
   // Active column/row handle data
   const activeColHandle = activeColIndex !== null ? colHandles[activeColIndex] : null;
@@ -434,39 +464,46 @@ export const TableHandles = memo(function TableHandles({ editor }: TableHandlesP
         </div>
       )}
 
-      {/* Edge + button: add column (right edge) */}
-      <button
-        type="button"
-        className="table-edge-plus fixed z-30 flex items-center justify-center rounded-full border border-border/50 bg-background text-muted-foreground/50 shadow-sm transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground"
-        style={{
-          left: tableRect.right + 4,
-          top: tableRect.top + tableRect.height / 2 - 10,
-          width: 20,
-          height: 20,
-        }}
-        onClick={handleAddColumnRight}
-        onMouseDown={(e) => e.preventDefault()}
-        title="Add column"
-      >
-        <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-      </button>
+      {/* Edge + button: add column — only visible when cursor/hover is on last column */}
+      {(activeColIndex === colCount - 1 || colHandleHover === colCount - 1) && (
+        <button
+          type="button"
+          className="table-edge-plus fixed z-30 flex items-center justify-center rounded-full border border-border/50 bg-background text-muted-foreground/50 shadow-sm transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground"
+          style={{
+            left: tableRect.right + 4,
+            top: tableRect.top + tableRect.height / 2 - 10,
+            width: 20,
+            height: 20,
+          }}
+          onClick={handleAddColumnRight}
+          onMouseDown={(e) => e.preventDefault()}
+          title="Add column"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+        </button>
+      )}
 
-      {/* Edge + button: add row (bottom edge) */}
-      <button
-        type="button"
-        className="table-edge-plus fixed z-30 flex items-center justify-center rounded-full border border-border/50 bg-background text-muted-foreground/50 shadow-sm transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground"
-        style={{
-          left: tableRect.left + tableRect.width / 2 - 10,
-          top: tableRect.bottom + 4,
-          width: 20,
-          height: 20,
-        }}
-        onClick={handleAddRowBottom}
-        onMouseDown={(e) => e.preventDefault()}
-        title="Add row"
-      >
-        <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-      </button>
+      {/* Edge + button: add row — only visible when cursor/hover is on last row */}
+      {(activeRowIndex === rowCount - 1 || rowHandleHover === rowCount - 1) && (
+        <button
+          type="button"
+          className="table-edge-plus fixed z-30 flex items-center justify-center rounded-full border border-border/50 bg-background text-muted-foreground/50 shadow-sm transition-all duration-100 hover:border-border hover:bg-muted hover:text-muted-foreground"
+          style={{
+            left:
+              tableRect.width > tableRect.wrapperWidth
+                ? tableRect.wrapperLeft + tableRect.wrapperWidth / 2 - 10
+                : tableRect.left + tableRect.width / 2 - 10,
+            top: tableRect.bottom + 4,
+            width: 20,
+            height: 20,
+          }}
+          onClick={handleAddRowBottom}
+          onMouseDown={(e) => e.preventDefault()}
+          title="Add row"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+        </button>
+      )}
 
       {/* Context Menus */}
       {contextMenu?.type === "column" && activeTable && (

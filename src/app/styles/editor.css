@@ -394,6 +394,9 @@
 /* Table */
 .ProseMirror table {
   @apply my-4 w-full border-collapse;
+  /* Clip the column-resize-handle (right:-2px) on the last column
+     so it doesn't cause wrapper overflow / phantom scrollbar */
+  overflow: clip;
 }
 
 .ProseMirror th,
@@ -455,14 +458,42 @@
   background-color: hsl(217 91% 60% / 0.7);
 }
 
-/* Table wrapper for overflow handling */
+/* Table wrapper — Notion-style rightward breakout.
+   Table left edge stays aligned with text. Right side extends to the
+   scroll area edge so wide tables grow rightward (like Notion).
+   --right-extend is set by ResizeObserver on [data-editor-scroll]. */
 .ProseMirror .tableWrapper {
   @apply overflow-x-auto;
   margin-top: 1.5rem;
   margin-bottom: 1rem;
+  /* Hide scrollbar by default, only show when actively scrolling */
+  scrollbar-width: none;
+}
+.ProseMirror .tableWrapper::-webkit-scrollbar {
+  height: 6px;
+}
+.ProseMirror .tableWrapper::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+.ProseMirror .tableWrapper:hover::-webkit-scrollbar-thumb {
+  background: hsl(var(--foreground) / 0.15);
+}
+/* Firefox: show thin scrollbar on hover */
+.ProseMirror .tableWrapper:hover {
+  scrollbar-width: thin;
 }
 
-/* Table wrapper mobile constraint */
+@media (min-width: 768px) {
+  .ProseMirror .tableWrapper {
+    /* Extend rightward only. Negative margin-right grows the wrapper's
+       content-box so the table fills from text left edge to scroll area right.
+       Keep 1.5rem padding so the table doesn't touch the edge. */
+    margin-right: calc(-1 * var(--right-extend, 0px) + 3rem);
+  }
+}
+
+/* Mobile: constrain table to viewport */
 @media (max-width: 767px) {
   .ProseMirror .tableWrapper {
     max-width: calc(100vw - 2rem);

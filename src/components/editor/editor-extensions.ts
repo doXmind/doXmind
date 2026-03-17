@@ -113,6 +113,7 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Tables
     Table.configure({
       resizable: true,
+      cellMinWidth: 200,
     }),
     TableRow,
     TableCell,

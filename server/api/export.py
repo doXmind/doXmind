@@ -111,5 +111,5 @@ async def export_file(
     except AppException:
         raise
     except Exception as e:
-        logger.error(f"Export error: {e}")
+        logger.error(f"Export error: {e}", exc_info=True)
         raise InternalError(message=f"Export failed: {str(e)}")

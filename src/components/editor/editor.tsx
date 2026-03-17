@@ -99,6 +99,7 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   const lineHeight = useLayoutStore((s) => s.lineHeight);
 
   const isMobile = useIsMobile();
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
   // Track database block IDs in the document to detect removals on save
@@ -563,6 +564,26 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
     [imageModalCallback, closeImageModal]
   );
 
+  // Set --right-extend CSS variable for Notion-style table rightward breakout.
+  // This is the exact pixel distance from PM content right edge to scroll area right edge.
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el || !editor) return;
+    const update = () => {
+      const pm = editor.view.dom;
+      const elRect = el.getBoundingClientRect();
+      const pmPaddingRight = parseFloat(getComputedStyle(pm).paddingRight) || 0;
+      const pmContentRight = pm.getBoundingClientRect().right - pmPaddingRight;
+      const rightExtend = Math.max(0, elRect.right - pmContentRight);
+      el.style.setProperty("--right-extend", `${rightExtend}px`);
+    };
+    const observer = new ResizeObserver(() => update());
+    observer.observe(el);
+    // Also update once now in case ResizeObserver already fired before editor was ready
+    update();
+    return () => observer.disconnect();
+  }, [editor]);
+
   if (!editor) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -624,14 +645,14 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
               <EditorContent editor={editor} />
             </div>
           ) : (
-            <ScrollArea className="min-h-0 flex-1" data-editor-scroll>
+            <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-editor-scroll>
               <PageCover fileId={file.id} />
               <div
                 className={cn(
                   "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
-                  editorWidth === "narrow" && "max-w-2xl",
-                  editorWidth === "normal" && "max-w-4xl",
-                  editorWidth === "wide" && "max-w-6xl",
+                  editorWidth === "narrow" && "max-w-3xl",
+                  editorWidth === "normal" && "max-w-5xl",
+                  editorWidth === "wide" && "max-w-7xl",
                   editorWidth === "full" && "max-w-none",
                   // Typography settings
                   fontFamily === "serif" && "editor-font-serif",
