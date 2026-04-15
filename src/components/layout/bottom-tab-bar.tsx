@@ -2,47 +2,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Users, User } from "lucide-react";
+import { FileText, Settings } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/stores/auth-store";
 import { Z_INDEX, MOBILE_PANEL } from "@/lib/constants";
-import { useTranslations } from "next-intl";
 import { useScrollDirection } from "@/hooks/use-scroll-direction";
 
-interface TabItem {
-  href: string;
-  label: string;
-  icon: typeof Home;
-  match: (pathname: string) => boolean;
-}
-
 export function BottomTabBar() {
-  const t = useTranslations("layout");
   const pathname = usePathname();
-  const user = useAuthStore((s) => s.user);
   const isVisible = useScrollDirection();
 
-  if (!user) return null;
-
-  const tabs: TabItem[] = [
+  const tabs = [
     {
-      href: "/",
-      label: t("home"),
-      icon: Home,
-      match: (p) => p === "/",
+      href: "/editor",
+      label: "Editor",
+      icon: FileText,
+      match: (p: string) => p.startsWith("/editor") || p === "/",
     },
     {
-      href: "/community",
-      label: t("community"),
-      icon: Users,
-      match: (p) => p.startsWith("/community"),
-    },
-    {
-      href: user?.id ? `/profile/${user.id}` : "/login",
-      label: t("profile"),
-      icon: User,
-      match: (p) => p.startsWith("/profile"),
+      href: "/settings",
+      label: "Settings",
+      icon: Settings,
+      match: (p: string) => p.startsWith("/settings"),
     },
   ];
 
@@ -76,7 +57,6 @@ export function BottomTabBar() {
               isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {/* Active indicator bar */}
             {isActive && (
               <div className="absolute -top-px left-1/2 h-[2px] w-6 -translate-x-1/2 rounded-full bg-primary" />
             )}

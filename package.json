@@ -18,8 +18,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "prepare": "husky",
-    "server": "cd server && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
-    "dev:all": "concurrently \"npm run dev\" \"npm run server\""
+    "server": "cd server && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:all": "node scripts/dev.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.8",
@@ -92,7 +92,6 @@
     "@vitest/coverage-v8": "^2.1.8",
     "@vitest/ui": "^2.1.8",
     "autoprefixer": "^10.4.20",
-    "concurrently": "^9.1.0",
     "cross-env": "^10.1.0",
     "eslint": "^9.17.0",
     "eslint-config-next": "^15.1.0",
