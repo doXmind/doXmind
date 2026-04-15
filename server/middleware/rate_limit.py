@@ -4,7 +4,8 @@ The `limiter` exposes a `.limit(...)` decorator that is a no-op so existing
 route definitions (`@limiter.limit("60/minute")`) keep parsing.
 """
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 class _NoopLimiter:

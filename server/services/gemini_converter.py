@@ -7,7 +7,6 @@ import asyncio
 import base64
 import io
 import logging
-from functools import lru_cache
 
 from openai import AsyncOpenAI
 

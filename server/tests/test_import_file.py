@@ -18,8 +18,8 @@ from api.import_file import (
     MAX_FILE_SIZE,
     get_file_extension,
     markdown_to_html,
-    strip_code_fences,
     router,
+    strip_code_fences,
 )
 from exceptions import AppException
 
