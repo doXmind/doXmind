@@ -9,15 +9,11 @@
  *   const unsub = eventBus.on("profile:updated", ({ userId }) => { ... });
  */
 
-import type { User } from "@/lib/api";
+import type { LocalUser } from "@/stores/auth-store";
 
 type EventMap = {
-  "profile:updated": { user: User };
+  "profile:updated": { user: LocalUser };
   "storage:changed": void;
-  "auth:login": void;
-  "auth:logout": void;
-  "fork:created": { shareToken: string };
-  "bookmark:changed": void;
   "database:deleted": { databaseId: string };
 };
 

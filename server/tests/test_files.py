@@ -9,7 +9,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import File
-from services.auth_service import TokenData
 
 
 @pytest.mark.unit
@@ -163,89 +162,13 @@ class TestFileValidation:
 # =============================================================================
 
 
-class TestGetUserId:
-    """Tests for get_user_id function."""
-
-    def _create_token(self, sub: str) -> TokenData:
-        """Helper to create TokenData with required fields."""
-        from datetime import UTC, datetime, timedelta
-
-        return TokenData(sub=sub, exp=datetime.now(UTC) + timedelta(hours=1))
-
-    def test_returns_none_for_dev_user(self):
-        """Should return None for dev-user token (shared data)."""
-        from api.files import get_user_id
-
-        result = get_user_id(self._create_token("dev-user"))
-        assert result is None
-
-    def test_returns_none_for_api_key_user(self):
-        """Should return None for api-key-user token (shared data)."""
-        from api.files import get_user_id
-
-        result = get_user_id(self._create_token("api-key-user"))
-        assert result is None
-
-    def test_returns_none_for_anonymous_user(self):
-        """Should return None for anonymous token (shared data)."""
-        from api.files import get_user_id
-
-        result = get_user_id(self._create_token("anonymous"))
-        assert result is None
-
-    def test_returns_user_id_for_regular_user(self):
-        """Should return user ID for regular user."""
-        from api.files import get_user_id
-
-        result = get_user_id(self._create_token("user-123"))
-        assert result == "user-123"
-
-    def test_returns_user_id_for_uuid_user(self):
-        """Should return user ID for UUID-based user."""
-        from api.files import get_user_id
-
-        result = get_user_id(self._create_token("550e8400-e29b-41d4-a716-446655440000"))
-        assert result == "550e8400-e29b-41d4-a716-446655440000"
-
-
-# =============================================================================
-# User Data Isolation Tests
-# =============================================================================
+# Multi-user / get_user_id tests removed — local desktop edition is single-user.
 
 
 @pytest.mark.asyncio
-class TestUserDataIsolation:
-    """Tests for user data isolation in file operations."""
-
-    async def test_list_files_returns_only_shared_files_for_dev_user(
-        self, client: AsyncClient, db_session: AsyncSession
-    ):
-        """Dev user should only see files with user_id=None (shared data)."""
-        from tests.conftest import create_test_user
-
-        # Create users first (foreign key constraint)
-        await create_test_user(db_session, "user-1")
-        await create_test_user(db_session, "user-2")
-
-        # Create files for different users and shared files
-        user1_file = File(name="User1 File", content="Content 1", user_id="user-1")
-        user2_file = File(name="User2 File", content="Content 2", user_id="user-2")
-        shared_file = File(name="Shared File", content="Shared Content", user_id=None)
-        db_session.add_all([user1_file, user2_file, shared_file])
-        await db_session.commit()
-
-        # Dev user should only see shared files (user_id=None)
-        response = await client.get("/api/files/")
-        assert response.status_code == 200
-        files = response.json()
-        # Only shared file should be visible
-        assert len(files) == 1
-        assert files[0]["name"] == "Shared File"
-
+class TestUpdateNonexistent:
     async def test_update_nonexistent_file_returns_404(self, client: AsyncClient):
-        """Should return 404 when updating non-existent file."""
         response = await client.put("/api/files/nonexistent-id", json={"name": "New Name"})
-
         assert response.status_code == 404
 
 
@@ -732,67 +655,17 @@ class TestFilesRouterStructure:
 # =============================================================================
 
 
-class TestGetUserIdExtended:
-    """Extended tests for get_user_id function."""
-
-    def _create_token(self, sub: str) -> TokenData:
-        """Helper to create TokenData."""
-        from datetime import UTC, datetime, timedelta
-
-        return TokenData(sub=sub, exp=datetime.now(UTC) + timedelta(hours=1))
-
-    def test_multiple_special_users(self):
-        """Should return None for all special user types (shared data)."""
-        from api.files import get_user_id
-
-        special_users = ["dev-user", "api-key-user", "anonymous"]
-
-        for user in special_users:
-            result = get_user_id(self._create_token(user))
-            assert result is None, f"Expected None for {user}"
-
-    def test_regular_user_returns_id(self):
-        """Should return user ID for regular users."""
-        from api.files import get_user_id
-
-        result = get_user_id(self._create_token("user-abc-123"))
-        assert result == "user-abc-123"
-
-
-# =============================================================================
-# File Database Model Tests
-# =============================================================================
+# Multi-user tests removed — local desktop edition is single-user.
 
 
 class TestFileDatabaseModel:
-    """Tests for File database model usage."""
-
     @pytest.mark.asyncio
     async def test_file_model_creation(self, db_session: AsyncSession):
-        """Should create File model correctly."""
-        from tests.conftest import create_test_user
-
-        # Create user first (foreign key constraint)
-        await create_test_user(db_session, "user-123")
-
-        file = File(name="Test File", content="File content", user_id="user-123")
+        file = File(name="Test File", content="File content")
         db_session.add(file)
         await db_session.commit()
         await db_session.refresh(file)
-
         assert file.id is not None
         assert file.name == "Test File"
         assert file.content == "File content"
-        assert file.user_id == "user-123"
         assert file.created_at is not None
-        assert file.updated_at is not None
-
-    @pytest.mark.asyncio
-    async def test_file_model_without_user_id(self, db_session: AsyncSession):
-        """Should create File model without user_id."""
-        file = File(name="No User File", content="Content")
-        db_session.add(file)
-        await db_session.commit()
-
-        assert file.id is not None
-        assert file.user_id is None

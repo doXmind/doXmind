@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-doXmind Mini is an AI-powered markdown writing assistant ("Cursor for Writing"). It combines a TipTap-based WYSIWYG editor with Claude AI assistance, featuring real-time chat, quick edit actions, autocomplete, and a knowledge base system.
+doXmind Mini is a **local-first, single-user** AI writing assistant ("Cursor for Writing"). It pairs a TipTap-based WYSIWYG editor with an OpenRouter-powered AI agent — chat, quick edits, autocomplete, document review, and a knowledge base — all running on the user's own machine. There is no auth, no cloud sync, no sharing, no billing. All data lives in `~/.doxmind/`.
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15 (App Router), React 19, TipTap editor, Zustand state management, Tailwind CSS, Framer Motion
-- **Backend:** FastAPI, Python 3.12, LangGraph agents, SQLAlchemy 2.0 (async)
-- **Database:** PostgreSQL (production/Docker) or SQLite (local development)
+- **Frontend:** Next.js 15 (App Router), React 19, TipTap, Zustand, Tailwind CSS
+- **Backend:** FastAPI, Python 3.12, SQLAlchemy 2.0 (async)
+- **Database:** SQLite (single file at `~/.doxmind/doxmind.db`)
+- **LLM:** OpenRouter (OpenAI-compatible client) — user supplies their key in the in-app Settings page
 
 ## Commands
 
@@ -19,113 +20,99 @@ doXmind Mini is an AI-powered markdown writing assistant ("Cursor for Writing").
 ```bash
 npm run dev           # Start Next.js dev server (port 3000)
 npm run build         # Production build
-npm run lint          # Run ESLint
-npm run lint:fix      # Auto-fix ESLint issues
-npm run type-check    # TypeScript validation
-npm test              # Run Vitest in watch mode
-npm run test:ci       # Run tests with coverage
-npm run format        # Prettier format
-npm run dev:all       # Run both frontend and backend concurrently
+npm run lint          # ESLint
+npm run type-check    # tsc --noEmit
+npm test              # Vitest in watch mode
+npm run dev:all       # Run frontend + backend together
 ```
 
 ### Backend (from server/ directory)
 
 ```bash
-python main.py                              # Run FastAPI server (port 8000)
-pytest                                      # Run all tests
-pytest --cov                                # Run with coverage
-pytest -v -m unit                           # Run only unit tests
-pytest tests/unit/test_specific.py::test_name  # Run single test
-ruff check .                                # Lint Python code
-ruff format .                               # Format Python code
+python main.py        # Run FastAPI server on 127.0.0.1:8000
+pytest                # Run tests (in-memory SQLite)
+ruff check .          # Lint
+ruff format .         # Format
 ```
 
-### Docker
+### First-run flow
 
-```bash
-docker-compose up -d          # Start all services (postgres, backend, frontend)
-docker-compose logs -f        # View logs
-docker-compose down -v        # Stop and remove volumes (resets database)
-```
+1. `npm run dev:all` (or run backend + frontend separately).
+2. Open `http://localhost:3000` — you land directly in the editor.
+3. Open the Settings page (`/settings`) and paste your OpenRouter API key. It's persisted to `~/.doxmind/config.json`.
+4. Start writing. Chat / autocomplete / quick edits will use that key automatically.
 
 ## Architecture
 
+### Local data directory
+
+Everything user-owned lives under `~/.doxmind/`:
+
+- `doxmind.db` — SQLite database (files, conversations, messages, KB attachments, database blocks)
+- `config.json` — User-supplied API keys and feature toggles (managed via `/settings`)
+- `uploads/` — Local image uploads (cover images, inline images)
+
+The `DATA_DIR` environment variable can override this path.
+
 ### Frontend Structure
 
-The frontend uses a Zustand-based state management pattern with custom hooks for business logic:
+- **Stores** (`src/stores/`): Zustand global state — files, chat, editor, KB, layout, API settings.
+- **Hooks** (`src/hooks/`): Business logic encapsulation (chat streaming, edit operations, autocomplete, diff review).
+- **Extensions** (`src/extensions/`): Custom TipTap extensions (diff-review, search, autocomplete, spellcheck).
 
-- **Stores** (`src/stores/`): Global state for files, chat, editor, auth, knowledge base, layout
-- **Hooks** (`src/hooks/`): Business logic encapsulation (chat streaming, edit operations, autocomplete, diff review)
-- **Extensions** (`src/extensions/`): Custom TipTap extensions for diff-review, search, autocomplete, spellcheck
+Stub modules in `src/stores/{auth-store,billing-store,notification-store,demo-store}.ts` exist purely so legacy components keep compiling — they always report a single fixed local user with no quotas.
 
-Key data flow: User Input → TipTap/AI components → Zustand stores → API calls → SSE stream processing → State update → UI re-render
-
-Entry point: `src/app/editor/page.tsx`
+Entry point: `src/app/editor/[[...fileId]]/page.tsx` (the root `/` redirects here).
 
 ### Backend Structure
 
-The backend follows a layered architecture:
+- **API routes** (`server/api/`): Thin FastAPI routers handling HTTP.
+- **Services** (`server/services/`): LLM, export, file conversion, etc.
+  - `local_config.py` — read/write `~/.doxmind/config.json`
+  - `auth_service.py`, `credit_service.py`, `usage_tracker.py`, `storage_tracker.py`, `api_key_service.py`, `middleware/rate_limit.py` — **stubs** that preserve old call signatures (no auth, unlimited credits, no quota tracking)
+- **Agents** (`server/agents/`): Writing agent / KB agent / global agent. They call OpenRouter via the OpenAI-compatible client; the API key is resolved in this order: explicit arg → env var (`OPENROUTER_API_KEY`) → `local_config.json`.
+- **Database** (`server/db/database.py`): SQLAlchemy models. `init_db()` runs `create_all` against SQLite — no Alembic.
 
-- **API routes** (`server/api/`): Thin FastAPI routers handling HTTP
-- **Services** (`server/services/`): Business logic (LLM, auth, export)
-- **Agents** (`server/agents/`): LangGraph orchestration with tool definitions for document editing and KB operations
-- **Database** (`server/db/`): SQLAlchemy models with async support
-
-Entry point: `server/main.py`
+Entry point: `server/main.py`. The lifespan handler creates `~/.doxmind/` and the SQLite file on first boot.
 
 ### AI Integration
 
-- **Chat streaming:** Server-Sent Events (SSE) for real-time Claude responses
-- **Tool system:** Document tools (`str_replace`, `insert`, `replace_all`) and KB tools (`search_documents`, `read_document`)
-- **Extended thinking:** Optional deep reasoning mode for complex requests
-- **Vision:** Multimodal support for image analysis (up to 10 images per message)
+- **Chat streaming:** Server-Sent Events (SSE) via FastAPI.
+- **Tool system:** Document tools (`str_replace`, `insert`, `replace_all`), KB tools (`search_documents`, `read_document`), web search (Serper, optional), code execution (optional, off by default).
+- **Models:** Configured in `server/config.py` and overridable per-request via the user's `preferred_model` in local_config.
 
-## Database Migrations (Alembic)
+## Database
 
-**IMPORTANT:** Never modify database schema by editing models alone. Always use Alembic migrations.
+There is no Alembic. Schema is defined in `server/db/database.py` and applied with `Base.metadata.create_all` on startup. To change the schema:
 
-### Workflow for Schema Changes
+1. Edit the model in `server/db/database.py`.
+2. Delete `~/.doxmind/doxmind.db` (or migrate by hand) — single-user local app, your call.
+3. Restart the server.
 
-```bash
-cd server
-
-# 1. Modify model in server/db/database.py
-
-# 2. Generate migration
-alembic revision --autogenerate -m "add xxx column"
-
-# 3. Review generated file in server/alembic/versions/
-#    - Verify upgrade() and downgrade() are correct
-
-# 4. Test locally
-alembic upgrade head
-alembic downgrade -1
-alembic upgrade head
-
-# 5. Commit and push - Heroku release phase runs migrations automatically
-```
-
-### Useful Commands
-
-```bash
-alembic current           # Show current database version
-alembic history           # Show migration chain
-alembic upgrade head      # Apply all pending migrations
-alembic downgrade -1      # Rollback one migration
-```
+The `user_id` columns on `File`, `Conversation`, and `DatabaseBlock` are kept as plain (non-FK) strings defaulting to `"local"` purely to keep legacy queries compatible.
 
 ## Environment Variables
 
-Backend requires `ANTHROPIC_API_KEY` in `server/.env`. For local development, `DATABASE_URL` defaults to SQLite. See `server/.env.example` for all options.
+Everything is optional; the GUI settings page is the canonical source.
+
+- `OPENROUTER_API_KEY` — fallback if the GUI doesn't have one
+- `SERPER_API_KEY` — optional, enables web search tool
+- `DATA_DIR` — override `~/.doxmind`
+- `DEBUG`, `HOST`, `PORT`
 
 ## Code Quality
 
-- **Pre-commit hooks:** ESLint and Prettier run on staged files via Husky
-- **Frontend:** TypeScript strict mode with `@/*` path aliases
-- **Backend:** Ruff for linting/formatting (line length 100, double quotes)
+- **Pre-commit hooks:** ESLint + Prettier via Husky
+- **Frontend:** TypeScript strict mode, `@/*` path aliases
+- **Backend:** Ruff (line length 100, double quotes)
 
 ## API Documentation
 
-When running locally with DEBUG=true:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+The backend always exposes:
+
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+## What was removed
+
+This is the local desktop edition. The following SaaS features have been stripped from the codebase: authentication (JWT, OAuth, password reset, email verification), Stripe billing, credits / usage quotas, document sharing, community feed, comments, follows / bookmarks, notifications, telemetry / RLHF reporting, AWS S3 storage, Notion / Google Drive OAuth import, Postgres, Redis, Docker, Heroku release config, all multi-user data isolation. Don't try to reintroduce any of these without explicit instructions — and if you do, do it through the cloud edition rather than this branch.

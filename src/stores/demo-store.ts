@@ -1,45 +1,21 @@
+/**
+ * Demo store stub — local desktop edition has no demo mode.
+ */
+
 import { create } from "zustand";
-import type { FileItem } from "@/types";
 
 interface DemoState {
   isDemoMode: boolean;
-  demoFile: FileItem | null;
-  initDemo: (content: string) => void;
-  updateDemoContent: (content: string) => void;
-  resetDemo: () => void;
+  demoFile: null;
+  updateDemoContent: (_content: string) => void;
+  enable: () => void;
+  disable: () => void;
 }
 
-export const useDemoStore = create<DemoState>((set) => ({
+export const useDemoStore = create<DemoState>(() => ({
   isDemoMode: false,
   demoFile: null,
-
-  initDemo: (content: string) =>
-    set({
-      isDemoMode: true,
-      demoFile: {
-        id: "demo-file",
-        name: "Demo Document",
-        content,
-        isFolder: false,
-        parentId: null,
-        position: 0,
-        isFavorite: false,
-        icon: null,
-        coverImageUrl: null,
-        coverPosition: 0.5,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        wordCount: 0,
-        preview: "",
-      },
-    }),
-
-  updateDemoContent: (content: string) =>
-    set((state) => ({
-      demoFile: state.demoFile
-        ? { ...state.demoFile, content, updatedAt: new Date().toISOString() }
-        : null,
-    })),
-
-  resetDemo: () => set({ isDemoMode: false, demoFile: null }),
+  updateDemoContent: () => {},
+  enable: () => {},
+  disable: () => {},
 }));

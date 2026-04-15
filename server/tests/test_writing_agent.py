@@ -159,13 +159,20 @@ class TestWritingAgentInit:
 
         assert agent.kb_attachments == attachments
 
-    @patch("agents.writing_agent.get_settings")
-    def test_init_without_api_key_raises(self, mock_settings):
-        """Should raise error when API key is missing."""
-        mock_settings.return_value = MagicMock(openrouter_api_key=None)
-
-        with pytest.raises(ValueError, match="No API key available"):
-            WritingAgent()
+    def test_init_without_api_key_raises(self):
+        """Should raise when no key is available anywhere."""
+        with patch("agents.writing_agent.get_settings") as mock_settings, patch(
+            "services.local_config.get_openrouter_key", return_value=""
+        ):
+            mock_settings.return_value = MagicMock(
+                openrouter_api_key="",
+                default_model="google/gemini-3.1-flash-lite-preview",
+                openrouter_base_url="https://openrouter.ai/api/v1",
+                openrouter_headers={},
+                max_output_tokens=8192,
+            )
+            with pytest.raises(ValueError, match="OpenRouter"):
+                WritingAgent()
 
 
 # ============================================================================

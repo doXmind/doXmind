@@ -22,10 +22,12 @@ async def serper_search(query: str, count: int = 10) -> list[dict[str, Any]]:
     Returns:
         List of search results with title, url, snippet
     """
+    from services.local_config import get_serper_key
+
     settings = get_settings()
-    api_key = settings.serper_api_key
+    api_key = settings.serper_api_key or get_serper_key()
     if not api_key:
-        return [{"error": "Serper API key not configured"}]
+        return [{"error": "Serper API key not configured. Add one in Settings to enable web search."}]
 
     headers = {
         "X-API-KEY": api_key,

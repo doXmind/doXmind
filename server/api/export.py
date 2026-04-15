@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.files import get_user_id
 from config import get_cors_headers
-from db.database import File, User, get_db
+from db.database import File, get_db
 from exceptions import AppException, BadRequestError, DocumentNotFoundError, InternalError
 from services.auth_service import TokenData, require_auth
 from services.export_service import get_export_service
@@ -58,13 +58,8 @@ async def export_file(
     if base_filename.endswith(".md"):
         base_filename = base_filename[:-3]
 
-    # Get author info from user table
+    # Local desktop edition — no author lookup.
     author_name = None
-    if file.user_id:
-        user_result = await db.execute(select(User).where(User.id == file.user_id))
-        user = user_result.scalar_one_or_none()
-        if user:
-            author_name = user.username or user.email
 
     # Build metadata for title page rendering
     metadata = {

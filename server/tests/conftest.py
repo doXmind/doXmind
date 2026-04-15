@@ -1,204 +1,95 @@
-"""
-Pytest configuration and fixtures for the test suite.
+"""Pytest fixtures — local desktop edition.
 
-Uses PostgreSQL for testing to match production environment.
-- Local: docker-compose up postgres (port 5433)
-- CI: GitHub Actions PostgreSQL service (port 5432)
+Tests run against an in-memory SQLite database. Auth is stubbed so all
+fixtures use a single fixed `local` user.
 """
 
 import asyncio
 import os
+import tempfile
 import uuid
 from collections.abc import AsyncGenerator, Generator
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import StaticPool
 
-# Get database URL from environment or use a SEPARATE test database
-# IMPORTANT: Uses 'doxmind_test' database to avoid wiping dev data during test cleanup
-# Local Docker uses port 5433, CI uses port 5432
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    os.environ.get(
-        "DATABASE_URL", "postgresql+asyncpg://doxmind:doxmind123@localhost:5433/doxmind_test"
-    ),
-)
+# Use an in-memory SQLite db so tests never touch the user's ~/.doxmind data.
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-# Set test environment variables before importing app modules
+# Sandbox the data dir so local_config / settings tests don't read the real
+# ~/.doxmind/config.json sitting in the developer's home folder.
+_TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="doxmind-test-"))
+os.environ["HOME"] = str(_TEST_DATA_DIR)
 os.environ["DEBUG"] = "true"
-os.environ["TESTING"] = "true"  # Disable rate limiting during tests
-os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
-os.environ.setdefault("OPENROUTER_API_KEY", "test-api-key")
-os.environ.setdefault(
-    "API_KEY_ENCRYPTION_KEY", "N7rUzNKqpRGSOGKpcErTa4dn1jsdNsM8F0BO5ch2RJE="
-)  # Fernet key for encrypting user API keys
+os.environ["OPENROUTER_API_KEY"] = "test-api-key"
 
-import db.database as db_database
-from db.database import Base, get_db
-from dependencies import get_db as deps_get_db
-from main import app
-from services.auth_service import create_access_token
+import db.database as db_database  # noqa: E402
+from db.database import Base, Conversation, File, get_db  # noqa: E402
+from dependencies import get_db as deps_get_db  # noqa: E402
+from main import app  # noqa: E402
 
 
-def _ensure_test_database():
-    """Create doxmind_test database if it doesn't exist.
-
-    Uses synchronous psycopg2 to create the database before async engine is used.
-    Only needed when TEST_DATABASE_URL points to a separate test database.
-    """
-    import re
-
-    match = re.match(
-        r"postgresql\+asyncpg://([^:]+):([^@]+)@([^:/]+):?(\d+)?/(.+)", TEST_DATABASE_URL
-    )
-    if not match:
-        return
-
-    user, password, host, port, dbname = match.groups()
-    port = port or "5432"
-
-    # Only auto-create if using a separate test database
-    if dbname == "doxmind":
-        return
-
-    try:
-        import psycopg2
-        from psycopg2 import sql
-
-        conn = psycopg2.connect(
-            dbname="doxmind",
-            user=user,
-            password=password,
-            host=host,
-            port=int(port),
-        )
-        conn.autocommit = True
-
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,))
-                exists = cur.fetchone() is not None
-                if not exists:
-                    cur.execute(
-                        sql.SQL("CREATE DATABASE {} OWNER {}").format(
-                            sql.Identifier(dbname), sql.Identifier(user)
-                        )
-                    )
-        finally:
-            conn.close()
-    except Exception as e:
-        import warnings
-
-        warnings.warn(f"Could not auto-create test database '{dbname}': {e}", stacklevel=2)
-
-
-_ensure_test_database()
-
-# Create test database engine with NullPool to avoid connection issues in tests
+# In-memory SQLite + StaticPool so all sessions share one connection.
 test_engine = create_async_engine(
     TEST_DATABASE_URL,
     echo=False,
-    poolclass=NullPool,  # Avoid pool issues in tests
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
+TestingSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
-TestingSessionLocal = async_sessionmaker(
-    test_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
-
-# Force app/database dependencies to use the test engine/session factory.
 db_database.engine = test_engine
 db_database.async_session = TestingSessionLocal
 
 
-def _setup_schema():
-    """Drop and recreate all tables to ensure schema matches current models.
-
-    Called once at import time. Uses drop_all + create_all because
-    create_all alone won't add new columns to existing tables.
-    """
-
-    async def _run():
-        async with test_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
-
-            # Create safe_substr function used by list_files query
-            await conn.execute(
-                text("""
-                CREATE OR REPLACE FUNCTION safe_substr(t text, start_pos int, len int)
-                RETURNS text AS $$
-                DECLARE
-                    old_timeout text;
-                    result text;
-                BEGIN
-                    old_timeout := current_setting('statement_timeout');
-                    PERFORM set_config('statement_timeout', '2000', true);
-                    BEGIN
-                        result := substr(t, start_pos, len);
-                        PERFORM set_config('statement_timeout', old_timeout, true);
-                        RETURN result;
-                    EXCEPTION WHEN OTHERS THEN
-                        PERFORM set_config('statement_timeout', old_timeout, true);
-                        RETURN '';
-                    END;
-                END;
-                $$ LANGUAGE plpgsql;
-            """)
-            )
-
-    asyncio.run(_run())
+# =============================================================================
+# Event loop & schema lifecycle
+# =============================================================================
 
 
-_setup_schema()
+@pytest.fixture(scope="session")
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
 
-def pytest_sessionfinish(session, exitstatus):
-    """Dispose database engines to properly close asyncpg connections."""
-    asyncio.run(test_engine.dispose())
+@pytest.fixture(scope="session", autouse=True)
+async def _create_schema() -> AsyncGenerator[None, None]:
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    await test_engine.dispose()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create a database session for each test.
+    # Reset all tables between tests so the in-memory SQLite db is fresh.
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
 
-    Tables are created once at import time (see _setup_schema above).
-    Uses transaction rollback instead of TRUNCATE for fast cleanup:
-    - A top-level transaction wraps each test
-    - session.commit() creates SAVEPOINTs (nested transactions) instead of real commits
-    - After the test, the outer transaction is rolled back, undoing all changes instantly
-    """
-    connection = await test_engine.connect()
-    transaction = await connection.begin()
-
-    session = AsyncSession(
-        bind=connection,
-        expire_on_commit=False,
-        join_transaction_mode="create_savepoint",
-    )
-
-    yield session
-
-    await session.close()
-    await transaction.rollback()
-    await connection.close()
+    async with TestingSessionLocal() as session:
+        yield session
+        await session.rollback()
 
 
-@pytest.fixture(scope="function")
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """Create an async test client with database override."""
+# =============================================================================
+# Test clients
+# =============================================================================
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+
+@pytest.fixture
+async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    async def override_get_db():
         yield db_session
 
-    # Override both get_db sources (db.database and dependencies)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[deps_get_db] = override_get_db
 
@@ -209,34 +100,40 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
-def sync_client(db_session: AsyncSession) -> Generator[TestClient, None, None]:
-    """Create a sync test client for simple tests."""
+async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Alias for async_client kept for legacy test names."""
 
-    def override_get_db():
-        return db_session
+    async def override_get_db():
+        yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps_get_db] = override_get_db
 
-    with TestClient(app) as c:
-        yield c
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
 
     app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def auth_headers() -> dict:
-    """Generate authentication headers for protected endpoints.
+def sync_client() -> Generator[TestClient, None, None]:
+    with TestClient(app) as c:
+        yield c
 
-    Uses 'dev-user' subject which returns None for user_id (shared data mode),
-    avoiding foreign key constraint issues when creating conversations.
-    """
-    token = create_access_token(subject="dev-user")
-    return {"Authorization": f"Bearer {token}"}
+
+@pytest.fixture
+def auth_headers() -> dict:
+    """No-op headers — local desktop edition has no auth."""
+    return {}
+
+
+# =============================================================================
+# Mock LLM fixtures
+# =============================================================================
 
 
 @pytest.fixture
 def mock_llm_service():
-    """Mock the LLM service for tests that don't need real API calls."""
     mock = AsyncMock()
     mock.chat.return_value = {
         "content": "Test response from AI",
@@ -247,22 +144,13 @@ def mock_llm_service():
     return mock
 
 
-# =============================================================================
-# AI Service Mock Fixtures (OpenAI SDK via OpenRouter)
-# =============================================================================
-
-
 class MockOpenAIChoice:
-    """Mock OpenAI Choice object."""
-
     def __init__(self, text: str = "Hello from AI"):
         self.message = MagicMock(content=text)
         self.finish_reason = "stop"
 
 
 class MockOpenAIChatCompletion:
-    """Mock OpenAI ChatCompletion response."""
-
     def __init__(self, text: str = "Hello from AI"):
         self.choices = [MockOpenAIChoice(text)]
         self.model = "minimax/minimax-m2.5"
@@ -270,8 +158,6 @@ class MockOpenAIChatCompletion:
 
 
 class MockOpenAIStreamChunk:
-    """Mock OpenAI streaming chunk."""
-
     def __init__(self, content: str | None = None, finish_reason: str | None = None):
         delta = MagicMock()
         delta.content = content
@@ -284,8 +170,6 @@ class MockOpenAIStreamChunk:
 
 
 class MockOpenAIAsyncStream:
-    """Mock async iterator for OpenAI streaming."""
-
     def __init__(self, chunks: list):
         self.chunks = chunks
 
@@ -300,83 +184,52 @@ class MockOpenAIAsyncStream:
 
 @pytest.fixture
 def mock_openai_client():
-    """Mock OpenAI AsyncOpenAI client."""
     mock = MagicMock()
-
-    # Mock chat.completions.create for non-streaming
     mock.chat.completions.create = AsyncMock(
         return_value=MockOpenAIChatCompletion("Test AI response")
     )
-
     return mock
 
 
-@pytest.fixture
-def mock_stream_events():
-    """Sample SSE events for testing streaming responses."""
-    return [
-        {"type": "text", "content": "Hello "},
-        {"type": "text", "content": "World!"},
-        {"type": "tool_use", "tool_name": "get_file", "tool_input": {"path": "file.txt"}},
-        {"type": "summary", "content": "Hello World!"},
-    ]
-
-
 # =============================================================================
-# Database Entity Fixtures
+# Fake user / file fixtures (single-user local mode)
 # =============================================================================
 
-from db.database import Conversation, File, User
+
+LOCAL_USER_ID = "local"
 
 
 async def create_test_user(
-    db_session: AsyncSession,
+    db_session: AsyncSession,  # noqa: ARG001
     user_id: str | None = None,
     email: str | None = None,
     username: str | None = None,
-) -> User:
-    """Helper function to create a test user in the database.
-
-    Use this when tests need to create users with specific IDs.
-    """
-    user_id = user_id or str(uuid.uuid4())
-    email = email or f"{user_id}@example.com"
-    username = username or user_id
-
-    user = User(
+) -> SimpleNamespace:
+    """Legacy helper — local desktop edition has no User table."""
+    user_id = user_id or LOCAL_USER_ID
+    return SimpleNamespace(
         id=user_id,
-        email=email,
-        username=username,
-        hashed_password="$2b$12$test_hashed_password",
+        email=email or f"{user_id}@example.com",
+        username=username or user_id,
         is_verified=True,
         is_active=True,
     )
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
 
 
 @pytest.fixture
-async def test_user(db_session: AsyncSession) -> User:
-    """Create a test user in the database."""
-    user = User(
-        id="test-user-id",
-        email="testuser@example.com",
-        username="testuser",
-        hashed_password="$2b$12$test_hashed_password",
+def test_user() -> SimpleNamespace:
+    """Return a fake user that mimics the old SQLAlchemy User model surface."""
+    return SimpleNamespace(
+        id=LOCAL_USER_ID,
+        email="local@doxmind.local",
+        username="local",
         is_verified=True,
         is_active=True,
     )
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
 
 
 @pytest.fixture
-async def test_file(db_session: AsyncSession, test_user: User) -> File:
-    """Create a test file in the database."""
+async def test_file(db_session: AsyncSession, test_user: SimpleNamespace) -> File:
     file = File(
         id=str(uuid.uuid4()),
         user_id=test_user.id,
@@ -390,8 +243,9 @@ async def test_file(db_session: AsyncSession, test_user: User) -> File:
 
 
 @pytest.fixture
-async def test_conversation(db_session: AsyncSession, test_file: File) -> Conversation:
-    """Create a test conversation in the database."""
+async def test_conversation(
+    db_session: AsyncSession, test_file: File
+) -> Conversation:
     conv = Conversation(
         id=str(uuid.uuid4()),
         file_id=test_file.id,
@@ -403,20 +257,8 @@ async def test_conversation(db_session: AsyncSession, test_file: File) -> Conver
     return conv
 
 
-# Sample test data fixtures
-@pytest.fixture
-def sample_user_data() -> dict:
-    """Sample user registration data."""
-    return {
-        "email": "test@example.com",
-        "username": "testuser",
-        "password": "SecurePass123!",
-    }
-
-
 @pytest.fixture
 def sample_file_data() -> dict:
-    """Sample file creation data."""
     return {
         "name": "Test Document",
         "content": "# Hello World\n\nThis is a test document.",
@@ -425,7 +267,6 @@ def sample_file_data() -> dict:
 
 @pytest.fixture
 def sample_chat_message() -> dict:
-    """Sample chat message data."""
     return {
         "message": "Hello, can you help me?",
         "mode": "chat",

@@ -145,11 +145,18 @@ class KBAgent:
         api_key: str | None = None,
         model: str | None = None,
     ):
+        from services.local_config import get_openrouter_key
+
         self.db = db
         self.user_id = user_id
         settings = get_settings()
+        effective_key = api_key or settings.openrouter_api_key or get_openrouter_key()
+        if not effective_key:
+            raise ValueError(
+                "No OpenRouter API key configured. Open Settings in the app to add one."
+            )
         self.client = AsyncOpenAI(
-            api_key=api_key or settings.openrouter_api_key,
+            api_key=effective_key,
             base_url=settings.openrouter_base_url,
             default_headers=settings.openrouter_headers,
         )

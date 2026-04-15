@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import bindparam, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import DocumentShare, File, Fork, User, get_db, utcnow
+from db.database import File, get_db, utcnow
 from exceptions import (
     AppException,
     BadRequestError,
@@ -236,10 +236,7 @@ async def list_files(
     user_id = get_user_id(token)
 
     # Build query with folder-aware ordering: folders first, then by position, then by date
-    # Optimized: exclude content column to reduce payload size (~160KB → ~5KB)
-    # Content is loaded on demand via GET /files/{file_id}
-    # LEFT JOIN with Fork + DocumentShare + User to populate fork provenance
-    source_author = User.__table__.alias("source_author")
+    # Optimized: exclude content column to reduce payload size.
     query = (
         select(
             File.id,
@@ -254,26 +251,16 @@ async def list_files(
             File.cover_position,
             File.created_at,
             File.updated_at,
-            # Lightweight preview: prefer content_markdown (no HTML, no TOAST issues)
-            # Only 250 chars needed (preview truncates to 200)
-            func.safe_substr(File.content_markdown, 1, 250).label("content_markdown_head"),
+            func.substr(File.content_markdown, 1, 250).label("content_markdown_head"),
             func.length(File.content_markdown).label("content_markdown_length"),
-            # Fallback for files without cached markdown
-            func.safe_substr(File.content, 1, 1000).label("content_head"),
+            func.substr(File.content, 1, 1000).label("content_head"),
             func.length(File.content).label("content_length"),
-            Fork.id.label("fork_id"),
-            Fork.source_share_id.label("forked_from_share_id"),
-            DocumentShare.title.label("forked_from_title"),
-            source_author.c.username.label("forked_from_author"),
         )
-        .outerjoin(Fork, Fork.forked_file_id == File.id)
-        .outerjoin(DocumentShare, Fork.source_share_id == DocumentShare.id)
-        .outerjoin(source_author, DocumentShare.user_id == source_author.c.id)
         .where(File.deleted_at.is_(None))
         .order_by(
-            File.is_folder.desc(),  # Folders first
-            File.position.asc(),  # Then by position
-            File.updated_at.desc(),  # Then by recency
+            File.is_folder.desc(),
+            File.position.asc(),
+            File.updated_at.desc(),
         )
     )
 
@@ -332,10 +319,10 @@ async def list_files(
                 updated_at=row.updated_at.isoformat(),
                 word_count=word_count,
                 preview=preview,
-                fork_id=row.fork_id,
-                forked_from_share_id=row.forked_from_share_id,
-                forked_from_title=row.forked_from_title,
-                forked_from_author=row.forked_from_author,
+                fork_id=None,
+                forked_from_share_id=None,
+                forked_from_title=None,
+                forked_from_author=None,
             )
         )
 
@@ -450,33 +437,11 @@ async def get_file(
     if not file:
         raise DocumentNotFoundError(file_id=file_id)
 
-    # Check if this file is a fork
+    # Sharing/fork removed in local desktop edition.
     fork_id = None
     forked_from_share_id = None
     forked_from_title = None
     forked_from_author = None
-
-    fork_query = select(Fork.id, Fork.source_share_id).where(
-        Fork.forked_file_id == file_id, Fork.user_id == user_id
-    )
-    fork_result = await db.execute(fork_query)
-    fork_row = fork_result.first()
-
-    if fork_row:
-        fork_id = fork_row.id
-        forked_from_share_id = fork_row.source_share_id
-
-        if fork_row.source_share_id:
-            share_query = (
-                select(DocumentShare.title, User.username)
-                .join(User, DocumentShare.user_id == User.id)
-                .where(DocumentShare.id == fork_row.source_share_id)
-            )
-            share_result = await db.execute(share_query)
-            share_row = share_result.first()
-            if share_row:
-                forked_from_title = share_row.title or file.name
-                forked_from_author = share_row.username or "Unknown"
 
     return FileResponse(
         id=file.id,
@@ -862,19 +827,17 @@ async def search_files(
         # Build query with optional file_ids filter
         where_clauses = [
             "deleted_at IS NULL",
-            "is_folder = false",
+            "is_folder = 0",
         ]
-        if user_id:
-            where_clauses.append("user_id = :user_id")
-            params["user_id"] = user_id
-        else:
-            where_clauses.append("user_id IS NULL")
+        # Local desktop edition: single-user, no user_id filter needed.
+        _ = user_id
 
         if request.file_ids:
             where_clauses.append("id IN :file_ids")
             params["file_ids"] = list(request.file_ids)
 
-        where_clauses.append("(name ILIKE :pattern OR content ILIKE :pattern)")
+        # SQLite LIKE is case-insensitive for ASCII by default.
+        where_clauses.append("(LOWER(name) LIKE LOWER(:pattern) OR LOWER(content) LIKE LOWER(:pattern))")
 
         where_sql = " AND ".join(where_clauses)
         sql = f"SELECT id, name, content FROM files WHERE {where_sql} ORDER BY updated_at DESC LIMIT :limit"

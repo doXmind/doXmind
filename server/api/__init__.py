@@ -1,2 +1,1 @@
-# API routes module
-from . import auth as auth  # noqa: F401 - explicit re-export
+# API routes module — local desktop edition
