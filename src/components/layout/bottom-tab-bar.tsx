@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, Settings } from "lucide-react";
+import { Home, FileText, Settings } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Z_INDEX, MOBILE_PANEL } from "@/lib/constants";
@@ -14,10 +14,16 @@ export function BottomTabBar() {
 
   const tabs = [
     {
+      href: "/",
+      label: "Home",
+      icon: Home,
+      match: (p: string) => p === "/",
+    },
+    {
       href: "/editor",
       label: "Editor",
       icon: FileText,
-      match: (p: string) => p.startsWith("/editor") || p === "/",
+      match: (p: string) => p.startsWith("/editor"),
     },
     {
       href: "/settings",
