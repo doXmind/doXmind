@@ -4,17 +4,18 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { APISettings } from "@/components/settings/api-settings";
 import { TypographySettings } from "@/components/settings/typography-settings";
+import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 
 export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl p-6">
       <div className="mb-6 flex items-center gap-3">
         <Link
-          href="/editor"
+          href="/"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to editor
+          Back to home
         </Link>
       </div>
 
@@ -23,6 +24,13 @@ export default function SettingsPage() {
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-medium">API key & model</h2>
         <APISettings />
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-lg font-medium">Theme</h2>
+        <div className="rounded-lg border border-border/40 bg-card p-4">
+          <ThemePickerPanel />
+        </div>
       </section>
 
       <section className="mb-10">
