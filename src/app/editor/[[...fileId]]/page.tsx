@@ -29,9 +29,6 @@ import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapse
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { UnifiedHeader } from "@/components/editor/unified-header";
-import { toast } from "sonner";
-import { useTranslations } from "next-intl";
-import { api } from "@/lib/api";
 
 // Dynamic imports — cold-path components split into separate chunks
 const ChatPanel = dynamic(

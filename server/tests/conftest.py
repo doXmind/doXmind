@@ -34,7 +34,6 @@ from db.database import Base, Conversation, File, get_db  # noqa: E402
 from dependencies import get_db as deps_get_db  # noqa: E402
 from main import app  # noqa: E402
 
-
 # In-memory SQLite + StaticPool so all sessions share one connection.
 test_engine = create_async_engine(
     TEST_DATABASE_URL,
