@@ -5,6 +5,9 @@
   "engines": {
     "node": ">=22"
   },
+  "overrides": {
+    "@swc/helpers": "^0.5.17"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:mobile": "next dev -H 0.0.0.0 -p 3000",
