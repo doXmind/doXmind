@@ -7,12 +7,32 @@
  * both, labels their output, and shuts them down cleanly on Ctrl-C.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+function resolvePython() {
+  if (process.env.DOXMIND_PYTHON) return process.env.DOXMIND_PYTHON;
+
+  const venvPython = path.join(REPO_ROOT, "server", ".venv", "bin", "python");
+  if (fs.existsSync(venvPython)) return venvPython;
+
+  for (const candidate of ["python3", "python"]) {
+    const result = spawnSync(candidate, ["--version"], { stdio: "ignore" });
+    if (result.status === 0) return candidate;
+  }
+
+  console.error(
+    "Could not find a Python interpreter. Create server/.venv first " +
+      "(python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requirements.txt) " +
+      "or set DOXMIND_PYTHON to an explicit path."
+  );
+  process.exit(1);
+}
 
 // Check both 0.0.0.0 and 127.0.0.1 — on macOS a process bound to 0.0.0.0
 // doesn't always block a 127.0.0.1 bind, so probing only one host lets stale
@@ -69,8 +89,11 @@ async function main() {
   console.log(`  backend  → ${backendUrl}`);
   console.log(`  frontend → ${frontendUrl}\n`);
 
+  const python = resolvePython();
+  console.log(`  python   → ${python}\n`);
+
   const backend = spawn(
-    "python",
+    python,
     ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(backendPort), "--reload"],
     {
       cwd: path.join(REPO_ROOT, "server"),
