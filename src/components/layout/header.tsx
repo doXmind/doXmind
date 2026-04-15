@@ -10,9 +10,9 @@ export function Header() {
   return (
     <header className="bg-sidebar relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-6">
       <div className="flex items-center gap-1">
-        <Tooltip content="Editor" side="bottom">
+        <Tooltip content="Home" side="bottom">
           <Link
-            href="/editor"
+            href="/"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"
           >
             <Logo variant="icon" size="sm" className="h-6 w-6" />
