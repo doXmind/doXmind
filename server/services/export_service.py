@@ -414,9 +414,26 @@ class PDFRenderer:
     @staticmethod
     def _download_image(url: str) -> str | None:
         """Download an image URL to a temporary file. Returns path or None."""
+        import ipaddress
         from urllib.parse import urlparse
 
-        from services.bookmark_service import _is_private_host
+        def _is_private_host(host: str) -> bool:
+            if not host:
+                return True
+            host_lower = host.lower()
+            if host_lower in ("localhost", "ip6-localhost", "ip6-loopback"):
+                return True
+            try:
+                ip = ipaddress.ip_address(host_lower)
+                return (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_multicast
+                )
+            except ValueError:
+                return False
 
         # Validate scheme
         parsed = urlparse(url)

@@ -71,7 +71,11 @@ class GPTReranker:
         if self._client is None:
             from openai import AsyncOpenAI
 
-            effective_key = self._api_key or self.settings.openrouter_api_key
+            from services.local_config import get_openrouter_key
+
+            effective_key = (
+                self._api_key or self.settings.openrouter_api_key or get_openrouter_key()
+            )
             self._client = AsyncOpenAI(
                 api_key=effective_key,
                 base_url=self.settings.openrouter_base_url,

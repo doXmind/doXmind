@@ -136,10 +136,14 @@ class WritingAgent:
         # Store user API key for passing to sub-services
         self._user_api_key = api_key
 
-        # Use user's API key if provided, otherwise fall back to server key
-        effective_api_key = api_key or settings.openrouter_api_key
+        # Resolve API key: explicit > env > local config (GUI-saved)
+        from services.local_config import get_openrouter_key
+
+        effective_api_key = api_key or settings.openrouter_api_key or get_openrouter_key()
         if not effective_api_key:
-            raise ValueError("No API key available")
+            raise ValueError(
+                "No OpenRouter API key configured. Open Settings in the app to add one."
+            )
 
         # Use user's model preference if provided, otherwise use default
         effective_model = model or settings.default_model

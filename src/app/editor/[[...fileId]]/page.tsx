@@ -18,7 +18,6 @@ import { useIsMobile } from "@/hooks/use-device-type";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useMobileGestures } from "@/hooks/use-mobile-gestures";
-import { useAuthGuard } from "@/hooks/use-auth-guard";
 import { useBlockSelection } from "@/hooks/use-block-selection";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
@@ -30,11 +29,9 @@ import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapse
 import { cn } from "@/lib/utils";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { UnifiedHeader } from "@/components/editor/unified-header";
-import { ForkIndicator } from "@/components/editor/fork-indicator";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
-import { useBillingStore } from "@/stores/billing-store";
 
 // Dynamic imports — cold-path components split into separate chunks
 const ChatPanel = dynamic(
@@ -91,13 +88,6 @@ const PresentationMode = dynamic(
     })),
   { ssr: false }
 );
-const PaymentSuccessModal = dynamic(
-  () =>
-    import("@/components/billing/payment-success-modal").then((m) => ({
-      default: m.PaymentSuccessModal,
-    })),
-  { ssr: false }
-);
 
 /**
  * Legacy URL redirect: /editor?id=xxx -> /editor/xxx
@@ -114,59 +104,6 @@ function LegacyUrlRedirect() {
     }
   }, [legacyId, router]);
   return null;
-}
-
-/**
- * Handle billing callback query params (?billing=success|canceled)
- * after Stripe Checkout redirect.
- *
- * On success: verifies the checkout session with the backend to activate
- * the subscription (doesn't rely on webhook timing), then shows a
- * confirmation modal.
- */
-function BillingCallback() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const billing = searchParams.get("billing");
-  const sessionId = searchParams.get("session_id");
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const t = useTranslations("billing");
-
-  useEffect(() => {
-    if (!billing) return;
-
-    if (billing === "success") {
-      const activate = async () => {
-        if (sessionId) {
-          // Primary path: verify checkout session and activate subscription
-          try {
-            await api.verifyCheckout(sessionId);
-            await useBillingStore.getState().refresh();
-            setShowSuccessModal(true);
-          } catch {
-            // Fallback: poll for webhook-based activation
-            await useBillingStore.getState().refreshWithRetry();
-            setShowSuccessModal(true);
-          }
-        } else {
-          // No session_id: fall back to polling
-          await useBillingStore.getState().refreshWithRetry();
-          setShowSuccessModal(true);
-        }
-      };
-      activate();
-    } else if (billing === "canceled") {
-      toast.info(t("checkoutCanceled"));
-    }
-
-    // Clean up URL
-    const url = new URL(window.location.href);
-    url.searchParams.delete("billing");
-    url.searchParams.delete("session_id");
-    router.replace(url.pathname + url.search, { scroll: false });
-  }, [billing, sessionId, router, t]);
-
-  return <PaymentSuccessModal open={showSuccessModal} onClose={() => setShowSuccessModal(false)} />;
 }
 
 export default function EditorPage() {
@@ -218,7 +155,6 @@ export default function EditorPage() {
   const [isResizing, setIsResizing] = useState(false);
 
   // Auth guard - handles 401 responses and redirects to login
-  useAuthGuard();
 
   // Global keyboard shortcuts (Ctrl+K, Ctrl+F, etc.)
   useEditorKeyboardShortcuts();
@@ -297,7 +233,6 @@ export default function EditorPage() {
         {/* Legacy URL handler — isolated in Suspense to avoid blocking the page */}
         <Suspense fallback={null}>
           <LegacyUrlRedirect />
-          <BillingCallback />
         </Suspense>
         <AppShell hideHeader>
           <MobileEditorLayout>
@@ -351,24 +286,14 @@ export default function EditorPage() {
   // Desktop Layout: Three-panel view
   return (
     <LoadingScreen isLoading={isLoading} isMobile={false}>
-      {/* Legacy URL handler + billing callback — isolated in Suspense */}
+      {/* Legacy URL handler — isolated in Suspense */}
       <Suspense fallback={null}>
         <LegacyUrlRedirect />
-        <BillingCallback />
       </Suspense>
       <AppShell hideHeader>
         <div className="flex h-full flex-col">
           {/* Unified Header — spans full width, above all panels */}
           {!isFocusMode && <UnifiedHeader />}
-
-          {/* Fork indicator — shown when editing a forked document */}
-          {!isFocusMode && currentFile?.fork_id && currentFile.forked_from_title && (
-            <ForkIndicator
-              forkId={currentFile.fork_id}
-              sourceTitle={currentFile.forked_from_title}
-              sourceAuthor={currentFile.forked_from_author || "Unknown"}
-            />
-          )}
 
           <div className="flex min-h-0 flex-1">
             {/* Files Sidebar - independent, hidden in focus mode */}

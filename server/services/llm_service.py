@@ -16,10 +16,16 @@ class LLMService:
     """Service for LLM interactions via OpenRouter (OpenAI-compatible)."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None):
+        from services.local_config import get_openrouter_key
+
         settings = get_settings()
-        effective_api_key = api_key or settings.openrouter_api_key
+        effective_api_key = api_key or settings.openrouter_api_key or get_openrouter_key()
         if not effective_api_key:
-            raise ValueError("OPENROUTER_API_KEY is not set in environment or .env file")
+            raise ValueError(
+                "No OpenRouter API key configured. "
+                "Open the Settings page in the app and paste your key, "
+                "or set OPENROUTER_API_KEY in server/.env."
+            )
         self.client = AsyncOpenAI(
             api_key=effective_api_key,
             base_url=settings.openrouter_base_url,

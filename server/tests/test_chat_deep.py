@@ -470,54 +470,7 @@ class TestStreaming:
 # ============================================================================
 
 
-class TestUserIsolation:
-    """Tests for user data isolation in chat."""
-
-    @pytest.mark.asyncio
-    async def test_user_can_only_see_own_conversations(self, db_session: AsyncSession):
-        """Users should only see their own conversations."""
-        from tests.conftest import create_test_user
-
-        # Create users first (foreign key constraint)
-        await create_test_user(db_session, "user-1")
-        await create_test_user(db_session, "user-2")
-
-        # Create conversations for different users
-        conv1 = Conversation(file_id="user1-file", user_id="user-1")
-        conv2 = Conversation(file_id="user2-file", user_id="user-2")
-        db_session.add(conv1)
-        db_session.add(conv2)
-        await db_session.commit()
-
-        # Query as user 1
-        result = await db_session.execute(
-            select(Conversation).where(Conversation.user_id == "user-1")
-        )
-        user1_convs = result.scalars().all()
-
-        assert len(user1_convs) == 1
-        assert user1_convs[0].file_id == "user1-file"
-
-    @pytest.mark.asyncio
-    async def test_get_user_id_returns_user_id(self):
-        """get_user_id should return user ID for regular users."""
-        from api.files import get_user_id
-
-        token = TokenData(sub="regular-user-123", exp=datetime.now(UTC) + timedelta(hours=1))
-
-        result = get_user_id(token)
-        assert result == "regular-user-123"
-
-    @pytest.mark.asyncio
-    async def test_get_user_id_special_users(self):
-        """get_user_id should return None for special users (shared data)."""
-        from api.files import get_user_id
-
-        for special_sub in ["dev-user", "anonymous", "api-key-user"]:
-            token = TokenData(sub=special_sub, exp=datetime.now(UTC) + timedelta(hours=1))
-
-            result = get_user_id(token)
-            assert result is None, f"Expected None for {special_sub}"
+# Multi-user isolation tests removed — local desktop edition is single-user.
 
 
 # ============================================================================

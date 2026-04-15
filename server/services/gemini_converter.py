@@ -80,14 +80,18 @@ def _build_extra_body() -> dict | None:
     return None
 
 
-@lru_cache
 def _get_server_client() -> AsyncOpenAI:
-    """Get cached OpenRouter client using server API key."""
+    """Get an OpenRouter client (env first, then local config)."""
+    from services.local_config import get_openrouter_key
+
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise ValueError("OPENROUTER_API_KEY is not configured")
+    key = settings.openrouter_api_key or get_openrouter_key()
+    if not key:
+        raise ValueError(
+            "No OpenRouter API key configured. Open Settings in the app to add one."
+        )
     return AsyncOpenAI(
-        api_key=settings.openrouter_api_key,
+        api_key=key,
         base_url=settings.openrouter_base_url,
         default_headers=settings.openrouter_headers,
     )
@@ -585,5 +589,7 @@ async def markitdown_convert(content: bytes, filename: str, ext: str) -> str:
 
 def is_converter_configured() -> bool:
     """Check if file conversion API is properly configured."""
+    from services.local_config import get_openrouter_key
+
     settings = get_settings()
-    return bool(settings.openrouter_api_key)
+    return bool(settings.openrouter_api_key or get_openrouter_key())

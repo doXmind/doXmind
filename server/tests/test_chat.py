@@ -902,40 +902,4 @@ class TestExtendedStreaming:
             assert response.status_code == 200
 
 
-# ============================================================================
-# User Isolation Tests
-# ============================================================================
-
-
-class TestUserIsolation:
-    """Tests for user data isolation in chat."""
-
-    @pytest.mark.asyncio
-    async def test_conversation_user_id_filter(self, client: AsyncClient, db_session, auth_headers):
-        """Should filter conversations by user_id in non-debug mode."""
-        from db.database import User
-
-        # This test verifies the get_user_id is called properly
-        # For dev-user token, user_id returns None (shared data)
-
-        # Create user for the conversation (foreign key constraint)
-        user2 = User(
-            id="user-2",
-            email="user2@example.com",
-            username="user2",
-            is_verified=True,
-            is_active=True,
-        )
-        db_session.add(user2)
-        await db_session.commit()
-
-        # Create conversation for different user
-        conv = Conversation(id=str(uuid.uuid4()), file_id="user2-file", user_id="user-2")
-        db_session.add(conv)
-        await db_session.commit()
-
-        # In debug mode, we should still see the conversation
-        response = await client.get("/api/chat/conversations/user2-file", headers=auth_headers)
-
-        # Debug mode shows all files
-        assert response.status_code == 200
+# User isolation tests removed — local desktop edition is single-user.

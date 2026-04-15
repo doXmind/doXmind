@@ -1,68 +1,21 @@
 /**
- * API client barrel file
- *
- * Imports all mixin modules to extend ApiClient prototype,
- * then re-exports everything for consumers.
+ * API client barrel file — local desktop edition.
  */
 
 // Import mixin modules to apply prototype extensions
-import "./auth";
 import "./files";
 import "./chat";
 import "./kb";
-import "./shares";
-import "./community";
-import "./comments";
-import "./inline-comments";
 import "./data-files";
 import "./global-agent";
-import "./notifications";
-import "./billing";
-import "./bookmarks";
 import "./databases";
 
 // Re-export the client class and singleton
 export { ApiClient } from "./client";
 
-// Re-export all types
-export type {
-  SearchResultItem,
-  SearchResults,
-  User,
-  TokenResponse,
-  AuthStatus,
-  MessageResponse,
-  Share,
-  ShareListResponse,
-  CreateShareRequest,
-  SharedDocumentResponse,
-  SharedFolderItem,
-  SharedItemResponse,
-  CommunityAuthor,
-  CommunityItem,
-  CommunityListResponse,
-  CommunityDetailResponse,
-  CommentReactionSummary,
-  CommentResponse,
-  CommentsListResponse,
-  InlineCommentAnchor,
-  InlineCommentResponse,
-  InlineCommentsListResponse,
-  ForkResponse,
-  ForkInfo,
-  UserProfileResponse,
-  FollowResponse,
-  FollowUser,
-  FollowListResponse,
-  InviteEntry,
-  SearchUserResult,
-  SharedWithMeItem,
-  NotificationItem,
-  NotificationListResponse,
-} from "./types";
+// Re-export the types still in use
+export type { SearchResultItem, SearchResults, MessageResponse } from "./types";
 export type { GlobalConversationItem, GlobalConversationMessages } from "./global-agent";
-export type { BillingStatus, CreditsInfo, StorageInfo, PricingInfo, PlanInfo } from "./billing";
-export type { BookmarkMetadata } from "./bookmarks";
 
 // Create and export the default client instance
 import { ApiClient } from "./client";

@@ -386,12 +386,13 @@ class TestGeminiConverter:
             await convert_file_to_markdown(content, "test.txt", ".txt")
 
     def test_is_converter_configured_returns_false_when_no_key(self):
-        """Should return False when no API key configured."""
+        """Should return False when neither env nor local config has a key."""
         from services.gemini_converter import is_converter_configured
 
-        with patch("services.gemini_converter.get_settings") as mock_settings:
+        with patch("services.gemini_converter.get_settings") as mock_settings, patch(
+            "services.local_config.get_openrouter_key", return_value=""
+        ):
             mock_settings.return_value.openrouter_api_key = ""
-
             assert is_converter_configured() is False
 
     def test_is_converter_configured_returns_true_when_key_set(self):

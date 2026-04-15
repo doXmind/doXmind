@@ -99,10 +99,12 @@ class TestLLMServiceInit:
             assert service.model == "minimax/minimax-m2.5"
 
     def test_init_without_api_key_raises(self):
-        """Test service raises error when API key is missing."""
-        with patch("services.llm_service.get_settings") as mock_settings:
-            mock_settings.return_value.openrouter_api_key = None
-            with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+        """Without any key in env or local config, init must raise."""
+        with patch("services.llm_service.get_settings") as mock_settings, patch(
+            "services.local_config.get_openrouter_key", return_value=""
+        ):
+            mock_settings.return_value.openrouter_api_key = ""
+            with pytest.raises(ValueError, match="OpenRouter"):
                 LLMService()
 
 
