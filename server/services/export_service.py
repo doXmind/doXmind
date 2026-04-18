@@ -347,9 +347,7 @@ class PDFRenderer:
                             return os.path.join(root, filename)
         return None
 
-    def render(
-        self, nodes: list[DocumentNode], metadata: ExportMetadata | None = None
-    ) -> bytes:
+    def render(self, nodes: list[DocumentNode], metadata: ExportMetadata | None = None) -> bytes:
         """Render document nodes to PDF bytes."""
         from fpdf import FPDF
 
@@ -457,7 +455,9 @@ class PDFRenderer:
             # Post-redirect SSRF check
             final_host = resp.url.host or ""
             if _is_private_host(final_host):
-                logger.warning("Blocked image download after redirect to private host: %s", final_host)
+                logger.warning(
+                    "Blocked image download after redirect to private host: %s", final_host
+                )
                 return None
             # Determine file extension from content type
             content_type = resp.headers.get("content-type", "")
@@ -763,9 +763,7 @@ class PDFRenderer:
 class DOCXRenderer:
     """Renders DocumentNodes to DOCX."""
 
-    def render(
-        self, nodes: list[DocumentNode], metadata: ExportMetadata | None = None
-    ) -> bytes:
+    def render(self, nodes: list[DocumentNode], metadata: ExportMetadata | None = None) -> bytes:
         """Render document nodes to DOCX bytes."""
         from docx import Document
         from docx.shared import Pt
@@ -991,7 +989,10 @@ class ExportService:
         return None
 
     def export_pdf(
-        self, content: str, filename: str, metadata: dict | None = None  # noqa: ARG002
+        self,
+        content: str,
+        filename: str,  # noqa: ARG002
+        metadata: dict | None = None,
     ) -> bytes:
         """Export content as PDF."""
         self.md.reset()
@@ -1001,7 +1002,10 @@ class ExportService:
         return self.pdf_renderer.render(nodes, metadata=meta)
 
     def export_docx(
-        self, content: str, filename: str, metadata: dict | None = None  # noqa: ARG002
+        self,
+        content: str,
+        filename: str,  # noqa: ARG002
+        metadata: dict | None = None,
     ) -> bytes:
         """Export content as DOCX."""
         self.md.reset()

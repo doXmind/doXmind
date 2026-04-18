@@ -1,18 +1,23 @@
-"""User Settings API — local desktop edition.
+"""User Settings API — multi-provider edition.
 
 Reads / writes ~/.doxmind/config.json. The GUI settings page calls these
-endpoints to let the user supply their own API key and pick a model.
+endpoints to configure API keys per provider, pick the active provider,
+and optionally override the model chosen for each feature role.
 """
 
 import logging
-import time
 
-import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
-from config import get_settings
 from exceptions import BadRequestError
+from provider.catalog import CATALOG, PROVIDER_IDS, ROLES
+from provider.registry import (
+    active_provider_id,
+    build_client,
+    provider_api_key,
+    role_model,
+)
 from services import local_config
 
 router = APIRouter()
@@ -20,55 +25,92 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# OpenRouter Models Cache
+# Response schemas
 # =============================================================================
-
-_models_cache: dict = {"models": None, "fetched_at": 0.0}
-_CACHE_TTL = 6 * 3600  # 6 hours
-
-
-# =============================================================================
-# Request / Response Models
-# =============================================================================
-
-
-class APIKeyRequest(BaseModel):
-    api_key: str
-
-    @field_validator("api_key")
-    @classmethod
-    def validate_format(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("API key cannot be empty")
-        if len(v) < 10 or len(v) > 300:
-            raise ValueError("Invalid API key length")
-        return v
-
-
-class ModelPreferenceRequest(BaseModel):
-    model: str
-
-
-class UserSettingsResponse(BaseModel):
-    has_api_key: bool
-    preferred_model: str
-    available_models: list[str]
-    web_search_enabled: bool
-    code_execution_enabled: bool
 
 
 class ModelInfo(BaseModel):
     id: str
     name: str
     context_length: int
-    prompt_price: float
-    completion_price: float
+    prompt_price: float | None = None
+    completion_price: float | None = None
+    supports_reasoning: bool = False
+    supports_vision: bool = True
 
 
-class AvailableModelsResponse(BaseModel):
+class ProviderInfo(BaseModel):
+    id: str
+    name: str
+    base_url: str
+    docs_url: str
+    api_key_hint: str
+    has_api_key: bool
+    key_preview: str | None = None  # masked "sk-...abcd"
     models: list[ModelInfo]
-    cached: bool = False
+    role_defaults: dict[str, str]
+    role_overrides: dict[str, str | None]
+    has_reasoning: bool
+
+
+class UserSettingsResponse(BaseModel):
+    active_provider: str | None
+    providers: list[ProviderInfo]
+    roles: tuple[str, ...] = ROLES
+    web_search_enabled: bool
+    code_execution_enabled: bool
+
+
+# =============================================================================
+# Request schemas
+# =============================================================================
+
+
+class ProviderKeyRequest(BaseModel):
+    api_key: str
+
+    @field_validator("api_key")
+    @classmethod
+    def _trim(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("API key cannot be empty")
+        if len(v) < 10 or len(v) > 500:
+            raise ValueError("Invalid API key length")
+        return v
+
+
+class ActiveProviderRequest(BaseModel):
+    provider_id: str | None
+
+    @field_validator("provider_id")
+    @classmethod
+    def _validate(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in PROVIDER_IDS:
+            raise ValueError(f"Unknown provider: {v}")
+        return v
+
+
+class RoleAssignmentRequest(BaseModel):
+    provider_id: str
+    role: str
+    model: str | None  # None clears the override (fall back to default)
+
+    @field_validator("provider_id")
+    @classmethod
+    def _provider(cls, v: str) -> str:
+        if v not in PROVIDER_IDS:
+            raise ValueError(f"Unknown provider: {v}")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def _role(cls, v: str) -> str:
+        if v not in ROLES:
+            raise ValueError(f"Unknown role: {v}")
+        return v
 
 
 class FeatureToggleRequest(BaseModel):
@@ -76,81 +118,47 @@ class FeatureToggleRequest(BaseModel):
 
 
 # =============================================================================
-# Curated Model List
+# Helpers
 # =============================================================================
 
-_CURATED_MODELS: list[tuple[str, str]] = [
-    ("anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6"),
-    ("anthropic/claude-opus-4.6", "Claude Opus 4.6"),
-    ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5"),
-    ("google/gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
-    ("google/gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash Lite"),
-    ("openai/gpt-5.1", "GPT-5.1"),
-    ("openai/gpt-5.3-chat", "GPT-5.3"),
-    ("deepseek/deepseek-v3.2", "DeepSeek V3.2"),
-    ("z-ai/glm-5", "GLM 5"),
-    ("minimax/minimax-m2.5", "MiniMax M2.5"),
-]
-_CURATED_IDS: set[str] = {model_id for model_id, _ in _CURATED_MODELS}
+
+def _mask_key(key: str) -> str | None:
+    if not key:
+        return None
+    if len(key) <= 11:
+        return "****"
+    return f"{key[:4]}…{key[-4:]}"
 
 
-async def _fetch_openrouter_models() -> list[ModelInfo]:
-    now = time.time()
-    if _models_cache["models"] and (now - _models_cache["fetched_at"]) < _CACHE_TTL:
-        return _models_cache["models"]
-
-    api_lookup: dict[str, dict] = {}
-    settings = get_settings()
-    api_key = local_config.get_openrouter_key() or settings.openrouter_api_key
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                "https://openrouter.ai/api/v1/models",
-                headers={
-                    "Authorization": f"Bearer {api_key}" if api_key else "",
-                    **settings.openrouter_headers,
-                },
+def _build_provider_info(pid: str) -> ProviderInfo:
+    pdef = CATALOG[pid]
+    cfg = local_config.load()
+    stored_key = (cfg.get("providers") or {}).get(pid, {}).get("api_key") or ""
+    overrides = (cfg.get("model_roles") or {}).get(pid) or {}
+    return ProviderInfo(
+        id=pdef.id,
+        name=pdef.name,
+        base_url=pdef.base_url,
+        docs_url=pdef.docs_url,
+        api_key_hint=pdef.api_key_hint,
+        has_api_key=bool(stored_key),
+        key_preview=_mask_key(stored_key),
+        models=[
+            ModelInfo(
+                id=m.id,
+                name=m.name,
+                context_length=m.context_length,
+                prompt_price=m.prompt_price_per_m,
+                completion_price=m.completion_price_per_m,
+                supports_reasoning=m.supports_reasoning,
+                supports_vision=m.supports_vision,
             )
-        if response.status_code == 200:
-            for m in response.json().get("data", []):
-                api_lookup[m.get("id", "")] = m
-    except Exception as e:
-        logger.debug(f"Could not fetch OpenRouter models: {e}")
-
-    result: list[ModelInfo] = []
-    for model_id, fallback_name in _CURATED_MODELS:
-        api_data = api_lookup.get(model_id)
-        if api_data:
-            pricing = api_data.get("pricing", {})
-            try:
-                prompt_price = float(pricing.get("prompt", "0")) * 1_000_000
-                completion_price = float(pricing.get("completion", "0")) * 1_000_000
-            except (ValueError, TypeError):
-                prompt_price = 0.0
-                completion_price = 0.0
-            result.append(
-                ModelInfo(
-                    id=model_id,
-                    name=api_data.get("name", fallback_name),
-                    context_length=api_data.get("context_length", 0),
-                    prompt_price=round(prompt_price, 2),
-                    completion_price=round(completion_price, 2),
-                )
-            )
-        else:
-            result.append(
-                ModelInfo(
-                    id=model_id,
-                    name=fallback_name,
-                    context_length=0,
-                    prompt_price=0.0,
-                    completion_price=0.0,
-                )
-            )
-
-    _models_cache["models"] = result
-    _models_cache["fetched_at"] = now
-    return result
+            for m in pdef.models
+        ],
+        role_defaults=dict(pdef.role_defaults),
+        role_overrides={role: overrides.get(role) for role in ROLES},
+        has_reasoning=pdef.has_reasoning_model(),
+    )
 
 
 # =============================================================================
@@ -161,44 +169,83 @@ async def _fetch_openrouter_models() -> list[ModelInfo]:
 @router.get("/", response_model=UserSettingsResponse)
 async def get_user_settings_endpoint():
     cfg = local_config.load()
-    has_key = bool(cfg.get("openrouter_api_key") or cfg.get("anthropic_api_key"))
     return UserSettingsResponse(
-        has_api_key=has_key,
-        preferred_model=cfg.get("preferred_model") or get_settings().default_model,
-        available_models=[m for m, _ in _CURATED_MODELS],
+        active_provider=active_provider_id(),
+        providers=[_build_provider_info(pid) for pid in PROVIDER_IDS],
         web_search_enabled=bool(cfg.get("web_search_enabled", True)),
         code_execution_enabled=bool(cfg.get("code_execution_enabled", False)),
     )
 
 
-@router.get("/models", response_model=AvailableModelsResponse)
-async def get_available_models():
-    models = await _fetch_openrouter_models()
-    cached = (
-        _models_cache["models"] is not None
-        and (time.time() - _models_cache["fetched_at"]) < _CACHE_TTL
-    )
-    return AvailableModelsResponse(models=models, cached=cached)
+@router.post("/providers/{provider_id}/key", response_model=ProviderInfo)
+async def set_provider_key(provider_id: str, body: ProviderKeyRequest):
+    """Save + validate a provider's API key.
+
+    Validation: build a client and call /v1/models. Most OpenAI-compatible
+    endpoints (including Anthropic and Google's compat endpoints) expose this.
+    """
+    if provider_id not in CATALOG:
+        raise HTTPException(404, f"Unknown provider: {provider_id}")
+
+    client = build_client(body.api_key, provider_id)
+    try:
+        # Validate — for Google/Anthropic /v1/models via the OpenAI-compat route
+        # may 404; fall back to a tiny chat completion probe in that case.
+        try:
+            await client.models.list()
+        except Exception:
+            # Probe with the provider's default fast model.
+            probe_model = CATALOG[provider_id].role_defaults.get("fast") or next(
+                iter(m.id for m in CATALOG[provider_id].models)
+            )
+            await client.chat.completions.create(
+                model=probe_model,
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=1,
+            )
+    except Exception as e:
+        raise HTTPException(400, f"API key validation failed: {e}")
+
+    local_config.save({"providers": {provider_id: {"api_key": body.api_key}}})
+    # Promote to active provider if nothing is active yet.
+    if active_provider_id() is None:
+        local_config.save({"active_provider": provider_id})
+    elif not provider_api_key(active_provider_id() or ""):
+        # Previous active had its key cleared — switch.
+        local_config.save({"active_provider": provider_id})
+
+    return _build_provider_info(provider_id)
 
 
-@router.post("/api-key")
-async def save_api_key(body: APIKeyRequest):
-    local_config.save({"openrouter_api_key": body.api_key})
-    return {"status": "ok", "message": "API key saved"}
+@router.delete("/providers/{provider_id}/key", response_model=ProviderInfo)
+async def delete_provider_key(provider_id: str):
+    if provider_id not in CATALOG:
+        raise HTTPException(404, f"Unknown provider: {provider_id}")
+    local_config.save({"providers": {provider_id: {"api_key": ""}}})
+    # If the user deleted the currently-active provider's key, demote to None
+    # (or to another provider that still has a key).
+    if active_provider_id() != provider_id:
+        # active auto-resolves via first-configured; no action needed.
+        pass
+    return _build_provider_info(provider_id)
 
 
-@router.delete("/api-key")
-async def delete_api_key():
-    local_config.save({"openrouter_api_key": "", "anthropic_api_key": ""})
-    return {"status": "ok", "message": "API key cleared"}
+@router.put("/active-provider")
+async def set_active_provider(body: ActiveProviderRequest):
+    if body.provider_id and not provider_api_key(body.provider_id):
+        raise BadRequestError(message=f"Provider '{body.provider_id}' has no API key saved.")
+    local_config.save({"active_provider": body.provider_id})
+    return {"status": "ok", "active_provider": body.provider_id}
 
 
-@router.put("/model")
-async def update_model_preference(request: ModelPreferenceRequest):
-    if request.model not in _CURATED_IDS:
-        raise BadRequestError(message="Model not in available models list")
-    local_config.save({"preferred_model": request.model})
-    return {"status": "ok", "preferred_model": request.model}
+@router.put("/role-assignment")
+async def set_role_assignment(body: RoleAssignmentRequest):
+    pdef = CATALOG[body.provider_id]
+    if body.model and not pdef.model_by_id(body.model):
+        raise BadRequestError(message=f"Model '{body.model}' is not in {pdef.name}'s catalog.")
+    local_config.save({"model_roles": {body.provider_id: {body.role: body.model}}})
+    resolved = role_model(body.role, body.provider_id)
+    return {"status": "ok", "role": body.role, "model": resolved}
 
 
 @router.put("/web-search")

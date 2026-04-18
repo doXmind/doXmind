@@ -167,11 +167,8 @@ class TestReviewEndpoint:
 
     @patch("api.review.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_successful_review(self, mock_settings, mock_llm_class, mock_resolve_key, client):
+    def test_successful_review(self, mock_llm_class, mock_resolve_key, client):
         """Should return suggestions from LLM."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         # Mock LLM response
         mock_llm = MagicMock()
         mock_llm.json_complete = AsyncMock(
@@ -217,11 +214,8 @@ class TestReviewEndpoint:
         assert len(result_events[0]["result"]["suggestions"]) == 1
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_validates_suggestion_positions(self, mock_settings, mock_llm_class, client):
+    def test_validates_suggestion_positions(self, mock_llm_class, client):
         """Should validate and correct suggestion positions."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         content = "The quick brown fox jumps over the lazy dog."
 
         # Mock LLM with incorrect position but valid text
@@ -260,11 +254,8 @@ class TestReviewEndpoint:
                     assert suggestion["end_offset"] == 9
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_filters_invalid_suggestions(self, mock_settings, mock_llm_class, client):
+    def test_filters_invalid_suggestions(self, mock_llm_class, client):
         """Should filter out suggestions with non-existent text."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         content = "The quick brown fox."
 
         # Mock LLM with non-existent text
@@ -301,11 +292,8 @@ class TestReviewEndpoint:
 
     @patch("api.review.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_handles_llm_error(self, mock_settings, mock_llm_class, mock_resolve_key, client):
+    def test_handles_llm_error(self, mock_llm_class, mock_resolve_key, client):
         """Should return error event when LLM fails."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         mock_llm = MagicMock()
         mock_llm.json_complete = AsyncMock(side_effect=Exception("API error"))
         mock_llm_class.return_value = mock_llm
@@ -333,11 +321,8 @@ class TestReviewEndpoint:
         assert error_found
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_validates_position_in_bounds(self, mock_settings, mock_llm_class, client):
+    def test_validates_position_in_bounds(self, mock_llm_class, client):
         """Should handle suggestions with valid positions."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         content = "The quick brown fox jumps."
 
         # Mock LLM with correct position
@@ -373,11 +358,8 @@ class TestReviewEndpoint:
                     assert len(data["result"]["suggestions"]) == 1
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_handles_negative_positions(self, mock_settings, mock_llm_class, client):
+    def test_handles_negative_positions(self, mock_llm_class, client):
         """Should handle suggestions with negative positions."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         content = "Test content for review with negative positions."
 
         # Mock LLM with negative position
@@ -406,11 +388,8 @@ class TestReviewEndpoint:
         assert response.status_code == 200
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_handles_empty_suggestions(self, mock_settings, mock_llm_class, client):
+    def test_handles_empty_suggestions(self, mock_llm_class, client):
         """Should handle empty suggestions from LLM."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         mock_llm = MagicMock()
         mock_llm.json_complete = AsyncMock(
             return_value={"suggestions": [], "summary": "No issues found."}
@@ -440,11 +419,8 @@ class TestReviewEndpoint:
         assert "text/event-stream" in response.headers.get("content-type", "")
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_includes_done_event(self, mock_settings, mock_llm_class, client):
+    def test_includes_done_event(self, mock_llm_class, client):
         """Should end stream with [DONE] event."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         mock_llm = MagicMock()
         mock_llm.json_complete = AsyncMock(
             return_value={"suggestions": [], "summary": "Review complete."}
@@ -459,11 +435,8 @@ class TestReviewEndpoint:
         assert "data: [DONE]" in response.text
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_handles_missing_summary(self, mock_settings, mock_llm_class, client):
+    def test_handles_missing_summary(self, mock_llm_class, client):
         """Should provide default summary if missing."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         mock_llm = MagicMock()
         mock_llm.json_complete = AsyncMock(
             return_value={
@@ -538,11 +511,8 @@ class TestEdgeCases:
         assert response.status_code == 200
 
     @patch("api.review.LLMService")
-    @patch("api.review.get_settings")
-    def test_unicode_content(self, mock_settings, mock_llm_class, client):
+    def test_unicode_content(self, mock_llm_class, client):
         """Should handle unicode content."""
-        mock_settings.return_value = MagicMock(default_model="claude-3-5-sonnet-20241022")
-
         mock_llm = MagicMock()
         mock_llm.json_complete = AsyncMock(
             return_value={"suggestions": [], "summary": "No issues."}

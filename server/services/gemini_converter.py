@@ -1,6 +1,9 @@
-"""File converter service via OpenRouter (OpenAI-compatible API).
+"""File converter service.
 
-Converts PDF, DOCX, PPTX files to Markdown using multimodal LLM models.
+Converts PDF, DOCX, PPTX files to Markdown using the active LLM provider's
+vision-capable model (mapped via the ``file_conversion`` role). Falls
+back to markitdown when no provider is configured or the model isn't
+vision-capable.
 """
 
 import asyncio
@@ -11,6 +14,13 @@ import logging
 from openai import AsyncOpenAI
 
 from config import get_settings
+from provider.registry import (
+    ProviderUnconfiguredError,
+    active_provider_id,
+    build_client,
+    provider_api_key,
+    role_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,40 +82,39 @@ MAX_CONCURRENT_CHUNKS = 10  # Max concurrent API calls
 
 
 def _build_extra_body() -> dict | None:
-    """Build extra_body with provider sort config for OpenRouter."""
-    settings = get_settings()
-    if settings.openrouter_provider_sort:
-        return {"provider": {"sort": settings.openrouter_provider_sort}}
+    """Hook for provider-specific extra_body. No-op today."""
     return None
 
 
-def _get_server_client() -> AsyncOpenAI:
-    """Get an OpenRouter client (env first, then local config)."""
-    from services.local_config import get_openrouter_key
-
-    settings = get_settings()
-    key = settings.openrouter_api_key or get_openrouter_key()
-    if not key:
-        raise ValueError(
-            "No OpenRouter API key configured. Open Settings in the app to add one."
+def _resolve_file_conversion() -> tuple[AsyncOpenAI, str]:
+    """Return (client, model) for the file_conversion role on the active provider."""
+    pid = active_provider_id()
+    if pid is None:
+        raise ProviderUnconfiguredError(
+            "No LLM provider configured. Open Settings to add an API key."
         )
-    return AsyncOpenAI(
-        api_key=key,
-        base_url=settings.openrouter_base_url,
-        default_headers=settings.openrouter_headers,
-    )
+    key = provider_api_key(pid) or get_settings().env_api_key_for(pid)
+    if not key:
+        raise ProviderUnconfiguredError(f"Active provider '{pid}' has no API key.")
+    model = role_model("file_conversion", pid)
+    if not model:
+        raise ProviderUnconfiguredError(
+            f"Provider '{pid}' has no file_conversion model configured."
+        )
+    return build_client(key, pid), model
 
 
 def _get_client(api_key: str | None = None) -> AsyncOpenAI:
-    """Get OpenRouter client, using user key if provided."""
-    if api_key:
-        settings = get_settings()
-        return AsyncOpenAI(
-            api_key=api_key,
-            base_url=settings.openrouter_base_url,
-            default_headers=settings.openrouter_headers,
+    """Build a client for the active provider (explicit key override allowed)."""
+    pid = active_provider_id()
+    if pid is None:
+        raise ProviderUnconfiguredError(
+            "No LLM provider configured. Open Settings to add an API key."
         )
-    return _get_server_client()
+    effective_key = api_key or provider_api_key(pid) or get_settings().env_api_key_for(pid)
+    if not effective_key:
+        raise ProviderUnconfiguredError(f"Active provider '{pid}' has no API key.")
+    return build_client(effective_key, pid)
 
 
 def _find_libreoffice() -> str:
@@ -242,8 +251,8 @@ async def convert_file_to_markdown(
         content: Raw file bytes
         filename: Original filename (for logging)
         extension: File extension (e.g., '.pdf', '.docx')
-        model: Model to use for conversion (defaults to settings.file_conversion_model)
-        api_key: Optional user API key (falls back to server key)
+        model: Model to use for conversion (defaults to the file_conversion role)
+        api_key: Optional user API key (falls back to active provider's key)
 
     Returns:
         Tuple of:
@@ -260,7 +269,11 @@ async def convert_file_to_markdown(
         raise ValueError(f"Unsupported file type: {extension}")
 
     settings = get_settings()
-    effective_model = model or settings.file_conversion_model
+    effective_model = model or role_model("file_conversion") or ""
+    if not effective_model:
+        raise ProviderUnconfiguredError(
+            "No file_conversion model configured for the active provider."
+        )
 
     # For DOCX/PPTX: convert to PDF first via LibreOffice, then process as PDF
     if ext_lower in OFFICE_TYPES:
@@ -271,8 +284,7 @@ async def convert_file_to_markdown(
             logger.info(f"Successfully converted {filename} to PDF")
         except Exception as e:
             logger.warning(
-                f"LibreOffice conversion failed for {filename}: {e}. "
-                f"Falling back to markitdown."
+                f"LibreOffice conversion failed for {filename}: {e}. Falling back to markitdown."
             )
             fallback_text = await markitdown_convert(content, filename, extension.lower())
             return fallback_text, None
@@ -284,16 +296,11 @@ async def convert_file_to_markdown(
     num_pages = _get_pdf_page_count(content)
     if num_pages > PARALLEL_PDF_PAGE_THRESHOLD:
         try:
-            logger.info(
-                f"{filename} has {num_pages} pages, using parallel conversion"
-            )
-            return await _convert_pdf_parallel(
-                content, filename, effective_model, api_key
-            )
+            logger.info(f"{filename} has {num_pages} pages, using parallel conversion")
+            return await _convert_pdf_parallel(content, filename, effective_model, api_key)
         except Exception as e:
             logger.warning(
-                f"Parallel PDF conversion failed for {filename}, "
-                f"trying single-call: {e}"
+                f"Parallel PDF conversion failed for {filename}, trying single-call: {e}"
             )
             # Fall through to single-call below
 
@@ -587,8 +594,9 @@ async def markitdown_convert(content: bytes, filename: str, ext: str) -> str:
 
 
 def is_converter_configured() -> bool:
-    """Check if file conversion API is properly configured."""
-    from services.local_config import get_openrouter_key
-
-    settings = get_settings()
-    return bool(settings.openrouter_api_key or get_openrouter_key())
+    """Check if the active provider has an API key and a file_conversion model."""
+    pid = active_provider_id()
+    if pid is None:
+        return False
+    key = provider_api_key(pid) or get_settings().env_api_key_for(pid)
+    return bool(key and role_model("file_conversion", pid))

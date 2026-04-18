@@ -67,20 +67,21 @@ class GPTReranker:
 
     @property
     def client(self):
-        """Lazy initialization of OpenRouter client."""
+        """Lazy initialization of the active provider's client."""
         if self._client is None:
-            from openai import AsyncOpenAI
+            from provider.registry import (
+                active_provider_id,
+                build_client,
+                provider_api_key,
+            )
 
-            from services.local_config import get_openrouter_key
-
+            pid = active_provider_id()
+            if pid is None:
+                raise RuntimeError("No LLM provider configured; reranker cannot run.")
             effective_key = (
-                self._api_key or self.settings.openrouter_api_key or get_openrouter_key()
+                self._api_key or provider_api_key(pid) or self.settings.env_api_key_for(pid)
             )
-            self._client = AsyncOpenAI(
-                api_key=effective_key,
-                base_url=self.settings.openrouter_base_url,
-                default_headers=self.settings.openrouter_headers,
-            )
+            self._client = build_client(effective_key, pid)
         return self._client
 
     async def rerank(
@@ -136,11 +137,14 @@ Documents:
 Rank all {len(documents)} documents by relevance."""
 
         try:
-            model = self.settings.reranking_model
+            from provider.registry import role_model
 
-            extra_body = {}
-            if self.settings.openrouter_provider_sort:
-                extra_body["provider"] = {"sort": self.settings.openrouter_provider_sort}
+            model = role_model("fast") or role_model("chat")
+            if not model:
+                # No provider configured — caller will get the passthrough list.
+                return documents[:top_n]
+
+            extra_body: dict[str, Any] = {}
 
             response = await self.client.chat.completions.create(
                 model=model,

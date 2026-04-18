@@ -3,6 +3,10 @@
 This is the desktop edition: no auth, no cloud, single-user, SQLite on disk.
 User-supplied API keys live in {DATA_DIR}/config.json (managed via the GUI
 settings page) — env vars still work as an override for power users.
+
+Starting with multi-provider v2: OpenAI, Anthropic, Google. Each has its own
+API key and its own set of models. Feature roles (chat / thinking / fast /
+review / file_conversion) map to a model on the active provider.
 """
 
 import logging
@@ -49,21 +53,11 @@ class Settings(BaseSettings):
         return f"sqlite+aiosqlite:///{self.database_path}"
 
     # =========================================================================
-    # API keys (env-var fallback; primary source is local_config.json)
+    # API key env-var fallbacks (primary source is local_config.json)
     # =========================================================================
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_provider_sort: str = "throughput"
-    openrouter_app_url: str = "https://doxmind.local"
-    openrouter_app_name: str = "doXmind"
-
-    @property
-    def openrouter_headers(self) -> dict[str, str]:
-        return {
-            "HTTP-Referer": self.openrouter_app_url,
-            "X-Title": self.openrouter_app_name,
-        }
-
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    google_api_key: str = ""
     serper_api_key: str = ""
 
     # =========================================================================
@@ -74,20 +68,9 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # =========================================================================
-    # AI Models (OpenRouter format)
+    # File conversion tuning
     # =========================================================================
-    default_model: str = "google/gemini-3.1-flash-lite-preview"
-    thinking_model: str = "minimax/minimax-m2.5"
-    fast_model: str = "google/gemini-2.5-flash-lite"
-    review_model: str = "google/gemini-3.1-flash-lite-preview"
-    file_conversion_model: str = "google/gemini-2.5-flash-lite"
     file_conversion_max_tokens: int = 65536
-
-    available_models: list[str] = [
-        "google/gemini-3.1-flash-lite-preview",
-        "z-ai/glm-5",
-        "z-ai/glm-4.7-flash",
-    ]
 
     # =========================================================================
     # Web tools
@@ -133,6 +116,13 @@ class Settings(BaseSettings):
     def ensure_data_dir(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.local_storage_path.mkdir(parents=True, exist_ok=True)
+
+    def env_api_key_for(self, provider_id: str) -> str:
+        return {
+            "openai": self.openai_api_key,
+            "anthropic": self.anthropic_api_key,
+            "google": self.google_api_key,
+        }.get(provider_id, "")
 
 
 @lru_cache

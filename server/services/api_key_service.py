@@ -1,36 +1,38 @@
-"""API key service — local desktop edition.
+"""API key service — compatibility shim over the multi-provider layer.
 
-Wraps `local_config.json` so existing routers/agents that call
-`APIKeyService(db).get_user_settings(...)` etc. keep working.
+Existing routers call ``APIKeyService(db).get_user_settings(...)`` and
+``get_decrypted_key(...)``. Under the new scheme, the "settings" are just
+the active provider's key + its chat-role model.
 """
 
 from dataclasses import dataclass
 from typing import Any
 
+from provider.registry import active_api_key, active_provider_id, role_model
 from services import local_config
 
 
 @dataclass
 class _UserAPISettings:
-    openrouter_api_key: str = ""
-    anthropic_api_key: str = ""
-    preferred_model: str = "google/gemini-3.1-flash-lite-preview"
+    api_key: str = ""
+    provider_id: str | None = None
+    preferred_model: str = ""
 
 
 class APIKeyService:
     def __init__(self, db: Any = None):  # noqa: ARG002
-        self._cfg = local_config.load()
+        pass
 
     async def get_user_settings(self, user_id: str | None = None) -> _UserAPISettings:  # noqa: ARG002
-        cfg = local_config.load()
+        pid = active_provider_id()
         return _UserAPISettings(
-            openrouter_api_key=cfg.get("openrouter_api_key", "") or "",
-            anthropic_api_key=cfg.get("anthropic_api_key", "") or "",
-            preferred_model=cfg.get("preferred_model", "google/gemini-3.1-flash-lite-preview"),
+            api_key=active_api_key(),
+            provider_id=pid,
+            preferred_model=(role_model("chat", pid) if pid else "") or "",
         )
 
     def has_api_key(self, settings: _UserAPISettings) -> bool:
-        return bool(settings.openrouter_api_key or settings.anthropic_api_key)
+        return bool(settings.api_key)
 
     async def get_decrypted_key(
         self,
@@ -38,13 +40,30 @@ class APIKeyService:
         settings: _UserAPISettings | None = None,
     ) -> str:
         s = settings or await self.get_user_settings()
-        return s.openrouter_api_key or s.anthropic_api_key or ""
+        return s.api_key or ""
 
-    async def set_api_key(self, user_id: str | None, api_key: str) -> None:  # noqa: ARG002
-        local_config.save({"openrouter_api_key": api_key})
+    async def set_api_key(
+        self,
+        user_id: str | None,  # noqa: ARG002
+        api_key: str,
+        provider_id: str | None = None,
+    ) -> None:
+        pid = provider_id or active_provider_id() or "openai"
+        local_config.save({"providers": {pid: {"api_key": api_key}}})
+        # Also promote to active if none set yet.
+        if active_provider_id() is None:
+            local_config.save({"active_provider": pid})
 
     async def remove_api_key(self, user_id: str | None = None) -> None:  # noqa: ARG002
-        local_config.save({"openrouter_api_key": "", "anthropic_api_key": ""})
+        pid = active_provider_id()
+        if pid:
+            local_config.save({"providers": {pid: {"api_key": ""}}})
 
-    async def set_preferred_model(self, user_id: str | None, model: str) -> None:  # noqa: ARG002
-        local_config.save({"preferred_model": model})
+    async def set_preferred_model(
+        self,
+        user_id: str | None,  # noqa: ARG002
+        model: str,
+    ) -> None:
+        pid = active_provider_id()
+        if pid:
+            local_config.save({"model_roles": {pid: {"chat": model}}})

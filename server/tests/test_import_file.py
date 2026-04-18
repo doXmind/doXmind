@@ -333,12 +333,15 @@ class TestGeminiConverter:
 
     @pytest.mark.asyncio
     async def test_converts_pdf_successfully(self):
-        """Should convert PDF content via OpenRouter."""
+        """Should convert PDF content via the active provider's file_conversion model."""
         from services.gemini_converter import convert_file_to_markdown
 
         content = b"PDF content"
 
-        with patch("services.gemini_converter._get_client") as mock_get_client:
+        with (
+            patch("services.gemini_converter._get_client") as mock_get_client,
+            patch("services.gemini_converter.role_model", return_value="gpt-5-mini"),
+        ):
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.choices = [MagicMock()]
@@ -361,6 +364,7 @@ class TestGeminiConverter:
 
         with (
             patch("services.gemini_converter._get_client") as mock_get_client,
+            patch("services.gemini_converter.role_model", return_value="gpt-5-mini"),
             patch(
                 "services.gemini_converter.markitdown_convert", new_callable=AsyncMock
             ) as mock_fallback,
@@ -386,22 +390,21 @@ class TestGeminiConverter:
             await convert_file_to_markdown(content, "test.txt", ".txt")
 
     def test_is_converter_configured_returns_false_when_no_key(self):
-        """Should return False when neither env nor local config has a key."""
+        """Should return False when no provider has a key."""
         from services.gemini_converter import is_converter_configured
 
-        with patch("services.gemini_converter.get_settings") as mock_settings, patch(
-            "services.local_config.get_openrouter_key", return_value=""
-        ):
-            mock_settings.return_value.openrouter_api_key = ""
+        with patch("services.gemini_converter.active_provider_id", return_value=None):
             assert is_converter_configured() is False
 
     def test_is_converter_configured_returns_true_when_key_set(self):
-        """Should return True when API key is configured."""
+        """Should return True when the active provider has a key + file_conversion model."""
         from services.gemini_converter import is_converter_configured
 
-        with patch("services.gemini_converter.get_settings") as mock_settings:
-            mock_settings.return_value.openrouter_api_key = "test-api-key"
-
+        with (
+            patch("services.gemini_converter.active_provider_id", return_value="openai"),
+            patch("services.gemini_converter.provider_api_key", return_value="sk-test"),
+            patch("services.gemini_converter.role_model", return_value="gpt-5-mini"),
+        ):
             assert is_converter_configured() is True
 
     @pytest.mark.asyncio
@@ -413,6 +416,7 @@ class TestGeminiConverter:
 
         with (
             patch("services.gemini_converter._get_client") as mock_get_client,
+            patch("services.gemini_converter.role_model", return_value="gpt-5-mini"),
             patch(
                 "services.gemini_converter.markitdown_convert", new_callable=AsyncMock
             ) as mock_fallback,
@@ -440,9 +444,8 @@ class TestGeminiConverter:
 
         with (
             patch("services.gemini_converter._get_client") as mock_get_client,
-            patch(
-                "services.gemini_converter.extract_docx_content", return_value="Extracted text"
-            ),
+            patch("services.gemini_converter.role_model", return_value="gpt-5-mini"),
+            patch("services.gemini_converter.extract_docx_content", return_value="Extracted text"),
             patch(
                 "services.gemini_converter.markitdown_convert", new_callable=AsyncMock
             ) as mock_fallback,
@@ -457,9 +460,7 @@ class TestGeminiConverter:
             mock_get_client.return_value = mock_client
             mock_fallback.return_value = "# Complete DOCX fallback"
 
-            result, usage = await convert_file_to_markdown(
-                b"docx bytes", "test.docx", ".docx"
-            )
+            result, usage = await convert_file_to_markdown(b"docx bytes", "test.docx", ".docx")
 
             assert result == "# Complete DOCX fallback"
             assert usage is None

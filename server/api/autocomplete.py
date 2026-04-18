@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_settings
 from db.database import get_db
 from dependencies import resolve_user_api_key
 from exceptions import InsufficientCreditsError
@@ -36,6 +35,13 @@ router = APIRouter()
 
 # Initialize cache (1000 entries, 5 min TTL)
 cache = AutocompleteCache(max_size=1000, ttl_seconds=300)
+
+
+def _autocomplete_model() -> str | None:
+    """Resolve the fast-role model for the active provider."""
+    from provider.registry import role_model
+
+    return role_model("fast") or role_model("chat")
 
 
 class AutocompleteRequest(BaseModel):
@@ -202,7 +208,6 @@ async def suggest(
         return AutocompleteResponse(suggestion=cached_suggestion, cached=True, latency_ms=latency)
 
     try:
-        settings = get_settings()
         user_api_key = await resolve_user_api_key(token.sub, db)
 
         # Pre-flight credit check (skip for BYOK users)
@@ -230,7 +235,7 @@ async def suggest(
                 user_id=token.sub,
             )
             max_output_tokens = 60  # ~1-2 sentences
-            model = settings.fast_model
+            model = _autocomplete_model()
             temperature = 0.5
 
         elif request.include_context and request.mode == "long":
@@ -247,7 +252,7 @@ async def suggest(
                 user_id=token.sub,
             )
             max_output_tokens = 200  # Multi-line paragraphs
-            model = settings.fast_model
+            model = _autocomplete_model()
             temperature = 0.6  # Slightly higher for more creative multi-line suggestions
 
         else:
@@ -256,7 +261,7 @@ async def suggest(
             if request.text_after:
                 context += f"\n[... cursor position ...]\n{request.text_after[:200]}"
             max_output_tokens = request.max_tokens
-            model = settings.fast_model
+            model = _autocomplete_model()
             temperature = 0.5
 
         # Build prompt with context

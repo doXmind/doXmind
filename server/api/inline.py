@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.writing_agent import WritingAgent
 from api.chat import _load_conversation_context, _resolve_user_api_settings
 from api.files import get_user_id
-from config import get_cors_headers, get_settings
+from config import get_cors_headers
 from db.database import Conversation, Message, get_db
 from services.auth_service import TokenData, require_auth
 
@@ -97,7 +97,6 @@ async def inline_stream(
     db: AsyncSession = Depends(get_db),
     auth: TokenData = Depends(require_auth),
 ):
-    settings = get_settings()
     origin = http_request.headers.get("origin")
 
     user_api_key, user_model = await _resolve_user_api_settings(auth, db)
@@ -152,11 +151,15 @@ async def inline_stream(
         agent = None
 
         try:
-            # Respect BYOK preference: if user has own API key/model, use it.
-            # Otherwise, thinking mode uses backend-configured thinking model.
+            # Thinking toggle swaps to the active provider's `thinking` role
+            # when available; otherwise keep the chat model.
             effective_model = user_model
-            if not user_model and request.options.thinkingEnabled:
-                effective_model = settings.thinking_model
+            if request.options.thinkingEnabled:
+                from provider.registry import role_model
+
+                thinking = role_model("thinking")
+                if thinking:
+                    effective_model = thinking
 
             # Enforce profile by intent so ask-mode can never receive edit tools,
             # even if the client accidentally sends an inconsistent option.
