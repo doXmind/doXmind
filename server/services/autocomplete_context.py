@@ -276,9 +276,7 @@ class AutocompleteContextService:
                 user_id=user_id,
             )
             if open_context:
-                context_parts.append(
-                    f"\n--- Related content from other files ---\n{open_context}"
-                )
+                context_parts.append(f"\n--- Related content from other files ---\n{open_context}")
                 budget_used += count_tokens(open_context)
 
         # 4. Combine and truncate to token budget

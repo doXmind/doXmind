@@ -15,9 +15,6 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
-from openai import AsyncOpenAI
-
 from agents.prompts import (
     get_kb_context_prompt,
     get_quick_edit_system_prompt,
@@ -136,25 +133,32 @@ class WritingAgent:
         # Store user API key for passing to sub-services
         self._user_api_key = api_key
 
-        # Resolve API key: explicit > env > local config (GUI-saved)
-        from services.local_config import get_openrouter_key
+        # Resolve provider + key + model via the registry.
+        from provider.registry import (
+            active_provider_id,
+            build_client,
+            provider_api_key,
+            role_model,
+        )
 
-        effective_api_key = api_key or settings.openrouter_api_key or get_openrouter_key()
+        pid = active_provider_id()
+        if pid is None:
+            raise ValueError(
+                "No LLM provider configured. Open the Settings page and add an API key."
+            )
+        effective_api_key = api_key or provider_api_key(pid) or settings.env_api_key_for(pid)
         if not effective_api_key:
             raise ValueError(
-                "No OpenRouter API key configured. Open Settings in the app to add one."
+                f"Active provider '{pid}' has no API key. Open Settings and paste one."
             )
 
-        # Use user's model preference if provided, otherwise use default
-        effective_model = model or settings.default_model
+        # Use user's model override if provided, else the chat-role default.
+        effective_model = model or role_model("chat", pid)
+        if not effective_model:
+            raise ValueError(f"Provider '{pid}' has no chat model configured.")
 
-        # Configure longer timeout for streaming responses
-        self.client = AsyncOpenAI(
-            api_key=effective_api_key,
-            base_url=settings.openrouter_base_url,
-            default_headers=settings.openrouter_headers,
-            timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0),
-        )
+        self.client = build_client(effective_api_key, pid)
+        self.provider_id = pid
         self.model = effective_model
         self.max_tokens = settings.max_output_tokens
         self.settings = settings
@@ -503,7 +507,7 @@ class WritingAgent:
                 system_prompt,
                 messages,
                 self.tool_executor.tools,
-                provider_sort=self.settings.openrouter_provider_sort,
+                provider_sort="",
             ):
                 # Accumulate token usage from each API call
                 if event and event.get("type") == "usage":

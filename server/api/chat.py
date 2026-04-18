@@ -347,7 +347,8 @@ async def _auto_export_database_blocks(
                     os.remove(existing.storage_path)
                 except OSError:
                     logger.warning(
-                        "Failed to delete stale data file at %s", existing.storage_path,
+                        "Failed to delete stale data file at %s",
+                        existing.storage_path,
                         exc_info=True,
                     )
             await db.delete(existing)
@@ -355,14 +356,10 @@ async def _auto_export_database_blocks(
 
         # Export the database as a new data file
         try:
-            data_file = await export_database_to_data_file(
-                db_id, conversation_id, user_id, db
-            )
+            data_file = await export_database_to_data_file(db_id, conversation_id, user_id, db)
             if data_file:
                 exported_any = True
-                logger.info(
-                    "Auto-exported database %s as data file %s", db_id, data_file.id
-                )
+                logger.info("Auto-exported database %s as data file %s", db_id, data_file.id)
         except Exception:
             # Don't fail the chat request if a single database export fails
             logger.warning("Failed to auto-export database %s", db_id, exc_info=True)
@@ -448,15 +445,11 @@ async def chat_stream(
                     conversation = conv
 
             if conv_id:
-                exported = await _auto_export_database_blocks(
-                    file_content, conv_id, user_id, db
-                )
+                exported = await _auto_export_database_blocks(file_content, conv_id, user_id, db)
                 if exported:
                     await db.commit()
                     # Re-load data files to include newly created ones
-                    data_files_metadata, data_files_content = await _reload_data_files(
-                        conv_id, db
-                    )
+                    data_files_metadata, data_files_content = await _reload_data_files(conv_id, db)
                     auto_exported_data_files = True
 
     # Collector for building the complete response
@@ -585,11 +578,15 @@ async def chat_stream(
             # Create agent with KB attachments, data files metadata, and web tools
             # Skills are auto-detected by the agent based on context
             # Code execution is always enabled (useful for calculations even without data files)
-            # Respect BYOK preference: if user has own API key/model, use it.
-            # Otherwise, thinking mode uses backend-configured thinking model.
+            # Thinking toggle swaps to the active provider's `thinking` role
+            # (falls back to the chat role if the provider has no reasoning model).
             effective_model = user_model
-            if not user_model and request.thinkingEnabled:
-                effective_model = settings.thinking_model
+            if request.thinkingEnabled:
+                from provider.registry import role_model
+
+                thinking = role_model("thinking")
+                if thinking:
+                    effective_model = thinking
 
             agent = WritingAgent(
                 mode=request.mode,
@@ -639,7 +636,9 @@ async def chat_stream(
                 data_files=data_files_content if data_files_content else None,
                 history=history,
                 conversation_id=conversation.id if conversation else None,
-                global_kb_context={"db": db, "user_id": user_id, "api_key": user_api_key} if user_id else None,
+                global_kb_context={"db": db, "user_id": user_id, "api_key": user_api_key}
+                if user_id
+                else None,
             ).__aiter__()
 
             # Use a persistent task to avoid cancelling the generator on heartbeat timeout
@@ -802,12 +801,12 @@ async def simple_chat(
 
     Uses fast_model by default for speed-critical operations like slides generation.
     """
+    from provider.registry import role_model
     from services.llm_service import LLMService
 
     try:
-        settings = get_settings()
-        # Use fast_model as default for simple chat (quick operations)
-        model = request.model or settings.fast_model
+        # Use the active provider's `fast` role for simple/quick chats.
+        model = request.model or role_model("fast") or role_model("chat")
         user_id = get_user_id(auth)
         user_api_key = await resolve_user_api_key(user_id, db) if user_id else None
 

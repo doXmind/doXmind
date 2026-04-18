@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_cors_headers, get_settings
+from config import get_cors_headers
 from db.database import get_db
 from dependencies import resolve_user_api_key
 from prompts.domains.review import REVIEW_JSON_SCHEMA, REVIEW_SYSTEM_PROMPT
@@ -46,7 +46,14 @@ async def review_text(
 
     async def generate():
         try:
-            settings = get_settings()
+            content = request.content
+
+            # Skip very short documents before touching any LLM provider.
+            if len(content.strip()) < 20:
+                yield f"data: {json.dumps({'result': {'suggestions': [], 'summary': 'Document too short for review.'}})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             user_api_key = await resolve_user_api_key(auth.sub, db)
 
             # Pre-flight credit check
@@ -60,15 +67,7 @@ async def review_text(
                     yield "data: [DONE]\n\n"
                     return
 
-            llm = LLMService(model=settings.review_model, api_key=user_api_key)
-
-            content = request.content
-
-            # Skip very short documents
-            if len(content.strip()) < 20:
-                yield f"data: {json.dumps({'result': {'suggestions': [], 'summary': 'Document too short for review.'}})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
+            llm = LLMService(role="review", api_key=user_api_key)
 
             user_prompt = f"""Please review this document and provide improvement suggestions.
 

@@ -27,7 +27,9 @@ async def serper_search(query: str, count: int = 10) -> list[dict[str, Any]]:
     settings = get_settings()
     api_key = settings.serper_api_key or get_serper_key()
     if not api_key:
-        return [{"error": "Serper API key not configured. Add one in Settings to enable web search."}]
+        return [
+            {"error": "Serper API key not configured. Add one in Settings to enable web search."}
+        ]
 
     headers = {
         "X-API-KEY": api_key,

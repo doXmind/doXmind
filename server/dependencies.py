@@ -22,11 +22,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def resolve_user_api_key(user_id: str | None = None, db: AsyncSession | None = None) -> str | None:  # noqa: ARG001
-    """Compatibility shim — returns the user's local OpenRouter key (single user)."""
-    from services.local_config import get_openrouter_key
+async def resolve_user_api_key(
+    user_id: str | None = None, db: AsyncSession | None = None
+) -> str | None:  # noqa: ARG001
+    """Return the active provider's API key, if any."""
+    from provider.registry import active_api_key
 
-    key = get_openrouter_key()
+    key = active_api_key()
     return key or None
 
 

@@ -441,14 +441,13 @@ class TestAutocompleteEndpoints:
 
     @patch("api.autocomplete.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.autocomplete.LLMService")
-    @patch("api.autocomplete.get_settings")
+    @patch("api.autocomplete._autocomplete_model", return_value="claude-haiku")
     @patch("api.autocomplete.cache")
     def test_calls_llm_on_cache_miss(
-        self, mock_cache, mock_settings, mock_llm_class, mock_resolve_key, client
+        self, mock_cache, mock_model, mock_llm_class, mock_resolve_key, client
     ):
         """Should call LLM when cache miss."""
         mock_cache.get.return_value = None  # Cache miss
-        mock_settings.return_value = MagicMock(fast_model="claude-haiku")
 
         mock_llm = MagicMock()
         mock_llm.complete = AsyncMock(return_value="completion")
@@ -461,14 +460,13 @@ class TestAutocompleteEndpoints:
 
     @patch("api.autocomplete.resolve_user_api_key", new_callable=AsyncMock, return_value="test-key")
     @patch("api.autocomplete.LLMService")
-    @patch("api.autocomplete.get_settings")
+    @patch("api.autocomplete._autocomplete_model", return_value="claude-haiku")
     @patch("api.autocomplete.cache")
     def test_caches_valid_suggestion(
-        self, mock_cache, mock_settings, mock_llm_class, mock_resolve_key, client
+        self, mock_cache, mock_model, mock_llm_class, mock_resolve_key, client
     ):
         """Should cache valid suggestions."""
         mock_cache.get.return_value = None
-        mock_settings.return_value = MagicMock(fast_model="claude-haiku")
 
         mock_llm = MagicMock()
         mock_llm.complete = AsyncMock(return_value="suggestion")
@@ -480,12 +478,11 @@ class TestAutocompleteEndpoints:
         mock_cache.set.assert_called_once()
 
     @patch("api.autocomplete.LLMService")
-    @patch("api.autocomplete.get_settings")
+    @patch("api.autocomplete._autocomplete_model", return_value="claude-haiku")
     @patch("api.autocomplete.cache")
-    def test_handles_llm_error(self, mock_cache, mock_settings, mock_llm_class, client):
+    def test_handles_llm_error(self, mock_cache, mock_model, mock_llm_class, client):
         """Should return empty suggestion on LLM error."""
         mock_cache.get.return_value = None
-        mock_settings.return_value = MagicMock(fast_model="claude-haiku")
 
         mock_llm = MagicMock()
         mock_llm.complete = AsyncMock(side_effect=Exception("API error"))

@@ -242,9 +242,7 @@ async def test_file(db_session: AsyncSession, test_user: SimpleNamespace) -> Fil
 
 
 @pytest.fixture
-async def test_conversation(
-    db_session: AsyncSession, test_file: File
-) -> Conversation:
+async def test_conversation(db_session: AsyncSession, test_file: File) -> Conversation:
     conv = Conversation(
         id=str(uuid.uuid4()),
         file_id=test_file.id,

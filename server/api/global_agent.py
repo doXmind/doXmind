@@ -363,11 +363,15 @@ async def global_agent_stream(
             return events_to_send
 
         try:
-            # Respect BYOK preference: if user has own API key/model, use it.
-            # Otherwise, thinking mode uses backend-configured thinking model.
+            # Thinking toggle swaps to the active provider's `thinking` role
+            # when available; otherwise keep the chat model.
             effective_model = user_model
-            if not user_model and request.thinkingEnabled:
-                effective_model = settings.thinking_model
+            if request.thinkingEnabled:
+                from provider.registry import role_model
+
+                thinking = role_model("thinking")
+                if thinking:
+                    effective_model = thinking
 
             agent = GlobalAgent(
                 user_id=user_id,

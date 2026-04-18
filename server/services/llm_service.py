@@ -1,53 +1,74 @@
-"""LLM Service for interacting with LLM API via OpenRouter."""
+"""LLM Service — role-based resolution on top of the multi-provider layer.
+
+Callers either pass an explicit ``model`` (for legacy code paths where the
+model is already resolved upstream) or a ``role`` that we resolve via
+``provider.registry`` to the active provider's configured model.
+"""
 
 import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
-from openai import AsyncOpenAI
-
 from config import get_settings
+from provider.registry import (
+    ProviderUnconfiguredError,
+    active_provider_id,
+    build_client,
+    provider_api_key,
+    resolve_role,
+    role_model,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Service for LLM interactions via OpenRouter (OpenAI-compatible)."""
+    """Service for LLM interactions via the active provider's OpenAI-compatible API.
 
-    def __init__(self, model: str | None = None, api_key: str | None = None):
-        from services.local_config import get_openrouter_key
+    Construction paths:
+      - ``LLMService(role="chat")`` — resolve everything from the active provider.
+      - ``LLMService(model="gpt-5.1")`` — caller supplies the model; provider
+        / api key still come from the active provider.
+      - ``LLMService(model=..., api_key=...)`` — both supplied (per-request BYOK).
+    """
 
+    def __init__(
+        self,
+        model: str | None = None,
+        api_key: str | None = None,
+        role: str = "chat",
+    ):
         settings = get_settings()
-        effective_api_key = api_key or settings.openrouter_api_key or get_openrouter_key()
+
+        provider_id = active_provider_id()
+        if provider_id is None:
+            raise ValueError(
+                "No LLM provider configured. Open the Settings page in the app and add an API key."
+            )
+
+        effective_api_key = (
+            api_key or provider_api_key(provider_id) or settings.env_api_key_for(provider_id)
+        )
         if not effective_api_key:
             raise ValueError(
-                "No OpenRouter API key configured. "
-                "Open the Settings page in the app and paste your key, "
-                "or set OPENROUTER_API_KEY in server/.env."
+                f"Active provider '{provider_id}' has no API key. "
+                "Open the Settings page and paste your key."
             )
-        self.client = AsyncOpenAI(
-            api_key=effective_api_key,
-            base_url=settings.openrouter_base_url,
-            default_headers=settings.openrouter_headers,
-        )
-        self.model = model or settings.default_model
+
+        effective_model = model or role_model(role, provider_id)
+        if not effective_model:
+            raise ValueError(f"No model configured for role '{role}' on provider '{provider_id}'.")
+
+        self.provider_id = provider_id
+        self.client = build_client(effective_api_key, provider_id)
+        self.model = effective_model
         self.max_tokens = settings.max_output_tokens
         self.last_usage: dict | None = None
-        self._provider_sort = settings.openrouter_provider_sort
 
     def _build_extra_body(self, extra_body: dict | None = None) -> dict | None:
-        """Merge provider sort config into extra_body."""
-        if not self._provider_sort:
-            return extra_body
-        provider = {"sort": self._provider_sort}
-        if extra_body and "provider" in extra_body:
-            extra_body["provider"] = {**provider, **extra_body["provider"]}
-            return extra_body
-        if extra_body:
-            extra_body["provider"] = provider
-            return extra_body
-        return {"provider": provider}
+        """Hook for provider-specific extra_body params. No-op for now."""
+        return extra_body or None
 
     async def complete(
         self,
@@ -190,11 +211,7 @@ class LLMService:
         max_tokens: int | None = None,
         temperature: float = 0.7,
     ) -> dict:
-        """Generate a structured JSON completion.
-
-        Uses OpenRouter/OpenAI structured output mode with strict JSON schema
-        enforcement to prevent non-JSON or multi-block responses.
-        """
+        """Generate a structured JSON completion."""
         json_system = (system or "You are a helpful AI writing assistant.") + (
             "\n\nIMPORTANT: You MUST respond with valid JSON only. "
             "No markdown, no explanations, no code fences. Just raw JSON."
@@ -225,13 +242,6 @@ class LLMService:
                 temperature=temperature,
                 messages=cast(Any, messages),
                 response_format=cast(Any, response_format),
-                extra_body=self._build_extra_body(
-                    {
-                        "provider": {
-                            "require_parameters": True,
-                        },
-                    }
-                ),
             )
             from services.usage_tracker import extract_usage
 
@@ -240,7 +250,6 @@ class LLMService:
             content = response.choices[0].message.content
             text = content.strip() if isinstance(content, str) else str(content or "").strip()
 
-            # Strip markdown code fences if present (some models still add them)
             if text.startswith("```"):
                 text = text.split("\n", 1)[1] if "\n" in text else text[3:]
                 if text.endswith("```"):
@@ -253,3 +262,11 @@ class LLMService:
         except Exception as e:
             logger.error(f"LLM JSON completion error: {e}")
             raise
+
+
+__all__ = [
+    "LLMService",
+    "ProviderUnconfiguredError",
+    "resolve_role",
+    "role_model",
+]

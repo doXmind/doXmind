@@ -837,7 +837,9 @@ async def search_files(
             params["file_ids"] = list(request.file_ids)
 
         # SQLite LIKE is case-insensitive for ASCII by default.
-        where_clauses.append("(LOWER(name) LIKE LOWER(:pattern) OR LOWER(content) LIKE LOWER(:pattern))")
+        where_clauses.append(
+            "(LOWER(name) LIKE LOWER(:pattern) OR LOWER(content) LIKE LOWER(:pattern))"
+        )
 
         where_sql = " AND ".join(where_clauses)
         sql = f"SELECT id, name, content FROM files WHERE {where_sql} ORDER BY updated_at DESC LIMIT :limit"
@@ -975,7 +977,7 @@ async def generate_summary(
         return SummaryResponse(summary="")
 
     try:
-        llm = LLMService()
+        llm = LLMService(role="fast")
         prompt = f"""Summarize this document in one evocative sentence (max 80 characters).
 Write in the same tone as the document. Be poetic, not descriptive.
 Do not start with "This document..." or similar. Just give the summary.

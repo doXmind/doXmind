@@ -113,14 +113,16 @@ class TestWritingAgentInit:
     """Tests for WritingAgent initialization."""
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    def test_init_with_default_mode(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    def test_init_with_default_mode(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should initialize with default edit mode."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
 
         agent = WritingAgent()
@@ -129,14 +131,16 @@ class TestWritingAgentInit:
         assert agent.kb_attachments == []
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    def test_init_with_analyze_mode(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    def test_init_with_analyze_mode(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should initialize with analyze mode."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
 
         agent = WritingAgent(mode="analyze")
@@ -144,14 +148,16 @@ class TestWritingAgentInit:
         assert agent.mode == "analyze"
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    def test_init_with_kb_attachments(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    def test_init_with_kb_attachments(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should store KB attachments."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
 
@@ -160,18 +166,9 @@ class TestWritingAgentInit:
         assert agent.kb_attachments == attachments
 
     def test_init_without_api_key_raises(self):
-        """Should raise when no key is available anywhere."""
-        with patch("agents.writing_agent.get_settings") as mock_settings, patch(
-            "services.local_config.get_openrouter_key", return_value=""
-        ):
-            mock_settings.return_value = MagicMock(
-                openrouter_api_key="",
-                default_model="google/gemini-3.1-flash-lite-preview",
-                openrouter_base_url="https://openrouter.ai/api/v1",
-                openrouter_headers={},
-                max_output_tokens=8192,
-            )
-            with pytest.raises(ValueError, match="OpenRouter"):
+        """Should raise when no provider is configured at all."""
+        with patch("provider.registry.active_provider_id", return_value=None):
+            with pytest.raises(ValueError, match="No LLM provider configured"):
                 WritingAgent()
 
 
@@ -185,14 +182,16 @@ class TestMessageBuilding:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_build_messages_simple(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_build_messages_simple(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should build simple text messages."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         agent = WritingAgent()
 
@@ -204,14 +203,16 @@ class TestMessageBuilding:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_build_messages_with_history(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_build_messages_with_history(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should include history in messages."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         agent = WritingAgent()
         history = [
@@ -228,14 +229,16 @@ class TestMessageBuilding:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_build_messages_with_images(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_build_messages_with_images(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should build multimodal messages with images."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         agent = WritingAgent()
         images = [{"base64": "iVBORw0KGgo=", "mediaType": "image/png"}]
@@ -250,14 +253,16 @@ class TestMessageBuilding:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_build_multimodal_content_multiple_images(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_build_multimodal_content_multiple_images(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should add labels for multiple images."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         agent = WritingAgent()
         images = [
@@ -284,14 +289,16 @@ class TestKBContext:
     """Tests for KB context building."""
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    def test_build_kb_context_returns_none_without_attachments(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    def test_build_kb_context_returns_none_without_attachments(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should return None when no attachments."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         agent = WritingAgent()
 
@@ -300,16 +307,16 @@ class TestKBContext:
         assert context is None
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
     def test_build_kb_context_returns_none_without_conversation_id(
-        self, mock_openai, mock_settings
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
     ):
         """Should return None when no conversation ID."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         agent = WritingAgent(kb_attachments=[{"id": "att-1"}])
 
@@ -318,14 +325,16 @@ class TestKBContext:
         assert context is None
 
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    def test_build_kb_context_returns_context(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    def test_build_kb_context_returns_context(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should return context when both attachments and conversation ID present."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
         attachments = [{"id": "att-1", "name": "doc.pdf"}]
         agent = WritingAgent(kb_attachments=attachments)
@@ -347,14 +356,16 @@ class TestStreaming:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_stream_yields_text_events(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_stream_yields_text_events(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should yield text events from stream."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
 
         # Create mock stream with OpenAI format
@@ -362,7 +373,7 @@ class TestStreaming:
         mock_stream = MockAsyncStream(chunks)
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(return_value=mock_stream)
-        mock_openai.return_value = mock_client
+        mock_build.return_value = mock_client
 
         agent = WritingAgent()
         files = [{"id": "file-1", "name": "doc.md", "content": "Test content"}]
@@ -378,19 +389,21 @@ class TestStreaming:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_stream_handles_error(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_stream_handles_error(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should yield error event on exception."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
 
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
-        mock_openai.return_value = mock_client
+        mock_build.return_value = mock_client
 
         agent = WritingAgent()
         files = [{"id": "file-1", "name": "doc.md", "content": "Test"}]
@@ -406,21 +419,23 @@ class TestStreaming:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_stream_marks_first_file_as_current(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_stream_marks_first_file_as_current(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should mark first file as current."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
 
         chunks = create_text_stream_chunks("Done")
         mock_stream = MockAsyncStream(chunks)
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(return_value=mock_stream)
-        mock_openai.return_value = mock_client
+        mock_build.return_value = mock_client
 
         agent = WritingAgent()
         files = [
@@ -445,14 +460,16 @@ class TestRunMethod:
 
     @pytest.mark.asyncio
     @patch("agents.writing_agent.get_settings")
-    @patch("agents.writing_agent.AsyncOpenAI")
-    async def test_run_collects_response_and_edits(self, mock_openai, mock_settings):
+    @patch("provider.registry.active_provider_id", return_value="openai")
+    @patch("provider.registry.provider_api_key", return_value="sk-test")
+    @patch("provider.registry.role_model", return_value="gpt-5.1")
+    @patch("provider.registry.build_client", return_value=MagicMock())
+    async def test_run_collects_response_and_edits(
+        self, mock_build, mock_role, mock_key, mock_active, mock_settings
+    ):
         """Should collect full response and edits."""
         mock_settings.return_value = MagicMock(
-            openrouter_api_key="test-key",
-            openrouter_base_url="https://openrouter.ai/api/v1",
-            default_model="minimax/minimax-m2.5",
-            max_output_tokens=4096,
+            max_output_tokens=4096, env_api_key_for=lambda pid: ""
         )
 
         # Mock stream to yield text events
@@ -460,7 +477,7 @@ class TestRunMethod:
         mock_stream = MockAsyncStream(chunks)
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(return_value=mock_stream)
-        mock_openai.return_value = mock_client
+        mock_build.return_value = mock_client
 
         agent = WritingAgent()
         files = [{"id": "file-1", "name": "doc.md", "content": "Test"}]

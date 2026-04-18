@@ -10,7 +10,6 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,23 +144,34 @@ class KBAgent:
         api_key: str | None = None,
         model: str | None = None,
     ):
-        from services.local_config import get_openrouter_key
+        from provider.registry import (
+            active_provider_id,
+            build_client,
+            provider_api_key,
+            role_model,
+        )
 
         self.db = db
         self.user_id = user_id
         settings = get_settings()
-        effective_key = api_key or settings.openrouter_api_key or get_openrouter_key()
+
+        pid = active_provider_id()
+        if pid is None:
+            raise ValueError(
+                "No LLM provider configured. Open the Settings page and add an API key."
+            )
+        effective_key = api_key or provider_api_key(pid) or settings.env_api_key_for(pid)
         if not effective_key:
             raise ValueError(
-                "No OpenRouter API key configured. Open Settings in the app to add one."
+                f"Active provider '{pid}' has no API key. Open Settings and paste one."
             )
-        self.client = AsyncOpenAI(
-            api_key=effective_key,
-            base_url=settings.openrouter_base_url,
-            default_headers=settings.openrouter_headers,
-        )
-        self.model = model or settings.default_model
-        self._provider_sort = settings.openrouter_provider_sort
+        effective_model = model or role_model("chat", pid)
+        if not effective_model:
+            raise ValueError(f"Provider '{pid}' has no chat model configured.")
+        self.client = build_client(effective_key, pid)
+        self.provider_id = pid
+        self.model = effective_model
+        self._provider_sort = ""
         self.tools = KB_TOOLS
 
     async def stream(

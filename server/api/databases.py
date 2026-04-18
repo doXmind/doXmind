@@ -241,11 +241,7 @@ async def create_database(
                 {
                     "id": str(uuid.uuid4()),
                     "database_id": db_block.id,
-                    "properties": (
-                        row_data.get("properties")
-                        if isinstance(row_data, dict)
-                        else {}
-                    )
+                    "properties": (row_data.get("properties") if isinstance(row_data, dict) else {})
                     or {},
                     "position": i,
                     "created_at": now,
@@ -332,11 +328,7 @@ async def create_database(
             ]
         ):
             status_choice = next(
-                (
-                    c
-                    for c in default_schema[1]["options"]["choices"]
-                    if c["name"] == status
-                ),
+                (c for c in default_schema[1]["options"]["choices"] if c["name"] == status),
                 None,
             )
             row = DatabaseRow(
@@ -413,8 +405,8 @@ async def get_database(
         raise HTTPException(status_code=404, detail="Database not found")
 
     # Count rows separately
-    count_query = select(func.count()).select_from(DatabaseRow).where(
-        DatabaseRow.database_id == database_id
+    count_query = (
+        select(func.count()).select_from(DatabaseRow).where(DatabaseRow.database_id == database_id)
     )
     row_count = (await session.execute(count_query)).scalar() or 0
 
@@ -480,9 +472,7 @@ async def delete_database(
 
     # Clean up any auto-exported data files linked to this database
     data_files_result = await session.execute(
-        select(ConversationDataFile).where(
-            ConversationDataFile.source_database_id == database_id
-        )
+        select(ConversationDataFile).where(ConversationDataFile.source_database_id == database_id)
     )
     for data_file in data_files_result.scalars().all():
         if data_file.storage_path and os.path.exists(data_file.storage_path):
@@ -643,8 +633,8 @@ async def list_rows(
         raise HTTPException(status_code=404, detail="Database not found")
 
     # Count total rows
-    count_query = select(func.count()).select_from(DatabaseRow).where(
-        DatabaseRow.database_id == database_id
+    count_query = (
+        select(func.count()).select_from(DatabaseRow).where(DatabaseRow.database_id == database_id)
     )
     total = (await session.execute(count_query)).scalar() or 0
 
@@ -897,8 +887,7 @@ async def export_database_to_data_file(
     for row in sorted_rows:
         props = row.properties or {}
         row_values = [
-            _resolve_cell_value(props.get(pid), schema[i])
-            for i, pid in enumerate(prop_ids)
+            _resolve_cell_value(props.get(pid), schema[i]) for i, pid in enumerate(prop_ids)
         ]
         writer.writerow(row_values)
 
@@ -999,9 +988,7 @@ async def send_database_to_chat(
         await session.delete(existing)
         await session.flush()
 
-    data_file = await export_database_to_data_file(
-        database_id, conversation.id, user_id, session
-    )
+    data_file = await export_database_to_data_file(database_id, conversation.id, user_id, session)
     if not data_file:
         raise HTTPException(status_code=400, detail="Database has no properties")
 
