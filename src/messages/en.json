@@ -103,6 +103,8 @@
   },
   "editor": {
     "untitled": "Untitled",
+    "back": "Back",
+    "forward": "Forward",
     "exitFocusMode": "Exit Focus Mode (F11)",
     "expandOutline": "Expand outline",
     "collapseOutline": "Collapse outline",
@@ -111,6 +113,7 @@
     "saved": "Saved",
     "saving": "Saving...",
     "unsavedChanges": "Unsaved changes",
+    "export": "Export",
     "readOnly": "Read only",
     "focusMode": "Focus mode",
     "versionHistory": "Version History",
