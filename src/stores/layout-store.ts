@@ -29,10 +29,6 @@ interface LayoutState {
   // Command palette
   isCommandPaletteOpen: boolean;
 
-  // Home page
-  homeViewMode: "grid" | "list";
-  homeActiveTab: "documents" | "shared" | "shares" | "forks" | "bookmarks";
-
   // Version history panel
   isVersionHistoryOpen: boolean;
 
@@ -92,10 +88,6 @@ interface LayoutState {
   openCommandPalette: () => void;
   toggleCommandPalette: () => void;
 
-  // Home page actions
-  setHomeViewMode: (mode: "grid" | "list") => void;
-  setHomeActiveTab: (tab: "documents" | "shared" | "shares" | "forks" | "bookmarks") => void;
-
   // Focus mode actions
   setFocusMode: (enabled: boolean) => void;
   toggleFocusMode: () => void;
@@ -142,7 +134,7 @@ export const useLayoutStore = create<LayoutState>()(
     (set) => ({
       // Desktop panel visibility
       isSidebarOpen: true,
-      isFilesSidebarOpen: false,
+      isFilesSidebarOpen: true,
       isMindlinesOpen: true,
       isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
       themeId: "notion",
@@ -165,10 +157,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Command palette
       isCommandPaletteOpen: false,
-
-      // Home page
-      homeViewMode: "grid" as const,
-      homeActiveTab: "documents" as const,
 
       // Focus mode
       isFocusMode: false,
@@ -196,7 +184,7 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Resizable panel widths
       sidebarWidth: 256,
-      filesSidebarWidth: 256,
+      filesSidebarWidth: 304,
 
       // Desktop actions
       toggleSidebar: () => {
@@ -310,15 +298,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       toggleCommandPalette: () => {
         set((state) => ({ isCommandPaletteOpen: !state.isCommandPaletteOpen }));
-      },
-
-      // Home page actions
-      setHomeViewMode: (mode: "grid" | "list") => {
-        set({ homeViewMode: mode });
-      },
-
-      setHomeActiveTab: (tab: "documents" | "shared" | "shares" | "forks" | "bookmarks") => {
-        set({ homeActiveTab: tab });
       },
 
       // Focus mode actions
@@ -455,8 +434,6 @@ export const useLayoutStore = create<LayoutState>()(
         preferredDarkTheme: state.preferredDarkTheme,
         systemThemeEnabled: state.systemThemeEnabled,
         isHighContrast: state.isHighContrast,
-        homeViewMode: state.homeViewMode,
-        homeActiveTab: state.homeActiveTab,
         editorWidth: state.editorWidth,
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,

@@ -1,5 +1,5 @@
-import { HomeDashboard } from "@/components/home/home-dashboard";
+import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  return <HomeDashboard />;
+  redirect("/editor");
 }

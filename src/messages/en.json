@@ -761,6 +761,9 @@
   },
   "sidebar": {
     "files": "Files",
+    "documents": "Documents",
+    "localWorkspace": "Local workspace",
+    "settings": "Settings",
     "search": "Search",
     "newDocument": "New Document",
     "newFolder": "New Folder",

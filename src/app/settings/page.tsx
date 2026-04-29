@@ -10,11 +10,11 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-3xl p-6">
       <div className="mb-6 flex items-center gap-3">
         <Link
-          href="/"
+          href="/editor"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to home
+          Back to editor
         </Link>
       </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { PanelLeftOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
@@ -35,6 +35,7 @@ export function DesktopEditor() {
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
+  const setFilesSidebarOpen = useLayoutStore((s) => s.setFilesSidebarOpen);
   const isFocusMode = useLayoutStore((s) => s.isFocusMode);
   const setFocusMode = useLayoutStore((s) => s.setFocusMode);
   const isVersionHistoryOpen = useLayoutStore((s) => s.isVersionHistoryOpen);
@@ -51,6 +52,13 @@ export function DesktopEditor() {
   const [isResizing, setIsResizing] = useState(false);
 
   const transitionClass = "transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]";
+
+  useEffect(() => {
+    setFilesSidebarOpen(true);
+    if (filesSidebarWidth < 288) {
+      setFilesSidebarWidth(304);
+    }
+  }, [filesSidebarWidth, setFilesSidebarOpen, setFilesSidebarWidth]);
 
   return (
     <AppShell hideHeader>

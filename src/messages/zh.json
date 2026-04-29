@@ -761,6 +761,9 @@
   },
   "sidebar": {
     "files": "文件",
+    "documents": "文档",
+    "localWorkspace": "本地工作区",
+    "settings": "设置",
     "search": "搜索",
     "newDocument": "新建文档",
     "newFolder": "新建文件夹",
