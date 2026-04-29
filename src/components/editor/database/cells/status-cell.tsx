@@ -12,6 +12,7 @@ import type {
 } from "@/extensions/database/database-types";
 import {
   SELECT_COLOR_CLASSES,
+  SELECT_COLOR_DOT_CLASSES,
   SELECT_COLORS,
   DEFAULT_STATUS_CATEGORIES,
 } from "@/extensions/database/database-types";
@@ -147,9 +148,10 @@ export function StatusCell({
 
   // Determine dot color from selected choice or category
   const getDotColor = () => {
-    if (!selectedChoice) return "bg-gray-400";
-    const colors = getColorClass(selectedChoice.color);
-    return colors.bg;
+    if (!selectedChoice) return "bg-gray-400 dark:bg-zinc-300";
+    return (
+      SELECT_COLOR_DOT_CLASSES[selectedChoice.color as SelectColor] ?? SELECT_COLOR_DOT_CLASSES.gray
+    );
   };
 
   return (
@@ -233,7 +235,13 @@ export function StatusCell({
                               colors.text
                             )}
                           >
-                            <span className={cn("h-1.5 w-1.5 rounded-full", colors.bg)} />
+                            <span
+                              className={cn(
+                                "h-1.5 w-1.5 rounded-full",
+                                SELECT_COLOR_DOT_CLASSES[c.color as SelectColor] ??
+                                  SELECT_COLOR_DOT_CLASSES.gray
+                              )}
+                            />
                             {c.name}
                           </span>
                           {isSelected && <Check className="ml-auto h-3 w-3 text-primary" />}

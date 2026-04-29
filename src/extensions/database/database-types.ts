@@ -236,24 +236,36 @@ export const SELECT_COLORS = [
 export type SelectColor = (typeof SELECT_COLORS)[number];
 
 export const SELECT_COLOR_CLASSES: Record<SelectColor, { bg: string; text: string }> = {
-  gray: { bg: "bg-gray-100 dark:bg-gray-500/20", text: "text-gray-700 dark:text-gray-300" },
-  brown: { bg: "bg-amber-100 dark:bg-amber-500/20", text: "text-amber-800 dark:text-amber-300" },
+  gray: { bg: "bg-gray-100 dark:bg-zinc-700", text: "text-gray-700 dark:text-zinc-100" },
+  brown: { bg: "bg-amber-100 dark:bg-amber-950/80", text: "text-amber-800 dark:text-amber-100" },
   orange: {
-    bg: "bg-orange-100 dark:bg-orange-500/20",
-    text: "text-orange-800 dark:text-orange-300",
+    bg: "bg-orange-100 dark:bg-orange-950/80",
+    text: "text-orange-800 dark:text-orange-100",
   },
   yellow: {
-    bg: "bg-yellow-100 dark:bg-yellow-500/20",
-    text: "text-yellow-800 dark:text-yellow-300",
+    bg: "bg-yellow-100 dark:bg-yellow-950/80",
+    text: "text-yellow-800 dark:text-yellow-100",
   },
-  green: { bg: "bg-green-100 dark:bg-green-500/20", text: "text-green-800 dark:text-green-300" },
-  blue: { bg: "bg-blue-100 dark:bg-blue-500/20", text: "text-blue-800 dark:text-blue-300" },
+  green: { bg: "bg-green-100 dark:bg-green-950/80", text: "text-green-800 dark:text-green-100" },
+  blue: { bg: "bg-blue-100 dark:bg-blue-950/80", text: "text-blue-800 dark:text-blue-100" },
   purple: {
-    bg: "bg-purple-100 dark:bg-purple-500/20",
-    text: "text-purple-800 dark:text-purple-300",
+    bg: "bg-purple-100 dark:bg-purple-950/80",
+    text: "text-purple-800 dark:text-purple-100",
   },
-  pink: { bg: "bg-pink-100 dark:bg-pink-500/20", text: "text-pink-800 dark:text-pink-300" },
-  red: { bg: "bg-red-100 dark:bg-red-500/20", text: "text-red-800 dark:text-red-300" },
+  pink: { bg: "bg-pink-100 dark:bg-pink-950/80", text: "text-pink-800 dark:text-pink-100" },
+  red: { bg: "bg-red-100 dark:bg-red-950/80", text: "text-red-800 dark:text-red-100" },
+};
+
+export const SELECT_COLOR_DOT_CLASSES: Record<SelectColor, string> = {
+  gray: "bg-gray-500 dark:bg-zinc-300",
+  brown: "bg-amber-600 dark:bg-amber-300",
+  orange: "bg-orange-600 dark:bg-orange-300",
+  yellow: "bg-yellow-600 dark:bg-yellow-300",
+  green: "bg-green-600 dark:bg-green-300",
+  blue: "bg-blue-600 dark:bg-blue-300",
+  purple: "bg-purple-600 dark:bg-purple-300",
+  pink: "bg-pink-600 dark:bg-pink-300",
+  red: "bg-red-600 dark:bg-red-300",
 };
 
 export const DEFAULT_COLUMN_WIDTH = 180;
