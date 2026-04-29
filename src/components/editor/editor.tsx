@@ -180,15 +180,25 @@ export function Editor({ file: initialFile }: EditorProps) {
     });
   }, [editor]);
 
-  // Flush pending save on page unload to prevent false "unsaved changes" warnings
-  // and ensure content is persisted before the page closes
+  // Persist pending edits when the tab closes. Uses fetch with keepalive:true
+  // so the browser is allowed to complete the request after page teardown —
+  // the regular store path's async fetch would otherwise be aborted mid-flight.
   useEffect(() => {
     const handleBeforeUnload = () => {
-      debouncedSave.flush();
+      if (!editor) return;
+      const content = editor.getHTML();
+      if (content === lastContentRef.current) return;
+      const contentMarkdown = editor.getMarkdown();
+      fetch(`/api/files/${file.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, content_markdown: contentMarkdown }),
+        keepalive: true,
+      }).catch(() => {});
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [debouncedSave]);
+  }, [editor, file.id]);
 
   // Block selection is desktop-only; mobile always uses direct editing (Notion-style)
   useEffect(() => {
