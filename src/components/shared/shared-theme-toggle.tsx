@@ -30,14 +30,14 @@ function MiniThemeCard({
       )}
     >
       <div
-        className="relative h-[40px] w-full overflow-hidden rounded-sm"
+        className="relative aspect-[16/9] w-full overflow-hidden rounded-sm"
         style={{ backgroundColor: theme.preview.backgroundColor }}
       >
         <div
           className="absolute bottom-0 left-0 top-0 w-[3px]"
           style={{ backgroundColor: theme.preview.accentColor }}
         />
-        <div className="flex flex-col gap-[3px] p-1.5 pl-2">
+        <div className="flex flex-col gap-1 p-2 pl-3">
           <div
             className="h-[3px] w-3/5 rounded-full"
             style={{ backgroundColor: theme.preview.foregroundColor, opacity: 0.6 }}
@@ -56,7 +56,7 @@ function MiniThemeCard({
           />
         </div>
         {isActive && (
-          <div className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary">
+          <div className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary">
             <Check className="h-2 w-2 text-primary-foreground" />
           </div>
         )}

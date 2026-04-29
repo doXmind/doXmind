@@ -23,7 +23,7 @@ from agents.prompts import (
 )
 from agents.stream_handler import stream_response
 from agents.tool_executor import ToolExecutor
-from agents.tools.definitions import get_tools_for_mode
+from agents.tools.definitions import FILE_MANAGEMENT_TOOLS, get_tools_for_mode
 from config import get_settings
 from services.document_sections import (
     find_section_for_text,
@@ -33,6 +33,41 @@ from services.document_sections import (
 from services.skills_service import get_skills_service
 
 logger = logging.getLogger(__name__)
+
+
+GLOBAL_CAPABILITIES_PROMPT = """
+
+<global_capabilities>
+You are a GLOBAL agent with full workspace access beyond the current document.
+
+<global_search>
+Search across ALL user documents (not just the current one) using the unified tools:
+- search(query, scope="all"): Text search across all documents by keyword. Returns file_id, document name, and matching excerpts.
+- get_outline(file_id=...): Get the outline (heading structure) of any document by file_id. Returns section IDs for navigation.
+- read_content(file_id=..., section_ids=[...]): Read specific sections from any document by file_id and section IDs.
+
+Workflow: search(scope="all") → get_outline(file_id=...) → read_content(file_id=..., section_ids=[...])
+
+When to use:
+- User asks about content from other documents
+- Need to reference or cross-check information across documents
+- Research across the user's entire document library
+
+These tools also support KB documents: use kb_document parameter instead of file_id.
+</global_search>
+
+<file_management>
+Full file and folder management:
+- create_file: Create a new document (with optional content and parent folder)
+- create_folder: Create a new folder (max 3 levels deep)
+- rename_file: Rename any file or folder
+- move_file: Move file/folder to a different location
+- delete_file: Delete file/folder (moves to trash, recoverable)
+- list_files: Browse folder contents (omit parent_id for root level)
+
+Use these when the user wants to organize their workspace, create new documents, or manage files.
+</file_management>
+</global_capabilities>"""
 
 
 def _annotate_selected_content(message: str, document_content: str) -> str:
@@ -103,6 +138,7 @@ class WritingAgent:
         model: str | None = None,
         is_quick_edit: bool = False,
         tool_profile: str | None = None,
+        user_id: str | None = None,
     ):
         """Initialize the writing agent.
 
@@ -115,6 +151,8 @@ class WritingAgent:
             api_key: User's OpenRouter API key (uses server key if not provided)
             model: User's preferred model (uses default if not provided)
             is_quick_edit: Quick edit mode - optimizes for direct text editing
+            user_id: If provided, enables global-agent capabilities (file
+                management tools + cross-document search).
         """
         self.mode = mode
         self.is_quick_edit = is_quick_edit
@@ -124,6 +162,7 @@ class WritingAgent:
         self.web_search_enabled = web_search_enabled
         self.code_execution_enabled = True  # Always enabled
         self.db = db
+        self.user_id = user_id
 
         # Check if skills are available
         self.has_skills = bool(get_skills_service().list_skills())
@@ -174,11 +213,17 @@ class WritingAgent:
             tool_profile=self.tool_profile,
         )
 
+        # Global mode: append workspace-level file management tools
+        if self.user_id:
+            tools = tools + list(FILE_MANAGEMENT_TOOLS)
+
         # Create tool executor
         self.tool_executor = ToolExecutor(settings, tools)
 
     def _get_extra_system_prompt(self) -> str:
-        """Hook for subclasses to append extra sections to the system prompt."""
+        """Extra system prompt sections (e.g., global capabilities)."""
+        if self.user_id:
+            return GLOBAL_CAPABILITIES_PROMPT
         return ""
 
     async def stream(
@@ -191,7 +236,6 @@ class WritingAgent:
         conversation_id: str = None,
         global_kb_context: dict[str, Any] | None = None,
         file_mgmt_context: dict[str, Any] | None = None,
-        community_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream agent response with real-time token streaming.
 
@@ -245,6 +289,17 @@ class WritingAgent:
             if doc_content:
                 message = _annotate_selected_content(message, doc_content)
 
+        # Auto-build global contexts when running as a global agent (user_id set).
+        if self.user_id:
+            if global_kb_context is None:
+                global_kb_context = {
+                    "db": self.db,
+                    "user_id": self.user_id,
+                    "api_key": self._user_api_key,
+                }
+            if file_mgmt_context is None:
+                file_mgmt_context = {"db": self.db, "user_id": self.user_id}
+
         # Build messages (async to support file uploads)
         messages = await self._build_messages(message, images, data_files, history)
 
@@ -266,7 +321,6 @@ class WritingAgent:
                 collected_edits=collected_edits,
                 global_kb_context=global_kb_context,
                 file_mgmt_context=file_mgmt_context,
-                community_context=community_context,
             ):
                 yield event
 
@@ -471,7 +525,6 @@ class WritingAgent:
         collected_edits: list[dict[str, Any]],
         global_kb_context: dict[str, Any] | None = None,
         file_mgmt_context: dict[str, Any] | None = None,
-        community_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Main agent loop handling streaming and tool execution."""
         iteration = 0
@@ -644,7 +697,6 @@ class WritingAgent:
                     current_todos=current_todos,
                     global_kb_context=global_kb_context,
                     file_mgmt_context=file_mgmt_context,
-                    community_context=community_context,
                 ):
                     if event.get("type") == "tool_result":
                         tool_result_messages.append(

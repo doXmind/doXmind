@@ -24,7 +24,6 @@ import { getReviewState } from "@/extensions/text-review-extension";
 import { useAutocomplete } from "@/hooks/use-autocomplete";
 import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useTextReview } from "@/hooks/use-text-review";
-import { useMockTextReview } from "@/hooks/use-mock-text-review";
 import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
@@ -441,18 +440,11 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
   useSpellcheck({ editor, enabled: spellcheckEnabled && !isMobile });
   useBlockKeyboardShortcuts(!isMobile ? editor : null);
 
-  // Use mock text review in demo mode, real API otherwise
-  const realTextReview = useTextReview({
+  const { triggerReview, clearReview } = useTextReview({
     editor,
     fileId: file.id,
     onReviewStart: () => setReviewPanelOpen(true),
   });
-  const mockTextReview = useMockTextReview({
-    editor,
-    fileId: file.id,
-    onReviewStart: () => setReviewPanelOpen(true),
-  });
-  const { triggerReview, clearReview } = isDemoMode ? mockTextReview : realTextReview;
 
   // Get review state for toolbar
   const reviewState = getReviewState(editor);

@@ -16,12 +16,21 @@ logger = logging.getLogger(__name__)
 _lock = RLock()
 
 
-_PROVIDER_IDS: tuple[str, ...] = ("openai", "anthropic", "google")
+_PROVIDER_IDS: tuple[str, ...] = ("openai", "anthropic", "google", "claude_code")
 _ROLE_IDS: tuple[str, ...] = ("chat", "thinking", "fast", "review", "file_conversion")
+
+# Providers that authenticate via OAuth (subscription) instead of a pasted key.
+_OAUTH_PROVIDER_IDS: tuple[str, ...] = ("claude_code",)
 
 
 def _empty_providers() -> dict:
-    return {pid: {"api_key": ""} for pid in _PROVIDER_IDS}
+    out: dict = {}
+    for pid in _PROVIDER_IDS:
+        entry: dict = {"api_key": ""}
+        if pid in _OAUTH_PROVIDER_IDS:
+            entry["oauth"] = None
+        out[pid] = entry
+    return out
 
 
 def _empty_role_overrides() -> dict:
@@ -56,8 +65,18 @@ def _merge_defaults(data: dict | None) -> dict:
     if isinstance(persisted_providers, dict):
         for pid in _PROVIDER_IDS:
             entry = persisted_providers.get(pid) or {}
-            if isinstance(entry, dict) and isinstance(entry.get("api_key"), str):
+            if not isinstance(entry, dict):
+                continue
+            if isinstance(entry.get("api_key"), str):
                 out["providers"][pid]["api_key"] = entry["api_key"]
+            if pid in _OAUTH_PROVIDER_IDS:
+                oauth = entry.get("oauth")
+                if isinstance(oauth, dict) and oauth.get("access_token"):
+                    out["providers"][pid]["oauth"] = {
+                        "access_token": str(oauth.get("access_token") or ""),
+                        "refresh_token": str(oauth.get("refresh_token") or ""),
+                        "expires_at": int(oauth.get("expires_at") or 0),
+                    }
 
     persisted_roles = data.get("model_roles") or {}
     if isinstance(persisted_roles, dict):
@@ -152,6 +171,16 @@ def save(updates: dict) -> dict:
                 continue
             if "api_key" in entry and isinstance(entry["api_key"], str):
                 current["providers"][pid]["api_key"] = entry["api_key"].strip()
+            if pid in _OAUTH_PROVIDER_IDS and "oauth" in entry:
+                oauth = entry["oauth"]
+                if oauth is None:
+                    current["providers"][pid]["oauth"] = None
+                elif isinstance(oauth, dict) and oauth.get("access_token"):
+                    current["providers"][pid]["oauth"] = {
+                        "access_token": str(oauth.get("access_token") or ""),
+                        "refresh_token": str(oauth.get("refresh_token") or ""),
+                        "expires_at": int(oauth.get("expires_at") or 0),
+                    }
 
     roles = updates.get("model_roles")
     if isinstance(roles, dict):

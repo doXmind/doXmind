@@ -36,29 +36,58 @@ def _load_config() -> dict:
     return local_config.load()
 
 
+def _provider_has_credentials(provider_id: str, providers_cfg: dict) -> bool:
+    """True if the provider has a usable API key or OAuth token."""
+    entry = providers_cfg.get(provider_id) or {}
+    if CATALOG[provider_id].auth_mode == "oauth":
+        oauth = entry.get("oauth") or {}
+        return bool(oauth.get("access_token") and oauth.get("refresh_token"))
+    return bool(entry.get("api_key"))
+
+
 def active_provider_id() -> str | None:
     """Which provider is currently active?
 
     Order of preference:
-      1. `active_provider` field from local_config (if it has a key configured)
-      2. The first catalog provider that has an API key
+      1. `active_provider` field from local_config (if it's configured)
+      2. The first catalog provider that has credentials
       3. None — nothing configured yet
     """
     cfg = _load_config()
     providers = cfg.get("providers") or {}
 
     active = cfg.get("active_provider")
-    if active in CATALOG and (providers.get(active, {}) or {}).get("api_key"):
+    if active in CATALOG and _provider_has_credentials(active, providers):
         return active
 
     for pid in PROVIDER_IDS:
-        if (providers.get(pid, {}) or {}).get("api_key"):
+        if _provider_has_credentials(pid, providers):
             return pid
 
     return None
 
 
 def provider_api_key(provider_id: str) -> str:
+    """Return the credential to pass as the OpenAI SDK's ``api_key``.
+
+    For API-key providers this is the stored key. For OAuth providers
+    (e.g. ``claude_code``) this is a fresh access token, refreshed lazily
+    when it's within 5 minutes of expiry.
+    """
+    if provider_id not in CATALOG:
+        return ""
+
+    if CATALOG[provider_id].auth_mode == "oauth":
+        if provider_id != "claude_code":
+            return ""
+        from services import claude_oauth
+
+        try:
+            return claude_oauth.ensure_valid_access_token()
+        except Exception as e:
+            logger.warning("Claude OAuth token unavailable: %s", e)
+            return ""
+
     cfg = _load_config()
     providers = cfg.get("providers") or {}
     entry = providers.get(provider_id) or {}

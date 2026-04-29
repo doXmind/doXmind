@@ -1,5 +1,5 @@
 /**
- * Data Files API and KB Agent API methods - extends ApiClient prototype
+ * Data Files API methods - extends ApiClient prototype
  */
 
 import { ApiClient } from "./client";
@@ -57,11 +57,6 @@ declare module "./client" {
       sourceDatabaseId?: string;
     }>;
     deleteDataFile(conversationId: string, fileId: string): Promise<{ status: string; id: string }>;
-    kbAgentStream(
-      question: string,
-      conversationId?: string | null,
-      signal?: AbortSignal
-    ): Promise<Response>;
   }
 }
 
@@ -165,36 +160,4 @@ ApiClient.prototype.deleteDataFile = async function (
     `/api/data-files/${conversationId}/files/${fileId}`,
     { method: "DELETE" }
   );
-};
-
-// ==========================================================================
-// KB Agent API
-// ==========================================================================
-
-/**
- * Stream a KB agent response. Returns the raw fetch Response for SSE processing.
- */
-ApiClient.prototype.kbAgentStream = async function (
-  this: ApiClient,
-  question: string,
-  conversationId?: string | null,
-  signal?: AbortSignal
-): Promise<Response> {
-  const url = `${this.baseUrl}/api/kb-agent/stream`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...this.getAuthHeaders(),
-    },
-    body: JSON.stringify({ question, conversationId }),
-    signal,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "KB Agent request failed" }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
-  }
-
-  return response;
 };

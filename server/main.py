@@ -24,8 +24,8 @@ from api import (
     images,
     import_file,
     inline,
-    kb_agent,
     knowledge_base,
+    oauth,
     review,
     skills,
     user_settings,
@@ -119,12 +119,12 @@ app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
-app.include_router(kb_agent.router, prefix="/api/kb-agent", tags=["kb_agent"])
 app.include_router(global_agent.router, prefix="/api/global-agent", tags=["global_agent"])
 app.include_router(knowledge_base.router, prefix="/api/kb", tags=["kb"])
 app.include_router(data_files.router, tags=["data_files"])
 app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
 app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
+app.include_router(oauth.router, prefix="/api/oauth", tags=["oauth"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(databases.router, prefix="/api/databases", tags=["databases"])
 
