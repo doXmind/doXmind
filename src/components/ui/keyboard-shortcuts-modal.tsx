@@ -57,15 +57,6 @@ const shortcutGroups: ShortcutGroup[] = [
     shortcuts: [
       { keys: ["Ctrl", "Z"], descriptionKey: "undoAction" },
       { keys: ["Ctrl", "Y"], descriptionKey: "redoAction" },
-      { keys: ["Alt", "/"], descriptionKey: "triggerAutocomplete" },
-    ],
-  },
-  {
-    titleKey: "aiFeatures",
-    shortcuts: [
-      { keys: ["Select text"], descriptionKey: "showQuickEdit" },
-      { keys: ["Enter"], descriptionKey: "sendInChat" },
-      { keys: ["Shift", "Enter"], descriptionKey: "newLineInChat" },
     ],
   },
 ];

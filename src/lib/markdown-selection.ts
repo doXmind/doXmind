@@ -2,8 +2,7 @@
  * Markdown Selection Utilities
  *
  * Serialize ProseMirror nodes and ranges to markdown via the editor's
- * markdown manager, ensuring selected content sent to AI matches
- * the markdown format the backend operates on.
+ * markdown manager, matching the markdown format the backend operates on.
  */
 
 import type { Editor } from "@tiptap/react";

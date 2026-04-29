@@ -34,16 +34,11 @@ import { PageLink } from "@/extensions/page-link";
 import { LinkPaste } from "@/extensions/link-paste";
 import { TrailingNode } from "@/extensions/trailing-node";
 import { SlashCommands } from "./slash-commands";
-import { AutocompleteExtension } from "@/extensions/autocomplete-extension";
-import { AutocompleteKeymap } from "@/extensions/autocomplete-keymap";
 import { SearchExtension } from "@/extensions/search";
 import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
-import { DiffReviewExtension } from "@/extensions/diff-review";
-import { TextReviewExtension } from "@/extensions/text-review-extension";
 import { BlockSelectionExtension } from "@/extensions/block-selection-extension";
 import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
-import { InlineAISelectionHighlightExtension } from "@/extensions/inline-ai-selection-highlight";
 import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
 import type { Extensions } from "@tiptap/react";
 
@@ -162,12 +157,8 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
 
     // Custom extensions
     SlashCommands,
-    AutocompleteExtension,
     SearchExtension,
     SpellcheckExtension,
-    DiffReviewExtension,
-    TextReviewExtension,
-    InlineAISelectionHighlightExtension,
 
     // Block color support (text and background colors for blocks)
     BlockColorExtension,
@@ -177,23 +168,18 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
       enabled: true,
       selectionMode: "desktop", // Block selection is desktop-only; mobile uses native editing
     }),
-
-    // AutocompleteKeymap MUST be last to ensure Tab handler has highest priority
-    // TipTap processes keyboard shortcuts in reverse order (last extension first)
-    AutocompleteKeymap,
   ];
 
   // Desktop-only: Block handle (hover to show +/grip in left margin)
   if (!isMobile) {
-    // Insert before AutocompleteKeymap (which must be last)
-    extensions.splice(extensions.length - 1, 0, BlockHandleExtension);
+    extensions.push(BlockHandleExtension);
   }
 
   // Only add Placeholder extension on desktop (mobile uses custom empty state UI)
   if (!isMobile) {
     extensions.push(
       Placeholder.configure({
-        placeholder: "Press Space for AI or '/' for commands",
+        placeholder: "Type '/' for commands",
         showOnlyCurrent: true,
       })
     );

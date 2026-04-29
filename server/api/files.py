@@ -21,7 +21,6 @@ from exceptions import (
     UnauthorizedError,
 )
 from services.auth_service import TokenData, require_auth
-from services.llm_service import LLMService
 from utils.html import _extract_data_content, strip_html_tags
 from utils.markdown_converter import html_to_markdown
 
@@ -166,7 +165,6 @@ class FileUpdate(BaseModel):
     content_markdown: str | None = None  # Frontend-computed markdown (from editor.getMarkdown())
     is_favorite: bool | None = None
     icon: str | None = None
-    presentation_simplified: str | None = None
     cover_image_url: str | None = None
     cover_position: float | None = None
 
@@ -190,14 +188,12 @@ class FileResponse(BaseModel):
     id: str
     name: str
     content: str
-    content_markdown: str | None = None  # Cached markdown for AI consumption
+    content_markdown: str | None = None  # Cached markdown for local preview/search
     is_folder: bool = False
     parent_id: str | None = None
     position: int = 0
-    summary: str | None = None
     is_favorite: bool = False
     icon: str | None = None
-    presentation_simplified: str | None = None
     cover_image_url: str | None = None
     cover_position: float = 0.5
     created_at: str
@@ -244,7 +240,6 @@ async def list_files(
             File.is_folder,
             File.parent_id,
             File.position,
-            File.summary,
             File.is_favorite,
             File.icon,
             File.cover_image_url,
@@ -310,7 +305,6 @@ async def list_files(
                 is_folder=row.is_folder,
                 parent_id=row.parent_id,
                 position=row.position,
-                summary=row.summary,
                 is_favorite=row.is_favorite or False,
                 icon=row.icon,
                 cover_image_url=row.cover_image_url,
@@ -404,7 +398,6 @@ async def create_file(
             is_folder=False,
             parent_id=cast(str | None, created["parent_id"]),
             position=cast(int, created["position"]),
-            summary=None,
             is_favorite=False,
             icon=None,
             created_at=cast(datetime, created["created_at"]).isoformat(),
@@ -451,10 +444,8 @@ async def get_file(
         is_folder=file.is_folder,
         parent_id=file.parent_id,
         position=file.position,
-        summary=file.summary,
         is_favorite=file.is_favorite or False,
         icon=file.icon,
-        presentation_simplified=file.presentation_simplified,
         cover_image_url=file.cover_image_url,
         cover_position=file.cover_position if file.cover_position is not None else 0.5,
         created_at=file.created_at.isoformat(),
@@ -506,11 +497,6 @@ async def update_file(
     if update.icon is not None:
         file.icon = update.icon if update.icon != "" else None
 
-    if update.presentation_simplified is not None:
-        file.presentation_simplified = (
-            update.presentation_simplified if update.presentation_simplified != "" else None
-        )
-
     if update.cover_image_url is not None:
         file.cover_image_url = update.cover_image_url if update.cover_image_url != "" else None
 
@@ -525,10 +511,8 @@ async def update_file(
     file_name = file.name
     file_content = file.content
     file_content_markdown = file.content_markdown
-    file_summary = file.summary
     file_is_favorite = file.is_favorite or False
     file_icon = file.icon
-    file_presentation_simplified = file.presentation_simplified
     file_cover_image_url = file.cover_image_url
     file_cover_position = file.cover_position if file.cover_position is not None else 0.5
     file_created_at = file.created_at.isoformat()
@@ -545,10 +529,8 @@ async def update_file(
         is_folder=file_is_folder,
         parent_id=file_parent_id,
         position=file_position,
-        summary=file_summary,
         is_favorite=file_is_favorite,
         icon=file_icon,
-        presentation_simplified=file_presentation_simplified,
         cover_image_url=file_cover_image_url,
         cover_position=file_cover_position,
         created_at=file_created_at,
@@ -699,7 +681,6 @@ async def create_folder(
             is_folder=cast(bool, created["is_folder"]),
             parent_id=cast(str | None, created["parent_id"]),
             position=cast(int, created["position"]),
-            summary=None,
             is_favorite=False,
             icon=None,
             created_at=cast(datetime, created["created_at"]).isoformat(),
@@ -795,7 +776,6 @@ async def move_file(
         is_folder=file.is_folder,
         parent_id=file.parent_id,
         position=file.position,
-        summary=file.summary,
         is_favorite=file.is_favorite or False,
         icon=file.icon,
         created_at=file.created_at.isoformat(),
@@ -946,64 +926,6 @@ async def search_in_document(
         pos = plain.lower().find(query_lower, pos + 1)
 
     return {"results": results}
-
-
-class SummaryResponse(BaseModel):
-    """Summary generation response."""
-
-    summary: str
-
-
-@router.post("/{file_id}/summarize", response_model=SummaryResponse)
-async def generate_summary(
-    file_id: str,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
-):
-    """Generate an AI summary for a file (not in trash)."""
-    user_id = get_user_id(token)
-
-    query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
-
-    result = await db.execute(query)
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise DocumentNotFoundError(file_id=file_id)
-
-    # Skip if content is too short
-    if not file.content or len(file.content.strip()) < 50:
-        return SummaryResponse(summary="")
-
-    try:
-        llm = LLMService(role="fast")
-        prompt = f"""Summarize this document in one evocative sentence (max 80 characters).
-Write in the same tone as the document. Be poetic, not descriptive.
-Do not start with "This document..." or similar. Just give the summary.
-
-Document:
-{file.content[:2000]}"""
-
-        summary = await llm.complete(
-            prompt=prompt,
-            max_tokens=100,
-            temperature=0.7,
-        )
-
-        # Clean up the summary
-        summary = summary.strip().strip('"').strip("'")
-        if len(summary) > 100:
-            summary = summary[:97] + "..."
-
-        # Save to database
-        file.summary = summary
-        await db.commit()
-
-        return SummaryResponse(summary=summary)
-    except Exception as e:
-        logger.error(f"Summary generation error: {e}")
-        raise InternalError(message="Failed to generate summary")
 
 
 # =============================================================================

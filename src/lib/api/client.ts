@@ -14,7 +14,7 @@ export class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  /** Kept as a no-op for legacy call sites (streaming hooks). */
+  /** Kept as a no-op for legacy call sites. */
   public getAuthorizationHeaders(): Record<string, string> {
     return {};
   }
@@ -27,7 +27,7 @@ export class ApiClient {
   public setAccessToken(_token: string, _expiresIn?: number): void {}
 
   // ---------------------------------------------------------------------------
-  // Legacy cloud method stubs (kept so old call sites don't break the build).
+  // Legacy sharing method stubs (kept so old call sites don't break the build).
   // All return empty payloads for the local desktop edition.
   // ---------------------------------------------------------------------------
   public async isLoggedIn(): Promise<boolean> {

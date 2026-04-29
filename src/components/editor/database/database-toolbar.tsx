@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Filter, ArrowUpDown, SlidersHorizontal, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import type {
   DatabaseData,
   DatabaseView,
@@ -15,8 +14,6 @@ import { FilterSortPanel } from "./filter-sort-panel";
 import { PropertiesPanel } from "./properties-panel";
 import { ViewSettingsPanel } from "./view-settings-panel";
 import { useDatabaseStore } from "@/stores/database-store";
-import { useLayoutStore } from "@/stores/layout-store";
-import { useChatContextStore } from "@/stores/chat-context-store";
 
 interface DatabaseToolbarProps {
   database: DatabaseData;
@@ -60,33 +57,6 @@ export function DatabaseToolbar({
   const hiddenCount = visiblePropertyIds
     ? database.properties_schema.length - visiblePropertyIds.length
     : 0;
-
-  const handleAnalyzeWithAI = () => {
-    // Build a summary of the database to use as a chat context reference
-    const colNames = database.properties_schema.map((p) => p.name).join(", ");
-    const rowCount = database.rows.length;
-    const summary = `<!-- database:${database.id} -->\n${database.title} (${rowCount} rows)\nColumns: ${colNames}`;
-
-    useChatContextStore.getState().addChatContext({
-      type: "selection",
-      text: summary,
-      from: 0,
-      to: 0,
-    });
-
-    // Set pending input for the chat composer to pick up
-    const colCount = database.properties_schema.length;
-    useChatContextStore.getState().setPendingInput(
-      t("analyzePrompt", {
-        title: database.title,
-        rowCount,
-        colCount,
-      })
-    );
-
-    // Open the sidebar chat — database CSV auto-exports when chat stream starts
-    useLayoutStore.getState().setChatOpen(true);
-  };
 
   const handleToggleVisibility = (propId: string, visible: boolean) => {
     const currentVisible =
@@ -191,19 +161,6 @@ export function DatabaseToolbar({
       </div>
 
       <div className="flex-1" />
-
-      {/* Analyze with AI button */}
-      <button
-        className={cn(
-          "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors duration-150",
-          "text-muted-foreground hover:bg-accent"
-        )}
-        onClick={handleAnalyzeWithAI}
-        title={t("analyzeWithAI")}
-      >
-        <AiLogoIcon className="h-3 w-3" size={12} />
-        {t("analyzeWithAI")}
-      </button>
 
       {/* View settings button (board / gallery only) */}
       {hasViewSettings && (

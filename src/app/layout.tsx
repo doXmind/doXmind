@@ -2,15 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import "./styles/editor.css";
-import "./styles/diff-review.css";
-import "./styles/text-review.css";
 import "./styles/code-block.css";
 import "./styles/math-mermaid.css";
 import "./styles/presentation.css";
 import "./styles/mobile.css";
 import "./styles/components.css";
 import { Providers } from "@/components/providers";
-import { GlobalAgentOverlay } from "@/components/global-agent/global-agent-overlay";
 import { Toaster } from "sonner";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
@@ -30,12 +27,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "doXmind - AI Writing Studio",
+    default: "doXmind - Local Writing Studio",
     template: "%s | doXmind",
   },
-  description:
-    "A minimalist AI-powered writing tool for markdown editing. Chat with AI, get suggestions, and write better content.",
-  keywords: ["AI writing", "markdown editor", "writing assistant", "Claude AI", "content creation"],
+  description: "A minimalist local-first writing tool for markdown editing.",
+  keywords: ["markdown editor", "local writing app", "document editor", "content creation"],
   authors: [{ name: "doXmind Team" }],
   creator: "doXmind",
   metadataBase: new URL("https://app.doxmind.com"),
@@ -48,21 +44,21 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "/",
     siteName: "doXmind",
-    title: "doXmind - AI Writing Studio",
-    description: "A minimalist AI-powered writing tool for markdown editing",
+    title: "doXmind - Local Writing Studio",
+    description: "A minimalist local-first writing tool for markdown editing",
     images: [
       {
         url: "/icon.svg",
         width: 480,
         height: 480,
-        alt: "doXmind AI Writing Studio",
+        alt: "doXmind Local Writing Studio",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "doXmind - AI Writing Studio",
-    description: "A minimalist AI-powered writing tool for markdown editing",
+    title: "doXmind - Local Writing Studio",
+    description: "A minimalist local-first writing tool for markdown editing",
     images: ["/icon.svg"],
   },
   robots: {
@@ -82,7 +78,7 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
   name: "doXmind",
-  description: "AI-powered writing assistant for markdown editing",
+  description: "Local-first markdown writing and document editing",
   applicationCategory: "Productivity",
   operatingSystem: "Web",
   offers: {
@@ -183,7 +179,6 @@ export default async function RootLayout({
               Skip to content
             </a>
             {children}
-            <GlobalAgentOverlay />
             <Toaster position="bottom-right" richColors />
           </Providers>
         </NextIntlClientProvider>

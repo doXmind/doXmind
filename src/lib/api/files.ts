@@ -39,7 +39,6 @@ declare module "./client" {
       position: number;
       is_favorite: boolean;
       icon: string | null;
-      presentation_simplified: string | null;
       cover_image_url: string | null;
       cover_position: number;
       created_at: string;
@@ -75,7 +74,6 @@ declare module "./client" {
         content_markdown?: string;
         is_favorite?: boolean;
         icon?: string;
-        presentation_simplified?: string;
         cover_image_url?: string;
         cover_position?: number;
       }
@@ -240,7 +238,6 @@ ApiClient.prototype.getFile = async function (this: ApiClient, id: string) {
     position: number;
     is_favorite: boolean;
     icon: string | null;
-    presentation_simplified: string | null;
     cover_image_url: string | null;
     cover_position: number;
     created_at: string;
@@ -286,7 +283,6 @@ ApiClient.prototype.updateFile = async function (
     content_markdown?: string;
     is_favorite?: boolean;
     icon?: string;
-    presentation_simplified?: string;
   }
 ) {
   return this.request<{

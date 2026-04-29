@@ -5,7 +5,7 @@ export function getTutorialDocumentMarkdown(locale?: string): string {
   if (locale === "zh") return getTutorialDocumentMarkdownZh();
   return `# doXmind User Guide
 
-Welcome to doXmind. This guide covers every core feature so you can go from first idea to final output quickly and clearly.
+Welcome to doXmind. The local desktop edition focuses on files, structured writing, databases, presentation, and export, with core work handled on your machine.
 
 ## 1. Start a Document
 
@@ -14,92 +14,54 @@ Welcome to doXmind. This guide covers every core feature so you can go from firs
 
 ## 2. Editor Basics
 
-- Type **/** to insert headings, lists, quotes, code blocks, callouts, and more.
+- Type **/** to insert headings, lists, quotes, code blocks, callouts, math, Mermaid charts, tables, and more.
 - Select text for format tools and block actions.
 - Use **Ctrl/Cmd+F** for in-document find.
 
-## 3. Inline AI (In-Editor AI)
+## 3. Databases
 
-- On an empty new line, press **Space** to open Inline AI in write mode.
-- Select text and press **Ctrl/Cmd+J** to ask or edit in place.
-- You can also right-click selected text and choose **Ask Inline AI**.
-- Inline AI works directly in the editor, so you can review and keep editing without switching context.
+- Insert inline databases for tasks, research, contacts, and checklists.
+- Use table and board views, properties, sorting, and filters.
+- Import CSV data and keep editing it locally.
 
-## 4. Quick Edit
-
-- Select any text to run instant rewrites (improve, simplify, shorten, expand, adjust tone, translate).
-
-## 5. AI Autocomplete
-
-- AI suggests continuations while you type.
-- Press **Tab** to accept a full suggestion.
-- Press **Ctrl+Space** to accept word-by-word.
-- Press **Esc** to dismiss a suggestion.
-- Press **Alt+/** to trigger autocomplete manually.
-- Press **Ctrl+Shift+Space** to force long-form completion.
-
-## 6. AI Chat Collaboration
-
-Use the right panel or floating input as your writing copilot for:
-
-- outlining,
-- rewriting,
-- summarizing,
-- translating,
-- brainstorming,
-- style alignment.
-
-Tip: include audience, tone, and target length in prompts for better first drafts.
-
-## 7. Diff Review
-
-- When AI proposes edits, review changes in diff mode and accept/reject line by line or in bulk.
-
-## 8. Attachments and Context
-
-- Upload files or images in chat to provide session context.
-- Ask for output in a specific format (for example: "Give me conclusion + evidence").
-
-## 9. Search and Navigation
+## 4. Search and Navigation
 
 - **Ctrl/Cmd+K**: Command Palette.
 - **Ctrl/Cmd+Tab**: Quick file switcher.
-- **Ctrl/Cmd+Shift+F**: Semantic search.
 - **Ctrl/Cmd+F**: Find in current document.
+- **Ctrl/Cmd+Shift+O**: Toggle outline.
 
-## 10. Document Management
+## 5. Document Management
 
 - Use folders for project structure.
 - Use Version History to compare snapshots and restore.
 - Export from the More menu as **Markdown**, **PDF**, or **Word**.
 
-## 11. Presentation Mode
+## 6. Presentation Mode
 
 - Press **F5** (or click the toolbar button) to start presentation mode.
 - Use **---** between sections to split slides.
-- You can present the original content or generate an AI-simplified presentation version.
 - Use arrow keys to navigate and **Esc** to exit.
 
-## 12. Outline, Mindlines, and Review
+## 7. Outline and Mindlines
 
 - **Ctrl/Cmd+Shift+O** toggles the outline panel.
 - Use Outline / Mindlines to jump across structure quickly.
-- Run Writing Review for structure, clarity, and readability checks.
 
-## 13. Personalization and Sharing
+## 8. Personalization and Sharing
 
 - Customize theme, typography, editor width, and spellcheck.
 - Share read-only links for collaboration and review.
 
-## 14. Recommended Workflow
+## 9. Recommended Workflow
 
 1. Draft a rough outline.
-2. Expand sections with Inline AI, chat, or autocomplete.
-3. Refine key paragraphs with Quick Edit.
-4. Review diffs and run Writing Review.
+2. Organize content with headings, callouts, tables, and databases.
+3. Save important milestones with Version History.
+4. Use Outline and Mindlines to review structure.
 5. Present, export, or share.
 
-## 15. Useful Shortcuts
+## 10. Useful Shortcuts
 
 - **Ctrl+K**: open quick switcher
 - **Ctrl+F**: find in document
@@ -115,7 +77,7 @@ You can keep this guide as a reference or delete it anytime.
 function getTutorialDocumentMarkdownZh(): string {
   return `# 欢迎使用 doXmind
 
-欢迎使用 doXmind。本指南覆盖完整功能清单与推荐工作流，帮助你从写作到演示一站完成。
+欢迎使用 doXmind。本地桌面版专注于文件管理、结构化写作、数据库、演示和导出，核心工作都在本机完成。
 
 ## 1. 快速开始
 
@@ -141,101 +103,57 @@ function getTutorialDocumentMarkdownZh(): string {
 - **大纲 / Mindlines**：快速定位章节结构；
 - **文档内搜索**：快速找到关键词位置。
 
-## 3. Inline AI（内联 AI）
+## 3. 数据库与结构化内容
 
-- 在空白新行按 **Space** 可打开内联 AI（写入模式）；
-- 选中文本后按 **Ctrl/Cmd+J** 可直接发起内联提问或改写；
-- 也可右键选中文本，使用 **Ask Inline AI**；
-- 内联 AI 在编辑区原位工作，减少来回切换。
+- 在文档中插入表格型数据库，管理任务、资料、联系人或清单；
+- 支持表格、看板、属性、排序和筛选；
+- 可从 CSV 导入数据并在本地继续整理。
 
-## 4. 快捷编辑
-
-选中文本后可一键执行润色、精简、扩写、改写语气、翻译等操作。
-
-## 5. AI 自动补全
-
-- AI 会在写作过程中实时给出续写建议；
-- 按 **Tab** 接受整段建议；
-- 按 **Ctrl+Space** 逐词接受；
-- 按 **Esc** 取消建议。
-- 按 **Alt+/** 手动触发自动补全；
-- 按 **Ctrl/Cmd+Shift+Space** 强制触发长文补全。
-
-## 6. AI 对话协作
-
-右侧 AI 对话面板可用于：
-
-- 生成大纲，
-- 改写段落，
-- 总结文档，
-- 翻译内容，
-- 头脑风暴，
-- 统一全文语气。
-
-建议在提问时明确目标读者、语气和篇幅，例如“面向产品经理，800 字，专业但易读”。
-
-## 7. Diff 审阅
-
-当 AI 生成修改时，可在差异审阅中逐条接受/拒绝，也可批量处理。
-
-## 8. 附件与上下文
-
-你可以在对话框中上传文件或图片，作为当前会话的上下文信息，帮助 AI 更贴合你的素材进行写作与改写。
-
-建议：
-
-- 上传结构清晰、信息完整的素材；
-- 提问时说明任务范围和输出格式；
-- 让 AI 按“结论 + 依据”输出，便于核对。
-
-## 9. 搜索与导航
+## 4. 搜索与导航
 
 - **Ctrl/Cmd+K**：打开命令面板；
 - **Ctrl/Cmd+Tab**：快速切换最近文档；
-- **Ctrl/Cmd+Shift+F**：语义搜索；
-- **Ctrl/Cmd+F**：文档内查找。
+- **Ctrl/Cmd+F**：文档内查找；
+- **Ctrl/Cmd+Shift+O**：切换大纲侧栏。
 
-## 10. 文档管理
+## 5. 文档管理
 
 - 支持文件夹与批量管理；
 - 支持导入、模板创建、回收站恢复；
 - 支持导出为 **Markdown**、**PDF**、**Word**。
 
-## 11. 演示模式（Presentation Mode）
+## 6. 演示模式（Presentation Mode）
 
 - 按 **F5** 或点击工具栏按钮进入演示模式；
 - 使用 **---** 分隔线控制幻灯片切分；
-- 可选择原文演示，或生成 AI 简化演示版本；
 - 方向键切换页面，按 **Esc** 退出演示。
 
-## 12. 审阅、专注与导出
+## 7. 专注与导出
 
-- **写作审阅**：用 AI 检查结构、表达和可读性；
 - 按 **F11** 进入专注模式；
 - 在右上角更多菜单导出为 **Markdown**、**PDF** 或 **Word**。
 
-## 13. 大纲与 Mindlines
+## 8. 大纲与 Mindlines
 
 - **Ctrl/Cmd+Shift+O** 可切换大纲侧栏；
 - 用大纲和 Mindlines 快速浏览和跳转章节。
 
-## 14. 个性化与分享
+## 9. 个性化与分享
 
 - 可自定义主题、排版、编辑器宽度与拼写检查；
 - 可生成只读分享链接，便于他人查看与演示。
 
-## 15. 推荐写作流程
+## 10. 推荐写作流程
 
 1. 先用 3-5 分钟列出大纲；
-2. 用内联 AI、自动补全或对话扩写每一段；
-3. 用快捷编辑打磨重点段落；
-4. 用 Diff 审阅和写作审阅完成最后检查；
+2. 用标题、引用、表格和数据库组织内容；
+3. 通过版本历史保存关键节点；
+4. 用大纲和 Mindlines 检查结构；
 5. 选择演示、导出或分享。
 
-## 16. 常用快捷键
+## 11. 常用快捷键
 
 - **Ctrl/Cmd+K**：打开命令面板
-- **Ctrl/Cmd+J**：打开内联 AI（基于当前选区/光标）
 - **Ctrl/Cmd+F**：文档内搜索
 - **Ctrl/Cmd+/**：查看快捷键面板
 - **F5**：开始演示

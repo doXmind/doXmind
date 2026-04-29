@@ -1,16 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Clock, RotateCcw, Loader2, FileText, Sparkles, Pencil, Undo2 } from "lucide-react";
+import { X, Clock, RotateCcw, Loader2, FileText, Pencil, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatDate, formatTime } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useFileStore } from "@/stores/file-store";
-import { useDiffReviewStore } from "@/stores/diff-review-store";
-import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { computeDiffHunks } from "@/lib/diff-utils";
-import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
@@ -36,16 +32,6 @@ const EDIT_TYPE_CONFIG: Record<string, { labelKey: string; icon: React.ReactNode
       icon: <Pencil className="h-3 w-3" />,
       color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
     },
-    ai_edit: {
-      labelKey: "versionPanel.aiEdit",
-      icon: <Sparkles className="h-3 w-3" />,
-      color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-    },
-    ai_quick_edit: {
-      labelKey: "versionPanel.quickEdit",
-      icon: <Sparkles className="h-3 w-3" />,
-      color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
-    },
     restore: {
       labelKey: "versionPanel.restored",
       icon: <Undo2 className="h-3 w-3" />,
@@ -69,7 +55,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
   const [isLoading, setIsLoading] = useState(false);
   const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
 
-  const { getFile } = useFileStore();
+  const { getFile, updateFile } = useFileStore();
 
   const fetchVersions = useCallback(async () => {
     setIsLoading(true);
@@ -91,55 +77,29 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
   }, [isOpen, fileId, fetchVersions]);
 
   const handleRestore = useCallback(
-    (version: Version) => {
-      const { isReviewMode, startDiffReview } = useDiffReviewStore.getState();
-
-      if (isReviewMode) {
-        toast.error(t("versionPanel.finishDiffReviewFirst"));
-        return;
-      }
-
+    async (version: Version) => {
       const file = getFile(fileId);
       if (!file) {
         toast.error(t("versionPanel.fileNotFound"));
         return;
       }
 
-      // Convert version HTML to markdown via editor's schema-aware markdown manager
-      const editor = useEditorRefStore.getState().editor;
-      let versionMarkdown: string;
-      if (editor?.storage.markdown?.manager) {
-        const el = document.createElement("div");
-        el.innerHTML = version.content;
-        const doc = ProseMirrorDOMParser.fromSchema(editor.schema).parse(el);
-        versionMarkdown = editor.storage.markdown.manager.serialize(doc.toJSON());
-      } else {
-        // Fallback: use raw content (editor not available)
-        versionMarkdown = version.content;
-      }
-
-      const hunks = computeDiffHunks(
-        file.content,
-        {
-          type: "replace_all",
-          new_content: versionMarkdown,
-          file_id: fileId,
-          file_name: "",
-          success: true,
-        },
-        file.contentMarkdown || undefined
-      );
-
-      if (hunks.length === 0) {
+      if (file.content === version.content) {
         toast.info(t("versionPanel.noChangesIdentical"));
         return;
       }
 
-      startDiffReview(fileId, hunks, file.content);
-      setPreviewVersion(null);
-      onClose();
+      try {
+        await updateFile(fileId, { content: version.content });
+        setPreviewVersion(null);
+        onClose();
+        toast.success(t("versionRestored"));
+      } catch (error) {
+        console.error("Failed to restore version:", error);
+        toast.error(t("versionPanel.loadFailed"));
+      }
     },
-    [fileId, getFile, onClose, t]
+    [fileId, getFile, onClose, t, updateFile]
   );
 
   const handleVersionClick = (version: Version) => {

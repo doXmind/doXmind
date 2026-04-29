@@ -14,7 +14,6 @@ import {
   Strikethrough,
   Code,
   Highlighter,
-  Sparkles,
   Type,
   Heading1,
   Heading2,
@@ -27,7 +26,6 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn, formatShortcut } from "@/lib/utils";
-import { useEditorStore } from "@/stores/editor-store";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
 
 interface EditorContextMenuProps {
@@ -121,7 +119,6 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const [submenuFocusIndex, setSubmenuFocusIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
-  const { openInlineAI } = useEditorStore();
   const t = useTranslations("editor");
   const isMobile = useIsMobile();
 
@@ -391,26 +388,6 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
             },
           };
         }),
-    },
-    { separator: true },
-    {
-      label: t("contextMenu.askAI"),
-      icon: <Sparkles className="h-3.5 w-3.5 text-primary" />,
-      disabled: !hasSelection,
-      action: () => {
-        if (position) {
-          const { from, to } = editor.state.selection;
-          const beforeStart = Math.max(0, from - 220);
-          const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
-          openInlineAI({ x: position.x, y: position.y }, "ask", {
-            from,
-            to,
-            beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
-            afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
-          });
-        }
-        close();
-      },
     },
   ];
 

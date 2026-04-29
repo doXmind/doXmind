@@ -4,7 +4,7 @@
  * Automatically lifts atom block nodes (mermaidChart, blockMath, image,
  * horizontalRule, tableOfContents) out of list items. These blocks should
  * always be top-level; if one ends up inside a listItem/taskItem (via paste,
- * input rule, slash command, or AI edits), this plugin moves it to just
+ * input rule, slash command, or imported content), this plugin moves it to just
  * after the parent list.
  */
 

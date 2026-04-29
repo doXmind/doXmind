@@ -6,7 +6,6 @@ import type { Editor } from "@tiptap/react";
 import { GripVertical, Plus } from "lucide-react";
 import { TextSelection } from "@tiptap/pm/state";
 import { findBlockAtCoords } from "@/extensions/block-handle-extension";
-import { useStreamingStore } from "@/stores/streaming-store";
 import { useTranslations } from "next-intl";
 import { BlockActionMenu } from "./block-action-menu";
 
@@ -299,9 +298,6 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
       // Don't update hovered block while a menu is open — changing
       // hoveredBlockPos would cause BlockActionMenu to target a different block.
       if (isMenuOpenRef.current) return;
-      // Hide block handle during AI streaming to prevent accidental edits
-      if (useStreamingStore.getState().isStreaming) return;
-
       const { clientX, clientY } = event;
       const lastPos = lastMousePosRef.current;
       const mouseActuallyMoved = !lastPos || lastPos.x !== clientX || lastPos.y !== clientY;
@@ -579,8 +575,6 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
         setHoveredBlockPos(blockPos);
         highlightBlock(blockPos);
       }
-      // Dismiss any active autocomplete ghost text
-      editor.commands.clearSuggestion();
       // Clear cursor focus so the caret doesn't show alongside the block highlight
       editor.commands.blur();
     },
@@ -744,8 +738,6 @@ export const BlockHandle = memo(function BlockHandle({ editor }: BlockHandleProp
         ds.active = true;
         setIsDragging(true);
         editor.view.dom.classList.add("is-block-dragging");
-        // Dismiss any active autocomplete ghost text
-        editor.commands.clearSuggestion();
         // Clear cursor focus during drag so the caret doesn't distract
         editor.commands.blur();
 

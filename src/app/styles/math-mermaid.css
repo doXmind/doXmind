@@ -148,8 +148,8 @@
 
 /*
  * Force high-contrast text in dark mode.
- * AI-generated mermaid code sometimes includes inline `style` directives
- * with light-mode colors (e.g. fill:#D4EDDA, color:#333) that become
+ * Imported or pasted Mermaid code sometimes includes inline `style`
+ * directives with light-mode colors (e.g. fill:#D4EDDA, color:#333) that become
  * unreadable on dark backgrounds. These overrides ensure text is always
  * legible regardless of inline styles.
  */

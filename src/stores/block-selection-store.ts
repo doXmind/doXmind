@@ -1,8 +1,7 @@
 /**
  * Block Selection Store
  *
- * Zustand store for managing mobile block-based selection,
- * and AI edit preview state.
+ * Zustand store for managing mobile block-based selection.
  */
 
 import { create } from "zustand";
@@ -10,7 +9,6 @@ import type {
   SelectableBlock,
   BlockSelectionState,
   BlockSelectionActions,
-  AIEditPreview,
   BlockDragState,
 } from "@/types/block-selection";
 
@@ -26,8 +24,6 @@ export const useBlockSelectionStore = create<BlockSelectionStore>((set, get) => 
   // State
   selectedBlocks: [],
   isSelectionActive: false,
-  editPreview: null,
-  isProcessingAI: false,
   drag: initialDragState,
 
   // Block Selection Actions
@@ -110,38 +106,6 @@ export const useBlockSelectionStore = create<BlockSelectionStore>((set, get) => 
   getSelectedText: () => {
     const { selectedBlocks } = get();
     return selectedBlocks.map((b) => b.text).join("\n\n");
-  },
-
-  // AI Edit Preview Actions
-  setEditPreview: (preview: AIEditPreview | null) => {
-    set({ editPreview: preview });
-  },
-
-  updateEditPreviewStatus: (status: AIEditPreview["status"]) => {
-    set((state) => ({
-      editPreview: state.editPreview ? { ...state.editPreview, status } : null,
-    }));
-  },
-
-  acceptEditPreview: () => {
-    const { editPreview } = get();
-    if (editPreview) {
-      set({
-        editPreview: { ...editPreview, status: "accepted" },
-      });
-    }
-  },
-
-  rejectEditPreview: () => {
-    set({
-      editPreview: null,
-      selectedBlocks: [],
-      isSelectionActive: false,
-    });
-  },
-
-  setProcessingAI: (processing: boolean) => {
-    set({ isProcessingAI: processing });
   },
 
   // Drag Actions (simplified for @dnd-kit integration)

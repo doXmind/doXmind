@@ -273,47 +273,8 @@
   @apply bg-accent;
 }
 
-.action-button-primary {
-  @apply bg-primary/10 text-primary;
-}
-
 .action-button:disabled {
   @apply pointer-events-none opacity-40;
-}
-
-/* ====================================
-   AI Edit Preview Styles
-   Full-screen diff preview for mobile
-   ==================================== */
-
-/* Original content (to be replaced) */
-.preview-original {
-  @apply rounded-lg p-3;
-  @apply border border-destructive/20 bg-destructive/10;
-}
-
-.preview-original-text {
-  @apply line-through opacity-70;
-}
-
-/* Proposed content (new) */
-.preview-proposed {
-  @apply rounded-lg p-3;
-  @apply border border-primary/20 bg-primary/10;
-}
-
-/* Preview slide-up animation */
-@keyframes previewSlideUp {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-.preview-enter {
-  animation: previewSlideUp 0.3s ease-out;
 }
 
 /* ====================================
@@ -362,8 +323,7 @@
     opacity: 1 !important;
   }
 
-  .action-bar-enter,
-  .preview-enter {
+  .action-bar-enter {
     animation: none !important;
   }
 }

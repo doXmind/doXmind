@@ -47,10 +47,8 @@ class File(Base):
     content = Column(Text, default="")
     content_hash = Column(String(64), nullable=True)
     content_markdown = Column(Text, nullable=True)
-    summary = Column(Text, nullable=True)
     is_favorite = Column(Boolean, default=False)
     icon = Column(String(10), nullable=True)
-    presentation_simplified = Column(Text, nullable=True)
 
     cover_image_url = Column(Text, nullable=True)
     cover_position = Column(Float, default=0.5)
@@ -85,105 +83,6 @@ class FileVersion(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     file = relationship("File", back_populates="versions")
-
-
-# =============================================================================
-# Conversations & Messages
-# =============================================================================
-
-
-class Conversation(Base):
-    __tablename__ = "conversations"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), nullable=True, default=_LOCAL_USER, index=True)
-    file_id = Column(String(255), nullable=True, index=True)
-    created_at = Column(DateTime(timezone=True), default=utcnow)
-
-    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
-    attachments = relationship(
-        "ConversationAttachment", back_populates="conversation", cascade="all, delete-orphan"
-    )
-    data_files = relationship(
-        "ConversationDataFile", back_populates="conversation", cascade="all, delete-orphan"
-    )
-
-
-class Message(Base):
-    __tablename__ = "messages"
-    __table_args__ = (Index("idx_messages_conversation_deleted", "conversation_id", "deleted_at"),)
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    conversation_id = Column(String(36), ForeignKey("conversations.id"))
-    role = Column(String(20))
-    content = Column(Text)
-
-    contexts = Column(JSON, nullable=True)
-    thinking = Column(Text, nullable=True)
-    tool_calls = Column(JSON, nullable=True)
-    edits = Column(JSON, nullable=True)
-
-    model = Column(String(100), nullable=True)
-    input_tokens = Column(Integer, nullable=True)
-    output_tokens = Column(Integer, nullable=True)
-    cost = Column(Float, nullable=True)
-
-    created_at = Column(DateTime(timezone=True), default=utcnow)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-
-    conversation = relationship("Conversation", back_populates="messages")
-
-
-# =============================================================================
-# Knowledge base attachments & data files
-# =============================================================================
-
-
-class ConversationAttachment(Base):
-    __tablename__ = "conversation_attachments"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    conversation_id = Column(String(36), ForeignKey("conversations.id"), nullable=False)
-
-    original_filename = Column(String(255), nullable=False)
-    file_type = Column(String(20), nullable=False)
-    file_size = Column(Integer, nullable=False)
-
-    extracted_text = Column(Text, nullable=True)
-    chunk_count = Column(Integer, default=0)
-
-    status = Column(String(20), default="processing")
-    error_message = Column(Text, nullable=True)
-
-    created_at = Column(DateTime(timezone=True), default=utcnow)
-
-    conversation = relationship("Conversation", back_populates="attachments")
-
-
-class ConversationDataFile(Base):
-    __tablename__ = "conversation_data_files"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    conversation_id = Column(String(36), ForeignKey("conversations.id"), nullable=False)
-
-    original_filename = Column(String(255), nullable=False)
-    file_type = Column(String(20), nullable=False)
-    file_size = Column(Integer, nullable=False)
-    mime_type = Column(String(100), nullable=True)
-
-    storage_path = Column(String(500), nullable=True)
-
-    preview_data = Column(JSON, nullable=True)
-    column_names = Column(JSON, nullable=True)
-    row_count = Column(Integer, default=0)
-
-    status = Column(String(20), default="ready")
-    error_message = Column(Text, nullable=True)
-
-    source_database_id = Column(String(36), nullable=True, index=True)
-    created_at = Column(DateTime(timezone=True), default=utcnow)
-
-    conversation = relationship("Conversation", back_populates="data_files")
 
 
 # =============================================================================

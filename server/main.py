@@ -1,4 +1,4 @@
-"""doXmind Mini — local desktop backend (FastAPI + OpenRouter).
+"""doXmind Mini — local desktop backend.
 
 Single-user, no auth, SQLite. Runs as a localhost sidecar for the Next.js UI.
 """
@@ -13,22 +13,11 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import (
-    autocomplete,
-    chat,
-    conversations,
-    data_files,
     databases,
     export,
     files,
-    global_agent,
     images,
     import_file,
-    inline,
-    knowledge_base,
-    oauth,
-    review,
-    skills,
-    user_settings,
     versions,
 )
 from config import CORS_ORIGINS, get_cors_headers, get_settings
@@ -58,7 +47,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="doXmind Mini (Local)",
-    description="Local AI writing studio backend",
+    description="Local-first document editor backend",
     version="2.0.0-local",
     lifespan=lifespan,
     docs_url="/docs",
@@ -110,21 +99,10 @@ app.add_middleware(RequestIDMiddleware)
 
 
 # Routers
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(conversations.router, prefix="/api/chat", tags=["chat"])
-app.include_router(inline.router, prefix="/api/inline", tags=["inline"])
-app.include_router(autocomplete.router, prefix="/api/autocomplete", tags=["autocomplete"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
-app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
-app.include_router(global_agent.router, prefix="/api/global-agent", tags=["global_agent"])
-app.include_router(knowledge_base.router, prefix="/api/kb", tags=["kb"])
-app.include_router(data_files.router, tags=["data_files"])
-app.include_router(skills.router, prefix="/api/skills", tags=["skills"])
-app.include_router(user_settings.router, prefix="/api/user-settings", tags=["user_settings"])
-app.include_router(oauth.router, prefix="/api/oauth", tags=["oauth"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(databases.router, prefix="/api/databases", tags=["databases"])
 

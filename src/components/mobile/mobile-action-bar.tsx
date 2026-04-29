@@ -4,13 +4,13 @@
  * Mobile Action Bar Component
  *
  * Fixed bottom action bar that appears when blocks are selected (via tap).
- * Provides actions: AI Voice, Copy, Cut, Delete.
+ * Provides actions: Copy, Cut, Delete.
  */
 
 import { useCallback, useState } from "react";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Scissors, Trash2, Check, Sparkles } from "lucide-react";
+import { Copy, Scissors, Trash2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useBlockSelectionStore } from "@/stores/block-selection-store";
 import { haptics } from "@/lib/haptics";
@@ -23,21 +23,14 @@ interface MobileActionBarProps {
   onCut: () => void;
   /** Callback when delete is requested */
   onDelete: () => void;
-  /** Callback when AI voice is requested */
-  onAIVoice?: () => void;
 }
 
-export function MobileActionBar({ onCopy, onCut, onDelete, onAIVoice }: MobileActionBarProps) {
+export function MobileActionBar({ onCopy, onCut, onDelete }: MobileActionBarProps) {
   const t = useTranslations("mobile");
   const tc = useTranslations("common");
   const tCom = useTranslations("community");
   const { selectedBlocks, isSelectionActive, clearSelection } = useBlockSelectionStore();
   const [copiedFeedback, setCopiedFeedback] = useState(false);
-
-  const handleAIVoice = useCallback(() => {
-    haptics.medium();
-    onAIVoice?.();
-  }, [onAIVoice]);
 
   const handleCopy = useCallback(() => {
     haptics.light();
@@ -96,17 +89,8 @@ export function MobileActionBar({ onCopy, onCut, onDelete, onAIVoice }: MobileAc
             </button>
           </div>
 
-          {/* Action buttons - AI Voice, Copy, Cut, Delete */}
+          {/* Action buttons */}
           <div className="flex items-center justify-center gap-6 px-4 py-3">
-            {/* AI - Primary action */}
-            <ActionButton
-              icon={<Sparkles className="h-6 w-6" />}
-              label="AI"
-              onPress={handleAIVoice}
-              disabled={!hasSelection}
-              primary
-            />
-
             {/* Copy */}
             <ActionButton
               icon={
@@ -153,10 +137,9 @@ interface ActionButtonProps {
   onPress: () => void;
   disabled?: boolean;
   destructive?: boolean;
-  primary?: boolean;
 }
 
-function ActionButton({ icon, label, onPress, disabled, destructive, primary }: ActionButtonProps) {
+function ActionButton({ icon, label, onPress, disabled, destructive }: ActionButtonProps) {
   return (
     <motion.button
       type="button"
@@ -166,8 +149,7 @@ function ActionButton({ icon, label, onPress, disabled, destructive, primary }: 
       className={cn(
         "action-button",
         disabled && "pointer-events-none opacity-40",
-        destructive && "text-destructive",
-        primary && "text-primary"
+        destructive && "text-destructive"
       )}
     >
       {icon}

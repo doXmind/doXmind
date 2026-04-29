@@ -31,7 +31,6 @@ export interface User {
   website?: string;
   social_links?: { github?: string; twitter?: string; linkedin?: string };
   is_verified: boolean;
-  oauth_provider?: string;
   created_at?: string;
 }
 

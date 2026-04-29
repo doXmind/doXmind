@@ -294,7 +294,6 @@ export function PresentationMode({
   }, []);
 
   // Build slides: title slide + content slides
-  // When AI summary is active, use the simplified doc instead of the original
   const slides = useMemo<Slide[]>(() => {
     if (!editor || !isPresentationMode) return [];
 
@@ -534,7 +533,7 @@ export function PresentationMode({
     };
   }, [isPresentationMode, showNavigator]);
 
-  // Clamp currentSlide when slide count changes (e.g. switching original ↔ simplified)
+  // Clamp currentSlide when slide count changes.
   useEffect(() => {
     if (slides.length > 0 && currentSlide >= slides.length) {
       setCurrentSlide(slides.length - 1);

@@ -1,12 +1,7 @@
 """Database block API routes for Notion-style inline databases."""
 
-import contextlib
 import copy
-import csv
-import io
 import logging
-import os
-import tempfile
 import uuid
 from datetime import UTC, datetime
 
@@ -17,16 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db.database import (
-    ConversationDataFile,
     DatabaseBlock,
     DatabaseRow,
     DatabaseView,
     File,
     get_db,
 )
-from dependencies import get_conversation_by_file_id
 from services.auth_service import TokenData, require_auth
-from services.data_parser_service import get_data_parser_service
 
 logger = logging.getLogger(__name__)
 
@@ -102,10 +94,6 @@ class UpdateRowRequest(BaseModel):
 
 class ReorderRowsRequest(BaseModel):
     row_ids: list[str]
-
-
-class SendToChatRequest(BaseModel):
-    file_id: str  # Editor file ID (used to resolve/create conversation)
 
 
 class CreateViewRequest(BaseModel):
@@ -459,7 +447,7 @@ async def delete_database(
     token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
-    """Delete a database block and all its rows/views, plus any auto-exported data files."""
+    """Delete a database block and all its rows/views."""
     user_id = get_user_id(token)
     db = await _get_db_or_404(database_id, user_id, session)
 
@@ -469,16 +457,6 @@ async def delete_database(
             page_file = await session.get(File, row.page_file_id)
             if page_file:
                 await session.delete(page_file)
-
-    # Clean up any auto-exported data files linked to this database
-    data_files_result = await session.execute(
-        select(ConversationDataFile).where(ConversationDataFile.source_database_id == database_id)
-    )
-    for data_file in data_files_result.scalars().all():
-        if data_file.storage_path and os.path.exists(data_file.storage_path):
-            with contextlib.suppress(OSError):
-                os.remove(data_file.storage_path)
-        await session.delete(data_file)
 
     await session.delete(db)
     await session.commit()
@@ -821,191 +799,6 @@ async def create_or_get_row_page(
     row.page_file_id = page.id
     await session.commit()
     return {"page_file_id": page.id}
-
-
-# =============================================================================
-# Send to Chat (export database as CSV data file for AI analysis)
-# =============================================================================
-
-
-def _resolve_cell_value(value, prop: dict) -> str:
-    """Resolve a cell value to a human-readable string for CSV export.
-
-    Select/multi-select values are stored as choice UUIDs — this maps them
-    back to display names using the property schema.
-    """
-    if value is None:
-        return ""
-
-    prop_type = prop.get("type", "text")
-    choices = (prop.get("options") or {}).get("choices") or []
-    choice_map = {c["id"]: c.get("name", c["id"]) for c in choices}
-
-    if prop_type == "select":
-        return choice_map.get(str(value), str(value))
-
-    if prop_type == "multi_select":
-        if isinstance(value, list):
-            return ", ".join(choice_map.get(str(v), str(v)) for v in value)
-        return str(value)
-
-    if prop_type == "checkbox":
-        return "true" if value else "false"
-
-    return str(value)
-
-
-async def export_database_to_data_file(
-    database_id: str,
-    conversation_id: str,
-    user_id: str | None,
-    session: AsyncSession,
-) -> ConversationDataFile | None:
-    """Export a database block as a CSV data file for AI analysis.
-
-    This is a reusable function called by both the manual "send-to-chat"
-    endpoint and the automatic chat-stream export logic.
-
-    Returns the created ConversationDataFile, or None if the database
-    has no properties. Caller is responsible for committing the session.
-    """
-    db_block = await _get_db_or_404(database_id, user_id, session)
-    schema = sorted(db_block.properties_schema or [], key=lambda p: p.get("position", 0))
-
-    if not schema:
-        return None
-
-    # Build CSV in memory
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    headers = [p["name"] for p in schema]
-    prop_ids = [p["id"] for p in schema]
-    writer.writerow(headers)
-
-    sorted_rows = sorted(db_block.rows or [], key=lambda r: r.position)
-    for row in sorted_rows:
-        props = row.properties or {}
-        row_values = [
-            _resolve_cell_value(props.get(pid), schema[i]) for i, pid in enumerate(prop_ids)
-        ]
-        writer.writerow(row_values)
-
-    csv_bytes = output.getvalue().encode("utf-8")
-
-    # Save CSV to temp storage
-    file_id = str(uuid.uuid4())
-    temp_dir = os.path.join(tempfile.gettempdir(), "doxmind_data_files")
-    os.makedirs(temp_dir, exist_ok=True)
-    storage_path = os.path.join(temp_dir, f"{file_id}.csv")
-
-    with open(storage_path, "wb") as f:
-        f.write(csv_bytes)
-
-    # Parse for preview metadata
-    parser = get_data_parser_service()
-    parse_result = await parser.parse_file(csv_bytes, f"{db_block.title}.csv", "text/csv")
-
-    # Create ConversationDataFile record
-    data_file = ConversationDataFile(
-        id=file_id,
-        conversation_id=conversation_id,
-        original_filename=f"{db_block.title}.csv",
-        file_type="csv",
-        file_size=len(csv_bytes),
-        mime_type="text/csv",
-        storage_path=storage_path,
-        preview_data=parse_result.get("preview_data"),
-        column_names=parse_result.get("column_names"),
-        row_count=parse_result.get("row_count", len(sorted_rows)),
-        status="ready",
-        source_database_id=database_id,
-    )
-    session.add(data_file)
-    return data_file
-
-
-@router.post("/{database_id}/send-to-chat")
-async def send_database_to_chat(
-    database_id: str,
-    body: SendToChatRequest,
-    token: TokenData = Depends(require_auth),
-    session: AsyncSession = Depends(get_db),
-):
-    """Export a database as CSV and attach it as a data file for AI analysis.
-
-    This creates a ConversationDataFile from the database's current rows,
-    enabling the agent to analyze it via code execution (pandas).
-    """
-    user_id = get_user_id(token)
-
-    # Resolve/create conversation for the editor file
-    conversation = await get_conversation_by_file_id(
-        body.file_id,
-        session,
-        create_if_missing=True,
-        user_id=user_id,
-    )
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Could not resolve conversation")
-
-    # Check if a data file already exists for this database in this conversation
-    existing_result = await session.execute(
-        select(ConversationDataFile).where(
-            ConversationDataFile.conversation_id == conversation.id,
-            ConversationDataFile.source_database_id == database_id,
-        )
-    )
-    existing = existing_result.scalar_one_or_none()
-
-    if existing:
-        # Check staleness: re-export only if database was updated after data file creation
-        db_block_result = await session.execute(
-            select(DatabaseBlock.updated_at).where(DatabaseBlock.id == database_id)
-        )
-        db_updated_at = db_block_result.scalar_one_or_none()
-
-        if db_updated_at and existing.created_at and db_updated_at <= existing.created_at:
-            # Data file is still fresh — return it as-is
-            await session.commit()
-            return {
-                "id": existing.id,
-                "conversationId": conversation.id,
-                "filename": existing.original_filename,
-                "fileType": existing.file_type,
-                "fileSize": existing.file_size,
-                "mimeType": existing.mime_type,
-                "status": existing.status,
-                "previewData": existing.preview_data,
-                "columnNames": existing.column_names,
-                "rowCount": existing.row_count,
-            }
-
-        # Stale — delete old data file and re-export
-        if existing.storage_path and os.path.exists(existing.storage_path):
-            with contextlib.suppress(OSError):
-                os.remove(existing.storage_path)
-        await session.delete(existing)
-        await session.flush()
-
-    data_file = await export_database_to_data_file(database_id, conversation.id, user_id, session)
-    if not data_file:
-        raise HTTPException(status_code=400, detail="Database has no properties")
-
-    await session.commit()
-
-    return {
-        "id": data_file.id,
-        "conversationId": conversation.id,
-        "filename": data_file.original_filename,
-        "fileType": data_file.file_type,
-        "fileSize": data_file.file_size,
-        "mimeType": data_file.mime_type,
-        "status": data_file.status,
-        "previewData": data_file.preview_data,
-        "columnNames": data_file.column_names,
-        "rowCount": data_file.row_count,
-    }
 
 
 # =============================================================================

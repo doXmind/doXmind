@@ -18,38 +18,6 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost
 /** Debounce delay for editor content updates (ms) */
 export const EDITOR_DEBOUNCE_DELAY = 1000;
 
-/** Minimum document length for text review (characters) */
-export const MIN_REVIEW_DOCUMENT_LENGTH = 20;
-
-// =============================================================================
-// Autocomplete Configuration
-// =============================================================================
-
-/** Debounce delay for autocomplete triggers (ms) */
-export const AUTOCOMPLETE_DEBOUNCE_DELAY = 300;
-
-/** Minimum text length to trigger autocomplete */
-export const AUTOCOMPLETE_MIN_TEXT_LENGTH = 2;
-
-/** Minimum word length to trigger autocomplete */
-export const AUTOCOMPLETE_MIN_WORD_LENGTH = 2;
-
-/** Maximum context characters before cursor */
-export const AUTOCOMPLETE_MAX_CONTEXT_BEFORE = 4000;
-
-/** Maximum context characters after cursor */
-export const AUTOCOMPLETE_MAX_CONTEXT_AFTER = 1000;
-
-// =============================================================================
-// Diff Configuration
-// =============================================================================
-
-/** Similarity threshold for paragraph matching (0-1) */
-export const DIFF_SIMILARITY_THRESHOLD = 0.3;
-
-/** Position tolerance for fuzzy text matching */
-export const DIFF_FUZZY_MATCH_TOLERANCE = 10;
-
 // =============================================================================
 // UI Configuration
 // =============================================================================
@@ -214,7 +182,7 @@ export const Z_INDEX = {
   BOTTOM_NAV: 40,
   /** Mobile overlay backdrop */
   MOBILE_OVERLAY: 45,
-  /** Mobile panel (sidebar, chat) */
+  /** Mobile panel */
   MOBILE_PANEL: 50,
   /** Bubble menu and popovers */
   BUBBLE_MENU: 60,
@@ -250,13 +218,6 @@ export const MOBILE_V2 = {
   PANEL_HANDLE_HEIGHT: 40,
   /** Panel drag handle visual width */
   PANEL_HANDLE_WIDTH: 40,
-
-  /** AI Panel - Peek mode height */
-  AI_PEEK_HEIGHT: 100,
-  /** AI Panel - Chat mode height ratio (70vh for better usability) */
-  AI_CHAT_RATIO: 0.7,
-  /** AI Panel - Full mode height ratio */
-  AI_FULL_RATIO: 0.9,
 
   /** Block selector width */
   BLOCK_SELECTOR_WIDTH: 260,
@@ -301,26 +262,4 @@ export const MOBILE_SPRINGS = {
   GENTLE: { stiffness: 200, damping: 25, mass: 1 },
   /** Bouncy spring for playful effects */
   BOUNCY: { stiffness: 500, damping: 15, mass: 0.5 },
-} as const;
-
-// =============================================================================
-// Chat/AI Configuration
-// =============================================================================
-
-/** Maximum number of images allowed in chat context */
-export const CHAT_MAX_IMAGES = 10;
-
-/** Maximum image file size in bytes (5MB for Anthropic API) */
-export const CHAT_MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-
-// =============================================================================
-// UI Popup/Menu Dimensions
-// =============================================================================
-
-/** Review popup dimensions */
-export const REVIEW_POPUP = {
-  /** Default popup width in pixels */
-  WIDTH: 340,
-  /** Padding from viewport edges */
-  VIEWPORT_PADDING: 16,
 } as const;

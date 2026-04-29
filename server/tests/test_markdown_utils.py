@@ -154,7 +154,7 @@ class TestSearchTextGeneration:
 
     def test_formatted_text_produces_plain(self):
         """Formatted markdown should produce plain text for searching."""
-        # This is what would be sent to AI as old_str
+        # This mirrors markdown text that callers search against.
         old_str = "**Important** information about `API` usage"
         # This should match what's in doc.textContent
         expected = "Important information about API usage"

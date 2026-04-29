@@ -24,12 +24,10 @@ import {
   MessageSquareQuote,
   ChevronRight as ChevronRightIcon,
   ChevronDown,
-  Wand2,
   AlignLeft,
   AlignCenter,
   AlignRight,
 } from "lucide-react";
-import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -39,9 +37,6 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn, formatShortcut } from "@/lib/utils";
-import { useEditorStore } from "@/stores/editor-store";
-import { isDiffReviewActive } from "@/extensions/diff-review";
-import { useStreamingStore } from "@/stores/streaming-store";
 import { NodeSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 import { LinkModal } from "./link-modal";
@@ -111,7 +106,6 @@ function getSelectionRect(): DOMRect | null {
 export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentProps) {
   const t = useTranslations("editor");
   const [linkModalOpen, setLinkModalOpen] = useState(false);
-  const { openInlineAI, selection, inlineAIOpen } = useEditorStore();
   const [visible, setVisible] = useState(false);
   const [rawPosition, setRawPosition] = useState({ x: 0, y: 0, selBottom: 0 });
   const [adjustedStyle, setAdjustedStyle] = useState<React.CSSProperties>({});
@@ -120,14 +114,11 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
   const updateTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   const checkShouldShow = useCallback(() => {
-    if (inlineAIOpen) return false;
-    if (isDiffReviewActive(editor)) return false;
-    if (useStreamingStore.getState().isStreaming) return false;
     if (editor.state.selection instanceof CellSelection) return false;
     if (editor.state.selection instanceof NodeSelection) return false;
     const { from, to } = editor.state.selection;
     return to - from > 0;
-  }, [editor, inlineAIOpen]);
+  }, [editor]);
 
   const updateMenu = useCallback(() => {
     const shouldShow = checkShouldShow();
@@ -175,13 +166,6 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
     }
   }, [visible, rawPosition]);
 
-  // Listen to editor selection changes, focus/blur, and mouseup
-  useEffect(() => {
-    if (inlineAIOpen) {
-      setVisible(false);
-    }
-  }, [inlineAIOpen]);
-
   useEffect(() => {
     const handleSelectionUpdate = () => {
       // Debounce to avoid rapid updates during drag selection
@@ -219,51 +203,6 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
       if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
     };
   }, [editor, updateMenu]);
-
-  const handleImproveWritingClick = (event: React.MouseEvent) => {
-    if (!selection) return;
-    const selectionRect = getSelectionRect();
-    const fallbackRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const rect = selectionRect || fallbackRect;
-    const beforeStart = Math.max(0, selection.from - 220);
-    const afterEnd = Math.min(editor.state.doc.content.size, selection.to + 220);
-    openInlineAI(
-      { x: rect.left, y: rect.bottom + 5 },
-      "edit",
-      {
-        from: selection.from,
-        to: selection.to,
-        beforeText: editor.state.doc
-          .textBetween(beforeStart, selection.from, "\n", "\n")
-          .slice(-220),
-        afterText: editor.state.doc.textBetween(selection.to, afterEnd, "\n", "\n").slice(0, 220),
-      },
-      { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right }
-    );
-  };
-
-  const handleAskAI = () => {
-    if (!selection) return;
-    const rect = getSelectionRect();
-    const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
-    const y = rect ? rect.bottom : window.innerHeight / 2;
-
-    const beforeStart = Math.max(0, selection.from - 220);
-    const afterEnd = Math.min(editor.state.doc.content.size, selection.to + 220);
-    openInlineAI(
-      { x, y },
-      "ask",
-      {
-        from: selection.from,
-        to: selection.to,
-        beforeText: editor.state.doc
-          .textBetween(beforeStart, selection.from, "\n", "\n")
-          .slice(-220),
-        afterText: editor.state.doc.textBetween(selection.to, afterEnd, "\n", "\n").slice(0, 220),
-      },
-      rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right } : null
-    );
-  };
 
   const handleLinkConfirm = (url: string) => {
     editor.chain().focus().setLink({ href: url }).run();
@@ -305,36 +244,6 @@ export function BubbleMenuComponent({ editor, isMobile }: BubbleMenuComponentPro
           }}
         >
           <div className="flex flex-nowrap items-center gap-0.5">
-            {/* Left side: AI actions with text labels (Notion-style) */}
-
-            {/* Improve Writing - opens quick edit menu */}
-            <button
-              type="button"
-              onClick={handleImproveWritingClick}
-              className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
-            >
-              <Wand2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-              <span className="hidden text-sm font-medium md:inline">
-                {t("bubbleMenu.inlineImprove")}
-              </span>
-            </button>
-
-            {/* Ask AI button */}
-            <button
-              type="button"
-              onClick={handleAskAI}
-              className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded px-2 text-sm hover:bg-accent md:h-8"
-            >
-              <AiLogoIcon className="h-4 w-4" />
-              <span className="hidden text-sm font-medium md:inline">
-                {t("bubbleMenu.askInlineAI")}
-              </span>
-            </button>
-
-            {/* Divider */}
-            <div className="mx-1 h-5 w-px bg-border" />
-
-            {/* Right side: Formatting tools */}
             {!isMobile && (
               <>
                 <DropdownMenu>

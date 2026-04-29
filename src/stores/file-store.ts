@@ -71,9 +71,7 @@ interface FileState {
   importFile: (file: File, parentId?: string | null) => Promise<string>;
   updateFile: (
     id: string,
-    updates: Partial<
-      Pick<FileItem, "name" | "content" | "contentMarkdown" | "presentationSimplified">
-    >
+    updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
   ) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   setCurrentFile: (id: string | null) => void;
@@ -173,14 +171,6 @@ export const useFileStore = create<FileState>()(
               }
             }
 
-            // Build a map of previously loaded presentation_simplified data
-            const prevSimplifiedMap = new Map<string, string | null>();
-            for (const f of state.files) {
-              if (preservedContentIds.has(f.id) && f.presentationSimplified) {
-                prevSimplifiedMap.set(f.id, f.presentationSimplified);
-              }
-            }
-
             const files: FileItem[] = serverFiles.map((f) => ({
               id: f.id,
               name: f.name,
@@ -193,7 +183,6 @@ export const useFileStore = create<FileState>()(
               icon: f.icon || null,
               coverImageUrl: f.cover_image_url || null,
               coverPosition: f.cover_position ?? 0.5,
-              presentationSimplified: prevSimplifiedMap.get(f.id) ?? null,
               createdAt: f.created_at,
               updatedAt: f.updated_at,
               wordCount: f.word_count || 0,
@@ -258,7 +247,6 @@ export const useFileStore = create<FileState>()(
                       ...f,
                       content: fullFile.content,
                       contentMarkdown: fullFile.content_markdown ?? null,
-                      presentationSimplified: fullFile.presentation_simplified ?? null,
                       fork_id: fullFile.fork_id || undefined,
                       forked_from_share_id: fullFile.forked_from_share_id || undefined,
                       forked_from_title: fullFile.forked_from_title || undefined,
@@ -295,7 +283,6 @@ export const useFileStore = create<FileState>()(
             icon: serverFile.icon || null,
             coverImageUrl: serverFile.cover_image_url || null,
             coverPosition: serverFile.cover_position ?? 0.5,
-            presentationSimplified: null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
             wordCount: 0,
@@ -348,7 +335,6 @@ export const useFileStore = create<FileState>()(
             icon: serverFile.icon || null,
             coverImageUrl: serverFile.cover_image_url || null,
             coverPosition: serverFile.cover_position ?? 0.5,
-            presentationSimplified: null,
             createdAt: serverFile.created_at,
             updatedAt: serverFile.updated_at,
             wordCount: plainText.split(/\s+/).filter(Boolean).length,
@@ -378,9 +364,7 @@ export const useFileStore = create<FileState>()(
 
       updateFile: async (
         id: string,
-        updates: Partial<
-          Pick<FileItem, "name" | "content" | "contentMarkdown" | "presentationSimplified">
-        >
+        updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
       ) => {
         // Optimistic update
         set((state) => ({
@@ -399,14 +383,11 @@ export const useFileStore = create<FileState>()(
             name?: string;
             content?: string;
             content_markdown?: string;
-            presentation_simplified?: string;
           } = {};
           if (updates.name !== undefined) apiUpdates.name = updates.name;
           if (updates.content !== undefined) apiUpdates.content = updates.content;
           if (updates.contentMarkdown !== undefined)
             apiUpdates.content_markdown = updates.contentMarkdown ?? undefined;
-          if (updates.presentationSimplified !== undefined)
-            apiUpdates.presentation_simplified = updates.presentationSimplified ?? "";
           // Sync to server
           await api.updateFile(id, apiUpdates);
         } catch (error) {
@@ -443,12 +424,6 @@ export const useFileStore = create<FileState>()(
         try {
           // Delete all files from server
           await Promise.all(filesToDelete.map((fileId) => api.deleteFile(fileId)));
-
-          // Delete associated chat conversations for all deleted files
-          const { useChatStore } = await import("./chat-store");
-          await Promise.all(
-            filesToDelete.map((fileId) => useChatStore.getState().deleteConversation(fileId))
-          );
 
           eventBus.emit("storage:changed");
         } catch (error) {
@@ -585,7 +560,6 @@ export const useFileStore = create<FileState>()(
             icon: serverFolder.icon || null,
             coverImageUrl: serverFolder.cover_image_url || null,
             coverPosition: serverFolder.cover_position ?? 0.5,
-            presentationSimplified: null,
             createdAt: serverFolder.created_at,
             updatedAt: serverFolder.updated_at,
             wordCount: 0,
@@ -767,12 +741,6 @@ export const useFileStore = create<FileState>()(
 
         try {
           await Promise.all(fileIds.map((fileId) => api.deleteFile(fileId)));
-          // Delete associated chat conversations
-          const { useChatStore } = await import("./chat-store");
-          await Promise.all(
-            fileIds.map((fileId) => useChatStore.getState().deleteConversation(fileId))
-          );
-
           eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to bulk delete files", error);

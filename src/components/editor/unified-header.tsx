@@ -4,13 +4,7 @@ import Link from "next/link";
 import {
   Search,
   MoreHorizontal,
-  FileSearch,
-  Sparkles,
-  Zap,
-  FileText,
   PanelLeft,
-  Target,
-  Loader2,
   Check,
   Clock,
   Download,
@@ -40,11 +34,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { UserMenu } from "@/components/layout/user-menu";
-
-import { CreditsExhaustedBanner } from "@/components/billing/credits-exhausted-banner";
-import { PricingModal } from "@/components/billing/pricing-modal";
 import { api } from "@/lib/api";
-import type { AutocompleteMode } from "@/types";
 
 export function UnifiedHeader() {
   const {
@@ -58,33 +48,11 @@ export function UnifiedHeader() {
     setPresentationMode,
   } = useLayoutStore();
   const { currentFileId, files } = useFileStore();
-  const {
-    autocompleteEnabled,
-    setAutocompleteEnabled,
-    autocompleteTriggerMode,
-    setAutocompleteTriggerMode,
-    autocompleteMode,
-    setAutocompleteMode,
-    isReviewLoading,
-    isReviewActive,
-    requestReview,
-    isReviewPanelOpen,
-    setReviewPanelOpen,
-    spellcheckEnabled,
-    setSpellcheckEnabled,
-  } = useEditorStore();
+  const { spellcheckEnabled, setSpellcheckEnabled } = useEditorStore();
   const tSettings = useTranslations("settings");
   const t = useTranslations("editor");
 
   const currentFile = files.find((f) => f.id === currentFileId);
-
-  const handleReviewClick = () => {
-    if (isReviewActive) {
-      setReviewPanelOpen(!isReviewPanelOpen);
-    } else {
-      requestReview();
-    }
-  };
 
   const handleExport = (format: "markdown" | "pdf" | "docx") => {
     if (!currentFile) return;
@@ -110,17 +78,6 @@ export function UnifiedHeader() {
         error: t("failedToExportAs", { format: formatLabel }),
       }
     );
-  };
-
-  const setAutocomplete = (mode: AutocompleteMode) => {
-    setAutocompleteEnabled(true);
-    setAutocompleteTriggerMode("auto");
-    setAutocompleteMode(mode);
-  };
-
-  const setAutocompleteManual = () => {
-    setAutocompleteEnabled(true);
-    setAutocompleteTriggerMode("manual");
   };
 
   return (
@@ -203,106 +160,6 @@ export function UnifiedHeader() {
                   </DropdownMenuTrigger>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-56">
-                  {/* AI Writing Review */}
-                  <DropdownMenuItem onClick={handleReviewClick} disabled={isReviewLoading}>
-                    {isReviewLoading ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileSearch className="mr-2 h-4 w-4" />
-                    )}
-                    {t("aiWritingReview")}
-                    {isReviewActive && <Check className="ml-auto h-4 w-4" />}
-                  </DropdownMenuItem>
-
-                  {/* Autocomplete submenu */}
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      {t("autocomplete")}
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {!autocompleteEnabled
-                          ? t("autocompleteOff")
-                          : autocompleteTriggerMode === "manual"
-                            ? t("autocompleteManual")
-                            : autocompleteMode === "short"
-                              ? t("autocompleteShort")
-                              : autocompleteMode === "long"
-                                ? t("autocompleteLong")
-                                : t("autocompleteAdaptive")}
-                      </span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent side="left" className="w-56">
-                      <DropdownMenuItem
-                        onClick={() => setAutocomplete("short")}
-                        className={cn(
-                          autocompleteEnabled &&
-                            autocompleteTriggerMode !== "manual" &&
-                            autocompleteMode === "short" &&
-                            "bg-accent"
-                        )}
-                      >
-                        <Zap className="mr-2 h-4 w-4" />
-                        {t("autocompleteShort")}
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {t("shortDesc")}
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setAutocomplete("long")}
-                        className={cn(
-                          autocompleteEnabled &&
-                            autocompleteTriggerMode !== "manual" &&
-                            autocompleteMode === "long" &&
-                            "bg-accent"
-                        )}
-                      >
-                        <FileText className="mr-2 h-4 w-4" />
-                        {t("autocompleteLong")}
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {t("longDesc")}
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setAutocomplete("adaptive")}
-                        className={cn(
-                          autocompleteEnabled &&
-                            autocompleteTriggerMode !== "manual" &&
-                            autocompleteMode === "adaptive" &&
-                            "bg-accent"
-                        )}
-                      >
-                        <Target className="mr-2 h-4 w-4" />
-                        {t("autocompleteAdaptive")}
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {t("adaptiveDesc")}
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={setAutocompleteManual}
-                        className={cn(
-                          autocompleteEnabled && autocompleteTriggerMode === "manual" && "bg-accent"
-                        )}
-                      >
-                        <Keyboard className="mr-2 h-4 w-4" />
-                        {t("autocompleteManual")}
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {t("manualTrigger")}
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setAutocompleteEnabled(false)}
-                        className={cn(!autocompleteEnabled && "bg-accent")}
-                      >
-                        <Sparkles className="mr-2 h-4 w-4 opacity-50" />
-                        {t("autocompleteOff")}
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {t("disabledLabel")}
-                        </span>
-                      </DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-
-                  {/* Spell Check */}
                   <DropdownMenuItem onClick={() => setSpellcheckEnabled(!spellcheckEnabled)}>
                     <SpellCheck className="mr-2 h-4 w-4" />
                     {t("spellCheck")}
@@ -366,8 +223,6 @@ export function UnifiedHeader() {
           <UserMenu compact />
         </div>
       </header>
-      <CreditsExhaustedBanner />
-      <PricingModal />
     </>
   );
 }

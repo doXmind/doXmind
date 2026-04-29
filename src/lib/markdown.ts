@@ -3,7 +3,7 @@
  *
  * HTML→Markdown conversion is handled by TipTap's @tiptap/markdown extension
  * via editor.getMarkdown() (schema-aware serialization). This module provides:
- * - Markdown→HTML conversion (via marked) for AI output → editor
+ * - Markdown→HTML conversion (via marked) for imported content → editor
  * - HTML detection, plain text extraction, and normalization helpers
  */
 
@@ -36,8 +36,7 @@ marked.use({
 
 // Configure marked to handle math expressions ($$...$$ and $...$).
 // Converts to the same HTML format that ProseMirror's block-math/inline-math parseHTML expects.
-// This ensures parseFullMarkdown() in the diff review system produces proper atom nodes
-// that match the actual editor document structure.
+// This produces atom nodes that match the actual editor document structure.
 function escapeLatexForAttr(latex: string): string {
   return latex
     .replace(/&/g, "&amp;")
@@ -131,9 +130,7 @@ export function isHtml(content: string): boolean {
   return htmlTagPattern.test(content);
 }
 
-/**
- * Normalize content from AI to HTML for editor
- */
+/** Normalize markdown or HTML content for the editor. */
 export function normalizeForEditor(content: string): string {
   if (!isHtml(content)) {
     return markdownToHtml(content);

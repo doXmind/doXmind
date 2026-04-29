@@ -7,19 +7,14 @@ python-dotenv==1.0.1
 pydantic==2.10.3
 pydantic-settings==2.7.0
 
-# AI / LLM (OpenRouter via OpenAI-compatible client)
-openai==1.97.1
-tiktoken==0.8.0
-
 # Database — local SQLite
 sqlalchemy==2.0.36
 aiosqlite==0.20.0
 greenlet==3.1.1
 
-# HTTP / streaming
+# HTTP
 python-multipart==0.0.19
 httpx==0.28.1
-sse-starlette==2.2.1
 
 # Export
 markdown==3.7
@@ -28,11 +23,11 @@ fpdf2==2.8.5
 python-docx==1.1.2
 beautifulsoup4==4.12.3
 
-# Import (PDF/DOCX → markdown via OpenRouter + markitdown fallback)
+# Import (PDF/DOCX → markdown locally via markitdown)
 markitdown[all]
 pypdf>=4.0.0
 
-# Data analysis (optional code execution sandbox)
+# Spreadsheet/database parsing
 pandas==2.2.3
 numpy==2.2.1
 scipy==1.15.1

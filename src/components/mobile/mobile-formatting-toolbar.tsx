@@ -33,12 +33,10 @@ import {
   MessageSquareQuote,
   ChevronRight,
   ChevronDown,
-  Sparkles,
   KeyboardOff,
 } from "lucide-react";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { rangeToMarkdown } from "@/lib/markdown-selection";
 import { useKeyboardState } from "@/hooks/use-mobile-gestures";
 import { haptics } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
@@ -210,26 +208,6 @@ export function MobileFormattingToolbar() {
       document.activeElement.blur();
     }
   }, [editor]);
-
-  // AI Edit: bridge selected text to bottom bar quick actions
-  const handleAIEdit = useCallback(() => {
-    if (!editor) return;
-    const { from, to } = editor.state.selection;
-    const selectedText = rangeToMarkdown(editor, from, to);
-    if (selectedText) {
-      useLayoutStore.getState().setPendingSelectionForAI(selectedText);
-      // Dismiss keyboard to reveal bottom bar with quick actions
-      editor.commands.blur();
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-    }
-  }, [editor]);
-
-  // Check if there's a text selection (for showing AI Edit button)
-  const hasTextSelection = editor
-    ? editor.state.selection.to - editor.state.selection.from > 0
-    : false;
 
   if (!editor) return null;
 
@@ -461,19 +439,6 @@ export function MobileFormattingToolbar() {
                     onPress={() => editor.chain().focus().redo().run()}
                     label={t("redo")}
                   />
-
-                  {/* AI Edit - shown when text is selected */}
-                  {hasTextSelection && (
-                    <>
-                      <Divider />
-                      <ToolbarButton
-                        icon={<Sparkles className="h-4.5 w-4.5" />}
-                        onPress={handleAIEdit}
-                        label={t("aiEdit")}
-                        className="text-primary"
-                      />
-                    </>
-                  )}
                 </div>
 
                 {/* Fixed keyboard dismiss button - pinned right */}

@@ -9,7 +9,6 @@ import { useLayoutStore } from "@/stores/layout-store";
  * Handles:
  * - Ctrl+? / Cmd+? - Toggle keyboard shortcuts modal
  * - Ctrl+K / Cmd+K - Toggle command palette
- * - Ctrl+Shift+F / Cmd+Shift+F - AI semantic search
  * - Ctrl+F / Cmd+F - Find in document
  */
 export function useEditorKeyboardShortcuts() {

@@ -1,4 +1,4 @@
-"""File import API endpoint - converts PDF, DOCX, MD to Markdown."""
+"""File import API endpoint - converts local files to Markdown."""
 
 import logging
 import os
@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.files import get_user_id
 from db.database import File as FileModel
 from db.database import get_db
-from dependencies import resolve_user_api_key
 from exceptions import (
     AppException,
     BadRequestError,
@@ -22,11 +21,6 @@ from exceptions import (
     UnsupportedFileTypeError,
 )
 from services.auth_service import TokenData, require_auth
-from services.gemini_converter import (
-    convert_file_to_markdown,
-    is_converter_configured,
-    markitdown_convert,
-)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,7 +47,7 @@ def markdown_to_html(md_content: str) -> str:
 
 
 def strip_code_fences(md_content: str) -> str:
-    """Strip wrapping code fences that LLMs sometimes add around markdown output.
+    """Strip wrapping Markdown code fences.
 
     Only removes the outermost fence when the entire content is wrapped in a single
     code fence block (e.g. ```markdown\\n...\\n```). Internal code fences are preserved.
@@ -65,11 +59,21 @@ def strip_code_fences(md_content: str) -> str:
     return md_content
 
 
-def _normalize_conversion_result(result: tuple[str, dict | None] | str) -> tuple[str, dict | None]:
-    """Normalize conversion result for backwards compatibility in tests/mocks."""
-    if isinstance(result, tuple):
-        return result
-    return result, None
+async def convert_with_markitdown(content: bytes, ext: str) -> str:
+    """Convert supported office/PDF formats locally with MarkItDown."""
+    import asyncio
+    import tempfile
+
+    from markitdown import MarkItDown
+
+    def _convert_sync() -> str:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp:
+            tmp.write(content)
+            tmp.flush()
+            result = MarkItDown().convert(tmp.name)
+            return result.text_content or ""
+
+    return await asyncio.to_thread(_convert_sync)
 
 
 @router.post("/")
@@ -88,9 +92,6 @@ async def import_file(
     - Returns: Created file object
     """
     user_id = get_user_id(token)
-
-    # Resolve user's API key for file conversion and indexing
-    user_api_key = await resolve_user_api_key(user_id, db) if user_id else None
 
     # Validate parent folder if provided
     if parent_id:
@@ -128,66 +129,13 @@ async def import_file(
             # Already markdown, just decode
             md_content = content.decode("utf-8")
         else:
-            # Determine if we can use LLM conversion or must fallback
-            use_markitdown = False
-
-            if not user_api_key and user_id:
-                from services.credit_service import CreditService
-
-                credit_svc = CreditService(db)
-                has_credits = await credit_svc.check_credits(user_id)
-                if not has_credits:
-                    use_markitdown = True
-
-            if not use_markitdown and not is_converter_configured():
-                use_markitdown = True
-
-            if use_markitdown:
-                # No credits or no LLM configured: use markitdown (zero cost)
-                md_content = await markitdown_convert(content, file.filename or "unknown", ext)
-                conversion_usage = None
-            else:
-                # Use LLM API for PDF/DOCX/PPTX conversion
-                conversion_result = await convert_file_to_markdown(
-                    content, file.filename or "unknown", ext, api_key=user_api_key
-                )
-                md_content, conversion_usage = _normalize_conversion_result(conversion_result)
-
-            # Track file conversion usage
-            import asyncio
-
-            from services.usage_tracker import track_usage
-
-            if conversion_usage:
-                asyncio.create_task(
-                    track_usage(
-                        service="file_conversion",
-                        model=conversion_usage.get("model"),
-                        input_tokens=conversion_usage.get("input_tokens"),
-                        output_tokens=conversion_usage.get("output_tokens"),
-                        cost=conversion_usage.get("cost"),
-                        user_id=user_id,
-                        is_byok=conversion_usage.get("is_byok", False),
-                    )
-                )
-
-                from services.credit_service import deduct_credits_for_usage
-
-                asyncio.create_task(
-                    deduct_credits_for_usage(
-                        user_id=user_id,
-                        cost=conversion_usage.get("cost"),
-                        service="file_conversion",
-                        is_byok=conversion_usage.get("is_byok", False),
-                    )
-                )
+            md_content = await convert_with_markitdown(content, ext)
     except AppException:
         raise
     except Exception as e:
         logger.error(f"Conversion failed: {e}")
         raise InternalError(message=f"Failed to convert file: {str(e)}")
 
-    # Strip wrapping code fences from LLM output
     md_content = strip_code_fences(md_content)
 
     # Convert markdown to HTML for TipTap editor (basic backend conversion)

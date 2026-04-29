@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock api module - vi.hoisted ensures mocks are available before imports
-const { mockApi, mockDeleteConversation } = vi.hoisted(() => ({
+const { mockApi } = vi.hoisted(() => ({
   mockApi: {
     listFiles: vi.fn(),
     createFile: vi.fn(),
@@ -12,20 +12,10 @@ const { mockApi, mockDeleteConversation } = vi.hoisted(() => ({
     updateFile: vi.fn(),
     deleteFile: vi.fn(),
   },
-  mockDeleteConversation: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
   api: mockApi,
-}));
-
-// Mock chat store for deleteFile
-vi.mock("@/stores/chat-store", () => ({
-  useChatStore: {
-    getState: () => ({
-      deleteConversation: mockDeleteConversation,
-    }),
-  },
 }));
 
 // Import store after mocks are set up
@@ -475,14 +465,6 @@ describe("useFileStore", () => {
       await useFileStore.getState().deleteFile("file-1");
 
       expect(mockApi.deleteFile).toHaveBeenCalledWith("file-1");
-    });
-
-    it("deletes associated chat conversation", async () => {
-      mockApi.deleteFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().deleteFile("file-1");
-
-      expect(mockDeleteConversation).toHaveBeenCalledWith("file-1");
     });
 
     it("switches current file when deleting current", async () => {
