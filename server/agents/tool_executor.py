@@ -8,7 +8,6 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from agents.tools.community_tools import execute_community_tool, is_community_tool
 from agents.tools.data_files_tools import execute_data_files_tool, is_data_files_tool
 from agents.tools.definitions import get_external_tools_for_skill
 from agents.tools.document_tools import (
@@ -45,7 +44,6 @@ class ToolExecutor:
         current_todos: list[dict] | None = None,
         global_kb_context: dict[str, Any] | None = None,
         file_mgmt_context: dict[str, Any] | None = None,
-        community_context: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Execute a single tool and yield events."""
         tool_name = tool_use["name"]
@@ -93,8 +91,6 @@ class ToolExecutor:
                 result = await execute_file_management_tool(
                     tool_name, tool_input, file_mgmt_context
                 )
-            elif is_community_tool(tool_name):
-                result = await execute_community_tool(tool_name, tool_input, community_context)
             elif is_web_tool(tool_name):
                 result = await execute_web_tool(tool_name, tool_input, data_files_context)
             else:
@@ -233,15 +229,6 @@ class ToolExecutor:
                     meta["file_name"] = name
                 return meta
 
-        if tool_name == "fork_community_document":
-            match = re.search(r"\(id=([^)]+)\)", result_str)
-            name_match = re.search(r"'([^']+)'", result_str)
-            if match:
-                meta = {"file_id": match.group(1), "file_action": "created"}
-                if name_match:
-                    meta["file_name"] = name_match.group(1)
-                return meta
-
         # --- Read operations (referenced documents) ---
 
         if tool_name in ("read_content", "get_outline"):
@@ -376,20 +363,6 @@ class ToolExecutor:
                 return f"Found {file_count} item{'s' if file_count != 1 else ''}"
             return "Listed files"
 
-        # Community tools
-        if tool_name == "search_community":
-            if isinstance(result_content, str):
-                if "No community documents" in result_content:
-                    return "Found 0 community documents"
-                return "Found community documents"
-            return "Searched community"
-
-        if tool_name == "fork_community_document":
-            return "Forked community document"
-
-        if tool_name == "get_community_recommendations":
-            return "Got recommendations"
-
         # Todo tools
         if tool_name == "TodoWrite":
             if isinstance(result_content, str):
@@ -461,12 +434,6 @@ class ToolExecutor:
             "delete_file",
             "list_files",
         )
-        community_tools = (
-            "search_community",
-            "fork_community_document",
-            "get_community_recommendations",
-        )
-
         if tool_name in reminders:
             return result_content + reminders[tool_name]
         elif tool_name in read_tools:
@@ -493,11 +460,6 @@ class ToolExecutor:
         elif tool_name in file_mgmt_tools:
             return result_content + (
                 "\n\n<reminder>File operation complete. Continue with the next task.</reminder>"
-            )
-        elif tool_name in community_tools:
-            return result_content + (
-                "\n\n<reminder>Present the community results to the user. "
-                "Use fork_community_document to copy interesting documents.</reminder>"
             )
         else:
             return result_content + (

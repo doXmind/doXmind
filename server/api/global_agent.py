@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.global_agent import GlobalAgent
+from agents.writing_agent import WritingAgent
 from api.chat import _resolve_user_api_settings
 from config import get_cors_headers, get_settings
 from db.database import Conversation, ConversationAttachment, ConversationDataFile, Message, get_db
@@ -373,7 +373,7 @@ async def global_agent_stream(
                 if thinking:
                     effective_model = thinking
 
-            agent = GlobalAgent(
+            agent = WritingAgent(
                 user_id=user_id,
                 mode=request.mode,
                 kb_attachments=kb_attachments if kb_attachments else None,

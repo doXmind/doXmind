@@ -51,6 +51,8 @@ class ProviderInfo(BaseModel):
     role_defaults: dict[str, str]
     role_overrides: dict[str, str | None]
     has_reasoning: bool
+    auth_mode: str = "api_key"  # "api_key" | "oauth"
+    oauth_expires_at: int | None = None  # ms-since-epoch, OAuth providers only
 
 
 class UserSettingsResponse(BaseModel):
@@ -133,16 +135,25 @@ def _mask_key(key: str) -> str | None:
 def _build_provider_info(pid: str) -> ProviderInfo:
     pdef = CATALOG[pid]
     cfg = local_config.load()
-    stored_key = (cfg.get("providers") or {}).get(pid, {}).get("api_key") or ""
+    provider_entry = (cfg.get("providers") or {}).get(pid, {}) or {}
+    stored_key = provider_entry.get("api_key") or ""
     overrides = (cfg.get("model_roles") or {}).get(pid) or {}
+
+    oauth_entry = provider_entry.get("oauth") or {}
+    has_oauth = pdef.auth_mode == "oauth" and bool(oauth_entry.get("access_token"))
+    oauth_expires_at = int(oauth_entry.get("expires_at") or 0) or None if has_oauth else None
+
     return ProviderInfo(
         id=pdef.id,
         name=pdef.name,
         base_url=pdef.base_url,
         docs_url=pdef.docs_url,
         api_key_hint=pdef.api_key_hint,
-        has_api_key=bool(stored_key),
-        key_preview=_mask_key(stored_key),
+        # For OAuth providers, `has_api_key` tracks "is signed in" so the
+        # existing settings UI logic (active-provider gating, tab labels) keeps
+        # working without a second boolean.
+        has_api_key=has_oauth if pdef.auth_mode == "oauth" else bool(stored_key),
+        key_preview=None if pdef.auth_mode == "oauth" else _mask_key(stored_key),
         models=[
             ModelInfo(
                 id=m.id,
@@ -158,6 +169,8 @@ def _build_provider_info(pid: str) -> ProviderInfo:
         role_defaults=dict(pdef.role_defaults),
         role_overrides={role: overrides.get(role) for role in ROLES},
         has_reasoning=pdef.has_reasoning_model(),
+        auth_mode=pdef.auth_mode,
+        oauth_expires_at=oauth_expires_at,
     )
 
 
@@ -186,6 +199,12 @@ async def set_provider_key(provider_id: str, body: ProviderKeyRequest):
     """
     if provider_id not in CATALOG:
         raise HTTPException(404, f"Unknown provider: {provider_id}")
+    if CATALOG[provider_id].auth_mode == "oauth":
+        raise HTTPException(
+            400,
+            f"{CATALOG[provider_id].name} uses OAuth sign-in, not an API key. "
+            "Call POST /api/oauth/claude/login instead.",
+        )
 
     client = build_client(body.api_key, provider_id)
     try:

@@ -632,8 +632,3 @@ FILE_MANAGEMENT_TOOLS = [
 ]
 
 FILE_MANAGEMENT_TOOL_NAMES = {tool["name"] for tool in FILE_MANAGEMENT_TOOLS}
-
-
-# Community tools removed in local desktop edition.
-COMMUNITY_TOOLS: list[dict] = []
-COMMUNITY_TOOL_NAMES: set[str] = set()

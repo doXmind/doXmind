@@ -39,6 +39,8 @@ class ProviderDef:
     models: tuple[ModelSpec, ...]
     role_defaults: dict[str, str]
     default_headers: dict[str, str] = field(default_factory=dict)
+    # Auth mode: "api_key" = paste a key; "oauth" = subscription login.
+    auth_mode: str = "api_key"
 
     def model_by_id(self, model_id: str) -> ModelSpec | None:
         for m in self.models:
@@ -143,6 +145,42 @@ CATALOG: dict[str, ProviderDef] = {
             "review": "claude-sonnet-4-6",
             "file_conversion": "claude-haiku-4-5",
         },
+    ),
+    "claude_code": ProviderDef(
+        id="claude_code",
+        name="Claude Pro/Max",
+        # Same host as the API-key path, but OAuth tokens are the auth mechanism
+        # and the anthropic-beta OAuth header is attached in default_headers.
+        base_url="https://api.anthropic.com/v1",
+        docs_url="https://claude.com/settings/billing",
+        api_key_hint="Sign in with your claude.ai account",
+        models=(
+            ModelSpec(
+                id="claude-opus-4-6",
+                name="Claude Opus 4.6",
+                context_length=200_000,
+                supports_reasoning=True,
+            ),
+            ModelSpec(
+                id="claude-sonnet-4-6",
+                name="Claude Sonnet 4.6",
+                context_length=1_000_000,
+            ),
+            ModelSpec(
+                id="claude-haiku-4-5",
+                name="Claude Haiku 4.5",
+                context_length=200_000,
+            ),
+        ),
+        role_defaults={
+            "chat": "claude-sonnet-4-6",
+            "thinking": "claude-opus-4-6",
+            "fast": "claude-haiku-4-5",
+            "review": "claude-sonnet-4-6",
+            "file_conversion": "claude-haiku-4-5",
+        },
+        default_headers={"anthropic-beta": "oauth-2025-04-20"},
+        auth_mode="oauth",
     ),
     "google": ProviderDef(
         id="google",

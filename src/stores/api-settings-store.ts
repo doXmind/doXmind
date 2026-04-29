@@ -12,8 +12,9 @@ import { api } from "@/lib/api";
 
 const API_ROOT = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export type ProviderId = "openai" | "anthropic" | "google";
+export type ProviderId = "openai" | "anthropic" | "google" | "claude_code";
 export type FeatureRole = "chat" | "thinking" | "fast" | "review" | "file_conversion";
+export type AuthMode = "api_key" | "oauth";
 
 export interface ModelInfo {
   id: string;
@@ -37,6 +38,8 @@ export interface ProviderInfo {
   role_defaults: Record<FeatureRole, string>;
   role_overrides: Record<FeatureRole, string | null>;
   has_reasoning: boolean;
+  auth_mode: AuthMode;
+  oauth_expires_at: number | null;
 }
 
 interface APISettingsState {
@@ -58,6 +61,15 @@ interface APISettingsState {
   setActiveProvider: (providerId: ProviderId | null) => Promise<void>;
   setRoleModel: (providerId: ProviderId, role: FeatureRole, model: string | null) => Promise<void>;
 
+  // OAuth sign-in (Claude Code subscription).
+  startClaudeOAuthLogin: () => Promise<
+    { success: true; sessionId: string; authUrl: string } | { success: false; error: string }
+  >;
+  pollClaudeOAuthStatus: (
+    sessionId: string
+  ) => Promise<{ status: "pending" | "success" | "error" | "unknown"; error?: string | null }>;
+  claudeLogout: () => Promise<void>;
+
   // Back-compat for callers that only cared about "do we have any key"
   hasAPIKey: boolean;
   availableModels: ModelInfo[]; // active provider's models (empty if none)
@@ -66,7 +78,14 @@ interface APISettingsState {
 
 const EMPTY_STATE: Omit<
   APISettingsState,
-  "loadFromBackend" | "saveProviderKey" | "deleteProviderKey" | "setActiveProvider" | "setRoleModel"
+  | "loadFromBackend"
+  | "saveProviderKey"
+  | "deleteProviderKey"
+  | "setActiveProvider"
+  | "setRoleModel"
+  | "startClaudeOAuthLogin"
+  | "pollClaudeOAuthStatus"
+  | "claudeLogout"
 > = {
   activeProvider: null,
   providers: [],
@@ -184,6 +203,56 @@ export const useAPISettingsStore = create<APISettingsState>()(
             activeProvider: previous,
             ...deriveHelpers(providers, previous),
           });
+        }
+      },
+
+      startClaudeOAuthLogin: async () => {
+        try {
+          const res = await fetch(`${API_ROOT}/api/oauth/claude/login`, {
+            method: "POST",
+            headers: api.getAuthorizationHeaders(),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            return { success: false, error: body.detail || "Failed to start Claude login" };
+          }
+          const data = await res.json();
+          return { success: true, sessionId: data.session_id, authUrl: data.auth_url };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : "Network error",
+          };
+        }
+      },
+
+      pollClaudeOAuthStatus: async (sessionId) => {
+        try {
+          const res = await fetch(
+            `${API_ROOT}/api/oauth/claude/status?session_id=${encodeURIComponent(sessionId)}`,
+            { headers: api.getAuthorizationHeaders() }
+          );
+          if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
+          const data = await res.json();
+          if (data.status === "success") await get().loadFromBackend();
+          return { status: data.status, error: data.error };
+        } catch (error) {
+          return {
+            status: "error",
+            error: error instanceof Error ? error.message : "Network error",
+          };
+        }
+      },
+
+      claudeLogout: async () => {
+        try {
+          const res = await fetch(`${API_ROOT}/api/oauth/claude/logout`, {
+            method: "POST",
+            headers: api.getAuthorizationHeaders(),
+          });
+          if (res.ok) await get().loadFromBackend();
+        } catch (error) {
+          console.warn("[APISettingsStore] claude logout failed:", error);
         }
       },
 

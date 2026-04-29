@@ -9,13 +9,10 @@ import {
   ChevronRight,
   Sun,
   Moon,
-  Loader2,
-  RefreshCw,
   AlignLeft,
   AlignCenter,
   AlignRight,
 } from "lucide-react";
-import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { useTranslations } from "next-intl";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -49,8 +46,6 @@ import { useFileStore } from "@/stores/file-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { Z_INDEX } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { useSlideSummary } from "@/hooks/use-slide-summary";
-
 /* ─── Presentation-only extensions (content rendering, no editing) ── */
 
 const presentationExtensions: Extensions = [
@@ -288,18 +283,8 @@ export function PresentationMode({
   const [isDark, setIsDark] = useState(true);
   const [mounted, setMounted] = useState(false);
   const t = useTranslations("editor");
-  const tc = useTranslations("common");
   const [showNavigator, setShowNavigator] = useState(false);
   const [jumpInput, setJumpInput] = useState("");
-  const [showSummaries, setShowSummaries] = useState(false);
-  const [showAiMenu, setShowAiMenu] = useState(false);
-
-  const {
-    simplifiedDoc,
-    isGenerating,
-    generate: generateSimplified,
-    cancel: cancelSummary,
-  } = useSlideSummary(currentFileId);
 
   const currentFile = files.find((f) => f.id === currentFileId);
 
@@ -313,8 +298,7 @@ export function PresentationMode({
   const slides = useMemo<Slide[]>(() => {
     if (!editor || !isPresentationMode) return [];
 
-    const sourceDoc = showSummaries && simplifiedDoc ? simplifiedDoc : editor.getJSON();
-    const contentSlides = splitJsonIntoSlides(sourceDoc);
+    const contentSlides = splitJsonIntoSlides(editor.getJSON());
     if (contentSlides.length === 0) return [];
 
     const title = titleProp || currentFile?.name?.replace(/\.md$/i, "") || t("untitled");
@@ -338,24 +322,13 @@ export function PresentationMode({
       result.push({
         type: "content",
         json: s.json,
-        sourceNodeIndex: showSummaries ? undefined : s.startNodeIndex,
-        nodeCount: showSummaries ? undefined : s.nodeCount,
+        sourceNodeIndex: s.startNodeIndex,
+        nodeCount: s.nodeCount,
       });
     }
 
     return result;
-  }, [
-    editor,
-    isPresentationMode,
-    currentFile,
-    user,
-    titleProp,
-    authorProp,
-    dateProp,
-    showSummaries,
-    simplifiedDoc,
-    t,
-  ]);
+  }, [editor, isPresentationMode, currentFile, user, titleProp, authorProp, dateProp, t]);
 
   // Reset state when entering presentation
   useEffect(() => {
@@ -366,8 +339,6 @@ export function PresentationMode({
       setIsDark(resolvedTheme !== "light");
       setShowNavigator(false);
       setJumpInput("");
-      setShowSummaries(false);
-      setShowAiMenu(false);
     }
   }, [isPresentationMode, resolvedTheme]);
 
@@ -384,13 +355,11 @@ export function PresentationMode({
   const goNext = useCallback(() => {
     setDirection(1);
     setCurrentSlide((prev) => Math.min(prev + 1, slides.length - 1));
-    setShowAiMenu(false);
   }, [slides.length]);
 
   const goPrev = useCallback(() => {
     setDirection(-1);
     setCurrentSlide((prev) => Math.max(prev - 1, 0));
-    setShowAiMenu(false);
   }, []);
 
   const canEdit = editor?.isEditable ?? false;
@@ -430,11 +399,9 @@ export function PresentationMode({
   }, [editor, slides]);
 
   const exit = useCallback(() => {
-    cancelSummary();
-    setShowAiMenu(false);
     syncEditsToEditor();
     setPresentationMode(false);
-  }, [cancelSummary, syncEditsToEditor, setPresentationMode]);
+  }, [syncEditsToEditor, setPresentationMode]);
 
   const goToSlide = useCallback(
     (index: number) => {
@@ -606,93 +573,6 @@ export function PresentationMode({
 
       {/* Top-right controls */}
       <div className={cn("presentation-top-controls", isIdle && "presentation-idle")}>
-        <div className="relative">
-          <button
-            onClick={() => setShowAiMenu((v) => !v)}
-            className={cn(
-              "presentation-control-btn flex items-center gap-1.5",
-              (showSummaries || isGenerating) && "presentation-control-btn-active"
-            )}
-            aria-label={t("presentation.aiOptions")}
-            title={t("presentation.aiOptions")}
-          >
-            <AiLogoIcon size={16} className={cn(isGenerating && "animate-pulse")} />
-            <span className="text-xs font-medium">AI</span>
-          </button>
-          {showAiMenu && (
-            <div className="presentation-ai-menu" onClick={(e) => e.stopPropagation()}>
-              {/* Original */}
-              <button
-                onClick={() => {
-                  if (showSummaries) setCurrentSlide(0);
-                  setShowSummaries(false);
-                  setShowAiMenu(false);
-                }}
-                className={cn(
-                  "presentation-ai-menu-item",
-                  !showSummaries && !isGenerating && "presentation-ai-menu-item-active"
-                )}
-              >
-                {t("presentation.original")}
-              </button>
-
-              {/* Simplified — use cached or generate */}
-              <button
-                onClick={async () => {
-                  if (isGenerating) {
-                    cancelSummary();
-                    setShowAiMenu(false);
-                    return;
-                  }
-                  if (simplifiedDoc) {
-                    setCurrentSlide(0);
-                    setShowSummaries(true);
-                  } else if (editor) {
-                    setShowAiMenu(false);
-                    await generateSimplified(editor.getJSON());
-                    setCurrentSlide(0);
-                    setShowSummaries(true);
-                    return;
-                  }
-                  setShowAiMenu(false);
-                }}
-                className={cn(
-                  "presentation-ai-menu-item",
-                  showSummaries && "presentation-ai-menu-item-active"
-                )}
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="mr-1.5 inline h-3 w-3 animate-spin" />
-                    {tc("cancel")}
-                  </>
-                ) : simplifiedDoc ? (
-                  t("presentation.simplified")
-                ) : (
-                  t("presentation.generateSimplified")
-                )}
-              </button>
-
-              {/* Regenerate — only when cached */}
-              {simplifiedDoc && !isGenerating && (
-                <button
-                  onClick={async () => {
-                    if (editor) {
-                      setShowAiMenu(false);
-                      await generateSimplified(editor.getJSON());
-                      setCurrentSlide(0);
-                      setShowSummaries(true);
-                    }
-                  }}
-                  className="presentation-ai-menu-item"
-                >
-                  <RefreshCw className="mr-1.5 inline h-3 w-3" />
-                  {t("presentation.regenerate")}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
         <button
           onClick={() => {
             const next =
@@ -746,15 +626,9 @@ export function PresentationMode({
 
       {/* Slide content */}
       <div className="presentation-stage">
-        {isGenerating && (
-          <div className="presentation-generating-overlay">
-            <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--pres-text-muted)" }} />
-            <p className="presentation-generating-text">{t("presentation.generatingSimplified")}</p>
-          </div>
-        )}
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
-            key={`${safeIndex}-${showSummaries ? "s" : "o"}`}
+            key={safeIndex}
             custom={direction}
             variants={slideVariants}
             initial="enter"
@@ -777,7 +651,7 @@ export function PresentationMode({
               <SlideContent
                 json={editedContentsRef.current[safeIndex] ?? slide.json!}
                 className={contentClassName}
-                editable={canEdit && !showSummaries}
+                editable={canEdit}
                 onContentChange={(json) => {
                   editedContentsRef.current[safeIndex] = json;
                 }}
