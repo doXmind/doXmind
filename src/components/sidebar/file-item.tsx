@@ -1,12 +1,22 @@
 "use client";
 
-import { FileText, MoreHorizontal, Check, X, CheckSquare, Square, Star } from "lucide-react";
+import {
+  Archive,
+  FileText,
+  MoreHorizontal,
+  Check,
+  X,
+  CheckSquare,
+  Square,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -365,15 +375,30 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       className={cn(
-        "group flex cursor-pointer items-center gap-3 rounded-md px-3 py-3 transition-colors md:gap-2 md:px-2 md:py-1.5",
+        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-xl px-3 py-3 transition-colors md:h-9 md:px-3 md:py-1.5",
         "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
         isSelected
-          ? "bg-primary/10 ring-2 ring-primary/30 dark:bg-primary/20"
+          ? "bg-primary/10 ring-1 ring-primary/25 dark:bg-primary/20"
           : isActive
-            ? "bg-accent text-accent-foreground"
-            : "text-foreground hover:bg-accent/50"
+            ? "bg-foreground/[0.08] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border)/0.35)] dark:bg-white/[0.11]"
+            : "text-foreground/90 hover:bg-accent/55"
       )}
     >
+      {!isRenaming && !isSelectionMode && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFavorite(file.id);
+          }}
+          className="absolute left-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
+          aria-label={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
+          title={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
+        >
+          {file.isFavorite ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+        </button>
+      )}
+
       {/* Checkbox for multi-select */}
       {(isSelectionMode || isSelected) && (
         <button
@@ -392,20 +417,22 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         </button>
       )}
 
-      <div className="relative flex-shrink-0">
+      <div
+        className={cn(
+          "relative flex h-5 w-5 flex-shrink-0 items-center justify-center transition-opacity",
+          !isRenaming && !isSelectionMode && "md:group-hover/file:opacity-0"
+        )}
+      >
         {file.icon ? (
-          <span className="flex h-5 w-5 items-center justify-center text-sm md:h-4 md:w-4 md:text-xs">
+          <span className="flex h-5 w-5 items-center justify-center text-sm md:text-xs">
             {file.icon}
           </span>
         ) : (
-          <FileText className="h-5 w-5 text-muted-foreground/70 md:h-4 md:w-4" />
-        )}
-        {file.isFavorite && (
-          <Star className="absolute -right-1 -top-1 h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+          <FileText className="h-5 w-5 text-muted-foreground/70 md:h-[18px] md:w-[18px]" />
         )}
       </div>
 
-      <div className="min-w-0 flex-1">
+      <div className={cn("min-w-0 flex-1", !isRenaming && "pr-12")}>
         {isRenaming ? (
           <div className="flex items-center gap-1">
             <Input
@@ -440,18 +467,49 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             </button>
           </div>
         ) : (
-          <>
-            <p className="truncate text-base md:text-sm">{getNameWithoutExtension(file.name)}</p>
-            <p className="truncate text-sm text-muted-foreground md:text-xs">
-              {formatDate(file.updatedAt)}
+          <div className="flex min-w-0 items-center gap-2">
+            <p
+              className={cn(
+                "min-w-0 flex-1 truncate text-[15px] leading-5",
+                isActive ? "font-semibold" : "font-medium"
+              )}
+            >
+              {getNameWithoutExtension(file.name)}
             </p>
-          </>
+            {file.isFavorite && (
+              <Pin className="h-3 w-3 flex-shrink-0 fill-muted-foreground/50 text-muted-foreground/50" />
+            )}
+          </div>
         )}
       </div>
 
+      {!isRenaming && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-semibold text-muted-foreground/75 transition-opacity md:group-hover/file:opacity-0"
+        >
+          {getRelativeTimeLabel(file.updatedAt)}
+        </span>
+      )}
+
+      {!isRenaming && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDelete(e);
+          }}
+          className="absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
+          aria-label={t("moveToTrash")}
+          title={t("moveToTrash")}
+        >
+          <Archive className="h-3.5 w-3.5" />
+        </button>
+      )}
+
       {/* Actions - Always visible on mobile via menu button */}
       <div
-        className="flex items-center transition-opacity md:opacity-0 md:group-hover:opacity-100"
+        className="flex items-center transition-opacity md:hidden"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
@@ -537,4 +595,25 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       />
     </div>
   );
+}
+
+function getRelativeTimeLabel(date: string) {
+  const now = new Date();
+  const d = new Date(date);
+  const diff = Math.max(0, now.getTime() - d.getTime());
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
+
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
 }

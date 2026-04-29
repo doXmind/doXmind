@@ -133,7 +133,7 @@ export const useLayoutStore = create<LayoutState>()(
   persist(
     (set) => ({
       // Desktop panel visibility
-      isSidebarOpen: true,
+      isSidebarOpen: false,
       isFilesSidebarOpen: true,
       isMindlinesOpen: true,
       isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
@@ -183,7 +183,7 @@ export const useLayoutStore = create<LayoutState>()(
       lineHeight: "normal" as const,
 
       // Resizable panel widths
-      sidebarWidth: 256,
+      sidebarWidth: 224,
       filesSidebarWidth: 304,
 
       // Desktop actions
@@ -386,7 +386,7 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       resetPanelWidths: () => {
-        set({ sidebarWidth: 256, filesSidebarWidth: 256 });
+        set({ sidebarWidth: 224, filesSidebarWidth: 304 });
       },
 
       toggleMobileEditMode: () => {
@@ -404,21 +404,35 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: "doxmind-layout",
-      version: 2,
+      version: 4,
       migrate: (persistedState: unknown, version: number) => {
-        const state = persistedState as Record<string, unknown>;
+        let state = persistedState as Record<string, unknown>;
         if (version < 2) {
           // Migrate from old theme field to new themeId system
           const oldTheme = state.theme as string | undefined;
           const themeId = oldTheme === "dark" ? "dark" : "notion";
           const systemThemeEnabled = oldTheme === "system";
-          return {
+          state = {
             ...state,
             themeId,
             preferredLightTheme: "notion",
             preferredDarkTheme: "dark",
             systemThemeEnabled,
             theme: undefined,
+          };
+        }
+        if (version < 3) {
+          state = {
+            ...state,
+            isSidebarOpen: false,
+            sidebarWidth: 224,
+            filesSidebarWidth: 304,
+          };
+        }
+        if (version < 4) {
+          state = {
+            ...state,
+            filesSidebarWidth: 304,
           };
         }
         return state;

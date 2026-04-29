@@ -1,21 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Search, Settings, Trash2 } from "lucide-react";
+import { FileText, Search, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Logo } from "@/components/ui/logo";
 import { FolderTree } from "./folder-tree";
-import { SortDropdown } from "./sort-dropdown";
 import { BulkActionBar } from "./bulk-action-bar";
-import { TrashPanel } from "./trash-panel";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
-import { NewButton } from "@/components/home/new-button";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { getErrorMessage, formatShortcut } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { useTranslations, useLocale } from "next-intl";
@@ -26,24 +22,15 @@ export function FilesSidebar() {
   const t = useTranslations("sidebar");
   const locale = useLocale();
   const router = useRouter();
-  const {
-    files,
-    createFile,
-    createFolder,
-    importFile,
-    currentFolderId,
-    getFolders,
-    isLoading,
-    isSynced,
-  } = useFileStore();
+  const { files, createFile, createFolder, importFile, getFolders, isLoading, isSynced } =
+    useFileStore();
   const { openCommandPalette } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
-  const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleCreateFile = async () => {
-    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+  const handleCreateFile = async (parentId: string | null = null) => {
+    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === parentId);
 
     let maxNum = 0;
     currentFiles.forEach((file) => {
@@ -56,7 +43,7 @@ export function FilesSidebar() {
 
     const name = `Untitled-${maxNum + 1}.md`;
     try {
-      const newId = await createFile(name, "", currentFolderId);
+      const newId = await createFile(name, "", parentId);
       router.push(`/editor/${newId}`);
     } catch (error) {
       log.error("Failed to create file", error);
@@ -66,7 +53,7 @@ export function FilesSidebar() {
   };
 
   const handleTemplateSelect = async (template: FileTemplate) => {
-    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === currentFolderId);
+    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === null);
     const localName = getLocalizedFileName(template.id, template.defaultFileName, locale);
 
     let counter = 0;
@@ -79,7 +66,7 @@ export function FilesSidebar() {
     try {
       const markdown = template.getContent(locale);
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
-      const newId = await createFile(name, htmlContent, currentFolderId);
+      const newId = await createFile(name, htmlContent, null);
       router.push(`/editor/${newId}`);
     } catch (error) {
       log.error("Failed to create file from template", error);
@@ -90,10 +77,10 @@ export function FilesSidebar() {
   };
 
   const handleCreateFolder = async () => {
-    const folders = getFolders(currentFolderId);
+    const folders = getFolders(null);
     const name = `New Folder ${folders.length + 1}`;
     try {
-      await createFolder(name, currentFolderId);
+      await createFolder(name, null);
     } catch (error) {
       log.error("Failed to create folder", error);
       const { title, description } = getErrorMessage(error);
@@ -114,7 +101,7 @@ export function FilesSidebar() {
     setIsImporting(true);
     const toastId = toast.loading(t("importing", { name: file.name }));
     try {
-      const newId = await importFile(file, currentFolderId);
+      const newId = await importFile(file, null);
       router.push(`/editor/${newId}`);
       toast.success(t("imported", { name: file.name }), { id: toastId });
     } catch (error) {
@@ -127,57 +114,24 @@ export function FilesSidebar() {
   };
 
   return (
-    <div className="bg-sidebar flex h-full flex-col border-r border-border/60 text-foreground">
-      <div className="px-4 pb-3 pt-4">
-        <div className="mb-4 flex items-center gap-2.5">
-          <Logo variant="icon" size="sm" className="h-7 w-7 shrink-0" />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold tracking-tight text-foreground">
-              doXmind
-            </div>
-            <div className="text-[11px] font-medium text-muted-foreground">
-              {t("localWorkspace")}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-1">
+    <div className="bg-sidebar flex h-full flex-col border-r border-border/50 text-foreground">
+      <div className="px-4 pb-3 pt-3">
+        <div className="space-y-1.5">
           <button
-            onClick={handleCreateFile}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent/70"
+            onClick={() => handleCreateFile()}
+            className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] font-semibold text-foreground transition-colors hover:bg-accent/70"
           >
-            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <FileText className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
             <span>{t("newDocument")}</span>
           </button>
 
           <button
             onClick={openCommandPalette}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent/70"
+            className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] font-semibold text-foreground transition-colors hover:bg-accent/70"
           >
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
             <span>{t("search")}</span>
-            <kbd className="ml-auto hidden text-[10px] font-semibold text-muted-foreground/70 md:inline">
-              {formatShortcut("Ctrl+K")}
-            </kbd>
           </button>
-        </div>
-      </div>
-
-      <div className="px-4 pb-2">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/80">
-            {t("documents")}
-          </div>
-          <div className="flex items-center gap-1">
-            <SortDropdown />
-            <NewButton
-              onCreateFile={handleCreateFile}
-              onCreateFolder={handleCreateFolder}
-              onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
-              onImportFile={handleImportClick}
-              isImporting={isImporting}
-            />
-          </div>
         </div>
       </div>
 
@@ -190,31 +144,32 @@ export function FilesSidebar() {
       />
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-1 px-2 pb-3">
-          {isLoading && !isSynced ? <FileListSkeleton /> : <FolderTree />}
+        <div className="space-y-1 px-2.5 pb-4">
+          {isLoading && !isSynced ? (
+            <FileListSkeleton />
+          ) : (
+            <FolderTree
+              onCreateFile={handleCreateFile}
+              onCreateFolder={handleCreateFolder}
+              onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
+              onImportFile={handleImportClick}
+              isImporting={isImporting}
+            />
+          )}
         </div>
       </ScrollArea>
 
       <BulkActionBar />
 
-      <div className="space-y-1 border-t border-border/60 px-3 pb-7 pt-3">
-        <button
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
-          onClick={() => setIsTrashOpen(true)}
-        >
-          <Trash2 className="h-4 w-4" />
-          {t("trash")}
-        </button>
+      <div className="space-y-1 px-4 pb-7 pt-3">
         <Link
           href="/settings"
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/70"
+          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-[15px] font-semibold text-foreground transition-colors hover:bg-accent/70"
         >
-          <Settings className="h-4 w-4 text-muted-foreground" />
+          <Settings className="h-[18px] w-[18px] text-muted-foreground" />
           {t("settings")}
         </Link>
       </div>
-
-      <TrashPanel open={isTrashOpen} onClose={() => setIsTrashOpen(false)} />
 
       <TemplatePicker
         open={isTemplatePickerOpen}

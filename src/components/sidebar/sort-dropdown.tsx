@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, ListFilter } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -20,7 +20,12 @@ const sortOptions: { value: SortOption; labelKey: string; shortLabelKey: string 
   { value: "created-oldest", labelKey: "sortCreatedOldest", shortLabelKey: "sortShortCreated" },
 ];
 
-export function SortDropdown() {
+interface SortDropdownProps {
+  iconOnly?: boolean;
+  ariaLabel?: string;
+}
+
+export function SortDropdown({ iconOnly = false, ariaLabel }: SortDropdownProps) {
   const t = useTranslations("sidebar");
   const { sortBy, setSortBy } = useFileStore();
   const currentOption = sortOptions.find((o) => o.value === sortBy);
@@ -29,11 +34,21 @@ export function SortDropdown() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={t("sortFiles")}
+          className={
+            iconOnly
+              ? "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              : "flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          }
+          aria-label={ariaLabel ?? t("sortFiles")}
         >
-          <span>{currentOption ? t(currentOption.shortLabelKey) : t("sort")}</span>
-          <ChevronDown className="h-3 w-3" />
+          {iconOnly ? (
+            <ListFilter className="h-4 w-4" />
+          ) : (
+            <>
+              <span>{currentOption ? t(currentOption.shortLabelKey) : t("sort")}</span>
+              <ChevronDown className="h-3 w-3" />
+            </>
+          )}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">

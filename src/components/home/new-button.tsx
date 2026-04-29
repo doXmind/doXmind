@@ -28,6 +28,7 @@ interface NewButtonProps {
   onImportWorkspace?: () => void;
   isImporting: boolean;
   disableFolder?: boolean;
+  hideFolder?: boolean;
 }
 
 export const NewButton = memo(function NewButton({
@@ -38,6 +39,7 @@ export const NewButton = memo(function NewButton({
   onImportWorkspace,
   isImporting,
   disableFolder,
+  hideFolder,
 }: NewButtonProps) {
   const t = useTranslations("sidebar");
   return (
@@ -57,10 +59,12 @@ export const NewButton = memo(function NewButton({
           <FilePlus className="mr-2 h-4 w-4" />
           {t("newDocument")}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onCreateFolder} disabled={disableFolder}>
-          <FolderPlus className="mr-2 h-4 w-4" />
-          {t("newFolder")}
-        </DropdownMenuItem>
+        {!hideFolder && (
+          <DropdownMenuItem onClick={onCreateFolder} disabled={disableFolder}>
+            <FolderPlus className="mr-2 h-4 w-4" />
+            {t("newFolder")}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onOpenTemplatePicker}>
           <LayoutTemplate className="mr-2 h-4 w-4" />

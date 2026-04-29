@@ -81,25 +81,26 @@ export function UnifiedHeader() {
 
   return (
     <>
-      <header className="bg-sidebar relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-border/40 px-6">
-        {/* Left: Home + Sidebar toggle + Breadcrumb */}
-        <div className="flex min-w-0 items-center gap-1">
-          <Tooltip content={t("homeTooltip")} side="bottom">
+      <header className="relative z-20 flex h-11 shrink-0 items-center justify-between border-b border-border/30 bg-background/95 px-3">
+        {/* Left: app identity + global sidebar toggle */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Tooltip content="doXmind" side="bottom">
             <Link
-              href="/"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"
+              href="/editor"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-accent/70"
+              aria-label="doXmind"
             >
               <Logo variant="icon" size="sm" className="h-6 w-6" />
             </Link>
           </Tooltip>
-
-          <div className="mx-1 h-5 w-px bg-border/40" />
-
           <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
-              className={cn("h-8 w-8 text-foreground", isFilesSidebarOpen && "bg-accent")}
+              className={cn(
+                "h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground",
+                isFilesSidebarOpen && "bg-accent/70 text-foreground"
+              )}
               onClick={toggleFilesSidebar}
               aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
             >

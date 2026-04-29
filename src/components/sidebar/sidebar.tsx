@@ -67,10 +67,10 @@ export function Sidebar() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col border-r border-border/30 bg-background/70">
       {/* Outline header */}
-      <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/60">
           {t("outline")}
         </span>
         <div className="flex gap-1">
@@ -81,9 +81,9 @@ export function Sidebar() {
               onClick={handleToggleAllOutline}
               disabled={headings.length === 0}
               aria-label={t("toggleCollapseAll")}
-              className="h-8 w-8"
+              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
             >
-              <ChevronsUpDown className="h-4 w-4" />
+              <ChevronsUpDown className="h-3.5 w-3.5" />
             </Button>
           </Tooltip>
           <Tooltip content={t("mindmapView")} side="bottom">
@@ -93,9 +93,9 @@ export function Sidebar() {
               onClick={() => setIsMindmapOpen(true)}
               disabled={headings.length === 0}
               aria-label={t("openMindmap")}
-              className="h-8 w-8"
+              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
             >
-              <GitBranch className="h-4 w-4" />
+              <GitBranch className="h-3.5 w-3.5" />
             </Button>
           </Tooltip>
           <Tooltip content={t("hideOutline")} side="bottom">
@@ -104,9 +104,9 @@ export function Sidebar() {
               size="icon"
               onClick={toggleSidebar}
               aria-label={t("hideOutline")}
-              className="h-8 w-8"
+              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
             >
-              <PanelLeftClose className="h-4 w-4" />
+              <PanelLeftClose className="h-3.5 w-3.5" />
             </Button>
           </Tooltip>
         </div>

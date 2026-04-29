@@ -107,11 +107,11 @@ export function DesktopEditor() {
                   </div>
                 </div>
               ) : (
-                <div className="flex h-full w-12 flex-shrink-0 flex-col">
+                <div className="flex h-full w-11 flex-shrink-0 flex-col border-r border-border/30 bg-background/60">
                   <div className="flex items-center justify-center px-1.5 py-2">
                     <button
                       onClick={toggleSidebar}
-                      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
                       title="Expand outline"
                       aria-label="Expand outline"
                     >

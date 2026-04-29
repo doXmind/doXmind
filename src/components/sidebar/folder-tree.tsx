@@ -11,34 +11,87 @@ import {
   X,
   Trash2,
   Pencil,
-  MoreHorizontal,
-  Loader2,
   FileText,
   Star,
   Share2,
+  FolderPlus,
+  Maximize2,
+  MoreHorizontal,
+  Minimize2,
+  SquarePen,
 } from "lucide-react";
 import { createPortal } from "react-dom";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { FileItem } from "./file-item";
+import { NewButton } from "@/components/home/new-button";
 import { ShareDialog } from "@/components/share/share-dialog";
+import { SortDropdown } from "./sort-dropdown";
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem as FileItemType } from "@/types";
 import { toast } from "sonner";
-import { getErrorMessage, cn, formatDate } from "@/lib/utils";
+import { getErrorMessage, cn } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 
 const log = storeLogger.child("FolderTree");
 
-export function FolderTree() {
+interface FolderTreeProps {
+  onCreateFile: (parentId?: string | null) => void;
+  onCreateFolder: () => void;
+  onOpenTemplatePicker: () => void;
+  onImportFile: () => void;
+  isImporting: boolean;
+}
+
+function SidebarSection({
+  title,
+  children,
+  actions,
+}: {
+  title: string;
+  children: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-1.5">
+      <div className="flex h-8 items-center justify-between px-2.5">
+        <h2 className="text-[13px] font-semibold leading-none text-muted-foreground/80">{title}</h2>
+        {actions ? <div className="flex items-center gap-0.5">{actions}</div> : null}
+      </div>
+      <div className="space-y-1">{children}</div>
+    </section>
+  );
+}
+
+function HeaderIconButton({
+  label,
+  children,
+  onClick,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip content={label} side="top">
+      <button
+        onClick={onClick}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+        aria-label={label}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
+
+export function FolderTree({
+  onCreateFile,
+  onCreateFolder,
+  onOpenTemplatePicker,
+  onImportFile,
+  isImporting: isFileImporting,
+}: FolderTreeProps) {
   const t = useTranslations("sidebar");
 
   // Fine-grained selectors — actions are stable refs, state values subscribed individually
@@ -48,7 +101,6 @@ export function FolderTree() {
   const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
   const getSubPages = useFileStore((s) => s.getSubPages);
   const getFavorites = useFileStore((s) => s.getFavorites);
-  const getFolderAncestors = useFileStore((s) => s.getFolderAncestors);
   const setCurrentFolder = useFileStore((s) => s.setCurrentFolder);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
   const renameFile = useFileStore((s) => s.renameFile);
@@ -58,10 +110,10 @@ export function FolderTree() {
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
   const [favoritesExpanded, setFavoritesExpanded] = useState(true);
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
-  const [isDraggingOverEmptyFolder, setIsDraggingOverEmptyFolder] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [, setIsImporting] = useState(false);
+  const [, setImportProgress] = useState({ current: 0, total: 0 });
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState("");
   const [shareFolderId, setShareFolderId] = useState<string | null>(null);
@@ -73,25 +125,22 @@ export function FolderTree() {
   const [contextMenuReady, setContextMenuReady] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  // Memoize derived data — recomputed only when files or currentFolderId change.
+  useEffect(() => {
+    if (currentFolderId) {
+      setCurrentFolder(null);
+    }
+  }, [currentFolderId, setCurrentFolder]);
+
+  // Memoize derived data — recomputed only when files change.
   // `files` is intentionally in deps as a change signal even though getFolders/etc.
   // read it internally (ESLint can't see through the store method indirection).
   const viewFolders = useMemo(
-    () => (currentFolderId ? getFolders(currentFolderId) : getFolders(null)),
+    () => getFolders(null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
-    [files, currentFolderId, getFolders]
+    [files, getFolders]
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
   const rootFiles = useMemo(() => getFilesInFolder(null), [files, getFilesInFolder]);
-  const currentFolder = useMemo(
-    () => (currentFolderId ? files.find((f) => f.id === currentFolderId) : null),
-    [files, currentFolderId]
-  );
-  const breadcrumbAncestors = useMemo(
-    () => (currentFolderId ? getFolderAncestors(currentFolderId) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
-    [currentFolderId, getFolderAncestors, files]
-  );
   const allFolders = useMemo(() => files.filter((f) => f.isFolder), [files]);
 
   // Drag and drop handlers for folders
@@ -112,7 +161,6 @@ export function FolderTree() {
     e.preventDefault();
     e.stopPropagation();
     setDragOverFolderId(null);
-    setIsDraggingOverEmptyFolder(false);
 
     // Check if dropping external files (from computer)
     const droppedFiles = e.dataTransfer.files;
@@ -213,6 +261,37 @@ export function FolderTree() {
     }
     if (y + menuHeight > window.innerHeight - 10) {
       y = window.innerHeight - menuHeight - 10;
+    }
+
+    setContextMenu({ x, y, folderId });
+    setContextMenuFocusIndex(-1);
+    setContextMenuReady(false);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setContextMenuReady(true);
+      });
+    });
+  }, []);
+
+  const handleFolderActionsClick = useCallback((e: React.MouseEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const menuWidth = 180;
+    const menuHeight = 120;
+    const rect = e.currentTarget.getBoundingClientRect();
+    let x = rect.right - menuWidth;
+    let y = rect.bottom + 6;
+
+    if (x < 10) {
+      x = 10;
+    }
+    if (x + menuWidth > window.innerWidth - 10) {
+      x = window.innerWidth - menuWidth - 10;
+    }
+    if (y + menuHeight > window.innerHeight - 10) {
+      y = rect.top - menuHeight - 6;
     }
 
     setContextMenu({ x, y, folderId });
@@ -329,13 +408,6 @@ export function FolderTree() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers read contextMenu which is already a dep
   }, [contextMenu, contextMenuFocusIndex]);
 
-  // When inside a folder, show only files in that folder
-  const currentFolderFiles = useMemo(
-    () => (currentFolderId ? getFilesInFolder(currentFolderId) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
-    [currentFolderId, files, getFilesInFolder]
-  );
-
   // Recursive renderer for files and their sub-pages
   const renderFileWithSubPages = (file: FileItemType) => {
     const subPages = getSubPages(file.id);
@@ -351,44 +423,169 @@ export function FolderTree() {
     );
   };
 
+  const hasExpandedFolders = viewFolders.some((folder) => !collapsedFolderIds.has(folder.id));
+  const collapseToggleLabel = hasExpandedFolders ? t("collapseAll") : t("expandAll");
+
+  const folderActions = (
+    <>
+      <HeaderIconButton
+        label={collapseToggleLabel}
+        onClick={() =>
+          setCollapsedFolderIds(
+            hasExpandedFolders ? new Set(viewFolders.map((folder) => folder.id)) : new Set()
+          )
+        }
+      >
+        {hasExpandedFolders ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+      </HeaderIconButton>
+      <Tooltip content={t("organizeFolders")} side="top">
+        <SortDropdown iconOnly ariaLabel={t("organizeFolders")} />
+      </Tooltip>
+      <HeaderIconButton label={t("newFolder")} onClick={onCreateFolder}>
+        <FolderPlus className="h-4 w-4" />
+      </HeaderIconButton>
+    </>
+  );
+
+  const fileActions = (
+    <>
+      <Tooltip content={t("organizeFiles")} side="top">
+        <SortDropdown iconOnly ariaLabel={t("organizeFiles")} />
+      </Tooltip>
+      <NewButton
+        onCreateFile={onCreateFile}
+        onCreateFolder={onCreateFolder}
+        onOpenTemplatePicker={onOpenTemplatePicker}
+        onImportFile={onImportFile}
+        isImporting={isFileImporting}
+        hideFolder
+      />
+    </>
+  );
+
+  const folderRows = viewFolders.map((folder) => {
+    const folderFiles = getFilesInFolder(folder.id);
+    const itemCount = folderFiles.length;
+    const isCollapsed = collapsedFolderIds.has(folder.id);
+
+    return (
+      <div key={folder.id} className="space-y-1">
+        <div
+          onDragOver={(e) => handleDragOver(e, folder.id)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, folder.id)}
+          className={`group/folder rounded-lg transition-colors ${
+            dragOverFolderId === folder.id ? "bg-accent ring-2 ring-primary" : "hover:bg-accent/35"
+          }`}
+        >
+          {renamingFolderId === folder.id ? (
+            <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2 md:py-1.5">
+              <Folder className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
+              <Input
+                value={renamingFolderName}
+                onChange={(e) => setRenamingFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleFolderRename();
+                  if (e.key === "Escape") cancelFolderRename();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="h-7 flex-1 text-sm"
+                autoFocus
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFolderRename();
+                }}
+                className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+                aria-label={t("confirmRename")}
+              >
+                <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cancelFolderRename();
+                }}
+                className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
+                aria-label={t("cancelRename")}
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+          ) : (
+            <div
+              onClick={() => {
+                setCollapsedFolderIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(folder.id)) {
+                    next.delete(folder.id);
+                  } else {
+                    next.add(folder.id);
+                  }
+                  return next;
+                });
+              }}
+              onContextMenu={(e) => handleContextMenu(e, folder.id)}
+              className="flex h-8 w-full cursor-pointer select-none items-center gap-2 px-3 text-sm transition-transform active:scale-[0.98] md:active:scale-100"
+            >
+              {isCollapsed ? (
+                <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-muted-foreground" />
+              ) : (
+                <FolderOpen className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-muted-foreground" />
+              )}
+
+              <span className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-foreground/80 transition-colors group-hover/folder:text-foreground">
+                {folder.name}
+              </span>
+              {itemCount > 0 && (
+                <span className="ml-2 text-[12px] font-semibold text-muted-foreground/70 transition-opacity group-hover/folder:hidden">
+                  {itemCount}
+                </span>
+              )}
+              <div className="ml-1 hidden items-center gap-0.5 opacity-0 transition-opacity group-hover/folder:opacity-100 md:flex">
+                <button
+                  onClick={(e) => handleFolderActionsClick(e, folder.id)}
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+                  aria-label={t("folderActions")}
+                  title={t("folderActions")}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCreateFile(folder.id);
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+                  aria-label={t("newDocument")}
+                  title={t("newDocument")}
+                >
+                  <SquarePen className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        {!isCollapsed && folderFiles.length > 0 && (
+          <div className="ml-6 space-y-1 border-l border-border/40 pl-1.5">
+            {folderFiles.map((file) => renderFileWithSubPages(file))}
+          </div>
+        )}
+      </div>
+    );
+  });
+
   return (
     <div className="space-y-2">
-      {/* Breadcrumb - Multi-level navigation (hide on mobile to avoid redundancy with header back button) */}
-      {currentFolderId && currentFolder && (
-        <div className="mb-2 hidden items-center gap-1 border-b border-border px-3 py-2 md:flex">
-          <button
-            onClick={() => setCurrentFolder(null)}
-            className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronRight className="h-3 w-3 rotate-180" />
-            {t("allFiles")}
-          </button>
-          {breadcrumbAncestors.map((ancestor, index) => (
-            <span key={ancestor.id} className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground">/</span>
-              {index === breadcrumbAncestors.length - 1 ? (
-                <span className="truncate text-xs font-medium text-foreground">
-                  {ancestor.name}
-                </span>
-              ) : (
-                <button
-                  onClick={() => setCurrentFolder(ancestor.id)}
-                  className="truncate text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {ancestor.name}
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* Favorites Section - only show at root when there are favorites */}
-      {!currentFolderId && getFavorites().length > 0 && (
+      {getFavorites().length > 0 && (
         <div className="mb-1">
           <button
             onClick={() => setFavoritesExpanded(!favoritesExpanded)}
-            className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground md:px-2"
+            className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             {favoritesExpanded ? (
               <ChevronDown className="h-3 w-3" />
@@ -411,224 +608,14 @@ export function FolderTree() {
         </div>
       )}
 
-      {/* Folders at current level (root or inside a folder) */}
-      {viewFolders.map((folder) => {
-        const folderFiles = getFilesInFolder(folder.id);
-        const subFolders = getFolders(folder.id);
-        const itemCount = folderFiles.length + subFolders.length;
+      <SidebarSection title={t("folders")} actions={folderActions}>
+        {folderRows}
+      </SidebarSection>
 
-        return (
-          <div key={folder.id}>
-            {/* Folder Item */}
-            <div
-              onDragOver={(e) => handleDragOver(e, folder.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, folder.id)}
-              className={`group rounded-md transition-colors ${
-                dragOverFolderId === folder.id
-                  ? "bg-accent ring-2 ring-primary"
-                  : "hover:bg-accent/50"
-              }`}
-            >
-              {renamingFolderId === folder.id ? (
-                <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2 md:py-1.5">
-                  <Folder className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
-                  <Input
-                    value={renamingFolderName}
-                    onChange={(e) => setRenamingFolderName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleFolderRename();
-                      if (e.key === "Escape") cancelFolderRename();
-                      e.stopPropagation();
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="h-7 flex-1 text-sm"
-                    autoFocus
-                    onFocus={(e) => e.target.select()}
-                  />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleFolderRename();
-                    }}
-                    className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-                    aria-label={t("confirmRename")}
-                  >
-                    <Check className="h-4 w-4 text-green-600 dark:text-green-500" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      cancelFolderRename();
-                    }}
-                    className="flex-shrink-0 rounded p-0.5 hover:bg-accent"
-                    aria-label={t("cancelRename")}
-                  >
-                    <X className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                </div>
-              ) : (
-                <div
-                  onClick={() => setCurrentFolder(folder.id)}
-                  onContextMenu={(e) => handleContextMenu(e, folder.id)}
-                  className="flex w-full cursor-pointer select-none items-center gap-3 px-3 py-3 text-sm transition-transform active:scale-[0.98] md:gap-2 md:px-2 md:py-1.5 md:active:scale-100"
-                >
-                  {/* Folder icon with count badge */}
-                  <div className="relative shrink-0">
-                    <Folder className="h-5 w-5 text-amber-600 dark:text-amber-500" />
-                    {itemCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-600 text-[10px] font-semibold text-white dark:bg-amber-500">
-                        {itemCount}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Folder name and metadata */}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-base transition-colors hover:text-primary md:text-sm">
-                      {folder.name}
-                    </p>
-                    <p className="truncate text-sm text-muted-foreground md:text-xs">
-                      {formatDate(folder.updatedAt)}
-                    </p>
-                  </div>
-
-                  {/* Three-dot menu */}
-                  <div
-                    className="flex items-center transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                    onClick={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <DropdownMenu>
-                      <Tooltip content={t("folderOptions")} side="right">
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-10 w-10 md:h-8 md:w-8"
-                            aria-label={t("folderOptions")}
-                          >
-                            <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                      </Tooltip>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShareFolderId(folder.id);
-                            setShareFolderName(folder.name);
-                          }}
-                        >
-                          <Share2 className="mr-2 h-4 w-4" />
-                          {t("share")}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenamingFolderId(folder.id);
-                            setRenamingFolderName(folder.name);
-                          }}
-                        >
-                          <Pencil className="mr-2 h-4 w-4" />
-                          {t("rename")}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteFolderDirect(folder);
-                          }}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {t("moveToTrash")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Root-level files - only show at root */}
-      {!currentFolderId && rootFiles.map((file) => renderFileWithSubPages(file))}
-
-      {/* Files in current folder - only show when inside a folder */}
-      {currentFolderId && (
-        <div
-          className="space-y-1"
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            setIsDraggingOverEmptyFolder(true);
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            setIsDraggingOverEmptyFolder(false);
-          }}
-          onDrop={(e) => {
-            handleDrop(e, currentFolderId);
-            setIsDraggingOverEmptyFolder(false);
-          }}
-        >
-          {isImporting ? (
-            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-primary bg-accent/30 py-12 text-center">
-              <div className="relative">
-                <FolderOpen className="h-12 w-12 text-primary" />
-                <Loader2 className="absolute -bottom-1 -right-1 h-5 w-5 animate-spin text-primary" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">{t("importingFiles")}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t("importProgress", {
-                    current: importProgress.current,
-                    total: importProgress.total,
-                  })}
-                </p>
-              </div>
-            </div>
-          ) : currentFolderFiles.length === 0 && viewFolders.length === 0 ? (
-            <div
-              className={cn(
-                "flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed py-12 text-center transition-colors",
-                isDraggingOverEmptyFolder ? "border-primary bg-accent/50" : "border-transparent"
-              )}
-            >
-              <FolderOpen
-                className={cn(
-                  "h-12 w-12 transition-colors",
-                  isDraggingOverEmptyFolder
-                    ? "text-primary"
-                    : "text-muted-foreground/30 dark:text-muted-foreground/50"
-                )}
-              />
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">{t("emptyFolder")}</p>
-                <p className="text-xs text-muted-foreground/70">{t("dragFilesHere")}</p>
-              </div>
-            </div>
-          ) : (
-            <>
-              {currentFolderFiles.map((file) => renderFileWithSubPages(file))}
-              {isImporting && (
-                <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-accent/50 px-3 py-2.5 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  <span className="text-foreground/80">
-                    {t("importingInline", {
-                      current: importProgress.current,
-                      total: importProgress.total,
-                    })}
-                  </span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+      {rootFiles.length > 0 && (
+        <SidebarSection title={t("files")} actions={fileActions}>
+          {rootFiles.map((file) => renderFileWithSubPages(file))}
+        </SidebarSection>
       )}
 
       {/* Empty state */}
