@@ -19,7 +19,6 @@ import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
-import { useDemoStore } from "@/stores/demo-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -45,16 +44,13 @@ function extractDatabaseIds(content: string): Set<string> {
 
 interface EditorProps {
   file: FileItem;
-  isDemoMode?: boolean;
 }
 
-export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
+export function Editor({ file: initialFile }: EditorProps) {
   // Subscribe to specific file via selector — avoids re-render when OTHER files change
   const updateFile = useFileStore((s) => s.updateFile);
   const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
-  const { updateDemoContent, demoFile } = useDemoStore();
-  // In demo mode, use demoFile; otherwise use file from store
-  const file = isDemoMode ? demoFile || initialFile : storeFile || initialFile;
+  const file = storeFile || initialFile;
 
   // Editor store — actions are stable refs, state values subscribed individually
   const setDirty = useEditorStore((s) => s.setDirty);
@@ -93,33 +89,25 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         return;
       }
 
-      if (isDemoMode) {
-        // Demo mode: only update in-memory state, no API calls
-        updateDemoContent(content);
-        setDirty(false);
-        lastContentRef.current = content;
-      } else {
-        // Normal mode: persist to server (with pre-computed markdown from editor.getMarkdown())
-        setSaving(true);
-        updateFile(file.id, { content, contentMarkdown });
-        setSaving(false);
-        setLastSavedAt(new Date().toISOString());
-        setDirty(false);
-        lastContentRef.current = content;
+      setSaving(true);
+      updateFile(file.id, { content, contentMarkdown });
+      setSaving(false);
+      setLastSavedAt(new Date().toISOString());
+      setDirty(false);
+      lastContentRef.current = content;
 
-        // Detect removed database blocks and cascade-delete them
-        const currentIds = extractDatabaseIds(contentMarkdown ?? content);
-        for (const id of prevDbIdsRef.current) {
-          if (!currentIds.has(id)) {
-            // deleteDatabase emits "database:deleted" event on success,
-            // which also cascade-deletes linked data files on the backend
-            useDatabaseStore.getState().deleteDatabase(id);
-          }
+      // Detect removed database blocks and cascade-delete them
+      const currentIds = extractDatabaseIds(contentMarkdown ?? content);
+      for (const id of prevDbIdsRef.current) {
+        if (!currentIds.has(id)) {
+          // deleteDatabase emits "database:deleted" event on success,
+          // which also cascade-deletes linked data files on the backend
+          useDatabaseStore.getState().deleteDatabase(id);
         }
-        prevDbIdsRef.current = currentIds;
       }
+      prevDbIdsRef.current = currentIds;
     }, EDITOR_DEBOUNCE_DELAY),
-    [file.id, updateFile, updateDemoContent, isDemoMode, setSaving, setLastSavedAt, setDirty]
+    [file.id, updateFile, setSaving, setLastSavedAt, setDirty]
   );
 
   const editor = useEditor({
@@ -137,7 +125,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
         return false;
       },
     },
-    editable: !isDemoMode, // Demo mode: read-only to ensure mock scenarios work
     immediatelyRender: false, // Prevent SSR hydration mismatch
     onUpdate: ({ editor }) => {
       // Skip save during file switching — the emit("update") is only to
@@ -209,14 +196,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
       editor.commands.setBlockSelectionEnabled(!isMobile);
     }
   }, [editor, isMobile]);
-
-  // Sync editable state with isDemoMode
-  // Demo mode: read-only to ensure mock scenarios work correctly
-  useEffect(() => {
-    if (editor) {
-      editor.setEditable(!isDemoMode);
-    }
-  }, [editor, isDemoMode]);
 
   // Reset when file changes
   useEffect(() => {
@@ -373,13 +352,6 @@ export function Editor({ file: initialFile, isDemoMode = false }: EditorProps) {
             !isMobile && "min-h-0 flex-1"
           )}
         >
-          {/* Demo mode indicator */}
-          {isDemoMode && (
-            <div className="flex items-center justify-center gap-2 border-b border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
-              <span className="inline-block h-2 w-2 rounded-full bg-yellow-500" />
-              <span>Demo Mode - Editor is read-only.</span>
-            </div>
-          )}
           {/* On mobile, parent MobileEditorLayout handles scrolling, so skip ScrollArea entirely */}
           {isMobile ? (
             <div
