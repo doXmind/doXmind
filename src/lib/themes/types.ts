@@ -23,7 +23,6 @@ export interface ThemeTokens {
   input: string;
   ring: string;
   sidebar: string;
-  chatCursorColor: string;
 }
 
 export interface ThemeDiffTokens {

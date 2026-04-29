@@ -129,36 +129,13 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
     title: "Unsupported File",
     description: "This file type is not supported. Please use PDF, DOCX, or Markdown files.",
   },
-  // AI errors
-  "AI service unavailable": {
-    title: "AI Service Unavailable",
-    description:
-      "The AI service is temporarily unavailable. Your document is safe, but AI features may not work.",
-  },
   "Rate limit exceeded": {
     title: "Too Many Requests",
     description: "You've made too many requests. Please wait a moment before trying again.",
   },
-  // Billing errors
-  INSUFFICIENT_CREDITS: {
-    title: "Credits Exhausted",
-    description:
-      "You've run out of credits. Please upgrade your plan to continue using AI features.",
-  },
-  "No credits remaining": {
-    title: "Credits Exhausted",
-    description:
-      "You've run out of credits. Please upgrade your plan to continue using AI features.",
-  },
-  "402": {
-    title: "Credits Exhausted",
-    description:
-      "You've run out of credits. Please upgrade your plan to continue using AI features.",
-  },
   STORAGE_LIMIT_EXCEEDED: {
     title: "Storage Full",
-    description:
-      "You've reached your storage limit. Please upgrade your plan or delete some files.",
+    description: "You've reached your storage limit. Delete some files to free up space.",
   },
 };
 

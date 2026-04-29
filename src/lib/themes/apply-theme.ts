@@ -22,7 +22,6 @@ const TOKEN_TO_CSS_VAR: Record<string, string> = {
   input: "--input",
   ring: "--ring",
   sidebar: "--sidebar",
-  chatCursorColor: "--chat-cursor-color",
 };
 
 const DIFF_TO_CSS_VAR: Record<string, string> = {

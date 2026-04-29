@@ -5,7 +5,6 @@ interface LayoutState {
   // Desktop panel visibility
   isSidebarOpen: boolean; // Outline sidebar
   isFilesSidebarOpen: boolean; // Files sidebar (independent)
-  isChatOpen: boolean;
   isMindlinesOpen: boolean;
   isMindlinesCollapsed: boolean; // Collapsed = minimal line indicators, Expanded = full outline
   themeId: string;
@@ -16,18 +15,9 @@ interface LayoutState {
 
   // Mobile-specific state (sheet/overlay approach - editor always visible)
   isMobileSidebarOpen: boolean;
-  isMobileChatOpen: boolean;
   isMobileOutlineOpen: boolean;
 
-  // Mobile selection state
-  pendingSelectionForAI: string | null; // Selected text to pass to AI panel
-
-  // Mobile V3 state (new design)
-  isMobileChatOverlayOpen: boolean;
-  isMobileAnswerBubbleVisible: boolean;
-  mobileAnswerBubbleContent: string;
-  mobileEditCount: number; // Number of edits applied in last operation
-  showMobileEditSuccess: boolean;
+  // Mobile editor state
   isMobileEditMode: boolean; // When true, editor uses desktop-style cursor editing instead of block selection
 
   // Mobile formatting toolbar
@@ -56,9 +46,6 @@ interface LayoutState {
   // Search bar (Cmd+F)
   isSearchBarOpen: boolean;
 
-  // Global agent sheet
-  isAgentSheetOpen: boolean;
-
   // Quick file switcher
   isQuickSwitcherOpen: boolean;
 
@@ -70,23 +57,17 @@ interface LayoutState {
   fontSize: "small" | "normal" | "large";
   lineHeight: "compact" | "normal" | "relaxed";
 
-  // Chat display mode
-  chatMode: "sidebar" | "floating";
-
   // Resizable panel widths (pixels)
   sidebarWidth: number; // Outline sidebar width
   filesSidebarWidth: number; // Files sidebar width
-  chatPanelWidth: number;
 
   // Actions
   toggleSidebar: () => void;
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
-  toggleChat: () => void;
   toggleMindlines: () => void;
   toggleMindlinesCollapsed: () => void;
   setSidebarOpen: (open: boolean) => void;
-  setChatOpen: (open: boolean) => void;
   setMindlinesOpen: (open: boolean) => void;
   setMindlinesCollapsed: (collapsed: boolean) => void;
   setThemeId: (id: string) => void;
@@ -98,10 +79,8 @@ interface LayoutState {
 
   // Mobile actions
   setMobileSidebarOpen: (open: boolean) => void;
-  setMobileChatOpen: (open: boolean) => void;
   setMobileOutlineOpen: (open: boolean) => void;
   toggleMobileSidebar: () => void;
-  toggleMobileChat: () => void;
   toggleMobileOutline: () => void;
 
   // Keyboard shortcuts modal actions
@@ -133,10 +112,6 @@ interface LayoutState {
   setSearchBarOpen: (open: boolean) => void;
   toggleSearchBar: () => void;
 
-  // Global agent sheet actions
-  setAgentSheetOpen: (open: boolean) => void;
-  toggleAgentSheet: () => void;
-
   // Quick switcher actions
   setQuickSwitcherOpen: (open: boolean) => void;
   toggleQuickSwitcher: () => void;
@@ -150,25 +125,11 @@ interface LayoutState {
   setFontSize: (size: "small" | "normal" | "large") => void;
   setLineHeight: (height: "compact" | "normal" | "relaxed") => void;
 
-  // Chat mode actions
-  setChatMode: (mode: "sidebar" | "floating") => void;
-
   // Resizable panel actions
   setSidebarWidth: (width: number) => void;
   setFilesSidebarWidth: (width: number) => void;
-  setChatPanelWidth: (width: number) => void;
   resetPanelWidths: () => void;
 
-  // Mobile selection actions
-  setPendingSelectionForAI: (text: string) => void;
-  clearPendingSelectionForAI: () => void;
-
-  // Mobile V3 actions (new design)
-  setMobileChatOverlayOpen: (open: boolean) => void;
-  showMobileAnswerBubble: (content: string) => void;
-  hideMobileAnswerBubble: () => void;
-  showMobileEditSuccessIndicator: (editCount: number) => void;
-  hideMobileEditSuccessIndicator: () => void;
   toggleMobileEditMode: () => void;
   setMobileEditMode: (enabled: boolean) => void;
 
@@ -182,7 +143,6 @@ export const useLayoutStore = create<LayoutState>()(
       // Desktop panel visibility
       isSidebarOpen: true,
       isFilesSidebarOpen: false,
-      isChatOpen: true,
       isMindlinesOpen: true,
       isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
       themeId: "notion",
@@ -193,18 +153,8 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Mobile-specific state (sheet/overlay approach)
       isMobileSidebarOpen: false,
-      isMobileChatOpen: false,
       isMobileOutlineOpen: false,
 
-      // Mobile selection state
-      pendingSelectionForAI: null,
-
-      // Mobile V3 state (new design)
-      isMobileChatOverlayOpen: false,
-      isMobileAnswerBubbleVisible: false,
-      mobileAnswerBubbleContent: "",
-      mobileEditCount: 0,
-      showMobileEditSuccess: false,
       isMobileEditMode: true,
 
       // Mobile formatting toolbar
@@ -233,9 +183,6 @@ export const useLayoutStore = create<LayoutState>()(
       // Search bar
       isSearchBarOpen: false,
 
-      // Global agent sheet
-      isAgentSheetOpen: false,
-
       // Quick file switcher
       isQuickSwitcherOpen: false,
 
@@ -247,13 +194,9 @@ export const useLayoutStore = create<LayoutState>()(
       fontSize: "normal" as const,
       lineHeight: "normal" as const,
 
-      // Chat display mode
-      chatMode: "sidebar" as const,
-
       // Resizable panel widths
       sidebarWidth: 256,
       filesSidebarWidth: 256,
-      chatPanelWidth: 384,
 
       // Desktop actions
       toggleSidebar: () => {
@@ -268,10 +211,6 @@ export const useLayoutStore = create<LayoutState>()(
         set({ isFilesSidebarOpen: open });
       },
 
-      toggleChat: () => {
-        set((state) => ({ isChatOpen: !state.isChatOpen }));
-      },
-
       toggleMindlines: () => {
         set((state) => ({ isMindlinesOpen: !state.isMindlinesOpen }));
       },
@@ -282,10 +221,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       setSidebarOpen: (open: boolean) => {
         set({ isSidebarOpen: open });
-      },
-
-      setChatOpen: (open: boolean) => {
-        set({ isChatOpen: open });
       },
 
       setMindlinesOpen: (open: boolean) => {
@@ -343,20 +278,12 @@ export const useLayoutStore = create<LayoutState>()(
         set({ isMobileSidebarOpen: open });
       },
 
-      setMobileChatOpen: (open: boolean) => {
-        set({ isMobileChatOpen: open });
-      },
-
       setMobileOutlineOpen: (open: boolean) => {
         set({ isMobileOutlineOpen: open });
       },
 
       toggleMobileSidebar: () => {
         set((state) => ({ isMobileSidebarOpen: !state.isMobileSidebarOpen }));
-      },
-
-      toggleMobileChat: () => {
-        set((state) => ({ isMobileChatOpen: !state.isMobileChatOpen }));
       },
 
       toggleMobileOutline: () => {
@@ -429,15 +356,6 @@ export const useLayoutStore = create<LayoutState>()(
         set((state) => ({ isSearchBarOpen: !state.isSearchBarOpen }));
       },
 
-      // Global agent sheet actions
-      setAgentSheetOpen: (open: boolean) => {
-        set({ isAgentSheetOpen: open });
-      },
-
-      toggleAgentSheet: () => {
-        set((state) => ({ isAgentSheetOpen: !state.isAgentSheetOpen }));
-      },
-
       // Quick switcher actions
       setQuickSwitcherOpen: (open: boolean) => {
         set({ isQuickSwitcherOpen: open });
@@ -479,11 +397,6 @@ export const useLayoutStore = create<LayoutState>()(
         set({ lineHeight: height });
       },
 
-      // Chat mode actions
-      setChatMode: (mode: "sidebar" | "floating") => {
-        set({ chatMode: mode });
-      },
-
       // Resizable panel actions
       setSidebarWidth: (width: number) => {
         set({ sidebarWidth: Math.max(200, Math.min(400, width)) });
@@ -493,53 +406,8 @@ export const useLayoutStore = create<LayoutState>()(
         set({ filesSidebarWidth: Math.max(200, Math.min(400, width)) });
       },
 
-      setChatPanelWidth: (width: number) => {
-        set({ chatPanelWidth: Math.max(300, Math.min(600, width)) });
-      },
-
       resetPanelWidths: () => {
-        set({ sidebarWidth: 256, filesSidebarWidth: 256, chatPanelWidth: 384 });
-      },
-
-      // Mobile selection actions
-      setPendingSelectionForAI: (text: string) => {
-        set({ pendingSelectionForAI: text });
-      },
-      clearPendingSelectionForAI: () => {
-        set({ pendingSelectionForAI: null });
-      },
-
-      // Mobile V3 actions (new design)
-      setMobileChatOverlayOpen: (open: boolean) => {
-        set({ isMobileChatOverlayOpen: open });
-      },
-
-      showMobileAnswerBubble: (content: string) => {
-        set({
-          isMobileAnswerBubbleVisible: true,
-          mobileAnswerBubbleContent: content,
-        });
-      },
-
-      hideMobileAnswerBubble: () => {
-        set({
-          isMobileAnswerBubbleVisible: false,
-          mobileAnswerBubbleContent: "",
-        });
-      },
-
-      showMobileEditSuccessIndicator: (editCount: number) => {
-        set({
-          showMobileEditSuccess: true,
-          mobileEditCount: editCount,
-        });
-      },
-
-      hideMobileEditSuccessIndicator: () => {
-        set({
-          showMobileEditSuccess: false,
-          mobileEditCount: 0,
-        });
+        set({ sidebarWidth: 256, filesSidebarWidth: 256 });
       },
 
       toggleMobileEditMode: () => {
@@ -580,7 +448,6 @@ export const useLayoutStore = create<LayoutState>()(
         // Only persist these fields (not modals state)
         isSidebarOpen: state.isSidebarOpen,
         isFilesSidebarOpen: state.isFilesSidebarOpen,
-        isChatOpen: state.isChatOpen,
         isMindlinesOpen: state.isMindlinesOpen,
         isMindlinesCollapsed: state.isMindlinesCollapsed,
         themeId: state.themeId,
@@ -594,10 +461,8 @@ export const useLayoutStore = create<LayoutState>()(
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,
         lineHeight: state.lineHeight,
-        chatMode: state.chatMode,
         sidebarWidth: state.sidebarWidth,
         filesSidebarWidth: state.filesSidebarWidth,
-        chatPanelWidth: state.chatPanelWidth,
       }),
     }
   )

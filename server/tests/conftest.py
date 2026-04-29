@@ -11,9 +11,9 @@ import uuid
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -30,7 +30,7 @@ os.environ["DEBUG"] = "true"
 os.environ["OPENROUTER_API_KEY"] = "test-api-key"
 
 import db.database as db_database  # noqa: E402
-from db.database import Base, Conversation, File, get_db  # noqa: E402
+from db.database import Base, File, get_db  # noqa: E402
 from dependencies import get_db as deps_get_db  # noqa: E402
 from main import app  # noqa: E402
 
@@ -59,7 +59,7 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop.close()
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def _create_schema() -> AsyncGenerator[None, None]:
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -67,7 +67,7 @@ async def _create_schema() -> AsyncGenerator[None, None]:
     await test_engine.dispose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     # Reset all tables between tests so the in-memory SQLite db is fresh.
     async with test_engine.begin() as conn:
@@ -84,7 +84,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 # =============================================================================
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db():
         yield db_session
@@ -98,7 +98,7 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Alias for async_client kept for legacy test names."""
 
@@ -124,70 +124,6 @@ def sync_client() -> Generator[TestClient, None, None]:
 def auth_headers() -> dict:
     """No-op headers — local desktop edition has no auth."""
     return {}
-
-
-# =============================================================================
-# Mock LLM fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def mock_llm_service():
-    mock = AsyncMock()
-    mock.chat.return_value = {
-        "content": "Test response from AI",
-        "model": "claude-3-haiku",
-        "input_tokens": 10,
-        "output_tokens": 20,
-    }
-    return mock
-
-
-class MockOpenAIChoice:
-    def __init__(self, text: str = "Hello from AI"):
-        self.message = MagicMock(content=text)
-        self.finish_reason = "stop"
-
-
-class MockOpenAIChatCompletion:
-    def __init__(self, text: str = "Hello from AI"):
-        self.choices = [MockOpenAIChoice(text)]
-        self.model = "minimax/minimax-m2.5"
-        self.usage = MagicMock(prompt_tokens=100, completion_tokens=50)
-
-
-class MockOpenAIStreamChunk:
-    def __init__(self, content: str | None = None, finish_reason: str | None = None):
-        delta = MagicMock()
-        delta.content = content
-        delta.tool_calls = None
-        choice = MagicMock()
-        choice.delta = delta
-        choice.finish_reason = finish_reason
-        self.choices = [choice]
-        self.usage = None
-
-
-class MockOpenAIAsyncStream:
-    def __init__(self, chunks: list):
-        self.chunks = chunks
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        if not self.chunks:
-            raise StopAsyncIteration
-        return self.chunks.pop(0)
-
-
-@pytest.fixture
-def mock_openai_client():
-    mock = MagicMock()
-    mock.chat.completions.create = AsyncMock(
-        return_value=MockOpenAIChatCompletion("Test AI response")
-    )
-    return mock
 
 
 # =============================================================================
@@ -227,7 +163,7 @@ def test_user() -> SimpleNamespace:
     )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_file(db_session: AsyncSession, test_user: SimpleNamespace) -> File:
     file = File(
         id=str(uuid.uuid4()),
@@ -242,29 +178,8 @@ async def test_file(db_session: AsyncSession, test_user: SimpleNamespace) -> Fil
 
 
 @pytest.fixture
-async def test_conversation(db_session: AsyncSession, test_file: File) -> Conversation:
-    conv = Conversation(
-        id=str(uuid.uuid4()),
-        file_id=test_file.id,
-        user_id=test_file.user_id,
-    )
-    db_session.add(conv)
-    await db_session.commit()
-    await db_session.refresh(conv)
-    return conv
-
-
-@pytest.fixture
 def sample_file_data() -> dict:
     return {
         "name": "Test Document",
         "content": "# Hello World\n\nThis is a test document.",
-    }
-
-
-@pytest.fixture
-def sample_chat_message() -> dict:
-    return {
-        "message": "Hello, can you help me?",
-        "mode": "chat",
     }

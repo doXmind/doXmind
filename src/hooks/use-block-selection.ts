@@ -88,12 +88,6 @@ export function useBlockSelection({
         return;
       }
 
-      // Don't clear if clicking on AI input area (context pills, input field, etc.)
-      const aiInputArea = document.querySelector("[data-ai-input-area]");
-      if (aiInputArea?.contains(target)) {
-        return;
-      }
-
       // Check if click is inside the editor content area
       const editorContent = document.querySelector(".ProseMirror");
       if (!editorContent?.contains(target)) {

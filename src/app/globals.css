@@ -54,9 +54,6 @@
     --status-warning-bg: rgba(251, 191, 36, 0.1);
     --status-warning-border: rgba(251, 191, 36, 0.3);
 
-    /* Chat UI tokens */
-    --chat-cursor-color: 45 8% 20%;
-
     /* Diff Review — Notion-inspired palette (light): gray deleted, blue inserted */
     --diff-deleted-bg: rgba(0, 0, 0, 0.04);
     --diff-deleted-bg-hover: rgba(0, 0, 0, 0.07);
@@ -108,9 +105,6 @@
     --input: 0 0% 18%;
     --ring: 0 0% 80%;
     --sidebar: 0 0% 10%; /* same as --background for unified look */
-
-    /* Chat UI tokens */
-    --chat-cursor-color: 0 0% 98%;
 
     /* Diff Review — Notion-inspired palette (dark): gray deleted, blue inserted */
     --diff-deleted-bg: rgba(255, 255, 255, 0.04);
@@ -254,62 +248,6 @@
 }
 
 /* ====================================
-   Chat Streaming Cursor
-   Blinking cursor for AI response streaming
-   ==================================== */
-@keyframes chatCursorBlink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
-/* Inline @mention tag in chat messages */
-.mention-tag {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 4px;
-  background-color: hsl(var(--primary) / 0.1);
-  color: hsl(var(--primary));
-  padding: 1px 6px;
-  font-size: 0.85em;
-  font-weight: 500;
-  white-space: nowrap;
-  vertical-align: baseline;
-  line-height: 1.4;
-}
-
-/* Mention tag inside the textarea overlay — covers raw @name text underneath */
-.mention-tag-input {
-  font-size: inherit;
-  line-height: inherit;
-  padding: 0 2px;
-  border-radius: 3px;
-  /* Opaque background to hide the raw textarea text underneath */
-  background-color: hsl(var(--accent));
-}
-
-/* Chat message tables: horizontally scrollable in narrow sidebar */
-.prose table {
-  display: block;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.chat-streaming-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  background-color: hsl(var(--chat-cursor-color) / 0.6);
-  animation: chatCursorBlink 1s step-end infinite;
-  vertical-align: text-bottom;
-  margin-left: 1px;
-}
-
-/* ====================================
    Avatar Frame Animations
    Used by premium avatar frame effects
    ==================================== */
@@ -410,18 +348,8 @@ html {
   /* Disable specific animations */
   .bubble-menu,
   .table-bubble-menu,
-  .spellcheck-popup,
-  .review-popup,
-  .review-panel-enter,
-  .autocomplete-ghost-text,
-  .ProseMirror .diff-deleted,
-  .ProseMirror .diff-inserted,
-  .chat-streaming-cursor {
+  .spellcheck-popup {
     animation: none !important;
-  }
-
-  .chat-streaming-cursor {
-    opacity: 0.6;
   }
 }
 
@@ -469,7 +397,7 @@ html {
    Print Styles
    ==================================== */
 @media print {
-  /* Hide all chrome - sidebar, chat, toolbar, header, status bar */
+  /* Hide all chrome - sidebar, toolbar, header, status bar */
   header,
   aside,
   nav,

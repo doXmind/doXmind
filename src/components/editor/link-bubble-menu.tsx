@@ -7,8 +7,6 @@ import { ExternalLink, Pencil, Trash2, Copy, Check } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { isDiffReviewActive } from "@/extensions/diff-review";
-import { useStreamingStore } from "@/stores/streaming-store";
 
 interface LinkBubbleMenuProps {
   editor: Editor;
@@ -77,8 +75,6 @@ export function LinkBubbleMenu({ editor }: LinkBubbleMenuProps) {
 
   // Only show when cursor is on a link
   const shouldShow = useCallback(() => {
-    if (isDiffReviewActive(editor)) return false;
-    if (useStreamingStore.getState().isStreaming) return false;
     // Don't show when text is selected (let the main bubble menu handle that)
     const { from, to } = editor.state.selection;
     if (to - from > 0) return false;

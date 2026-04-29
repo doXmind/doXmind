@@ -19,7 +19,6 @@ import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useMobileGestures } from "@/hooks/use-mobile-gestures";
 import { useBlockSelection } from "@/hooks/use-block-selection";
-import { useDiffReview } from "@/hooks/use-diff-review";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -31,10 +30,6 @@ import { WelcomeScreen } from "@/components/welcome-screen";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 
 // Dynamic imports — cold-path components split into separate chunks
-const ChatPanel = dynamic(
-  () => import("@/components/ai/chat-panel").then((m) => ({ default: m.ChatPanel })),
-  { ssr: false }
-);
 const VersionHistoryPanel = dynamic(
   () =>
     import("@/components/editor/version-history-panel").then((m) => ({
@@ -62,20 +57,6 @@ const CommandPalette = dynamic(
 );
 const QuickSwitcher = dynamic(
   () => import("@/components/ui/quick-switcher").then((m) => ({ default: m.QuickSwitcher })),
-  { ssr: false }
-);
-const FloatingChatButton = dynamic(
-  () =>
-    import("@/components/ai/floating-chat-button").then((m) => ({
-      default: m.FloatingChatButton,
-    })),
-  { ssr: false }
-);
-const FloatingChatWindow = dynamic(
-  () =>
-    import("@/components/ai/floating-chat-window").then((m) => ({
-      default: m.FloatingChatWindow,
-    })),
   { ssr: false }
 );
 const PresentationMode = dynamic(
@@ -122,8 +103,6 @@ export default function EditorPage() {
   // Sync URL <-> Zustand store
   useFileUrlSync(fileIdFromUrl);
 
-  const isChatOpen = useLayoutStore((s) => s.isChatOpen);
-  const chatMode = useLayoutStore((s) => s.chatMode);
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
@@ -139,9 +118,7 @@ export default function EditorPage() {
   const setMobileOutlineOpen = useLayoutStore((s) => s.setMobileOutlineOpen);
   const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const filesSidebarWidth = useLayoutStore((s) => s.filesSidebarWidth);
-  const chatPanelWidth = useLayoutStore((s) => s.chatPanelWidth);
   const setFilesSidebarWidth = useLayoutStore((s) => s.setFilesSidebarWidth);
-  const setChatPanelWidth = useLayoutStore((s) => s.setChatPanelWidth);
   const resetPanelWidths = useLayoutStore((s) => s.resetPanelWidths);
 
   const editor = useEditorRefStore((s) => s.editor);
@@ -184,12 +161,6 @@ export default function EditorPage() {
     enabled: isMobile,
   });
 
-  // Diff review hook for accept/reject operations
-  useDiffReview({
-    editor,
-    fileId: currentFileId || "",
-  });
-
   // Warn user when leaving with unsaved changes
   useUnsavedChangesWarning();
 
@@ -219,7 +190,7 @@ export default function EditorPage() {
     if (currentFile) {
       document.title = currentFile.name.replace(/\.md$/i, "");
     } else {
-      document.title = "doXmind - AI Writing Studio";
+      document.title = "doXmind - Local Writing Studio";
     }
   }, [currentFile]);
 
@@ -389,41 +360,8 @@ export default function EditorPage() {
                     <WelcomeScreen />
                   )}
                 </ErrorBoundary>
-                {/* Floating chat window — overlays editor when in floating mode */}
-                {!isFocusMode && currentFile && chatMode === "floating" && <FloatingChatWindow />}
-                {/* Floating AI button — visible when chat is closed */}
-                {!isFocusMode && currentFile && !isChatOpen && <FloatingChatButton />}
               </div>
             </main>
-
-            {/* AI Chat Panel (sidebar mode) - hidden in focus mode */}
-            {!isFocusMode && currentFile && chatMode === "sidebar" && (
-              <>
-                {isChatOpen && (
-                  <ResizeHandle
-                    side="right"
-                    onResize={(delta) => setChatPanelWidth(chatPanelWidth + delta)}
-                    onResizeStart={() => setIsResizing(true)}
-                    onResizeEnd={() => setIsResizing(false)}
-                    onDoubleClick={() => resetPanelWidths()}
-                  />
-                )}
-                <aside
-                  style={{ width: isChatOpen ? chatPanelWidth : 0 }}
-                  className={cn(
-                    "bg-sidebar flex-shrink-0 overflow-hidden",
-                    !isResizing &&
-                      "transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
-                  )}
-                >
-                  <div style={{ minWidth: chatPanelWidth }} className="h-full">
-                    <ErrorBoundary>
-                      <ChatPanel />
-                    </ErrorBoundary>
-                  </div>
-                </aside>
-              </>
-            )}
 
             {/* Version History Panel - hidden in focus mode */}
             {!isFocusMode && currentFile && isVersionHistoryOpen && (

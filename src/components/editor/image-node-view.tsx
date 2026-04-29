@@ -22,8 +22,6 @@ import { useIsMobile } from "@/hooks/use-device-type";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useEditorStore } from "@/stores/editor-store";
-import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 
 interface ResizeState {
   isResizing: boolean;
@@ -201,44 +199,6 @@ export function ImageNodeView({
     document.body.removeChild(a);
   }, [src, alt]);
 
-  const handleAskInline = useCallback(() => {
-    if (src && nodePos !== undefined) {
-      const escapedAlt = (alt || "").replace(/\]/g, "\\]");
-      const escapedTitle = (title || "").replace(/"/g, '\\"');
-      const markdown = title
-        ? `![${escapedAlt}](${src} \"${escapedTitle}\")`
-        : `![${escapedAlt}](${src})`;
-
-      useEditorStore.getState().setSelection({
-        from: nodePos,
-        to: nodePos + node.nodeSize,
-        text: markdown,
-      });
-
-      const from = nodePos;
-      const to = nodePos + node.nodeSize;
-      const beforeStart = Math.max(0, from - 220);
-      const afterEnd = Math.min(editor.state.doc.content.size, to + 220);
-      const rect = containerRef.current?.getBoundingClientRect();
-
-      useEditorStore.getState().openInlineAI(
-        {
-          x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
-          y: rect ? rect.bottom : window.innerHeight / 2,
-        },
-        "ask",
-        {
-          from,
-          to,
-          selectedText: markdown,
-          beforeText: editor.state.doc.textBetween(beforeStart, from, "\n", "\n").slice(-220),
-          afterText: editor.state.doc.textBetween(to, afterEnd, "\n", "\n").slice(0, 220),
-        },
-        rect ? { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right } : null
-      );
-    }
-  }, [src, alt, title, nodePos, node.nodeSize, editor]);
-
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       e.stopPropagation();
@@ -328,16 +288,6 @@ export function ImageNodeView({
                 <div className="image-toolbar-sep" />
               </>
             )}
-
-            {/* Ask AI */}
-            <Tooltip content={t("blockAction.askInline")} side="top">
-              <button type="button" className="image-toolbar-btn" onClick={handleAskInline}>
-                <AiLogoIcon className="h-3.5 w-3.5" />
-                <span className="text-xs">{t("blockAction.askInline")}</span>
-              </button>
-            </Tooltip>
-
-            <div className="image-toolbar-sep" />
 
             {/* Alignment buttons */}
             <Tooltip content={t("alignLeft")} side="top">
@@ -461,13 +411,6 @@ export function ImageNodeView({
                 <AlignRight className="h-4 w-4" />
               </button>
               <div className="mx-0.5 h-4 w-px bg-border" />
-              <button
-                type="button"
-                className="rounded-lg p-2 active:bg-accent"
-                onClick={handleAskInline}
-              >
-                <AiLogoIcon className="h-4 w-4" />
-              </button>
               <button
                 type="button"
                 className="rounded-lg p-2 active:bg-accent"

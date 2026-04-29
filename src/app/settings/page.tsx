@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { APISettings } from "@/components/settings/api-settings";
 import { TypographySettings } from "@/components/settings/typography-settings";
 import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 
@@ -20,11 +19,6 @@ export default function SettingsPage() {
       </div>
 
       <h1 className="mb-6 text-2xl font-semibold">Settings</h1>
-
-      <section className="mb-10">
-        <h2 className="mb-3 text-lg font-medium">API key & model</h2>
-        <APISettings />
-      </section>
 
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-medium">Theme</h2>

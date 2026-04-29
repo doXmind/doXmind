@@ -2,7 +2,7 @@
    Mobile V2 Utility Styles
    ==================================== */
 
-/* Processing animations for AI input */
+/* Processing animations */
 @keyframes border-wave {
   0% {
     box-shadow: 0 0 0 0px hsl(var(--primary) / 0.6);

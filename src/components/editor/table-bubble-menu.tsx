@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { isDiffReviewActive } from "@/extensions/diff-review";
 import { CellSelection } from "@tiptap/pm/tables";
 
 interface TableBubbleMenuProps {
@@ -37,7 +36,6 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
         offset: { mainAxis: 10 },
       }}
       shouldShow={({ editor }) => {
-        if (isDiffReviewActive(editor)) return false;
         // Don't show when cells are selected via column/row handles
         if (editor.state.selection instanceof CellSelection) return false;
         return editor.isActive("table");

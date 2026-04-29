@@ -9,7 +9,6 @@ import {
   Palette,
   Keyboard,
   PanelLeft,
-  MessageSquare,
   ArrowRight,
   Contrast,
   Loader2,
@@ -70,10 +69,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { files, createFile, setCurrentFile } = useFileStore();
   const {
     toggleSidebar,
-    toggleChat,
     setKeyboardShortcutsOpen,
     isSidebarOpen,
-    isChatOpen,
     isHighContrast,
     toggleHighContrast,
     editorWidth,
@@ -154,17 +151,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         keywords: ["sidebar", "panel", "files", "toggle"],
       },
       {
-        id: "toggle-chat",
-        label: isChatOpen ? "Hide AI Chat" : "Show AI Chat",
-        icon: <MessageSquare className="h-4 w-4" />,
-        category: "view",
-        action: () => {
-          toggleChat();
-          onClose();
-        },
-        keywords: ["chat", "ai", "assistant", "toggle"],
-      },
-      {
         id: "toggle-theme",
         label: currentTheme.baseMode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode",
         icon: <Palette className="h-4 w-4" />,
@@ -233,10 +219,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     setCurrentFile,
     router,
     toggleSidebar,
-    toggleChat,
     setKeyboardShortcutsOpen,
     isSidebarOpen,
-    isChatOpen,
     isHighContrast,
     toggleHighContrast,
     editorWidth,

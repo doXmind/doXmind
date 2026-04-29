@@ -4,7 +4,6 @@
  * Adaptive Nav (Mobile Bottom Navigation)
  *
  * Fixed bottom navigation with:
- * - AI Chat button (opens voice edit preview for AI interaction)
  * - Files button (opens file sidebar)
  *
  * Hidden when block selection is active (action bar shows instead).
@@ -12,7 +11,7 @@
 
 import { useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { FolderOpen, Sparkles } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -20,20 +19,10 @@ import { useBlockSelectionStore } from "@/stores/block-selection-store";
 import { Z_INDEX, MOBILE_V2, MOBILE_SPRINGS } from "@/lib/constants";
 import { haptics } from "@/lib/haptics";
 
-interface AdaptiveNavProps {
-  /** Called when AI button is tapped */
-  onAITap?: () => void;
-}
-
-export function AdaptiveNav({ onAITap }: AdaptiveNavProps) {
+export function AdaptiveNav() {
   const t = useTranslations("mobile");
   const { setMobileSidebarOpen, isMobileSidebarOpen } = useLayoutStore();
   const { isSelectionActive } = useBlockSelectionStore();
-
-  const handleAI = useCallback(() => {
-    haptics.light();
-    onAITap?.();
-  }, [onAITap]);
 
   const handleFiles = useCallback(() => {
     haptics.light();
@@ -62,27 +51,6 @@ export function AdaptiveNav({ onAITap }: AdaptiveNavProps) {
       animate={{ y: 0 }}
       transition={{ type: "spring", ...MOBILE_SPRINGS.SMOOTH }}
     >
-      {/* AI Chat Button */}
-      <button
-        type="button"
-        onClick={handleAI}
-        className={cn(
-          "flex flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
-          "active:scale-95 active:bg-accent/50",
-          "text-muted-foreground hover:text-foreground"
-        )}
-        style={{
-          minWidth: MOBILE_V2.NAV_BUTTON_SIZE,
-          height: MOBILE_V2.NAV_BUTTON_SIZE,
-          padding: "8px 16px",
-        }}
-      >
-        <div className="flex h-5 w-5 items-center justify-center">
-          <Sparkles className="h-5 w-5" />
-        </div>
-        <span className="text-[10px] font-medium">{t("ai")}</span>
-      </button>
-
       {/* Files Button */}
       <button
         type="button"

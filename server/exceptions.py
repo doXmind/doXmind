@@ -121,19 +121,6 @@ class FileTooLargeError(AppException):
         super().__init__(details=details, **kwargs)
 
 
-class InsufficientCreditsError(AppException):
-    """Credits exhausted (402)."""
-
-    status_code = 402
-    error_code = "INSUFFICIENT_CREDITS"
-    message = "No credits remaining. Please upgrade your plan."
-
-    def __init__(self, credits_remaining: int = 0, **kwargs):
-        details = kwargs.pop("details", {})
-        details["credits_remaining"] = credits_remaining
-        super().__init__(details=details, **kwargs)
-
-
 class StorageLimitExceededError(AppException):
     """Storage quota exceeded (413)."""
 
@@ -196,40 +183,9 @@ class ServiceUnavailableError(AppException):
     message = "Service temporarily unavailable"
 
 
-class ExternalServiceError(AppException):
-    """External service error (502)."""
-
-    status_code = 502
-    error_code = "EXTERNAL_SERVICE_ERROR"
-    message = "An external service returned an error"
-
-    def __init__(self, service: str = None, **kwargs):
-        details = kwargs.pop("details", {})
-        if service:
-            details["service"] = service
-        super().__init__(details=details, **kwargs)
-
-
 # ============================================================================
 # Domain-Specific Errors
 # ============================================================================
-
-
-class LLMError(ExternalServiceError):
-    """Error from LLM service (Claude API)."""
-
-    error_code = "LLM_ERROR"
-    message = "LLM service error"
-
-    def __init__(self, **kwargs):
-        super().__init__(service="claude_api", **kwargs)
-
-
-class VectorStoreError(InternalError):
-    """Error from vector store (Chroma)."""
-
-    error_code = "VECTOR_STORE_ERROR"
-    message = "Vector store error"
 
 
 class FileProcessingError(InternalError):
@@ -245,16 +201,3 @@ class DocumentNotFoundError(NotFoundError):
     def __init__(self, file_id: str = None, **kwargs):
         super().__init__(resource="File", resource_id=file_id, **kwargs)
 
-
-class ConversationNotFoundError(NotFoundError):
-    """Conversation not found."""
-
-    def __init__(self, conversation_id: str = None, **kwargs):
-        super().__init__(resource="Conversation", resource_id=conversation_id, **kwargs)
-
-
-class AttachmentNotFoundError(NotFoundError):
-    """KB attachment not found."""
-
-    def __init__(self, attachment_id: str = None, **kwargs):
-        super().__init__(resource="Attachment", resource_id=attachment_id, **kwargs)

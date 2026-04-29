@@ -1,10 +1,10 @@
-"""HTML-to-Markdown converter for AI consumption.
+"""HTML-to-Markdown converter for local preview/search.
 
 Converts TipTap HTML content to clean markdown, handling atom blocks
 (mermaid charts, math blocks) that store content in data attributes.
 
-This produces the cached `content_markdown` column so the AI reads
-pre-computed markdown with zero conversion at chat time.
+This produces the cached `content_markdown` column used by local previews,
+search, and import/export flows.
 """
 
 import html as html_module
@@ -147,7 +147,7 @@ def _get_code_language(el) -> str | None:
 
 
 def html_to_markdown(html_content: str) -> str:
-    """Convert TipTap HTML to clean markdown for AI consumption.
+    """Convert TipTap HTML to clean markdown.
 
     Handles:
     - Mermaid charts (data-code attribute)

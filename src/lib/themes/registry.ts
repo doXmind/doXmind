@@ -34,7 +34,6 @@ const notion: ThemeDefinition = {
     input: "60 4% 91%",
     ring: "45 8% 20%",
     sidebar: "0 0% 100%",
-    chatCursorColor: "45 8% 20%",
   },
   diff: {
     deletedBg: "rgba(255, 59, 48, 0.08)",
@@ -105,7 +104,6 @@ const sepia: ThemeDefinition = {
     input: "35 15% 85%",
     ring: "25 20% 25%",
     sidebar: "35 30% 94%",
-    chatCursorColor: "25 20% 25%",
   },
   diff: {
     deletedBg: "rgba(180, 60, 40, 0.1)",
@@ -176,7 +174,6 @@ const solarizedLight: ThemeDefinition = {
     input: "46 30% 84%",
     ring: "205 69% 49%",
     sidebar: "44 87% 94%",
-    chatCursorColor: "194 14% 40%",
   },
   diff: {
     deletedBg: "rgba(220, 50, 47, 0.08)",
@@ -247,7 +244,6 @@ const rose: ThemeDefinition = {
     input: "350 18% 88%",
     ring: "350 35% 45%",
     sidebar: "350 50% 98%",
-    chatCursorColor: "350 20% 22%",
   },
   diff: {
     deletedBg: "rgba(220, 60, 60, 0.08)",
@@ -318,7 +314,6 @@ const dark: ThemeDefinition = {
     input: "0 0% 18%",
     ring: "0 0% 80%",
     sidebar: "0 0% 10%",
-    chatCursorColor: "0 0% 98%",
   },
   diff: {
     deletedBg: "rgba(255, 69, 58, 0.1)",
@@ -389,7 +384,6 @@ const nord: ThemeDefinition = {
     input: "220 16% 30%",
     ring: "193 43% 67%",
     sidebar: "220 16% 22%",
-    chatCursorColor: "219 28% 92%",
   },
   diff: {
     deletedBg: "rgba(191, 97, 106, 0.12)",
@@ -460,7 +454,6 @@ const forest: ThemeDefinition = {
     input: "150 10% 20%",
     ring: "150 20% 56%",
     sidebar: "150 16% 12%",
-    chatCursorColor: "140 14% 90%",
   },
   diff: {
     deletedBg: "rgba(200, 80, 70, 0.1)",
@@ -531,7 +524,6 @@ const ocean: ThemeDefinition = {
     input: "213 25% 20%",
     ring: "207 52% 59%",
     sidebar: "213 45% 11%",
-    chatCursorColor: "210 22% 92%",
   },
   diff: {
     deletedBg: "rgba(230, 80, 70, 0.1)",
@@ -602,7 +594,6 @@ const champagne: ThemeDefinition = {
     input: "40 22% 86%",
     ring: "40 55% 50%",
     sidebar: "40 50% 96%",
-    chatCursorColor: "35 20% 18%",
   },
   diff: {
     deletedBg: "rgba(180, 60, 40, 0.1)",
@@ -673,7 +664,6 @@ const lavender: ThemeDefinition = {
     input: "265 14% 87%",
     ring: "270 28% 55%",
     sidebar: "265 25% 96%",
-    chatCursorColor: "265 18% 22%",
   },
   diff: {
     deletedBg: "rgba(200, 60, 60, 0.08)",
@@ -744,7 +734,6 @@ const ivory: ThemeDefinition = {
     input: "40 12% 90%",
     ring: "140 15% 55%",
     sidebar: "40 40% 98%",
-    chatCursorColor: "0 0% 17%",
   },
   diff: {
     deletedBg: "rgba(255, 59, 48, 0.08)",
@@ -815,7 +804,6 @@ const arctic: ThemeDefinition = {
     input: "214 20% 90%",
     ring: "217 91% 60%",
     sidebar: "210 40% 98%",
-    chatCursorColor: "222 47% 17%",
   },
   diff: {
     deletedBg: "rgba(239, 68, 68, 0.08)",
@@ -886,7 +874,6 @@ const obsidian: ThemeDefinition = {
     input: "0 0% 13%",
     ring: "42 60% 55%",
     sidebar: "0 0% 4%",
-    chatCursorColor: "35 12% 95%",
   },
   diff: {
     deletedBg: "rgba(255, 69, 58, 0.1)",
@@ -957,7 +944,6 @@ const cyberpunk: ThemeDefinition = {
     input: "240 22% 16%",
     ring: "186 100% 50%",
     sidebar: "240 33% 8%",
-    chatCursorColor: "186 100% 50%",
   },
   diff: {
     deletedBg: "rgba(255, 0, 110, 0.12)",
@@ -1028,7 +1014,6 @@ const amethyst: ThemeDefinition = {
     input: "250 16% 18%",
     ring: "270 42% 63%",
     sidebar: "250 25% 9%",
-    chatCursorColor: "258 22% 95%",
   },
   diff: {
     deletedBg: "rgba(220, 70, 70, 0.1)",
@@ -1099,7 +1084,6 @@ const carbon: ThemeDefinition = {
     input: "0 0% 16%",
     ring: "210 26% 55%",
     sidebar: "0 0% 8%",
-    chatCursorColor: "0 0% 90%",
   },
   diff: {
     deletedBg: "rgba(255, 69, 58, 0.1)",

@@ -55,22 +55,6 @@ declare module "./client" {
 
     createOrGetRowPage(databaseId: string, rowId: string): Promise<{ page_file_id: string }>;
 
-    sendDatabaseToChat(
-      databaseId: string,
-      fileId: string
-    ): Promise<{
-      id: string;
-      conversationId: string;
-      filename: string;
-      fileType: string;
-      fileSize: number;
-      mimeType?: string;
-      status: string;
-      previewData?: Record<string, unknown>[];
-      columnNames?: string[];
-      rowCount?: number;
-    }>;
-
     createDatabaseView(databaseId: string, body: CreateViewRequest): Promise<DatabaseData>;
     updateDatabaseView(
       databaseId: string,
@@ -243,30 +227,6 @@ ApiClient.prototype.createOrGetRowPage = async function (
 ) {
   return this.request<{ page_file_id: string }>(`/api/databases/${databaseId}/rows/${rowId}/page`, {
     method: "POST",
-  });
-};
-
-// Send to Chat
-
-ApiClient.prototype.sendDatabaseToChat = async function (
-  this: ApiClient,
-  databaseId: string,
-  fileId: string
-) {
-  return this.request<{
-    id: string;
-    conversationId: string;
-    filename: string;
-    fileType: string;
-    fileSize: number;
-    mimeType?: string;
-    status: string;
-    previewData?: Record<string, unknown>[];
-    columnNames?: string[];
-    rowCount?: number;
-  }>(`/api/databases/${databaseId}/send-to-chat`, {
-    method: "POST",
-    body: JSON.stringify({ file_id: fileId }),
   });
 };
 

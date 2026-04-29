@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen, FileText, Sparkles, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
+import { FolderOpen, FileText, MoreHorizontal, Moon, Sun, ListTree } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { useState } from "react";
@@ -100,37 +100,21 @@ function MoreMenu({ isOpen, onClose }: MoreMenuProps) {
 
 export function MobileNavBar() {
   const t = useTranslations("mobile");
-  const { isMobileSidebarOpen, isMobileChatOpen, setMobileSidebarOpen, setMobileChatOpen } =
-    useLayoutStore();
+  const { isMobileSidebarOpen, setMobileSidebarOpen } = useLayoutStore();
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   const handleFilesClick = () => {
     setIsMoreMenuOpen(false);
     setMobileSidebarOpen(!isMobileSidebarOpen);
-    // Close chat if open
-    if (isMobileChatOpen) {
-      setMobileChatOpen(false);
-    }
   };
 
   const handleEditorClick = () => {
     setIsMoreMenuOpen(false);
-    // Close any open panels to focus on editor
     setMobileSidebarOpen(false);
-    setMobileChatOpen(false);
-  };
-
-  const handleAIClick = () => {
-    setIsMoreMenuOpen(false);
-    setMobileChatOpen(!isMobileChatOpen);
-    // Close sidebar if open
-    if (isMobileSidebarOpen) {
-      setMobileSidebarOpen(false);
-    }
   };
 
   // Editor is "active" when no overlays are open
-  const isEditorActive = !isMobileSidebarOpen && !isMobileChatOpen;
+  const isEditorActive = !isMobileSidebarOpen;
 
   return (
     <>
@@ -159,13 +143,6 @@ export function MobileNavBar() {
           label={t("editor")}
           isActive={isEditorActive}
           onClick={handleEditorClick}
-        />
-
-        <NavButton
-          icon={<Sparkles className="h-5 w-5" />}
-          label={t("ai")}
-          isActive={isMobileChatOpen}
-          onClick={handleAIClick}
         />
 
         <NavButton

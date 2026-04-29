@@ -31,12 +31,8 @@ import {
   Palette,
   ArrowRightLeft,
 } from "lucide-react";
-import { AiLogoIcon } from "@/components/ui/ai-logo-icon";
 import { cn } from "@/lib/utils";
 import { turnIntoOptions, isTurnIntoSeparator } from "@/lib/block-actions";
-import { useChatContextStore } from "@/stores/chat-context-store";
-import { useLayoutStore } from "@/stores/layout-store";
-import { nodeToMarkdown } from "@/lib/markdown-selection";
 import { ColorPicker } from "./color-picker";
 import {
   moveBlockUp,
@@ -115,8 +111,6 @@ const ALIGN_TYPES = new Set([
 
 export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockActionMenuProps) {
   const t = useTranslations("editor");
-  const addChatContext = useChatContextStore((s) => s.addChatContext);
-  const setChatOpen = useLayoutStore((s) => s.setChatOpen);
   // Freeze blockPos at mount time — parent may update hoveredBlockPos
   // via mousemove, but our target block must never change while open.
   const [stableBlockPos] = useState(blockPos);
@@ -535,22 +529,6 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     [editor, onClose, resolveAlignTarget]
   );
 
-  const handleAskAI = useCallback(() => {
-    if (block) {
-      const text = nodeToMarkdown(editor, block.node);
-      if (text.trim()) {
-        addChatContext({
-          type: "selection",
-          text,
-          from: block.from,
-          to: block.to,
-        });
-      }
-      setChatOpen(true);
-    }
-    onClose();
-  }, [editor, block, addChatContext, setChatOpen, onClose]);
-
   // Build dynamic menu item IDs based on block type
   type MenuItemId =
     | "delete"
@@ -560,8 +538,7 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     | "moveUp"
     | "moveDown"
     | "align"
-    | "color"
-    | "askAI";
+    | "color";
   const menuItems: MenuItemId[] = [
     "delete",
     "duplicate",
@@ -571,7 +548,6 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     "moveDown",
     ...(showAlign ? ["align" as const] : []),
     ...(showColor ? ["color" as const] : []),
-    "askAI",
   ];
   const menuItemCount = menuItems.length;
 
@@ -639,9 +615,6 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
               case "align":
                 setActiveSubmenu("align");
                 break;
-              case "askAI":
-                handleAskAI();
-                break;
             }
           }
           break;
@@ -660,7 +633,6 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
     handleCopy,
     handleMoveUp,
     handleMoveDown,
-    handleAskAI,
   ]);
 
   const turnIntoItems = turnIntoOptions.filter((o) => !isTurnIntoSeparator(o));
@@ -962,20 +934,6 @@ export function BlockActionMenu({ editor, blockPos, position, onClose }: BlockAc
           )}
         </>
       )}
-
-      {/* Ask AI */}
-      <div className="my-1.5 h-px bg-border" />
-      <MenuButton
-        icon={<AiLogoIcon className="h-3.5 w-3.5 text-primary" />}
-        label={t("blockAction.askInSidebar")}
-        focused={currentItemId === "askAI" && !activeSubmenu}
-        onClick={handleAskAI}
-        onMouseEnter={() => {
-          setFocusIndex(menuItems.indexOf("askAI"));
-          setActiveSubmenu(null);
-        }}
-        shortcut="Ctrl+J"
-      />
     </div>,
     document.body
   );

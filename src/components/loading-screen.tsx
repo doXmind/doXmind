@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { AnimatedLogoIcon, GlitchProvider } from "@/components/ui/animated-logo";
 import { SidebarSkeleton } from "@/components/sidebar/sidebar-skeleton";
 import { EditorSkeleton } from "@/components/editor/editor-skeleton";
-import { ChatSkeleton } from "@/components/ai/chat-skeleton";
 import { AppShell } from "@/components/layout/app-shell";
 import { useLayoutStore } from "@/stores/layout-store";
 import { cn } from "@/lib/utils";
@@ -26,7 +25,7 @@ let hasEverInitialized = false;
 export function LoadingScreen({ isLoading, children, isMobile = false }: LoadingScreenProps) {
   const [phase, setPhase] = useState<LoadingPhase>(hasEverInitialized ? "content" : "logo");
   const [hasInitialized, setHasInitialized] = useState(hasEverInitialized);
-  const { isChatOpen, isSidebarOpen } = useLayoutStore();
+  const { isSidebarOpen } = useLayoutStore();
 
   useEffect(() => {
     // Only run the logo animation once on initial mount
@@ -85,7 +84,7 @@ export function LoadingScreen({ isLoading, children, isMobile = false }: Loading
           {isMobile ? (
             <MobileSkeletonLayout />
           ) : (
-            <DesktopSkeletonLayout isSidebarOpen={isSidebarOpen} isChatOpen={isChatOpen} />
+            <DesktopSkeletonLayout isSidebarOpen={isSidebarOpen} />
           )}
         </motion.div>
       )}
@@ -104,13 +103,7 @@ export function LoadingScreen({ isLoading, children, isMobile = false }: Loading
   );
 }
 
-function DesktopSkeletonLayout({
-  isSidebarOpen,
-  isChatOpen,
-}: {
-  isSidebarOpen: boolean;
-  isChatOpen: boolean;
-}) {
+function DesktopSkeletonLayout({ isSidebarOpen }: { isSidebarOpen: boolean }) {
   return (
     <AppShell>
       <div className="flex h-full">
@@ -128,16 +121,6 @@ function DesktopSkeletonLayout({
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <EditorSkeleton />
         </main>
-
-        {/* Chat Panel skeleton */}
-        <aside
-          className={cn(
-            "bg-sidebar w-96 flex-shrink-0 border-l border-border transition-all duration-300",
-            !isChatOpen && "w-0 overflow-hidden opacity-0"
-          )}
-        >
-          <ChatSkeleton />
-        </aside>
       </div>
     </AppShell>
   );

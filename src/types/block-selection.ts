@@ -49,30 +49,6 @@ export const SELECTABLE_BLOCK_TYPES = [
 export type SelectableBlockType = (typeof SELECTABLE_BLOCK_TYPES)[number];
 
 /**
- * AI edit preview state
- */
-export interface AIEditPreview {
-  /** Unique identifier for this edit */
-  id: string;
-  /** Original blocks that were selected */
-  originalBlocks: SelectableBlock[];
-  /** Original combined text content */
-  originalText: string;
-  /** Proposed new content (plain text) */
-  proposedContent: string;
-  /** Proposed new content (HTML for rendering) */
-  proposedHtml: string;
-  /** Voice instruction that triggered this edit (if any) */
-  voiceInstruction?: string;
-  /** AI action type (improve, shorten, expand, etc.) */
-  actionType?: string;
-  /** Edit status */
-  status: "pending" | "streaming" | "ready" | "accepted" | "rejected";
-  /** Creation timestamp */
-  createdAt: string;
-}
-
-/**
  * Drag state for block reordering (simplified for @dnd-kit integration)
  */
 export interface BlockDragState {
@@ -92,10 +68,6 @@ export interface BlockSelectionState {
   selectedBlocks: SelectableBlock[];
   /** Whether selection mode is active (at least one block selected) */
   isSelectionActive: boolean;
-  /** AI edit preview (shown after AI generates edit) */
-  editPreview: AIEditPreview | null;
-  /** Whether AI is processing an edit request */
-  isProcessingAI: boolean;
   /** Drag state for block reordering */
   drag: BlockDragState;
 }
@@ -114,17 +86,6 @@ export interface BlockSelectionActions {
   clearSelection: () => void;
   /** Get combined text of all selected blocks */
   getSelectedText: () => string;
-
-  /** Set AI edit preview */
-  setEditPreview: (preview: AIEditPreview | null) => void;
-  /** Update edit preview status */
-  updateEditPreviewStatus: (status: AIEditPreview["status"]) => void;
-  /** Accept the edit preview (apply to document) */
-  acceptEditPreview: () => void;
-  /** Reject the edit preview */
-  rejectEditPreview: () => void;
-  /** Set AI processing state */
-  setProcessingAI: (processing: boolean) => void;
 
   /** Start dragging a block */
   startDrag: (block: SelectableBlock) => void;
