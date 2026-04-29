@@ -3,16 +3,11 @@
  *
  * Usage:
  *   import { eventBus } from "@/lib/events";
- *   // Emit
- *   eventBus.emit("profile:updated", { userId: "123" });
- *   // Subscribe (returns unsubscribe fn)
- *   const unsub = eventBus.on("profile:updated", ({ userId }) => { ... });
+ *   eventBus.emit("storage:changed");
+ *   const unsub = eventBus.on("database:deleted", ({ databaseId }) => { ... });
  */
 
-import type { LocalUser } from "@/stores/auth-store";
-
 type EventMap = {
-  "profile:updated": { user: LocalUser };
   "storage:changed": void;
   "database:deleted": { databaseId: string };
 };

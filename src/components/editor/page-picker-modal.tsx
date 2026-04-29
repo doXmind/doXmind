@@ -6,14 +6,12 @@ import { Modal, ModalHeader } from "@/components/ui/modal";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileStore } from "@/stores/file-store";
 import { cn } from "@/lib/utils";
-import { useSearchParams } from "next/navigation";
 
 export function PagePickerModal() {
   const { pagePickerOpen, pagePickerCallback, closePagePicker } = useEditorStore();
   const files = useFileStore((s) => s.files);
+  const currentFileId = useFileStore((s) => s.currentFileId);
   const [query, setQuery] = useState("");
-  const searchParams = useSearchParams();
-  const currentFileId = searchParams.get("id");
 
   const filteredPages = useMemo(() => {
     const pages = Object.values(files).filter((f) => !f.isFolder && f.id !== currentFileId);

@@ -133,31 +133,16 @@ async def upload_image(
             message=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB"
         )
 
-    # Check storage quota (pre-flight, non-locking — catches obvious overages early)
-    if user_id != "shared":
-        from services.storage_tracker import StorageTracker
-
-        storage_tracker = StorageTracker(db)
-        await storage_tracker.check_storage_limit(user_id, len(content))
-
-    # Generate unique filename and S3 key
+    # Generate unique filename and storage key
     filename = f"{uuid.uuid4().hex}{ext}"
     s3_key = f"images/{user_id}/{filename}"
     content_type = file.content_type or "application/octet-stream"
 
-    # Upload to S3
+    # Save to local storage
     storage = get_storage_service()
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, storage.upload, s3_key, content, content_type)
 
-    # Atomically check limit and record storage usage (with row lock)
-    if user_id != "shared":
-        from services.storage_tracker import StorageTracker
-
-        storage_tracker = StorageTracker(db)
-        await storage_tracker.check_and_add_usage(user_id, len(content))
-
-    # Return URL path (proxy approach — same URL format as before)
     url = f"/api/images/{user_id}/{filename}"
     logger.info(f"Image uploaded to S3: {url} ({len(content)} bytes)")
 
@@ -246,18 +231,7 @@ async def delete_image(
 
     storage = get_storage_service()
     loop = asyncio.get_event_loop()
-
-    # Get file size before deletion for storage tracking
-    file_size = await loop.run_in_executor(None, storage.get_size, s3_key)
-
     await loop.run_in_executor(None, storage.delete, s3_key)
 
-    # Reduce storage usage
-    if user_id != "shared" and file_size:
-        from services.storage_tracker import StorageTracker
-
-        storage_tracker = StorageTracker(db)
-        await storage_tracker.remove_usage(user_id, file_size)
-
-    logger.info(f"Image deleted from S3: {s3_key}")
+    logger.info(f"Image deleted: {s3_key}")
     return {"status": "deleted"}

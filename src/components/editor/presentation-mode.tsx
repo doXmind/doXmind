@@ -43,7 +43,6 @@ import { MermaidChart } from "@/extensions/mermaid/mermaid-chart";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useFileStore } from "@/stores/file-store";
-import { useAuthStore } from "@/stores/auth-store";
 import { Z_INDEX } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 /* ─── Presentation-only extensions (content rendering, no editing) ── */
@@ -273,7 +272,6 @@ export function PresentationMode({
   } = useLayoutStore();
   const editor = useEditorRefStore((s) => s.editor);
   const { currentFileId, files } = useFileStore();
-  const user = useAuthStore((s) => s.user);
   const { currentTheme } = useThemeManager();
   const resolvedTheme = currentTheme.baseMode;
 
@@ -301,7 +299,7 @@ export function PresentationMode({
     if (contentSlides.length === 0) return [];
 
     const title = titleProp || currentFile?.name?.replace(/\.md$/i, "") || t("untitled");
-    const author = authorProp ?? (user?.username || user?.email || "");
+    const author = authorProp ?? "";
     const date =
       dateProp ?? (currentFile?.updatedAt ? formatPresentationDate(currentFile.updatedAt) : "");
 
@@ -327,7 +325,7 @@ export function PresentationMode({
     }
 
     return result;
-  }, [editor, isPresentationMode, currentFile, user, titleProp, authorProp, dateProp, t]);
+  }, [editor, isPresentationMode, currentFile, titleProp, authorProp, dateProp, t]);
 
   // Reset state when entering presentation
   useEffect(() => {

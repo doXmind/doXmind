@@ -12,7 +12,6 @@ import { Toaster } from "sonner";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 
-// Prevent auto-zoom on input focus on mobile (iOS/Chrome)
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -26,66 +25,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: {
-    default: "doXmind - Local Writing Studio",
-    template: "%s | doXmind",
-  },
-  description: "A minimalist local-first writing tool for markdown editing.",
-  keywords: ["markdown editor", "local writing app", "document editor", "content creation"],
-  authors: [{ name: "doXmind Team" }],
-  creator: "doXmind",
-  metadataBase: new URL("https://app.doxmind.com"),
-  icons: {
-    icon: "/icon.svg",
-  },
-  manifest: "/manifest.json",
-  openGraph: {
-    type: "website",
-    locale: "en_US",
-    url: "/",
-    siteName: "doXmind",
-    title: "doXmind - Local Writing Studio",
-    description: "A minimalist local-first writing tool for markdown editing",
-    images: [
-      {
-        url: "/icon.svg",
-        width: 480,
-        height: 480,
-        alt: "doXmind Local Writing Studio",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "doXmind - Local Writing Studio",
-    description: "A minimalist local-first writing tool for markdown editing",
-    images: ["/icon.svg"],
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-video-preview": -1,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-    },
-  },
-};
-
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@type": "WebApplication",
-  name: "doXmind",
-  description: "Local-first markdown writing and document editing",
-  applicationCategory: "Productivity",
-  operatingSystem: "Web",
-  offers: {
-    "@type": "Offer",
-    price: "0",
-    priceCurrency: "USD",
-  },
+  title: "doXmind",
+  description: "Local-first markdown writing studio.",
+  icons: { icon: "/icon.svg" },
 };
 
 const themeBootstrapScript = `(function(){
@@ -112,7 +54,6 @@ const themeBootstrapScript = `(function(){
     var prefDark = prefs && typeof prefs.preferredDarkTheme === 'string' ? prefs.preferredDarkTheme : stateDark;
     var prefSystem = prefs && typeof prefs.systemThemeEnabled === 'boolean' ? prefs.systemThemeEnabled : stateSystem;
 
-    // Canonical source is dedicated theme prefs. Layout state is legacy fallback only.
     var themeId = prefThemeId || stateThemeId || (cache && cache.id ? cache.id : null);
     var systemEnabled = prefSystem;
     var mode = cache && cache.mode ? cache.mode : null;
@@ -161,20 +102,11 @@ export default async function RootLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: themeBootstrapScript,
-          }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>
-            {/* Skip to Content - Accessibility feature for keyboard users */}
             <a href="#main-content" className="skip-to-content">
               Skip to content
             </a>

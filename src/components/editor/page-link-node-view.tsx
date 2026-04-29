@@ -7,7 +7,7 @@ import { FileText, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export function PageLinkNodeView({
   node,
@@ -18,7 +18,7 @@ export function PageLinkNodeView({
 }: NodeViewProps) {
   const { pageId, pageTitle, pageIcon } = node.attrs;
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const currentFileId = useFileStore((s) => s.currentFileId);
   const [isHovered, setIsHovered] = useState(false);
 
   // Live title sync: read from file store in case the page was renamed
@@ -31,9 +31,8 @@ export function PageLinkNodeView({
 
   const handleClick = () => {
     if (!pageId || isDeleted) return;
-    const currentId = searchParams.get("id");
-    if (currentId !== pageId) {
-      router.push(`/editor?id=${pageId}`);
+    if (currentFileId !== pageId) {
+      router.push(`/editor/${pageId}`);
     }
   };
 

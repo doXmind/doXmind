@@ -33,7 +33,6 @@ import { toast } from "sonner";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { UserMenu } from "@/components/layout/user-menu";
 import { api } from "@/lib/api";
 
 export function UnifiedHeader() {
@@ -220,7 +219,6 @@ export function UnifiedHeader() {
               <div className="mx-1 h-5 w-px bg-border/30" />
             </>
           )}
-          <UserMenu compact />
         </div>
       </header>
     </>
