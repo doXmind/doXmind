@@ -77,17 +77,21 @@ def get_settings() -> Settings:
     return settings
 
 
-# CORS — desktop app talks only to localhost
-CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# CORS — desktop app talks only to localhost.
+#
+# The server binds to 127.0.0.1 only, so the threat model is "code already
+# running on this machine can hit it." We accept any origin so the Tauri
+# WebView (which serves pages from `tauri://localhost` on macOS, or
+# `http://tauri.localhost` on Windows) and the plain dev server on
+# `http://localhost:3000` both work without per-platform allowlists.
+CORS_ORIGINS = ["*"]
 
 
 def get_cors_headers(origin: str | None) -> dict[str, str]:
-    if origin and origin in CORS_ORIGINS:
-        return {
-            "Access-Control-Allow-Origin": origin,
-            "Access-Control-Allow-Credentials": "true",
-        }
-    return {}
+    """Echo the request origin back so credentialed requests work everywhere."""
+    if not origin:
+        return {}
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+    }

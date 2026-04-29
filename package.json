@@ -25,7 +25,12 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "prepare": "husky",
     "server": "cd server && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000",
-    "dev:all": "node scripts/dev.mjs"
+    "dev:all": "node scripts/dev.mjs",
+    "tauri": "tauri",
+    "icons": "node scripts/build-app-icon.mjs",
+    "dev:desktop": "node scripts/desktop-dev.mjs",
+    "build:sidecar": "node scripts/build-sidecar.mjs",
+    "build:desktop": "node scripts/build-sidecar.mjs && tauri build --config src-tauri/tauri.bundle.conf.json"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.8",
@@ -84,6 +89,8 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/cli": "^2.10.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",

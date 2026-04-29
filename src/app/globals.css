@@ -1,9 +1,13 @@
+/* KaTeX styles for math rendering. Must come before any other rule —
+   the CSS spec requires @import to precede everything except @charset
+   and @layer statements. Webpack was lenient about this, but Turbopack
+   enforces it strictly: keeping the import below @tailwind directives
+   triggers "@import rules must precede all rules". */
+@import "katex/dist/katex.min.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* KaTeX styles for math rendering */
-@import "katex/dist/katex.min.css";
 
 @layer base {
   :root {

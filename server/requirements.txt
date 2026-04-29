@@ -24,18 +24,17 @@ python-docx==1.1.2
 beautifulsoup4==4.12.3
 
 # Import (PDF/DOCX → markdown locally via markitdown)
+# Intentionally unpinned — always pull the latest markitdown for new format
+# support and bug fixes. Run `pip install -U markitdown[all]` to refresh.
 markitdown[all]
 pypdf>=4.0.0
 
-# Spreadsheet/database parsing
+# Spreadsheet parsing — required transitively by markitdown's xlsx converter.
 pandas==2.2.3
 numpy==2.2.1
-scipy==1.15.1
 openpyxl==3.1.5
 
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2
 pytest-cov==6.0.0
-factory-boy==3.3.1
-faker==33.1.0

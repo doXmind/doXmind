@@ -2,7 +2,6 @@
 
 import { useTransition } from "react";
 import { useLocale } from "next-intl";
-import { useRouter } from "next/navigation";
 import { Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,13 +19,15 @@ const LOCALES = [
 
 export function LanguageSwitcher({ className }: { className?: string }) {
   const locale = useLocale();
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   function switchLocale(newLocale: string) {
+    if (newLocale === locale) return;
     document.cookie = `NEXT_LOCALE=${newLocale};path=/;max-age=${365 * 24 * 60 * 60};samesite=lax`;
+    // Static export + client-only i18n provider: reload so the provider
+    // re-reads the cookie. router.refresh() is a no-op for `output: 'export'`.
     startTransition(() => {
-      router.refresh();
+      window.location.reload();
     });
   }
 

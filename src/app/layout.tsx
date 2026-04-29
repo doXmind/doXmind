@@ -9,8 +9,7 @@ import "./styles/mobile.css";
 import "./styles/components.css";
 import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
-import { NextIntlClientProvider } from "next-intl";
-import { getLocale, getMessages } from "next-intl/server";
+import { ClientIntlProvider } from "@/i18n/intl-provider";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -91,21 +90,18 @@ const themeBootstrapScript = `(function(){
   } catch (_) {}
 })();`;
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const locale = await getLocale();
-  const messages = await getMessages();
-
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
-        <NextIntlClientProvider locale={locale} messages={messages}>
+        <ClientIntlProvider>
           <Providers>
             <a href="#main-content" className="skip-to-content">
               Skip to content
@@ -113,7 +109,7 @@ export default async function RootLayout({
             {children}
             <Toaster position="bottom-right" richColors />
           </Providers>
-        </NextIntlClientProvider>
+        </ClientIntlProvider>
       </body>
     </html>
   );

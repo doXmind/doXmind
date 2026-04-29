@@ -33,6 +33,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { api } from "@/lib/api";
+import { useIsTauri } from "@/hooks/use-is-tauri";
 
 export function UnifiedHeader() {
   const {
@@ -53,6 +54,13 @@ export function UnifiedHeader() {
   const currentFile = files.find((f) => f.id === currentFileId);
   const title = currentFile?.name?.replace(/\.md$/i, "") || t("untitled");
   const saveLabel = isSaving ? t("saving") : isDirty ? t("unsavedChanges") : t("saved");
+
+  // In the Tauri macOS build the native title bar is hidden via
+  // `titleBarStyle: Overlay`, so the real traffic-light buttons float over
+  // the top-left of the WebView. Reserve ~78px of left padding for them and
+  // make the header itself a drag region so the window can still be moved.
+  const { isTauri, platform } = useIsTauri();
+  const isMacTauri = isTauri && platform === "macos";
 
   const handleExport = (format: "markdown" | "pdf" | "docx") => {
     if (!currentFile) return;
@@ -82,13 +90,28 @@ export function UnifiedHeader() {
 
   return (
     <>
-      <header className="relative z-20 grid h-11 shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center border-b border-border/40 bg-[#161616]/95 px-3 text-foreground shadow-[0_1px_0_rgba(255,255,255,0.03)_inset]">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="mr-1 flex items-center gap-2 pl-0.5" aria-hidden="true">
-            <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-            <span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-            <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-          </div>
+      <header
+        data-tauri-drag-region
+        className={cn(
+          // 1fr_auto_1fr keeps the centered title pill in the visual middle
+          // of the window regardless of how much the left/right action
+          // groups change width (e.g. when no file is open).
+          //
+          // In dark mode the sidebar and main pane both use --background
+          // (#1a1a1a). Match that here so the only visible horizontal seam
+          // is the `border-b` line — picking a different shade (we used to
+          // hard-code #161616) caused a second, parallel "phantom" line at
+          // the header/content boundary from the colour transition.
+          // Light mode keeps the original dark header strip because the
+          // header's icon colours are hard-coded for a dark surface.
+          "relative z-20 grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-b border-border/50 bg-[#161616] pr-3 text-foreground dark:bg-background",
+          // On macOS Tauri the real traffic lights live at ~12px from the
+          // left, ~18px from the top — leave 78px so the green button has
+          // breathing room before our first sidebar toggle.
+          isMacTauri ? "pl-[78px]" : "pl-3"
+        )}
+      >
+        <div data-tauri-drag-region className="flex min-w-0 items-center gap-2">
           <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
             <Button
               variant="ghost"
@@ -128,18 +151,22 @@ export function UnifiedHeader() {
           </Tooltip>
         </div>
 
-        <div className="flex min-w-0 justify-center px-4">
+        <div data-tauri-drag-region className="flex min-w-0 justify-center px-4">
           <div
+            data-tauri-drag-region
             className="flex h-8 min-w-0 max-w-[min(680px,100%)] items-center gap-2 rounded-md border border-white/10 bg-[#1f1f1f] px-3 shadow-sm"
             aria-label={title}
           >
-            <span className="min-w-0 truncate text-[13px] font-semibold text-zinc-100">
+            <span
+              data-tauri-drag-region
+              className="min-w-0 truncate text-[13px] font-semibold text-zinc-100"
+            >
               {title}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-1.5">
+        <div data-tauri-drag-region className="flex items-center justify-end gap-1.5">
           {currentFile && (
             <>
               <Tooltip content={t("present")} side="bottom">

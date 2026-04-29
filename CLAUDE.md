@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-doXmind Mini is a **local-first, single-user** AI writing assistant ("Cursor for Writing"). It pairs a TipTap-based WYSIWYG editor with an OpenRouter-powered AI agent — chat, quick edits, autocomplete, document review, and a knowledge base — all running on the user's own machine. There is no auth, no cloud sync, no sharing, no billing. All data lives in `~/.doxmind/`.
+doXmind Mini is a **local-first, single-user, offline document editor**. It is a TipTap-based WYSIWYG editor with a thin FastAPI sidecar that handles file storage, version snapshots, and document import/export. There is no auth, no cloud sync, no sharing, no billing, **and no LLM / AI features**. All data lives in `~/.doxmind/`.
 
 ## Tech Stack
 
 - **Frontend:** Next.js 15 (App Router), React 19, TipTap, Zustand, Tailwind CSS
 - **Backend:** FastAPI, Python 3.12, SQLAlchemy 2.0 (async)
 - **Database:** SQLite (single file at `~/.doxmind/doxmind.db`)
-- **LLM:** OpenRouter (OpenAI-compatible client) — user supplies their key in the in-app Settings page
+- **External services:** none. The backend binds to `127.0.0.1` and makes no outbound network calls.
 
 ## Commands
 
@@ -39,8 +39,7 @@ ruff format .         # Format
 
 1. `npm run dev:all` (or run backend + frontend separately).
 2. Open `http://localhost:3000` — you land directly in the editor.
-3. Open the Settings page (`/settings`) and paste your OpenRouter API key. It's persisted to `~/.doxmind/config.json`.
-4. Start writing. Chat / autocomplete / quick edits will use that key automatically.
+3. Start writing. There is no sign-in, no API key, no setup step.
 
 ## Architecture
 
@@ -48,38 +47,32 @@ ruff format .         # Format
 
 Everything user-owned lives under `~/.doxmind/`:
 
-- `doxmind.db` — SQLite database (files, conversations, messages, KB attachments, database blocks)
-- `config.json` — User-supplied API keys and feature toggles (managed via `/settings`)
+- `doxmind.db` — SQLite database (files, versions, database blocks)
 - `uploads/` — Local image uploads (cover images, inline images)
 
 The `DATA_DIR` environment variable can override this path.
 
 ### Frontend Structure
 
-- **Stores** (`src/stores/`): Zustand global state — files, chat, editor, KB, layout, API settings.
-- **Hooks** (`src/hooks/`): Business logic encapsulation (chat streaming, edit operations, autocomplete, diff review).
-- **Extensions** (`src/extensions/`): Custom TipTap extensions (diff-review, search, autocomplete, spellcheck).
+- **Stores** (`src/stores/`): Zustand global state — `file-store`, `editor-store`, `editor-ref-store`, `database-store`, `outline-store`, `layout-store`, `block-selection-store`, `settings-store`. All local, all single-user.
+- **Hooks** (`src/hooks/`): UI-side business logic — block interaction, keyboard shortcuts, selection, mobile gestures, spellcheck, theme, etc. None of these talk to an LLM.
+- **Extensions** (`src/extensions/`): Custom TipTap extensions — block handle / color / selection, callout, code-block, columns, database, inline-comment, math, mermaid, page-link, resizable-image, search, spellcheck, toc, toggle, web-bookmark.
 
-Stub modules in `src/stores/{auth-store,billing-store,notification-store,demo-store}.ts` exist purely so legacy components keep compiling — they always report a single fixed local user with no quotas.
-
-Entry point: `src/app/editor/[[...fileId]]/page.tsx` (the root `/` redirects here).
+Entry point: `src/app/editor/[[...fileId]]/page.tsx` (the root `/` redirects here). The settings page (`src/app/settings/page.tsx`) only exposes typography controls.
 
 ### Backend Structure
 
-- **API routes** (`server/api/`): Thin FastAPI routers handling HTTP.
-- **Services** (`server/services/`): LLM, export, file conversion, etc.
-  - `local_config.py` — read/write `~/.doxmind/config.json`
-  - `auth_service.py`, `credit_service.py`, `usage_tracker.py`, `storage_tracker.py`, `api_key_service.py`, `middleware/rate_limit.py` — **stubs** that preserve old call signatures (no auth, unlimited credits, no quota tracking)
-- **Agents** (`server/agents/`): Writing agent / KB agent / global agent. They call OpenRouter via the OpenAI-compatible client; the API key is resolved in this order: explicit arg → env var (`OPENROUTER_API_KEY`) → `local_config.json`.
+- **API routes** (`server/api/`): Six thin FastAPI routers, all wired up in `server/main.py`:
+  - `files` — CRUD on documents
+  - `versions` — per-file version snapshots
+  - `export` — render documents to Markdown / HTML / PDF / DOCX
+  - `import_file` — convert PDF / DOCX / PPTX / XLSX / Markdown into editor content (via `markitdown`)
+  - `images` — local image upload and serving from `~/.doxmind/uploads/`
+  - `databases` — database-block CRUD
+- **Services** (`server/services/`): `export_service`, `document_detector`, `document_sections`, `content_sanitizer`, `default_guide`, `storage_service`. `auth_service.py` is a stub kept only so legacy imports keep resolving — it always reports a single fixed `local` user.
 - **Database** (`server/db/database.py`): SQLAlchemy models. `init_db()` runs `create_all` against SQLite — no Alembic.
 
 Entry point: `server/main.py`. The lifespan handler creates `~/.doxmind/` and the SQLite file on first boot.
-
-### AI Integration
-
-- **Chat streaming:** Server-Sent Events (SSE) via FastAPI.
-- **Tool system:** Document tools (`str_replace`, `insert`, `replace_all`), KB tools (`search_documents`, `read_document`), web search (Serper, optional), code execution (optional, off by default).
-- **Models:** Configured in `server/config.py` and overridable per-request via the user's `preferred_model` in local_config.
 
 ## Database
 
@@ -93,12 +86,12 @@ The `user_id` columns on `File`, `Conversation`, and `DatabaseBlock` are kept as
 
 ## Environment Variables
 
-Everything is optional; the GUI settings page is the canonical source.
+All optional.
 
-- `OPENROUTER_API_KEY` — fallback if the GUI doesn't have one
-- `SERPER_API_KEY` — optional, enables web search tool
 - `DATA_DIR` — override `~/.doxmind`
-- `DEBUG`, `HOST`, `PORT`
+- `DEBUG`, `HOST`, `PORT` — server config
+
+There are no API keys or external service credentials.
 
 ## Code Quality
 
@@ -115,4 +108,8 @@ The backend always exposes:
 
 ## What was removed
 
-This is the local desktop edition. The following SaaS features have been stripped from the codebase: authentication (JWT, OAuth, password reset, email verification), Stripe billing, credits / usage quotas, document sharing, community feed, comments, follows / bookmarks, notifications, telemetry / RLHF reporting, AWS S3 storage, Notion / Google Drive OAuth import, Postgres, Redis, Docker, Heroku release config, all multi-user data isolation. Don't try to reintroduce any of these without explicit instructions — and if you do, do it through the cloud edition rather than this branch.
+This branch is the local desktop edition. Two waves of removals shaped it:
+
+**SaaS features:** authentication (JWT, OAuth, password reset, email verification), Stripe billing, credits / usage quotas, document sharing, community feed, comments, follows / bookmarks, notifications, telemetry / RLHF reporting, AWS S3 storage, Notion / Google Drive OAuth import, Postgres, Redis, Docker, Heroku release config, all multi-user data isolation.
+
+**LLM / AI features** (removed in `fd59e3b`): the writing agent, global agent, KB agent, chat streaming, autocomplete, inline edit, diff-review, text-review, knowledge base, web search (Serper), tool system, prompts, skills, OpenRouter / OpenAI integration, the `api-settings` page, and every supporting store / hook / extension on the frontend. The app is now editor-only; do **not** reintroduce LLM functionality on this branch — if it's needed, add it on the cloud edition instead.

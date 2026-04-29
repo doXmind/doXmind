@@ -1,27 +1,24 @@
 import type { NextConfig } from "next";
-import createNextIntlPlugin from "next-intl/plugin";
 
-const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
-
-const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+// Note: we deliberately do *not* use `next-intl/plugin` here. The plugin is
+// designed to wire next-intl's server-side request config (cookies, headers,
+// async getRequestConfig), but the desktop build is a static export and our
+// i18n runs entirely on the client (see src/i18n/intl-provider.tsx). Keeping
+// the plugin tripped a Next.js 15.5.x bug ("Expected clientReferenceManifest
+// to be defined") during static export. Without it `useTranslations` /
+// `useLocale` keep working because messages are passed through
+// NextIntlClientProvider on the client.
 
 const nextConfig: NextConfig = {
+  // Static export so Tauri can serve the frontend from the bundled `out/`
+  // directory. All API traffic goes directly to the FastAPI sidecar at the
+  // URL injected as window.__TAURI_BACKEND_URL__ (see src/lib/api/client.ts).
+  output: "export",
+  trailingSlash: true,
+  images: { unoptimized: true },
   experimental: {
     optimizePackageImports: ["lucide-react", "framer-motion"],
   },
-  async rewrites() {
-    // Local document/data routes are proxied to the FastAPI sidecar.
-    return [
-      { source: "/api/files", destination: `${backendUrl}/api/files/` },
-      { source: "/api/files/:path*", destination: `${backendUrl}/api/files/:path*` },
-      { source: "/api/versions/:path*", destination: `${backendUrl}/api/versions/:path*` },
-      { source: "/api/export/:path*", destination: `${backendUrl}/api/export/:path*` },
-      { source: "/api/import/:path*", destination: `${backendUrl}/api/import/:path*` },
-      { source: "/api/images/:path*", destination: `${backendUrl}/api/images/:path*` },
-      { source: "/api/databases", destination: `${backendUrl}/api/databases/` },
-      { source: "/api/databases/:path*", destination: `${backendUrl}/api/databases/:path*` },
-    ];
-  },
 };
 
-export default withNextIntl(nextConfig);
+export default nextConfig;

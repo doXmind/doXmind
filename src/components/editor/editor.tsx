@@ -23,6 +23,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
+import { apiUrl } from "@/lib/api/base";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
 import { BlockHandle } from "./block-handle";
@@ -189,7 +190,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       const content = editor.getHTML();
       if (content === lastContentRef.current) return;
       const contentMarkdown = editor.getMarkdown();
-      fetch(`/api/files/${file.id}`, {
+      fetch(apiUrl(`/api/files/${file.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, content_markdown: contentMarkdown }),

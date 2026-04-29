@@ -1,17 +1,31 @@
 /**
  * Base API client — local desktop edition (no auth).
  *
- * The backend runs on localhost:8000 and trusts every request. We just
- * proxy through Next.js rewrites and never attach any auth headers.
+ * The backend runs as a FastAPI sidecar on 127.0.0.1; the exact port is
+ * injected at runtime by the Tauri shell into window.__TAURI_BACKEND_URL__.
+ * See src/lib/api/base.ts for the resolution order.
  */
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+import { getApiBase } from "./base";
+
+/** @deprecated Read getApiBase() at call time instead — the URL is dynamic. */
+export const API_BASE = "";
 
 export class ApiClient {
-  protected baseUrl: string;
+  protected baseUrl: string | null;
 
-  constructor(baseUrl: string = API_BASE) {
-    this.baseUrl = baseUrl;
+  /**
+   * Pass an explicit baseUrl to pin a client to a specific backend (rare —
+   * mostly for tests). When omitted the URL is resolved on every request so
+   * the Tauri-injected value works even for clients constructed before the
+   * WebView's first render.
+   */
+  constructor(baseUrl?: string) {
+    this.baseUrl = baseUrl ?? null;
+  }
+
+  public resolveBaseUrl(): string {
+    return this.baseUrl ?? getApiBase();
   }
 
   /** Kept as a no-op for legacy call sites. */
@@ -81,7 +95,7 @@ export class ApiClient {
   }
 
   protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
+    const url = `${this.resolveBaseUrl()}${endpoint}`;
     const response = await fetch(url, {
       ...options,
       headers: {

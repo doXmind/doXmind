@@ -79,3 +79,14 @@ CLAUDE.md
 # content
 /content
 test_output.txt
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+
+# PyInstaller intermediates
+server/dist/
+server/build/
+server/__pycache__/

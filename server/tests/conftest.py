@@ -22,12 +22,11 @@ from sqlalchemy.pool import StaticPool
 # Use an in-memory SQLite db so tests never touch the user's ~/.doxmind data.
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-# Sandbox the data dir so local_config / settings tests don't read the real
-# ~/.doxmind/config.json sitting in the developer's home folder.
+# Sandbox the data dir so settings tests don't touch the real ~/.doxmind
+# directory sitting in the developer's home folder.
 _TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="doxmind-test-"))
 os.environ["HOME"] = str(_TEST_DATA_DIR)
 os.environ["DEBUG"] = "true"
-os.environ["OPENROUTER_API_KEY"] = "test-api-key"
 
 import db.database as db_database  # noqa: E402
 from db.database import Base, File, get_db  # noqa: E402

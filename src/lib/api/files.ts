@@ -406,7 +406,7 @@ ApiClient.prototype.uploadImage = async function (
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const response = await fetch(`${this.baseUrl}/api/images/upload`, {
+    const response = await fetch(`${this.resolveBaseUrl()}/api/images/upload`, {
       method: "POST",
       headers: authHeaders,
       body: formData,
@@ -461,7 +461,7 @@ ApiClient.prototype.deleteImage = async function (
 
   const [, userId, filename] = match;
 
-  const response = await fetch(`${this.baseUrl}/api/images/${userId}/${filename}`, {
+  const response = await fetch(`${this.resolveBaseUrl()}/api/images/${userId}/${filename}`, {
     method: "DELETE",
     headers: this.getAuthHeaders(),
   });
@@ -554,7 +554,7 @@ ApiClient.prototype.exportFile = async function (
   fileId: string,
   format: "markdown" | "pdf" | "docx"
 ): Promise<Blob> {
-  const url = `${this.baseUrl}/api/export/${fileId}/${format}`;
+  const url = `${this.resolveBaseUrl()}/api/export/${fileId}/${format}`;
   const response = await fetch(url, {
     headers: this.getAuthHeaders(),
   });
@@ -584,7 +584,7 @@ ApiClient.prototype.importFile = async function (
     formData.append("parent_id", parentId);
   }
 
-  const url = `${this.baseUrl}/api/import/`;
+  const url = `${this.resolveBaseUrl()}/api/import/`;
   const response = await fetch(url, {
     method: "POST",
     body: formData,
