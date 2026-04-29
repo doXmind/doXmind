@@ -549,14 +549,14 @@
     },
     "versionPanel": {
       "manualEdit": "Manual edit",
-      "aiEdit": "AI edit",
+      "aiEdit": "Local snapshot",
       "quickEdit": "Quick edit",
       "restored": "Restored",
       "loadFailed": "Failed to load versions",
       "finishDiffReviewFirst": "Please finish the current diff review first",
       "fileNotFound": "File not found",
       "noChangesIdentical": "No differences — content is already identical",
-      "versionsAutoCreated": "Versions are created automatically when AI edits your document.",
+      "versionsAutoCreated": "Versions are created automatically as local snapshots while you edit.",
       "preview": "Preview",
       "inlineAI": {
         "placeholder": "Ask AI anything...",

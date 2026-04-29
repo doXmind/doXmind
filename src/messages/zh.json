@@ -451,7 +451,7 @@
     },
     "versionPanel": {
       "manualEdit": "手动编辑",
-      "aiEdit": "AI 编辑",
+      "aiEdit": "本地快照",
       "quickEdit": "快速编辑",
       "restored": "已恢复",
       "loadFailed": "加载版本历史失败"
@@ -556,7 +556,7 @@
       "finishDiffReviewFirst": "请先完成当前的差异审查",
       "fileNotFound": "文件未找到",
       "noChangesIdentical": "无差异 — 内容已完全相同",
-      "versionsAutoCreated": "AI 编辑文档时会自动创建版本。",
+      "versionsAutoCreated": "编辑文档时会自动创建本地快照版本。",
       "preview": "预览",
       "inlineAI": {
         "placeholder": "向 AI 提问...",
