@@ -525,6 +525,8 @@
     "reset": "Reset",
     "backToApp": "Back to app",
     "tabGeneral": "General",
+    "tabTrash": "Trash",
+    "trashIntro": "Restore deleted documents and folders, or remove them permanently. Items live here until you empty the trash.",
     "uiFontSize": "UI font size",
     "uiFontSizeDesc": "Adjust the base size used for the doXmind UI",
     "codeFontSize": "Code font size",

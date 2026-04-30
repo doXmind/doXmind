@@ -436,12 +436,16 @@ ApiClient.prototype.deleteImage = async function (
   this: ApiClient,
   imageUrl: string
 ): Promise<void> {
-  const match = imageUrl.match(/\/api\/images\/([^/]+)$/);
+  // Match the canonical /api/images/{filename} shape and the legacy
+  // /api/images/{user_id}/{filename} shape that older documents still embed.
+  // We forward the full path through to the server, which has compat routes
+  // for both layouts.
+  const match = imageUrl.match(/\/api\/images\/((?:[^/]+\/)?[^/]+)$/);
   if (!match) return;
 
-  const [, filename] = match;
+  const [, path] = match;
 
-  const response = await fetch(`${this.resolveBaseUrl()}/api/images/${filename}`, {
+  const response = await fetch(`${this.resolveBaseUrl()}/api/images/${path}`, {
     method: "DELETE",
   });
 

@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -199,8 +200,36 @@ async def init_db() -> None:
     logger = logging.getLogger(__name__)
     settings.ensure_data_dir()
     async with engine.begin() as conn:
+        await _refuse_legacy_multiuser_db(conn)
         await conn.run_sync(Base.metadata.create_all)
     logger.info(f"Database ready at {settings.database_path}")
+
+
+async def _refuse_legacy_multiuser_db(conn) -> None:
+    """Fail-fast on a SQLite file that came from a prior auth-enabled build.
+
+    The single-user code paths ignore the residual `user_id` column, which is
+    safe when only one user's rows exist. With more than one distinct user,
+    the sidebar would silently merge other users' files and `empty_trash`
+    would permanently delete them. Refuse to start in that case so the user
+    backs up first.
+    """
+    pragma = await conn.execute(text("PRAGMA table_info(files)"))
+    cols = [row[1] for row in pragma.fetchall()]
+    if "user_id" not in cols:
+        return
+    result = await conn.execute(
+        text("SELECT COUNT(DISTINCT user_id) FROM files WHERE user_id IS NOT NULL")
+    )
+    distinct = result.scalar() or 0
+    if distinct > 1:
+        raise RuntimeError(
+            f"Detected legacy multi-user database at {settings.database_path} "
+            f"with {distinct} distinct user_ids. doXmind Mini is single-user "
+            "and will not start to avoid merging other users' files. Back up "
+            "the database, then either drop the user_id column manually or "
+            "remove the file to start fresh."
+        )
 
 
 async def get_db() -> AsyncSession:

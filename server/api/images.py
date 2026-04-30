@@ -23,17 +23,28 @@ ALLOWED_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/sv
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
-# Regex to extract image URLs from HTML content
+# Regex to extract image URLs from HTML content. Allows an optional legacy
+# user_id segment (pre-slim URLs were /api/images/{user_id}/{filename}) so
+# orphan cleanup still finds matches in older documents.
 _IMAGE_URL_PATTERN = re.compile(r'/api/images/([^"\')\s]+)')
 
 
 def extract_image_keys_from_content(content: str) -> list[str]:
     """Extract local storage keys from image URLs found in HTML content.
 
-    Finds all occurrences of /api/images/{filename} and returns the
-    corresponding storage keys as ["images/{filename}", ...].
+    Returns storage keys of the form "images/{...}". Defensively skips any
+    captured value with path-traversal segments or absolute paths;
+    LocalStorageService._resolve also enforces this, but rejecting at
+    extraction keeps such inputs out of the orphan-cleanup pipeline entirely.
     """
-    return [f"images/{filename}" for filename in _IMAGE_URL_PATTERN.findall(content)]
+    keys: list[str] = []
+    for captured in _IMAGE_URL_PATTERN.findall(content):
+        if captured.startswith("/") or "\\" in captured:
+            continue
+        if any(segment in {"..", ""} for segment in captured.split("/")):
+            continue
+        keys.append(f"images/{captured}")
+    return keys
 
 
 async def delete_orphaned_images(
@@ -183,3 +194,17 @@ async def delete_image(
 
     logger.info(f"Image deleted: {image_key}")
     return {"status": "deleted"}
+
+
+# Backward-compat shims for pre-slim URLs of the form
+# /api/images/{user_id}/{filename}. We ignore the leading segment and serve
+# from the flat {filename} layout. Without these, every image embedded in a
+# document created by an older build returns a routing 400/404.
+@router.get("/{user_id}/{filename}")
+async def get_image_legacy(user_id: str, filename: str):  # noqa: ARG001
+    return await get_image(filename)
+
+
+@router.delete("/{user_id}/{filename}")
+async def delete_image_legacy(user_id: str, filename: str):  # noqa: ARG001
+    return await delete_image(filename)

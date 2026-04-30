@@ -9,11 +9,13 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import get_settings
 from db.database import File as FileModel
 from db.database import get_db
 from exceptions import (
     AppException,
     BadRequestError,
+    FileTooLargeError,
     InternalError,
     NotFoundError,
     UnsupportedFileTypeError,
@@ -22,12 +24,8 @@ from exceptions import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Configuration
-# No size cap — this is a local-only sidecar bound to 127.0.0.1, writing to
-# the user's own data dir. The legacy 10 MB limit was a SaaS-era safeguard
-# that has no role here; large academic PDFs / scanned docs work fine, they
-# just take longer in markitdown.
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".md", ".markdown"}
+MAX_FILE_SIZE = get_settings().max_import_file_size
 
 
 def get_file_extension(filename: str) -> str:
@@ -114,6 +112,12 @@ async def import_file(
 
     # Read file content
     content = await file.read()
+
+    # Cap body size — even though the server binds to 127.0.0.1, browser
+    # tabs on allowed origins can still POST here, and an unbounded
+    # await file.read() is a memory-DoS primitive.
+    if len(content) > MAX_FILE_SIZE:
+        raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
 
     # Convert to markdown
     try:

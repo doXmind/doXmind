@@ -79,17 +79,24 @@ def get_settings() -> Settings:
 
 # CORS — desktop app talks only to localhost.
 #
-# The server binds to 127.0.0.1 only, so the threat model is "code already
-# running on this machine can hit it." We accept any origin so the Tauri
-# WebView (which serves pages from `tauri://localhost` on macOS, or
-# `http://tauri.localhost` on Windows) and the plain dev server on
-# `http://localhost:3000` both work without per-platform allowlists.
-CORS_ORIGINS = ["*"]
+# The server binds to 127.0.0.1, but localhost binding does not isolate from
+# browser-origin JS: any tab the user opens can reach 127.0.0.1:8000. With
+# auth removed, an explicit allowlist is the only defense against arbitrary
+# websites reading/writing the user's documents. Allowed origins:
+#   - Tauri WebView macOS:   tauri://localhost
+#   - Tauri WebView Windows: http://tauri.localhost
+#   - Local Next.js dev:     http://localhost:3000, http://127.0.0.1:3000
+CORS_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
 
 def get_cors_headers(origin: str | None) -> dict[str, str]:
-    """Echo the request origin back so credentialed requests work everywhere."""
-    if not origin:
+    """Return CORS headers only when the request origin is on the allowlist."""
+    if not origin or origin not in CORS_ORIGINS:
         return {}
     return {
         "Access-Control-Allow-Origin": origin,

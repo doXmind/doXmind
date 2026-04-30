@@ -525,6 +525,8 @@
     "reset": "重置",
     "backToApp": "返回应用",
     "tabGeneral": "通用",
+    "tabTrash": "回收站",
+    "trashIntro": "恢复已删除的文档和文件夹，或永久移除它们。在清空回收站前，条目会保留在这里。",
     "uiFontSize": "界面字号",
     "uiFontSizeDesc": "调整 doXmind 界面的基础字号",
     "codeFontSize": "代码字号",

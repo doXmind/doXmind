@@ -17,10 +17,19 @@ class LocalStorageService:
         settings = get_settings()
         self.base_path = Path(settings.local_storage_path).expanduser()
         self.base_path.mkdir(parents=True, exist_ok=True)
+        self._resolved_base = self.base_path.resolve()
         logger.info(f"Local storage initialized at {self.base_path}")
 
     def _resolve(self, key: str) -> Path:
-        return self.base_path / key
+        # Resolve and verify the path stays under the storage root so that
+        # caller-supplied keys (extracted from document HTML) cannot escape
+        # via "..", absolute paths, or symlinks.
+        candidate = (self.base_path / key).resolve()
+        try:
+            candidate.relative_to(self._resolved_base)
+        except ValueError as exc:
+            raise ValueError(f"Storage key escapes base path: {key!r}") from exc
+        return candidate
 
     def upload(self, key: str, data: bytes, content_type: str) -> None:  # noqa: ARG002
         path = self._resolve(key)
@@ -43,7 +52,11 @@ class LocalStorageService:
         return path.stat().st_size
 
     def delete(self, key: str) -> None:
-        path = self._resolve(key)
+        try:
+            path = self._resolve(key)
+        except ValueError:
+            logger.warning(f"Refusing to delete out-of-bounds key: {key!r}")
+            return
         if path.is_file():
             path.unlink()
 
