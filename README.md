@@ -1,4 +1,4 @@
-# doXmind Mini
+# doXmind
 
 <p align="center">
   <a href="https://github.com/doXmind/local-desk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/doXmind/local-desk/ci.yml?branch=main&style=flat-square&label=CI" alt="CI" /></a>
@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/readme/doxmind-workflow.gif" width="900" alt="doXmind Mini local Markdown workspace workflow" />
+  <img src="docs/readme/doxmind-workflow.gif" width="900" alt="doXmind local Markdown workspace workflow" />
 </p>
 
 <h3 align="center">A local-first Markdown workspace for notes, research, and structured documents.</h3>
@@ -22,9 +22,9 @@
 
 ---
 
-## Why doXmind Mini
+## Why doXmind
 
-doXmind Mini is built for people who want a polished document editor without giving up control of their files.
+doXmind is built for people who want a polished document editor without giving up control of their files.
 
 - **Your documents are real files.** Each note is a normal `.md` file that works in Finder, Git, VS Code, Typora, Obsidian, iCloud Drive, Dropbox, and any plain Markdown workflow.
 - **Rich editing stays lossless.** The hidden `.doxmind` sidecar preserves editor HTML and doXmind-only block data such as database rows, layout state, and future local metadata.
@@ -34,7 +34,7 @@ doXmind Mini is built for people who want a polished document editor without giv
 
 ## What It Feels Like
 
-| Work in doXmind Mini     | It should give you                                                             |
+| Work in doXmind          | It should give you                                                             |
 | ------------------------ | ------------------------------------------------------------------------------ |
 | Create a new note        | A clean Markdown file in your local workspace                                  |
 | Add rich blocks          | Tables, code, math, images, diagrams, tasks, and database blocks in one editor |
@@ -45,10 +45,10 @@ doXmind Mini is built for people who want a polished document editor without giv
 
 ## Local Markdown Workspace
 
-doXmind Mini opens to a file tree backed by a real folder on your machine. Creating, renaming, editing, and deleting documents updates the local workspace instead of hiding everything in an application database.
+doXmind opens to a file tree backed by a real folder on your machine. Creating, renaming, editing, and deleting documents updates the local workspace instead of hiding everything in an application database.
 
 <p align="center">
-  <img src="docs/readme/doxmind-editor-4k.png" width="900" alt="doXmind Mini editor with a local Markdown document" />
+  <img src="docs/readme/doxmind-editor-4k.png" width="900" alt="doXmind editor with a local Markdown document" />
 </p>
 
 The default workspace is `~/Documents/doXmind`. You can also point the app at another local folder when running the desktop shell.
@@ -58,14 +58,14 @@ The default workspace is `~/Documents/doXmind`. You can also point the app at an
 The editor supports the document blocks that are expected in a modern knowledge workspace: headings, lists, tasks, quotes, tables, code blocks, math, images, Mermaid diagrams, embeds, and local database blocks.
 
 <p align="center">
-  <img src="docs/readme/doxmind-blocks-4k.png" width="900" alt="doXmind Mini rich block rendering with table, code, and math" />
+  <img src="docs/readme/doxmind-blocks-4k.png" width="900" alt="doXmind rich block rendering with table, code, and math" />
 </p>
 
 Portable Markdown remains the user-facing file. When a block needs more state than Markdown can represent cleanly, doXmind stores that state in the sidecar.
 
 ## Storage Model
 
-doXmind Mini uses a Markdown-plus-sidecar layout:
+doXmind uses a Markdown-plus-sidecar layout:
 
 ```text
 ~/Documents/doXmind/
@@ -110,7 +110,7 @@ Marker OCR models are not bundled. The app asks before downloading them and stor
 
 ## Current Scope
 
-This repository is the local sidecar edition of doXmind Mini.
+This repository is the local sidecar edition of doXmind.
 
 Included:
 
@@ -214,7 +214,7 @@ The frontend owns the editing experience. The backend sidecar owns local filesys
 ## FAQ
 
 <details>
-<summary>Does doXmind Mini require an account?</summary>
+<summary>Does doXmind require an account?</summary>
 
 No. This branch is designed as a single-user local desktop editor.
 

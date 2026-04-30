@@ -1,4 +1,4 @@
-"""Custom exceptions for the doXmind Mini API.
+"""Custom exceptions for the doXmind API.
 
 This module provides a unified exception hierarchy for consistent
 error handling across the application.

@@ -3,6 +3,6 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
-name = "doxmind-mini-backend"
+name = "doxmind-backend"
 version = "1.0.0"
 source = { virtual = "." }

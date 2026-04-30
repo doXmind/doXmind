@@ -1,4 +1,4 @@
-# doXmind Mini — local desktop edition
+# doXmind — local desktop edition
 
 # Core
 fastapi==0.115.6

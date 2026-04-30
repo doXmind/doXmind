@@ -1,7 +1,7 @@
 [project]
-name = "doxmind-mini-backend"
+name = "doxmind-backend"
 version = "1.0.0"
-description = "doXmind Mini - Local Writing Studio Backend"
+description = "doXmind - Local Writing Studio Backend"
 requires-python = ">=3.11"
 
 [tool.ruff]

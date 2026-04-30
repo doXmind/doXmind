@@ -1,4 +1,4 @@
-"""Local-first application configuration for doXmind Mini.
+"""Local-first application configuration for doXmind.
 
 Desktop edition: no auth, no cloud services, single-user SQLite on disk.
 """

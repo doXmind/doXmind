@@ -1,4 +1,4 @@
-"""doXmind Mini local sidecar backend.
+"""doXmind local sidecar backend.
 
 The document source of truth is the user's Markdown workspace on disk. This
 server only handles local conversion, image serving, and future metadata/cache
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
-    logger.info("Starting doXmind Mini local server...")
+    logger.info("Starting doXmind local server...")
     settings = get_settings()
     settings.ensure_data_dir()
     await init_db()
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 settings = get_settings()
 
 app = FastAPI(
-    title="doXmind Mini (Local)",
+    title="doXmind (Local)",
     description="Local-first document editor backend",
     version="2.0.0-local",
     lifespan=lifespan,
@@ -102,7 +102,7 @@ app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"]
 
 @app.get("/")
 async def root():
-    return {"name": "doXmind Mini (Local)", "version": "2.0.0-local", "status": "running"}
+    return {"name": "doXmind (Local)", "version": "2.0.0-local", "status": "running"}
 
 
 @app.get("/health")
