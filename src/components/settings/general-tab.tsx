@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 import { AppearanceCustomize } from "@/components/settings/appearance-customize";
+import { OcrEngineSection } from "@/components/settings/ocr-engine-section";
 
 export function GeneralTab() {
   const t = useTranslations("settings");
@@ -17,6 +18,8 @@ export function GeneralTab() {
       </section>
 
       <AppearanceCustomize />
+
+      <OcrEngineSection />
     </div>
   );
 }

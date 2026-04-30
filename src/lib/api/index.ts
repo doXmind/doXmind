@@ -4,6 +4,7 @@
 
 // Import mixin modules to apply prototype extensions
 import "./files";
+import "./marker";
 
 // Re-export the client class and singleton
 export { ApiClient } from "./client";

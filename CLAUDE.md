@@ -108,11 +108,35 @@ The checked-in runtime has not fully migrated to sidecar storage yet. SQLite sti
 - `files` — document CRUD
 - `versions` — local version snapshots
 - `export` — Markdown / HTML / PDF / DOCX export
-- `import_file` — local import and conversion
+- `import_file` — local import and conversion (routes through `services/document_converter.py`)
+- `marker` — Marker (offline OCR) model lifecycle: `/api/import/marker/status` and `/api/import/marker/download`
 - `images` — local image upload and serving
 - `databases` — database-block CRUD until sidecar `extras.databases` becomes the source of truth
 
 `server/db/database.py` defines the current SQLite schema and `create_all` startup flow. There is no Alembic.
+
+### Document import pipeline
+
+`markitdown` was replaced with a per-format router (`services/document_converter.py`):
+
+| Format                         | Strategy                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| `.pdf` (native text)           | **PyMuPDF4LLM** — fast path, no models, milliseconds. Trips when avg chars/page ≥ 40. |
+| `.pdf` (scanned / image-heavy) | **Marker** (Surya layout + OCR). Lazy-loaded on Apple Silicon via `TORCH_DEVICE=mps`. |
+| `.docx`                        | **mammoth** → HTML → markdownify.                                                     |
+| `.pptx`                        | **python-pptx** + a custom slide-by-slide markdown emitter.                           |
+| `.md` / `.markdown`            | passthrough.                                                                          |
+
+The Marker fallback needs ~2GB of Surya weights from HuggingFace. We do **not** pre-bundle them. The first time a scanned PDF hits the converter:
+
+1. Backend returns `409 MARKER_MODELS_REQUIRED`.
+2. Frontend (`src/stores/marker-store.ts` + `src/components/marker-download-prompt.tsx`) shows a one-time confirm modal.
+3. On accept, frontend POSTs `/api/import/marker/download` and polls `/api/import/marker/status` until `installed`.
+4. The original import is replayed automatically.
+
+Install state is tracked by a sentinel file at `~/.doxmind/marker-models.json` — delete it to force a re-download.
+
+Packaging caveat: `marker-pdf` brings in PyTorch + Surya, which inflates the PyInstaller bundle considerably. The single-file sidecar still works for dev, but the `.app` build will likely need to switch to a directory bundle (or ship a thin venv) to keep launch latency reasonable.
 
 ## Storage Ownership
 
@@ -136,3 +160,5 @@ There are no API keys or external service credentials.
 This branch intentionally excludes JWT auth, OAuth user login, password reset, email verification, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF reporting, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, and knowledge-base retrieval.
 
 Do not rebuild these by accident. If a feature needs to return, make the product decision explicit and design it around the local sidecar edition.
+
+`markitdown` was also dropped in this revision in favor of the per-format pipeline above (PyMuPDF4LLM + Marker + mammoth + python-pptx) — quality on scanned PDFs and complex layouts was the bottleneck. Don't reintroduce it.

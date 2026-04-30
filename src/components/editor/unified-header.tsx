@@ -86,6 +86,7 @@ export function UnifiedHeader() {
     <>
       <header
         data-tauri-drag-region
+        data-borderless={!currentFileName ? "" : undefined}
         className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center pr-3 text-foreground"
         style={{
           gridTemplateColumns: "max(var(--files-sidebar-width, 304px), 124px) minmax(0, 1fr) auto",

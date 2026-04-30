@@ -1,11 +1,17 @@
-"""File import API endpoint - converts local files to Markdown."""
+"""File import API endpoint - converts local files to Markdown.
+
+Routes by file type to the document_converter service. See
+``services/document_converter.py`` for the per-format strategy
+(PyMuPDF4LLM fast path, Marker fallback for scans, mammoth for docx,
+python-pptx for pptx).
+"""
 
 import logging
 import os
 import re
 
 import markdown
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 
 from config import get_settings
 from exceptions import (
@@ -14,6 +20,7 @@ from exceptions import (
     InternalError,
     UnsupportedFileTypeError,
 )
+from services.document_converter import convert_to_markdown
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,27 +30,20 @@ MAX_FILE_SIZE = get_settings().max_import_file_size
 
 
 def get_file_extension(filename: str) -> str:
-    """Get lowercase file extension."""
     return os.path.splitext(filename)[1].lower()
 
 
 def markdown_to_html(md_content: str) -> str:
     """Convert markdown to HTML for TipTap editor.
 
-    Note: We don't use 'codehilite' extension because it wraps code blocks
-    in <div class="codehilite"> with extra <span> tags, which TipTap cannot
-    parse correctly. TipTap expects simple <pre><code class="language-xxx">
-    format. Frontend uses lowlight for syntax highlighting instead.
+    No 'codehilite' extension — it wraps blocks in extra spans that TipTap
+    can't parse. Frontend uses lowlight for syntax highlighting instead.
     """
     return markdown.markdown(md_content, extensions=["tables", "fenced_code"])
 
 
 def strip_code_fences(md_content: str) -> str:
-    """Strip wrapping Markdown code fences.
-
-    Only removes the outermost fence when the entire content is wrapped in a single
-    code fence block (e.g. ```markdown\\n...\\n```). Internal code fences are preserved.
-    """
+    """Strip a single outer ```markdown fence if the whole doc is wrapped in one."""
     stripped = md_content.strip()
     match = re.match(r"^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$", stripped)
     if match:
@@ -51,7 +51,11 @@ def strip_code_fences(md_content: str) -> str:
     return md_content
 
 
-async def upload_to_markdown(file: UploadFile) -> tuple[str, str, str]:
+async def upload_to_markdown(
+    file: UploadFile,
+    *,
+    mode: str = "auto",
+) -> tuple[str, str, str]:
     """Read and convert an upload to (name, markdown, html) without storing it."""
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:
@@ -65,7 +69,7 @@ async def upload_to_markdown(file: UploadFile) -> tuple[str, str, str]:
         if ext in {".md", ".markdown"}:
             md_content = content.decode("utf-8")
         else:
-            md_content = await convert_with_markitdown(content, ext)
+            md_content = await convert_to_markdown(content, ext, force_ocr=mode == "ocr")
     except AppException:
         raise
     except Exception as e:
@@ -78,30 +82,12 @@ async def upload_to_markdown(file: UploadFile) -> tuple[str, str, str]:
     return f"{base_name}.md", md_content, html_content
 
 
-async def convert_with_markitdown(content: bytes, ext: str) -> str:
-    """Convert supported office/PDF formats locally with MarkItDown."""
-    import asyncio
-    import tempfile
-
-    from markitdown import MarkItDown
-
-    def _convert_sync() -> str:
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp:
-            tmp.write(content)
-            tmp.flush()
-            result = MarkItDown().convert(tmp.name)
-            return result.text_content or ""
-
-    return await asyncio.to_thread(_convert_sync)
-
-
 @router.post("/convert")
-async def convert_file(file: UploadFile = File(...)):
-    """Convert an upload to markdown/html without writing to the SQLite library."""
-    name, md_content, html_content = await upload_to_markdown(file)
+async def convert_file(file: UploadFile = File(...), mode: str = Form("auto")):
+    """Convert an upload to markdown/html without writing to the document workspace."""
+    name, md_content, html_content = await upload_to_markdown(file, mode=mode)
     return {
         "name": name,
         "content": html_content,
         "content_markdown": md_content,
     }
-

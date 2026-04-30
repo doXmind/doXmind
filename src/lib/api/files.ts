@@ -7,11 +7,43 @@
 
 import { ApiClient } from "./client";
 
+/**
+ * Per-import overrides surfaced to the user as menu options.
+ * - "auto" — fast path, fall back to Marker only when nothing extracts.
+ * - "ocr"  — explicitly use the Marker pipeline for the whole document.
+ *   Triggers the model download prompt if the weights aren't local yet.
+ */
+export type ImportMode = "auto" | "ocr";
+
+export interface ImportOptions {
+  mode?: ImportMode;
+}
+
+export class ImportError extends Error {
+  code: string | null;
+  status: number;
+  details: Record<string, unknown> | null;
+
+  constructor(
+    message: string,
+    opts: { code?: string | null; status: number; details?: Record<string, unknown> | null }
+  ) {
+    super(message);
+    this.name = "ImportError";
+    this.code = opts.code ?? null;
+    this.status = opts.status;
+    this.details = opts.details ?? null;
+  }
+}
+
 declare module "./client" {
   interface ApiClient {
     uploadImage(file: File): Promise<{ url: string; filename: string; size: number }>;
     deleteImage(imageUrl: string): Promise<void>;
-    convertFile(file: File): Promise<{
+    convertFile(
+      file: File,
+      opts?: ImportOptions
+    ): Promise<{
       name: string;
       content: string;
       content_markdown: string;
@@ -72,9 +104,16 @@ ApiClient.prototype.deleteImage = async function (
   }
 };
 
-ApiClient.prototype.convertFile = async function (this: ApiClient, file: File) {
+ApiClient.prototype.convertFile = async function (
+  this: ApiClient,
+  file: File,
+  opts?: ImportOptions
+) {
   const formData = new FormData();
   formData.append("file", file);
+  if (opts?.mode && opts.mode !== "auto") {
+    formData.append("mode", opts.mode);
+  }
 
   const response = await fetch(`${this.resolveBaseUrl()}/api/import/convert`, {
     method: "POST",
@@ -82,10 +121,19 @@ ApiClient.prototype.convertFile = async function (this: ApiClient, file: File) {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
+    const payload = await response.json().catch(() => ({}) as Record<string, unknown>);
+    const errBlock = (
+      payload as { error?: { code?: string; message?: string; details?: Record<string, unknown> } }
+    ).error;
     const message =
-      error.detail || error.error?.message || `Conversion failed (HTTP ${response.status})`;
-    throw new Error(message);
+      errBlock?.message ||
+      (payload as { detail?: string }).detail ||
+      `Conversion failed (HTTP ${response.status})`;
+    throw new ImportError(message, {
+      code: errBlock?.code ?? null,
+      status: response.status,
+      details: errBlock?.details ?? null,
+    });
   }
 
   return response.json() as Promise<{

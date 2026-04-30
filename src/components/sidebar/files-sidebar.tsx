@@ -38,6 +38,9 @@ export function FilesSidebar() {
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Separate input pinned to PDFs for the "Import with OCR" path —
+  // OCR doesn't apply to docx/pptx/md, no point letting the user pick them.
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const folderImportAbortRef = useRef<AbortController | null>(null);
   const [folderImportProgress, setFolderImportProgress] = useState<FolderImportProgress | null>(
@@ -115,6 +118,10 @@ export function FilesSidebar() {
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleImportClickOcr = () => {
+    ocrFileInputRef.current?.click();
   };
 
   const handleImportFolderClick = () => {
@@ -197,26 +204,36 @@ export function FilesSidebar() {
     setFolderImportProgress(null);
   };
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const makeFileSelectHandler =
+    (mode: "auto" | "ocr") => async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    e.target.value = "";
+      e.target.value = "";
 
-    setIsImporting(true);
-    const toastId = toast.loading(t("importing", { name: file.name }));
-    try {
-      const newId = await importFile(file, null);
-      router.push(`/editor/${newId}`);
-      toast.success(t("imported", { name: file.name }), { id: toastId });
-    } catch (error) {
-      log.error("Failed to import file", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { id: toastId, description });
-    } finally {
-      setIsImporting(false);
-    }
-  };
+      setIsImporting(true);
+      const toastId = toast.loading(t("importing", { name: file.name }));
+      try {
+        const newId = await importFile(file, null, mode === "auto" ? undefined : { mode });
+        if (newId) {
+          router.push(`/editor/${newId}`);
+          toast.success(t("imported", { name: file.name }), { id: toastId });
+        } else {
+          // null = deferred behind the Marker model download prompt.
+          // Dismiss the loading toast; the prompt owns the next step.
+          toast.dismiss(toastId);
+        }
+      } catch (error) {
+        log.error("Failed to import file", error);
+        const { title, description } = getErrorMessage(error);
+        toast.error(title, { id: toastId, description });
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+  const handleFileSelect = makeFileSelectHandler("auto");
+  const handleFileSelectOcr = makeFileSelectHandler("ocr");
 
   return (
     <div className="sidebar-glass flex h-full flex-col border-r border-[var(--sidebar-active-border)] text-foreground">
@@ -258,6 +275,13 @@ export function FilesSidebar() {
         onChange={handleFileSelect}
         className="hidden"
       />
+      <input
+        ref={ocrFileInputRef}
+        type="file"
+        accept=".pdf"
+        onChange={handleFileSelectOcr}
+        className="hidden"
+      />
       {/* `webkitdirectory` / `directory` aren't in React's input typings,
           so the spread carries them through as plain HTML attributes.
           Setting them at JSX time (rather than via a mount effect) makes
@@ -281,6 +305,7 @@ export function FilesSidebar() {
               onCreateFolder={handleCreateFolder}
               onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
               onImportFile={handleImportClick}
+              onImportFileOcr={handleImportClickOcr}
               onImportFolder={handleImportFolderClick}
               isImporting={isImporting}
             />
