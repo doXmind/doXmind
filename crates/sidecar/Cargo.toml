@@ -1,0 +1,26 @@
+[package]
+name = "doxmind-sidecar"
+version = "0.1.0"
+edition = "2021"
+description = "Read/write doxmind markdown documents paired with a hidden .doxmind sidecar."
+license = "MIT"
+publish = false
+
+[lib]
+name = "doxmind_sidecar"
+path = "src/lib.rs"
+
+[dependencies]
+gray_matter = { version = "0.2", default-features = false, features = ["yaml"] }
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "1"
+tokio = { version = "1", features = ["fs", "io-util", "rt", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["fs", "io-util", "rt", "macros", "rt-multi-thread"] }
