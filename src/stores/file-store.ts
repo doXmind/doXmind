@@ -78,7 +78,7 @@ interface FileState {
   loadFiles: () => Promise<void>;
   loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
   openDiskWorkspace: (root: string) => Promise<void>;
-  useDbWorkspace: () => Promise<void>;
+  switchToDbWorkspace: () => Promise<void>;
   createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
   importFile: (
     file: File,
@@ -333,7 +333,7 @@ export const useFileStore = create<FileState>()(
         await get().loadFiles();
       },
 
-      useDbWorkspace: async () => {
+      switchToDbWorkspace: async () => {
         set({
           workspaceMode: "db",
           workspaceRoot: null,

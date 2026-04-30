@@ -26,16 +26,32 @@ doXmind 的文档库不再是 `~/.doxmind/doxmind.db`，而是用户选择的一
 
 ## 当前状态
 
-当前代码仍然是 DB-first：
+当前分支已经完成 Phase 1-6 的主体实现，进入稳定化和旧 DB 路径收口阶段：
 
-- `server/db/database.py` 的 `files` 表存 HTML、markdown cache、文件树、软删除。
-- `server/api/files.py` 提供 CRUD、folder、trash、search。
-- `src/stores/file-store.ts` 围绕 `/api/files` 管理文档。
-- [x] `crates/sidecar` 已完成基础读写模型，并有 24 个测试通过。
+- [x] 根目录已经是 Cargo workspace，`src-tauri` 已接入 `crates/sidecar`。
+- [x] `src-tauri` 已提供 `doc_*`、`workspace_*` command，支持真实 `.md + .doxmind` 工作区读写、扫描、搜索、重命名、移动、删除和 asset import。
+- [x] `src/stores/file-store.ts` 已支持 `workspaceMode: "db" | "disk"`，disk workspace 成为主要路径，DB 路径仍作为 legacy/回滚路径保留。
+- [x] Open Folder、recent workspaces、disk-mode create/rename/move/delete/save 已接入 UI。
 - [x] `server/scripts/dump_to_disk.py` 已写好，能把现有 DB dump 成磁盘 markdown 树（Phase 5 用）。
-- [x] 本 spec 已落盘 (`docs/MARKDOWN_FIRST_MIGRATION.md`)，作为 living doc。
-- `src-tauri` 还没有接入 `crates/sidecar`。
-- 根目录还不是 Cargo workspace。
+- [x] Phase 6 的 page-link index、asset import、markdown search 已接入。
+- [ ] Phase 7 尚未开始：旧 DB API、versions/images/import/export 的 DB 依赖还未删除。
+
+## 2026-04-30 收尾记录
+
+- 桌面顶部 chrome 需要保持与 `main` 一致：
+  - `src-tauri/src/lib.rs` 使用 `TitleBarStyle::Overlay`。
+  - macOS traffic lights 使用 `traffic_light_position(LogicalPosition::new(14.0, 24.0))`。
+  - `src/app/globals.css` 中 `html.is-tauri-macos .desktop-chrome-left-controls` 保持 `padding-left: 78px`。
+  - `UnifiedHeader` 保持 `useIsTauri` / `isMacTauri` 分支，非 macOS 才加 `pl-3`。
+- 不要再用 `Transparent` / `Visible` 替代 `Overlay` 来修复顶部重叠；这会变成双层顶部或丢失 unified chrome。
+- 不要删除 `traffic_light_position` 或改成默认位置；当前 macOS 对齐依赖 main 上的 `(14, 24)` 调整。
+- 为避免 Next dev 下 `/editor/[[...fileId]]/page.js` 过大导致 Tauri WebView `ChunkLoadError`，`editor-client.tsx` 已将 `DesktopEditor` / `MobileEditor` 改为 `dynamic(..., { ssr: false })`。入口 chunk 从约 18MB 降到约 1MB。
+- 今日验证过：
+  - `cargo fmt --all -- --check`
+  - `cargo check -p doxmind`
+  - `npm run lint`
+  - `npm run type-check`
+  - `git diff --check`
 
 ## 目标模型
 

@@ -10,8 +10,15 @@ import { useIsMobile } from "@/hooks/use-device-type";
 import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
-import { DesktopEditor } from "./_components/desktop-editor";
-import { MobileEditor } from "./_components/mobile-editor";
+
+const DesktopEditor = dynamic(
+  () => import("./_components/desktop-editor").then((m) => ({ default: m.DesktopEditor })),
+  { ssr: false }
+);
+const MobileEditor = dynamic(
+  () => import("./_components/mobile-editor").then((m) => ({ default: m.MobileEditor })),
+  { ssr: false }
+);
 
 const KeyboardShortcutsModal = dynamic(
   () =>

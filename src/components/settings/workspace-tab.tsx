@@ -15,7 +15,7 @@ export function WorkspaceTab() {
   const workspaceRoot = useFileStore((state) => state.workspaceRoot);
   const recentWorkspaces = useFileStore((state) => state.recentWorkspaces);
   const openDiskWorkspace = useFileStore((state) => state.openDiskWorkspace);
-  const useDbWorkspace = useFileStore((state) => state.useDbWorkspace);
+  const switchToDbWorkspace = useFileStore((state) => state.switchToDbWorkspace);
   const [isMigrating, setIsMigrating] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
 
@@ -84,7 +84,7 @@ export function WorkspaceTab() {
               </p>
             </div>
             {workspaceMode === "disk" && (
-              <Button variant="outline" size="sm" onClick={useDbWorkspace}>
+              <Button variant="outline" size="sm" onClick={switchToDbWorkspace}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 {t("returnToDb")}
               </Button>

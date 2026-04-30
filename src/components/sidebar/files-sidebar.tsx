@@ -39,6 +39,7 @@ export function FilesSidebar() {
     workspaceMode,
     workspaceRoot,
     openDiskWorkspace,
+    switchToDbWorkspace,
   } = useFileStore();
   const { openCommandPalette } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
@@ -49,9 +50,12 @@ export function FilesSidebar() {
   const [folderImportProgress, setFolderImportProgress] = useState<FolderImportProgress | null>(
     null
   );
-  const diskWorkspaceEnabled =
-    process.env.NODE_ENV !== "production" ||
-    process.env.NEXT_PUBLIC_ENABLE_DISK_WORKSPACE === "true";
+  // Workspace toggle is available in any Tauri shell (debug or release). It
+  // used to be gated behind NODE_ENV / NEXT_PUBLIC_ENABLE_DISK_WORKSPACE,
+  // which hid the entry point in production and left users stranded inside
+  // disk mode with no way back; the gate has moved to the Tauri-presence
+  // check that the dialog import already requires.
+  const isDesktopShell = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
 
   const handleCreateFile = async (parentId: string | null = null) => {
     const currentFiles = files.filter((f) => !f.isFolder && f.parentId === parentId);
@@ -121,9 +125,7 @@ export function FilesSidebar() {
   };
 
   const handleOpenWorkspaceFolder = async () => {
-    if (!diskWorkspaceEnabled) return;
-
-    if (typeof window === "undefined" || !("__TAURI_BACKEND_URL__" in window)) {
+    if (!isDesktopShell) {
       toast.error(t("openWorkspaceRequiresDesktop"));
       return;
     }
@@ -140,6 +142,17 @@ export function FilesSidebar() {
       toast.success(t("workspaceOpened"));
     } catch (error) {
       log.error("Failed to open workspace folder", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const handleReturnToDbWorkspace = async () => {
+    try {
+      await switchToDbWorkspace();
+      toast.success(t("returnedToDbWorkspace"));
+    } catch (error) {
+      log.error("Failed to return to DB workspace", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     }
@@ -239,17 +252,21 @@ export function FilesSidebar() {
             <span>{t("search")}</span>
           </button>
 
-          {diskWorkspaceEnabled && (
+          {isDesktopShell && (
             <button
-              onClick={handleOpenWorkspaceFolder}
+              onClick={
+                workspaceMode === "disk" ? handleReturnToDbWorkspace : handleOpenWorkspaceFolder
+              }
               className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
-              title={workspaceRoot || undefined}
+              title={
+                workspaceMode === "disk"
+                  ? (workspaceRoot ?? undefined)
+                  : t("openWorkspaceFolderHint")
+              }
             >
               <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="truncate">
-                {workspaceMode === "disk" && workspaceRoot
-                  ? t("workspaceFolderActive")
-                  : t("openWorkspaceFolder")}
+                {workspaceMode === "disk" ? t("returnToDbWorkspace") : t("openWorkspaceFolder")}
               </span>
             </button>
           )}
