@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { api } from "@/lib/api";
 import { storeLogger } from "@/lib/logger";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
 
@@ -51,7 +50,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const renameFile = useFileStore((s) => s.renameFile);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
   const toggleFavorite = useFileStore((s) => s.toggleFavorite);
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
   const isSelected = useFileStore((s) => s.selectedFileIds.has(file.id));
@@ -298,44 +296,19 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const handleExport = (format: "markdown" | "pdf" | "docx") => {
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
-    if (workspaceMode === "disk") {
-      if (format !== "markdown") {
-        toast.error(t("diskExportOnlyMarkdown"));
-        return;
-      }
-
-      toast.promise(
-        (async () => {
-          const store = useFileStore.getState();
-          await store.loadFileContent(file.id, { force: true });
-          const latest = useFileStore.getState().getFile(file.id) ?? file;
-          const markdown = latest.contentMarkdown ?? latest.content ?? "";
-          const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-          const filename = `${getNameWithoutExtension(latest.name)}.md`;
-
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        })(),
-        {
-          loading: t("exportingAs", { format: formatLabel }),
-          success: t("exportedAs", { format: formatLabel }),
-          error: t("failedToExport", { format: formatLabel }),
-        }
-      );
+    if (format !== "markdown") {
+      toast.error(t("diskExportOnlyMarkdown"));
       return;
     }
 
     toast.promise(
-      api.exportFile(file.id, format).then((blob) => {
-        const baseName = getNameWithoutExtension(file.name);
-        const extension = format === "markdown" ? "md" : format;
-        const filename = `${baseName}.${extension}`;
+      (async () => {
+        const store = useFileStore.getState();
+        await store.loadFileContent(file.id, { force: true });
+        const latest = useFileStore.getState().getFile(file.id) ?? file;
+        const markdown = latest.contentMarkdown ?? latest.content ?? "";
+        const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+        const filename = `${getNameWithoutExtension(latest.name)}.md`;
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -345,7 +318,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-      }),
+      })(),
       {
         loading: t("exportingAs", { format: formatLabel }),
         success: t("exportedAs", { format: formatLabel }),

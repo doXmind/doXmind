@@ -1,50 +1,43 @@
 /**
- * Zustand store for database block state management.
+ * Sidecar-backed database block state.
  *
- * Caches loaded databases in memory with optimistic update pattern.
- * API responses are merged surgically (never full-replace) so that
- * concurrent operations don't overwrite each other's optimistic state.
+ * Inline database blocks are document data, not app database data. Their
+ * schema, rows, and views live in the active document sidecar under
+ * `extras.databases`.
  */
 
 import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
-import { api } from "@/lib/api";
 import { eventBus } from "@/lib/events";
 import type {
+  AddPropertyRequest,
+  AddRowRequest,
+  CreateDatabaseRequest,
+  CreateViewRequest,
   DatabaseData,
   DatabaseRow,
   DatabaseView,
   PropertyDef,
-  CreateDatabaseRequest,
-  AddPropertyRequest,
-  UpdatePropertyRequest,
-  AddRowRequest,
-  CreateViewRequest,
-  UpdateViewRequest,
   RowProperties,
+  UpdatePropertyRequest,
+  UpdateViewRequest,
 } from "@/extensions/database/database-types";
 
 interface DatabaseState {
-  /** Cached databases keyed by ID */
   databases: Record<string, DatabaseData>;
-  /** IDs currently being loaded */
   loadingIds: Set<string>;
-  /** Currently active view per database */
   activeViewIds: Record<string, string>;
 
-  // Actions
   loadDatabase: (id: string) => Promise<DatabaseData | null>;
   createDatabase: (options?: CreateDatabaseRequest) => Promise<DatabaseData>;
   updateDatabase: (id: string, updates: { title?: string; icon?: string | null }) => Promise<void>;
   deleteDatabase: (id: string) => Promise<void>;
 
-  // Properties
   addProperty: (dbId: string, body: AddPropertyRequest) => Promise<void>;
   updateProperty: (dbId: string, propId: string, body: UpdatePropertyRequest) => Promise<void>;
   deleteProperty: (dbId: string, propId: string) => Promise<void>;
   reorderProperties: (dbId: string, propertyIds: string[]) => Promise<void>;
 
-  // Rows
   loadMoreRows: (dbId: string) => Promise<void>;
   addRow: (dbId: string, body?: AddRowRequest) => Promise<void>;
   duplicateRow: (dbId: string, rowId: string) => Promise<void>;
@@ -52,33 +45,11 @@ interface DatabaseState {
   deleteRow: (dbId: string, rowId: string) => Promise<void>;
   reorderRows: (dbId: string, rowIds: string[]) => Promise<void>;
 
-  // Views
   setActiveView: (dbId: string, viewId: string) => void;
   createView: (dbId: string, body: CreateViewRequest) => Promise<void>;
   updateView: (dbId: string, viewId: string, body: UpdateViewRequest) => Promise<void>;
   deleteView: (dbId: string, viewId: string) => Promise<void>;
 }
-
-/**
- * Load only the first page of rows. Further pages are loaded on-demand
- * via the `loadMoreRows` store action when the user scrolls.
- */
-async function loadInitialRows(dbId: string, setFn: typeof useDatabaseStore.setState) {
-  const page = await api.getDatabaseRows(dbId, { limit: 500, offset: 0 });
-  setFn((state) => {
-    const db = state.databases[dbId];
-    if (!db) return state;
-    return {
-      databases: {
-        ...state.databases,
-        [dbId]: { ...db, rows: page.rows, hasMoreRows: page.has_more },
-      },
-    };
-  });
-}
-
-/** Set used to prevent concurrent loadMoreRows calls for the same database. */
-const _loadingMoreIds = new Set<string>();
 
 type DatabaseExtras = {
   databases?: Record<string, DatabaseData>;
@@ -148,18 +119,11 @@ export function syncDatabasesForDocument(
   });
 }
 
-async function isDiskWorkspace(): Promise<boolean> {
-  const { useFileStore } = await import("@/stores/file-store");
-  return useFileStore.getState().workspaceMode === "disk";
-}
-
 function extractDatabaseIdsFromDocument(html: string, markdown?: string | null): Set<string> {
   const ids = new Set<string>();
   const sources = [html, markdown ?? ""];
   for (const source of sources) {
-    for (const match of source.matchAll(/data-database-id=["']([^"']+)["']/g)) {
-      ids.add(match[1]);
-    }
+    for (const match of source.matchAll(/data-database-id=["']([^"']+)["']/g)) ids.add(match[1]);
     for (const match of source.matchAll(/<!--\s*database:([a-zA-Z0-9_-]+)\s*-->/g)) {
       ids.add(match[1]);
     }
@@ -184,31 +148,17 @@ function databasesForDocument(
   return databases;
 }
 
-async function persistCurrentDiskDatabases(
-  state: DatabaseState,
-  changedDbIds: string[] = []
-): Promise<boolean> {
+async function persistCurrentDatabases(state: DatabaseState, changedDbIds: string[] = []) {
   const { useFileStore } = await import("@/stores/file-store");
   const { createStorageAdapter } = await import("@/lib/storage");
   const fileState = useFileStore.getState();
-  if (fileState.workspaceMode !== "disk") {
-    return false;
-  }
-  if (!fileState.workspaceRoot || !fileState.currentFileId) return true;
+  if (!fileState.workspaceRoot || !fileState.currentFileId) return;
 
   const file = fileState.files.find((item) => item.id === fileState.currentFileId);
-  if (!file || file.isFolder) return true;
+  if (!file || file.isFolder) return;
 
-  const handle = file.storageHandle ?? {
-    mode: "disk" as const,
-    id: file.id,
-    kind: "document" as const,
-  };
-  const adapter = createStorageAdapter({
-    mode: "disk",
-    disk: { root: fileState.workspaceRoot },
-  });
-  const current = await adapter.read(handle);
+  const adapter = createStorageAdapter({ mode: "disk", disk: { root: fileState.workspaceRoot } });
+  const current = await adapter.read(file.storageHandle ?? { mode: "disk", id: file.id });
   const existingExtras =
     current.extras && typeof current.extras === "object"
       ? (current.extras as Record<string, unknown>)
@@ -220,7 +170,6 @@ async function persistCurrentDiskDatabases(
       databases: databasesForDocument(state, current.html, current.markdown, changedDbIds),
     },
   });
-  return true;
 }
 
 function normalizeProperty(raw: Record<string, unknown>, position: number): PropertyDef {
@@ -319,13 +268,19 @@ function createLocalDatabase(options: CreateDatabaseRequest = {}): DatabaseData 
   ];
   const views =
     options.views?.length
-      ? options.views.map((view, index) => {
-          const config =
-            view.type === "board" && !view.config
-              ? { groupByPropertyId: statusPropId }
-              : (view.config ?? {});
-          return makeView(databaseId, { ...view, config }, index);
-        })
+      ? options.views.map((view, index) =>
+          makeView(
+            databaseId,
+            {
+              ...view,
+              config:
+                view.type === "board" && !view.config
+                  ? { groupByPropertyId: statusPropId }
+                  : (view.config ?? {}),
+            },
+            index
+          )
+        )
       : [
           makeView(databaseId, { name: "Table View", type: "table" }, 0),
           makeView(
@@ -361,162 +316,57 @@ function createLocalDatabase(options: CreateDatabaseRequest = {}): DatabaseData 
   };
 }
 
-export const useDatabaseStore: UseBoundStore<StoreApi<DatabaseState>> = create<DatabaseState>()((set, get) => ({
-  databases: {},
-  loadingIds: new Set(),
-  activeViewIds: {},
+async function persistDb(dbId: string) {
+  await persistCurrentDatabases(useDatabaseStore.getState(), [dbId]);
+}
 
-  loadDatabase: async (id: string) => {
-    const diskWorkspace = await isDiskWorkspace();
-    const { loadingIds, databases } = get();
-    // Return cached if available
-    if (!diskWorkspace && databases[id]) return databases[id];
-    // Prevent duplicate loads
-    if (loadingIds.has(id)) return null;
+export const useDatabaseStore: UseBoundStore<StoreApi<DatabaseState>> = create<DatabaseState>()(
+  (set, get) => ({
+    databases: {},
+    loadingIds: new Set(),
+    activeViewIds: {},
 
-    set({ loadingIds: new Set([...loadingIds, id]) });
-    if (diskWorkspace) {
-      try {
-        const { useFileStore } = await import("@/stores/file-store");
-        const { createStorageAdapter } = await import("@/lib/storage");
-        const fileState = useFileStore.getState();
-        const file = fileState.files.find((item) => item.id === fileState.currentFileId);
-        let hydrated: DatabaseData | null = null;
-        if (file && fileState.workspaceRoot) {
-          const adapter = createStorageAdapter({
-            mode: "disk",
-            disk: { root: fileState.workspaceRoot },
-          });
-          const content = await adapter.read(file.storageHandle ?? { mode: "disk", id: file.id });
-          const diskDatabases = databaseExtrasFromUnknown(content.extras);
-          hydrateDatabasesFromExtras(content.extras);
-          hydrated = diskDatabases[id] ?? null;
-        }
-        set((state) => ({
-          loadingIds: new Set([...state.loadingIds].filter((x) => x !== id)),
-        }));
-        return hydrated;
-      } catch {
-        set((state) => ({
-          loadingIds: new Set([...state.loadingIds].filter((x) => x !== id)),
-        }));
-        return null;
-      }
-    }
+    loadDatabase: async (id) => get().databases[id] ?? null,
 
-    try {
-      const data = await api.getDatabase(id);
-      set((state) => ({
-        databases: { ...state.databases, [id]: data },
-        loadingIds: new Set([...state.loadingIds].filter((x) => x !== id)),
-        activeViewIds: {
-          ...state.activeViewIds,
-          // Default to first view if not set
-          [id]: state.activeViewIds[id] || (data.views[0]?.id ?? ""),
-        },
-      }));
-
-      // Load first page of rows; more loaded on-demand via loadMoreRows
-      if (data.row_count && data.row_count > 0) {
-        await loadInitialRows(id, set);
-      }
-
-      return data;
-    } catch {
-      set((state) => ({
-        loadingIds: new Set([...state.loadingIds].filter((x) => x !== id)),
-      }));
-      return null;
-    }
-  },
-
-  createDatabase: async (options?: CreateDatabaseRequest) => {
-    if (await isDiskWorkspace()) {
+    createDatabase: async (options) => {
       const data = createLocalDatabase(options);
       set((state) => ({
         databases: { ...state.databases, [data.id]: data },
-        activeViewIds: {
-          ...state.activeViewIds,
-          [data.id]: data.views[0]?.id ?? "",
-        },
+        activeViewIds: { ...state.activeViewIds, [data.id]: data.views[0]?.id ?? "" },
       }));
-      await persistCurrentDiskDatabases(useDatabaseStore.getState(), [data.id]);
+      await persistDb(data.id);
       return data;
-    }
+    },
 
-    const data = await api.createDatabase(options);
+    updateDatabase: async (id, updates) => {
+      set((state) => {
+        const db = state.databases[id];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [id]: { ...db, ...updates, updated_at: nowIso() },
+          },
+        };
+      });
+      await persistDb(id);
+    },
 
-    // Store metadata immediately
-    set((state) => ({
-      databases: { ...state.databases, [data.id]: data },
-      activeViewIds: {
-        ...state.activeViewIds,
-        [data.id]: data.views[0]?.id ?? "",
-      },
-    }));
-
-    // If rows were omitted (large import), load first page
-    if (data.row_count && data.rows.length === 0) {
-      await loadInitialRows(data.id, set);
-    }
-
-    return data;
-  },
-
-  updateDatabase: async (id, updates) => {
-    const prev = get().databases[id];
-    // Optimistic update
-    set((state) => {
-      const db = state.databases[id];
-      if (!db) return state;
-      return {
-        databases: { ...state.databases, [id]: { ...db, ...updates } },
-      };
-    });
-    try {
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState(), [id])) return;
-      await api.updateDatabase(id, updates);
-      // Success -- optimistic state is correct, no replacement needed
-    } catch {
-      // Targeted rollback: only revert the specific fields we changed
-      if (prev) {
-        set((state) => {
-          const db = state.databases[id];
-          if (!db) return state;
-          const reverted: Partial<DatabaseData> = {};
-          if ("title" in updates) reverted.title = prev.title;
-          if ("icon" in updates) reverted.icon = prev.icon;
-          return { databases: { ...state.databases, [id]: { ...db, ...reverted } } };
-        });
-      }
-    }
-  },
-
-  deleteDatabase: async (id) => {
-    const prev = get().databases[id];
-    set((state) => {
-      const { [id]: _, ...rest } = state.databases;
-      return { databases: rest };
-    });
-    try {
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState())) {
-        eventBus.emit("database:deleted", { databaseId: id });
-        return;
-      }
-      await api.deleteDatabase(id);
+    deleteDatabase: async (id) => {
+      set((state) => {
+        const { [id]: _deleted, ...rest } = state.databases;
+        const { [id]: _view, ...activeViewIds } = state.activeViewIds;
+        return { databases: rest, activeViewIds };
+      });
+      await persistCurrentDatabases(useDatabaseStore.getState());
       eventBus.emit("database:deleted", { databaseId: id });
-    } catch {
-      if (prev) set((state) => ({ databases: { ...state.databases, [id]: prev } }));
-    }
-  },
+    },
 
-  // Property actions
-  addProperty: async (dbId, body) => {
-    if (await isDiskWorkspace()) {
+    addProperty: async (dbId, body) => {
       set((state) => {
         const db = state.databases[dbId];
         if (!db) return state;
-        const newProp: PropertyDef = {
+        const prop: PropertyDef = {
           id: newId(),
           name: body.name,
           type: body.type,
@@ -528,38 +378,16 @@ export const useDatabaseStore: UseBoundStore<StoreApi<DatabaseState>> = create<D
             ...state.databases,
             [dbId]: {
               ...db,
-              properties_schema: [...db.properties_schema, newProp],
+              properties_schema: [...db.properties_schema, prop],
               updated_at: nowIso(),
             },
           },
         };
       });
-      await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId]);
-      return;
-    }
+      await persistDb(dbId);
+    },
 
-    const prevPropIds = new Set(get().databases[dbId]?.properties_schema.map((p) => p.id) ?? []);
-    const data = await api.addDatabaseProperty(dbId, body);
-    // Merge: add only the new property to current state
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      const newProp = data.properties_schema.find((p) => !prevPropIds.has(p.id));
-      if (!newProp) return state;
-      return {
-        databases: {
-          ...state.databases,
-          [dbId]: {
-            ...db,
-            properties_schema: [...db.properties_schema, newProp],
-          },
-        },
-      };
-    });
-  },
-
-  updateProperty: async (dbId, propId, body) => {
-    if (await isDiskWorkspace()) {
+    updateProperty: async (dbId, propId, body) => {
       set((state) => {
         const db = state.databases[dbId];
         if (!db) return state;
@@ -576,151 +404,59 @@ export const useDatabaseStore: UseBoundStore<StoreApi<DatabaseState>> = create<D
           },
         };
       });
-      await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId]);
-      return;
-    }
+      await persistDb(dbId);
+    },
 
-    const data = await api.updateDatabaseProperty(dbId, propId, body);
-    // Merge: update only the changed property
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      const updatedProp = data.properties_schema.find((p) => p.id === propId);
-      if (!updatedProp) return state;
-      return {
-        databases: {
-          ...state.databases,
-          [dbId]: {
-            ...db,
-            properties_schema: db.properties_schema.map((p) => (p.id === propId ? updatedProp : p)),
-          },
-        },
-      };
-    });
-  },
-
-  deleteProperty: async (dbId, propId) => {
-    const prevDb = get().databases[dbId];
-    const deletedProp = prevDb?.properties_schema.find((p) => p.id === propId);
-    // Optimistic: remove property immediately
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      return {
-        databases: {
-          ...state.databases,
-          [dbId]: {
-            ...db,
-            properties_schema: db.properties_schema.filter((p) => p.id !== propId),
-            rows: db.rows.map((r) => {
-              const { [propId]: _, ...rest } = r.properties;
-              return { ...r, properties: rest };
-            }),
-          },
-        },
-      };
-    });
-    try {
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId])) return;
-      await api.deleteDatabaseProperty(dbId, propId);
-      // Success -- optimistic state is correct
-    } catch {
-      // Targeted rollback: re-insert the deleted property and restore row values
-      if (prevDb && deletedProp) {
-        set((state) => {
-          const db = state.databases[dbId];
-          if (!db) return state;
-          const schema = [...db.properties_schema];
-          const insertIdx = Math.min(deletedProp.position, schema.length);
-          schema.splice(insertIdx, 0, deletedProp);
-          const prevRowMap = new Map(prevDb.rows.map((r) => [r.id, r]));
-          const rows = db.rows.map((r) => {
-            const prevRow = prevRowMap.get(r.id);
-            const restoredValue = prevRow?.properties[propId];
-            return restoredValue !== undefined
-              ? { ...r, properties: { ...r.properties, [propId]: restoredValue } }
-              : r;
-          });
-          return {
-            databases: {
-              ...state.databases,
-              [dbId]: { ...db, properties_schema: schema, rows },
-            },
-          };
-        });
-      }
-    }
-  },
-
-  reorderProperties: async (dbId, propertyIds) => {
-    const prevSchema = get().databases[dbId]?.properties_schema;
-    // Optimistic: reorder immediately
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      const ordered = propertyIds
-        .map((id) => db.properties_schema.find((p) => p.id === id))
-        .filter(Boolean) as typeof db.properties_schema;
-      return {
-        databases: {
-          ...state.databases,
-          [dbId]: { ...db, properties_schema: ordered },
-        },
-      };
-    });
-    try {
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId])) return;
-      await api.reorderDatabaseProperties(dbId, propertyIds);
-      // Success -- optimistic state is correct
-    } catch {
-      // Targeted rollback: restore schema order
-      if (prevSchema) {
-        set((state) => {
-          const db = state.databases[dbId];
-          if (!db) return state;
-          return {
-            databases: { ...state.databases, [dbId]: { ...db, properties_schema: prevSchema } },
-          };
-        });
-      }
-    }
-  },
-
-  // Row actions
-  loadMoreRows: async (dbId: string) => {
-    if (await isDiskWorkspace()) return;
-
-    const db = get().databases[dbId];
-    if (!db || !db.hasMoreRows || _loadingMoreIds.has(dbId)) return;
-    _loadingMoreIds.add(dbId);
-    try {
-      const offset = db.rows.length;
-      const page = await api.getDatabaseRows(dbId, { limit: 500, offset });
+    deleteProperty: async (dbId, propId) => {
       set((state) => {
-        const current = state.databases[dbId];
-        if (!current) return state;
+        const db = state.databases[dbId];
+        if (!db) return state;
         return {
           databases: {
             ...state.databases,
             [dbId]: {
-              ...current,
-              rows: [...current.rows, ...page.rows],
-              hasMoreRows: page.has_more,
+              ...db,
+              properties_schema: db.properties_schema.filter((p) => p.id !== propId),
+              rows: db.rows.map((row) => {
+                const { [propId]: _deleted, ...properties } = row.properties;
+                return { ...row, properties };
+              }),
+              updated_at: nowIso(),
             },
           },
         };
       });
-    } finally {
-      _loadingMoreIds.delete(dbId);
-    }
-  },
+      await persistDb(dbId);
+    },
 
-  addRow: async (dbId, body) => {
-    if (await isDiskWorkspace()) {
+    reorderProperties: async (dbId, propertyIds) => {
       set((state) => {
         const db = state.databases[dbId];
         if (!db) return state;
-        const maxPos = db.rows.reduce((max, r) => Math.max(max, r.position), -1);
+        const byId = new Map(db.properties_schema.map((prop) => [prop.id, prop]));
+        const ordered = propertyIds
+          .map((id, position) => {
+            const prop = byId.get(id);
+            return prop ? { ...prop, position } : null;
+          })
+          .filter(Boolean) as PropertyDef[];
+        return {
+          databases: {
+            ...state.databases,
+            [dbId]: { ...db, properties_schema: ordered, updated_at: nowIso() },
+          },
+        };
+      });
+      await persistDb(dbId);
+    },
+
+    loadMoreRows: async () => {},
+
+    addRow: async (dbId, body) => {
+      set((state) => {
+        const db = state.databases[dbId];
+        if (!db) return state;
+        const maxPos = db.rows.reduce((max, row) => Math.max(max, row.position), -1);
         const row = makeRow(dbId, { properties: body?.properties ?? {} }, maxPos + 1);
         return {
           databases: {
@@ -734,114 +470,62 @@ export const useDatabaseStore: UseBoundStore<StoreApi<DatabaseState>> = create<D
           },
         };
       });
-      await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId]);
-      return;
-    }
+      await persistDb(dbId);
+    },
 
-    try {
-      const data = await api.addDatabaseRow(dbId, body);
-      set((state) => {
-        if (!state.databases[dbId]) return state;
-        return {
-          databases: {
-            ...state.databases,
-            [dbId]: { ...data, hasMoreRows: false },
-          },
-        };
-      });
-    } catch (error) {
-      console.error("Failed to add database row", error);
-    }
-  },
+    duplicateRow: async (dbId, rowId) => {
+      const source = get().databases[dbId]?.rows.find((row) => row.id === rowId);
+      if (!source) return;
+      await get().addRow(dbId, { properties: { ...source.properties } });
+    },
 
-  duplicateRow: async (dbId, rowId) => {
-    const db = get().databases[dbId];
-    const sourceRow = db?.rows.find((r) => r.id === rowId);
-    if (!sourceRow || !db) return;
-    // Copy all properties from the source row (excluding page_file_id)
-    await get().addRow(dbId, { properties: { ...sourceRow.properties } });
-  },
-
-  updateRow: async (dbId, rowId, properties) => {
-    // Snapshot only the affected property keys for targeted rollback
-    const prevRow = get().databases[dbId]?.rows.find((r) => r.id === rowId);
-    const prevProperties: RowProperties = {};
-    if (prevRow) {
-      for (const key of Object.keys(properties)) {
-        prevProperties[key] = prevRow.properties[key] ?? null;
-      }
-    }
-    // Optimistic: update the row
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      const updatedRows = db.rows.map((r) =>
-        r.id === rowId ? { ...r, properties: { ...r.properties, ...properties } } : r
-      );
-      return {
-        databases: {
-          ...state.databases,
-          [dbId]: { ...db, rows: updatedRows },
-        },
-      };
-    });
-    try {
-      if (rowId.startsWith("temp-")) return;
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId])) return;
-      await api.updateDatabaseRow(dbId, rowId, { properties });
-      // Success -- optimistic state is correct
-    } catch {
-      // Targeted rollback: only revert the specific properties we changed
+    updateRow: async (dbId, rowId, properties) => {
       set((state) => {
         const db = state.databases[dbId];
         if (!db) return state;
-        const rows = db.rows.map((r) =>
-          r.id === rowId ? { ...r, properties: { ...r.properties, ...prevProperties } } : r
-        );
-        return { databases: { ...state.databases, [dbId]: { ...db, rows } } };
-      });
-    }
-  },
-
-  deleteRow: async (dbId, rowId) => {
-    const deletedRow = get().databases[dbId]?.rows.find((r) => r.id === rowId);
-    // Optimistic: remove row
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      return {
-        databases: {
-          ...state.databases,
-          [dbId]: {
-            ...db,
-            rows: db.rows.filter((r) => r.id !== rowId),
-            row_count: Math.max(0, (db.row_count ?? db.rows.length) - 1),
-            updated_at: nowIso(),
+        return {
+          databases: {
+            ...state.databases,
+            [dbId]: {
+              ...db,
+              rows: db.rows.map((row) =>
+                row.id === rowId
+                  ? {
+                      ...row,
+                      properties: { ...row.properties, ...properties },
+                      updated_at: nowIso(),
+                    }
+                  : row
+              ),
+              updated_at: nowIso(),
+            },
           },
-        },
-      };
-    });
-    // Temp rows only exist locally -- no API call needed
-    if (rowId.startsWith("temp-")) return;
-    try {
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId])) return;
-      await api.deleteDatabaseRow(dbId, rowId);
-      // Success -- optimistic state is correct
-    } catch {
-      // Targeted rollback: re-insert the deleted row
-      if (deletedRow) {
-        set((state) => {
-          const db = state.databases[dbId];
-          if (!db) return state;
-          const rows = [...db.rows, deletedRow].sort((a, b) => a.position - b.position);
-          return { databases: { ...state.databases, [dbId]: { ...db, rows } } };
-        });
-      }
-    }
-  },
+        };
+      });
+      await persistDb(dbId);
+    },
 
-  reorderRows: async (dbId, rowIds) => {
-    if (await isDiskWorkspace()) {
+    deleteRow: async (dbId, rowId) => {
+      set((state) => {
+        const db = state.databases[dbId];
+        if (!db) return state;
+        const rows = db.rows.filter((row) => row.id !== rowId);
+        return {
+          databases: {
+            ...state.databases,
+            [dbId]: {
+              ...db,
+              rows,
+              row_count: rows.length,
+              updated_at: nowIso(),
+            },
+          },
+        };
+      });
+      await persistDb(dbId);
+    },
+
+    reorderRows: async (dbId, rowIds) => {
       set((state) => {
         const db = state.databases[dbId];
         if (!db) return state;
@@ -860,33 +544,14 @@ export const useDatabaseStore: UseBoundStore<StoreApi<DatabaseState>> = create<D
           },
         };
       });
-      await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId]);
-      return;
-    }
+      await persistDb(dbId);
+    },
 
-    const data = await api.reorderDatabaseRows(dbId, rowIds);
-    // Merge: only update positions from server response
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      const positionMap = new Map(data.rows.map((r) => [r.id, r.position]));
-      const rows = db.rows.map((r) => {
-        const newPos = positionMap.get(r.id);
-        return newPos != null ? { ...r, position: newPos } : r;
-      });
-      return { databases: { ...state.databases, [dbId]: { ...db, rows } } };
-    });
-  },
+    setActiveView: (dbId, viewId) => {
+      set((state) => ({ activeViewIds: { ...state.activeViewIds, [dbId]: viewId } }));
+    },
 
-  // View actions
-  setActiveView: (dbId, viewId) => {
-    set((state) => ({
-      activeViewIds: { ...state.activeViewIds, [dbId]: viewId },
-    }));
-  },
-
-  createView: async (dbId, body) => {
-    if (await isDiskWorkspace()) {
+    createView: async (dbId, body) => {
       const view = makeView(
         dbId,
         body as unknown as Record<string, unknown>,
@@ -903,119 +568,53 @@ export const useDatabaseStore: UseBoundStore<StoreApi<DatabaseState>> = create<D
           activeViewIds: { ...state.activeViewIds, [dbId]: view.id },
         };
       });
-      await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId]);
-      return;
-    }
+      await persistDb(dbId);
+    },
 
-    const prevViewIds = new Set(get().databases[dbId]?.views.map((v) => v.id) ?? []);
-    const data = await api.createDatabaseView(dbId, body);
-    // Merge: add only the new view
-    const newView = data.views.find((v) => !prevViewIds.has(v.id));
-    if (newView) {
+    updateView: async (dbId, viewId, body) => {
       set((state) => {
         const db = state.databases[dbId];
         if (!db) return state;
         return {
           databases: {
             ...state.databases,
-            [dbId]: { ...db, views: [...db.views, newView] },
+            [dbId]: {
+              ...db,
+              views: db.views.map((view) =>
+                view.id === viewId
+                  ? {
+                      ...view,
+                      ...(body.name != null ? { name: body.name } : {}),
+                      config: { ...view.config, ...(body.config ?? {}) },
+                      updated_at: nowIso(),
+                    }
+                  : view
+              ),
+              updated_at: nowIso(),
+            },
           },
-          activeViewIds: { ...state.activeViewIds, [dbId]: newView.id },
         };
       });
-    }
-  },
+      await persistDb(dbId);
+    },
 
-  updateView: async (dbId, viewId, body) => {
-    const prevView = get().databases[dbId]?.views.find((v) => v.id === viewId);
-    // Optimistic: merge view config immediately
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      return {
-        databases: {
-          ...state.databases,
-          [dbId]: {
-            ...db,
-            views: db.views.map((v) =>
-              v.id === viewId
-                ? {
-                    ...v,
-                    ...(body.name != null ? { name: body.name } : {}),
-                    config: { ...v.config, ...(body.config ?? {}) },
-                  }
-                : v
-            ),
+    deleteView: async (dbId, viewId) => {
+      set((state) => {
+        const db = state.databases[dbId];
+        if (!db) return state;
+        const views = db.views.filter((view) => view.id !== viewId);
+        return {
+          databases: {
+            ...state.databases,
+            [dbId]: { ...db, views, updated_at: nowIso() },
           },
-        },
-      };
-    });
-    try {
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId])) return;
-      await api.updateDatabaseView(dbId, viewId, body);
-      // Success -- optimistic state is correct
-    } catch {
-      // Targeted rollback: restore this view to its previous state
-      if (prevView) {
-        set((state) => {
-          const db = state.databases[dbId];
-          if (!db) return state;
-          return {
-            databases: {
-              ...state.databases,
-              [dbId]: {
-                ...db,
-                views: db.views.map((v) => (v.id === viewId ? prevView : v)),
-              },
-            },
-          };
-        });
-      }
-    }
-  },
-
-  deleteView: async (dbId, viewId) => {
-    const deletedView = get().databases[dbId]?.views.find((v) => v.id === viewId);
-    // Optimistic: remove view immediately
-    set((state) => {
-      const db = state.databases[dbId];
-      if (!db) return state;
-      const remaining = db.views.filter((v) => v.id !== viewId);
-      const updates: Partial<DatabaseState> = {
-        databases: {
-          ...state.databases,
-          [dbId]: { ...db, views: remaining },
-        },
-      };
-      if (state.activeViewIds[dbId] === viewId && remaining.length > 0) {
-        updates.activeViewIds = {
-          ...state.activeViewIds,
-          [dbId]: remaining[0].id,
+          activeViewIds:
+            state.activeViewIds[dbId] === viewId
+              ? { ...state.activeViewIds, [dbId]: views[0]?.id ?? "" }
+              : state.activeViewIds,
         };
-      }
-      return updates;
-    });
-    try {
-      if (await persistCurrentDiskDatabases(useDatabaseStore.getState(), [dbId])) return;
-      await api.deleteDatabaseView(dbId, viewId);
-      // Success -- optimistic state is correct
-    } catch {
-      // Targeted rollback: re-insert the deleted view
-      if (deletedView) {
-        set((state) => {
-          const db = state.databases[dbId];
-          if (!db) return state;
-          return {
-            databases: {
-              ...state.databases,
-              [dbId]: {
-                ...db,
-                views: [...db.views, deletedView].sort((a, b) => a.position - b.position),
-              },
-            },
-          };
-        });
-      }
-    }
-  },
-}));
+      });
+      await persistDb(dbId);
+    },
+  })
+);

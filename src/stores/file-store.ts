@@ -184,7 +184,7 @@ function isEphemeralWorkspaceRoot(root: string | null | undefined): boolean {
 
 function handleForFile(file: FileItem): DocumentHandle {
   return (
-    file.storageHandle ?? { mode: "db", id: file.id, kind: file.isFolder ? "folder" : "document" }
+    file.storageHandle ?? { mode: "disk", id: file.id, kind: file.isFolder ? "folder" : "document" }
   );
 }
 
@@ -241,7 +241,6 @@ export const useFileStore = create<FileState>()(
         try {
           let adapterState = get();
           if (
-            adapterState.workspaceMode !== "disk" ||
             !adapterState.workspaceRoot ||
             isEphemeralWorkspaceRoot(adapterState.workspaceRoot)
           ) {
@@ -252,13 +251,6 @@ export const useFileStore = create<FileState>()(
                 workspaceRoot: defaultRoot,
                 recentWorkspaces: rememberWorkspace(defaultRoot, state),
               }));
-              adapterState = get();
-            } else if (
-              adapterState.workspaceMode === "disk" &&
-              (!adapterState.workspaceRoot || isEphemeralWorkspaceRoot(adapterState.workspaceRoot))
-            ) {
-              // Browser-only development still needs a backend-backed fallback.
-              set({ workspaceMode: "db", workspaceRoot: null });
               adapterState = get();
             }
           }
@@ -332,9 +324,7 @@ export const useFileStore = create<FileState>()(
           const file = get().files.find((f) => f.id === fileId);
           if (!file) return;
           const fullFile = await getAdapter(get()).read(handleForFile(file));
-          if (get().workspaceMode === "disk") {
-            syncDatabasesForDocument(fullFile.extras, fullFile.html, fullFile.markdown);
-          }
+          syncDatabasesForDocument(fullFile.extras, fullFile.html, fullFile.markdown);
           set((state) => {
             // Only update if the file exists in the files array.
             // If loadFiles() hasn't completed yet, files may be empty — in that case
@@ -419,84 +409,35 @@ export const useFileStore = create<FileState>()(
         // SaaS-era 10MB limit; markitdown handles them fine, just takes
         // longer for very large files.
         try {
-          if (get().workspaceMode === "disk") {
-            const imported = /\.(md|markdown)$/i.test(file.name)
-              ? {
-                  name: file.name,
-                  markdown: await file.text(),
-                  html: "",
-                }
-              : await api.convertFile(file).then((converted) => ({
-                  name: converted.name,
-                  markdown: converted.content_markdown,
-                  html: converted.content,
-                }));
-            const htmlContent = imported.html || markdownToHtml(imported.markdown);
-            const entry = await getAdapter(get()).create({
-              name: imported.name,
-              kind: "document",
-              parent: parentHandleForId(get().files, parentId),
-              content: { html: htmlContent, markdown: imported.markdown },
-            });
-            const newFile = {
-              ...fileFromEntry(entry, htmlContent),
-              contentMarkdown: imported.markdown,
-              wordCount: imported.markdown.split(/\s+/).filter(Boolean).length,
-              preview: imported.markdown
-                .replace(/[#*_`>\-[\]()]/g, "")
-                .trim()
-                .slice(0, 200),
-            };
-            if (options?.silent) {
-              set((state) => ({ files: [newFile, ...state.files] }));
-            } else {
-              set((state) => ({
-                files: [newFile, ...state.files],
-                currentFileId: newFile.id,
-                loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
+          const imported = /\.(md|markdown)$/i.test(file.name)
+            ? {
+                name: file.name,
+                markdown: await file.text(),
+                html: "",
+              }
+            : await api.convertFile(file).then((converted) => ({
+                name: converted.name,
+                markdown: converted.content_markdown,
+                html: converted.content,
               }));
-            }
-            eventBus.emit("storage:changed");
-            return newFile.id;
-          }
-
-          // Import file via API (converts PDF/DOCX/MD to markdown)
-          const serverFile = await api.importFile(file, parentId);
-
-          // Use frontend markdownToHtml for proper math/mermaid/TipTap rendering
-          // The backend's Python markdown library doesn't support math ($...$) or
-          // mermaid blocks, but our frontend's marked config handles them correctly.
-          let htmlContent = serverFile.content;
-          if (serverFile.content_markdown) {
-            htmlContent = markdownToHtml(serverFile.content_markdown);
-          }
-
-          const plainText = htmlContent.replace(/<[^>]*>/g, "").trim();
-          const newFile: FileItem = {
-            id: serverFile.id,
-            name: serverFile.name,
-            content: htmlContent,
-            contentMarkdown: serverFile.content_markdown || null,
-            isFolder: serverFile.is_folder || false,
-            parentId: serverFile.parent_id || null,
-            position: serverFile.position || 0,
-            isFavorite: serverFile.is_favorite || false,
-            icon: serverFile.icon || null,
-            coverImageUrl: serverFile.cover_image_url || null,
-            coverPosition: serverFile.cover_position ?? 0.5,
-            createdAt: serverFile.created_at,
-            updatedAt: serverFile.updated_at,
-            wordCount: plainText.split(/\s+/).filter(Boolean).length,
-            preview: plainText.slice(0, 200),
+          const htmlContent = imported.html || markdownToHtml(imported.markdown);
+          const entry = await getAdapter(get()).create({
+            name: imported.name,
+            kind: "document",
+            parent: parentHandleForId(get().files, parentId),
+            content: { html: htmlContent, markdown: imported.markdown },
+          });
+          const newFile = {
+            ...fileFromEntry(entry, htmlContent),
+            contentMarkdown: imported.markdown,
+            wordCount: imported.markdown.split(/\s+/).filter(Boolean).length,
+            preview: imported.markdown
+              .replace(/[#*_`>\-[\]()]/g, "")
+              .trim()
+              .slice(0, 200),
           };
-
-          // `silent` skips opening the imported file — used by folder
-          // import where 8 concurrent uploads would otherwise thrash the
-          // active editor by flipping currentFileId on every completion.
           if (options?.silent) {
-            set((state) => ({
-              files: [newFile, ...state.files],
-            }));
+            set((state) => ({ files: [newFile, ...state.files] }));
           } else {
             set((state) => ({
               files: [newFile, ...state.files],
@@ -504,14 +445,6 @@ export const useFileStore = create<FileState>()(
               loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
             }));
           }
-
-          // Save properly converted HTML back to server so future loads use it
-          if (serverFile.content_markdown && htmlContent !== serverFile.content) {
-            api.updateFile(newFile.id, { content: htmlContent }).catch((err) => {
-              log.error("Failed to save re-converted HTML", err);
-            });
-          }
-
           eventBus.emit("storage:changed");
           return newFile.id;
         } catch (error) {
@@ -545,11 +478,7 @@ export const useFileStore = create<FileState>()(
             updates.content !== undefined || updates.contentMarkdown !== undefined;
           let updatedEntry: WorkspaceEntry | null = null;
 
-          if (
-            adapter.mode !== "db" &&
-            updates.name !== undefined &&
-            updates.name !== originalFile.name
-          ) {
+          if (updates.name !== undefined && updates.name !== originalFile.name) {
             updatedEntry = await adapter.rename(originalHandle, updates.name);
           }
 
@@ -575,23 +504,6 @@ export const useFileStore = create<FileState>()(
               ),
               currentFileId: state.currentFileId === id ? content.handle.id : state.currentFileId,
               loadedContentIds: new Set([...state.loadedContentIds, content.handle.id]),
-            }));
-          } else if (
-            adapter.mode === "db" &&
-            updates.name !== undefined &&
-            updates.name !== originalFile.name
-          ) {
-            updatedEntry = await adapter.rename(originalHandle, updates.name);
-            set((state) => ({
-              files: state.files.map((item) =>
-                item.id === id
-                  ? {
-                      ...item,
-                      ...fileFromEntry(updatedEntry!, item.content),
-                      content: item.content,
-                    }
-                  : item
-              ),
             }));
           } else if (updatedEntry) {
             set((state) => ({
@@ -680,13 +592,9 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          if (get().workspaceMode === "disk") {
-            await getAdapter(get()).write(handleForFile(file), {
-              meta: { id: file.id, favorite: newFavorite },
-            });
-          } else {
-            await api.updateFile(fileId, { is_favorite: newFavorite });
-          }
+          await getAdapter(get()).write(handleForFile(file), {
+            meta: { id: file.id, favorite: newFavorite },
+          });
         } catch (error) {
           log.error("Failed to toggle favorite", error);
           // Revert on error
@@ -708,13 +616,9 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          if (get().workspaceMode === "disk") {
-            await getAdapter(get()).write(handleForFile(file), {
-              meta: { id: file.id, icon },
-            });
-          } else {
-            await api.updateFile(fileId, { icon: icon ?? "" });
-          }
+          await getAdapter(get()).write(handleForFile(file), {
+            meta: { id: file.id, icon },
+          });
         } catch (error) {
           log.error("Failed to set file icon", error);
           // Revert on error
@@ -733,13 +637,9 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          if (get().workspaceMode === "disk") {
-            await getAdapter(get()).write(handleForFile(file), {
-              meta: { id: file.id, cover: url },
-            });
-          } else {
-            await api.updateFile(fileId, { cover_image_url: url ?? "" });
-          }
+          await getAdapter(get()).write(handleForFile(file), {
+            meta: { id: file.id, cover: url },
+          });
         } catch (error) {
           log.error("Failed to set cover image", error);
           set((state) => ({
@@ -760,12 +660,9 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          if (get().workspaceMode === "disk") {
-            // Cover position has no markdown/frontmatter field yet; keep it local
-            // until sidecar extras own page metadata.
-            return;
-          }
-          await api.updateFile(fileId, { cover_position: clamped });
+          await getAdapter(get()).write(handleForFile(file), {
+            meta: { id: file.id, cover_position: clamped },
+          });
         } catch (error) {
           log.error("Failed to set cover position", error);
           set((state) => ({
@@ -1027,63 +924,26 @@ export const useFileStore = create<FileState>()(
       // Trash operations
       loadTrash: async () => {
         set({ isTrashLoading: true });
-        try {
-          const trashItems = await api.listTrash();
-          set({
-            trashFiles: trashItems.map((f) => ({
-              id: f.id,
-              name: f.name,
-              isFolder: f.is_folder,
-              parentId: f.parent_id,
-              deletedAt: f.deleted_at,
-              createdAt: f.created_at,
-              updatedAt: f.updated_at,
-            })),
-            isTrashLoading: false,
-          });
-        } catch (error) {
-          log.error("Failed to load trash", error);
-          set({ isTrashLoading: false });
-        }
+        set({ trashFiles: [], isTrashLoading: false });
       },
 
       restoreFile: async (id: string) => {
-        try {
-          await api.restoreFile(id);
-          // Remove from trash list
-          set((state) => ({
-            trashFiles: state.trashFiles.filter((f) => f.id !== id),
-          }));
-          // Reload files to get the restored file
-          await get().loadFiles();
-        } catch (error) {
-          log.error("Failed to restore file", error);
-          throw error;
-        }
+        set((state) => ({
+          trashFiles: state.trashFiles.filter((f) => f.id !== id),
+        }));
+        await get().loadFiles();
       },
 
       permanentDeleteFile: async (id: string) => {
-        try {
-          await api.permanentDeleteFile(id);
-          set((state) => ({
-            trashFiles: state.trashFiles.filter((f) => f.id !== id),
-          }));
-          eventBus.emit("storage:changed");
-        } catch (error) {
-          log.error("Failed to permanently delete file", error);
-          throw error;
-        }
+        set((state) => ({
+          trashFiles: state.trashFiles.filter((f) => f.id !== id),
+        }));
+        eventBus.emit("storage:changed");
       },
 
       emptyTrash: async () => {
-        try {
-          await api.emptyTrash();
-          set({ trashFiles: [] });
-          eventBus.emit("storage:changed");
-        } catch (error) {
-          log.error("Failed to empty trash", error);
-          throw error;
-        }
+        set({ trashFiles: [] });
+        eventBus.emit("storage:changed");
       },
     }),
     {
@@ -1112,7 +972,7 @@ export const useFileStore = create<FileState>()(
         return {
           ...currentState,
           ...persisted,
-          workspaceMode: persisted.workspaceMode === "disk" ? "disk" : "db",
+          workspaceMode: "disk",
           workspaceRoot: persisted.workspaceRoot ?? null,
           recentWorkspaces: persisted.recentWorkspaces ?? [],
           files: currentState.files, // Always use runtime files, never from localStorage

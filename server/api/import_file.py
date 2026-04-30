@@ -5,19 +5,13 @@ import os
 import re
 
 import markdown
-from fastapi import APIRouter, Depends, File, Form, UploadFile
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, File, UploadFile
 
 from config import get_settings
-from db.database import File as FileModel
-from db.database import get_db
 from exceptions import (
     AppException,
-    BadRequestError,
     FileTooLargeError,
     InternalError,
-    NotFoundError,
     UnsupportedFileTypeError,
 )
 
@@ -111,65 +105,3 @@ async def convert_file(file: UploadFile = File(...)):
         "content_markdown": md_content,
     }
 
-
-@router.post("/")
-async def import_file(
-    file: UploadFile = File(...),
-    parent_id: str | None = Form(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
-
-    - Accepts: PDF, DOCX, MD, MARKDOWN files
-    - Max size: 10MB
-    - parent_id: Optional folder ID to import into
-    - Returns: Created file object
-    """
-    # Validate parent folder if provided
-    if parent_id:
-        result = await db.execute(
-            select(FileModel).where(
-                FileModel.id == parent_id,
-                FileModel.is_folder.is_(True),
-            )
-        )
-        parent_folder = result.scalar_one_or_none()
-        if not parent_folder:
-            raise NotFoundError(resource="Parent folder", resource_id=parent_id)
-
-        # Check that parent folder is at root (single-level hierarchy)
-        if parent_folder.parent_id is not None:
-            raise BadRequestError(
-                message="Cannot import into nested folders. Only single-level folders are supported."
-            )
-    new_name, md_content, html_content = await upload_to_markdown(file)
-
-    # Create new file in database
-    try:
-        new_file = FileModel(
-            name=new_name,
-            content=html_content,
-            content_markdown=md_content,
-            parent_id=parent_id,
-        )
-        db.add(new_file)
-        await db.commit()
-        await db.refresh(new_file)
-
-        return {
-            "id": new_file.id,
-            "name": new_file.name,
-            "content": new_file.content,
-            "content_markdown": md_content,
-            "parent_id": new_file.parent_id,
-            "is_folder": new_file.is_folder,
-            "position": new_file.position,
-            "created_at": new_file.created_at.isoformat(),
-            "updated_at": new_file.updated_at.isoformat(),
-        }
-    except AppException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to create file: {e}")
-        raise InternalError(message=str(e))

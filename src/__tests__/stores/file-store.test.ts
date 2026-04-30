@@ -1,780 +1,270 @@
-/**
- * Tests for file store
- */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock api module - vi.hoisted ensures mocks are available before imports
-const { mockApi } = vi.hoisted(() => ({
-  mockApi: {
-    listFiles: vi.fn(),
-    createFile: vi.fn(),
-    importFile: vi.fn(),
-    updateFile: vi.fn(),
-    deleteFile: vi.fn(),
-  },
+const { invokeMock, convertFileMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn(),
+  convertFileMock: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
 }));
 
 vi.mock("@/lib/api", () => ({
-  api: mockApi,
+  api: {
+    convertFile: convertFileMock,
+  },
 }));
 
-// Import store after mocks are set up
 import { useFileStore } from "@/stores/file-store";
 
-describe("useFileStore", () => {
-  // Reset store state before each test
+const now = "2026-04-30T00:00:00.000Z";
+
+function resetStore() {
+  useFileStore.setState({
+    files: [],
+    currentFileId: null,
+    currentFolderId: null,
+    workspaceMode: "disk",
+    workspaceRoot: "/workspace",
+    recentWorkspaces: [],
+    isLoading: false,
+    isSynced: false,
+    justCreatedFileId: null,
+    expandedFolderIds: new Set(),
+    selectedFileIds: new Set(),
+    loadedContentIds: new Set(),
+    trashFiles: [],
+    isTrashLoading: false,
+  });
+}
+
+function mockRead(path = "Doc.md", html = "<p>Hello</p>", markdown = "Hello") {
+  invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+    if (command === "doc_read") {
+      expect(payload).toEqual({ path: `/workspace/${path}` });
+      return {
+        html,
+        markdown,
+        meta: { id: "doc-1", title: "Doc", created: now, updated: now },
+        extras: { databases: {} },
+        source: "sidecar",
+      };
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  });
+}
+
+describe("useFileStore disk workspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset the store to initial state
+    resetStore();
+  });
+
+  it("loads files from the disk workspace scan", async () => {
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "workspace_scan") {
+        expect(payload).toEqual({ root: "/workspace" });
+        return {
+          root: "/workspace",
+          documents: [
+            {
+              id: "doc-1",
+              idSource: "frontmatter",
+              path: "Folder/Doc.md",
+              name: "Doc.md",
+              title: "Doc",
+              hasSidecar: true,
+            },
+          ],
+        };
+      }
+      if (command === "workspace_index_rebuild") {
+        return { version: 1, ids: { "doc-1": "Folder/Doc.md" } };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await useFileStore.getState().loadFiles();
+
+    const state = useFileStore.getState();
+    expect(state.isSynced).toBe(true);
+    expect(state.files.map((file) => [file.id, file.name, file.isFolder])).toEqual([
+      ["folder:Folder", "Folder", true],
+      ["doc-1", "Doc.md", false],
+    ]);
+  });
+
+  it("loads document content from the sidecar reader", async () => {
     useFileStore.setState({
-      files: [],
-      currentFileId: null,
-      isLoading: false,
-      isSynced: false,
-    });
-  });
-
-  afterEach(() => {
-    vi.resetAllMocks();
-  });
-
-  // ============================================================================
-  // loadFiles tests
-  // ============================================================================
-  describe("loadFiles", () => {
-    it("fetches files from server", async () => {
-      const serverFiles = [
+      files: [
         {
-          id: "file-1",
-          name: "Document 1",
-          content: "Content 1",
-          created_at: "2024-01-01T00:00:00Z",
-          updated_at: "2024-01-01T00:00:00Z",
+          id: "doc-1",
+          name: "Doc.md",
+          content: "",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          icon: null,
+          coverImageUrl: null,
+          coverPosition: 0.5,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
         },
+      ],
+    });
+    mockRead();
+
+    await useFileStore.getState().loadFileContent("doc-1");
+
+    const file = useFileStore.getState().getFile("doc-1");
+    expect(file?.content).toBe("<p>Hello</p>");
+    expect(file?.contentMarkdown).toBe("Hello");
+    expect(useFileStore.getState().loadedContentIds.has("doc-1")).toBe(true);
+  });
+
+  it("creates a new local markdown document", async () => {
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "doc_create") {
+        expect(payload).toMatchObject({
+          root: "/workspace",
+          payload: {
+            path: "New Note.md",
+            html: "<p>Draft</p>",
+            markdown: "",
+          },
+        });
+        return {
+          id: "doc-new",
+          idSource: "frontmatter",
+          path: "New Note.md",
+          name: "New Note.md",
+          title: "New Note",
+          hasSidecar: true,
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    const id = await useFileStore.getState().createFile("New Note", "<p>Draft</p>");
+
+    expect(id).toBe("doc-new");
+    expect(useFileStore.getState().currentFileId).toBe("doc-new");
+    expect(useFileStore.getState().getFile("doc-new")?.content).toBe("<p>Draft</p>");
+  });
+
+  it("imports converted office/PDF files into the disk workspace", async () => {
+    convertFileMock.mockResolvedValueOnce({
+      name: "Import.md",
+      content: "<p>Converted</p>",
+      content_markdown: "Converted",
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_create") {
+        return {
+          id: "doc-import",
+          idSource: "frontmatter",
+          path: "Import.md",
+          name: "Import.md",
+          title: "Import",
+          hasSidecar: true,
+        };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    const id = await useFileStore.getState().importFile(
+      new File(["fake"], "Import.pdf", { type: "application/pdf" })
+    );
+
+    expect(id).toBe("doc-import");
+    expect(convertFileMock).toHaveBeenCalledOnce();
+    expect(useFileStore.getState().getFile("doc-import")?.contentMarkdown).toBe("Converted");
+  });
+
+  it("writes content updates through doc_write_workspace", async () => {
+    useFileStore.setState({
+      files: [
         {
-          id: "file-2",
-          name: "Document 2",
-          content: "Content 2",
-          created_at: "2024-01-02T00:00:00Z",
-          updated_at: "2024-01-02T00:00:00Z",
+          id: "doc-1",
+          name: "Doc.md",
+          content: "<p>Old</p>",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          icon: null,
+          coverImageUrl: null,
+          coverPosition: 0.5,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
         },
-      ];
-      mockApi.listFiles.mockResolvedValueOnce(serverFiles);
-
-      await useFileStore.getState().loadFiles();
-
-      expect(mockApi.listFiles).toHaveBeenCalledOnce();
-      const state = useFileStore.getState();
-      expect(state.files).toHaveLength(2);
-      expect(state.files[0].id).toBe("file-1");
-      expect(state.files[0].name).toBe("Document 1");
-      expect(state.isSynced).toBe(true);
+      ],
+    });
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "doc_read") {
+        return {
+          html: "<p>Old</p>",
+          markdown: "Old",
+          meta: { id: "doc-1", title: "Doc", updated: now },
+          extras: { databases: {} },
+          source: "sidecar",
+        };
+      }
+      if (command === "doc_write_workspace") return undefined;
+      throw new Error(`Unexpected command: ${command}`);
     });
 
-    it("sets isLoading during fetch", async () => {
-      let loadingDuringFetch = false;
-      mockApi.listFiles.mockImplementationOnce(() => {
-        loadingDuringFetch = useFileStore.getState().isLoading;
-        return Promise.resolve([]);
-      });
+    await useFileStore
+      .getState()
+      .updateFile("doc-1", { content: "<p>New</p>", contentMarkdown: "New" });
 
-      await useFileStore.getState().loadFiles();
+    expect(invokeMock).toHaveBeenCalledWith(
+      "doc_write_workspace",
+      expect.objectContaining({
+        root: "/workspace",
+        path: "Doc.md",
+        payload: expect.objectContaining({ html: "<p>New</p>", markdown: "New" }),
+      })
+    );
+  });
 
-      expect(loadingDuringFetch).toBe(true);
-      expect(useFileStore.getState().isLoading).toBe(false);
-    });
-
-    it("handles server errors gracefully", async () => {
-      mockApi.listFiles.mockRejectedValueOnce(new Error("Network error"));
-
-      await useFileStore.getState().loadFiles();
-
-      const state = useFileStore.getState();
-      expect(state.isSynced).toBe(false);
-      expect(state.isLoading).toBe(false);
-    });
-
-    it("maps server response fields correctly", async () => {
-      mockApi.listFiles.mockResolvedValueOnce([
+  it("deletes documents through workspace delete commands", async () => {
+    useFileStore.setState({
+      files: [
         {
-          id: "file-123",
-          name: "Test",
-          content: "Test content",
-          created_at: "2024-01-01T00:00:00Z",
-          updated_at: "2024-01-02T00:00:00Z",
+          id: "doc-1",
+          name: "Doc.md",
+          content: "",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          icon: null,
+          coverImageUrl: null,
+          coverPosition: 0.5,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
         },
-      ]);
-
-      await useFileStore.getState().loadFiles();
-
-      const file = useFileStore.getState().files[0];
-      expect(file.createdAt).toBe("2024-01-01T00:00:00Z");
-      expect(file.updatedAt).toBe("2024-01-02T00:00:00Z");
+      ],
     });
-  });
-
-  // ============================================================================
-  // createFile tests
-  // ============================================================================
-  describe("createFile", () => {
-    it("creates file via API and adds to store", async () => {
-      mockApi.createFile.mockResolvedValueOnce({
-        id: "new-file-123",
-        name: "New Document",
-        content: "",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      });
-
-      const fileId = await useFileStore.getState().createFile("New Document");
-
-      expect(mockApi.createFile).toHaveBeenCalledWith("New Document", "", null);
-      expect(fileId).toBe("new-file-123");
-
-      const state = useFileStore.getState();
-      expect(state.files).toHaveLength(1);
-      expect(state.files[0].name).toBe("New Document");
-      expect(state.currentFileId).toBe("new-file-123");
+    invokeMock.mockResolvedValueOnce({
+      path: "Doc.md",
+      trashPath: ".trash/Doc.md",
     });
 
-    it("creates file with initial content", async () => {
-      mockApi.createFile.mockResolvedValueOnce({
-        id: "new-file-123",
-        name: "New Document",
-        content: "Initial content",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      });
+    await useFileStore.getState().deleteFile("doc-1");
 
-      await useFileStore.getState().createFile("New Document", "Initial content");
-
-      expect(mockApi.createFile).toHaveBeenCalledWith("New Document", "Initial content", null);
-    });
-
-    it("adds new file to the beginning of the list", async () => {
-      // Setup existing files
-      useFileStore.setState({
-        files: [
-          {
-            id: "old-1",
-            name: "Old 1",
-            content: "",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-          {
-            id: "old-2",
-            name: "Old 2",
-            content: "",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-
-      mockApi.createFile.mockResolvedValueOnce({
-        id: "new-file",
-        name: "New",
-        content: "",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      });
-
-      await useFileStore.getState().createFile("New");
-
-      const files = useFileStore.getState().files;
-      expect(files[0].id).toBe("new-file");
-      expect(files).toHaveLength(3);
-    });
-
-    it("throws error on API failure", async () => {
-      mockApi.createFile.mockRejectedValueOnce(new Error("Server error"));
-
-      await expect(useFileStore.getState().createFile("Test")).rejects.toThrow("Server error");
-    });
-
-    it("sets current file to newly created file", async () => {
-      useFileStore.setState({ currentFileId: "old-file" });
-      mockApi.createFile.mockResolvedValueOnce({
-        id: "new-file",
-        name: "New",
-        content: "",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      });
-
-      await useFileStore.getState().createFile("New");
-
-      expect(useFileStore.getState().currentFileId).toBe("new-file");
-    });
-  });
-
-  // ============================================================================
-  // importFile tests
-  // ============================================================================
-  describe("importFile", () => {
-    it("imports file via API", async () => {
-      const mockFile = new File(["test content"], "test.pdf", { type: "application/pdf" });
-      mockApi.importFile.mockResolvedValueOnce({
-        id: "imported-123",
-        name: "test.md",
-        content: "# Converted content",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      });
-
-      const fileId = await useFileStore.getState().importFile(mockFile);
-
-      expect(mockApi.importFile).toHaveBeenCalledWith(mockFile, undefined);
-      expect(fileId).toBe("imported-123");
-    });
-
-    it("adds imported file to store", async () => {
-      const mockFile = new File(["test"], "test.docx");
-      mockApi.importFile.mockResolvedValueOnce({
-        id: "imported-123",
-        name: "test.md",
-        content: "Converted",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-      });
-
-      await useFileStore.getState().importFile(mockFile);
-
-      const state = useFileStore.getState();
-      expect(state.files).toHaveLength(1);
-      expect(state.files[0].name).toBe("test.md");
-      expect(state.currentFileId).toBe("imported-123");
-    });
-
-    it("throws error on import failure", async () => {
-      const mockFile = new File(["test"], "test.pdf");
-      mockApi.importFile.mockRejectedValueOnce(new Error("Import failed"));
-
-      await expect(useFileStore.getState().importFile(mockFile)).rejects.toThrow("Import failed");
-    });
-  });
-
-  // ============================================================================
-  // updateFile tests
-  // ============================================================================
-  describe("updateFile", () => {
-    beforeEach(() => {
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "Original Name",
-            content: "Original content",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "2024-01-01T00:00:00Z",
-            updatedAt: "2024-01-01T00:00:00Z",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-    });
-
-    it("updates file content optimistically", async () => {
-      mockApi.updateFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().updateFile("file-1", { content: "Updated content" });
-
-      const file = useFileStore.getState().files[0];
-      expect(file.content).toBe("Updated content");
-    });
-
-    it("updates file name", async () => {
-      mockApi.updateFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().updateFile("file-1", { name: "New Name" });
-
-      const file = useFileStore.getState().files[0];
-      expect(file.name).toBe("New Name");
-    });
-
-    it("updates the updatedAt timestamp", async () => {
-      mockApi.updateFile.mockResolvedValueOnce({});
-      const before = new Date().toISOString();
-
-      await useFileStore.getState().updateFile("file-1", { content: "New" });
-
-      const after = new Date().toISOString();
-      const file = useFileStore.getState().files[0];
-      expect(file.updatedAt >= before).toBe(true);
-      expect(file.updatedAt <= after).toBe(true);
-    });
-
-    it("calls API with correct parameters", async () => {
-      mockApi.updateFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().updateFile("file-1", { name: "New", content: "Updated" });
-
-      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", {
-        name: "New",
-        content: "Updated",
-      });
-    });
-
-    it("reverts on API error", async () => {
-      mockApi.updateFile.mockRejectedValueOnce(new Error("Server error"));
-      mockApi.listFiles.mockResolvedValueOnce([
-        {
-          id: "file-1",
-          name: "Original Name",
-          content: "Original content",
-          created_at: "2024-01-01T00:00:00Z",
-          updated_at: "2024-01-01T00:00:00Z",
-        },
-      ]);
-
-      await useFileStore.getState().updateFile("file-1", { content: "New content" });
-
-      // Should trigger loadFiles to revert
-      expect(mockApi.listFiles).toHaveBeenCalled();
-    });
-
-    it("does not change other files", async () => {
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "File 1",
-            content: "Content 1",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-          {
-            id: "file-2",
-            name: "File 2",
-            content: "Content 2",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-      mockApi.updateFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().updateFile("file-1", { content: "Updated" });
-
-      const files = useFileStore.getState().files;
-      expect(files[1].content).toBe("Content 2");
-    });
-  });
-
-  // ============================================================================
-  // deleteFile tests
-  // ============================================================================
-  describe("deleteFile", () => {
-    beforeEach(() => {
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "File 1",
-            content: "",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-          {
-            id: "file-2",
-            name: "File 2",
-            content: "",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-        currentFileId: "file-1",
-      });
-    });
-
-    it("removes file from store", async () => {
-      mockApi.deleteFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().deleteFile("file-1");
-
-      const files = useFileStore.getState().files;
-      expect(files).toHaveLength(1);
-      expect(files[0].id).toBe("file-2");
-    });
-
-    it("calls API to delete", async () => {
-      mockApi.deleteFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().deleteFile("file-1");
-
-      expect(mockApi.deleteFile).toHaveBeenCalledWith("file-1");
-    });
-
-    it("switches current file when deleting current", async () => {
-      mockApi.deleteFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().deleteFile("file-1");
-
-      expect(useFileStore.getState().currentFileId).toBe("file-2");
-    });
-
-    it("sets currentFileId to null when deleting last file", async () => {
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "File 1",
-            content: "",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-        currentFileId: "file-1",
-      });
-      mockApi.deleteFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().deleteFile("file-1");
-
-      expect(useFileStore.getState().currentFileId).toBeNull();
-      expect(useFileStore.getState().files).toHaveLength(0);
-    });
-
-    it("keeps currentFileId unchanged when deleting different file", async () => {
-      mockApi.deleteFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().deleteFile("file-2");
-
-      expect(useFileStore.getState().currentFileId).toBe("file-1");
-    });
-
-    it("reverts on API error", async () => {
-      mockApi.deleteFile.mockRejectedValueOnce(new Error("Server error"));
-      mockApi.listFiles.mockResolvedValueOnce([
-        { id: "file-1", name: "File 1", content: "", created_at: "", updated_at: "" },
-        { id: "file-2", name: "File 2", content: "", created_at: "", updated_at: "" },
-      ]);
-
-      await useFileStore.getState().deleteFile("file-1");
-
-      // Should trigger loadFiles to revert
-      expect(mockApi.listFiles).toHaveBeenCalled();
-    });
-  });
-
-  // ============================================================================
-  // setCurrentFile tests
-  // ============================================================================
-  describe("setCurrentFile", () => {
-    it("sets current file id", () => {
-      useFileStore.getState().setCurrentFile("file-123");
-
-      expect(useFileStore.getState().currentFileId).toBe("file-123");
-    });
-
-    it("can set to null", () => {
-      useFileStore.setState({ currentFileId: "file-123" });
-
-      useFileStore.getState().setCurrentFile(null);
-
-      expect(useFileStore.getState().currentFileId).toBeNull();
-    });
-  });
-
-  // ============================================================================
-  // renameFile tests
-  // ============================================================================
-  describe("renameFile", () => {
-    beforeEach(() => {
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "Original",
-            content: "Content",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-    });
-
-    it("updates file name", async () => {
-      mockApi.updateFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().renameFile("file-1", "New Name");
-
-      const file = useFileStore.getState().files[0];
-      expect(file.name).toBe("New Name");
-    });
-
-    it("calls updateFile with name only", async () => {
-      mockApi.updateFile.mockResolvedValueOnce({});
-
-      await useFileStore.getState().renameFile("file-1", "New Name");
-
-      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", { name: "New Name" });
-    });
-  });
-
-  // ============================================================================
-  // getFile tests
-  // ============================================================================
-  describe("getFile", () => {
-    beforeEach(() => {
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "File 1",
-            content: "Content 1",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-          {
-            id: "file-2",
-            name: "File 2",
-            content: "Content 2",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-    });
-
-    it("returns file by id", () => {
-      const file = useFileStore.getState().getFile("file-1");
-
-      expect(file).toBeDefined();
-      expect(file?.name).toBe("File 1");
-    });
-
-    it("returns undefined for non-existent id", () => {
-      const file = useFileStore.getState().getFile("non-existent");
-
-      expect(file).toBeUndefined();
-    });
-  });
-
-  // ==========================================================================
-  // setFileIcon
-  // ==========================================================================
-  describe("setFileIcon", () => {
-    beforeEach(() => {
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "File 1",
-            content: "Content 1",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: null,
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-    });
-
-    it("sets an emoji icon on a file", async () => {
-      mockApi.updateFile.mockResolvedValue({});
-
-      await useFileStore.getState().setFileIcon("file-1", "📝");
-
-      const file = useFileStore.getState().getFile("file-1");
-      expect(file?.icon).toBe("📝");
-    });
-
-    it("removes icon when set to null", async () => {
-      // Start with an icon
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "File 1",
-            content: "Content 1",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: "📝",
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-      mockApi.updateFile.mockResolvedValue({});
-
-      await useFileStore.getState().setFileIcon("file-1", null);
-
-      const file = useFileStore.getState().getFile("file-1");
-      expect(file?.icon).toBeNull();
-    });
-
-    it("calls API with empty string to clear icon", async () => {
-      mockApi.updateFile.mockResolvedValue({});
-
-      await useFileStore.getState().setFileIcon("file-1", null);
-
-      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", { icon: "" });
-    });
-
-    it("calls API with emoji string to set icon", async () => {
-      mockApi.updateFile.mockResolvedValue({});
-
-      await useFileStore.getState().setFileIcon("file-1", "🚀");
-
-      expect(mockApi.updateFile).toHaveBeenCalledWith("file-1", { icon: "🚀" });
-    });
-
-    it("does nothing for non-existent file", async () => {
-      await useFileStore.getState().setFileIcon("non-existent", "📝");
-
-      expect(mockApi.updateFile).not.toHaveBeenCalled();
-    });
-
-    it("reverts icon on API error", async () => {
-      mockApi.updateFile.mockRejectedValue(new Error("Server error"));
-
-      await useFileStore.getState().setFileIcon("file-1", "📝");
-
-      // Should revert to original null icon
-      const file = useFileStore.getState().getFile("file-1");
-      expect(file?.icon).toBeNull();
-    });
-
-    it("reverts to previous icon on API error", async () => {
-      // Start with an existing icon
-      useFileStore.setState({
-        files: [
-          {
-            id: "file-1",
-            name: "File 1",
-            content: "",
-            isFolder: false,
-            parentId: null,
-            position: 0,
-            isFavorite: false,
-            icon: "\u{1F4DD}",
-            coverImageUrl: null,
-            coverPosition: 0.5,
-            createdAt: "",
-            updatedAt: "",
-            wordCount: 0,
-            preview: "",
-          },
-        ],
-      });
-      mockApi.updateFile.mockRejectedValue(new Error("Server error"));
-
-      await useFileStore.getState().setFileIcon("file-1", "🔥");
-
-      // Should revert to the previous icon
-      const file = useFileStore.getState().getFile("file-1");
-      expect(file?.icon).toBe("\u{1F4DD}");
-    });
+    expect(invokeMock).toHaveBeenCalledWith("doc_delete", { root: "/workspace", path: "Doc.md" });
+    expect(useFileStore.getState().files).toHaveLength(0);
   });
 });

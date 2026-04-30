@@ -1,6 +1,8 @@
-"""doXmind Mini — local desktop backend.
+"""doXmind Mini local sidecar backend.
 
-Single-user, no auth, SQLite. Runs as a localhost sidecar for the Next.js UI.
+The document source of truth is the user's Markdown workspace on disk. This
+server only handles local conversion, image serving, and future metadata/cache
+needs; it does not expose a SQLite document workspace.
 """
 
 import logging
@@ -12,15 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from api import (
-    databases,
-    export,
-    files,
-    images,
-    import_file,
-    migration,
-    versions,
-)
+from api import images, import_file
 from config import CORS_ORIGINS, get_cors_headers, get_settings
 from db.database import engine as db_engine
 from db.database import init_db
@@ -99,14 +93,9 @@ app.add_middleware(
 app.add_middleware(RequestIDMiddleware)
 
 
-# Routers
-app.include_router(files.router, prefix="/api/files", tags=["files"])
-app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
-app.include_router(export.router, prefix="/api/export", tags=["export"])
+# Routers: document CRUD lives in the Tauri filesystem commands.
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
-app.include_router(databases.router, prefix="/api/databases", tags=["databases"])
-app.include_router(migration.router, prefix="/api/migration", tags=["migration"])
 
 
 @app.get("/")

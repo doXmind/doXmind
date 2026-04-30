@@ -1,21 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { DatabaseBackup, FolderOpen, HardDrive } from "lucide-react";
+import { FolderOpen, HardDrive } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
 import { getErrorMessage } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 
 export function WorkspaceTab() {
   const t = useTranslations("settings");
-  const workspaceMode = useFileStore((state) => state.workspaceMode);
   const workspaceRoot = useFileStore((state) => state.workspaceRoot);
   const recentWorkspaces = useFileStore((state) => state.recentWorkspaces);
   const openDiskWorkspace = useFileStore((state) => state.openDiskWorkspace);
-  const [isMigrating, setIsMigrating] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
 
   const isDesktop = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
@@ -46,27 +43,6 @@ export function WorkspaceTab() {
     }
   };
 
-  const handleMigrate = async () => {
-    setIsMigrating(true);
-    try {
-      const selected = await chooseDirectory(t("migrateLibrary"));
-      if (!selected) return;
-      const result = await api.migrateDbToWorkspace(selected);
-      await openDiskWorkspace(result.output_root);
-      toast.success(t("migrationComplete"), {
-        description: t("migrationCompleteDesc", {
-          docs: result.documents_exported,
-          folders: result.folders_exported,
-        }),
-      });
-    } catch (error) {
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
-    } finally {
-      setIsMigrating(false);
-    }
-  };
-
   return (
     <div className="space-y-8">
       <section className="space-y-3">
@@ -76,10 +52,10 @@ export function WorkspaceTab() {
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <HardDrive className="h-4 w-4 text-muted-foreground" />
-                {workspaceMode === "disk" ? t("diskWorkspace") : t("dbWorkspace")}
+                {t("diskWorkspace")}
               </div>
               <p className="truncate text-sm text-muted-foreground">
-                {workspaceMode === "disk" && workspaceRoot ? workspaceRoot : t("dbWorkspaceDesc")}
+                {workspaceRoot || t("workspaceDesktopRequired")}
               </p>
             </div>
           </div>
@@ -88,10 +64,6 @@ export function WorkspaceTab() {
             <Button variant="outline" onClick={handleOpenWorkspace} disabled={isOpening}>
               <FolderOpen className="mr-2 h-4 w-4" />
               {t("openWorkspace")}
-            </Button>
-            <Button onClick={handleMigrate} disabled={isMigrating}>
-              <DatabaseBackup className="mr-2 h-4 w-4" />
-              {isMigrating ? t("migratingLibrary") : t("migrateLibrary")}
             </Button>
           </div>
         </div>

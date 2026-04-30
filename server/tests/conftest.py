@@ -1,12 +1,8 @@
-"""Pytest fixtures — local desktop edition.
-
-Tests run against an in-memory SQLite database.
-"""
+"""Pytest fixtures for the local sidecar backend."""
 
 import asyncio
 import os
 import tempfile
-import uuid
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 
@@ -17,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-# Use an in-memory SQLite db so tests never touch the user's ~/.doxmind data.
+# Use an in-memory SQLite db so tests never touch the user's ~/.doxmind metadata.
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 # Sandbox the data dir so settings tests don't touch the real ~/.doxmind
@@ -27,7 +23,7 @@ os.environ["HOME"] = str(_TEST_DATA_DIR)
 os.environ["DEBUG"] = "true"
 
 import db.database as db_database  # noqa: E402
-from db.database import Base, File, get_db  # noqa: E402
+from db.database import Base, get_db  # noqa: E402
 from dependencies import get_db as deps_get_db  # noqa: E402
 from main import app  # noqa: E402
 
@@ -115,24 +111,3 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 def sync_client() -> Generator[TestClient, None, None]:
     with TestClient(app) as c:
         yield c
-
-
-@pytest_asyncio.fixture
-async def test_file(db_session: AsyncSession) -> File:
-    file = File(
-        id=str(uuid.uuid4()),
-        name="Test Document",
-        content="# Test Content\n\nThis is test content.",
-    )
-    db_session.add(file)
-    await db_session.commit()
-    await db_session.refresh(file)
-    return file
-
-
-@pytest.fixture
-def sample_file_data() -> dict:
-    return {
-        "name": "Test Document",
-        "content": "# Hello World\n\nThis is a test document.",
-    }

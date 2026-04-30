@@ -4,7 +4,6 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { useDatabaseStore } from "@/stores/database-store";
-import { useFileStore } from "@/stores/file-store";
 import type { DatabaseData } from "@/extensions/database/database-types";
 import { ViewTabs } from "./view-tabs";
 import { DatabaseToolbar } from "./database-toolbar";
@@ -12,7 +11,6 @@ import { TableView } from "./views/table-view";
 import { BoardView } from "./views/board-view";
 import { GalleryView } from "./views/gallery-view";
 import { ListView } from "./views/list-view";
-import { RowPageModal } from "./row-page-modal";
 import { PropertyEditor } from "./property-editor";
 
 interface DatabaseContainerProps {
@@ -21,7 +19,6 @@ interface DatabaseContainerProps {
 
 export function DatabaseContainer({ databaseId }: DatabaseContainerProps) {
   const t = useTranslations("database");
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
 
   // Manual subscription bypasses useSyncExternalStore which doesn't reliably
   // trigger re-renders inside TipTap's memo-wrapped portals in React 19.
@@ -50,7 +47,6 @@ export function DatabaseContainer({ databaseId }: DatabaseContainerProps) {
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
-  const [rowPageModalRowId, setRowPageModalRowId] = useState<string | null>(null);
   const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
   const [showAddProperty, setShowAddProperty] = useState(false);
   const [insertPosition, setInsertPosition] = useState<number | undefined>();
@@ -85,13 +81,7 @@ export function DatabaseContainer({ databaseId }: DatabaseContainerProps) {
     }
   }, [titleDraft, databaseId, updateDatabase, t]);
 
-  const handleOpenRowPage = useCallback(
-    (rowId: string) => {
-      if (workspaceMode === "disk") return;
-      setRowPageModalRowId(rowId);
-    },
-    [workspaceMode]
-  );
+  const handleOpenRowPage = useCallback(() => {}, []);
 
   const handleEditProperty = useCallback((propId: string, pos?: { top: number; left: number }) => {
     setEditingPropertyId(propId);
@@ -210,16 +200,6 @@ export function DatabaseContainer({ databaseId }: DatabaseContainerProps) {
           </div>,
           document.body
         )}
-
-      {/* Row page modal */}
-      {rowPageModalRowId && (
-        <RowPageModal
-          databaseId={database.id}
-          rowId={rowPageModalRowId}
-          database={database}
-          onClose={() => setRowPageModalRowId(null)}
-        />
-      )}
     </div>
   );
 }

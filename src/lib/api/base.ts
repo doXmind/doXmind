@@ -29,7 +29,7 @@ export function getApiBase(): string {
   return FALLBACK;
 }
 
-/** Convenience: prefix a path like "/api/files" with the backend base URL. */
+/** Convenience: prefix a sidecar HTTP path with the backend base URL. */
 export function apiUrl(path: string): string {
   const base = getApiBase();
   if (!path.startsWith("/")) path = "/" + path;

@@ -1,4 +1,4 @@
-export type WorkspaceMode = "db" | "disk";
+export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
 

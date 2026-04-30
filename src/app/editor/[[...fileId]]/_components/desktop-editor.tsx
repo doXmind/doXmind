@@ -1,7 +1,6 @@
 "use client";
 
 import { type CSSProperties, useEffect } from "react";
-import dynamic from "next/dynamic";
 import { PanelLeftOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
@@ -18,14 +17,6 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn } from "@/lib/utils";
 
-const VersionHistoryPanel = dynamic(
-  () =>
-    import("@/components/editor/version-history-panel").then((m) => ({
-      default: m.VersionHistoryPanel,
-    })),
-  { ssr: false }
-);
-
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
   const currentFile = useFileStore((s) =>
@@ -35,7 +26,6 @@ export function DesktopEditor() {
   const isCurrentFileLoaded = useFileStore((s) =>
     s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
   );
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
 
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
@@ -43,8 +33,6 @@ export function DesktopEditor() {
   const setFilesSidebarOpen = useLayoutStore((s) => s.setFilesSidebarOpen);
   const isFocusMode = useLayoutStore((s) => s.isFocusMode);
   const setFocusMode = useLayoutStore((s) => s.setFocusMode);
-  const isVersionHistoryOpen = useLayoutStore((s) => s.isVersionHistoryOpen);
-  const setVersionHistoryOpen = useLayoutStore((s) => s.setVersionHistoryOpen);
   const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const filesSidebarWidth = useLayoutStore((s) => s.filesSidebarWidth);
   const setFilesSidebarWidth = useLayoutStore((s) => s.setFilesSidebarWidth);
@@ -190,14 +178,6 @@ export function DesktopEditor() {
               </div>
             </main>
           </div>
-
-          {!isFocusMode && workspaceMode === "db" && currentFile && isVersionHistoryOpen && (
-            <VersionHistoryPanel
-              fileId={currentFile.id}
-              isOpen={isVersionHistoryOpen}
-              onClose={() => setVersionHistoryOpen(false)}
-            />
-          )}
         </div>
 
         {isFocusMode && (

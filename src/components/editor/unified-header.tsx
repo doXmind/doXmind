@@ -6,8 +6,6 @@ import {
   PanelLeft,
   ChevronLeft,
   ChevronRight,
-  Check,
-  Clock,
   Download,
   Keyboard,
   Palette,
@@ -22,7 +20,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 import { cn, formatShortcut } from "@/lib/utils";
@@ -31,22 +28,18 @@ import { toast } from "sonner";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { api } from "@/lib/api";
 import { useIsTauri } from "@/hooks/use-is-tauri";
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
-  const isVersionHistoryOpen = useLayoutStore((s) => s.isVersionHistoryOpen);
   const isSearchBarOpen = useLayoutStore((s) => s.isSearchBarOpen);
   const toggleFilesSidebar = useLayoutStore((s) => s.toggleFilesSidebar);
-  const toggleVersionHistory = useLayoutStore((s) => s.toggleVersionHistory);
   const toggleSearchBar = useLayoutStore((s) => s.toggleSearchBar);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
   const setPresentationMode = useLayoutStore((s) => s.setPresentationMode);
   const currentFileName = useFileStore((s) =>
     s.currentFileId ? s.files.find((file) => file.id === s.currentFileId)?.name : undefined
   );
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
   const tSettings = useTranslations("settings");
@@ -71,46 +64,22 @@ export function UnifiedHeader() {
     if (!currentFile) return;
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
-    if (workspaceMode === "disk") {
-      if (format !== "markdown") {
-        toast.error(t("diskExportOnlyMarkdown"));
-        return;
-      }
-      const markdown = currentFile.contentMarkdown ?? currentFile.content ?? "";
-      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-      const baseName = currentFile.name.replace(/\.md$/, "");
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${baseName}.md`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success(t("exportedAs", { format: formatLabel }));
+    if (format !== "markdown") {
+      toast.error(t("diskExportOnlyMarkdown"));
       return;
     }
-
-    toast.promise(
-      api.exportFile(currentFile.id, format).then((blob) => {
-        const baseName = currentFile.name.replace(/\.md$/, "");
-        const extension = format === "markdown" ? "md" : format;
-        const filename = `${baseName}.${extension}`;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }),
-      {
-        loading: t("exportingAs", { format: formatLabel }),
-        success: t("exportedAs", { format: formatLabel }),
-        error: t("failedToExportAs", { format: formatLabel }),
-      }
-    );
+    const markdown = currentFile.contentMarkdown ?? currentFile.content ?? "";
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const baseName = currentFile.name.replace(/\.md$/, "");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${baseName}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(t("exportedAs", { format: formatLabel }));
   };
 
   return (
@@ -288,17 +257,6 @@ export function UnifiedHeader() {
                   </DropdownMenuTrigger>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-56">
-                  {workspaceMode === "db" && (
-                    <>
-                      <DropdownMenuItem onClick={toggleVersionHistory}>
-                        <Clock className="mr-2 h-4 w-4" />
-                        {t("versionHistory")}
-                        {isVersionHistoryOpen && <Check className="ml-auto h-4 w-4" />}
-                      </DropdownMenuItem>
-
-                      <DropdownMenuSeparator />
-                    </>
-                  )}
                   <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
                     <Keyboard className="mr-2 h-4 w-4" />
                     {t("keyboardShortcuts")}
