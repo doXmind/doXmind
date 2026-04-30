@@ -48,6 +48,8 @@ export interface FolderImportOptions {
   entries: FolderImportEntry[];
   /** doxmind folder id to import into; null = root. */
   parentId: string | null;
+  /** Optional extension filter for callers that intentionally narrow import support. */
+  supportedExtensions?: RegExp;
   createFolder: (name: string, parentId: string | null) => Promise<string>;
   importFile: (file: File, parentId: string | null) => Promise<string>;
   onProgress: (p: FolderImportProgress) => void;
@@ -143,12 +145,13 @@ function readBatch(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]
 
 export async function importLocalFolder(opts: FolderImportOptions): Promise<FolderImportProgress> {
   const { entries, parentId, createFolder, importFile, onProgress, signal } = opts;
+  const supportedExtensions = opts.supportedExtensions ?? SUPPORTED_EXT;
 
   // Partition entries into supported (will upload) and skipped.
   const supported: FolderImportEntry[] = [];
   let skipped = 0;
   for (const e of entries) {
-    if (SUPPORTED_EXT.test(e.file.name)) supported.push(e);
+    if (supportedExtensions.test(e.file.name)) supported.push(e);
     else skipped++;
   }
 

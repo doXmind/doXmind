@@ -47,6 +47,7 @@ interface EditorProps {
 export function Editor({ file: initialFile }: EditorProps) {
   // Subscribe to specific file via selector — avoids re-render when OTHER files change
   const updateFile = useFileStore((s) => s.updateFile);
+  const workspaceMode = useFileStore((s) => s.workspaceMode);
   const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
   const file = storeFile || initialFile;
 
@@ -181,18 +182,46 @@ export function Editor({ file: initialFile }: EditorProps) {
   // adapter. Browser shutdown can still interrupt async work, but this keeps
   // the save path consistent for DB and disk workspaces.
   useEffect(() => {
-    const handleBeforeUnload = () => {
+    const saveCurrentNow = async () => {
       if (!editor) return;
       const content = editor.getHTML();
       if (content === lastContentRef.current) return;
       const contentMarkdown = editor.getMarkdown();
       debouncedSave.flush();
       if (content !== lastContentRef.current) {
-        void updateFile(file.id, { content, contentMarkdown });
+        await updateFile(file.id, { content, contentMarkdown });
       }
     };
+
+    const handleBeforeUnload = () => {
+      void saveCurrentNow();
+    };
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handleBeforeUnload);
+
+    let unlistenClose: (() => void) | null = null;
+    let closingAfterFlush = false;
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        const appWindow = getCurrentWindow();
+        return appWindow.onCloseRequested(async (event) => {
+          if (closingAfterFlush) return;
+          event.preventDefault();
+          await saveCurrentNow();
+          closingAfterFlush = true;
+          await appWindow.close();
+        });
+      })
+      .then((unlisten) => {
+        unlistenClose = unlisten;
+      })
+      .catch(() => {});
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handleBeforeUnload);
+      unlistenClose?.();
+    };
   }, [debouncedSave, editor, file.id, updateFile]);
 
   // Block selection is desktop-only; mobile always uses direct editing (Notion-style)
@@ -265,19 +294,23 @@ export function Editor({ file: initialFile }: EditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on file.id change, not content
   }, [file.id, editor]);
 
-  // Sync editor when file content arrives late after navigation.
-  // The list endpoint returns content="" for optimization; real content loads
-  // asynchronously via loadFileContent. This effect catches that transition.
+  // Sync editor when file content arrives late after navigation, and when a
+  // disk workspace document is refreshed after an external markdown edit.
   useEffect(() => {
-    if (!editor || !file.content) return;
-    // Only sync if the editor is currently empty but the store has real content
+    if (!editor) return;
     const editorHTML = editor.getHTML();
     const isEmpty =
       editorHTML === "" ||
       editorHTML === "<p></p>" ||
       editorHTML === "<p><br></p>" ||
       editorHTML === '<p><br class="ProseMirror-trailingBreak"></p>';
-    if (!isEmpty) return;
+    const shouldApplyDiskRefresh =
+      workspaceMode === "disk" && file.content !== lastContentRef.current;
+    if (!isEmpty && !shouldApplyDiskRefresh) return;
+    if (editorHTML === file.content) {
+      lastContentRef.current = editorHTML;
+      return;
+    }
 
     isFileSwitchingRef.current = true;
     const timeoutId = setTimeout(() => {
@@ -299,7 +332,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       clearTimeout(timeoutId);
       isFileSwitchingRef.current = false;
     };
-  }, [file.content, editor]);
+  }, [file.content, editor, workspaceMode]);
 
   // Initialize hooks
   useBlockKeyboardShortcuts(!isMobile ? editor : null);
@@ -374,9 +407,9 @@ export function Editor({ file: initialFile }: EditorProps) {
               <div
                 className={cn(
                   "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
-                  editorWidth === "narrow" && "max-w-3xl",
-                  editorWidth === "normal" && "max-w-5xl",
-                  editorWidth === "wide" && "max-w-7xl",
+                  editorWidth === "narrow" && "max-w-2xl",
+                  editorWidth === "normal" && "max-w-3xl",
+                  editorWidth === "wide" && "max-w-5xl",
                   editorWidth === "full" && "max-w-none",
                   lineHeight === "compact" && "editor-leading-compact",
                   lineHeight === "relaxed" && "editor-leading-relaxed"

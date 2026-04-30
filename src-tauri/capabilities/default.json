@@ -3,6 +3,12 @@
   "identifier": "default",
   "description": "Default capability set for the doXmind desktop window",
   "windows": ["main"],
+  "remote": {
+    "urls": [
+      "http://localhost:3000/*",
+      "http://127.0.0.1:3000/*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:default",
@@ -13,6 +19,7 @@
     "core:path:default",
     "shell:allow-open",
     "dialog:default",
-    "opener:default"
+    "opener:default",
+    "allow-workspace-commands"
   ]
 }

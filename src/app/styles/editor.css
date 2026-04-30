@@ -1,6 +1,8 @@
 /* Editor Styles */
 .ProseMirror {
   @apply min-h-[500px] px-4 pb-[50vh] pt-4 outline-none;
+  font-size: 1rem;
+  line-height: 1.55;
 }
 
 .ProseMirror > * + * {
@@ -30,7 +32,7 @@
   line-height: 1.4;
 }
 .editor-leading-relaxed .ProseMirror {
-  line-height: 1.9;
+  line-height: 1.75;
 }
 
 .ProseMirror p.is-empty::before {

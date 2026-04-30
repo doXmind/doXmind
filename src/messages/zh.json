@@ -478,6 +478,7 @@
     "exportingAs": "正在导出为 {format}...",
     "exportedAs": "已导出为 {format}",
     "failedToExport": "导出为 {format} 失败",
+    "diskExportOnlyMarkdown": "磁盘工作区目前仅支持导出 Markdown。",
     "deselectFile": "取消选择",
     "selectFile": "选择文件",
     "fileOptions": "文件选项",

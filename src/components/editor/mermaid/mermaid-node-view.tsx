@@ -88,9 +88,10 @@ export function MermaidNodeView({
       const svgEl = targetEl.querySelector("svg");
       if (svgEl) {
         svgEl.style.maxWidth = "100%";
-        svgEl.style.maxHeight = "inherit";
+        svgEl.style.maxHeight = "460px";
         svgEl.style.height = "auto";
         svgEl.style.width = "auto";
+        svgEl.style.margin = "0 auto";
       }
 
       setRenderError(null);
@@ -280,7 +281,7 @@ export function MermaidNodeView({
           ref={renderedRef}
           onDoubleClick={handleEnterEdit}
           className={cn(
-            "mermaid-rendered cursor-pointer overflow-x-auto rounded-lg border border-border/40 bg-card p-4 text-center transition-all duration-150",
+            "mermaid-rendered cursor-pointer overflow-auto rounded-lg border border-border/40 bg-card p-4 text-center transition-all duration-150",
             "hover:border-border hover:bg-accent/20",
             renderError && "border-destructive/50"
           )}

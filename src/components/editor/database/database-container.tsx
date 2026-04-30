@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { useDatabaseStore } from "@/stores/database-store";
+import { useFileStore } from "@/stores/file-store";
 import type { DatabaseData } from "@/extensions/database/database-types";
 import { ViewTabs } from "./view-tabs";
 import { DatabaseToolbar } from "./database-toolbar";
@@ -20,6 +21,7 @@ interface DatabaseContainerProps {
 
 export function DatabaseContainer({ databaseId }: DatabaseContainerProps) {
   const t = useTranslations("database");
+  const workspaceMode = useFileStore((s) => s.workspaceMode);
 
   // Manual subscription bypasses useSyncExternalStore which doesn't reliably
   // trigger re-renders inside TipTap's memo-wrapped portals in React 19.
@@ -83,9 +85,13 @@ export function DatabaseContainer({ databaseId }: DatabaseContainerProps) {
     }
   }, [titleDraft, databaseId, updateDatabase, t]);
 
-  const handleOpenRowPage = useCallback((rowId: string) => {
-    setRowPageModalRowId(rowId);
-  }, []);
+  const handleOpenRowPage = useCallback(
+    (rowId: string) => {
+      if (workspaceMode === "disk") return;
+      setRowPageModalRowId(rowId);
+    },
+    [workspaceMode]
+  );
 
   const handleEditProperty = useCallback((propId: string, pos?: { top: number; left: number }) => {
     setEditingPropertyId(propId);

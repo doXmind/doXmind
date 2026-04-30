@@ -191,6 +191,11 @@ declare module "./client" {
       created_at: string;
       updated_at: string;
     }>;
+    convertFile(file: File): Promise<{
+      name: string;
+      content: string;
+      content_markdown: string;
+    }>;
   }
 }
 
@@ -592,5 +597,33 @@ ApiClient.prototype.importFile = async function (
     cover_position: number;
     created_at: string;
     updated_at: string;
+  }>;
+};
+
+/**
+ * Convert a local file to Markdown/HTML without adding it to the SQLite library.
+ * Disk workspaces use this to keep the real .md file as the document source.
+ */
+ApiClient.prototype.convertFile = async function (this: ApiClient, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const url = `${this.resolveBaseUrl()}/api/import/convert`;
+  const response = await fetch(url, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    const message =
+      error.detail || error.error?.message || `Conversion failed (HTTP ${response.status})`;
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<{
+    name: string;
+    content: string;
+    content_markdown: string;
   }>;
 };

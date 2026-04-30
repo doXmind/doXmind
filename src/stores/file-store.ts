@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
+import { syncDatabasesForDocument } from "@/stores/database-store";
 import type { FileItem } from "@/types";
 import {
   createStorageAdapter,
@@ -283,6 +284,9 @@ export const useFileStore = create<FileState>()(
           const file = get().files.find((f) => f.id === fileId);
           if (!file) return;
           const fullFile = await getAdapter(get()).read(handleForFile(file));
+          if (get().workspaceMode === "disk") {
+            syncDatabasesForDocument(fullFile.extras, fullFile.html, fullFile.markdown);
+          }
           set((state) => {
             // Only update if the file exists in the files array.
             // If loadFiles() hasn't completed yet, files may be empty — in that case
@@ -384,22 +388,29 @@ export const useFileStore = create<FileState>()(
         // longer for very large files.
         try {
           if (get().workspaceMode === "disk") {
-            if (!/\.(md|markdown)$/i.test(file.name)) {
-              throw new Error("Disk workspaces currently import Markdown files only");
-            }
-            const markdown = await file.text();
-            const htmlContent = markdownToHtml(markdown);
+            const imported = /\.(md|markdown)$/i.test(file.name)
+              ? {
+                  name: file.name,
+                  markdown: await file.text(),
+                  html: "",
+                }
+              : await api.convertFile(file).then((converted) => ({
+                  name: converted.name,
+                  markdown: converted.content_markdown,
+                  html: converted.content,
+                }));
+            const htmlContent = imported.html || markdownToHtml(imported.markdown);
             const entry = await getAdapter(get()).create({
-              name: file.name,
+              name: imported.name,
               kind: "document",
               parent: parentHandleForId(get().files, parentId),
-              content: { html: htmlContent, markdown },
+              content: { html: htmlContent, markdown: imported.markdown },
             });
             const newFile = {
               ...fileFromEntry(entry, htmlContent),
-              contentMarkdown: markdown,
-              wordCount: markdown.split(/\s+/).filter(Boolean).length,
-              preview: markdown
+              contentMarkdown: imported.markdown,
+              wordCount: imported.markdown.split(/\s+/).filter(Boolean).length,
+              preview: imported.markdown
                 .replace(/[#*_`>\-[\]()]/g, "")
                 .trim()
                 .slice(0, 200),

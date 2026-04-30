@@ -478,6 +478,7 @@
     "exportingAs": "Exporting as {format}...",
     "exportedAs": "Exported as {format}",
     "failedToExport": "Failed to export as {format}",
+    "diskExportOnlyMarkdown": "Disk workspaces currently export Markdown only.",
     "deselectFile": "Deselect file",
     "selectFile": "Select file",
     "fileOptions": "File options",

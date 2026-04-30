@@ -137,13 +137,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  max-height: 480px;
+  min-height: 4rem;
+  overflow: auto;
 }
 
 /* Ensure mermaid SVGs are responsive */
 .ProseMirror .mermaid-chart-wrapper .mermaid-rendered svg {
   max-width: 100%;
+  max-height: 460px;
   height: auto;
   width: auto;
+  margin: 0 auto;
 }
 
 /*

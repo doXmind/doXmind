@@ -1,0 +1,22 @@
+"$schema" = "schemas/schema.json"
+
+[[permission]]
+identifier = "allow-workspace-commands"
+description = "Allows the main desktop window to manage local markdown workspace files and sidecars."
+commands.allow = [
+  "doc_read",
+  "doc_write",
+  "doc_write_workspace",
+  "workspace_scan",
+  "workspace_index_rebuild",
+  "workspace_index_read",
+  "workspace_markdown_search",
+  "doc_create",
+  "doc_rename",
+  "doc_move",
+  "doc_delete",
+  "workspace_create_folder",
+  "workspace_rename_folder",
+  "workspace_delete_folder",
+  "workspace_import_asset",
+]

@@ -323,6 +323,48 @@ class TestImportEndpoint:
         assert response.status_code in [200, 500]
 
 
+class TestConvertEndpoint:
+    """Tests for converting imports without writing to the SQLite library."""
+
+    @pytest.fixture
+    def app(self):
+        """Create FastAPI app with import router."""
+        return _create_test_app()
+
+    @pytest.fixture
+    def client(self, app) -> Generator[TestClient, None, None]:
+        """Create test client."""
+        with TestClient(app) as test_client:
+            yield test_client
+
+    def test_converts_markdown_without_creating_file(self, client):
+        """Should return markdown/html payload without touching FileModel."""
+        file_content = b"# Disk Import\n\nPortable content."
+
+        with patch("api.import_file.FileModel") as mock_file_model:
+            response = client.post(
+                "/api/import/convert",
+                files={"file": ("source.md", io.BytesIO(file_content), "text/markdown")},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["name"] == "source.md"
+        assert body["content_markdown"] == "# Disk Import\n\nPortable content."
+        assert "<h1>" in body["content"]
+        mock_file_model.assert_not_called()
+
+    def test_convert_rejects_unsupported_extension(self, client):
+        """Should apply the same supported-extension guard as full import."""
+        response = client.post(
+            "/api/import/convert",
+            files={"file": ("source.txt", io.BytesIO(b"text"), "text/plain")},
+        )
+
+        assert response.status_code == 415
+        assert response.json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
+
+
 # Integration Tests
 # ============================================================================
 

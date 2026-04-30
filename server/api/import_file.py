@@ -57,6 +57,33 @@ def strip_code_fences(md_content: str) -> str:
     return md_content
 
 
+async def upload_to_markdown(file: UploadFile) -> tuple[str, str, str]:
+    """Read and convert an upload to (name, markdown, html) without storing it."""
+    ext = get_file_extension(file.filename or "")
+    if ext not in ALLOWED_EXTENSIONS:
+        raise UnsupportedFileTypeError(file_type=ext, allowed_types=list(ALLOWED_EXTENSIONS))
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
+
+    try:
+        if ext in {".md", ".markdown"}:
+            md_content = content.decode("utf-8")
+        else:
+            md_content = await convert_with_markitdown(content, ext)
+    except AppException:
+        raise
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}")
+        raise InternalError(message=f"Failed to convert file: {str(e)}")
+
+    md_content = strip_code_fences(md_content)
+    html_content = markdown_to_html(md_content)
+    base_name = os.path.splitext(file.filename or "Imported")[0]
+    return f"{base_name}.md", md_content, html_content
+
+
 async def convert_with_markitdown(content: bytes, ext: str) -> str:
     """Convert supported office/PDF formats locally with MarkItDown."""
     import asyncio
@@ -72,6 +99,17 @@ async def convert_with_markitdown(content: bytes, ext: str) -> str:
             return result.text_content or ""
 
     return await asyncio.to_thread(_convert_sync)
+
+
+@router.post("/convert")
+async def convert_file(file: UploadFile = File(...)):
+    """Convert an upload to markdown/html without writing to the SQLite library."""
+    name, md_content, html_content = await upload_to_markdown(file)
+    return {
+        "name": name,
+        "content": html_content,
+        "content_markdown": md_content,
+    }
 
 
 @router.post("/")
@@ -105,41 +143,7 @@ async def import_file(
             raise BadRequestError(
                 message="Cannot import into nested folders. Only single-level folders are supported."
             )
-    # Validate file extension
-    ext = get_file_extension(file.filename or "")
-    if ext not in ALLOWED_EXTENSIONS:
-        raise UnsupportedFileTypeError(file_type=ext, allowed_types=list(ALLOWED_EXTENSIONS))
-
-    # Read file content
-    content = await file.read()
-
-    # Cap body size — even though the server binds to 127.0.0.1, browser
-    # tabs on allowed origins can still POST here, and an unbounded
-    # await file.read() is a memory-DoS primitive.
-    if len(content) > MAX_FILE_SIZE:
-        raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
-
-    # Convert to markdown
-    try:
-        if ext in {".md", ".markdown"}:
-            # Already markdown, just decode
-            md_content = content.decode("utf-8")
-        else:
-            md_content = await convert_with_markitdown(content, ext)
-    except AppException:
-        raise
-    except Exception as e:
-        logger.error(f"Conversion failed: {e}")
-        raise InternalError(message=f"Failed to convert file: {str(e)}")
-
-    md_content = strip_code_fences(md_content)
-
-    # Convert markdown to HTML for TipTap editor (basic backend conversion)
-    html_content = markdown_to_html(md_content)
-
-    # Generate file name (remove extension, add .md)
-    base_name = os.path.splitext(file.filename or "Imported")[0]
-    new_name = f"{base_name}.md"
+    new_name, md_content, html_content = await upload_to_markdown(file)
 
     # Create new file in database
     try:

@@ -31,6 +31,7 @@ export function DesktopEditor() {
   const files = useFileStore((s) => s.files);
   const isSynced = useFileStore((s) => s.isSynced);
   const loadedContentIds = useFileStore((s) => s.loadedContentIds);
+  const workspaceMode = useFileStore((s) => s.workspaceMode);
 
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
@@ -196,7 +197,7 @@ export function DesktopEditor() {
             </main>
           </div>
 
-          {!isFocusMode && currentFile && isVersionHistoryOpen && (
+          {!isFocusMode && workspaceMode === "db" && currentFile && isVersionHistoryOpen && (
             <VersionHistoryPanel
               fileId={currentFile.id}
               isOpen={isVersionHistoryOpen}

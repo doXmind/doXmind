@@ -196,16 +196,6 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
 
     let (mut meta, body) = parse_frontmatter(&raw)?;
 
-    if body.trim().is_empty() {
-        return Ok(ReadResult {
-            html: String::new(),
-            markdown: String::new(),
-            meta,
-            extras: None,
-            source: Source::Empty,
-        });
-    }
-
     let current_hash = hash_markdown(&raw);
     let sidecar_path = sidecar_path_for(md_path);
 
@@ -225,6 +215,16 @@ pub async fn read_doc(md_path: impl AsRef<Path>) -> Result<ReadResult> {
             });
         }
         // Stale sidecar: ignore and fall through to markdown path.
+    }
+
+    if body.trim().is_empty() {
+        return Ok(ReadResult {
+            html: String::new(),
+            markdown: String::new(),
+            meta,
+            extras: None,
+            source: Source::Empty,
+        });
     }
 
     let html = markdown_to_html(&body);
@@ -527,6 +527,31 @@ mod tests {
         let p = write_md(dir.path(), "fmonly.md", "---\nid: x\n---\n\n");
         let r = read_doc(&p).await.unwrap();
         assert_eq!(r.source, Source::Empty);
+    }
+
+    #[tokio::test]
+    async fn fresh_sidecar_wins_even_when_markdown_body_is_empty() {
+        let dir = td();
+        let p = dir.path().join("rich-only.md");
+        write_doc(
+            &p,
+            &DocPayload {
+                html: "<div data-type=\"database-block\" data-database-id=\"d1\"></div>".into(),
+                markdown: String::new(),
+                meta: DocMeta::new("doc-1"),
+                extras: Some(serde_json::json!({"databases": {"d1": {"rows": []}}})),
+            },
+        )
+        .await
+        .unwrap();
+
+        let r = read_doc(&p).await.unwrap();
+        assert_eq!(r.source, Source::Sidecar);
+        assert!(r.html.contains("database-block"));
+        assert_eq!(
+            r.extras.unwrap()["databases"]["d1"]["rows"],
+            serde_json::json!([])
+        );
     }
 
     #[tokio::test]
