@@ -10,15 +10,19 @@ import { useFileStore } from "@/stores/file-store";
  * Uses a `lastSyncedId` ref to track what fileId was last synced,
  * preventing infinite loops between URL→Store and Store→URL directions.
  *
- * All explicit user navigation (sidebar click, file creation, home page click)
- * calls both setCurrentFile AND router.push directly. This hook only handles:
+ * Sidebar navigation may update only currentFileId so the editor can switch
+ * immediately; this hook keeps the URL aligned after the store update. It also handles:
  *   - Initial page load (deep link or localStorage restore)
  *   - Browser back/forward (popstate → fileIdFromUrl changes)
  *   - Store-driven changes (file deletion, loadFiles clearing invalid ID)
  */
 export function useFileUrlSync(fileIdFromUrl: string | null) {
   const router = useRouter();
-  const { currentFileId, setCurrentFile, files, isLoading, isSynced } = useFileStore();
+  const currentFileId = useFileStore((s) => s.currentFileId);
+  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
+  const isLoading = useFileStore((s) => s.isLoading);
+  const isSynced = useFileStore((s) => s.isSynced);
+  const fileIds = useFileStore((s) => s.files.map((f) => f.id).join(","));
 
   const hasInitialized = useRef(false);
   // Tracks the last fileId we synced to, preventing duplicate navigations
@@ -32,6 +36,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     if (isLoading || !isSynced) return;
 
     hasInitialized.current = true;
+    const files = useFileStore.getState().files;
 
     if (fileIdFromUrl) {
       // Deep link: /editor/abc123
@@ -75,6 +80,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     lastSyncedId.current = fileIdFromUrl;
 
     if (fileIdFromUrl) {
+      const files = useFileStore.getState().files;
       const exists = files.some((f) => f.id === fileIdFromUrl);
       if (exists) {
         setCurrentFile(fileIdFromUrl);
@@ -126,7 +132,6 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
   //
   // Only react to file list *membership* changes (files added/removed), not
   // content updates from loadFileContent which mutate the same array reference.
-  const fileIds = files.map((f) => f.id).join(",");
   useEffect(() => {
     if (!hasInitialized.current) return;
     if (!fileIdFromUrl) return;
@@ -134,6 +139,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
 
     // Use live store value to avoid stale closure issues
     const liveCurrentFileId = useFileStore.getState().currentFileId;
+    const files = useFileStore.getState().files;
     const exists = files.some((f) => f.id === fileIdFromUrl);
     if (exists) {
       // File now exists after loadFiles completed — sync store

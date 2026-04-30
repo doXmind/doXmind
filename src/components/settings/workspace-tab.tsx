@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { DatabaseBackup, FolderOpen, HardDrive, RotateCcw } from "lucide-react";
+import { DatabaseBackup, FolderOpen, HardDrive } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,6 @@ export function WorkspaceTab() {
   const workspaceRoot = useFileStore((state) => state.workspaceRoot);
   const recentWorkspaces = useFileStore((state) => state.recentWorkspaces);
   const openDiskWorkspace = useFileStore((state) => state.openDiskWorkspace);
-  const switchToDbWorkspace = useFileStore((state) => state.switchToDbWorkspace);
   const [isMigrating, setIsMigrating] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
 
@@ -83,12 +82,6 @@ export function WorkspaceTab() {
                 {workspaceMode === "disk" && workspaceRoot ? workspaceRoot : t("dbWorkspaceDesc")}
               </p>
             </div>
-            {workspaceMode === "disk" && (
-              <Button variant="outline" size="sm" onClick={switchToDbWorkspace}>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                {t("returnToDb")}
-              </Button>
-            )}
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">

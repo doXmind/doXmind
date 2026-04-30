@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditor, EditorContent } from "@tiptap/react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 
@@ -77,10 +77,8 @@ export function Editor({ file: initialFile }: EditorProps) {
   // again destroys/recreates React node views, triggering flushSync errors.
   const initialFileIdRef = useRef<string | null>(file.id);
 
-  // Debounced save function
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce returns a new function, deps are intentionally limited
-  const debouncedSave = useCallback(
-    debounce((content: string, contentMarkdown?: string) => {
+  const persistContent = useCallback(
+    async (content: string, contentMarkdown?: string) => {
       // Skip save if content hasn't changed
       if (content === lastContentRef.current) {
         setDirty(false);
@@ -88,24 +86,36 @@ export function Editor({ file: initialFile }: EditorProps) {
       }
 
       setSaving(true);
-      updateFile(file.id, { content, contentMarkdown });
-      setSaving(false);
-      setLastSavedAt(new Date().toISOString());
-      setDirty(false);
-      lastContentRef.current = content;
+      try {
+        await updateFile(file.id, { content, contentMarkdown });
+        setLastSavedAt(new Date().toISOString());
+        setDirty(false);
+        lastContentRef.current = content;
 
-      // Detect removed database blocks and cascade-delete them
-      const currentIds = extractDatabaseIds(contentMarkdown ?? content);
-      for (const id of prevDbIdsRef.current) {
-        if (!currentIds.has(id)) {
-          // deleteDatabase emits "database:deleted" event on success,
-          // which also cascade-deletes linked data files on the backend
-          useDatabaseStore.getState().deleteDatabase(id);
+        // Detect removed database blocks and cascade-delete them
+        const currentIds = extractDatabaseIds(contentMarkdown ?? content);
+        for (const id of prevDbIdsRef.current) {
+          if (!currentIds.has(id)) {
+            // deleteDatabase emits "database:deleted" event on success,
+            // which also cascade-deletes linked data files on the backend
+            void useDatabaseStore.getState().deleteDatabase(id);
+          }
         }
+        prevDbIdsRef.current = currentIds;
+      } finally {
+        setSaving(false);
       }
-      prevDbIdsRef.current = currentIds;
-    }, EDITOR_DEBOUNCE_DELAY),
+    },
     [file.id, updateFile, setSaving, setLastSavedAt, setDirty]
+  );
+
+  // Debounced save function
+  const debouncedSave = useMemo(
+    () =>
+      debounce((content: string, contentMarkdown?: string) => {
+        void persistContent(content, contentMarkdown);
+      }, EDITOR_DEBOUNCE_DELAY),
+    [persistContent]
   );
 
   const editor = useEditor({
@@ -187,10 +197,8 @@ export function Editor({ file: initialFile }: EditorProps) {
       const content = editor.getHTML();
       if (content === lastContentRef.current) return;
       const contentMarkdown = editor.getMarkdown();
-      debouncedSave.flush();
-      if (content !== lastContentRef.current) {
-        await updateFile(file.id, { content, contentMarkdown });
-      }
+      debouncedSave.cancel();
+      await persistContent(content, contentMarkdown);
     };
 
     const handleBeforeUnload = () => {
@@ -222,7 +230,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       window.removeEventListener("pagehide", handleBeforeUnload);
       unlistenClose?.();
     };
-  }, [debouncedSave, editor, file.id, updateFile]);
+  }, [debouncedSave, editor, persistContent]);
 
   // Block selection is desktop-only; mobile always uses direct editing (Notion-style)
   useEffect(() => {

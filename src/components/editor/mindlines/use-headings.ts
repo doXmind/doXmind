@@ -8,6 +8,17 @@ import { getScrollParent } from "./utils/heading-utils";
 /** Scroll-spy threshold: fraction of viewport height from top */
 const SCROLLSPY_THRESHOLD = 0.2;
 
+function headingsEqual(a: Heading[], b: Heading[]) {
+  if (a.length !== b.length) return false;
+  return a.every(
+    (heading, index) =>
+      heading.id === b[index]?.id &&
+      heading.level === b[index]?.level &&
+      heading.text === b[index]?.text &&
+      heading.pos === b[index]?.pos
+  );
+}
+
 /**
  * Hook to extract and track headings from a TipTap editor
  * Provides headings array, active heading ID (scroll-spy), and navigation function
@@ -32,7 +43,7 @@ export function useHeadings(editor: Editor | null) {
           });
         }
       });
-      setHeadings(found);
+      setHeadings((prev) => (headingsEqual(prev, found) ? prev : found));
     };
 
     updateHeadings();
@@ -73,7 +84,8 @@ export function useHeadings(editor: Editor | null) {
         }
       }
 
-      setActiveId(best?.id ?? headings[0]?.id ?? null);
+      const nextActiveId = best?.id ?? headings[0]?.id ?? null;
+      setActiveId((prev) => (prev === nextActiveId ? prev : nextActiveId));
     };
 
     const handleScroll = () => {

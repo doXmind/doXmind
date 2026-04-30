@@ -2,7 +2,7 @@ import { DbStorageAdapter, type DbStorageAdapterOptions } from "./db-storage-ada
 import { DiskStorageAdapter, type DiskStorageAdapterOptions } from "./disk-storage-adapter";
 import type { StorageAdapter, WorkspaceMode } from "./types";
 
-export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "db";
+export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "disk";
 
 export interface StorageAdapterSelectionOptions {
   mode?: WorkspaceMode | string | null;

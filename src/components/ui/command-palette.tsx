@@ -53,6 +53,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
+  if (!open) return null;
+
+  return <CommandPaletteContent onClose={onClose} />;
+}
+
+function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const [mounted, setMounted] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [selectedIndex, setSelectedIndex] = React.useState(0);
@@ -66,16 +72,18 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const router = useRouter();
-  const { files, createFile, setCurrentFile, workspaceMode, workspaceRoot } = useFileStore();
-  const {
-    toggleSidebar,
-    setKeyboardShortcutsOpen,
-    isSidebarOpen,
-    isHighContrast,
-    toggleHighContrast,
-    editorWidth,
-    cycleEditorWidth,
-  } = useLayoutStore();
+  const files = useFileStore((s) => s.files);
+  const createFile = useFileStore((s) => s.createFile);
+  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
+  const workspaceMode = useFileStore((s) => s.workspaceMode);
+  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
+  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
+  const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
+  const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
+  const isHighContrast = useLayoutStore((s) => s.isHighContrast);
+  const toggleHighContrast = useLayoutStore((s) => s.toggleHighContrast);
+  const editorWidth = useLayoutStore((s) => s.editorWidth);
+  const cycleEditorWidth = useLayoutStore((s) => s.cycleEditorWidth);
   const { currentTheme, toggleBaseMode } = useThemeManager();
   const { editor } = useEditorRefStore();
 
@@ -324,19 +332,17 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   // Focus input when opened, clear search state
   React.useEffect(() => {
-    if (open) {
-      setQuery("");
-      setSelectedIndex(0);
-      setFileSearchResults([]);
-      setSearchError(null);
-      // Only auto-focus on desktop to avoid keyboard popup on mobile
-      if (window.innerWidth >= 768) {
-        requestAnimationFrame(() => {
-          inputRef.current?.focus();
-        });
-      }
+    setQuery("");
+    setSelectedIndex(0);
+    setFileSearchResults([]);
+    setSearchError(null);
+    // Only auto-focus on desktop to avoid keyboard popup on mobile
+    if (window.innerWidth >= 768) {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
     }
-  }, [open]);
+  }, []);
 
   // Scroll selected item into view
   React.useEffect(() => {
@@ -390,7 +396,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     return key;
   };
 
-  if (!open || !mounted) return null;
+  if (!mounted) return null;
 
   let globalIndex = 0;
 

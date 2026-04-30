@@ -45,7 +45,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const router = useRouter();
   const t = useTranslations("sidebar");
   // Fine-grained selectors — each FileItem only re-renders when its relevant state changes
-  const currentFileId = useFileStore((s) => s.currentFileId);
+  const isActive = useFileStore((s) => s.currentFileId === file.id);
   const setCurrentFile = useFileStore((s) => s.setCurrentFile);
   const deleteFile = useFileStore((s) => s.deleteFile);
   const renameFile = useFileStore((s) => s.renameFile);
@@ -54,7 +54,8 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const workspaceMode = useFileStore((s) => s.workspaceMode);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
-  const selectedFileIds = useFileStore((s) => s.selectedFileIds);
+  const isSelected = useFileStore((s) => s.selectedFileIds.has(file.id));
+  const isSelectionMode = useFileStore((s) => s.selectedFileIds.size > 0);
   const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
   const selectFileRange = useFileStore((s) => s.selectFileRange);
   const clearSelection = useFileStore((s) => s.clearSelection);
@@ -66,10 +67,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   // Remove .md extension for editing
   const getNameWithoutExtension = (name: string) => name.replace(/\.md$/, "");
   const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
-
-  const isActive = currentFileId === file.id;
-  const isSelected = selectedFileIds.has(file.id);
-  const isSelectionMode = selectedFileIds.size > 0;
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -206,7 +203,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       // Only call setCurrentFile — useFileUrlSync's Store→URL effect handles
       // the URL update. Calling both setCurrentFile + router.push caused
       // duplicate navigations and page remounts.
-      if (selectedFileIds.size > 0) {
+      if (isSelectionMode) {
         clearSelection();
       }
       setCurrentFile(file.id);

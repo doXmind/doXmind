@@ -79,7 +79,6 @@ interface FileState {
   loadFiles: () => Promise<void>;
   loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
   openDiskWorkspace: (root: string) => Promise<void>;
-  switchToDbWorkspace: () => Promise<void>;
   createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
   importFile: (
     file: File,
@@ -158,6 +157,31 @@ function getAdapter(state: Pick<FileState, "workspaceMode" | "workspaceRoot">): 
   });
 }
 
+async function resolveDefaultDiskWorkspaceRoot(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<string>("workspace_default_root");
+  } catch {
+    return null;
+  }
+}
+
+function rememberWorkspace(root: string, state: Pick<FileState, "recentWorkspaces">): string[] {
+  return [root, ...state.recentWorkspaces.filter((item) => item !== root)].slice(0, 8);
+}
+
+function isEphemeralWorkspaceRoot(root: string | null | undefined): boolean {
+  if (!root) return false;
+  const normalized = root.replaceAll("\\", "/");
+  return (
+    normalized.startsWith("/tmp/") ||
+    normalized.startsWith("/private/tmp/") ||
+    normalized.includes("/var/folders/")
+  );
+}
+
 function handleForFile(file: FileItem): DocumentHandle {
   return (
     file.storageHandle ?? { mode: "db", id: file.id, kind: file.isFolder ? "folder" : "document" }
@@ -199,7 +223,7 @@ export const useFileStore = create<FileState>()(
       files: [],
       currentFileId: null,
       currentFolderId: null,
-      workspaceMode: "db",
+      workspaceMode: "disk",
       workspaceRoot: null,
       recentWorkspaces: [],
       isLoading: false,
@@ -215,7 +239,31 @@ export const useFileStore = create<FileState>()(
       loadFiles: async () => {
         set({ isLoading: true });
         try {
-          const adapter = getAdapter(get());
+          let adapterState = get();
+          if (
+            adapterState.workspaceMode !== "disk" ||
+            !adapterState.workspaceRoot ||
+            isEphemeralWorkspaceRoot(adapterState.workspaceRoot)
+          ) {
+            const defaultRoot = await resolveDefaultDiskWorkspaceRoot();
+            if (defaultRoot) {
+              set((state) => ({
+                workspaceMode: "disk",
+                workspaceRoot: defaultRoot,
+                recentWorkspaces: rememberWorkspace(defaultRoot, state),
+              }));
+              adapterState = get();
+            } else if (
+              adapterState.workspaceMode === "disk" &&
+              (!adapterState.workspaceRoot || isEphemeralWorkspaceRoot(adapterState.workspaceRoot))
+            ) {
+              // Browser-only development still needs a backend-backed fallback.
+              set({ workspaceMode: "db", workspaceRoot: null });
+              adapterState = get();
+            }
+          }
+
+          const adapter = getAdapter(adapterState);
           const entries = await adapter.list();
           const newFileIds = new Set(entries.map((f) => f.handle.id));
 
@@ -324,29 +372,13 @@ export const useFileStore = create<FileState>()(
         set((state) => ({
           workspaceMode: "disk",
           workspaceRoot: trimmedRoot,
-          recentWorkspaces: [
-            trimmedRoot,
-            ...state.recentWorkspaces.filter((item) => item !== trimmedRoot),
-          ].slice(0, 8),
+          recentWorkspaces: rememberWorkspace(trimmedRoot, state),
           files: [],
           currentFileId: null,
           currentFolderId: null,
           loadedContentIds: new Set(),
           isSynced: false,
         }));
-        await get().loadFiles();
-      },
-
-      switchToDbWorkspace: async () => {
-        set({
-          workspaceMode: "db",
-          workspaceRoot: null,
-          files: [],
-          currentFileId: null,
-          currentFolderId: null,
-          loadedContentIds: new Set(),
-          isSynced: false,
-        });
         await get().loadFiles();
       },
 
@@ -577,7 +609,7 @@ export const useFileStore = create<FileState>()(
         } catch (error) {
           log.error("Failed to update file", error);
           // Revert optimistic update on error
-          get().loadFiles();
+          await get().loadFiles();
         }
       },
 
@@ -618,11 +650,12 @@ export const useFileStore = create<FileState>()(
         } catch (error) {
           log.error("Failed to delete file(s)", error);
           // Revert on error
-          get().loadFiles();
+          await get().loadFiles();
         }
       },
 
       setCurrentFile: (id: string | null) => {
+        if (get().currentFileId === id) return;
         set({ currentFileId: id });
       },
 
@@ -820,7 +853,7 @@ export const useFileStore = create<FileState>()(
         } catch (error) {
           log.error("Failed to move file", error);
           // Revert optimistic update on error
-          get().loadFiles();
+          await get().loadFiles();
         }
       },
 
@@ -954,7 +987,7 @@ export const useFileStore = create<FileState>()(
         } catch (error) {
           log.error("Failed to bulk move files", error);
           // Revert optimistic update on error
-          get().loadFiles();
+          await get().loadFiles();
           throw error;
         }
       },
@@ -986,7 +1019,7 @@ export const useFileStore = create<FileState>()(
         } catch (error) {
           log.error("Failed to bulk delete files", error);
           // Revert on error
-          get().loadFiles();
+          await get().loadFiles();
           throw error;
         }
       },
@@ -1022,7 +1055,7 @@ export const useFileStore = create<FileState>()(
             trashFiles: state.trashFiles.filter((f) => f.id !== id),
           }));
           // Reload files to get the restored file
-          get().loadFiles();
+          await get().loadFiles();
         } catch (error) {
           log.error("Failed to restore file", error);
           throw error;

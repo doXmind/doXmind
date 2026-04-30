@@ -49,7 +49,9 @@ export function EditorClient() {
   const fileIdFromUrl = (params.fileId as string[] | undefined)?.[0] ?? null;
 
   const currentFileId = useFileStore((s) => s.currentFileId);
-  const files = useFileStore((s) => s.files);
+  const currentFileName = useFileStore((s) =>
+    s.currentFileId ? s.files.find((file) => file.id === s.currentFileId)?.name : undefined
+  );
   const loadFiles = useFileStore((s) => s.loadFiles);
   const isSynced = useFileStore((s) => s.isSynced);
   const loadFileContent = useFileStore((s) => s.loadFileContent);
@@ -65,7 +67,6 @@ export function EditorClient() {
   const setCommandPaletteOpen = useLayoutStore((s) => s.setCommandPaletteOpen);
 
   const isMobile = useIsMobile();
-  const currentFile = files.find((f) => f.id === currentFileId);
 
   // Load file list once on mount.
   useEffect(() => {
@@ -99,8 +100,8 @@ export function EditorClient() {
 
   // Sync browser tab title with current file
   useEffect(() => {
-    document.title = currentFile ? currentFile.name.replace(/\.md$/i, "") : "doXmind";
-  }, [currentFile]);
+    document.title = currentFileName ? currentFileName.replace(/\.md$/i, "") : "doXmind";
+  }, [currentFileName]);
 
   return (
     <>

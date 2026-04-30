@@ -12,13 +12,23 @@ import { useLayoutStore } from "@/stores/layout-store";
 const MAX_RECENT_FILES = 10;
 
 export function QuickSwitcher() {
+  const isQuickSwitcherOpen = useLayoutStore((s) => s.isQuickSwitcherOpen);
+
+  if (!isQuickSwitcherOpen) return null;
+
+  return <QuickSwitcherContent />;
+}
+
+function QuickSwitcherContent() {
   const [mounted, setMounted] = React.useState(false);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const listRef = React.useRef<HTMLDivElement>(null);
 
   const router = useRouter();
-  const { files, currentFileId, setCurrentFile } = useFileStore();
-  const { isQuickSwitcherOpen, setQuickSwitcherOpen } = useLayoutStore();
+  const files = useFileStore((s) => s.files);
+  const currentFileId = useFileStore((s) => s.currentFileId);
+  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
+  const setQuickSwitcherOpen = useLayoutStore((s) => s.setQuickSwitcherOpen);
   const t = useTranslations("quickSwitcher");
 
   // Get recent files sorted by updatedAt, excluding folders
@@ -38,10 +48,8 @@ export function QuickSwitcher() {
 
   // Start with second item selected (skip current file)
   React.useEffect(() => {
-    if (isQuickSwitcherOpen) {
-      setSelectedIndex(orderedFiles.length > 1 ? 1 : 0);
-    }
-  }, [isQuickSwitcherOpen, orderedFiles.length]);
+    setSelectedIndex(orderedFiles.length > 1 ? 1 : 0);
+  }, [orderedFiles.length]);
 
   // Mount state
   React.useEffect(() => {
@@ -60,8 +68,6 @@ export function QuickSwitcher() {
 
   // Handle keyboard events
   React.useEffect(() => {
-    if (!isQuickSwitcherOpen) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -108,7 +114,7 @@ export function QuickSwitcher() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isQuickSwitcherOpen, orderedFiles, selectedIndex, navigateToFile, setQuickSwitcherOpen]);
+  }, [orderedFiles, selectedIndex, navigateToFile, setQuickSwitcherOpen]);
 
   // Scroll selected into view
   React.useEffect(() => {
@@ -134,7 +140,7 @@ export function QuickSwitcher() {
     return date.toLocaleDateString();
   };
 
-  if (!isQuickSwitcherOpen || !mounted) return null;
+  if (!mounted) return null;
 
   return createPortal(
     <div

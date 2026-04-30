@@ -28,20 +28,13 @@ export function FilesSidebar() {
   const t = useTranslations("sidebar");
   const locale = useLocale();
   const router = useRouter();
-  const {
-    files,
-    createFile,
-    createFolder,
-    importFile,
-    getFolders,
-    isLoading,
-    isSynced,
-    workspaceMode,
-    workspaceRoot,
-    openDiskWorkspace,
-    switchToDbWorkspace,
-  } = useFileStore();
-  const { openCommandPalette } = useLayoutStore();
+  const createFile = useFileStore((s) => s.createFile);
+  const createFolder = useFileStore((s) => s.createFolder);
+  const importFile = useFileStore((s) => s.importFile);
+  const isLoading = useFileStore((s) => s.isLoading);
+  const isSynced = useFileStore((s) => s.isSynced);
+  const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
+  const openCommandPalette = useLayoutStore((s) => s.openCommandPalette);
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -58,7 +51,9 @@ export function FilesSidebar() {
   const isDesktopShell = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
 
   const handleCreateFile = async (parentId: string | null = null) => {
-    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === parentId);
+    const currentFiles = useFileStore
+      .getState()
+      .files.filter((f) => !f.isFolder && f.parentId === parentId);
 
     let maxNum = 0;
     currentFiles.forEach((file) => {
@@ -81,7 +76,9 @@ export function FilesSidebar() {
   };
 
   const handleTemplateSelect = async (template: FileTemplate) => {
-    const currentFiles = files.filter((f) => !f.isFolder && f.parentId === null);
+    const currentFiles = useFileStore
+      .getState()
+      .files.filter((f) => !f.isFolder && f.parentId === null);
     const localName = getLocalizedFileName(template.id, template.defaultFileName, locale);
 
     let counter = 0;
@@ -105,7 +102,7 @@ export function FilesSidebar() {
   };
 
   const handleCreateFolder = async () => {
-    const folders = getFolders(null);
+    const folders = useFileStore.getState().getFolders(null);
     const name = `New Folder ${folders.length + 1}`;
     try {
       await createFolder(name, null);
@@ -142,17 +139,6 @@ export function FilesSidebar() {
       toast.success(t("workspaceOpened"));
     } catch (error) {
       log.error("Failed to open workspace folder", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
-    }
-  };
-
-  const handleReturnToDbWorkspace = async () => {
-    try {
-      await switchToDbWorkspace();
-      toast.success(t("returnedToDbWorkspace"));
-    } catch (error) {
-      log.error("Failed to return to DB workspace", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     }
@@ -254,20 +240,12 @@ export function FilesSidebar() {
 
           {isDesktopShell && (
             <button
-              onClick={
-                workspaceMode === "disk" ? handleReturnToDbWorkspace : handleOpenWorkspaceFolder
-              }
+              onClick={handleOpenWorkspaceFolder}
               className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
-              title={
-                workspaceMode === "disk"
-                  ? (workspaceRoot ?? undefined)
-                  : t("openWorkspaceFolderHint")
-              }
+              title={t("openWorkspaceFolderHint")}
             >
               <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">
-                {workspaceMode === "disk" ? t("returnToDbWorkspace") : t("openWorkspaceFolder")}
-              </span>
+              <span className="truncate">{t("openWorkspaceFolder")}</span>
             </button>
           )}
         </div>

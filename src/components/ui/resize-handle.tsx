@@ -22,6 +22,8 @@ export function ResizeHandle({
 }: ResizeHandleProps) {
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
+  const frameRef = useRef<number | null>(null);
+  const pendingDeltaRef = useRef(0);
 
   // Keep refs to latest callbacks to avoid stale closures in document event listeners
   const onResizeRef = useRef(onResize);
@@ -43,11 +45,29 @@ export function ResizeHandle({
         const delta = moveEvent.clientX - startXRef.current;
         startXRef.current = moveEvent.clientX;
         const adjustedDelta = side === "right" ? -delta : delta;
-        onResizeRef.current(adjustedDelta);
+        pendingDeltaRef.current += adjustedDelta;
+
+        if (frameRef.current !== null) return;
+        frameRef.current = requestAnimationFrame(() => {
+          frameRef.current = null;
+          const nextDelta = pendingDeltaRef.current;
+          pendingDeltaRef.current = 0;
+          if (nextDelta !== 0) {
+            onResizeRef.current(nextDelta);
+          }
+        });
       };
 
       const handleMouseUp = () => {
         isDraggingRef.current = false;
+        if (frameRef.current !== null) {
+          cancelAnimationFrame(frameRef.current);
+          frameRef.current = null;
+        }
+        if (pendingDeltaRef.current !== 0) {
+          onResizeRef.current(pendingDeltaRef.current);
+          pendingDeltaRef.current = 0;
+        }
         document.removeEventListener("mousemove", handleMouseMove);
         document.removeEventListener("mouseup", handleMouseUp);
         document.body.style.cursor = "";

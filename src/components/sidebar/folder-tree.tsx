@@ -105,7 +105,9 @@ export function FolderTree({
 
   // Fine-grained selectors — actions are stable refs, state values subscribed individually
   const files = useFileStore((s) => s.files);
-  const currentFileId = useFileStore((s) => s.currentFileId);
+  const activeParentId = useFileStore(
+    (s) => s.files.find((file) => file.id === s.currentFileId)?.parentId ?? null
+  );
   const currentFolderId = useFileStore((s) => s.currentFolderId);
   const getFolders = useFileStore((s) => s.getFolders);
   const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
@@ -480,7 +482,7 @@ export function FolderTree({
   const folderRows = viewFolders.map((folder) => {
     const folderFiles = getFilesInFolder(folder.id);
     const isCollapsed = collapsedFolderIds.has(folder.id);
-    const isActiveFolder = files.find((file) => file.id === currentFileId)?.parentId === folder.id;
+    const isActiveFolder = activeParentId === folder.id;
 
     return (
       <div key={folder.id} className="space-y-0.5">

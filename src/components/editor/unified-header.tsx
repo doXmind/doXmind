@@ -35,26 +35,27 @@ import { api } from "@/lib/api";
 import { useIsTauri } from "@/hooks/use-is-tauri";
 
 export function UnifiedHeader() {
-  const {
-    isFilesSidebarOpen,
-    isVersionHistoryOpen,
-    isSearchBarOpen,
-    toggleFilesSidebar,
-    toggleVersionHistory,
-    toggleSearchBar,
-    setKeyboardShortcutsOpen,
-    setPresentationMode,
-  } = useLayoutStore();
-  const { currentFileId, files, workspaceMode } = useFileStore();
-  const { isDirty, isSaving } = useEditorStore();
+  const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
+  const isVersionHistoryOpen = useLayoutStore((s) => s.isVersionHistoryOpen);
+  const isSearchBarOpen = useLayoutStore((s) => s.isSearchBarOpen);
+  const toggleFilesSidebar = useLayoutStore((s) => s.toggleFilesSidebar);
+  const toggleVersionHistory = useLayoutStore((s) => s.toggleVersionHistory);
+  const toggleSearchBar = useLayoutStore((s) => s.toggleSearchBar);
+  const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
+  const setPresentationMode = useLayoutStore((s) => s.setPresentationMode);
+  const currentFileName = useFileStore((s) =>
+    s.currentFileId ? s.files.find((file) => file.id === s.currentFileId)?.name : undefined
+  );
+  const workspaceMode = useFileStore((s) => s.workspaceMode);
+  const isDirty = useEditorStore((s) => s.isDirty);
+  const isSaving = useEditorStore((s) => s.isSaving);
   const tSettings = useTranslations("settings");
   const t = useTranslations("editor");
 
-  const currentFile = files.find((f) => f.id === currentFileId);
   // Only show a title when an actual document is loaded — on the
   // welcome screen there's no file to title, so showing "Untitled"
   // would just be noise.
-  const title = currentFile ? currentFile.name.replace(/\.md$/i, "") : "";
+  const title = currentFileName ? currentFileName.replace(/\.md$/i, "") : "";
   const saveLabel = isSaving ? t("saving") : isDirty ? t("unsavedChanges") : t("saved");
 
   // In the Tauri macOS build the native title bar is hidden via
@@ -65,6 +66,8 @@ export function UnifiedHeader() {
   const isMacTauri = isTauri && platform === "macos";
 
   const handleExport = (format: "markdown" | "pdf" | "docx") => {
+    const { currentFileId, files } = useFileStore.getState();
+    const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
@@ -180,7 +183,7 @@ export function UnifiedHeader() {
         </div>
 
         <div data-tauri-drag-region className="flex items-center justify-end gap-1.5">
-          {currentFile && (
+          {currentFileName && (
             <>
               <Tooltip content={t("present")} side="bottom">
                 <Button

@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { PanelLeftOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
@@ -28,9 +28,13 @@ const VersionHistoryPanel = dynamic(
 
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
-  const files = useFileStore((s) => s.files);
+  const currentFile = useFileStore((s) =>
+    s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
+  );
   const isSynced = useFileStore((s) => s.isSynced);
-  const loadedContentIds = useFileStore((s) => s.loadedContentIds);
+  const isCurrentFileLoaded = useFileStore((s) =>
+    s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
+  );
   const workspaceMode = useFileStore((s) => s.workspaceMode);
 
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
@@ -49,18 +53,12 @@ export function DesktopEditor() {
   const editor = useEditorRefStore((s) => s.editor);
   const { headings, activeId, navigateTo } = useHeadings(editor);
   const hasHeadings = headings.length > 0;
-  const currentFile = files.find((f) => f.id === currentFileId);
-  const [isResizing, setIsResizing] = useState(false);
 
-  // Sidebar collapse/expand used to animate `width` on a flex child, which
-  // forces the flex container to re-distribute on every frame and reflows
-  // the editor (TipTap is heavy). Animating `grid-template-columns` on a
-  // grid container is the path WebKit/Blink optimize for column resizing —
-  // the editor still reflows, but only as part of the column update, not
-  // through a flex-distribution chain. Duration lowered from 300→180ms so
-  // the unavoidable layout work has fewer frames to spread over.
-  const easing = "cubic-bezier(0.25, 0.1, 0.25, 1)";
-  const filesGridTransition = !isResizing ? `grid-template-columns 180ms ${easing}` : "none";
+  // Do not animate grid-template-columns here. Even optimized grid column
+  // animation forces the heavy TipTap editor to reflow on every frame in the
+  // macOS WebView. The instant column snap is less decorative, but keeps
+  // sidebar toggles responsive.
+  const filesGridTransition = "none";
   const filesSidebarColPx = !isFocusMode && isFilesSidebarOpen ? filesSidebarWidth : 0;
   // Handle column stays 0 — ResizeHandle is `w-0` and uses absolutely
   // positioned children for both the hit area and the visible separator.
@@ -69,11 +67,9 @@ export function DesktopEditor() {
   // between sidebar and editor.
   const filesHandleColPx = 0;
   const outlineColPx = !isFocusMode && hasHeadings ? (isSidebarOpen ? sidebarWidth : 44) : 0;
-  // Shorter than the files sidebar transition — the outline lives inside
-  // <main>, so its column animation reflows the editor on every frame.
-  // 120ms keeps the unavoidable reflow window small enough to not register
-  // as jank, while staying smooth enough to read as an animation.
-  const outlineGridTransition = !isResizing ? `grid-template-columns 120ms ${easing}` : "none";
+  // Same reason as the files sidebar: the outline shares a grid with the
+  // editor surface, so animated width changes are expensive in Tauri/WebKit.
+  const outlineGridTransition = "none";
 
   const shellStyle = {
     "--files-sidebar-width": !isFocusMode && isFilesSidebarOpen ? `${filesSidebarWidth}px` : "0px",
@@ -111,8 +107,6 @@ export function DesktopEditor() {
                 <ResizeHandle
                   side="left"
                   onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}
-                  onResizeStart={() => setIsResizing(true)}
-                  onResizeEnd={() => setIsResizing(false)}
                   onDoubleClick={() => resetPanelWidths()}
                 />
               )}
@@ -182,7 +176,7 @@ export function DesktopEditor() {
               <div className="relative flex min-w-0 flex-col overflow-hidden">
                 <ErrorBoundary>
                   {currentFile ? (
-                    loadedContentIds.has(currentFile.id) ? (
+                    isCurrentFileLoaded ? (
                       <Editor file={currentFile} />
                     ) : (
                       <LoadingPlaceholder />

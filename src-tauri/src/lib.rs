@@ -255,6 +255,19 @@ fn get_backend_url(state: tauri::State<'_, BackendUrl>) -> String {
 }
 
 #[tauri::command]
+fn workspace_default_root() -> Result<String, String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set; cannot create default workspace".to_string())?;
+    let root = home.join("Documents").join("doXmind");
+    fs::create_dir_all(&root)
+        .map_err(|err| format!("failed to create default workspace: {err}"))?;
+    fs::canonicalize(&root)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|err| format!("failed to resolve default workspace: {err}"))
+}
+
+#[tauri::command]
 async fn doc_read(path: String) -> Result<ReadResultDto, String> {
     doxmind_sidecar::read_doc(PathBuf::from(path))
         .await
@@ -1101,6 +1114,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .manage(backend_state)
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
+            workspace_default_root,
             doc_read,
             doc_write,
             doc_write_workspace,
