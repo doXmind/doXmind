@@ -90,7 +90,7 @@ describe("useFileStore disk workspace", () => {
     expect(state.isSynced).toBe(true);
     expect(state.files.map((file) => [file.id, file.name, file.isFolder])).toEqual([
       ["folder:Folder", "Folder", true],
-      ["doc-1", "Doc.md", false],
+      ["doc-1", "Doc", false],
     ]);
   });
 

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from api import images, import_file
+from api import images, import_file, workspace
 from config import CORS_ORIGINS, get_cors_headers, get_settings
 from db.database import engine as db_engine
 from db.database import init_db
@@ -96,6 +96,7 @@ app.add_middleware(RequestIDMiddleware)
 # Routers: document CRUD lives in the Tauri filesystem commands.
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
+app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 
 
 @app.get("/")

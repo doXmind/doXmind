@@ -61,7 +61,7 @@ describe("storage search helpers", () => {
       content: "Alpha roadmap details",
       metadata: {
         fileId: "doc-1",
-        name: "Project.md",
+        name: "Project",
         path: "Project.md",
         chunkIndex: 1,
       },

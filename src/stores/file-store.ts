@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
+import { apiUrl } from "@/lib/api/base";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
@@ -164,7 +165,17 @@ async function resolveDefaultDiskWorkspaceRoot(): Promise<string | null> {
     const { invoke } = await import("@tauri-apps/api/core");
     return await invoke<string>("workspace_default_root");
   } catch {
-    return null;
+    try {
+      const response = await fetch(apiUrl("/api/workspace/invoke"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: "workspace_default_root", payload: {} }),
+      });
+      if (!response.ok) return null;
+      return (await response.json()) as string;
+    } catch {
+      return null;
+    }
   }
 }
 

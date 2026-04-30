@@ -12,6 +12,7 @@ import type {
   WorkspaceIndexQuery,
 } from "./types";
 import { entriesToWorkspaceIndex } from "./search";
+import { apiUrl } from "@/lib/api/base";
 
 type TauriInvoker = <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
 
@@ -149,6 +150,18 @@ export class DiskStorageAdapter implements StorageAdapter {
       currentPath,
       handle.kind === "folder" ? name : ensureMarkdownExtension(name)
     );
+    if (newPath === currentPath) {
+      return handle.kind === "folder"
+        ? folderEntryFromPath(currentPath)
+        : entryFromDocument({
+            id: handle.id,
+            idSource: handle.id.startsWith("path:") ? "path" : "frontmatter",
+            path: currentPath,
+            name: basename(currentPath),
+            title: stripMarkdownExtension(basename(currentPath)),
+            hasSidecar: false,
+          });
+    }
     if (handle.kind === "folder") {
       await this.invoke<void>("workspace_rename_folder", {
         root: this.requireRoot(),
@@ -169,6 +182,18 @@ export class DiskStorageAdapter implements StorageAdapter {
   async move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry> {
     const currentPath = requireHandlePath(handle);
     const newPath = childPath(parent, basename(currentPath));
+    if (newPath === currentPath) {
+      return handle.kind === "folder"
+        ? folderEntryFromPath(currentPath)
+        : entryFromDocument({
+            id: handle.id,
+            idSource: handle.id.startsWith("path:") ? "path" : "frontmatter",
+            path: currentPath,
+            name: basename(currentPath),
+            title: stripMarkdownExtension(basename(currentPath)),
+            hasSidecar: false,
+          });
+    }
     if (handle.kind === "folder") {
       await this.invoke<void>("workspace_rename_folder", {
         root: this.requireRoot(),
@@ -275,8 +300,38 @@ export class DiskStorageAdapter implements StorageAdapter {
 }
 
 async function invokeTauri<T>(command: string, payload: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<T>(command, payload);
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<T>(command, payload);
+  } catch (error) {
+    return invokeWorkspaceHttp<T>(command, payload, error);
+  }
+}
+
+async function invokeWorkspaceHttp<T>(
+  command: string,
+  payload: Record<string, unknown>,
+  tauriError: unknown
+): Promise<T> {
+  const response = await fetch(apiUrl("/api/workspace/invoke"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command, payload }),
+  });
+
+  if (!response.ok) {
+    let message = `Workspace command failed: ${command}`;
+    try {
+      const body = await response.json();
+      message = body?.detail || body?.error?.message || message;
+    } catch {
+      // Keep the generic message when the local sidecar cannot return JSON.
+    }
+    const fallback = tauriError instanceof Error ? `; Tauri: ${tauriError.message}` : "";
+    throw new Error(`${message}${fallback}`);
+  }
+
+  return response.json() as Promise<T>;
 }
 
 function entriesFromDocuments(documents: WorkspaceDocumentDto[]): WorkspaceEntry[] {
@@ -314,7 +369,7 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
       relPath: doc.path,
     },
     kind: "document",
-    name: doc.name,
+    name: stripMarkdownExtension(doc.name),
     parent: parentPath ? folderHandle(parentPath) : null,
     position: 0,
     createdAt: now,
