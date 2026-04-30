@@ -245,9 +245,9 @@ export const MOBILE_V2 = {
     SINGLE_ACTION_WIDTH: 80,
     /** Double action buttons width (star + delete) */
     DOUBLE_ACTION_WIDTH: 160,
-    /** Triple action buttons width (star + share + delete, 3 × 64px) */
+    /** Triple action buttons width */
     TRIPLE_ACTION_WIDTH: 192,
-    /** Quad action buttons width (star + move + share + delete, 4 × 64px) */
+    /** Quad action buttons width */
     QUAD_ACTION_WIDTH: 256,
   },
 } as const;

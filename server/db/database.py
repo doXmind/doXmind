@@ -34,15 +34,10 @@ class Base(DeclarativeBase):
 # =============================================================================
 
 
-_LOCAL_USER = "local"
-
-
 class File(Base):
     __tablename__ = "files"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    # Single-user local edition: kept for query compatibility, always "local".
-    user_id = Column(String(36), nullable=True, default=_LOCAL_USER, index=True)
     name = Column(String(255), nullable=False)
     content = Column(Text, default="")
     content_hash = Column(String(64), nullable=True)
@@ -94,7 +89,6 @@ class DatabaseBlock(Base):
     __tablename__ = "database_blocks"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), nullable=True, default=_LOCAL_USER, index=True)
     title = Column(String(255), nullable=False, default="Untitled Database")
     icon = Column(String(10), nullable=True)
     properties_schema = Column(JSON, nullable=False, default=list)

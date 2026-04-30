@@ -80,22 +80,6 @@ class BadRequestError(AppException):
     message = "Bad request"
 
 
-class UnauthorizedError(AppException):
-    """Authentication required (401)."""
-
-    status_code = 401
-    error_code = "UNAUTHORIZED"
-    message = "Authentication required"
-
-
-class ForbiddenError(AppException):
-    """Access forbidden (403)."""
-
-    status_code = 403
-    error_code = "FORBIDDEN"
-    message = "Access forbidden"
-
-
 class ConflictError(AppException):
     """Resource conflict (409)."""
 
@@ -200,4 +184,3 @@ class DocumentNotFoundError(NotFoundError):
 
     def __init__(self, file_id: str = None, **kwargs):
         super().__init__(resource="File", resource_id=file_id, **kwargs)
-

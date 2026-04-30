@@ -89,21 +89,6 @@ export const nativeBridge = {
   },
 
   /**
-   * Auth - notify RN about auth state changes
-   */
-  auth: {
-    onLogin: (token: string, user: unknown) => {
-      postToNative("AUTH_LOGIN", { token, user });
-    },
-    onLogout: () => {
-      postToNative("AUTH_LOGOUT", {});
-    },
-    requestToken: () => {
-      postToNative("AUTH_REQUEST_TOKEN", {});
-    },
-  },
-
-  /**
    * Navigation - request RN navigation actions
    */
   navigation: {

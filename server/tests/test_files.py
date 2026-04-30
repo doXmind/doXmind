@@ -156,15 +156,6 @@ class TestFileValidation:
         assert data["name"] == "Test"
         assert data["content"] == ""  # Default empty content
 
-
-# =============================================================================
-# get_user_id Tests
-# =============================================================================
-
-
-# Multi-user / get_user_id tests removed — local desktop edition is single-user.
-
-
 @pytest.mark.asyncio
 class TestUpdateNonexistent:
     async def test_update_nonexistent_file_returns_404(self, client: AsyncClient):

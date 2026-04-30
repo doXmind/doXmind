@@ -67,8 +67,6 @@ known-first-party = ["api", "db", "services", "middleware"]
 "tests/*" = ["ARG002", "ARG005"]
 # conftest.py needs to set environment variables before imports
 "tests/conftest.py" = ["E402"]
-# telemetry.py has elif chains that are more readable as-is
-"api/telemetry.py" = ["SIM102"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

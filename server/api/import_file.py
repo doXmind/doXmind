@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.files import get_user_id
 from db.database import File as FileModel
 from db.database import get_db
 from exceptions import (
@@ -19,7 +18,6 @@ from exceptions import (
     NotFoundError,
     UnsupportedFileTypeError,
 )
-from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -83,7 +81,6 @@ async def import_file(
     file: UploadFile = File(...),
     parent_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
     """
     Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
@@ -93,14 +90,11 @@ async def import_file(
     - parent_id: Optional folder ID to import into
     - Returns: Created file object
     """
-    user_id = get_user_id(token)
-
     # Validate parent folder if provided
     if parent_id:
         result = await db.execute(
             select(FileModel).where(
                 FileModel.id == parent_id,
-                FileModel.user_id == user_id,
                 FileModel.is_folder.is_(True),
             )
         )
@@ -149,7 +143,6 @@ async def import_file(
             name=new_name,
             content=html_content,
             content_markdown=md_content,
-            user_id=user_id,
             parent_id=parent_id,
         )
         db.add(new_file)

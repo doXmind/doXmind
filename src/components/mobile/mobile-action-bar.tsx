@@ -28,7 +28,6 @@ interface MobileActionBarProps {
 export function MobileActionBar({ onCopy, onCut, onDelete }: MobileActionBarProps) {
   const t = useTranslations("mobile");
   const tc = useTranslations("common");
-  const tCom = useTranslations("community");
   const { selectedBlocks, isSelectionActive, clearSelection } = useBlockSelectionStore();
   const [copiedFeedback, setCopiedFeedback] = useState(false);
 
@@ -85,7 +84,7 @@ export function MobileActionBar({ onCopy, onCut, onDelete }: MobileActionBarProp
               onClick={handleClear}
               className="text-sm font-medium text-primary"
             >
-              {tCom("clear")}
+              {tc("clear")}
             </button>
           </div>
 

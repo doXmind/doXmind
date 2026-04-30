@@ -13,7 +13,6 @@ import {
   Pencil,
   FileText,
   Star,
-  Share2,
   FolderPlus,
   Maximize2,
   MoreHorizontal,
@@ -32,7 +31,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FileItem } from "./file-item";
 import { NewButton } from "@/components/home/new-button";
-import { ShareDialog } from "@/components/share/share-dialog";
 import { SortDropdown } from "./sort-dropdown";
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem as FileItemType } from "@/types";
@@ -128,8 +126,6 @@ export function FolderTree({
   const [, setImportProgress] = useState({ current: 0, total: 0 });
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState("");
-  const [shareFolderId, setShareFolderId] = useState<string | null>(null);
-  const [shareFolderName, setShareFolderName] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folderId: string } | null>(
     null
   );
@@ -317,16 +313,6 @@ export function FolderTree({
     });
   }, []);
 
-  const handleContextMenuShare = () => {
-    if (!contextMenu) return;
-    const folder = allFolders.find((f) => f.id === contextMenu.folderId);
-    if (folder) {
-      setShareFolderId(folder.id);
-      setShareFolderName(folder.name);
-    }
-    setContextMenu(null);
-  };
-
   const handleContextMenuRename = () => {
     if (!contextMenu) return;
     const folder = allFolders.find((f) => f.id === contextMenu.folderId);
@@ -392,19 +378,17 @@ export function FolderTree({
           break;
         case "ArrowDown":
           e.preventDefault();
-          setContextMenuFocusIndex((prev) => (prev + 1) % 3);
+          setContextMenuFocusIndex((prev) => (prev + 1) % 2);
           break;
         case "ArrowUp":
           e.preventDefault();
-          setContextMenuFocusIndex((prev) => (prev - 1 + 3) % 3);
+          setContextMenuFocusIndex((prev) => (prev - 1 + 2) % 2);
           break;
         case "Enter":
           e.preventDefault();
           if (contextMenuFocusIndex === 0) {
-            handleContextMenuShare();
-          } else if (contextMenuFocusIndex === 1) {
             handleContextMenuRename();
-          } else if (contextMenuFocusIndex === 2) {
+          } else if (contextMenuFocusIndex === 1) {
             handleContextMenuDelete();
           }
           break;
@@ -670,30 +654,15 @@ export function FolderTree({
               top: contextMenu.y,
             }}
           >
-            {/* Share */}
+            {/* Rename */}
             <button
               role="menuitem"
-              onClick={handleContextMenuShare}
+              onClick={handleContextMenuRename}
               onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(0)}
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
                 contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
                 contextMenuFocusIndex === 0 && "bg-accent text-accent-foreground"
-              )}
-            >
-              <Share2 className="mr-2 h-4 w-4" />
-              {t("share")}
-            </button>
-
-            {/* Rename */}
-            <button
-              role="menuitem"
-              onClick={handleContextMenuRename}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 1 && "bg-accent text-accent-foreground"
               )}
             >
               <Pencil className="mr-2 h-4 w-4" />
@@ -706,11 +675,11 @@ export function FolderTree({
             <button
               role="menuitem"
               onClick={handleContextMenuDelete}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(2)}
+              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
               className={cn(
                 "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm text-destructive outline-none",
                 contextMenuReady && "hover:bg-destructive/10",
-                contextMenuFocusIndex === 2 && "bg-destructive/10"
+                contextMenuFocusIndex === 1 && "bg-destructive/10"
               )}
             >
               <Trash2 className="mr-2 h-4 w-4" />
@@ -719,20 +688,6 @@ export function FolderTree({
           </div>,
           document.body
         )}
-
-      {/* Share Dialog for folders */}
-      {shareFolderId && (
-        <ShareDialog
-          open={!!shareFolderId}
-          onClose={() => {
-            setShareFolderId(null);
-            setShareFolderName("");
-          }}
-          fileId={shareFolderId}
-          fileName={shareFolderName}
-          isFolder
-        />
-      )}
     </div>
   );
 }

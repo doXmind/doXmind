@@ -47,7 +47,7 @@ function OutlineItem({
   // Scroll active or selected item into view within the outline panel.
   // Uses manual scroll on the nearest scroll container only, avoiding
   // scrollIntoView which cascades to all ancestors and can interfere
-  // with page scroll in sticky outline layouts (community/shared pages).
+  // with page scroll in sticky outline layouts.
   useEffect(() => {
     if (!(isActive || isSelected) || !itemRef.current) return;
 

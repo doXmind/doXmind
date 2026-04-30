@@ -1,4 +1,4 @@
-"""File management API endpoints with user data isolation."""
+"""File management API endpoints for the single-user local desktop edition."""
 
 import hashlib
 import logging
@@ -18,27 +18,12 @@ from exceptions import (
     DocumentNotFoundError,
     InternalError,
     NotFoundError,
-    UnauthorizedError,
 )
-from services.auth_service import TokenData, require_auth
 from utils.html import _extract_data_content, strip_html_tags
 from utils.markdown_converter import html_to_markdown
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def get_user_id(token: TokenData) -> str | None:
-    """Get user ID from token for data isolation.
-
-    Returns None only for special dev/api-key users (which share data).
-    Real users always get their user_id for proper isolation.
-    """
-    # Special token types share data (no user isolation)
-    if token.sub in ("dev-user", "api-key-user", "anonymous"):
-        return None
-
-    return token.sub
 
 
 def compute_content_hash(content: str) -> str:
@@ -201,11 +186,6 @@ class FileResponse(BaseModel):
     # Lightweight preview fields (populated in list, avoids sending full content)
     word_count: int = 0
     preview: str = ""
-    # Fork info (populated when this file was forked from a community item)
-    fork_id: str | None = None
-    forked_from_share_id: str | None = None
-    forked_from_title: str | None = None
-    forked_from_author: str | None = None
 
     class Config:
         from_attributes = True
@@ -219,9 +199,8 @@ async def list_files(
     limit: int = Query(500, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
-    """List files for the current user, optionally filtered by parent folder.
+    """List local files, optionally filtered by parent folder.
 
     Args:
         parent_id: If provided with filter_by_parent=True, only return files/folders within this folder.
@@ -229,8 +208,6 @@ async def list_files(
         limit: Maximum number of files to return (default 500, max 1000).
         offset: Number of files to skip (for pagination).
     """
-    user_id = get_user_id(token)
-
     # Build query with folder-aware ordering: folders first, then by position, then by date
     # Optimized: exclude content column to reduce payload size.
     query = (
@@ -259,9 +236,6 @@ async def list_files(
         )
     )
 
-    # Filter by user (None means shared/dev mode, for dev/anonymous users only show files with no user_id)
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
-
     # Filter by parent folder only if explicitly requested
     if filter_by_parent:
         query = query.where(File.parent_id == parent_id)
@@ -271,8 +245,7 @@ async def list_files(
     rows = result.all()
 
     logger.debug(
-        "list_files: user_id=%s, filter_by_parent=%s, count=%d",
-        user_id,
+        "list_files: filter_by_parent=%s, count=%d",
         filter_by_parent,
         len(rows),
     )
@@ -313,10 +286,6 @@ async def list_files(
                 updated_at=row.updated_at.isoformat(),
                 word_count=word_count,
                 preview=preview,
-                fork_id=None,
-                forked_from_share_id=None,
-                forked_from_title=None,
-                forked_from_author=None,
             )
         )
 
@@ -336,11 +305,8 @@ async def list_files(
 
 @router.post("", response_model=FileResponse, include_in_schema=False)
 @router.post("/", response_model=FileResponse)
-async def create_file(
-    file: FileCreate, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
-):
-    """Create a new file for the current user."""
-    user_id = get_user_id(token)
+async def create_file(file: FileCreate, db: AsyncSession = Depends(get_db)):
+    """Create a new local file."""
     # Sanitize before Core INSERT (bypasses ORM event listeners)
     from services.content_sanitizer import sanitize_content
 
@@ -350,11 +316,6 @@ async def create_file(
     # Validate parent_id if provided (must exist and not be in trash)
     if file.parent_id is not None:
         parent_query = select(File).where(File.id == file.parent_id, File.deleted_at.is_(None))
-        parent_query = (
-            parent_query.where(File.user_id == user_id)
-            if user_id
-            else parent_query.where(File.user_id.is_(None))
-        )
 
         parent_result = await db.execute(parent_query)
         parent = parent_result.scalar_one_or_none()
@@ -371,7 +332,6 @@ async def create_file(
                 content=sanitized,
                 content_hash=content_hash,
                 content_markdown=content_md,
-                user_id=user_id,
                 parent_id=file.parent_id,  # Use the validated parent_id
             )
             .returning(
@@ -405,36 +365,20 @@ async def create_file(
         )
     except Exception as e:
         await db.rollback()
-        error_str = str(e)
         logger.error(f"Failed to create file: {e}")
-        # Foreign key violation on user_id means the user doesn't exist in DB
-        # This happens when token is valid but user was deleted or never created
-        if "ForeignKeyViolationError" in error_str and "user_id" in error_str:
-            raise UnauthorizedError(message="User session invalid. Please log in again.")
         raise InternalError(message=str(e))
 
 
 @router.get("/{file_id}", response_model=FileResponse)
-async def get_file(
-    file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
-):
-    """Get a file by ID (must belong to current user, not in trash)."""
-    user_id = get_user_id(token)
-
+async def get_file(file_id: str, db: AsyncSession = Depends(get_db)):
+    """Get a local file by ID."""
     query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
 
     if not file:
         raise DocumentNotFoundError(file_id=file_id)
-
-    # Sharing/fork removed in local desktop edition.
-    fork_id = None
-    forked_from_share_id = None
-    forked_from_title = None
-    forked_from_author = None
 
     return FileResponse(
         id=file.id,
@@ -450,10 +394,6 @@ async def get_file(
         cover_position=file.cover_position if file.cover_position is not None else 0.5,
         created_at=file.created_at.isoformat(),
         updated_at=file.updated_at.isoformat(),
-        fork_id=fork_id,
-        forked_from_share_id=forked_from_share_id,
-        forked_from_title=forked_from_title,
-        forked_from_author=forked_from_author,
     )
 
 
@@ -462,13 +402,9 @@ async def update_file(
     file_id: str,
     update: FileUpdate,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
-    """Update a file (must belong to current user, not in trash)."""
-    user_id = get_user_id(token)
-
+    """Update a local file."""
     query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -539,14 +475,9 @@ async def update_file(
 
 
 @router.delete("/{file_id}")
-async def delete_file(
-    file_id: str, db: AsyncSession = Depends(get_db), token: TokenData = Depends(require_auth)
-):
-    """Soft-delete a file (move to trash). Must belong to current user."""
-    user_id = get_user_id(token)
-
+async def delete_file(file_id: str, db: AsyncSession = Depends(get_db)):
+    """Soft-delete a local file by moving it to trash."""
     query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -592,7 +523,6 @@ async def delete_file(
 async def create_folder(
     folder: FolderCreate,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
     """Create a new folder, optionally nested inside another folder.
 
@@ -601,19 +531,12 @@ async def create_folder(
     - Have empty content
     - Are not indexed in vector store
     """
-    user_id = get_user_id(token)
-
     # Validate parent folder if provided
     if folder.parent_id is not None:
         parent_query = select(File).where(
             File.id == folder.parent_id,
             File.is_folder.is_(True),
             File.deleted_at.is_(None),
-        )
-        parent_query = (
-            parent_query.where(File.user_id == user_id)
-            if user_id
-            else parent_query.where(File.user_id.is_(None))
         )
         parent_result = await db.execute(parent_query)
         parent = parent_result.scalar_one_or_none()
@@ -635,12 +558,6 @@ async def create_folder(
         File.parent_id == folder.parent_id,
         File.deleted_at.is_(None),
     )
-    dup_query = (
-        dup_query.where(File.user_id == user_id)
-        if user_id
-        else dup_query.where(File.user_id.is_(None))
-    )
-
     result = await db.execute(dup_query)
     existing = result.scalar_one_or_none()
 
@@ -655,7 +572,6 @@ async def create_folder(
                 content="",  # Folders have no content
                 is_folder=True,
                 parent_id=folder.parent_id,
-                user_id=user_id,
             )
             .returning(
                 File.id,
@@ -690,10 +606,7 @@ async def create_folder(
         raise
     except Exception as e:
         await db.rollback()
-        error_str = str(e)
         logger.error(f"Failed to create folder: {e}")
-        if "ForeignKeyViolationError" in error_str and "user_id" in error_str:
-            raise UnauthorizedError(message="User session invalid. Please log in again.")
         raise InternalError(message=str(e))
 
 
@@ -702,7 +615,6 @@ async def move_file(
     file_id: str,
     move_request: MoveRequest,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
     """Move a file or folder to a different folder (or root).
 
@@ -710,13 +622,9 @@ async def move_file(
     - Files and folders can be moved
     - Target must be a folder or None (root)
     - Moving a folder checks for circular references and depth limits
-    - User must own both file and target folder
     """
-    user_id = get_user_id(token)
-
     # Get the file to move (must not be in trash)
     query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -729,11 +637,6 @@ async def move_file(
         target_query = select(File).where(
             File.id == move_request.target_folder_id,
             File.deleted_at.is_(None),
-        )
-        target_query = (
-            target_query.where(File.user_id == user_id)
-            if user_id
-            else target_query.where(File.user_id.is_(None))
         )
 
         target_result = await db.execute(target_query)
@@ -795,10 +698,8 @@ class SearchRequest(BaseModel):
 async def search_files(
     request: SearchRequest,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
-    """Search files using text matching (within user's files)."""
-    user_id = get_user_id(token)
+    """Search local files using text matching."""
 
     try:
         pattern = f"%{request.query}%"
@@ -809,9 +710,6 @@ async def search_files(
             "deleted_at IS NULL",
             "is_folder = 0",
         ]
-        # Local desktop edition: single-user, no user_id filter needed.
-        _ = user_id
-
         if request.file_ids:
             where_clauses.append("id IN :file_ids")
             params["file_ids"] = list(request.file_ids)
@@ -876,19 +774,11 @@ class InDocSearchRequest(BaseModel):
 async def search_in_document(
     request: InDocSearchRequest,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
     """Search within a specific document by file_id."""
-    user_id = get_user_id(token)
-
     # Check file exists
     where_clauses = ["id = :file_id", "deleted_at IS NULL"]
     params: dict[str, Any] = {"file_id": request.file_id}
-    if user_id:
-        where_clauses.append("user_id = :user_id")
-        params["user_id"] = user_id
-    else:
-        where_clauses.append("user_id IS NULL")
 
     where_sql = " AND ".join(where_clauses)
     result = await db.execute(
@@ -949,15 +839,9 @@ class TrashFileResponse(BaseModel):
 
 
 @router.get("/trash/list", response_model=list[TrashFileResponse])
-async def list_trash(
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
-):
+async def list_trash(db: AsyncSession = Depends(get_db)):
     """List all soft-deleted files in the trash."""
-    user_id = get_user_id(token)
-
     query = select(File).where(File.deleted_at.is_not(None)).order_by(File.deleted_at.desc())
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     files = result.scalars().all()
@@ -980,13 +864,9 @@ async def list_trash(
 async def restore_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
     """Restore a soft-deleted file from the trash."""
-    user_id = get_user_id(token)
-
     query = select(File).where(File.id == file_id, File.deleted_at.is_not(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -1029,13 +909,9 @@ async def restore_file(
 async def permanent_delete_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
     """Permanently delete a file that is already in the trash."""
-    user_id = get_user_id(token)
-
     query = select(File).where(File.id == file_id, File.deleted_at.is_not(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     file = result.scalar_one_or_none()
@@ -1051,7 +927,7 @@ async def permanent_delete_file(
     await db.delete(file)
     await db.commit()
 
-    # Clean up orphaned images from S3
+    # Clean up orphaned images from local storage.
     if image_keys:
         try:
             await delete_orphaned_images(db, image_keys, exclude_file_ids=[file_id])
@@ -1062,15 +938,9 @@ async def permanent_delete_file(
 
 
 @router.delete("/trash/empty")
-async def empty_trash(
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
-):
+async def empty_trash(db: AsyncSession = Depends(get_db)):
     """Permanently delete all files in the trash."""
-    user_id = get_user_id(token)
-
     query = select(File).where(File.deleted_at.is_not(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
 
     result = await db.execute(query)
     trash_files = result.scalars().all()
@@ -1094,7 +964,7 @@ async def empty_trash(
 
     await db.commit()
 
-    # Clean up orphaned images from S3
+    # Clean up orphaned images from local storage.
     if all_image_keys:
         try:
             unique_keys = list(set(all_image_keys))

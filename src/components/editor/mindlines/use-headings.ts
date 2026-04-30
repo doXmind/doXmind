@@ -94,7 +94,7 @@ export function useHeadings(editor: Editor | null) {
 
   // Navigate to a specific heading
   // Uses manual scroll calculation instead of scrollIntoView for reliable
-  // positioning across different layouts (editor, shared pages, community pages)
+  // positioning across different layouts (editor and presentation surfaces)
   const navigateTo = useCallback(
     (heading: Heading, options?: { skipFocus?: boolean }) => {
       if (!editor) return;

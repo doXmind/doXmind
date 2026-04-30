@@ -1,6 +1,6 @@
 "use client";
 
-import { FileDown, Home, Pencil, Share2, Star, Trash2 } from "lucide-react";
+import { FileDown, Home, Pencil, Star, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import {
@@ -12,7 +12,6 @@ import {
 export interface FileActionsMenuItemsProps {
   /** Action handlers */
   onRename: () => void;
-  onShare: () => void;
   onToggleFavorite: () => void;
   onMoveToRoot: () => void;
   onExport: (format: "markdown" | "pdf" | "docx") => void;
@@ -39,17 +38,15 @@ export interface FileActionsMenuItemsProps {
  *
  * Menu item indices (for keyboard navigation):
  *   0 - Rename
- *   1 - Share
- *   2 - Favorite
- *   3 - Move to Root  (only when hasParent is true; shifts subsequent indices by 1)
- *   3+offset - Export Markdown
- *   4+offset - Export PDF
- *   5+offset - Export Word
- *   6+offset - Move to Trash
+ *   1 - Favorite
+ *   2 - Move to Root  (only when hasParent is true; shifts subsequent indices by 1)
+ *   2+offset - Export Markdown
+ *   3+offset - Export PDF
+ *   4+offset - Export Word
+ *   5+offset - Move to Trash
  */
 export function FileActionsMenuItems({
   onRename,
-  onShare,
   onToggleFavorite,
   onMoveToRoot,
   onExport,
@@ -75,15 +72,6 @@ export function FileActionsMenuItems({
         >
           <Pencil className="mr-2 h-4 w-4" />
           {t("rename")}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onShare();
-          }}
-        >
-          <Share2 className="mr-2 h-4 w-4" />
-          {t("share")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => {
@@ -184,23 +172,12 @@ export function FileActionsMenuItems({
         {t("rename")}
       </button>
 
-      {/* Share */}
-      <button
-        role="menuitem"
-        onClick={onShare}
-        onMouseEnter={() => setFocus(1)}
-        className={contextItemClass(1)}
-      >
-        <Share2 className="mr-2 h-4 w-4" />
-        {t("share")}
-      </button>
-
       {/* Favorite */}
       <button
         role="menuitem"
         onClick={onToggleFavorite}
-        onMouseEnter={() => setFocus(2)}
-        className={contextItemClass(2)}
+        onMouseEnter={() => setFocus(1)}
+        className={contextItemClass(1)}
       >
         <Star className={cn("mr-2 h-4 w-4", isFavorite && "fill-amber-500 text-amber-500")} />
         {isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
@@ -214,8 +191,8 @@ export function FileActionsMenuItems({
           <button
             role="menuitem"
             onClick={onMoveToRoot}
-            onMouseEnter={() => setFocus(3)}
-            className={contextItemClass(3)}
+            onMouseEnter={() => setFocus(2)}
+            className={contextItemClass(2)}
           >
             <Home className="mr-2 h-4 w-4" />
             {t("moveToRoot")}
@@ -232,8 +209,8 @@ export function FileActionsMenuItems({
       <button
         role="menuitem"
         onClick={() => onExport("markdown")}
-        onMouseEnter={() => setFocus(3 + exportOffset)}
-        className={contextItemClass(3 + exportOffset)}
+        onMouseEnter={() => setFocus(2 + exportOffset)}
+        className={contextItemClass(2 + exportOffset)}
       >
         <FileDown className="mr-2 h-4 w-4" />
         {t("markdownFormat")}
@@ -243,8 +220,8 @@ export function FileActionsMenuItems({
       <button
         role="menuitem"
         onClick={() => onExport("pdf")}
-        onMouseEnter={() => setFocus(4 + exportOffset)}
-        className={contextItemClass(4 + exportOffset)}
+        onMouseEnter={() => setFocus(3 + exportOffset)}
+        className={contextItemClass(3 + exportOffset)}
       >
         <FileDown className="mr-2 h-4 w-4" />
         {t("pdfFormat")}
@@ -254,8 +231,8 @@ export function FileActionsMenuItems({
       <button
         role="menuitem"
         onClick={() => onExport("docx")}
-        onMouseEnter={() => setFocus(5 + exportOffset)}
-        className={contextItemClass(5 + exportOffset)}
+        onMouseEnter={() => setFocus(4 + exportOffset)}
+        className={contextItemClass(4 + exportOffset)}
       >
         <FileDown className="mr-2 h-4 w-4" />
         {t("wordFormat")}
@@ -267,8 +244,8 @@ export function FileActionsMenuItems({
       <button
         role="menuitem"
         onClick={onDelete}
-        onMouseEnter={() => setFocus(6 + exportOffset)}
-        className={contextItemClass(6 + exportOffset, true)}
+        onMouseEnter={() => setFocus(5 + exportOffset)}
+        className={contextItemClass(5 + exportOffset, true)}
       >
         <Trash2 className="mr-2 h-4 w-4" />
         {t("moveToTrash")}
@@ -281,8 +258,8 @@ export function FileActionsMenuItems({
  * Returns the total number of actionable items in the menu.
  * Used by the keyboard navigation handler in FileItem.
  *
- * Items: Rename, Share, Favorite, [Move to Root], Export x3, Delete = 7 or 8
+ * Items: Rename, Favorite, [Move to Root], Export x3, Delete = 6 or 7
  */
 export function getMenuItemCount(hasParent: boolean): number {
-  return hasParent ? 8 : 7;
+  return hasParent ? 7 : 6;
 }

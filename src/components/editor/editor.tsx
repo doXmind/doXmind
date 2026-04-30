@@ -268,7 +268,7 @@ export function Editor({ file: initialFile }: EditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on file.id change, not content
   }, [file.id, editor]);
 
-  // Sync editor when file content arrives late (e.g., after fork redirect).
+  // Sync editor when file content arrives late after navigation.
   // The list endpoint returns content="" for optimization; real content loads
   // asynchronously via loadFileContent. This effect catches that transition.
   useEffect(() => {

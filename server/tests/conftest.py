@@ -1,7 +1,6 @@
 """Pytest fixtures — local desktop edition.
 
-Tests run against an in-memory SQLite database. Auth is stubbed so all
-fixtures use a single fixed `local` user.
+Tests run against an in-memory SQLite database.
 """
 
 import asyncio
@@ -10,7 +9,6 @@ import tempfile
 import uuid
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -119,54 +117,10 @@ def sync_client() -> Generator[TestClient, None, None]:
         yield c
 
 
-@pytest.fixture
-def auth_headers() -> dict:
-    """No-op headers — local desktop edition has no auth."""
-    return {}
-
-
-# =============================================================================
-# Fake user / file fixtures (single-user local mode)
-# =============================================================================
-
-
-LOCAL_USER_ID = "local"
-
-
-async def create_test_user(
-    db_session: AsyncSession,  # noqa: ARG001
-    user_id: str | None = None,
-    email: str | None = None,
-    username: str | None = None,
-) -> SimpleNamespace:
-    """Legacy helper — local desktop edition has no User table."""
-    user_id = user_id or LOCAL_USER_ID
-    return SimpleNamespace(
-        id=user_id,
-        email=email or f"{user_id}@example.com",
-        username=username or user_id,
-        is_verified=True,
-        is_active=True,
-    )
-
-
-@pytest.fixture
-def test_user() -> SimpleNamespace:
-    """Return a fake user that mimics the old SQLAlchemy User model surface."""
-    return SimpleNamespace(
-        id=LOCAL_USER_ID,
-        email="local@doxmind.local",
-        username="local",
-        is_verified=True,
-        is_active=True,
-    )
-
-
 @pytest_asyncio.fixture
-async def test_file(db_session: AsyncSession, test_user: SimpleNamespace) -> File:
+async def test_file(db_session: AsyncSession) -> File:
     file = File(
         id=str(uuid.uuid4()),
-        user_id=test_user.id,
         name="Test Document",
         content="# Test Content\n\nThis is test content.",
     )

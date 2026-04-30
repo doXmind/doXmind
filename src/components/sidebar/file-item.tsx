@@ -25,7 +25,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
 } from "@/components/ui/dropdown-menu";
-import { ShareDialog } from "@/components/share/share-dialog";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { api } from "@/lib/api";
@@ -59,7 +58,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const selectFileRange = useFileStore((s) => s.selectFileRange);
   const clearSelection = useFileStore((s) => s.clearSelection);
   const [isRenaming, setIsRenaming] = useState(false);
-  const [showShareDialog, setShowShareDialog] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
   const [contextMenuReady, setContextMenuReady] = useState(false);
@@ -104,7 +102,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         case " ":
           e.preventDefault();
           // Execute the action based on focused index
-          // Indices: 0=Rename, 1=Share, 2=Favorite, [3=MoveToRoot], 3+offset..5+offset=Export, 6+offset=Delete
+          // Indices: 0=Rename, 1=Favorite, [2=MoveToRoot], 2+offset..4+offset=Export, 5+offset=Delete
           if (contextMenuFocusIndex === 0) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -113,12 +111,8 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           } else if (contextMenuFocusIndex === 1) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            setShowShareDialog(true);
-          } else if (contextMenuFocusIndex === 2) {
-            setContextMenu(null);
-            setContextMenuFocusIndex(-1);
             toggleFavorite(file.id);
-          } else if (contextMenuFocusIndex === 3 && file.parentId) {
+          } else if (contextMenuFocusIndex === 2 && file.parentId) {
             // Move to Root (only when file is in a folder)
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -130,19 +124,19 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
                 log.error("Failed to move file to root", error);
                 toast.error(t("failedToMove"));
               });
-          } else if (contextMenuFocusIndex === 3 + exportOffset) {
+          } else if (contextMenuFocusIndex === 2 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleExport("markdown");
-          } else if (contextMenuFocusIndex === 4 + exportOffset) {
+          } else if (contextMenuFocusIndex === 3 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleExport("pdf");
-          } else if (contextMenuFocusIndex === 5 + exportOffset) {
+          } else if (contextMenuFocusIndex === 4 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleExport("docx");
-          } else if (contextMenuFocusIndex === 6 + exportOffset) {
+          } else if (contextMenuFocusIndex === 5 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
             handleDelete();
@@ -334,11 +328,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     setContextMenu(null);
     setNewName(getNameWithoutExtension(file.name));
     setIsRenaming(true);
-  };
-
-  const handleContextMenuShare = () => {
-    setContextMenu(null);
-    setShowShareDialog(true);
   };
 
   const handleContextMenuToggleFavorite = () => {
@@ -536,7 +525,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
                 setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
               }}
-              onShare={() => setShowShareDialog(true)}
               onToggleFavorite={() => toggleFavorite(file.id)}
               onMoveToRoot={async () => {
                 try {
@@ -576,7 +564,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
               onFocusIndex={setContextMenuFocusIndex}
               contextMenuReady={contextMenuReady}
               onRename={handleContextMenuRename}
-              onShare={handleContextMenuShare}
               onToggleFavorite={handleContextMenuToggleFavorite}
               onMoveToRoot={handleContextMenuMoveToRoot}
               onExport={handleContextMenuExport}
@@ -585,14 +572,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           </div>,
           document.body
         )}
-
-      {/* Share Dialog */}
-      <ShareDialog
-        open={showShareDialog}
-        onClose={() => setShowShareDialog(false)}
-        fileId={file.id}
-        fileName={getNameWithoutExtension(file.name)}
-      />
     </div>
   );
 }

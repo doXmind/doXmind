@@ -195,10 +195,6 @@ export const useFileStore = create<FileState>()(
               updatedAt: f.updated_at,
               wordCount: f.word_count || 0,
               preview: f.preview || "",
-              fork_id: f.fork_id || undefined,
-              forked_from_share_id: f.forked_from_share_id || undefined,
-              forked_from_title: f.forked_from_title || undefined,
-              forked_from_author: f.forked_from_author || undefined,
             }));
 
             // Clear currentFileId / currentFolderId if they no longer exist
@@ -255,10 +251,6 @@ export const useFileStore = create<FileState>()(
                       ...f,
                       content: fullFile.content,
                       contentMarkdown: fullFile.content_markdown ?? null,
-                      fork_id: fullFile.fork_id || undefined,
-                      forked_from_share_id: fullFile.forked_from_share_id || undefined,
-                      forked_from_title: fullFile.forked_from_title || undefined,
-                      forked_from_author: fullFile.forked_from_author || undefined,
                     }
                   : f
               ),

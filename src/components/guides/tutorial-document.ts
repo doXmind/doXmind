@@ -48,10 +48,10 @@ Welcome to doXmind. The local desktop edition focuses on files, structured writi
 - **Ctrl/Cmd+Shift+O** toggles the outline panel.
 - Use Outline / Mindlines to jump across structure quickly.
 
-## 8. Personalization and Sharing
+## 8. Personalization and Export
 
 - Customize theme, typography, and editor width.
-- Share read-only links for collaboration and review.
+- Export finished work to Markdown, PDF, or Word.
 
 ## 9. Recommended Workflow
 
@@ -59,7 +59,7 @@ Welcome to doXmind. The local desktop edition focuses on files, structured writi
 2. Organize content with headings, callouts, tables, and databases.
 3. Save important milestones with Version History.
 4. Use Outline and Mindlines to review structure.
-5. Present, export, or share.
+5. Present or export.
 
 ## 10. Useful Shortcuts
 

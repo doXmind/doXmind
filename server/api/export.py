@@ -10,11 +10,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.files import get_user_id
 from config import get_cors_headers
 from db.database import File, get_db
 from exceptions import AppException, BadRequestError, DocumentNotFoundError, InternalError
-from services.auth_service import TokenData, require_auth
 from services.export_service import get_export_service
 
 logger = logging.getLogger(__name__)
@@ -29,7 +27,6 @@ async def export_file(
     format: ExportFormat,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
     """Export a file in the specified format.
 
@@ -37,16 +34,12 @@ async def export_file(
         file_id: The ID of the file to export
         format: The export format (markdown, pdf, or docx)
         db: Database session
-        token: Auth token for user isolation
 
     Returns:
         StreamingResponse with the exported file
     """
-    user_id = get_user_id(token)
-
-    # Get the file from database (with user isolation, exclude trash)
+    # Get the file from database, excluding trash.
     query = select(File).where(File.id == file_id, File.deleted_at.is_(None))
-    query = query.where(File.user_id == user_id) if user_id else query.where(File.user_id.is_(None))
     result = await db.execute(query)
     file = result.scalar_one_or_none()
 

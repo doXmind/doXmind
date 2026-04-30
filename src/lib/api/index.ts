@@ -10,7 +10,7 @@ import "./databases";
 export { ApiClient } from "./client";
 
 // Re-export the types still in use
-export type { SearchResultItem, SearchResults, MessageResponse } from "./types";
+export type { SearchResultItem, SearchResults } from "./types";
 
 // Create and export the default client instance
 import { ApiClient } from "./client";

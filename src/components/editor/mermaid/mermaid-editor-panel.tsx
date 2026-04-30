@@ -146,7 +146,7 @@ const CHART_TEMPLATES: ChartTemplate[] = [
     code: `requirementDiagram
     requirement req1 {
         id: REQ-001
-        text: System shall authenticate users
+        text: System shall save documents locally
         risk: high
         verifymethod: test
     }

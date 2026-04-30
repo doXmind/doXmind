@@ -127,7 +127,6 @@ export const logger = new Logger();
 export const storeLogger = logger.child("Store");
 export const apiLogger = logger.child("API");
 export const editorLogger = logger.child("Editor");
-export const authLogger = logger.child("Auth");
 
 // Factory function for creating custom loggers
 export function createLogger(prefix: string, options?: Omit<LoggerOptions, "prefix">): Logger {

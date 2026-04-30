@@ -194,7 +194,7 @@ The slide counter at the bottom of the screen shows your current position (e.g.,
 
 ### Keep the Document as a Leave-Behind
 
-One of the great advantages of document-based presentations is that your slides and your detailed write-up are the same artifact. After the meeting, share the document link. Attendees get both the slide-level summary (from the headings and bullets) and the full context (from the prose paragraphs) in one place. No need to create a separate follow-up document.
+One of the great advantages of document-based presentations is that your slides and your detailed write-up are the same artifact. After the meeting, export the document or keep it alongside the presentation notes. Attendees can get both the slide-level summary (from the headings and bullets) and the full context (from the prose paragraphs) in one place.
 
 ### Combining With Cover Images
 

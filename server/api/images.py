@@ -1,4 +1,4 @@
-"""Image upload API endpoints (S3-backed)."""
+"""Local image upload API endpoints."""
 
 import asyncio
 import logging
@@ -6,15 +6,13 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile
+from fastapi import APIRouter, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.files import get_user_id
-from db.database import File, get_db
-from exceptions import BadRequestError, ForbiddenError, NotFoundError
-from services.auth_service import TokenData, require_auth
+from db.database import File
+from exceptions import BadRequestError, NotFoundError
 from services.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
@@ -26,17 +24,16 @@ ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Regex to extract image URLs from HTML content
-_IMAGE_URL_PATTERN = re.compile(r'/api/images/([^/]+)/([^"\')\s]+)')
+_IMAGE_URL_PATTERN = re.compile(r'/api/images/([^"\')\s]+)')
 
 
 def extract_image_keys_from_content(content: str) -> list[str]:
-    """Extract S3 keys from image URLs found in HTML content.
+    """Extract local storage keys from image URLs found in HTML content.
 
-    Finds all occurrences of /api/images/{user_id}/{filename} and
-    returns the corresponding S3 keys as ["images/{user_id}/{filename}", ...].
+    Finds all occurrences of /api/images/{filename} and returns the
+    corresponding storage keys as ["images/{filename}", ...].
     """
-    matches = _IMAGE_URL_PATTERN.findall(content)
-    return [f"images/{user_id}/{filename}" for user_id, filename in matches]
+    return [f"images/{filename}" for filename in _IMAGE_URL_PATTERN.findall(content)]
 
 
 async def delete_orphaned_images(
@@ -44,18 +41,18 @@ async def delete_orphaned_images(
     image_keys: list[str],
     exclude_file_ids: list[str] | None = None,
 ) -> list[str]:
-    """Delete images from S3 that are not referenced by any active file.
+    """Delete local images that are not referenced by any active file.
 
     For each image key, checks all non-deleted files to see if the image URL
     still appears in any content. Only deletes truly orphaned images.
 
     Args:
         db: Database session
-        image_keys: List of S3 keys to potentially delete
+        image_keys: List of storage keys to potentially delete
         exclude_file_ids: File IDs being deleted (skip these when checking references)
 
     Returns:
-        List of S3 keys that were actually deleted
+        List of storage keys that were actually deleted
     """
     if not image_keys:
         return []
@@ -77,17 +74,17 @@ async def delete_orphaned_images(
     # Filter to only truly orphaned keys
     orphaned_keys = []
     for key in image_keys:
-        # Convert S3 key back to URL pattern for matching
+        # Convert storage key back to URL pattern for matching
         url = f"/api/{key}"
         if url not in combined_content:
             orphaned_keys.append(key)
 
-    # Batch delete orphaned images from S3
+    # Batch delete orphaned images from local storage.
     if orphaned_keys:
         storage = get_storage_service()
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, storage.delete_many, orphaned_keys)
-        logger.info(f"Deleted {len(orphaned_keys)} orphaned images from S3")
+        logger.info(f"Deleted {len(orphaned_keys)} orphaned images")
 
     return orphaned_keys
 
@@ -95,12 +92,8 @@ async def delete_orphaned_images(
 @router.post("/upload")
 async def upload_image(
     file: UploadFile,
-    db: AsyncSession = Depends(get_db),
-    token: TokenData = Depends(require_auth),
 ):
-    """Upload an image file to S3. Returns the URL to access the image."""
-    user_id = get_user_id(token) or "shared"
-
+    """Upload an image file to local storage. Returns the URL to access the image."""
     # Validate content type
     if file.content_type not in ALLOWED_TYPES:
         raise BadRequestError(
@@ -135,63 +128,33 @@ async def upload_image(
 
     # Generate unique filename and storage key
     filename = f"{uuid.uuid4().hex}{ext}"
-    s3_key = f"images/{user_id}/{filename}"
+    image_key = f"images/{filename}"
     content_type = file.content_type or "application/octet-stream"
 
     # Save to local storage
     storage = get_storage_service()
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, storage.upload, s3_key, content, content_type)
+    await loop.run_in_executor(None, storage.upload, image_key, content, content_type)
 
-    url = f"/api/images/{user_id}/{filename}"
-    logger.info(f"Image uploaded to S3: {url} ({len(content)} bytes)")
+    url = f"/api/images/{filename}"
+    logger.info(f"Image uploaded: {url} ({len(content)} bytes)")
 
     return {"url": url, "filename": filename, "size": len(content)}
 
 
-@router.get("/avatars/{user_id}/{filename}")
-async def get_avatar(user_id: str, filename: str):
-    """Serve a user avatar image from S3. Avatars are stored separately from editor images."""
-    if ".." in filename or "/" in filename or "\\" in filename:
-        raise BadRequestError(message="Invalid filename")
-
-    if ".." in user_id or "/" in user_id or "\\" in user_id:
-        raise BadRequestError(message="Invalid user ID")
-
-    s3_key = f"avatars/{user_id}/{filename}"
-
-    storage = get_storage_service()
-    loop = asyncio.get_event_loop()
-    try:
-        data, content_type = await loop.run_in_executor(None, storage.download, s3_key)
-    except FileNotFoundError:
-        raise NotFoundError(message="Image not found")
-
-    return Response(
-        content=data,
-        media_type=content_type,
-        headers={
-            "Cache-Control": "public, max-age=31536000, immutable",
-        },
-    )
-
-
-@router.get("/{user_id}/{filename}")
-async def get_image(user_id: str, filename: str):
-    """Serve an uploaded image from S3."""
+@router.get("/{filename}")
+async def get_image(filename: str):
+    """Serve an uploaded image from local storage."""
     # Validate inputs to prevent injection
     if ".." in filename or "/" in filename or "\\" in filename:
         raise BadRequestError(message="Invalid filename")
 
-    if ".." in user_id or "/" in user_id or "\\" in user_id:
-        raise BadRequestError(message="Invalid user ID")
-
-    s3_key = f"images/{user_id}/{filename}"
+    image_key = f"images/{filename}"
 
     storage = get_storage_service()
     loop = asyncio.get_event_loop()
     try:
-        data, content_type = await loop.run_in_executor(None, storage.download, s3_key)
+        data, content_type = await loop.run_in_executor(None, storage.download, image_key)
     except FileNotFoundError:
         raise NotFoundError(message="Image not found")
 
@@ -204,34 +167,19 @@ async def get_image(user_id: str, filename: str):
     )
 
 
-@router.delete("/{user_id}/{filename}")
+@router.delete("/{filename}")
 async def delete_image(
-    user_id: str,
     filename: str,
-    token: TokenData = Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
 ):
-    """Delete a single image from S3.
-
-    Called when user explicitly removes an image from the editor.
-    Only the image owner can delete.
-    """
+    """Delete a single image from local storage."""
     if ".." in filename or "/" in filename or "\\" in filename:
         raise BadRequestError(message="Invalid filename")
 
-    if ".." in user_id or "/" in user_id or "\\" in user_id:
-        raise BadRequestError(message="Invalid user ID")
-
-    # Authorization: ensure the requesting user matches the image's user_id
-    request_user_id = get_user_id(token) or "shared"
-    if request_user_id != user_id:
-        raise ForbiddenError(message="Not authorized to delete this image")
-
-    s3_key = f"images/{user_id}/{filename}"
+    image_key = f"images/{filename}"
 
     storage = get_storage_service()
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, storage.delete, s3_key)
+    await loop.run_in_executor(None, storage.delete, image_key)
 
-    logger.info(f"Image deleted: {s3_key}")
+    logger.info(f"Image deleted: {image_key}")
     return {"status": "deleted"}

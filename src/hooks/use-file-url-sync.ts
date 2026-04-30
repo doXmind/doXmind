@@ -45,7 +45,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
         // with the stale render-captured currentFileId) from redirecting away.
         lastSyncedId.current = fileIdFromUrl;
       } else if (files.length > 0) {
-        // File not in current list — might be newly created (e.g., fork).
+        // File not in current list — it may have just been created.
         // Clear currentFileId to avoid briefly showing the wrong file, but
         // DON'T redirect. The guard effect will sync to the correct file
         // after loadFiles completes with fresh data from the server.
@@ -122,7 +122,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
   // === Guard: redirect when URL points to a deleted/non-existent file ===
   // This handles cases where the Store→URL effect doesn't fire (e.g., component
   // unmount race conditions, lastSyncedId ref getting out of sync), AND handles
-  // newly-created files (e.g., fork) that weren't in the file list during init.
+  // newly-created files that weren't in the file list during init.
   //
   // Only react to file list *membership* changes (files added/removed), not
   // content updates from loadFileContent which mutate the same array reference.
@@ -136,7 +136,7 @@ export function useFileUrlSync(fileIdFromUrl: string | null) {
     const liveCurrentFileId = useFileStore.getState().currentFileId;
     const exists = files.some((f) => f.id === fileIdFromUrl);
     if (exists) {
-      // File now exists (e.g., loadFiles completed after fork) — sync store
+      // File now exists after loadFiles completed — sync store
       if (liveCurrentFileId !== fileIdFromUrl) {
         setCurrentFile(fileIdFromUrl);
         lastSyncedId.current = fileIdFromUrl;

@@ -1,12 +1,12 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code when working with this repository.
+This file provides guidance to Codex when working with this repository.
 
 ## Project Overview
 
-doXmind Mini is the **local sidecar edition**: a local-first, single-user desktop document editor. The product direction is a dual-file model where a clean Markdown file is the portable facade and a hidden `.doxmind` sidecar stores lossless editor HTML plus doXmind-only block data.
+doXmind Mini is the **local sidecar edition**: a local-first, single-user desktop document editor. The intended storage model is a clean Markdown file beside a hidden `.doxmind` sidecar. Markdown stays portable; the sidecar keeps lossless editor HTML and doXmind-only block data.
 
-There is no auth, cloud sync, sharing, community, billing, telemetry, or AI runtime in this branch. The backend is a localhost FastAPI sidecar for storage, import/export, versions, images, and database-block data during the sidecar migration.
+There is no auth, cloud sync, sharing, community, billing, telemetry, or AI runtime in this branch. Treat the app as an offline document editor with a localhost backend sidecar.
 
 ## Tech Stack
 
@@ -30,6 +30,8 @@ npm run type-check
 npm test
 npm run test:ci
 ```
+
+Run one frontend test with `npx vitest run path/to/file.test.ts -t "test name"`.
 
 ### Backend
 
@@ -76,30 +78,18 @@ Sidecar shape:
 }
 ```
 
-Open algorithm:
-
-1. Read `.md` and split frontmatter/body.
-2. Find the same-name hidden `.doxmind` sidecar.
-3. If missing, import Markdown into editor HTML.
-4. If present and `markdown_hash` matches, use `sidecar.html`.
-5. If present and the hash differs, treat external Markdown edits as authoritative and regenerate the sidecar on save.
-
-Save algorithm:
-
-1. Write `.md = editor.getMarkdown()`.
-2. Hash the just-written Markdown.
-3. Write `.doxmind = { html, markdown_hash, id, extras }`.
+`markdown_hash` is the freshness check. Matching hash means open `sidecar.html`; missing sidecar means import Markdown; mismatched hash means the external `.md` edit wins and the sidecar is overwritten on next save.
 
 ## Current Architecture
 
-The checked-in runtime has not fully migrated to sidecar storage yet. SQLite still stores files, versions, and database blocks. When implementing the sidecar migration, introduce or use a `DocumentStore` boundary instead of putting `.md + .doxmind` filesystem logic directly into FastAPI route handlers.
+The runtime has not fully migrated to sidecar storage. SQLite still stores files, versions, and database blocks. When implementing sidecar storage, create or use a `DocumentStore` boundary so filesystem rules stay out of FastAPI route handlers.
 
 ### Frontend
 
-- `src/app/editor/[[...fileId]]/page.tsx` is the editor entry point.
-- `src/stores/` contains local Zustand stores for files, editor state, layout, settings, outline, block selection, and database blocks.
-- `src/extensions/` contains TipTap extensions for editor behavior and custom blocks.
-- `src/messages/` should only describe features present in this branch.
+- Entry point: `src/app/editor/[[...fileId]]/page.tsx`.
+- Stores: local Zustand stores for files, editor, layout, settings, outline, block selection, and database blocks.
+- Extensions: TipTap extensions for editing, formatting, custom blocks, search, spellcheck, database, math, mermaid, images, and page links.
+- Messages: `src/messages/` should only describe features that exist in this branch.
 
 ### Backend
 
@@ -112,7 +102,7 @@ The checked-in runtime has not fully migrated to sidecar storage yet. SQLite sti
 - `images` — local image upload and serving
 - `databases` — database-block CRUD until sidecar `extras.databases` becomes the source of truth
 
-`server/db/database.py` defines the current SQLite schema and `create_all` startup flow. There is no Alembic.
+`server/db/database.py` defines the current SQLite schema and startup uses `Base.metadata.create_all`. There is no Alembic.
 
 ## Storage Ownership
 

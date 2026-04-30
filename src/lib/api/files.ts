@@ -23,10 +23,6 @@ declare module "./client" {
         updated_at: string;
         word_count: number;
         preview: string;
-        fork_id: string | null;
-        forked_from_share_id: string | null;
-        forked_from_title: string | null;
-        forked_from_author: string | null;
       }>
     >;
     getFile(id: string): Promise<{
@@ -43,10 +39,6 @@ declare module "./client" {
       cover_position: number;
       created_at: string;
       updated_at: string;
-      fork_id: string | null;
-      forked_from_share_id: string | null;
-      forked_from_title: string | null;
-      forked_from_author: string | null;
     }>;
     createFile(
       name: string,
@@ -219,10 +211,6 @@ ApiClient.prototype.listFiles = async function (this: ApiClient) {
       updated_at: string;
       word_count: number;
       preview: string;
-      fork_id: string | null;
-      forked_from_share_id: string | null;
-      forked_from_title: string | null;
-      forked_from_author: string | null;
     }>
   >("/api/files", { cache: "no-store" });
 };
@@ -242,10 +230,6 @@ ApiClient.prototype.getFile = async function (this: ApiClient, id: string) {
     cover_position: number;
     created_at: string;
     updated_at: string;
-    fork_id: string | null;
-    forked_from_share_id: string | null;
-    forked_from_title: string | null;
-    forked_from_author: string | null;
   }>(`/api/files/${id}`);
 };
 
@@ -399,8 +383,6 @@ ApiClient.prototype.uploadImage = async function (
   const formData = new FormData();
   formData.append("file", file);
 
-  const authHeaders = this.getAuthHeaders();
-
   // Add timeout controller (30 seconds)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -408,7 +390,6 @@ ApiClient.prototype.uploadImage = async function (
   try {
     const response = await fetch(`${this.resolveBaseUrl()}/api/images/upload`, {
       method: "POST",
-      headers: authHeaders,
       body: formData,
       signal: controller.signal,
     });
@@ -455,15 +436,13 @@ ApiClient.prototype.deleteImage = async function (
   this: ApiClient,
   imageUrl: string
 ): Promise<void> {
-  // Extract user_id/filename from URL like "/api/images/{user_id}/{filename}"
-  const match = imageUrl.match(/\/api\/images\/([^/]+)\/([^/]+)$/);
+  const match = imageUrl.match(/\/api\/images\/([^/]+)$/);
   if (!match) return;
 
-  const [, userId, filename] = match;
+  const [, filename] = match;
 
-  const response = await fetch(`${this.resolveBaseUrl()}/api/images/${userId}/${filename}`, {
+  const response = await fetch(`${this.resolveBaseUrl()}/api/images/${filename}`, {
     method: "DELETE",
-    headers: this.getAuthHeaders(),
   });
 
   if (!response.ok) {
@@ -555,9 +534,7 @@ ApiClient.prototype.exportFile = async function (
   format: "markdown" | "pdf" | "docx"
 ): Promise<Blob> {
   const url = `${this.resolveBaseUrl()}/api/export/${fileId}/${format}`;
-  const response = await fetch(url, {
-    headers: this.getAuthHeaders(),
-  });
+  const response = await fetch(url);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Export failed" }));
@@ -588,7 +565,6 @@ ApiClient.prototype.importFile = async function (
   const response = await fetch(url, {
     method: "POST",
     body: formData,
-    headers: this.getAuthHeaders(),
   });
 
   if (!response.ok) {

@@ -86,6 +86,10 @@ src-tauri/gen/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 
+# Rust workspace crates (e.g. crates/sidecar)
+crates/*/target/
+crates/target/
+
 # PyInstaller intermediates
 server/dist/
 server/build/

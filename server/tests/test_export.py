@@ -842,22 +842,12 @@ class TestExportAPIEndpoints:
         file.id = "file-123"
         file.name = "document.md"
         file.content = "# Test Document\n\nSome content."
-        file.user_id = None
         file.icon = None
         file.cover_image_url = None
         file.cover_position = 0.5
         file.created_at = None
         file.updated_at = None
         return file
-
-    @pytest.fixture
-    def mock_token(self):
-        """Create mock TokenData for auth."""
-        from datetime import UTC, datetime, timedelta
-
-        from services.auth_service import TokenData
-
-        return TokenData(sub="dev-user", exp=datetime.now(UTC) + timedelta(hours=1))
 
     @pytest.fixture
     def mock_request(self):
@@ -867,7 +857,7 @@ class TestExportAPIEndpoints:
         return request
 
     @pytest.mark.asyncio
-    async def test_export_markdown_success(self, mock_db, mock_file, mock_token, mock_request):
+    async def test_export_markdown_success(self, mock_db, mock_file, mock_request):
         """Should export file as markdown."""
         # Setup mock
         mock_result = MagicMock()
@@ -876,12 +866,12 @@ class TestExportAPIEndpoints:
 
         from api.export import export_file
 
-        response = await export_file("file-123", "markdown", mock_request, mock_db, mock_token)
+        response = await export_file("file-123", "markdown", mock_request, mock_db)
 
         assert response.media_type == "text/markdown"
 
     @pytest.mark.asyncio
-    async def test_export_pdf_success(self, mock_db, mock_file, mock_token, mock_request):
+    async def test_export_pdf_success(self, mock_db, mock_file, mock_request):
         """Should export file as PDF."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_file
@@ -889,12 +879,12 @@ class TestExportAPIEndpoints:
 
         from api.export import export_file
 
-        response = await export_file("file-123", "pdf", mock_request, mock_db, mock_token)
+        response = await export_file("file-123", "pdf", mock_request, mock_db)
 
         assert response.media_type == "application/pdf"
 
     @pytest.mark.asyncio
-    async def test_export_docx_success(self, mock_db, mock_file, mock_token, mock_request):
+    async def test_export_docx_success(self, mock_db, mock_file, mock_request):
         """Should export file as DOCX."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_file
@@ -902,12 +892,12 @@ class TestExportAPIEndpoints:
 
         from api.export import export_file
 
-        response = await export_file("file-123", "docx", mock_request, mock_db, mock_token)
+        response = await export_file("file-123", "docx", mock_request, mock_db)
 
         assert "wordprocessingml" in response.media_type
 
     @pytest.mark.asyncio
-    async def test_export_file_not_found(self, mock_db, mock_token, mock_request):
+    async def test_export_file_not_found(self, mock_db, mock_request):
         """Should raise 404 when file not found."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -916,12 +906,12 @@ class TestExportAPIEndpoints:
         from api.export import export_file
 
         with pytest.raises(AppException) as exc_info:
-            await export_file("nonexistent", "markdown", mock_request, mock_db, mock_token)
+            await export_file("nonexistent", "markdown", mock_request, mock_db)
 
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_export_strips_md_extension(self, mock_db, mock_file, mock_token, mock_request):
+    async def test_export_strips_md_extension(self, mock_db, mock_file, mock_request):
         """Should strip .md extension from filename."""
         mock_file.name = "document.md"
         mock_result = MagicMock()
@@ -930,14 +920,14 @@ class TestExportAPIEndpoints:
 
         from api.export import export_file
 
-        response = await export_file("file-123", "markdown", mock_request, mock_db, mock_token)
+        response = await export_file("file-123", "markdown", mock_request, mock_db)
 
         # Check Content-Disposition header
         content_disp = response.headers.get("Content-Disposition", "")
         assert "document.md" in content_disp
 
     @pytest.mark.asyncio
-    async def test_export_handles_error(self, mock_db, mock_file, mock_token, mock_request):
+    async def test_export_handles_error(self, mock_db, mock_file, mock_request):
         """Should raise 500 on export error."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_file
@@ -947,12 +937,12 @@ class TestExportAPIEndpoints:
 
         with patch.object(export_service, "export_pdf", side_effect=Exception("Export failed")):
             with pytest.raises(AppException) as exc_info:
-                await export_file("file-123", "pdf", mock_request, mock_db, mock_token)
+                await export_file("file-123", "pdf", mock_request, mock_db)
 
             assert exc_info.value.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_export_url_encodes_filename(self, mock_db, mock_file, mock_token, mock_request):
+    async def test_export_url_encodes_filename(self, mock_db, mock_file, mock_request):
         """Should URL encode filename with special characters."""
         mock_file.name = "文档 测试.md"
         mock_result = MagicMock()
@@ -961,13 +951,13 @@ class TestExportAPIEndpoints:
 
         from api.export import export_file
 
-        response = await export_file("file-123", "markdown", mock_request, mock_db, mock_token)
+        response = await export_file("file-123", "markdown", mock_request, mock_db)
 
         content_disp = response.headers.get("Content-Disposition", "")
         assert "UTF-8''" in content_disp
 
     @pytest.mark.asyncio
-    async def test_export_without_md_extension(self, mock_db, mock_file, mock_token, mock_request):
+    async def test_export_without_md_extension(self, mock_db, mock_file, mock_request):
         """Should handle file without .md extension."""
         mock_file.name = "document"
         mock_result = MagicMock()
@@ -976,7 +966,7 @@ class TestExportAPIEndpoints:
 
         from api.export import export_file
 
-        response = await export_file("file-123", "pdf", mock_request, mock_db, mock_token)
+        response = await export_file("file-123", "pdf", mock_request, mock_db)
 
         assert response.media_type == "application/pdf"
 

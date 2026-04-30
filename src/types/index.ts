@@ -19,11 +19,6 @@ export interface FileItem {
   // Lightweight preview fields from list endpoint (avoids loading full content)
   wordCount: number;
   preview: string;
-  // Fork info (populated when this file was forked from a community item)
-  fork_id?: string;
-  forked_from_share_id?: string;
-  forked_from_title?: string;
-  forked_from_author?: string;
 }
 
 // =============================================================================
@@ -59,15 +54,6 @@ export interface ApiError {
   status?: number;
 }
 
-export interface StreamEvent {
-  type: "text" | "tool_start" | "tool_end" | "error";
-  content?: string;
-  tool?: string;
-  input?: string;
-  output?: string;
-}
-
-// =============================================================================
 // Search Types
 // =============================================================================
 

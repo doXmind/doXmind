@@ -18,22 +18,10 @@ from db.database import (
     File,
     get_db,
 )
-from services.auth_service import TokenData, require_auth
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def get_user_id(token: TokenData) -> str | None:
-    """Get user ID from token for data isolation.
-
-    Returns None only for special dev/api-key users (which share data).
-    Real users always get their user_id for proper isolation.
-    """
-    if token.sub in ("dev-user", "api-key-user", "anonymous"):
-        return None
-    return token.sub
 
 
 # =============================================================================
@@ -150,7 +138,7 @@ def _db_to_dict(db: DatabaseBlock) -> dict:
 
 
 async def _get_db_or_404(
-    database_id: str, user_id: str | None, session: AsyncSession
+    database_id: str, session: AsyncSession
 ) -> DatabaseBlock:
     """Fetch a database block with rows and views, or raise 404."""
     query = (
@@ -158,8 +146,6 @@ async def _get_db_or_404(
         .where(DatabaseBlock.id == database_id)
         .options(selectinload(DatabaseBlock.rows), selectinload(DatabaseBlock.views))
     )
-    if user_id is not None:
-        query = query.where(DatabaseBlock.user_id == user_id)
     result = await session.execute(query)
     db = result.scalar_one_or_none()
     if not db:
@@ -175,7 +161,6 @@ async def _get_db_or_404(
 @router.post("/")
 async def create_database(
     body: CreateDatabaseRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Create a new database block with default or custom properties and views.
@@ -184,7 +169,6 @@ async def create_database(
     - Default: hardcoded Name + Status schema with sample rows
     - Template/CSV: client provides properties_schema, rows, and views
     """
-    user_id = get_user_id(token)
 
     if body.properties_schema:
         # ── Custom schema (template or CSV import) ──
@@ -192,7 +176,6 @@ async def create_database(
 
         db_block = DatabaseBlock(
             id=str(uuid.uuid4()),
-            user_id=user_id,
             title=body.title,
             properties_schema=schema,
         )
@@ -268,7 +251,6 @@ async def create_database(
 
         db_block = DatabaseBlock(
             id=str(uuid.uuid4()),
-            user_id=user_id,
             title=body.title,
             properties_schema=default_schema,
         )
@@ -366,18 +348,16 @@ async def create_database(
         }
 
     # Re-fetch with relationships loaded
-    db_block = await _get_db_or_404(db_block.id, user_id, session)
+    db_block = await _get_db_or_404(db_block.id, session)
     return _db_to_dict(db_block)
 
 
 @router.get("/{database_id}")
 async def get_database(
     database_id: str,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get a database block metadata and views. Rows are loaded separately via pagination."""
-    user_id = get_user_id(token)
 
     # Load database with views only (skip rows for performance)
     query = (
@@ -385,8 +365,6 @@ async def get_database(
         .where(DatabaseBlock.id == database_id)
         .options(selectinload(DatabaseBlock.views))
     )
-    if user_id is not None:
-        query = query.where(DatabaseBlock.user_id == user_id)
     result = await session.execute(query)
     db = result.scalar_one_or_none()
     if not db:
@@ -427,12 +405,10 @@ async def get_database(
 async def update_database(
     database_id: str,
     body: UpdateDatabaseRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Update database title or icon."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     if body.title is not None:
         db.title = body.title
     if body.icon is not None:
@@ -444,12 +420,10 @@ async def update_database(
 @router.delete("/{database_id}")
 async def delete_database(
     database_id: str,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Delete a database block and all its rows/views."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     # Clean up page files linked to rows
     for row in db.rows:
@@ -472,12 +446,10 @@ async def delete_database(
 async def add_property(
     database_id: str,
     body: AddPropertyRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Add a new property column to the database."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     schema = list(db.properties_schema or [])
 
     new_prop = {
@@ -500,12 +472,10 @@ async def update_property(
     database_id: str,
     prop_id: str,
     body: UpdatePropertyRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Update a property's name, type, or options."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     schema = copy.deepcopy(db.properties_schema or [])
 
     prop = next((p for p in schema if p["id"] == prop_id), None)
@@ -528,12 +498,10 @@ async def update_property(
 async def delete_property(
     database_id: str,
     prop_id: str,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Remove a property column and clean up row data."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     schema = [p for p in (db.properties_schema or []) if p["id"] != prop_id]
 
     if len(schema) == len(db.properties_schema or []):
@@ -559,12 +527,10 @@ async def delete_property(
 async def reorder_properties(
     database_id: str,
     body: ReorderPropertiesRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Reorder property columns."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     schema = list(db.properties_schema or [])
     prop_map = {p["id"]: p for p in schema}
 
@@ -596,16 +562,12 @@ async def list_rows(
     database_id: str,
     limit: int = Query(500, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Get paginated rows for a database."""
-    user_id = get_user_id(token)
 
     # Verify database exists and user has access (without loading rows)
     db_query = select(DatabaseBlock).where(DatabaseBlock.id == database_id)
-    if user_id is not None:
-        db_query = db_query.where(DatabaseBlock.user_id == user_id)
     result = await session.execute(db_query)
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Database not found")
@@ -649,12 +611,10 @@ async def list_rows(
 async def add_row(
     database_id: str,
     body: AddRowRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Add a new row to the database."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     max_pos = max((r.position for r in db.rows), default=-1)
     row = DatabaseRow(
@@ -666,7 +626,7 @@ async def add_row(
     await session.commit()
 
     # Re-fetch to get updated rows list
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     return _db_to_dict(db)
 
 
@@ -675,12 +635,10 @@ async def update_row(
     database_id: str,
     row_id: str,
     body: UpdateRowRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Update cell values in a row."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     row = next((r for r in db.rows if r.id == row_id), None)
     if not row:
@@ -698,12 +656,10 @@ async def update_row(
 async def delete_row(
     database_id: str,
     row_id: str,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Delete a row from the database."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     row = next((r for r in db.rows if r.id == row_id), None)
     if not row:
@@ -718,7 +674,7 @@ async def delete_row(
     await session.delete(row)
     await session.commit()
 
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     return _db_to_dict(db)
 
 
@@ -726,12 +682,10 @@ async def delete_row(
 async def reorder_rows(
     database_id: str,
     body: ReorderRowsRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Reorder rows by providing the new order of row IDs."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     row_map = {r.id: r for r in db.rows}
 
     # Assign new positions to all provided row IDs
@@ -749,7 +703,7 @@ async def reorder_rows(
             next_pos += 1
 
     await session.commit()
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     return _db_to_dict(db)
 
 
@@ -762,12 +716,10 @@ async def reorder_rows(
 async def create_or_get_row_page(
     database_id: str,
     row_id: str,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Create or get the page (File) associated with a database row."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     row = next((r for r in db.rows if r.id == row_id), None)
     if not row:
@@ -789,7 +741,6 @@ async def create_or_get_row_page(
 
     # Create a new File for this row
     page = File(
-        user_id=user_id,
         name=title,
         content="",
     )
@@ -810,12 +761,10 @@ async def create_or_get_row_page(
 async def create_view(
     database_id: str,
     body: CreateViewRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Create a new view for the database."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     max_pos = max((v.position for v in db.views), default=-1)
     view = DatabaseView(
@@ -828,7 +777,7 @@ async def create_view(
     session.add(view)
     await session.commit()
 
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     return _db_to_dict(db)
 
 
@@ -837,12 +786,10 @@ async def update_view(
     database_id: str,
     view_id: str,
     body: UpdateViewRequest,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Update a view's name or config."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     view = next((v for v in db.views if v.id == view_id), None)
     if not view:
@@ -863,12 +810,10 @@ async def update_view(
 async def delete_view(
     database_id: str,
     view_id: str,
-    token: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db),
 ):
     """Delete a view. Must keep at least one view."""
-    user_id = get_user_id(token)
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
 
     if len(db.views) <= 1:
         raise HTTPException(status_code=400, detail="Cannot delete the last view")
@@ -880,5 +825,5 @@ async def delete_view(
     await session.delete(view)
     await session.commit()
 
-    db = await _get_db_or_404(database_id, user_id, session)
+    db = await _get_db_or_404(database_id, session)
     return _db_to_dict(db)

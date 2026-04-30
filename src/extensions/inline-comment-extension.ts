@@ -1,8 +1,7 @@
 /**
  * Inline Comment Extension for TipTap
  *
- * Renders text-anchored comment highlights as ProseMirror Decorations
- * in read-only shared document views. Supports click-to-open comment threads.
+ * Renders text-anchored note highlights as ProseMirror Decorations.
  */
 
 import { Extension } from "@tiptap/core";
