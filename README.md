@@ -43,14 +43,6 @@ doXmind is built for people who want a polished document editor without giving u
 | Import office files      | Local Markdown output from PDF, DOCX, PPTX, or existing Markdown               |
 | Work offline             | A complete editor without required cloud services or accounts                  |
 
-## First Launch
-
-doXmind opens directly into the workspace. There is no onboarding funnel, account wall, model setup, or cloud project picker before you can start writing.
-
-<p align="center">
-  <img src="docs/readme/doxmind-welcome.png" width="900" alt="doXmind first launch workspace with local files" />
-</p>
-
 ## Local Markdown Workspace
 
 doXmind opens to a file tree backed by a real folder on your machine. Creating, renaming, editing, and deleting documents updates the local workspace instead of hiding everything in an application database.
