@@ -26,6 +26,15 @@ use tauri::{
     Emitter,
 };
 
+#[cfg(target_os = "macos")]
+use objc2::rc::Retained;
+#[cfg(target_os = "macos")]
+use objc2::AnyThread;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSApplication, NSImage};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{MainThreadMarker, NSData};
+
 #[cfg(not(debug_assertions))]
 use tauri_plugin_shell::process::CommandChild;
 #[cfg(not(debug_assertions))]
@@ -203,13 +212,37 @@ window.__TAURI_PLATFORM__ = "{platform}";
             // both modes:
             //   dev:  http://localhost:3000/editor/ (Next dev server)
             //   prod: tauri://localhost/editor/     (static editor route)
-            let mut builder =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("editor/".into()))
-                    .title("doXmind")
-                    .inner_size(1400.0, 900.0)
-                    .min_inner_size(900.0, 600.0)
-                    .resizable(true)
-                    .initialization_script(&init_script);
+            // In dev mode the binary is normally launched by `tauri dev`,
+            // which bakes the right `devUrl` into the compiled config. The
+            // macOS dev flow (`scripts/desktop-dev.mjs`) takes a different
+            // path: it builds the binary, wraps it in a thin .app so macOS
+            // LaunchServices reports the correct bundle (and Mission Control
+            // shows our logo as the corner badge), and launches the .app via
+            // `open`. Compile-time config baking doesn't reach that .app, so
+            // we let it pass the dev URL through `DOXMIND_DEV_URL` instead
+            // (propagated via `LSEnvironment` in the wrapper's Info.plist).
+            let webview_url = std::env::var("DOXMIND_DEV_URL")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .and_then(|raw| {
+                    let trimmed = raw.trim_end_matches('/');
+                    let full = format!("{trimmed}/editor/");
+                    match full.parse::<tauri::Url>() {
+                        Ok(url) => Some(WebviewUrl::External(url)),
+                        Err(err) => {
+                            log::warn!("[webview] ignoring invalid DOXMIND_DEV_URL ({raw}): {err}");
+                            None
+                        }
+                    }
+                })
+                .unwrap_or_else(|| WebviewUrl::App("editor/".into()));
+
+            let mut builder = WebviewWindowBuilder::new(app, "main", webview_url)
+                .title("doXmind")
+                .inner_size(1400.0, 900.0)
+                .min_inner_size(900.0, 600.0)
+                .resizable(true)
+                .initialization_script(&init_script);
 
             #[cfg(target_os = "macos")]
             {
@@ -248,6 +281,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
 
             #[cfg(target_os = "macos")]
             {
+                apply_dock_icon();
                 if let Err(err) = install_macos_tray(app.handle()) {
                     log::warn!("[tray] failed to install: {err}");
                 }
@@ -265,6 +299,41 @@ window.__TAURI_PLATFORM__ = "{platform}";
             shutdown_backend(handle);
         }
     });
+}
+
+/// Bytes of the master app logo. Embedded at compile time so the dock-tile
+/// override works in `tauri dev` (where there is no .app bundle wrapper) as
+/// well as in production builds.
+#[cfg(target_os = "macos")]
+const APP_ICON_PNG: &[u8] = include_bytes!("../icons/icon.png");
+
+/// Decode the embedded PNG into an NSImage. Returns `None` if AppKit refuses
+/// the data (should never happen for our static asset).
+#[cfg(target_os = "macos")]
+fn load_ns_image() -> Option<Retained<NSImage>> {
+    let data = NSData::with_bytes(APP_ICON_PNG);
+    NSImage::initWithData(NSImage::alloc(), &data)
+}
+
+/// Set the application icon at runtime. macOS uses this for the dock tile,
+/// the Cmd+Tab switcher, AND as the bottom-right corner badge that Mission
+/// Control / App Exposé / minimize-to-dock thumbnails draw on top of the
+/// captured window snapshot — i.e. the "logo in the corner of the live
+/// preview" effect. In `tauri dev` there is no .app bundle for macOS to read
+/// CFBundleIconFile from, so without this call the dock and previews fall
+/// back to a generic blue square.
+#[cfg(target_os = "macos")]
+fn apply_dock_icon() {
+    let Some(mtm) = MainThreadMarker::new() else {
+        log::warn!("[dock] skipping icon override — not on main thread");
+        return;
+    };
+    let Some(image) = load_ns_image() else {
+        log::warn!("[dock] failed to decode embedded icon.png");
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    unsafe { app.setApplicationIconImage(Some(&image)) };
 }
 
 #[cfg(target_os = "macos")]

@@ -1,4 +1,10 @@
-"""File import API endpoint - converts local files to Markdown."""
+"""File import API endpoint - converts local files to Markdown.
+
+Routes by file type to the document_converter service. See
+``services/document_converter.py`` for the per-format strategy
+(PyMuPDF4LLM fast path, Marker fallback for scans, mammoth for docx,
+python-pptx for pptx).
+"""
 
 import logging
 import os
@@ -20,6 +26,7 @@ from exceptions import (
     NotFoundError,
     UnsupportedFileTypeError,
 )
+from services.document_converter import convert_to_markdown
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,27 +36,20 @@ MAX_FILE_SIZE = get_settings().max_import_file_size
 
 
 def get_file_extension(filename: str) -> str:
-    """Get lowercase file extension."""
     return os.path.splitext(filename)[1].lower()
 
 
 def markdown_to_html(md_content: str) -> str:
     """Convert markdown to HTML for TipTap editor.
 
-    Note: We don't use 'codehilite' extension because it wraps code blocks
-    in <div class="codehilite"> with extra <span> tags, which TipTap cannot
-    parse correctly. TipTap expects simple <pre><code class="language-xxx">
-    format. Frontend uses lowlight for syntax highlighting instead.
+    No 'codehilite' extension — it wraps blocks in extra spans that TipTap
+    can't parse. Frontend uses lowlight for syntax highlighting instead.
     """
     return markdown.markdown(md_content, extensions=["tables", "fenced_code"])
 
 
 def strip_code_fences(md_content: str) -> str:
-    """Strip wrapping Markdown code fences.
-
-    Only removes the outermost fence when the entire content is wrapped in a single
-    code fence block (e.g. ```markdown\\n...\\n```). Internal code fences are preserved.
-    """
+    """Strip a single outer ```markdown fence if the whole doc is wrapped in one."""
     stripped = md_content.strip()
     match = re.match(r"^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$", stripped)
     if match:
@@ -57,38 +57,30 @@ def strip_code_fences(md_content: str) -> str:
     return md_content
 
 
-async def convert_with_markitdown(content: bytes, ext: str) -> str:
-    """Convert supported office/PDF formats locally with MarkItDown."""
-    import asyncio
-    import tempfile
-
-    from markitdown import MarkItDown
-
-    def _convert_sync() -> str:
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp:
-            tmp.write(content)
-            tmp.flush()
-            result = MarkItDown().convert(tmp.name)
-            return result.text_content or ""
-
-    return await asyncio.to_thread(_convert_sync)
-
-
 @router.post("/")
 async def import_file(
     file: UploadFile = File(...),
     parent_id: str | None = Form(None),
+    mode: str = Form("auto"),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
+    """Import a file (PDF / DOCX / PPTX / Markdown) and create a new document.
 
-    - Accepts: PDF, DOCX, MD, MARKDOWN files
-    - Max size: 10MB
-    - parent_id: Optional folder ID to import into
-    - Returns: Created file object
+    ``mode`` controls the PDF converter routing:
+        * ``auto`` (default) — fast PyMuPDF4LLM path, fall back to Marker
+          when the doc looks scanned (very low text yield).
+        * ``ocr`` — skip the probe and use Marker for the full pipeline.
+          This is the "Import with OCR" menu item; the user has explicitly
+          asked for the high-quality (slower) path.
+
+    Other formats ignore ``mode`` — there is no OCR to apply to a DOCX.
+
+    If Marker is needed but its models aren't installed yet the response
+    is 409 with ``code: MARKER_MODELS_REQUIRED`` — the frontend prompts
+    to download and retries with the same ``mode``.
     """
-    # Validate parent folder if provided
+    force_ocr = mode == "ocr"
+
     if parent_id:
         result = await db.execute(
             select(FileModel).where(
@@ -99,33 +91,25 @@ async def import_file(
         parent_folder = result.scalar_one_or_none()
         if not parent_folder:
             raise NotFoundError(resource="Parent folder", resource_id=parent_id)
-
-        # Check that parent folder is at root (single-level hierarchy)
         if parent_folder.parent_id is not None:
             raise BadRequestError(
                 message="Cannot import into nested folders. Only single-level folders are supported."
             )
-    # Validate file extension
+
     ext = get_file_extension(file.filename or "")
     if ext not in ALLOWED_EXTENSIONS:
         raise UnsupportedFileTypeError(file_type=ext, allowed_types=list(ALLOWED_EXTENSIONS))
 
-    # Read file content
     content = await file.read()
 
-    # Cap body size — even though the server binds to 127.0.0.1, browser
-    # tabs on allowed origins can still POST here, and an unbounded
-    # await file.read() is a memory-DoS primitive.
     if len(content) > MAX_FILE_SIZE:
         raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
 
-    # Convert to markdown
     try:
         if ext in {".md", ".markdown"}:
-            # Already markdown, just decode
             md_content = content.decode("utf-8")
         else:
-            md_content = await convert_with_markitdown(content, ext)
+            md_content = await convert_to_markdown(content, ext, force_ocr=force_ocr)
     except AppException:
         raise
     except Exception as e:
@@ -133,15 +117,11 @@ async def import_file(
         raise InternalError(message=f"Failed to convert file: {str(e)}")
 
     md_content = strip_code_fences(md_content)
-
-    # Convert markdown to HTML for TipTap editor (basic backend conversion)
     html_content = markdown_to_html(md_content)
 
-    # Generate file name (remove extension, add .md)
     base_name = os.path.splitext(file.filename or "Imported")[0]
     new_name = f"{base_name}.md"
 
-    # Create new file in database
     try:
         new_file = FileModel(
             name=new_name,

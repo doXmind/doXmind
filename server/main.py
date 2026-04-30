@@ -18,6 +18,7 @@ from api import (
     files,
     images,
     import_file,
+    marker,
     versions,
 )
 from config import CORS_ORIGINS, get_cors_headers, get_settings
@@ -103,6 +104,7 @@ app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(versions.router, prefix="/api/versions", tags=["versions"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
+app.include_router(marker.router, prefix="/api/import/marker", tags=["import"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(databases.router, prefix="/api/databases", tags=["databases"])
 

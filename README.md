@@ -88,11 +88,28 @@ First run:
 - `files` — local document CRUD
 - `versions` — local version snapshots
 - `export` — Markdown / HTML / PDF / DOCX export
-- `import_file` — import PDF / DOCX / PPTX / XLSX / Markdown through local conversion
+- `import_file` — import PDF / DOCX / PPTX / Markdown through local conversion (`services/document_converter.py`)
+- `marker` — Marker (offline OCR) model lifecycle: `/api/import/marker/status` and `/api/import/marker/download`
 - `images` — local image upload and serving from `~/.doxmind/uploads/`
 - `databases` — database-block CRUD while sidecar storage is being introduced
 
 Swagger and ReDoc are available at `http://localhost:8000/docs` and `http://localhost:8000/redoc` in development.
+
+## Document Import
+
+`services/document_converter.py` routes by extension:
+
+| Format                         | Strategy                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| `.pdf` (native text)           | **PyMuPDF4LLM** — fast path, no models, milliseconds. Trips when avg chars/page ≥ 40. |
+| `.pdf` (scanned / image-heavy) | **Marker** (Surya layout + OCR). Lazy-loaded on Apple Silicon via `TORCH_DEVICE=mps`. |
+| `.docx`                        | **mammoth** → HTML → markdownify.                                                     |
+| `.pptx`                        | **python-pptx** + a custom slide-by-slide markdown emitter.                           |
+| `.md` / `.markdown`            | passthrough.                                                                          |
+
+Marker requires ~2GB of Surya weights and is **not** pre-bundled. The first time a scanned PDF arrives, the backend returns `409 MARKER_MODELS_REQUIRED`; the frontend shows a one-time confirm modal, kicks off `/api/import/marker/download`, polls `/api/import/marker/status` until `installed`, and replays the original import. Install state is tracked at `~/.doxmind/marker-models.json` — delete it to force a re-download.
+
+`markitdown` was previously the unified converter and has been removed; do not reintroduce it.
 
 ## Removed Surface
 

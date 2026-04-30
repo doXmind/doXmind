@@ -18,6 +18,7 @@ import {
 import { cn, getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { toast } from "sonner";
+import { WelcomeOcrRow } from "@/components/welcome-ocr-row";
 
 const log = storeLogger.child("Welcome");
 
@@ -76,6 +77,9 @@ export function WelcomeScreen() {
   const currentFolderId = useFileStore((s) => s.currentFolderId);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Pinned to .pdf for the OCR row's "Open scanned PDF" affordance —
+  // OCR doesn't apply to docx/pptx/md, so we narrow the picker.
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const folderImportAbortRef = useRef<AbortController | null>(null);
 
@@ -111,26 +115,43 @@ export function WelcomeScreen() {
 
   const handleOpenFileClick = () => fileInputRef.current?.click();
   const handleOpenFolderClick = () => folderInputRef.current?.click();
+  const handleOpenOcrFileClick = () => ocrFileInputRef.current?.click();
 
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
+  const makeFileInputChange =
+    (mode: "auto" | "ocr") => async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      e.target.value = "";
 
-    setIsImporting(true);
-    const toastId = toast.loading(t("importingFile"));
-    try {
-      const newId = await importFile(file, currentFolderId);
-      router.push(`/editor/${newId}`);
-      toast.success(file.name, { id: toastId });
-    } catch (error) {
-      log.error("Failed to import file", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { id: toastId, description });
-    } finally {
-      setIsImporting(false);
-    }
-  };
+      setIsImporting(true);
+      const toastId = toast.loading(t("importingFile"));
+      try {
+        const newId = await importFile(
+          file,
+          currentFolderId,
+          mode === "ocr" ? { mode } : undefined
+        );
+        if (newId) {
+          router.push(`/editor/${newId}`);
+          toast.success(file.name, { id: toastId });
+        } else {
+          // null = deferred behind the Marker download prompt — but on
+          // the welcome screen the row already shows installed=true
+          // before this code path can run, so this branch only fires if
+          // the auto-fallback kicks in for a near-empty PDF.
+          toast.dismiss(toastId);
+        }
+      } catch (error) {
+        log.error("Failed to import file", error);
+        const { title, description } = getErrorMessage(error);
+        toast.error(title, { id: toastId, description });
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+  const handleFileInputChange = makeFileInputChange("auto");
+  const handleOcrFileInputChange = makeFileInputChange("ocr");
 
   /** Run the folder import pipeline given an already-normalized entry
       list. Used by both the picker change handler and folder-drop. */
@@ -226,7 +247,9 @@ export function WelcomeScreen() {
       setIsImporting(true);
       try {
         const newId = await importFile(file, currentFolderId);
-        router.push(`/editor/${newId}`);
+        if (newId) {
+          router.push(`/editor/${newId}`);
+        }
       } catch (error) {
         log.error("Failed to import dropped file", error);
         const { title, description } = getErrorMessage(error);
@@ -301,6 +324,10 @@ export function WelcomeScreen() {
               {t("openFolder")}
             </Button>
           </div>
+          {/* Status-aware row: lets the user install the offline OCR
+              engine without leaving the welcome screen and, once
+              installed, jump straight into a scanned-PDF picker. */}
+          <WelcomeOcrRow onUseOcr={handleOpenOcrFileClick} />
         </motion.div>
 
         {/* Recent files */}
@@ -357,6 +384,13 @@ export function WelcomeScreen() {
         type="file"
         accept=".pdf,.docx,.md,.markdown"
         onChange={handleFileInputChange}
+        className="hidden"
+      />
+      <input
+        ref={ocrFileInputRef}
+        type="file"
+        accept=".pdf"
+        onChange={handleOcrFileInputChange}
         className="hidden"
       />
       {/* `webkitdirectory` / `directory` aren't in React's input typings,

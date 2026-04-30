@@ -8,6 +8,7 @@ import {
   LayoutTemplate,
   Loader2,
   Plus,
+  ScanText,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ interface NewButtonProps {
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   onImportFile: () => void;
+  /** Optional — only wired up where the OCR pipeline makes sense. */
+  onImportFileOcr?: () => void;
   onImportWorkspace?: () => void;
   isImporting: boolean;
   disableFolder?: boolean;
@@ -36,6 +39,7 @@ export const NewButton = memo(function NewButton({
   onCreateFolder,
   onOpenTemplatePicker,
   onImportFile,
+  onImportFileOcr,
   onImportWorkspace,
   isImporting,
   disableFolder,
@@ -78,6 +82,12 @@ export const NewButton = memo(function NewButton({
           )}
           {t("importFile")}
         </DropdownMenuItem>
+        {onImportFileOcr && (
+          <DropdownMenuItem onClick={onImportFileOcr} disabled={isImporting}>
+            <ScanText className="mr-2 h-4 w-4" />
+            {t("importFileWithOcr")}
+          </DropdownMenuItem>
+        )}
         {onImportWorkspace && (
           <DropdownMenuItem onClick={onImportWorkspace}>
             <FileArchive className="mr-2 h-4 w-4" />

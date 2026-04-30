@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
+import { ImportError, type ImportMode } from "@/lib/api/files";
+import { useMarkerStore } from "@/stores/marker-store";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
@@ -71,8 +73,8 @@ interface FileState {
   importFile: (
     file: File,
     parentId?: string | null,
-    options?: { silent?: boolean }
-  ) => Promise<string>;
+    options?: { silent?: boolean; mode?: ImportMode }
+  ) => Promise<string | null>;
   updateFile: (
     id: string,
     updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
@@ -304,16 +306,20 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      importFile: async (file: File, parentId?: string | null, options?: { silent?: boolean }) => {
+      importFile: async (
+        file: File,
+        parentId?: string | null,
+        options?: { silent?: boolean; mode?: ImportMode }
+      ) => {
         // No client-side size cap — this is a local-first desktop build,
         // the sidecar is on 127.0.0.1 and the data dir is the user's own
-        // disk. Big academic PDFs / scanned docs were getting silently
-        // counted as "failed" in folder imports because of the legacy
-        // SaaS-era 10MB limit; markitdown handles them fine, just takes
-        // longer for very large files.
+        // disk. Big academic PDFs and scans use the Marker fallback in
+        // the converter router; the per-format dispatch is on the server.
         try {
-          // Import file via API (converts PDF/DOCX/MD to markdown)
-          const serverFile = await api.importFile(file, parentId);
+          // Import file via API (converts PDF / DOCX / PPTX / MD to markdown).
+          // `options.mode` lets the caller force the OCR pipeline (the
+          // "Import with OCR" menu item); omit it for the default routing.
+          const serverFile = await api.importFile(file, parentId, { mode: options?.mode });
 
           // Use frontend markdownToHtml for proper math/mermaid/TipTap rendering
           // The backend's Python markdown library doesn't support math ($...$) or
@@ -367,6 +373,14 @@ export const useFileStore = create<FileState>()(
           eventBus.emit("storage:changed");
           return newFile.id;
         } catch (error) {
+          // Scanned PDF that needs the Marker fallback, but the OCR
+          // weights aren't downloaded yet. Hand off to the marker store,
+          // which will prompt the user, kick off the download, and
+          // re-call this same `importFile` once the models are ready.
+          if (error instanceof ImportError && error.code === "MARKER_MODELS_REQUIRED") {
+            useMarkerStore.getState().enqueueImport({ file, parentId, options });
+            return null;
+          }
           log.error("Failed to import file", error);
           throw error;
         }

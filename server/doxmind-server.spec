@@ -26,11 +26,30 @@ hiddenimports += collect_submodules("utils")
 hiddenimports += collect_submodules("lib")
 
 datas: list[tuple[str, str]] = []
-# markitdown ships data files for some converters; pull them in if installed.
-try:
-    datas += collect_data_files("markitdown")
-except Exception:
-    pass
+# Marker / Surya / pymupdf4llm / mammoth / python-pptx ship a handful of
+# small bundled assets (font files, class label maps, default templates).
+# The Surya weights are NOT bundled — they live in the user's HuggingFace
+# cache and are downloaded on demand the first time a scanned PDF is
+# imported (see services/marker_state.py).
+#
+# NOTE: bundling marker-pdf into a single PyInstaller binary inflates the
+# artifact significantly (PyTorch alone is ~800MB). When we cut the next
+# .app build we may want to switch the sidecar from a one-file PyInstaller
+# bundle to a directory bundle (or ship a thin venv) so the weights and
+# PyTorch don't have to be unpacked on every launch.
+for _pkg in ("marker", "surya", "pymupdf4llm", "pymupdf", "mammoth", "pptx"):
+    try:
+        datas += collect_data_files(_pkg)
+    except Exception:
+        pass
+
+# Marker / Surya pull in torch + transformers via dynamic imports that
+# PyInstaller can't always trace statically. Be explicit.
+for _pkg in ("torch", "transformers", "surya", "marker", "pymupdf4llm", "mammoth", "pptx"):
+    try:
+        hiddenimports += collect_submodules(_pkg)
+    except Exception:
+        pass
 
 a = Analysis(
     ["run_sidecar.py"],

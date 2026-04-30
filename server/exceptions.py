@@ -184,3 +184,20 @@ class DocumentNotFoundError(NotFoundError):
 
     def __init__(self, file_id: str = None, **kwargs):
         super().__init__(resource="File", resource_id=file_id, **kwargs)
+
+
+class MarkerModelsRequiredError(AppException):
+    """Marker OCR models are needed but not installed locally yet (409).
+
+    Raised when a PDF requires the Marker fallback (scanned / heavy layout)
+    and the Surya model weights have not been downloaded yet. The frontend
+    catches this code and prompts the user to confirm the one-time
+    ~2GB download before retrying the import.
+    """
+
+    status_code = 409
+    error_code = "MARKER_MODELS_REQUIRED"
+    message = (
+        "This PDF needs the offline OCR engine, which has not been downloaded yet. "
+        "Approve the one-time ~2GB model download to continue."
+    )

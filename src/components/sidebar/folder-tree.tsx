@@ -45,6 +45,7 @@ interface FolderTreeProps {
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   onImportFile: () => void;
+  onImportFileOcr: () => void;
   onImportFolder: () => void;
   isImporting: boolean;
 }
@@ -98,6 +99,7 @@ export function FolderTree({
   onCreateFolder,
   onOpenTemplatePicker,
   onImportFile,
+  onImportFileOcr,
   onImportFolder,
   isImporting: isFileImporting,
 }: FolderTreeProps) {
@@ -471,6 +473,7 @@ export function FolderTree({
         onCreateFolder={onCreateFolder}
         onOpenTemplatePicker={onOpenTemplatePicker}
         onImportFile={onImportFile}
+        onImportFileOcr={onImportFileOcr}
         isImporting={isFileImporting}
         hideFolder
       />

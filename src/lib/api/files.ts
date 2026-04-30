@@ -175,7 +175,8 @@ declare module "./client" {
     exportFile(fileId: string, format: "markdown" | "pdf" | "docx"): Promise<Blob>;
     importFile(
       file: File,
-      parentId?: string | null
+      parentId?: string | null,
+      opts?: ImportOptions
     ): Promise<{
       id: string;
       name: string;
@@ -192,6 +193,18 @@ declare module "./client" {
       updated_at: string;
     }>;
   }
+}
+
+/**
+ * Per-import overrides surfaced to the user as menu options.
+ * - "auto" — fast path, fall back to Marker only when nothing extracts.
+ * - "ocr"  — explicitly use the Marker pipeline for the whole document.
+ *   Triggers the model download prompt if the weights aren't local yet.
+ */
+export type ImportMode = "auto" | "ocr";
+
+export interface ImportOptions {
+  mode?: ImportMode;
 }
 
 ApiClient.prototype.listFiles = async function (this: ApiClient) {
@@ -549,20 +562,51 @@ ApiClient.prototype.exportFile = async function (
 };
 
 /**
- * Import a file (PDF, DOCX, or Markdown) and convert it to a new document.
+ * Typed error so callers can branch on the backend's error code instead of
+ * pattern-matching on the message. The most important code we surface is
+ * MARKER_MODELS_REQUIRED — the file-store catches that, queues the file,
+ * and shows the one-time download prompt.
+ */
+export class ImportError extends Error {
+  code: string | null;
+  status: number;
+  details: Record<string, unknown> | null;
+
+  constructor(
+    message: string,
+    opts: { code?: string | null; status: number; details?: Record<string, unknown> | null }
+  ) {
+    super(message);
+    this.name = "ImportError";
+    this.code = opts.code ?? null;
+    this.status = opts.status;
+    this.details = opts.details ?? null;
+  }
+}
+
+/**
+ * Import a file (PDF / DOCX / PPTX / Markdown) and convert it to a new document.
  * @param file - The file to import
  * @param parentId - Optional folder ID to import into
  * @returns The created file object
+ * @throws {ImportError} with `code === "MARKER_MODELS_REQUIRED"` when a
+ *   scanned PDF needs the Marker fallback but its weights aren't installed.
  */
 ApiClient.prototype.importFile = async function (
   this: ApiClient,
   file: File,
-  parentId?: string | null
+  parentId?: string | null,
+  opts?: ImportOptions
 ) {
   const formData = new FormData();
   formData.append("file", file);
   if (parentId) {
     formData.append("parent_id", parentId);
+  }
+  // Only send `mode` when the caller explicitly opts in — the backend
+  // defaults to "auto" and we want to keep the multipart body small.
+  if (opts?.mode && opts.mode !== "auto") {
+    formData.append("mode", opts.mode);
   }
 
   const url = `${this.resolveBaseUrl()}/api/import/`;
@@ -572,10 +616,19 @@ ApiClient.prototype.importFile = async function (
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
+    const payload = await response.json().catch(() => ({}) as Record<string, unknown>);
+    const errBlock = (
+      payload as { error?: { code?: string; message?: string; details?: Record<string, unknown> } }
+    ).error;
     const message =
-      error.detail || error.error?.message || `Import failed (HTTP ${response.status})`;
-    throw new Error(message);
+      errBlock?.message ||
+      (payload as { detail?: string }).detail ||
+      `Import failed (HTTP ${response.status})`;
+    throw new ImportError(message, {
+      code: errBlock?.code ?? null,
+      status: response.status,
+      details: errBlock?.details ?? null,
+    });
   }
 
   return response.json() as Promise<{

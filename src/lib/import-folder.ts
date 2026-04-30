@@ -49,7 +49,11 @@ export interface FolderImportOptions {
   /** doxmind folder id to import into; null = root. */
   parentId: string | null;
   createFolder: (name: string, parentId: string | null) => Promise<string>;
-  importFile: (file: File, parentId: string | null) => Promise<string>;
+  // Returns the new file id, OR null when the import was deferred (e.g.
+  // a scanned PDF queued behind the Marker model download prompt).
+  // Folder import always runs in default ("auto") mode — bulk OCR over a
+  // whole tree is rarely what the user wants and would be very slow.
+  importFile: (file: File, parentId: string | null) => Promise<string | null>;
   onProgress: (p: FolderImportProgress) => void;
   signal?: AbortSignal;
 }
