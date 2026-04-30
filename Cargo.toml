@@ -1,0 +1,11 @@
+[workspace]
+members = ["src-tauri", "crates/sidecar"]
+resolver = "2"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+incremental = false
+opt-level = "s"
+strip = true

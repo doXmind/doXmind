@@ -112,7 +112,7 @@ sidecar 保存：
 
 ### Phase 1: 接通 Tauri + sidecar crate
 
-Status: todo
+Status: done
 
 目标：让前端能通过 Tauri command 读写真实 `.md` 文件，但不改变现有 DB 路径。
 

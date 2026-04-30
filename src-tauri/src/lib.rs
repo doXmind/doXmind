@@ -4,15 +4,18 @@
 //!   1. On startup, pick a free TCP port on 127.0.0.1.
 //!   2. Spawn the FastAPI sidecar with PORT=<that port>.
 //!      - Release: tauri-plugin-shell sidecar (bundled `doxmind-server` binary).
-//!      - Debug:   `python -m uvicorn run_sidecar:main` from the repo's
-//!                 `server/` directory using the venv interpreter when present.
+//!      - Debug: `python -m uvicorn run_sidecar:main` from `server/` using the
+//!        venv interpreter when present.
 //!   3. Inject `window.__TAURI_BACKEND_URL__` into every WebView before any
 //!      page script runs (see `init_script` on the WindowBuilder).
 //!   4. On exit, kill the sidecar so we don't leave an orphaned uvicorn.
 
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
+use doxmind_sidecar::{DocMeta, DocPayload, ReadResult, Source};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
@@ -31,8 +34,6 @@ use tauri_plugin_shell::process::CommandChild;
 #[cfg(not(debug_assertions))]
 use tauri_plugin_shell::ShellExt;
 
-#[cfg(debug_assertions)]
-use std::path::PathBuf;
 #[cfg(debug_assertions)]
 use std::process::{Child, Command};
 
@@ -122,9 +123,71 @@ fn spawn_backend_sidecar(app: &AppHandle, port: u16) -> CommandChild {
 
 struct BackendUrl(String);
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadResultDto {
+    html: String,
+    markdown: String,
+    meta: DocMeta,
+    extras: Option<serde_json::Value>,
+    source: String,
+}
+
+impl From<ReadResult> for ReadResultDto {
+    fn from(result: ReadResult) -> Self {
+        Self {
+            html: result.html,
+            markdown: result.markdown,
+            meta: result.meta,
+            extras: result.extras,
+            source: match result.source {
+                Source::Sidecar => "sidecar",
+                Source::Markdown => "markdown",
+                Source::Empty => "empty",
+            }
+            .to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocWritePayloadDto {
+    html: String,
+    markdown: String,
+    meta: DocMeta,
+    extras: Option<serde_json::Value>,
+}
+
+impl From<DocWritePayloadDto> for DocPayload {
+    fn from(payload: DocWritePayloadDto) -> Self {
+        Self {
+            html: payload.html,
+            markdown: payload.markdown,
+            meta: payload.meta,
+            extras: payload.extras,
+        }
+    }
+}
+
 #[tauri::command]
 fn get_backend_url(state: tauri::State<'_, BackendUrl>) -> String {
     state.0.clone()
+}
+
+#[tauri::command]
+async fn doc_read(path: String) -> Result<ReadResultDto, String> {
+    doxmind_sidecar::read_doc(PathBuf::from(path))
+        .await
+        .map(ReadResultDto::from)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn doc_write(path: String, payload: DocWritePayloadDto) -> Result<(), String> {
+    doxmind_sidecar::write_doc(PathBuf::from(path), &DocPayload::from(payload))
+        .await
+        .map_err(|err| err.to_string())
 }
 
 pub fn run() {
@@ -173,7 +236,11 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .plugin(tauri_plugin_opener::init())
         .manage(BackendUrl(backend_url.clone()))
         .manage(backend_state)
-        .invoke_handler(tauri::generate_handler![get_backend_url])
+        .invoke_handler(tauri::generate_handler![
+            get_backend_url,
+            doc_read,
+            doc_write
+        ])
         .setup(move |app| {
             // Spawn the backend.
             #[cfg(debug_assertions)]

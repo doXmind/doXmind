@@ -258,8 +258,7 @@ pub async fn write_doc(md_path: impl AsRef<Path>, payload: &DocPayload) -> Resul
         updated_at: now_iso8601(),
         extras: payload.extras.clone(),
     };
-    let sidecar_json =
-        serde_json::to_vec_pretty(&sidecar).map_err(Error::SidecarSerialize)?;
+    let sidecar_json = serde_json::to_vec_pretty(&sidecar).map_err(Error::SidecarSerialize)?;
     atomic_write(&sidecar_path_for(md_path), &sidecar_json).await?;
     Ok(())
 }
@@ -276,8 +275,7 @@ fn parse_frontmatter(raw: &str) -> Result<(DocMeta, String)> {
     let meta = match parsed.data {
         Some(pod) => {
             // gray_matter's Pod -> serde_json::Value via its Deserialize impl.
-            let json: serde_json::Value =
-                pod.deserialize().map_err(Error::FrontmatterParse)?;
+            let json: serde_json::Value = pod.deserialize().map_err(Error::FrontmatterParse)?;
             value_to_meta(json)
         }
         None => DocMeta::new(new_id()),
@@ -298,7 +296,8 @@ fn value_to_meta(value: serde_json::Value) -> DocMeta {
     {
         map.insert("id".into(), serde_json::Value::String(new_id()));
     }
-    serde_json::from_value(serde_json::Value::Object(map)).unwrap_or_else(|_| DocMeta::new(new_id()))
+    serde_json::from_value(serde_json::Value::Object(map))
+        .unwrap_or_else(|_| DocMeta::new(new_id()))
 }
 
 fn build_md_with_frontmatter(meta: &DocMeta, body: &str) -> Result<String> {
@@ -661,10 +660,7 @@ mod tests {
         .unwrap();
         for entry in std::fs::read_dir(dir.path()).unwrap() {
             let name = entry.unwrap().file_name().into_string().unwrap();
-            assert!(
-                !name.contains(".tmp-"),
-                "leaked tmp file in dir: {name}"
-            );
+            assert!(!name.contains(".tmp-"), "leaked tmp file in dir: {name}");
         }
     }
 
