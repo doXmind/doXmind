@@ -48,7 +48,7 @@ doXmind is built for people who want a polished document editor without giving u
 doXmind opens directly into the workspace. There is no onboarding funnel, account wall, model setup, or cloud project picker before you can start writing.
 
 <p align="center">
-  <img src="docs/readme/doxmind-welcome-4k.png" width="900" alt="doXmind first launch workspace with local files" />
+  <img src="docs/readme/doxmind-welcome.png" width="900" alt="doXmind first launch workspace with local files" />
 </p>
 
 ## Local Markdown Workspace
@@ -56,7 +56,7 @@ doXmind opens directly into the workspace. There is no onboarding funnel, accoun
 doXmind opens to a file tree backed by a real folder on your machine. Creating, renaming, editing, and deleting documents updates the local workspace instead of hiding everything in an application database.
 
 <p align="center">
-  <img src="docs/readme/doxmind-editor-4k.png" width="900" alt="doXmind editor with a local Markdown document" />
+  <img src="docs/readme/doxmind-editor.png" width="900" alt="doXmind editor with a local Markdown document" />
 </p>
 
 The default workspace is `~/Documents/doXmind`. You can also point the app at another local folder when running the desktop shell.
@@ -66,7 +66,7 @@ The default workspace is `~/Documents/doXmind`. You can also point the app at an
 The editor supports the document blocks that are expected in a modern knowledge workspace: headings, lists, tasks, quotes, tables, code blocks, math, images, Mermaid diagrams, embeds, and local database blocks.
 
 <p align="center">
-  <img src="docs/readme/doxmind-blocks-4k.png" width="900" alt="doXmind rich block rendering with table, code, and math" />
+  <img src="docs/readme/doxmind-blocks.png" width="900" alt="doXmind rich block rendering with table, code, and math" />
 </p>
 
 Portable Markdown remains the user-facing file. When a block needs more state than Markdown can represent cleanly, doXmind stores that state in the sidecar.
@@ -76,7 +76,7 @@ Portable Markdown remains the user-facing file. When a block needs more state th
 Database blocks are local document data, not a hosted workspace service. Rows, schema, and view state are stored in `extras.databases` inside the matching `.doxmind` sidecar so the Markdown file and its rich structured data can travel together.
 
 <p align="center">
-  <img src="docs/readme/doxmind-database-4k.png" width="900" alt="doXmind database block stored in a local sidecar" />
+  <img src="docs/readme/doxmind-database.png" width="900" alt="doXmind database block stored in a local sidecar" />
 </p>
 
 ## Storage Model
@@ -115,7 +115,7 @@ The Markdown file is the portable source. The sidecar is the lossless doXmind st
 All import work is local. There is no remote parser service.
 
 <p align="center">
-  <img src="docs/readme/doxmind-import-4k.png" width="900" alt="doXmind local PDF DOCX PPTX import workflow" />
+  <img src="docs/readme/doxmind-import.png" width="900" alt="doXmind local PDF DOCX PPTX import workflow" />
 </p>
 
 | Format                        | Local strategy                                             |
@@ -133,7 +133,7 @@ Marker OCR models are not bundled. The app asks before downloading them and stor
 Themes, editor behavior, OCR model state, and import settings are stored on the device. The settings surface is intentionally focused on the local sidecar edition instead of cloud accounts, billing, or provider keys.
 
 <p align="center">
-  <img src="docs/readme/doxmind-settings-4k.png" width="900" alt="doXmind local settings for theme customization and OCR setup" />
+  <img src="docs/readme/doxmind-settings.png" width="900" alt="doXmind local settings for theme customization and OCR setup" />
 </p>
 
 ## Current Scope
