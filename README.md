@@ -43,6 +43,14 @@ doXmind is built for people who want a polished document editor without giving u
 | Import office files      | Local Markdown output from PDF, DOCX, PPTX, or existing Markdown               |
 | Work offline             | A complete editor without required cloud services or accounts                  |
 
+## First Launch
+
+doXmind opens directly into the workspace. There is no onboarding funnel, account wall, model setup, or cloud project picker before you can start writing.
+
+<p align="center">
+  <img src="docs/readme/doxmind-welcome-4k.png" width="900" alt="doXmind first launch workspace with local files" />
+</p>
+
 ## Local Markdown Workspace
 
 doXmind opens to a file tree backed by a real folder on your machine. Creating, renaming, editing, and deleting documents updates the local workspace instead of hiding everything in an application database.
@@ -62,6 +70,14 @@ The editor supports the document blocks that are expected in a modern knowledge 
 </p>
 
 Portable Markdown remains the user-facing file. When a block needs more state than Markdown can represent cleanly, doXmind stores that state in the sidecar.
+
+## Sidecar Databases
+
+Database blocks are local document data, not a hosted workspace service. Rows, schema, and view state are stored in `extras.databases` inside the matching `.doxmind` sidecar so the Markdown file and its rich structured data can travel together.
+
+<p align="center">
+  <img src="docs/readme/doxmind-database-4k.png" width="900" alt="doXmind database block stored in a local sidecar" />
+</p>
 
 ## Storage Model
 
@@ -98,6 +114,10 @@ The Markdown file is the portable source. The sidecar is the lossless doXmind st
 
 All import work is local. There is no remote parser service.
 
+<p align="center">
+  <img src="docs/readme/doxmind-import-4k.png" width="900" alt="doXmind local PDF DOCX PPTX import workflow" />
+</p>
+
 | Format                        | Local strategy                                             |
 | ----------------------------- | ---------------------------------------------------------- |
 | `.md`, `.markdown`            | Imported as Markdown                                       |
@@ -107,6 +127,14 @@ All import work is local. There is no remote parser service.
 | Scanned or image-heavy `.pdf` | Optional Marker / Surya OCR model download, then local OCR |
 
 Marker OCR models are not bundled. The app asks before downloading them and stores the install state locally.
+
+## Local Preferences
+
+Themes, editor behavior, OCR model state, and import settings are stored on the device. The settings surface is intentionally focused on the local sidecar edition instead of cloud accounts, billing, or provider keys.
+
+<p align="center">
+  <img src="docs/readme/doxmind-settings-4k.png" width="900" alt="doXmind local settings for theme customization and OCR setup" />
+</p>
 
 ## Current Scope
 

@@ -12,6 +12,7 @@ import type { NextConfig } from "next";
 const isProd = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   // Static export so Tauri can serve the frontend from the bundled `out/`
   // directory. All API traffic goes directly to the FastAPI sidecar at the
   // URL injected as window.__TAURI_BACKEND_URL__ (see src/lib/api/client.ts).
