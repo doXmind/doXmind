@@ -21,7 +21,6 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn, debounce } from "@/lib/utils";
-import { apiUrl } from "@/lib/api/base";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getEditorExtensions, defaultEditorProps } from "./editor-extensions";
 import { BlockHandle } from "./block-handle";
@@ -178,25 +177,23 @@ export function Editor({ file: initialFile }: EditorProps) {
     });
   }, [editor]);
 
-  // Persist pending edits when the tab closes. Uses fetch with keepalive:true
-  // so the browser is allowed to complete the request after page teardown —
-  // the regular store path's async fetch would otherwise be aborted mid-flight.
+  // Persist pending edits when the tab closes through the active storage
+  // adapter. Browser shutdown can still interrupt async work, but this keeps
+  // the save path consistent for DB and disk workspaces.
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (!editor) return;
       const content = editor.getHTML();
       if (content === lastContentRef.current) return;
       const contentMarkdown = editor.getMarkdown();
-      fetch(apiUrl(`/api/files/${file.id}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, content_markdown: contentMarkdown }),
-        keepalive: true,
-      }).catch(() => {});
+      debouncedSave.flush();
+      if (content !== lastContentRef.current) {
+        void updateFile(file.id, { content, contentMarkdown });
+      }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [editor, file.id]);
+  }, [debouncedSave, editor, file.id, updateFile]);
 
   // Block selection is desktop-only; mobile always uses direct editing (Notion-style)
   useEffect(() => {

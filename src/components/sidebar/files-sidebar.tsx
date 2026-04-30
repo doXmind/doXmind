@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Search, Settings } from "lucide-react";
+import { FileText, FolderOpen, Search, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -28,8 +28,18 @@ export function FilesSidebar() {
   const t = useTranslations("sidebar");
   const locale = useLocale();
   const router = useRouter();
-  const { files, createFile, createFolder, importFile, getFolders, isLoading, isSynced } =
-    useFileStore();
+  const {
+    files,
+    createFile,
+    createFolder,
+    importFile,
+    getFolders,
+    isLoading,
+    isSynced,
+    workspaceMode,
+    workspaceRoot,
+    openDiskWorkspace,
+  } = useFileStore();
   const { openCommandPalette } = useLayoutStore();
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
@@ -39,6 +49,9 @@ export function FilesSidebar() {
   const [folderImportProgress, setFolderImportProgress] = useState<FolderImportProgress | null>(
     null
   );
+  const diskWorkspaceEnabled =
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_ENABLE_DISK_WORKSPACE === "true";
 
   const handleCreateFile = async (parentId: string | null = null) => {
     const currentFiles = files.filter((f) => !f.isFolder && f.parentId === parentId);
@@ -105,6 +118,31 @@ export function FilesSidebar() {
 
   const handleImportFolderClick = () => {
     folderInputRef.current?.click();
+  };
+
+  const handleOpenWorkspaceFolder = async () => {
+    if (!diskWorkspaceEnabled) return;
+
+    if (typeof window === "undefined" || !("__TAURI_BACKEND_URL__" in window)) {
+      toast.error(t("openWorkspaceRequiresDesktop"));
+      return;
+    }
+
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t("openWorkspaceFolder"),
+      });
+      if (!selected || Array.isArray(selected)) return;
+      await openDiskWorkspace(selected);
+      toast.success(t("workspaceOpened"));
+    } catch (error) {
+      log.error("Failed to open workspace folder", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
   };
 
   const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -200,6 +238,21 @@ export function FilesSidebar() {
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span>{t("search")}</span>
           </button>
+
+          {diskWorkspaceEnabled && (
+            <button
+              onClick={handleOpenWorkspaceFolder}
+              className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
+              title={workspaceRoot || undefined}
+            >
+              <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">
+                {workspaceMode === "disk" && workspaceRoot
+                  ? t("workspaceFolderActive")
+                  : t("openWorkspaceFolder")}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 

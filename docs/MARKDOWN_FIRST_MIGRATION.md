@@ -136,7 +136,7 @@ Status: done
 
 ### Phase 2: 引入 Workspace 和 StorageAdapter
 
-Status: todo
+Status: done
 
 目标：前端有统一存储边界，但默认仍走 DB。
 
@@ -169,7 +169,7 @@ interface StorageAdapter {
 
 ### Phase 3: Open Folder 作为 Workspace
 
-Status: todo
+Status: done
 
 目标：用户可以选择一个已有 markdown folder 并作为 workspace 打开。
 
@@ -196,7 +196,7 @@ Status: todo
 
 ### Phase 4: Disk 写路径成为新默认
 
-Status: todo
+Status: done
 
 目标：disk workspace 下的新建、编辑、保存都写回 `.md + .doxmind`。
 

@@ -2,11 +2,14 @@
 // File Types
 // =============================================================================
 
+import type { DocumentHandle } from "@/lib/storage";
+
 export interface FileItem {
   id: string;
   name: string;
   content: string;
   contentMarkdown?: string | null; // Cached markdown for local preview/search
+  storageHandle?: DocumentHandle;
   isFolder: boolean;
   parentId: string | null;
   position: number;

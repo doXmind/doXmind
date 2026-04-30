@@ -5,6 +5,13 @@ import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import type { FileItem } from "@/types";
+import {
+  createStorageAdapter,
+  type DocumentHandle,
+  type StorageAdapter,
+  type WorkspaceEntry,
+  type WorkspaceMode,
+} from "@/lib/storage";
 
 const log = storeLogger.child("File");
 
@@ -56,6 +63,9 @@ interface FileState {
   files: FileItem[];
   currentFileId: string | null;
   currentFolderId: string | null; // NEW: null = root view
+  workspaceMode: WorkspaceMode;
+  workspaceRoot: string | null;
+  recentWorkspaces: string[];
   isLoading: boolean;
   isSynced: boolean;
   sortBy: SortOption;
@@ -66,7 +76,9 @@ interface FileState {
 
   // File actions
   loadFiles: () => Promise<void>;
-  loadFileContent: (fileId: string) => Promise<void>;
+  loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
+  openDiskWorkspace: (root: string) => Promise<void>;
+  useDbWorkspace: () => Promise<void>;
   createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
   importFile: (
     file: File,
@@ -138,12 +150,57 @@ interface FileState {
   emptyTrash: () => Promise<void>;
 }
 
+function getAdapter(state: Pick<FileState, "workspaceMode" | "workspaceRoot">): StorageAdapter {
+  return createStorageAdapter({
+    mode: state.workspaceMode,
+    disk: { root: state.workspaceRoot },
+  });
+}
+
+function handleForFile(file: FileItem): DocumentHandle {
+  return (
+    file.storageHandle ?? { mode: "db", id: file.id, kind: file.isFolder ? "folder" : "document" }
+  );
+}
+
+function fileFromEntry(entry: WorkspaceEntry, existingContent?: string): FileItem {
+  return {
+    id: entry.handle.id,
+    name: entry.name,
+    content: existingContent ?? "",
+    isFolder: entry.kind === "folder",
+    parentId: entry.parent?.id ?? null,
+    position: entry.position || 0,
+    isFavorite: entry.isFavorite || false,
+    icon: entry.icon || null,
+    coverImageUrl: entry.coverImageUrl || null,
+    coverPosition: entry.coverPosition ?? 0.5,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    wordCount: entry.wordCount || 0,
+    preview: entry.preview || "",
+    storageHandle: entry.handle,
+  };
+}
+
+function parentHandleForId(
+  files: FileItem[],
+  parentId: string | null | undefined
+): DocumentHandle | null {
+  if (!parentId) return null;
+  const parent = files.find((f) => f.id === parentId);
+  return parent ? handleForFile(parent) : null;
+}
+
 export const useFileStore = create<FileState>()(
   persist(
     (set, get) => ({
       files: [],
       currentFileId: null,
       currentFolderId: null,
+      workspaceMode: "db",
+      workspaceRoot: null,
+      recentWorkspaces: [],
       isLoading: false,
       isSynced: false,
       sortBy: "modified-newest" as SortOption,
@@ -157,8 +214,9 @@ export const useFileStore = create<FileState>()(
       loadFiles: async () => {
         set({ isLoading: true });
         try {
-          const serverFiles = await api.listFiles();
-          const newFileIds = new Set(serverFiles.map((f) => f.id));
+          const adapter = getAdapter(get());
+          const entries = await adapter.list();
+          const newFileIds = new Set(entries.map((f) => f.handle.id));
 
           // Use set callback to read the latest state atomically, preventing
           // race conditions where a concurrent loadFileContent updates
@@ -179,23 +237,9 @@ export const useFileStore = create<FileState>()(
               }
             }
 
-            const files: FileItem[] = serverFiles.map((f) => ({
-              id: f.id,
-              name: f.name,
-              // Preserve already-loaded content; list endpoint returns content=""
-              content: prevContentMap.get(f.id) ?? f.content,
-              isFolder: f.is_folder || false,
-              parentId: f.parent_id || null,
-              position: f.position || 0,
-              isFavorite: f.is_favorite || false,
-              icon: f.icon || null,
-              coverImageUrl: f.cover_image_url || null,
-              coverPosition: f.cover_position ?? 0.5,
-              createdAt: f.created_at,
-              updatedAt: f.updated_at,
-              wordCount: f.word_count || 0,
-              preview: f.preview || "",
-            }));
+            const files: FileItem[] = entries.map((entry) =>
+              fileFromEntry(entry, prevContentMap.get(entry.handle.id))
+            );
 
             // Clear currentFileId / currentFolderId if they no longer exist
             const validCurrentFileId =
@@ -230,13 +274,15 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      loadFileContent: async (fileId: string) => {
-        if (get().loadedContentIds.has(fileId)) return;
+      loadFileContent: async (fileId: string, options?: { force?: boolean }) => {
+        if (!options?.force && get().loadedContentIds.has(fileId)) return;
         // Prevent duplicate concurrent fetches for the same file
         if (pendingContentLoads.has(fileId)) return;
         pendingContentLoads.add(fileId);
         try {
-          const fullFile = await api.getFile(fileId);
+          const file = get().files.find((f) => f.id === fileId);
+          if (!file) return;
+          const fullFile = await getAdapter(get()).read(handleForFile(file));
           set((state) => {
             // Only update if the file exists in the files array.
             // If loadFiles() hasn't completed yet, files may be empty — in that case
@@ -249,12 +295,16 @@ export const useFileStore = create<FileState>()(
                 f.id === fileId
                   ? {
                       ...f,
-                      content: fullFile.content,
-                      contentMarkdown: fullFile.content_markdown ?? null,
+                      id: fullFile.handle.id,
+                      content: fullFile.html,
+                      contentMarkdown: fullFile.markdown ?? null,
+                      storageHandle: fullFile.handle,
                     }
                   : f
               ),
-              loadedContentIds: new Set([...state.loadedContentIds, fileId]),
+              currentFileId:
+                state.currentFileId === fileId ? fullFile.handle.id : state.currentFileId,
+              loadedContentIds: new Set([...state.loadedContentIds, fullFile.handle.id]),
             };
           });
         } catch (error) {
@@ -264,30 +314,51 @@ export const useFileStore = create<FileState>()(
         }
       },
 
+      openDiskWorkspace: async (root: string) => {
+        const trimmedRoot = root.trim();
+        if (!trimmedRoot) return;
+        set((state) => ({
+          workspaceMode: "disk",
+          workspaceRoot: trimmedRoot,
+          recentWorkspaces: [
+            trimmedRoot,
+            ...state.recentWorkspaces.filter((item) => item !== trimmedRoot),
+          ].slice(0, 8),
+          files: [],
+          currentFileId: null,
+          currentFolderId: null,
+          loadedContentIds: new Set(),
+          isSynced: false,
+        }));
+        await get().loadFiles();
+      },
+
+      useDbWorkspace: async () => {
+        set({
+          workspaceMode: "db",
+          workspaceRoot: null,
+          files: [],
+          currentFileId: null,
+          currentFolderId: null,
+          loadedContentIds: new Set(),
+          isSynced: false,
+        });
+        await get().loadFiles();
+      },
+
       createFile: async (name: string, content: string = "", parentId: string | null = null) => {
         try {
           // Validate parentId exists (folder or file for sub-pages); fall back to root if stale
           const validParentId =
             parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
-          // Create on server first
-          const serverFile = await api.createFile(name, content, validParentId);
-          const newFile: FileItem = {
-            id: serverFile.id,
-            name: serverFile.name,
-            content: serverFile.content,
-            isFolder: serverFile.is_folder || false,
-            parentId: serverFile.parent_id || null,
-            position: serverFile.position || 0,
-            isFavorite: serverFile.is_favorite || false,
-            icon: serverFile.icon || null,
-            coverImageUrl: serverFile.cover_image_url || null,
-            coverPosition: serverFile.cover_position ?? 0.5,
-            createdAt: serverFile.created_at,
-            updatedAt: serverFile.updated_at,
-            wordCount: 0,
-            preview: "",
-          };
+          const entry = await getAdapter(get()).create({
+            name,
+            kind: "document",
+            parent: parentHandleForId(get().files, validParentId),
+            content: { html: content, markdown: "" },
+          });
+          const newFile = { ...fileFromEntry(entry, content), content };
 
           set((state) => ({
             files: [newFile, ...state.files],
@@ -299,7 +370,7 @@ export const useFileStore = create<FileState>()(
           eventBus.emit("storage:changed");
           return newFile.id;
         } catch (error) {
-          log.error("Failed to create file on server", error);
+          log.error("Failed to create file", error);
           throw error;
         }
       },
@@ -312,6 +383,40 @@ export const useFileStore = create<FileState>()(
         // SaaS-era 10MB limit; markitdown handles them fine, just takes
         // longer for very large files.
         try {
+          if (get().workspaceMode === "disk") {
+            if (!/\.(md|markdown)$/i.test(file.name)) {
+              throw new Error("Disk workspaces currently import Markdown files only");
+            }
+            const markdown = await file.text();
+            const htmlContent = markdownToHtml(markdown);
+            const entry = await getAdapter(get()).create({
+              name: file.name,
+              kind: "document",
+              parent: parentHandleForId(get().files, parentId),
+              content: { html: htmlContent, markdown },
+            });
+            const newFile = {
+              ...fileFromEntry(entry, htmlContent),
+              contentMarkdown: markdown,
+              wordCount: markdown.split(/\s+/).filter(Boolean).length,
+              preview: markdown
+                .replace(/[#*_`>\-[\]()]/g, "")
+                .trim()
+                .slice(0, 200),
+            };
+            if (options?.silent) {
+              set((state) => ({ files: [newFile, ...state.files] }));
+            } else {
+              set((state) => ({
+                files: [newFile, ...state.files],
+                currentFileId: newFile.id,
+                loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
+              }));
+            }
+            eventBus.emit("storage:changed");
+            return newFile.id;
+          }
+
           // Import file via API (converts PDF/DOCX/MD to markdown)
           const serverFile = await api.importFile(file, parentId);
 
@@ -376,6 +481,9 @@ export const useFileStore = create<FileState>()(
         id: string,
         updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
       ) => {
+        const originalFile = get().files.find((f) => f.id === id);
+        if (!originalFile) return;
+
         // Optimistic update
         set((state) => ({
           files: state.files.map((file) =>
@@ -388,20 +496,75 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          // Map camelCase to snake_case for API
-          const apiUpdates: {
-            name?: string;
-            content?: string;
-            content_markdown?: string;
-          } = {};
-          if (updates.name !== undefined) apiUpdates.name = updates.name;
-          if (updates.content !== undefined) apiUpdates.content = updates.content;
-          if (updates.contentMarkdown !== undefined)
-            apiUpdates.content_markdown = updates.contentMarkdown ?? undefined;
-          // Sync to server
-          await api.updateFile(id, apiUpdates);
+          const adapter = getAdapter(get());
+          const originalHandle = handleForFile(originalFile);
+          const hasContentUpdate =
+            updates.content !== undefined || updates.contentMarkdown !== undefined;
+          let updatedEntry: WorkspaceEntry | null = null;
+
+          if (
+            adapter.mode !== "db" &&
+            updates.name !== undefined &&
+            updates.name !== originalFile.name
+          ) {
+            updatedEntry = await adapter.rename(originalHandle, updates.name);
+          }
+
+          if (hasContentUpdate) {
+            const content = await adapter.write(updatedEntry?.handle ?? originalHandle, {
+              html: updates.content,
+              markdown: updates.contentMarkdown,
+              name: updates.name ?? originalFile.name,
+            });
+            set((state) => ({
+              files: state.files.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      id: content.handle.id,
+                      name: updates.name ?? content.name,
+                      content: content.html,
+                      contentMarkdown: content.markdown,
+                      storageHandle: content.handle,
+                      updatedAt: content.updatedAt,
+                    }
+                  : item
+              ),
+              currentFileId: state.currentFileId === id ? content.handle.id : state.currentFileId,
+              loadedContentIds: new Set([...state.loadedContentIds, content.handle.id]),
+            }));
+          } else if (
+            adapter.mode === "db" &&
+            updates.name !== undefined &&
+            updates.name !== originalFile.name
+          ) {
+            updatedEntry = await adapter.rename(originalHandle, updates.name);
+            set((state) => ({
+              files: state.files.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      ...fileFromEntry(updatedEntry!, item.content),
+                      content: item.content,
+                    }
+                  : item
+              ),
+            }));
+          } else if (updatedEntry) {
+            set((state) => ({
+              files: state.files.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      ...fileFromEntry(updatedEntry!, item.content),
+                      content: item.content,
+                    }
+                  : item
+              ),
+            }));
+          }
         } catch (error) {
-          log.error("Failed to update file on server", error);
+          log.error("Failed to update file", error);
           // Revert optimistic update on error
           get().loadFiles();
         }
@@ -432,12 +595,17 @@ export const useFileStore = create<FileState>()(
         });
 
         try {
-          // Delete all files from server
-          await Promise.all(filesToDelete.map((fileId) => api.deleteFile(fileId)));
+          const adapter = getAdapter(state);
+          await Promise.all(
+            filesToDelete.map((fileId) => {
+              const file = state.files.find((item) => item.id === fileId);
+              return file ? adapter.delete(handleForFile(file)) : Promise.resolve();
+            })
+          );
 
           eventBus.emit("storage:changed");
         } catch (error) {
-          log.error("Failed to delete file(s) on server", error);
+          log.error("Failed to delete file(s)", error);
           // Revert on error
           get().loadFiles();
         }
@@ -468,7 +636,13 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          await api.updateFile(fileId, { is_favorite: newFavorite });
+          if (get().workspaceMode === "disk") {
+            await getAdapter(get()).write(handleForFile(file), {
+              meta: { id: file.id, favorite: newFavorite },
+            });
+          } else {
+            await api.updateFile(fileId, { is_favorite: newFavorite });
+          }
         } catch (error) {
           log.error("Failed to toggle favorite", error);
           // Revert on error
@@ -490,7 +664,13 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          await api.updateFile(fileId, { icon: icon ?? "" });
+          if (get().workspaceMode === "disk") {
+            await getAdapter(get()).write(handleForFile(file), {
+              meta: { id: file.id, icon },
+            });
+          } else {
+            await api.updateFile(fileId, { icon: icon ?? "" });
+          }
         } catch (error) {
           log.error("Failed to set file icon", error);
           // Revert on error
@@ -509,7 +689,13 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          await api.updateFile(fileId, { cover_image_url: url ?? "" });
+          if (get().workspaceMode === "disk") {
+            await getAdapter(get()).write(handleForFile(file), {
+              meta: { id: file.id, cover: url },
+            });
+          } else {
+            await api.updateFile(fileId, { cover_image_url: url ?? "" });
+          }
         } catch (error) {
           log.error("Failed to set cover image", error);
           set((state) => ({
@@ -530,6 +716,11 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
+          if (get().workspaceMode === "disk") {
+            // Cover position has no markdown/frontmatter field yet; keep it local
+            // until sidecar extras own page metadata.
+            return;
+          }
           await api.updateFile(fileId, { cover_position: clamped });
         } catch (error) {
           log.error("Failed to set cover position", error);
@@ -562,23 +753,12 @@ export const useFileStore = create<FileState>()(
         options?: { silent?: boolean }
       ) => {
         try {
-          const serverFolder = await api.createFolder(name, parentId);
-          const newFolder: FileItem = {
-            id: serverFolder.id,
-            name: serverFolder.name,
-            content: serverFolder.content,
-            isFolder: serverFolder.is_folder || true,
-            parentId: serverFolder.parent_id || null,
-            position: serverFolder.position || 0,
-            isFavorite: serverFolder.is_favorite || false,
-            icon: serverFolder.icon || null,
-            coverImageUrl: serverFolder.cover_image_url || null,
-            coverPosition: serverFolder.cover_position ?? 0.5,
-            createdAt: serverFolder.created_at,
-            updatedAt: serverFolder.updated_at,
-            wordCount: 0,
-            preview: "",
-          };
+          const entry = await getAdapter(get()).create({
+            name,
+            kind: "folder",
+            parent: parentHandleForId(get().files, parentId),
+          });
+          const newFolder = fileFromEntry(entry);
 
           // `silent` suppresses justCreatedFileId — used by folder import
           // where setting it on every nested folder would auto-open
@@ -597,12 +777,13 @@ export const useFileStore = create<FileState>()(
 
           return newFolder.id;
         } catch (error) {
-          log.error("Failed to create folder on server", error);
+          log.error("Failed to create folder", error);
           throw error;
         }
       },
 
       moveFileToFolder: async (fileId: string, folderId: string | null) => {
+        const originalFile = get().files.find((file) => file.id === fileId);
         // Optimistic update
         set((state) => ({
           files: state.files.map((file) =>
@@ -613,9 +794,20 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          await api.moveFile(fileId, folderId);
+          if (!originalFile) return;
+          const moved = await getAdapter(get()).move(
+            handleForFile(originalFile),
+            parentHandleForId(get().files, folderId)
+          );
+          set((state) => ({
+            files: state.files.map((file) =>
+              file.id === fileId
+                ? { ...file, ...fileFromEntry(moved, file.content), content: file.content }
+                : file
+            ),
+          }));
         } catch (error) {
-          log.error("Failed to move file on server", error);
+          log.error("Failed to move file", error);
           // Revert optimistic update on error
           get().loadFiles();
         }
@@ -739,7 +931,15 @@ export const useFileStore = create<FileState>()(
         }));
 
         try {
-          await Promise.all(fileIds.map((fileId) => api.moveFile(fileId, folderId)));
+          const adapter = getAdapter(get());
+          await Promise.all(
+            fileIds.map((fileId) => {
+              const file = get().files.find((item) => item.id === fileId);
+              return file
+                ? adapter.move(handleForFile(file), parentHandleForId(get().files, folderId))
+                : Promise.resolve();
+            })
+          );
         } catch (error) {
           log.error("Failed to bulk move files", error);
           // Revert optimistic update on error
@@ -764,7 +964,13 @@ export const useFileStore = create<FileState>()(
         });
 
         try {
-          await Promise.all(fileIds.map((fileId) => api.deleteFile(fileId)));
+          const adapter = getAdapter(state);
+          await Promise.all(
+            fileIds.map((fileId) => {
+              const file = state.files.find((item) => item.id === fileId);
+              return file ? adapter.delete(handleForFile(file)) : Promise.resolve();
+            })
+          );
           eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to bulk delete files", error);
@@ -844,18 +1050,27 @@ export const useFileStore = create<FileState>()(
       // because the value lives in memory between renders.
       partialize: (state) => ({
         currentFolderId: state.currentFolderId,
+        workspaceMode: state.workspaceMode,
+        workspaceRoot: state.workspaceRoot,
+        recentWorkspaces: state.recentWorkspaces,
         sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<{
           currentFolderId: string | null;
+          workspaceMode: WorkspaceMode;
+          workspaceRoot: string | null;
+          recentWorkspaces: string[];
           sortBy: SortOption;
           expandedFolderIds: string[];
         }>;
         return {
           ...currentState,
           ...persisted,
+          workspaceMode: persisted.workspaceMode === "disk" ? "disk" : "db",
+          workspaceRoot: persisted.workspaceRoot ?? null,
+          recentWorkspaces: persisted.recentWorkspaces ?? [],
           files: currentState.files, // Always use runtime files, never from localStorage
           expandedFolderIds: new Set(persisted.expandedFolderIds || []),
         };

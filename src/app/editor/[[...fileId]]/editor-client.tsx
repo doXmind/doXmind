@@ -46,6 +46,7 @@ export function EditorClient() {
   const loadFiles = useFileStore((s) => s.loadFiles);
   const isSynced = useFileStore((s) => s.isSynced);
   const loadFileContent = useFileStore((s) => s.loadFileContent);
+  const workspaceMode = useFileStore((s) => s.workspaceMode);
 
   useFileUrlSync(fileIdFromUrl);
   useEditorKeyboardShortcuts();
@@ -74,6 +75,20 @@ export function EditorClient() {
       loadFileContent(currentFileId);
     }
   }, [currentFileId, loadFileContent, isSynced]);
+
+  // Disk workspaces can be edited by external tools. On focus, re-read the
+  // active document so stale sidecars are ignored and markdown wins.
+  useEffect(() => {
+    if (workspaceMode !== "disk") return;
+    const refreshCurrentFile = () => {
+      const id = useFileStore.getState().currentFileId;
+      if (id) {
+        void useFileStore.getState().loadFileContent(id, { force: true });
+      }
+    };
+    window.addEventListener("focus", refreshCurrentFile);
+    return () => window.removeEventListener("focus", refreshCurrentFile);
+  }, [workspaceMode]);
 
   // Sync browser tab title with current file
   useEffect(() => {
