@@ -1,69 +1,181 @@
 # doXmind Mini
 
-Local sidecar edition of doXmind: a single-user desktop document editor built around clean Markdown files plus hidden sidecar metadata.
+<p align="center">
+  <a href="https://github.com/doXmind/local-desk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/doXmind/local-desk/ci.yml?branch=main&style=flat-square&label=CI" alt="CI" /></a>
+  <a href="https://github.com/doXmind/local-desk/stargazers"><img src="https://img.shields.io/github/stars/doXmind/local-desk?style=flat-square" alt="GitHub Stars" /></a>
+  <img src="https://img.shields.io/badge/storage-Markdown%20%2B%20sidecar-blue?style=flat-square" alt="Storage: Markdown plus sidecar" />
+  <img src="https://img.shields.io/badge/local--first-offline%20workspace-2ea44f?style=flat-square" alt="Local-first offline workspace" />
+  <img src="https://img.shields.io/badge/desktop-Tauri%20v2-24c8db?style=flat-square" alt="Desktop: Tauri v2" />
+  <img src="https://img.shields.io/badge/frontend-Next.js%2015-black?style=flat-square" alt="Frontend: Next.js 15" />
+  <a href="https://github.com/doXmind/local-desk/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome" /></a>
+</p>
 
-## Product Shape
+<p align="center">
+  <img src="docs/readme/doxmind-workflow.gif" width="900" alt="doXmind Mini local Markdown workspace workflow" />
+</p>
 
-doXmind Mini is an offline-first writing workspace. The visible document should stay as a normal `.md` file that works in Git, VS Code, Typora, iCloud, and any plain Markdown tool. doXmind-specific fidelity lives next to it in a hidden `.doxmind` sidecar file.
+<h3 align="center">A local-first Markdown workspace for notes, research, and structured documents.</h3>
 
-There is no authentication, cloud sync, sharing, community feed, billing, credits, telemetry, or AI runtime in this branch. The backend binds to localhost and exists as a local sidecar for file IO, import/export, versions, images, and editor data.
+<p align="center">
+  Write in a rich block editor while keeping portable Markdown files on disk. doXmind stores editor-only fidelity in hidden sidecars, so your notes remain readable in any Markdown tool.
+</p>
 
-## Target Storage Model
+---
+
+## Why doXmind Mini
+
+doXmind Mini is built for people who want a polished document editor without giving up control of their files.
+
+- **Your documents are real files.** Each note is a normal `.md` file that works in Finder, Git, VS Code, Typora, Obsidian, iCloud Drive, Dropbox, and any plain Markdown workflow.
+- **Rich editing stays lossless.** The hidden `.doxmind` sidecar preserves editor HTML and doXmind-only block data such as database rows, layout state, and future local metadata.
+- **External edits are respected.** If the Markdown file changes outside doXmind, the file on disk wins and the sidecar is refreshed on the next save.
+- **No account required.** This branch has no login, cloud sync, sharing links, billing, telemetry, model providers, or hosted backend.
+- **Designed for desktop work.** A Tauri shell wraps a Next.js editor and a localhost FastAPI sidecar for local import, export, image, and filesystem operations.
+
+## What It Feels Like
+
+| Work in doXmind Mini     | It should give you                                                             |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| Create a new note        | A clean Markdown file in your local workspace                                  |
+| Add rich blocks          | Tables, code, math, images, diagrams, tasks, and database blocks in one editor |
+| Edit the `.md` elsewhere | doXmind reloads the external Markdown and treats it as the source of truth     |
+| Move a workspace folder  | The Markdown and `.doxmind` sidecars move together                             |
+| Import office files      | Local Markdown output from PDF, DOCX, PPTX, or existing Markdown               |
+| Work offline             | A complete editor without required cloud services or accounts                  |
+
+## Local Markdown Workspace
+
+doXmind Mini opens to a file tree backed by a real folder on your machine. Creating, renaming, editing, and deleting documents updates the local workspace instead of hiding everything in an application database.
+
+<p align="center">
+  <img src="docs/readme/doxmind-editor-4k.png" width="900" alt="doXmind Mini editor with a local Markdown document" />
+</p>
+
+The default workspace is `~/Documents/doXmind`. You can also point the app at another local folder when running the desktop shell.
+
+## Rich Blocks
+
+The editor supports the document blocks that are expected in a modern knowledge workspace: headings, lists, tasks, quotes, tables, code blocks, math, images, Mermaid diagrams, embeds, and local database blocks.
+
+<p align="center">
+  <img src="docs/readme/doxmind-blocks-4k.png" width="900" alt="doXmind Mini rich block rendering with table, code, and math" />
+</p>
+
+Portable Markdown remains the user-facing file. When a block needs more state than Markdown can represent cleanly, doXmind stores that state in the sidecar.
+
+## Storage Model
+
+doXmind Mini uses a Markdown-plus-sidecar layout:
 
 ```text
-~/Documents/notes/
-├── Project Plan.md
-├── .Project Plan.doxmind
-└── assets/
-    └── diagram.png
+~/Documents/doXmind/
+├── Research Notes.md
+├── .Research Notes.doxmind
+├── assets/
+│   └── diagram.png
+└── .doxmind/
+    └── index.json
 ```
 
-The Markdown file is the portable facade. The sidecar is the lossless doXmind state:
+The Markdown file is the portable source. The sidecar is the lossless doXmind state:
 
 ```json
 {
   "version": 1,
   "id": "dfe24100-bb43-4f93-8553-2d9fdcc50172",
-  "html": "<p>...</p>",
+  "html": "<h1>Research Notes</h1><p>...</p>",
   "markdown_hash": "sha256:abc123...",
-  "updated_at": "2026-04-29T17:38:00Z",
+  "updated_at": "2026-04-30T18:00:00Z",
   "extras": {
     "databases": {}
   }
 }
 ```
 
-`markdown_hash` decides freshness. If the `.md` hash matches, doXmind opens `sidecar.html` and preserves rich editor-only features. If the hash differs, the user changed Markdown outside doXmind, so the `.md` wins and the sidecar is regenerated on the next save.
+`markdown_hash` is the freshness check. When the current `.md` hash matches the sidecar, doXmind can reopen the richer HTML. When the hash differs, the Markdown file was edited externally, so doXmind imports the Markdown and regenerates the sidecar on save.
 
-## Current Runtime
+## Document Import
 
-The sidecar storage layer is the direction of travel, but the current checked-in runtime still uses SQLite for documents, versions, and database blocks. Keep API code store-oriented while migrating so `.md + .doxmind` does not get hard-coded into route handlers.
+All import work is local. There is no remote parser service.
 
-Planned storage ownership:
+| Format                        | Local strategy                                             |
+| ----------------------------- | ---------------------------------------------------------- |
+| `.md`, `.markdown`            | Imported as Markdown                                       |
+| `.docx`                       | Converted through Mammoth and Markdownify                  |
+| `.pptx`                       | Converted slide-by-slide with `python-pptx`                |
+| Text-based `.pdf`             | Fast Markdown extraction through PyMuPDF4LLM               |
+| Scanned or image-heavy `.pdf` | Optional Marker / Surya OCR model download, then local OCR |
 
-- Documents: clean Markdown file plus hidden `.doxmind` sidecar.
-- Rich HTML: sidecar `html`.
-- Database blocks: sidecar `extras.databases` as the source of truth.
-- SQLite: runtime cache and compatibility during migration, not the long-term source of truth for user documents.
+Marker OCR models are not bundled. The app asks before downloading them and stores the install state locally.
 
-## Tech Stack
+## Current Scope
 
-- Frontend: Next.js 15 App Router, React 19, TipTap, Zustand, Tailwind CSS
-- Backend: FastAPI, Python 3.12, SQLAlchemy 2.0 async
-- Current database: local SQLite at `~/.doxmind/doxmind.db`
-- Desktop shell: Tauri
-- External services: none
+This repository is the local sidecar edition of doXmind Mini.
+
+Included:
+
+- Local Markdown workspace
+- Hidden `.doxmind` sidecars
+- Rich TipTap editor
+- Local import and export
+- Local images and attachments
+- Local database blocks stored through sidecar extras
+- Tauri desktop shell and localhost backend sidecar
+
+Not included:
+
+- User accounts, OAuth, teams, sharing, comments, community publishing, billing, quotas, telemetry, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, provider keys, OpenRouter, autocomplete, quick edit, document review, prompts, or knowledge-base retrieval.
+
+## Get Started
+
+Requirements:
+
+- Node.js 22 or newer
+- Python 3.12
+- Rust toolchain for desktop builds
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the web development app:
+
+```bash
+npm run dev:all
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+Run the desktop shell:
+
+```bash
+npm run dev:desktop
+```
+
+Build a desktop app:
+
+```bash
+npm run build:desktop
+```
 
 ## Development
 
+Useful commands:
+
 ```bash
-npm run dev:all       # frontend + backend with auto-port discovery
+npm run dev:all       # Next.js frontend + FastAPI backend
 npm run dev           # Next.js only
 npm run server        # FastAPI only
-npm run build
-npm run lint
 npm run type-check
-npm test
+npm run lint
+npm run test:ci
+npm run build
 ```
 
 Backend commands from `server/`:
@@ -75,44 +187,70 @@ ruff check .
 ruff format .
 ```
 
-First run:
+## Repository Structure
 
-1. `npm run dev:all`
-2. Open `http://localhost:3000`
-3. Start writing. There is no sign-in or API key setup.
+```text
+src/                 Next.js app, editor UI, stores, extensions, and components
+server/              FastAPI sidecar, local import/export, filesystem APIs
+src-tauri/           Tauri desktop shell and native integration
+crates/              Rust sidecar helpers for Markdown and .doxmind storage
+docs/readme/         README screenshots and workflow media
+```
 
-## Backend API
+## Architecture
 
-`server/main.py` currently mounts:
+```text
+Tauri desktop shell
+        │
+        ▼
+Next.js editor UI  ── localhost HTTP ── FastAPI sidecar
+        │                                   │
+        │                                   ▼
+        └──────────── local workspace folder + .doxmind sidecars
+```
 
-- `files` — local document CRUD
-- `versions` — local version snapshots
-- `export` — Markdown / HTML / PDF / DOCX export
-- `import_file` — import PDF / DOCX / PPTX / Markdown through local conversion (`services/document_converter.py`)
-- `marker` — Marker (offline OCR) model lifecycle: `/api/import/marker/status` and `/api/import/marker/download`
-- `images` — local image upload and serving from `~/.doxmind/uploads/`
-- `databases` — database-block CRUD while sidecar storage is being introduced
+The frontend owns the editing experience. The backend sidecar owns local filesystem operations, conversion, image storage, export, and workspace commands. SQLite may exist as local metadata/cache, but Markdown files and `.doxmind` sidecars are the durable document source.
 
-Swagger and ReDoc are available at `http://localhost:8000/docs` and `http://localhost:8000/redoc` in development.
+## FAQ
 
-## Document Import
+<details>
+<summary>Does doXmind Mini require an account?</summary>
 
-`services/document_converter.py` routes by extension:
+No. This branch is designed as a single-user local desktop editor.
 
-| Format                         | Strategy                                                                              |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| `.pdf` (native text)           | **PyMuPDF4LLM** — fast path, no models, milliseconds. Trips when avg chars/page ≥ 40. |
-| `.pdf` (scanned / image-heavy) | **Marker** (Surya layout + OCR). Lazy-loaded on Apple Silicon via `TORCH_DEVICE=mps`. |
-| `.docx`                        | **mammoth** → HTML → markdownify.                                                     |
-| `.pptx`                        | **python-pptx** + a custom slide-by-slide markdown emitter.                           |
-| `.md` / `.markdown`            | passthrough.                                                                          |
+</details>
 
-Marker requires ~2GB of Surya weights and is **not** pre-bundled. The first time a scanned PDF arrives, the backend returns `409 MARKER_MODELS_REQUIRED`; the frontend shows a one-time confirm modal, kicks off `/api/import/marker/download`, polls `/api/import/marker/status` until `installed`, and replays the original import. Install state is tracked at `~/.doxmind/marker-models.json` — delete it to force a re-download.
+<details>
+<summary>Where are my documents stored?</summary>
 
-`markitdown` was previously the unified converter and has been removed; do not reintroduce it.
+By default, documents live in `~/Documents/doXmind` as normal Markdown files. Rich editor state lives beside them in hidden `.doxmind` files.
 
-## Removed Surface
+</details>
 
-Do not reintroduce the SaaS or AI product surface on this branch without an explicit decision. Removed or intentionally absent areas include JWT auth, OAuth user login, Stripe billing, credits, quotas, sharing links, community publishing, comments, follows, bookmarks, notifications, telemetry, RLHF feedback, S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat, agents, providers, OpenRouter, autocomplete, quick edit, document review, prompts, and knowledge-base retrieval.
+<details>
+<summary>Can I edit files outside doXmind?</summary>
 
-If any of these return later, they should be rebuilt deliberately around the local sidecar architecture or developed on a separate cloud edition branch.
+Yes. External Markdown edits are expected. When the Markdown hash no longer matches the sidecar, doXmind treats the `.md` file as newer and refreshes editor state from it.
+
+</details>
+
+<details>
+<summary>Does my data leave my machine?</summary>
+
+The editor, workspace files, imports, exports, sidecars, and metadata are local. This branch does not include cloud sync, telemetry, hosted parsing, or AI model calls.
+
+</details>
+
+<details>
+<summary>Why keep a sidecar instead of only Markdown?</summary>
+
+Markdown is portable, but it cannot represent every rich editor detail without becoming noisy. The sidecar keeps lossless state while leaving the visible file clean.
+
+</details>
+
+<details>
+<summary>Is there a public release build?</summary>
+
+This branch is currently source-first. Use `npm run dev:desktop` for development and `npm run build:desktop` to create a local desktop build.
+
+</details>
