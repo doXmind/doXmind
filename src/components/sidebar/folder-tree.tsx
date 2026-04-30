@@ -19,10 +19,17 @@ import {
   MoreHorizontal,
   Minimize2,
   SquarePen,
+  Upload,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FileItem } from "./file-item";
 import { NewButton } from "@/components/home/new-button";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -40,6 +47,7 @@ interface FolderTreeProps {
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   onImportFile: () => void;
+  onImportFolder: () => void;
   isImporting: boolean;
 }
 
@@ -92,6 +100,7 @@ export function FolderTree({
   onCreateFolder,
   onOpenTemplatePicker,
   onImportFile,
+  onImportFolder,
   isImporting: isFileImporting,
 }: FolderTreeProps) {
   const t = useTranslations("sidebar");
@@ -444,9 +453,27 @@ export function FolderTree({
       <Tooltip content={t("organizeFolders")} side="top">
         <SortDropdown iconOnly ariaLabel={t("organizeFolders")} />
       </Tooltip>
-      <HeaderIconButton label={t("newFolder")} onClick={onCreateFolder}>
-        <FolderPlus className="h-4 w-4" />
-      </HeaderIconButton>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
+            aria-label={t("newFolder")}
+            title={t("newFolder")}
+          >
+            <FolderPlus className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={onCreateFolder}>
+            <FolderPlus className="mr-2 h-4 w-4" />
+            {t("newFolder")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onImportFolder}>
+            <Upload className="mr-2 h-4 w-4" />
+            {t("importFolder")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 

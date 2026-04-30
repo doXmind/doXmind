@@ -35,7 +35,6 @@ import { LinkPaste } from "@/extensions/link-paste";
 import { TrailingNode } from "@/extensions/trailing-node";
 import { SlashCommands } from "./slash-commands";
 import { SearchExtension } from "@/extensions/search";
-import { SpellcheckExtension } from "@/extensions/spellcheck-extension";
 import { BlockSelectionExtension } from "@/extensions/block-selection-extension";
 import { BlockHandleExtension } from "@/extensions/block-handle-extension";
 import { BlockColorExtension } from "@/extensions/block-color-extension";
@@ -158,7 +157,6 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Custom extensions
     SlashCommands,
     SearchExtension,
-    SpellcheckExtension,
 
     // Block color support (text and background colors for blocks)
     BlockColorExtension,

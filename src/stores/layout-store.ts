@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { FontFamilyId } from "@/lib/font-options";
+import { DEFAULT_FONT_FAMILY } from "@/lib/font-options";
 
 interface LayoutState {
   // Desktop panel visibility
@@ -49,7 +51,7 @@ interface LayoutState {
   editorWidth: "narrow" | "normal" | "wide" | "full";
 
   // Typography preferences
-  fontFamily: "sans" | "serif" | "mono";
+  fontFamily: FontFamilyId;
   fontSize: "small" | "normal" | "large";
   lineHeight: "compact" | "normal" | "relaxed";
 
@@ -113,7 +115,7 @@ interface LayoutState {
   cycleEditorWidth: () => void;
 
   // Typography actions
-  setFontFamily: (font: "sans" | "serif" | "mono") => void;
+  setFontFamily: (font: FontFamilyId) => void;
   setFontSize: (size: "small" | "normal" | "large") => void;
   setLineHeight: (height: "compact" | "normal" | "relaxed") => void;
 
@@ -178,7 +180,7 @@ export const useLayoutStore = create<LayoutState>()(
       editorWidth: "normal" as const,
 
       // Typography preferences
-      fontFamily: "sans" as const,
+      fontFamily: DEFAULT_FONT_FAMILY,
       fontSize: "normal" as const,
       lineHeight: "normal" as const,
 
@@ -364,7 +366,7 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       // Typography actions
-      setFontFamily: (font: "sans" | "serif" | "mono") => {
+      setFontFamily: (font: FontFamilyId) => {
         set({ fontFamily: font });
       },
 

@@ -25,7 +25,7 @@ export function SettingsSidebar({ activeTab, onSelectTab }: SettingsSidebarProps
     >
       <div
         data-tauri-drag-region
-        className={cn("flex items-center px-4", isMacTauri ? "h-14 pl-[88px]" : "h-12")}
+        className={cn("flex items-center px-4", isMacTauri ? "h-11 pl-[88px]" : "h-12")}
       >
         <Link
           href="/editor"

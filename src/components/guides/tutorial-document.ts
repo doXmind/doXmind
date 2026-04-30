@@ -50,7 +50,7 @@ Welcome to doXmind. The local desktop edition focuses on files, structured writi
 
 ## 8. Personalization and Sharing
 
-- Customize theme, typography, editor width, and spellcheck.
+- Customize theme, typography, and editor width.
 - Share read-only links for collaboration and review.
 
 ## 9. Recommended Workflow

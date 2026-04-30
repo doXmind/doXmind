@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useIsTauri } from "@/hooks/use-is-tauri";
 import { MINDMAP_FIT_VIEW, MINDMAP_CENTER_VIEW, ANIMATION_DURATION } from "@/lib/constants";
 import { useOutlineStore } from "@/stores/outline-store";
 import { useFileStore } from "@/stores/file-store";
@@ -253,6 +254,13 @@ function MindmapFlowInner({
     zoomOut({ duration: 200 });
   }, [zoomOut]);
 
+  // The mindmap renders as a fullscreen `fixed inset-0` overlay (see
+  // sidebar.tsx mindmap modal), so on macOS Tauri the floating traffic
+  // lights overlay the top-left corner. Push the zoom-controls panel
+  // down past the cluster so they don't collide.
+  const { isTauri, platform } = useIsTauri();
+  const isMacTauri = isTauri && platform === "macos";
+
   return (
     <ReactFlow
       nodes={nodesWithState}
@@ -352,7 +360,7 @@ function MindmapFlowInner({
       </Panel>
 
       {/* Zoom controls - top left */}
-      <Panel position="top-left" className="flex flex-col gap-1">
+      <Panel position="top-left" className={cn("flex flex-col gap-1", isMacTauri && "!top-11")}>
         <Button
           variant="outline"
           size="icon"

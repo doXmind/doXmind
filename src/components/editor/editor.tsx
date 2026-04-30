@@ -8,14 +8,12 @@ import { LinkBubbleMenu } from "./link-bubble-menu";
 import { ImageModal } from "./image-modal";
 import { BookmarkModal } from "./bookmark-modal";
 import { PagePickerModal } from "./page-picker-modal";
-import { SpellcheckPopup } from "./spellcheck-popup";
 import { EditorContextMenu } from "./editor-context-menu";
 import { SearchBar } from "./search-bar";
 import { StatusBar } from "./status-bar";
 import { DocumentTitle } from "./document-title";
 import { PageCover } from "./page-cover";
 import { useIsMobile } from "@/hooks/use-device-type";
-import { useSpellcheck } from "@/hooks/use-spellcheck";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
@@ -61,12 +59,11 @@ export function Editor({ file: initialFile }: EditorProps) {
   const imageModalOpen = useEditorStore((s) => s.imageModalOpen);
   const imageModalCallback = useEditorStore((s) => s.imageModalCallback);
   const closeImageModal = useEditorStore((s) => s.closeImageModal);
-  const spellcheckEnabled = useEditorStore((s) => s.spellcheckEnabled);
 
   // Layout state — use individual selectors to avoid re-renders on unrelated layout changes
   const editorWidth = useLayoutStore((s) => s.editorWidth);
-  const fontFamily = useLayoutStore((s) => s.fontFamily);
-  const fontSize = useLayoutStore((s) => s.fontSize);
+  // fontFamily is applied at <html> by AppearanceInjector so the whole
+  // app stays in one font; no per-editor wrapper needed here.
   const lineHeight = useLayoutStore((s) => s.lineHeight);
 
   const isMobile = useIsMobile();
@@ -308,7 +305,6 @@ export function Editor({ file: initialFile }: EditorProps) {
   }, [file.content, editor]);
 
   // Initialize hooks
-  useSpellcheck({ editor, enabled: spellcheckEnabled && !isMobile });
   useBlockKeyboardShortcuts(!isMobile ? editor : null);
 
   // Use keyboard shortcuts hook (Ctrl+Shift+O for outline)
@@ -369,11 +365,6 @@ export function Editor({ file: initialFile }: EditorProps) {
               className={cn(
                 "mx-auto w-full max-w-full px-4 pb-24 pt-0 sm:max-w-4xl",
                 "mobile-edit-mode", // Always edit mode on mobile (Notion-style)
-                // Typography settings
-                fontFamily === "serif" && "editor-font-serif",
-                fontFamily === "mono" && "editor-font-mono",
-                fontSize === "small" && "editor-font-small",
-                fontSize === "large" && "editor-font-large",
                 lineHeight === "compact" && "editor-leading-compact",
                 lineHeight === "relaxed" && "editor-leading-relaxed"
               )}
@@ -390,11 +381,6 @@ export function Editor({ file: initialFile }: EditorProps) {
                   editorWidth === "normal" && "max-w-5xl",
                   editorWidth === "wide" && "max-w-7xl",
                   editorWidth === "full" && "max-w-none",
-                  // Typography settings
-                  fontFamily === "serif" && "editor-font-serif",
-                  fontFamily === "mono" && "editor-font-mono",
-                  fontSize === "small" && "editor-font-small",
-                  fontSize === "large" && "editor-font-large",
                   lineHeight === "compact" && "editor-leading-compact",
                   lineHeight === "relaxed" && "editor-leading-relaxed"
                 )}
@@ -426,8 +412,6 @@ export function Editor({ file: initialFile }: EditorProps) {
       {!isMobile && (
         <>
           <LinkBubbleMenu editor={editor} />
-
-          <SpellcheckPopup editor={editor} />
           <EditorContextMenu editor={editor} />
         </>
       )}

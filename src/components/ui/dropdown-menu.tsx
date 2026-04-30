@@ -184,7 +184,10 @@ export function DropdownMenuContent({
     left: number;
   } | null>(null);
 
-  // Calculate position from anchor point (right-click) or trigger element
+  // Calculate position from anchor point (right-click) or trigger element.
+  // Initial pass uses the requested `side`; a second useLayoutEffect below
+  // measures the actual content and flips to the opposite side when the
+  // content would clip outside the viewport.
   React.useEffect(() => {
     if (!open) return;
 
@@ -210,6 +213,48 @@ export function DropdownMenuContent({
       setPos({ top: rect.bottom + sideOffset, bottom: "auto", left });
     }
   }, [open, triggerRef, anchorPoint, align, side, sideOffset]);
+
+  // Auto-flip: after the dropdown renders, measure its actual height and
+  // flip to the opposite side if it would overflow the viewport. Runs as
+  // a layout effect so the corrected position is applied before paint —
+  // no visible flicker from the initial placement. Skipped for anchor-
+  // point (right-click) menus where the caller has already chosen y.
+  React.useLayoutEffect(() => {
+    if (!open || !pos || anchorPoint) return;
+    if (!contentRef.current || !triggerRef.current) return;
+
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const contentH = contentRef.current.offsetHeight;
+    const viewportH = window.innerHeight;
+    const margin = 8; // breathing room from viewport edge
+
+    const isCurrentlyTop = pos.top === "auto";
+    const overflowsBelow =
+      !isCurrentlyTop && triggerRect.bottom + sideOffset + contentH + margin > viewportH;
+    const overflowsAbove = isCurrentlyTop && triggerRect.top - sideOffset - contentH - margin < 0;
+
+    if (overflowsBelow) {
+      const fitsAbove = triggerRect.top - sideOffset - contentH - margin >= 0;
+      // Only flip if the opposite side actually has more room — otherwise
+      // we'd just clip on the other end.
+      if (fitsAbove || triggerRect.top > viewportH - triggerRect.bottom) {
+        setPos({
+          top: "auto",
+          bottom: viewportH - triggerRect.top + sideOffset,
+          left: pos.left,
+        });
+      }
+    } else if (overflowsAbove) {
+      const fitsBelow = triggerRect.bottom + sideOffset + contentH + margin <= viewportH;
+      if (fitsBelow || viewportH - triggerRect.bottom > triggerRect.top) {
+        setPos({
+          top: triggerRect.bottom + sideOffset,
+          bottom: "auto",
+          left: pos.left,
+        });
+      }
+    }
+  }, [open, pos, anchorPoint, sideOffset, triggerRef]);
 
   // Handle click outside
   React.useEffect(() => {

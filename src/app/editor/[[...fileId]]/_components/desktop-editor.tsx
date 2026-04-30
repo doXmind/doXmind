@@ -153,7 +153,7 @@ export function DesktopEditor() {
                       )}
                       aria-hidden={isSidebarOpen}
                     >
-                      <div className="desktop-content-surface flex h-full w-11 flex-col border-r border-border/30">
+                      <div className="flex h-full w-11 flex-col">
                         <div className="flex items-center justify-center px-1.5 py-2">
                           <button
                             onClick={toggleSidebar}

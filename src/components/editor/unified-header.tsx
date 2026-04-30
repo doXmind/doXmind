@@ -11,7 +11,6 @@ import {
   Download,
   Keyboard,
   Palette,
-  SpellCheck,
   Play,
   CloudUpload,
   Loader2,
@@ -47,12 +46,15 @@ export function UnifiedHeader() {
     setPresentationMode,
   } = useLayoutStore();
   const { currentFileId, files } = useFileStore();
-  const { spellcheckEnabled, setSpellcheckEnabled, isDirty, isSaving } = useEditorStore();
+  const { isDirty, isSaving } = useEditorStore();
   const tSettings = useTranslations("settings");
   const t = useTranslations("editor");
 
   const currentFile = files.find((f) => f.id === currentFileId);
-  const title = currentFile?.name?.replace(/\.md$/i, "") || t("untitled");
+  // Only show a title when an actual document is loaded — on the
+  // welcome screen there's no file to title, so showing "Untitled"
+  // would just be noise.
+  const title = currentFile ? currentFile.name.replace(/\.md$/i, "") : "";
   const saveLabel = isSaving ? t("saving") : isDirty ? t("unsavedChanges") : t("saved");
 
   // In the Tauri macOS build the native title bar is hidden via
@@ -141,18 +143,20 @@ export function UnifiedHeader() {
         </div>
 
         <div data-tauri-drag-region className="flex min-w-0 justify-start px-4">
-          <div
-            data-tauri-drag-region
-            className="flex h-8 min-w-0 max-w-[min(520px,100%)] items-center gap-2 rounded-md px-1.5"
-            aria-label={title}
-          >
-            <span
+          {title && (
+            <div
               data-tauri-drag-region
-              className="text-ui-base min-w-0 truncate font-semibold text-foreground"
+              className="flex h-8 min-w-0 max-w-[min(520px,100%)] items-center gap-2 rounded-md px-1.5"
+              aria-label={title}
             >
-              {title}
-            </span>
-          </div>
+              <span
+                data-tauri-drag-region
+                className="text-ui-base min-w-0 truncate font-semibold text-foreground"
+              >
+                {title}
+              </span>
+            </div>
+          )}
         </div>
 
         <div data-tauri-drag-region className="flex items-center justify-end gap-1.5">
@@ -261,13 +265,6 @@ export function UnifiedHeader() {
                   </DropdownMenuTrigger>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={() => setSpellcheckEnabled(!spellcheckEnabled)}>
-                    <SpellCheck className="mr-2 h-4 w-4" />
-                    {t("spellCheck")}
-                    {spellcheckEnabled && <Check className="ml-auto h-4 w-4" />}
-                  </DropdownMenuItem>
-
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={toggleVersionHistory}>
                     <Clock className="mr-2 h-4 w-4" />
                     {t("versionHistory")}

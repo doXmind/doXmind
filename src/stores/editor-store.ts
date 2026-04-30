@@ -28,8 +28,6 @@ interface EditorState {
   isSaving: boolean;
   lastSavedAt: string | null;
 
-  spellcheckEnabled: boolean;
-
   imageModalOpen: boolean;
   imageModalCallback: ImageModalCallback | null;
 
@@ -43,8 +41,6 @@ interface EditorState {
   setSelection: (selection: Selection | null) => void;
   setSaving: (saving: boolean) => void;
   setLastSavedAt: (date: string | null) => void;
-
-  setSpellcheckEnabled: (enabled: boolean) => void;
 
   openImageModal: (callback: ImageModalCallback) => void;
   closeImageModal: () => void;
@@ -62,8 +58,6 @@ export const useEditorStore = create<EditorState>()((set) => ({
   isSaving: false,
   lastSavedAt: null,
 
-  spellcheckEnabled: false,
-
   imageModalOpen: false,
   imageModalCallback: null,
 
@@ -77,8 +71,6 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setSelection: (selection) => set({ selection }),
   setSaving: (saving) => set({ isSaving: saving }),
   setLastSavedAt: (date) => set({ lastSavedAt: date }),
-
-  setSpellcheckEnabled: (enabled) => set({ spellcheckEnabled: enabled }),
 
   openImageModal: (callback) => set({ imageModalOpen: true, imageModalCallback: callback }),
   closeImageModal: () => set({ imageModalOpen: false, imageModalCallback: null }),

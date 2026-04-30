@@ -14,7 +14,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BreadcrumbNav } from "./breadcrumb-nav";
 import { CoverPickerModal } from "./cover-picker-modal";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -137,9 +136,6 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Breadcrumb navigation — only shown when file has a parent */}
-      <BreadcrumbNav fileId={fileId} />
-
       {/* Action buttons — above title, Notion-style; opacity transition, no layout shift */}
       <div
         className="flex h-7 items-center gap-1 transition-opacity duration-150"

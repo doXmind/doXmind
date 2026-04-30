@@ -1,4 +1,4 @@
-import { Settings, Type } from "lucide-react";
+import { Settings, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface SettingsTab {
@@ -9,7 +9,7 @@ export interface SettingsTab {
 
 export const SETTINGS_TABS = [
   { id: "general", icon: Settings, labelKey: "tabGeneral" },
-  { id: "typography", icon: Type, labelKey: "tabTypography" },
+  { id: "trash", icon: Trash2, labelKey: "tabTrash" },
 ] as const satisfies readonly SettingsTab[];
 
 export type SettingsTabId = (typeof SETTINGS_TABS)[number]["id"];

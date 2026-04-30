@@ -67,7 +67,7 @@ export function Sidebar() {
   };
 
   return (
-    <div className="flex h-full flex-col border-r border-border/30 bg-background/70">
+    <div className="flex h-full flex-col">
       {/* Outline header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <span className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground/60">

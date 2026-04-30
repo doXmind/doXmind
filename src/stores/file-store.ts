@@ -68,7 +68,11 @@ interface FileState {
   loadFiles: () => Promise<void>;
   loadFileContent: (fileId: string) => Promise<void>;
   createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
-  importFile: (file: File, parentId?: string | null) => Promise<string>;
+  importFile: (
+    file: File,
+    parentId?: string | null,
+    options?: { silent?: boolean }
+  ) => Promise<string>;
   updateFile: (
     id: string,
     updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
@@ -87,7 +91,11 @@ interface FileState {
   getRecentFiles: (limit?: number) => FileItem[];
 
   // Folder actions
-  createFolder: (name: string, parentId?: string | null) => Promise<string>;
+  createFolder: (
+    name: string,
+    parentId?: string | null,
+    options?: { silent?: boolean }
+  ) => Promise<string>;
   moveFileToFolder: (fileId: string, folderId: string | null) => Promise<void>;
   setCurrentFolder: (folderId: string | null) => void;
   getFilesInFolder: (folderId: string | null) => FileItem[];
@@ -304,12 +312,13 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      importFile: async (file: File, parentId?: string | null) => {
-        const MAX_IMPORT_SIZE = 10 * 1024 * 1024; // 10MB — must match server MAX_FILE_SIZE
-        if (file.size > MAX_IMPORT_SIZE) {
-          throw new Error("File too large. Maximum size is 10MB");
-        }
-
+      importFile: async (file: File, parentId?: string | null, options?: { silent?: boolean }) => {
+        // No client-side size cap — this is a local-first desktop build,
+        // the sidecar is on 127.0.0.1 and the data dir is the user's own
+        // disk. Big academic PDFs / scanned docs were getting silently
+        // counted as "failed" in folder imports because of the legacy
+        // SaaS-era 10MB limit; markitdown handles them fine, just takes
+        // longer for very large files.
         try {
           // Import file via API (converts PDF/DOCX/MD to markdown)
           const serverFile = await api.importFile(file, parentId);
@@ -341,11 +350,20 @@ export const useFileStore = create<FileState>()(
             preview: plainText.slice(0, 200),
           };
 
-          set((state) => ({
-            files: [newFile, ...state.files],
-            currentFileId: newFile.id,
-            loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
-          }));
+          // `silent` skips opening the imported file — used by folder
+          // import where 8 concurrent uploads would otherwise thrash the
+          // active editor by flipping currentFileId on every completion.
+          if (options?.silent) {
+            set((state) => ({
+              files: [newFile, ...state.files],
+            }));
+          } else {
+            set((state) => ({
+              files: [newFile, ...state.files],
+              currentFileId: newFile.id,
+              loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
+            }));
+          }
 
           // Save properly converted HTML back to server so future loads use it
           if (serverFile.content_markdown && htmlContent !== serverFile.content) {
@@ -546,7 +564,11 @@ export const useFileStore = create<FileState>()(
       },
 
       // Folder operations
-      createFolder: async (name: string, parentId?: string | null) => {
+      createFolder: async (
+        name: string,
+        parentId?: string | null,
+        options?: { silent?: boolean }
+      ) => {
         try {
           const serverFolder = await api.createFolder(name, parentId);
           const newFolder: FileItem = {
@@ -566,10 +588,20 @@ export const useFileStore = create<FileState>()(
             preview: "",
           };
 
-          set((state) => ({
-            files: [newFolder, ...state.files],
-            justCreatedFileId: newFolder.id,
-          }));
+          // `silent` suppresses justCreatedFileId — used by folder import
+          // where setting it on every nested folder would auto-open
+          // rename mode in the sidebar for whichever folder happened to
+          // come last, mid-import.
+          if (options?.silent) {
+            set((state) => ({
+              files: [newFolder, ...state.files],
+            }));
+          } else {
+            set((state) => ({
+              files: [newFolder, ...state.files],
+              justCreatedFileId: newFolder.id,
+            }));
+          }
 
           return newFolder.id;
         } catch (error) {
@@ -814,15 +846,17 @@ export const useFileStore = create<FileState>()(
     }),
     {
       name: "doxmind-files",
+      // `currentFileId` intentionally NOT persisted — every cold boot
+      // should land on the WelcomeScreen instead of jumping back into
+      // whatever doc was last open. In-session navigation still works
+      // because the value lives in memory between renders.
       partialize: (state) => ({
-        currentFileId: state.currentFileId,
         currentFolderId: state.currentFolderId,
         sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<{
-          currentFileId: string | null;
           currentFolderId: string | null;
           sortBy: SortOption;
           expandedFolderIds: string[];

@@ -9,12 +9,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { FolderTree } from "./folder-tree";
 import { BulkActionBar } from "./bulk-action-bar";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
+import { ImportFolderProgressModal } from "./import-folder-progress";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { useTranslations, useLocale } from "next-intl";
+import {
+  importLocalFolder,
+  entriesFromFileList,
+  type FolderImportProgress,
+} from "@/lib/import-folder";
 
 const log = storeLogger.child("FilesSidebar");
 
@@ -28,6 +34,11 @@ export function FilesSidebar() {
   const [isImporting, setIsImporting] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const folderImportAbortRef = useRef<AbortController | null>(null);
+  const [folderImportProgress, setFolderImportProgress] = useState<FolderImportProgress | null>(
+    null
+  );
 
   const handleCreateFile = async (parentId: string | null = null) => {
     const currentFiles = files.filter((f) => !f.isFolder && f.parentId === parentId);
@@ -92,6 +103,63 @@ export function FilesSidebar() {
     fileInputRef.current?.click();
   };
 
+  const handleImportFolderClick = () => {
+    folderInputRef.current?.click();
+  };
+
+  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files;
+    if (!picked || picked.length === 0) return;
+    // Snapshot before clearing the input value (some browsers null out
+    // FileList once the input resets).
+    const filesSnapshot = picked;
+    e.target.value = "";
+
+    const abort = new AbortController();
+    folderImportAbortRef.current = abort;
+    // Seed the modal with a synthetic initial progress so the dialog has
+    // something to render before the first onProgress tick.
+    setFolderImportProgress({
+      total: 0,
+      done: 0,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      currentFileName: null,
+      rootFolderName: filesSnapshot[0]?.webkitRelativePath.split("/")[0] ?? "—",
+      isComplete: false,
+      cancelled: false,
+    });
+
+    try {
+      await importLocalFolder({
+        entries: entriesFromFileList(filesSnapshot),
+        parentId: null,
+        // `silent: true` keeps the import from hijacking the editor: each
+        // imported file would otherwise become the active doc, and each
+        // created folder would open into rename mode in the sidebar.
+        createFolder: (name, parentId) => createFolder(name, parentId, { silent: true }),
+        importFile: (file, parentId) => importFile(file, parentId, { silent: true }),
+        onProgress: (p) => setFolderImportProgress({ ...p }),
+        signal: abort.signal,
+      });
+    } catch (error) {
+      log.error("Folder import failed", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    } finally {
+      folderImportAbortRef.current = null;
+    }
+  };
+
+  const handleFolderImportCancel = () => {
+    folderImportAbortRef.current?.abort();
+  };
+
+  const handleFolderImportClose = () => {
+    setFolderImportProgress(null);
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -142,6 +210,18 @@ export function FilesSidebar() {
         onChange={handleFileSelect}
         className="hidden"
       />
+      {/* `webkitdirectory` / `directory` aren't in React's input typings,
+          so the spread carries them through as plain HTML attributes.
+          Setting them at JSX time (rather than via a mount effect) makes
+          sure they exist before the very first `.click()` could fire. */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        onChange={handleFolderSelect}
+        className="hidden"
+        {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+      />
 
       <ScrollArea className="sidebar-scrollbar min-h-0 flex-1">
         <div className="space-y-1 px-2.5 pb-3">
@@ -153,6 +233,7 @@ export function FilesSidebar() {
               onCreateFolder={handleCreateFolder}
               onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
               onImportFile={handleImportClick}
+              onImportFolder={handleImportFolderClick}
               isImporting={isImporting}
             />
           )}
@@ -175,6 +256,13 @@ export function FilesSidebar() {
         open={isTemplatePickerOpen}
         onClose={() => setIsTemplatePickerOpen(false)}
         onSelect={handleTemplateSelect}
+      />
+
+      <ImportFolderProgressModal
+        open={folderImportProgress !== null}
+        progress={folderImportProgress}
+        onCancel={handleFolderImportCancel}
+        onClose={handleFolderImportClose}
       />
     </div>
   );

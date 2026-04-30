@@ -15,7 +15,6 @@ from db.database import get_db
 from exceptions import (
     AppException,
     BadRequestError,
-    FileTooLargeError,
     InternalError,
     NotFoundError,
     UnsupportedFileTypeError,
@@ -26,7 +25,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Configuration
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+# No size cap — this is a local-only sidecar bound to 127.0.0.1, writing to
+# the user's own data dir. The legacy 10 MB limit was a SaaS-era safeguard
+# that has no role here; large academic PDFs / scanned docs work fine, they
+# just take longer in markitdown.
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".md", ".markdown"}
 
 
@@ -118,10 +120,6 @@ async def import_file(
 
     # Read file content
     content = await file.read()
-
-    # Validate file size
-    if len(content) > MAX_FILE_SIZE:
-        raise FileTooLargeError(max_size=MAX_FILE_SIZE, actual_size=len(content))
 
     # Convert to markdown
     try:

@@ -127,8 +127,15 @@
     --muted-foreground: 0 0% 61%; /* #9b9b9b — Notion's exact muted text */
     --accent: 0 0% 22%; /* #383838 — visible hover on dark popover */
     --accent-foreground: 0 0% 95%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 90%;
+    /* `--destructive` doubles as the `text-destructive` color for
+       menu items like "Move to Trash". The shadcn dark default
+       (`0 62.8% 30.6%`) reads fine on a destructive button surface but
+       sits at ~3:1 contrast as text over our near-black sidebar — too
+       dim. Lifted to a red-400 lightness so the label pops without
+       turning neon. Foreground stays near-white for buttons that flip
+       the relationship (light text on the destructive bg). */
+    --destructive: 0 84% 65%;
+    --destructive-foreground: 0 0% 98%;
     --border: 0 0% 18%; /* #2f2f2f — Notion's exact border */
     --border-subtle: 0 0% 14%;
     --input: 0 0% 18%;
@@ -291,30 +298,17 @@
   }
 }
 
-/* Editor content (TipTap / .ProseMirror) keeps its own typography
-   cascade — drop the `!important` enforcement inside the editor so
-   headings, blockquotes, code, etc. can size themselves. We reset only
-   font-size + line-height; color/weight/family inherit normally. The
-   inner selector uses a high-specificity tag list so it beats the
-   chrome utility's `!important` for any Tailwind text-* class that
-   happens to be applied inside the editor. */
-.ProseMirror,
-.ProseMirror h1,
-.ProseMirror h2,
-.ProseMirror h3,
-.ProseMirror h4,
-.ProseMirror h5,
-.ProseMirror h6,
-.ProseMirror p,
-.ProseMirror li,
-.ProseMirror blockquote {
-  font-size: revert !important;
-  line-height: revert !important;
-}
+/* Editor content (TipTap / .ProseMirror) keeps its own typography. The
+   chrome's `text-*` utilities don't apply to bare prose tags (h1, p,
+   blockquote, etc.) so they don't fight here, and the editor.css rules
+   (.editor-font-* / .editor-leading-*) get to size + space content as
+   normal. */
 
-/* Mono surfaces follow the separate code-font slider. The .ProseMirror
-   selectors keep editor inline code and code blocks scaling with the
-   user's preferred code size, independent of the UI base. */
+/* Mono surfaces follow the separate code-font slider AND keep their
+   monospace stack regardless of the global UI font. Without the
+   `font-family` line, picking "Serif" as the global font would turn
+   code blocks Georgia. `!important` beats the `html, body` rule the
+   AppearanceInjector writes when the user picks Serif/Mono. */
 code,
 kbd,
 samp,
@@ -322,6 +316,9 @@ samp,
 .ProseMirror code,
 .ProseMirror pre {
   font-size: var(--ui-code-font-size-base);
+  font-family:
+    "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace !important;
 }
 
 @layer base {
@@ -623,8 +620,7 @@ html {
 
   /* Disable specific animations */
   .bubble-menu,
-  .table-bubble-menu,
-  .spellcheck-popup {
+  .table-bubble-menu {
     animation: none !important;
   }
 }
@@ -678,7 +674,6 @@ html {
   aside,
   nav,
   .bubble-menu,
-  .spellcheck-popup,
   [role="toolbar"],
   [data-resize-handle],
   .status-bar,

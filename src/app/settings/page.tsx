@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { SettingsSidebar } from "@/components/settings/settings-sidebar";
 import { GeneralTab } from "@/components/settings/general-tab";
-import { TypographyTab } from "@/components/settings/typography-tab";
+import { TrashTab } from "@/components/settings/trash-tab";
 import { toSettingsTabId, type SettingsTabId } from "@/components/settings/settings-tabs";
 
 export default function SettingsPage() {
@@ -29,12 +29,12 @@ export default function SettingsPage() {
             the top of the content area and the traffic-light cluster has
             its usual top inset. The visible page heading is rendered by
             each tab below. */}
-        <div data-tauri-drag-region className="h-14 shrink-0" />
+        <div data-tauri-drag-region className="h-11 shrink-0" />
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-8 pb-12 pt-2">
             {activeTab === "general" && <GeneralTab />}
-            {activeTab === "typography" && <TypographyTab />}
+            {activeTab === "trash" && <TrashTab />}
           </div>
         </div>
       </main>

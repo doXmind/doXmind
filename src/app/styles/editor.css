@@ -577,25 +577,6 @@
   box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.7);
 }
 
-/* Spellcheck Error - Red Wavy Underline */
-.ProseMirror .spellcheck-error {
-  text-decoration: underline wavy red;
-  text-decoration-skip-ink: none;
-  cursor: pointer;
-  text-underline-offset: 2px;
-}
-
-.dark .ProseMirror .spellcheck-error {
-  text-decoration-color: #f87171; /* red-400 for better visibility in dark mode */
-}
-
-/* Spellcheck Popup Animation */
-.spellcheck-popup {
-  animation:
-    fadeIn 0.15s ease-out,
-    zoomIn 0.15s ease-out;
-}
-
 /* Slash command inline query hint (Notion-like) */
 .ProseMirror .slash-command-query {
   position: relative;

@@ -8,7 +8,7 @@ import "./styles/presentation.css";
 import "./styles/mobile.css";
 import "./styles/components.css";
 import { Providers } from "@/components/providers";
-import { Toaster } from "sonner";
+import { ThemedToaster } from "@/components/themed-toaster";
 import { ClientIntlProvider } from "@/i18n/intl-provider";
 
 export const viewport: Viewport = {
@@ -126,7 +126,7 @@ export default function RootLayout({
               Skip to content
             </a>
             {children}
-            <Toaster position="bottom-right" richColors />
+            <ThemedToaster />
           </Providers>
         </ClientIntlProvider>
       </body>
