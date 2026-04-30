@@ -56,7 +56,7 @@ function renderCellPreview(
     return (
       <span
         className={cn(
-          "inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+          "text-ui-xs inline-flex rounded-full px-1.5 py-0.5 font-medium",
           colors.bg,
           colors.text
         )}
@@ -78,7 +78,7 @@ function renderCellPreview(
             <span
               key={id}
               className={cn(
-                "inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                "text-ui-xs inline-flex rounded-full px-1.5 py-0.5 font-medium",
                 colors.bg,
                 colors.text
               )}
@@ -88,7 +88,7 @@ function renderCellPreview(
           );
         })}
         {(value as string[]).length > 2 && (
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-ui-xs text-muted-foreground">
             +{(value as string[]).length - 2}
           </span>
         )}
@@ -193,7 +193,7 @@ export function GalleryView({ database, view, onOpenRowPage }: GalleryViewProps)
                 if (!preview) return null;
                 return (
                   <div key={prop.id} className="flex items-center gap-1.5">
-                    <span className="shrink-0 text-[10px] text-muted-foreground/50">
+                    <span className="text-ui-xs shrink-0 text-muted-foreground/50">
                       {prop.name}
                     </span>
                     {preview}

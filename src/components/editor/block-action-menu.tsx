@@ -973,7 +973,7 @@ function MenuButton({
     >
       <span className="text-muted-foreground">{icon}</span>
       <span className="flex-1 text-left">{label}</span>
-      {shortcut && <span className="text-[10px] text-muted-foreground/60">{shortcut}</span>}
+      {shortcut && <span className="text-ui-xs text-muted-foreground/60">{shortcut}</span>}
     </button>
   );
 }

@@ -855,7 +855,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
   switch (title) {
     case "Text":
       return (
-        <div className="space-y-1.5 text-[13px] leading-relaxed text-popover-foreground/80">
+        <div className="text-ui-base space-y-1.5 leading-relaxed text-popover-foreground/80">
           <p>Start writing with plain text. Use commands to add formatting and blocks.</p>
         </div>
       );
@@ -863,67 +863,67 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
     case "Heading 1":
       return (
         <div className="space-y-1">
-          <p className="text-[20px] font-bold leading-tight text-popover-foreground">
+          <p className="text-ui-xl font-bold leading-tight text-popover-foreground">
             Large section heading
           </p>
-          <p className="text-[11px] text-muted-foreground">Used for major document sections</p>
+          <p className="text-ui-xs text-muted-foreground">Used for major document sections</p>
         </div>
       );
 
     case "Heading 2":
       return (
         <div className="space-y-1">
-          <p className="text-[17px] font-bold leading-tight text-popover-foreground">
+          <p className="text-ui-lg font-bold leading-tight text-popover-foreground">
             Medium section heading
           </p>
-          <p className="text-[11px] text-muted-foreground">Used for sub-sections</p>
+          <p className="text-ui-xs text-muted-foreground">Used for sub-sections</p>
         </div>
       );
 
     case "Heading 3":
       return (
         <div className="space-y-1">
-          <p className="text-[15px] font-semibold leading-tight text-popover-foreground">
+          <p className="text-ui-md font-semibold leading-tight text-popover-foreground">
             Small section heading
           </p>
-          <p className="text-[11px] text-muted-foreground">Used for nested sections</p>
+          <p className="text-ui-xs text-muted-foreground">Used for nested sections</p>
         </div>
       );
 
     case "Heading 4":
       return (
         <div className="space-y-1">
-          <p className="text-[14px] font-semibold leading-tight text-popover-foreground">
+          <p className="text-ui-base font-semibold leading-tight text-popover-foreground">
             Extra small heading
           </p>
-          <p className="text-[11px] text-muted-foreground">Minor section divider</p>
+          <p className="text-ui-xs text-muted-foreground">Minor section divider</p>
         </div>
       );
 
     case "Heading 5":
       return (
         <div className="space-y-1">
-          <p className="text-[13px] font-semibold leading-tight text-popover-foreground">
+          <p className="text-ui-base font-semibold leading-tight text-popover-foreground">
             Minor heading
           </p>
-          <p className="text-[11px] text-muted-foreground">Small section label</p>
+          <p className="text-ui-xs text-muted-foreground">Small section label</p>
         </div>
       );
 
     case "Heading 6":
       return (
         <div className="space-y-1">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-popover-foreground">
+          <p className="text-ui-sm font-semibold uppercase tracking-wide text-popover-foreground">
             Smallest heading
           </p>
-          <p className="text-[11px] text-muted-foreground">Fine-grained section label</p>
+          <p className="text-ui-xs text-muted-foreground">Fine-grained section label</p>
         </div>
       );
 
     case "Quote":
       return (
         <div className="border-l-[3px] border-popover-foreground/20 pl-3">
-          <p className="text-[13px] italic leading-relaxed text-muted-foreground">
+          <p className="text-ui-base italic leading-relaxed text-muted-foreground">
             &ldquo;The only way to do great work is to love what you do.&rdquo;
           </p>
         </div>
@@ -934,7 +934,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
         <div className="rounded-md border border-blue-200/50 bg-blue-50/50 p-2 dark:border-blue-800/50 dark:bg-blue-950/30">
           <div className="flex items-start gap-2">
             <span className="text-sm">&#x2139;&#xfe0f;</span>
-            <p className="text-[12px] leading-relaxed text-popover-foreground/80">
+            <p className="text-ui-sm leading-relaxed text-popover-foreground/80">
               Highlighted information or important note
             </p>
           </div>
@@ -946,17 +946,17 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
         <div className="space-y-1">
           <div className="flex items-center gap-1.5">
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <p className="text-[13px] font-medium text-popover-foreground">Toggle heading</p>
+            <p className="text-ui-base font-medium text-popover-foreground">Toggle heading</p>
           </div>
           <div className="ml-5 rounded border border-dashed border-border/60 px-2 py-1">
-            <p className="text-[11px] text-muted-foreground">Hidden content inside...</p>
+            <p className="text-ui-xs text-muted-foreground">Hidden content inside...</p>
           </div>
         </div>
       );
 
     case "Table of Contents":
       return (
-        <div className="space-y-1 text-[12px]">
+        <div className="text-ui-sm space-y-1">
           <p className="font-medium text-popover-foreground">Table of Contents</p>
           <div className="space-y-0.5 pl-1 text-muted-foreground">
             <p>&#x2022; Introduction</p>
@@ -969,15 +969,15 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
     case "Divider":
       return (
         <div className="flex flex-col items-center gap-2 py-2">
-          <p className="text-[11px] text-muted-foreground">Content above</p>
+          <p className="text-ui-xs text-muted-foreground">Content above</p>
           <hr className="w-full border-border" />
-          <p className="text-[11px] text-muted-foreground">Content below</p>
+          <p className="text-ui-xs text-muted-foreground">Content below</p>
         </div>
       );
 
     case "Bullet List":
       return (
-        <div className="space-y-1 pl-1 text-[12px] text-popover-foreground/80">
+        <div className="text-ui-sm space-y-1 pl-1 text-popover-foreground/80">
           <p>&#x2022; First bullet point</p>
           <p>&#x2022; Second bullet point</p>
           <p>&#x2022; Third bullet point</p>
@@ -986,7 +986,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
 
     case "Numbered List":
       return (
-        <div className="space-y-1 pl-1 text-[12px] text-popover-foreground/80">
+        <div className="text-ui-sm space-y-1 pl-1 text-popover-foreground/80">
           <p>1. First item</p>
           <p>2. Second item</p>
           <p>3. Third item</p>
@@ -995,7 +995,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
 
     case "Task List":
       return (
-        <div className="space-y-1 text-[12px] text-popover-foreground/80">
+        <div className="text-ui-sm space-y-1 text-popover-foreground/80">
           <div className="flex items-center gap-1.5">
             <div className="h-3 w-3 rounded-sm border border-muted-foreground/40" />
             <span>Todo item</span>
@@ -1018,13 +1018,13 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
         <div className="flex flex-col items-center gap-1.5 rounded-md border border-dashed border-border/70 p-3">
           {/* eslint-disable-next-line jsx-a11y/alt-text -- Lucide icon, not img */}
           <Image className="h-6 w-6 text-muted-foreground/50" />
-          <p className="text-[11px] text-muted-foreground">Upload or embed an image</p>
+          <p className="text-ui-xs text-muted-foreground">Upload or embed an image</p>
         </div>
       );
 
     case "Table":
       return (
-        <div className="overflow-hidden rounded border border-border/70 text-[11px]">
+        <div className="text-ui-xs overflow-hidden rounded border border-border/70">
           <div className="flex bg-muted/50">
             <div className="flex-1 border-r border-border/50 px-2 py-1 font-medium">Header</div>
             <div className="flex-1 border-r border-border/50 px-2 py-1 font-medium">Header</div>
@@ -1087,7 +1087,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
 
     case "Code Block":
       return (
-        <div className="rounded-md bg-zinc-900 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-300 dark:bg-zinc-800">
+        <div className="text-ui-xs rounded-md bg-zinc-900 p-2.5 font-mono leading-relaxed text-zinc-300 dark:bg-zinc-800">
           <p>
             <span className="text-purple-400">const</span>{" "}
             <span className="text-blue-300">hello</span> <span className="text-zinc-500">=</span>{" "}
@@ -1099,13 +1099,13 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
     case "Math Block":
       return (
         <div className="flex items-center justify-center rounded-md border border-border/50 bg-muted/30 p-3">
-          <p className="font-serif text-[16px] italic text-popover-foreground">E = mc&sup2;</p>
+          <p className="text-ui-md font-serif italic text-popover-foreground">E = mc&sup2;</p>
         </div>
       );
 
     case "Mermaid Chart":
       return (
-        <div className="rounded-md border border-border/50 bg-muted/30 p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
+        <div className="text-ui-xs rounded-md border border-border/50 bg-muted/30 p-2.5 font-mono leading-relaxed text-muted-foreground">
           <p>graph LR</p>
           <p className="pl-2">A[&quot;Start&quot;] --&gt; B[&quot;End&quot;]</p>
         </div>
@@ -1113,7 +1113,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
 
     case "Inline Math":
       return (
-        <div className="text-[13px] leading-relaxed text-popover-foreground/80">
+        <div className="text-ui-base leading-relaxed text-popover-foreground/80">
           <p>
             The formula{" "}
             <span className="rounded bg-muted/50 px-1 font-serif italic">
@@ -1129,15 +1129,15 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
         <div className="overflow-hidden rounded-md border border-border/70">
           <div className="flex items-start gap-2 p-2">
             <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-[12px] font-medium text-popover-foreground">
+              <p className="text-ui-sm font-medium text-popover-foreground">
                 Netscape (web browser)
               </p>
-              <p className="text-[10px] leading-relaxed text-muted-foreground">
+              <p className="text-ui-xs leading-relaxed text-muted-foreground">
                 Netscape is the general name for a web browser...
               </p>
               <div className="flex items-center gap-1">
                 <Globe className="h-2.5 w-2.5 text-muted-foreground" />
-                <span className="text-[10px] text-muted-foreground">en.wikipedia.org</span>
+                <span className="text-ui-xs text-muted-foreground">en.wikipedia.org</span>
               </div>
             </div>
             <div className="h-10 w-14 shrink-0 rounded bg-muted" />
@@ -1149,7 +1149,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
       return (
         <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
           <span className="text-base">&#x1f4cb;</span>
-          <span className="text-[13px] text-popover-foreground underline underline-offset-2">
+          <span className="text-ui-base text-popover-foreground underline underline-offset-2">
             Tasks
           </span>
         </div>
@@ -1157,7 +1157,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
 
     case "Table view":
       return (
-        <div className="overflow-hidden rounded border border-border/70 text-[11px]">
+        <div className="text-ui-xs overflow-hidden rounded border border-border/70">
           <div className="flex bg-muted/50">
             <div className="w-[45%] border-r border-border/50 px-2 py-1 font-medium">Aa Name</div>
             <div className="flex-1 px-2 py-1 font-medium">&#x25cf; Status</div>
@@ -1185,7 +1185,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
               </div>
               <div className="flex-1 px-2 py-1">
                 <span
-                  className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${row.color}`}
+                  className={`text-ui-xs inline-block rounded px-1.5 py-0.5 font-medium ${row.color}`}
                 >
                   {row.status}
                 </span>
@@ -1206,7 +1206,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
             <div key={col.label} className="flex-1 space-y-1">
               <div className="flex items-center gap-1 px-0.5">
                 <div className={`h-1.5 w-1.5 rounded-full ${col.color}`} />
-                <span className="text-[10px] font-medium text-muted-foreground">{col.label}</span>
+                <span className="text-ui-xs font-medium text-muted-foreground">{col.label}</span>
               </div>
               {Array.from({ length: col.items }).map((_, i) => (
                 <div key={i} className="rounded border border-border/60 bg-background p-1.5">
@@ -1236,7 +1236,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
 
     case "List view":
       return (
-        <div className="space-y-0.5 text-[11px]">
+        <div className="text-ui-xs space-y-0.5">
           {["Meeting notes", "Project plan", "Design spec", "Weekly review"].map((name) => (
             <div
               key={name}
@@ -1264,7 +1264,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
         if (bg) {
           return (
             <div className="rounded-md p-2.5" style={{ backgroundColor: bg }}>
-              <p className="text-[12px] text-zinc-700">
+              <p className="text-ui-sm text-zinc-700">
                 Sample text with {item.title.toLowerCase()}
               </p>
             </div>
@@ -1273,7 +1273,7 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
       }
       // Fallback: show description
       return (
-        <p className="text-[13px] leading-relaxed text-muted-foreground">{item.description}</p>
+        <p className="text-ui-base leading-relaxed text-muted-foreground">{item.description}</p>
       );
   }
 }
@@ -1300,9 +1300,7 @@ function PreviewCard({ item, translatedTitle }: { item: CommandItem; translatedT
         <div className="flex h-5 w-5 items-center justify-center text-muted-foreground">
           {item.icon}
         </div>
-        <span className="text-[12px] font-semibold text-muted-foreground/80">
-          {translatedTitle}
-        </span>
+        <span className="text-ui-sm font-semibold text-muted-foreground/80">{translatedTitle}</span>
       </div>
       <div className="mb-2.5 h-px bg-border" />
       <div className="pointer-events-none select-none">{getPreviewContent(item)}</div>
@@ -1489,7 +1487,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, comma
               {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
 
               {/* Category header */}
-              <div className="px-2 pb-0.5 pt-1 text-[12px] font-semibold text-muted-foreground/80">
+              <div className="text-ui-sm px-2 pb-0.5 pt-1 font-semibold text-muted-foreground/80">
                 {t(categoryLabelKeys[group.category] ?? group.category)}
               </div>
 

@@ -21,6 +21,7 @@ const MESSAGES: Record<Locale, Record<string, unknown>> = { en, zh };
 
 const DEFAULT_LOCALE: Locale =
   (process.env.NEXT_PUBLIC_DEFAULT_LOCALE as Locale) === "zh" ? "zh" : "en";
+const DEFAULT_TIME_ZONE = "UTC";
 
 function readCookieLocale(): Locale | null {
   if (typeof document === "undefined") return null;
@@ -43,7 +44,11 @@ export function ClientIntlProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <NextIntlClientProvider locale={locale} messages={MESSAGES[locale]}>
+    <NextIntlClientProvider
+      locale={locale}
+      messages={MESSAGES[locale]}
+      timeZone={DEFAULT_TIME_ZONE}
+    >
       {children}
     </NextIntlClientProvider>
   );

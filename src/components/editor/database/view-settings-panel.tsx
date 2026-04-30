@@ -26,7 +26,7 @@ export function ViewSettingsPanel({ database, view, onClose: _onClose }: ViewSet
       {/* Board view: Group by */}
       {view.type === "board" && (
         <div className="space-y-2">
-          <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <label className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t("groupBy")}
           </label>
           <div className="space-y-0.5">
@@ -70,7 +70,7 @@ export function ViewSettingsPanel({ database, view, onClose: _onClose }: ViewSet
         <div className="space-y-4">
           {/* Card size */}
           <div className="space-y-2">
-            <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <label className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("cardSize")}
             </label>
             <div className="flex gap-1">
@@ -103,7 +103,7 @@ export function ViewSettingsPanel({ database, view, onClose: _onClose }: ViewSet
 
           {/* Cover property */}
           <div className="space-y-2">
-            <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <label className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("coverProperty")}
             </label>
             <div className="space-y-0.5">

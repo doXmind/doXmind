@@ -96,7 +96,7 @@ export function OutlineToggle({ headingsCount = 0 }: OutlineToggleProps) {
                     "absolute -right-0.5 -top-0.5",
                     "h-4 min-w-[16px] px-1",
                     "flex items-center justify-center",
-                    "text-[10px] font-semibold",
+                    "text-ui-xs font-semibold",
                     "bg-primary text-primary-foreground",
                     "rounded-full"
                   )}

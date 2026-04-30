@@ -69,7 +69,7 @@ export function AdaptiveNav() {
         <div className="flex h-5 w-5 items-center justify-center">
           <FolderOpen className="h-5 w-5" />
         </div>
-        <span className="text-[10px] font-medium">{t("files")}</span>
+        <span className="text-ui-xs font-medium">{t("files")}</span>
       </button>
     </motion.nav>
   );

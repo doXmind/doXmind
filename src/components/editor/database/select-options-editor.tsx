@@ -54,7 +54,7 @@ export function SelectOptionsEditor({ choices, onChange }: SelectOptionsEditorPr
 
   return (
     <div className="space-y-1">
-      <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+      <div className="text-ui-xs px-1 font-semibold uppercase tracking-wider text-muted-foreground/60">
         {t("options")}
       </div>
       <div className="space-y-0.5">

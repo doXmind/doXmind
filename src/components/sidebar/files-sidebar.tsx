@@ -114,22 +114,22 @@ export function FilesSidebar() {
   };
 
   return (
-    <div className="bg-sidebar flex h-full flex-col border-r border-border/50 text-foreground">
-      <div className="px-4 pb-3 pt-3">
-        <div className="space-y-1.5">
+    <div className="sidebar-glass flex h-full flex-col border-r border-[var(--sidebar-active-border)] text-foreground">
+      <div className="px-3 pb-2 pt-2">
+        <div className="space-y-0.5">
           <button
             onClick={() => handleCreateFile()}
-            className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] font-semibold text-foreground transition-colors hover:bg-accent/70"
+            className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
           >
-            <FileText className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span>{t("newDocument")}</span>
           </button>
 
           <button
             onClick={openCommandPalette}
-            className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] font-semibold text-foreground transition-colors hover:bg-accent/70"
+            className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
           >
-            <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span>{t("search")}</span>
           </button>
         </div>
@@ -143,8 +143,8 @@ export function FilesSidebar() {
         className="hidden"
       />
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-1 px-2.5 pb-4">
+      <ScrollArea className="sidebar-scrollbar min-h-0 flex-1">
+        <div className="space-y-1 px-2.5 pb-3">
           {isLoading && !isSynced ? (
             <FileListSkeleton />
           ) : (
@@ -161,12 +161,12 @@ export function FilesSidebar() {
 
       <BulkActionBar />
 
-      <div className="space-y-1 px-4 pb-7 pt-3">
+      <div className="space-y-0.5 px-3 pb-3 pt-2">
         <Link
           href="/settings"
-          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 text-[15px] font-semibold text-foreground transition-colors hover:bg-accent/70"
+          className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
         >
-          <Settings className="h-[18px] w-[18px] text-muted-foreground" />
+          <Settings className="h-4 w-4 text-muted-foreground" />
           {t("settings")}
         </Link>
       </div>

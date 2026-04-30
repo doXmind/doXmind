@@ -32,7 +32,7 @@ export function PropertiesPanel({
       <div className="mb-2 flex items-center justify-between px-1">
         <span className="text-xs font-medium text-muted-foreground">{t("properties")}</span>
         {hiddenCount > 0 && (
-          <span className="text-[10px] text-muted-foreground/60">
+          <span className="text-ui-xs text-muted-foreground/60">
             {t("hiddenCount", { count: hiddenCount })}
           </span>
         )}

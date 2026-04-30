@@ -64,7 +64,7 @@ export function PropertyTypePicker({
 
     return (
       <div>
-        <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+        <div className="text-ui-xs mb-1.5 px-1 font-semibold uppercase tracking-wider text-muted-foreground/60">
           {label}
         </div>
         <div className="grid grid-cols-2 gap-0.5">

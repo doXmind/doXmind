@@ -12,7 +12,7 @@ interface AppShellProps {
 export function AppShell({ children, hideHeader = false }: AppShellProps) {
   return (
     <div
-      className="flex flex-col bg-background"
+      className="desktop-app-shell flex flex-col bg-background"
       style={{
         height: "100dvh",
       }}

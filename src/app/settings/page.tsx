@@ -1,36 +1,43 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { TypographySettings } from "@/components/settings/typography-settings";
-import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
+import { useEffect, useState } from "react";
+import { SettingsSidebar } from "@/components/settings/settings-sidebar";
+import { GeneralTab } from "@/components/settings/general-tab";
+import { TypographyTab } from "@/components/settings/typography-tab";
+import { toSettingsTabId, type SettingsTabId } from "@/components/settings/settings-tabs";
 
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("general");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setActiveTab(toSettingsTabId(params.get("tab")));
+  }, []);
+
+  const navigateTab = (tab: SettingsTabId) => {
+    setActiveTab(tab);
+    const url = `/settings?tab=${tab}`;
+    window.history.replaceState({}, "", url);
+  };
+
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <div className="mb-6 flex items-center gap-3">
-        <Link
-          href="/editor"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to editor
-        </Link>
-      </div>
+    <div className="desktop-window-shell flex bg-background" style={{ height: "100dvh" }}>
+      <SettingsSidebar activeTab={activeTab} onSelectTab={navigateTab} />
 
-      <h1 className="mb-6 text-2xl font-semibold">Settings</h1>
+      <main className="desktop-content-surface flex min-w-0 flex-1 flex-col">
+        {/* Empty drag-region strip so the window can still be dragged from
+            the top of the content area and the traffic-light cluster has
+            its usual top inset. The visible page heading is rendered by
+            each tab below. */}
+        <div data-tauri-drag-region className="h-14 shrink-0" />
 
-      <section className="mb-10">
-        <h2 className="mb-3 text-lg font-medium">Theme</h2>
-        <div className="rounded-lg border border-border/40 bg-card p-4">
-          <ThemePickerPanel />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-8 pb-12 pt-2">
+            {activeTab === "general" && <GeneralTab />}
+            {activeTab === "typography" && <TypographyTab />}
+          </div>
         </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="mb-3 text-lg font-medium">Typography</h2>
-        <TypographySettings />
-      </section>
+      </main>
     </div>
   );
 }

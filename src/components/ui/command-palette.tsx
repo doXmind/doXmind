@@ -515,11 +515,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                         <span className="flex flex-shrink-0 items-center gap-1">
                           {cmd.shortcut.map((key, i) => (
                             <React.Fragment key={i}>
-                              <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-border bg-muted px-1 text-[10px] font-medium text-muted-foreground">
+                              <kbd className="text-ui-xs inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-border bg-muted px-1 font-medium text-muted-foreground">
                                 {formatKey(key)}
                               </kbd>
                               {i < cmd.shortcut!.length - 1 && (
-                                <span className="text-[10px] text-muted-foreground">+</span>
+                                <span className="text-ui-xs text-muted-foreground">+</span>
                               )}
                             </React.Fragment>
                           ))}
@@ -539,13 +539,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         {/* Footer hint */}
         <div className="flex items-center justify-between border-t border-border bg-muted/30 px-4 py-2">
           <span className="text-xs text-muted-foreground">
-            <kbd className="mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
+            <kbd className="text-ui-xs mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
               ↑↓
             </kbd>
             to navigate
           </span>
           <span className="text-xs text-muted-foreground">
-            <kbd className="mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
+            <kbd className="text-ui-xs mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
               ↵
             </kbd>
             to select

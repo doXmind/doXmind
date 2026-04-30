@@ -99,7 +99,7 @@ export function EmojiPicker({ onSelect, onClose, anchorRect }: EmojiPickerProps)
       <div className="max-h-64 overflow-y-auto p-2">
         {filteredCategories.map((category) => (
           <div key={category.label} className="mb-2">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="text-ui-xs mb-1 font-semibold uppercase tracking-wider text-muted-foreground">
               {category.label}
             </div>
             <div className="grid grid-cols-7 gap-0.5">

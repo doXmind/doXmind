@@ -191,7 +191,7 @@ export function CoverPickerModal({
         <div className="max-h-[400px] space-y-4 overflow-y-auto pr-1">
           {coverPresetCategories.map((category) => (
             <div key={category.labelKey}>
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              <p className="text-ui-xs mb-2 font-medium uppercase tracking-wider text-muted-foreground">
                 {t(category.labelKey)}
               </p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">

@@ -274,7 +274,7 @@ export function FloatingOutline() {
                     type="button"
                     onClick={() => handleHeadingClick(heading)}
                     className={cn(
-                      "w-full py-2.5 pr-4 text-left text-[13px] transition-colors",
+                      "text-ui-base w-full py-2.5 pr-4 text-left transition-colors",
                       "active:bg-accent/50",
                       isActive
                         ? "bg-foreground/10 font-semibold text-foreground"

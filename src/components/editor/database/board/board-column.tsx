@@ -54,7 +54,7 @@ export function BoardColumn({
         >
           {title}
         </span>
-        <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
+        <span className="text-ui-xs rounded-full bg-muted px-1.5 font-medium text-muted-foreground">
           {rows.length}
         </span>
       </div>

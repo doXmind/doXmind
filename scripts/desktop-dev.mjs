@@ -45,16 +45,14 @@ async function main() {
   // Override two fields in tauri.conf.json: the URL the WebView loads,
   // and the command that boots the dev server (must match the URL).
   //
-  // We force --turbopack here because webpack's dev middleware will, on
-  // a cold start, occasionally serve a partial chunk file to the very
-  // first request — which manifests as "SyntaxError: Unexpected EOF"
-  // in the WebView. Turbopack does not have this race condition and
-  // compiles ~5-10x faster on first boot, so the Tauri shell sees a
-  // ready page sooner.
+  // Desktop validation needs the dev server to prioritize stability over
+  // fastest cold boot. Turbopack can leave the Tauri WebView stuck behind
+  // React Client Manifest overlays after hot restarts, so use Next's
+  // standard dev server for the desktop shell.
   const overrideConfig = {
     build: {
       devUrl,
-      beforeDevCommand: `next dev --turbopack -p ${port}`,
+      beforeDevCommand: `next dev -p ${port}`,
     },
   };
 

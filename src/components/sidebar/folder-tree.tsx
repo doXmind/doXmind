@@ -53,12 +53,14 @@ function SidebarSection({
   actions?: React.ReactNode;
 }) {
   return (
-    <section className="space-y-1.5">
-      <div className="flex h-8 items-center justify-between px-2.5">
-        <h2 className="text-[13px] font-semibold leading-none text-muted-foreground/80">{title}</h2>
+    <section className="space-y-1">
+      <div className="flex h-7 items-center justify-between px-2.5">
+        <h2 className="text-ui-xs font-semibold uppercase leading-none tracking-wide text-muted-foreground/70">
+          {title}
+        </h2>
         {actions ? <div className="flex items-center gap-0.5">{actions}</div> : null}
       </div>
-      <div className="space-y-1">{children}</div>
+      <div className="space-y-0.5">{children}</div>
     </section>
   );
 }
@@ -76,7 +78,7 @@ function HeaderIconButton({
     <Tooltip content={label} side="top">
       <button
         onClick={onClick}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+        className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
         aria-label={label}
       >
         {children}
@@ -96,6 +98,7 @@ export function FolderTree({
 
   // Fine-grained selectors — actions are stable refs, state values subscribed individually
   const files = useFileStore((s) => s.files);
+  const currentFileId = useFileStore((s) => s.currentFileId);
   const currentFolderId = useFileStore((s) => s.currentFolderId);
   const getFolders = useFileStore((s) => s.getFolders);
   const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
@@ -465,22 +468,27 @@ export function FolderTree({
 
   const folderRows = viewFolders.map((folder) => {
     const folderFiles = getFilesInFolder(folder.id);
-    const itemCount = folderFiles.length;
     const isCollapsed = collapsedFolderIds.has(folder.id);
+    const isActiveFolder = files.find((file) => file.id === currentFileId)?.parentId === folder.id;
 
     return (
-      <div key={folder.id} className="space-y-1">
+      <div key={folder.id} className="space-y-0.5">
         <div
           onDragOver={(e) => handleDragOver(e, folder.id)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, folder.id)}
-          className={`group/folder rounded-lg transition-colors ${
-            dragOverFolderId === folder.id ? "bg-accent ring-2 ring-primary" : "hover:bg-accent/35"
-          }`}
+          className={cn(
+            "group/folder rounded-lg transition-colors duration-150 ease-out",
+            dragOverFolderId === folder.id
+              ? "bg-[var(--sidebar-active)] ring-1 ring-primary/40"
+              : isActiveFolder
+                ? "bg-[var(--sidebar-active)] shadow-[var(--sidebar-active-shadow)] ring-1 ring-[var(--sidebar-active-border)]"
+                : "hover:bg-[var(--sidebar-hover)]"
+          )}
         >
           {renamingFolderId === folder.id ? (
-            <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2 md:py-1.5">
-              <Folder className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
+            <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2.5 md:py-1.5">
+              <Folder className="h-5 w-5 shrink-0 text-muted-foreground/80" />
               <Input
                 value={renamingFolderName}
                 onChange={(e) => setRenamingFolderName(e.target.value)}
@@ -529,26 +537,21 @@ export function FolderTree({
                 });
               }}
               onContextMenu={(e) => handleContextMenu(e, folder.id)}
-              className="flex h-8 w-full cursor-pointer select-none items-center gap-2 px-3 text-sm transition-transform active:scale-[0.98] md:active:scale-100"
+              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-2.5 text-sm transition-transform active:scale-[0.98] md:active:scale-100"
             >
               {isCollapsed ? (
-                <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-muted-foreground" />
+                <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
               ) : (
-                <FolderOpen className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-muted-foreground" />
+                <FolderOpen className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
               )}
 
-              <span className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-foreground/80 transition-colors group-hover/folder:text-foreground">
+              <span className="text-ui-base min-w-0 flex-1 truncate font-semibold leading-5 text-foreground/80 transition-colors group-hover/folder:text-foreground">
                 {folder.name}
               </span>
-              {itemCount > 0 && (
-                <span className="ml-2 text-[12px] font-semibold text-muted-foreground/70 transition-opacity group-hover/folder:hidden">
-                  {itemCount}
-                </span>
-              )}
-              <div className="ml-1 hidden items-center gap-0.5 opacity-0 transition-opacity group-hover/folder:opacity-100 md:flex">
+              <div className="ml-1 hidden items-center gap-0.5 opacity-0 transition-opacity group-focus-within/folder:opacity-100 group-hover/folder:opacity-100 md:flex">
                 <button
                   onClick={(e) => handleFolderActionsClick(e, folder.id)}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+                  className="sidebar-action-button flex h-6 w-6 items-center justify-center rounded-md transition-colors"
                   aria-label={t("folderActions")}
                   title={t("folderActions")}
                 >
@@ -559,7 +562,7 @@ export function FolderTree({
                     e.stopPropagation();
                     onCreateFile(folder.id);
                   }}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+                  className="sidebar-action-button flex h-6 w-6 items-center justify-center rounded-md transition-colors"
                   aria-label={t("newDocument")}
                   title={t("newDocument")}
                 >
@@ -570,7 +573,7 @@ export function FolderTree({
           )}
         </div>
         {!isCollapsed && folderFiles.length > 0 && (
-          <div className="ml-6 space-y-1 border-l border-border/40 pl-1.5">
+          <div className="ml-6 space-y-0.5 pl-1.5">
             {folderFiles.map((file) => renderFileWithSubPages(file))}
           </div>
         )}
@@ -579,13 +582,13 @@ export function FolderTree({
   });
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {/* Favorites Section - only show at root when there are favorites */}
       {getFavorites().length > 0 && (
         <div className="mb-1">
           <button
             onClick={() => setFavoritesExpanded(!favoritesExpanded)}
-            className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+            className="text-ui-xs flex h-7 w-full items-center gap-1.5 rounded-lg px-2.5 font-semibold text-muted-foreground transition-colors hover:bg-[var(--sidebar-hover)] hover:text-foreground"
           >
             {favoritesExpanded ? (
               <ChevronDown className="h-3 w-3" />
@@ -594,7 +597,7 @@ export function FolderTree({
             )}
             <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
             {t("favorites")}
-            <span className="ml-auto text-[10px] font-normal text-muted-foreground/60">
+            <span className="text-ui-xs ml-auto font-normal text-muted-foreground/60">
               {getFavorites().length}
             </span>
           </button>

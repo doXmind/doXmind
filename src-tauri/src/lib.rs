@@ -16,6 +16,9 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+
+#[cfg(target_os = "macos")]
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
@@ -148,9 +151,12 @@ pub fn run() {
         r#"window.__TAURI_BACKEND_URL__ = {url};
 window.__TAURI_PLATFORM__ = "{platform}";
 (function() {{
-  var apply = function() {{
+    var apply = function() {{
     if (!document.documentElement) return;
     document.documentElement.classList.add("is-tauri", "is-tauri-" + "{platform}");
+    if ("{platform}" === "macos") {{
+      document.documentElement.classList.add("macos-vibrancy");
+    }}
   }};
   if (document.documentElement) apply();
   else document.addEventListener("DOMContentLoaded", apply, {{ once: true }});
@@ -189,15 +195,16 @@ window.__TAURI_PLATFORM__ = "{platform}";
             // floating at the top-left and the in-page header gets enough
             // left padding (see .is-tauri-macos in the frontend) to clear
             // them.
-            // Use an empty path so the URL resolves to the frontend root in
+            // Load the editor shell directly. The marketing/home surface was
+            // removed, so desktop should boot into the local workspace rather
+            // than flashing "/" and waiting for a client redirect.
+            //
+            // Use a trailing slash so the URL resolves to the editor index in
             // both modes:
-            //   dev:  http://localhost:3000/        (Next dev server)
-            //   prod: tauri://localhost/            (Tauri's asset protocol
-            //                                       auto-serves index.html)
-            // Passing "index.html" instead 404s in dev because the Next.js
-            // dev server doesn't expose that filename — only "/" works.
+            //   dev:  http://localhost:3000/editor/ (Next dev server)
+            //   prod: tauri://localhost/editor/     (static editor route)
             let mut builder =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("".into()))
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("editor/".into()))
                     .title("doXmind")
                     .inner_size(1400.0, 900.0)
                     .min_inner_size(900.0, 600.0)
@@ -206,12 +213,34 @@ window.__TAURI_PLATFORM__ = "{platform}";
 
             #[cfg(target_os = "macos")]
             {
+                // Center the traffic lights vertically inside the 44px
+                // chrome header so they align with the icon buttons that
+                // sit immediately to the right of them. Tauri positions
+                // the cluster at this offset from the window's top-left;
+                // y is tuned visually rather than mathematically because
+                // macOS adds extra padding around the cluster.
                 builder = builder
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .hidden_title(true);
+                    .traffic_light_position(tauri::LogicalPosition::new(14.0, 24.0))
+                    .hidden_title(true)
+                    .transparent(true);
             }
 
             let window = builder.build()?;
+            #[cfg(target_os = "macos")]
+            {
+                // corner_radius=None lets NSVisualEffectView fill the entire
+                // window; passing Some(...) clips the vibrancy view to a
+                // smaller rounded rect that may not cover the full sidebar.
+                if let Err(err) = apply_vibrancy(
+                    &window,
+                    NSVisualEffectMaterial::Sidebar,
+                    Some(NSVisualEffectState::Active),
+                    None,
+                ) {
+                    log::warn!("[window] failed to apply macOS vibrancy: {err}");
+                }
+            }
             // Show & focus once the WebView is ready (avoids the brief blank
             // flash you get with the default config).
             let _ = window.show();

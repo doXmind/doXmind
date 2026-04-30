@@ -375,13 +375,13 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       className={cn(
-        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-xl px-3 py-3 transition-colors md:h-9 md:px-3 md:py-1.5",
+        "group/file relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out md:h-7 md:px-2.5 md:py-1",
         "select-none active:scale-[0.98] md:active:scale-100", // Touch feedback on mobile, prevent text selection
         isSelected
           ? "bg-primary/10 ring-1 ring-primary/25 dark:bg-primary/20"
           : isActive
-            ? "bg-foreground/[0.08] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border)/0.35)] dark:bg-white/[0.11]"
-            : "text-foreground/90 hover:bg-accent/55"
+            ? "bg-[var(--sidebar-active)] text-foreground shadow-[var(--sidebar-active-shadow)] ring-1 ring-[var(--sidebar-active-border)]"
+            : "text-foreground/90 hover:bg-[var(--sidebar-hover)]"
       )}
     >
       {!isRenaming && !isSelectionMode && (
@@ -391,7 +391,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             e.stopPropagation();
             toggleFavorite(file.id);
           }}
-          className="absolute left-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
+          className="sidebar-action-button absolute left-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md opacity-0 transition-opacity focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
           aria-label={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
           title={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
         >
@@ -470,7 +470,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           <div className="flex min-w-0 items-center gap-2">
             <p
               className={cn(
-                "min-w-0 flex-1 truncate text-[15px] leading-5",
+                "text-ui-base min-w-0 flex-1 truncate leading-5",
                 isActive ? "font-semibold" : "font-medium"
               )}
             >
@@ -486,7 +486,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       {!isRenaming && (
         <span
           aria-hidden
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-semibold text-muted-foreground/75 transition-opacity md:group-hover/file:opacity-0"
+          className="text-ui-xs pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-semibold text-muted-foreground/75 transition-opacity md:group-hover/file:opacity-0"
         >
           {getRelativeTimeLabel(file.updatedAt)}
         </span>
@@ -499,7 +499,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             e.stopPropagation();
             handleDelete(e);
           }}
-          className="absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
+          className="sidebar-action-button absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md opacity-0 transition-opacity focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
           aria-label={t("moveToTrash")}
           title={t("moveToTrash")}
         >

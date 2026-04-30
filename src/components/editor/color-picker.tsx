@@ -24,7 +24,7 @@ export const ColorPicker = memo(function ColorPicker({
   return (
     <div className="p-2.5">
       {/* Text color section */}
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      <p className="text-ui-xs mb-1.5 font-medium uppercase tracking-wider text-muted-foreground">
         Text color
       </p>
       <div className="mb-3 grid grid-cols-6 gap-1">
@@ -39,7 +39,7 @@ export const ColorPicker = memo(function ColorPicker({
       </div>
 
       {/* Background color section */}
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      <p className="text-ui-xs mb-1.5 font-medium uppercase tracking-wider text-muted-foreground">
         Background
       </p>
       <div className="grid grid-cols-6 gap-1">

@@ -596,7 +596,7 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
           >
             {t("blockMenu.back")}
           </button>
-          <div className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <div className="text-ui-xs px-2 pb-0.5 pt-1 font-semibold uppercase tracking-wider text-muted-foreground/70">
             {t("blockMenu.tableSize")}
           </div>
           <TableSizePicker onSelect={handleTableSizeSelect} />
@@ -626,7 +626,7 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
             {groupedItems.map((group, groupIndex) => (
               <div key={group.category}>
                 {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
-                <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                <div className="text-ui-xs px-2 pb-0.5 pt-1.5 font-semibold uppercase tracking-wider text-muted-foreground/70">
                   {t(categoryLabelKeys[group.category] as TKey)}
                 </div>
                 {group.items.map(({ item, globalIndex }) => (
@@ -652,7 +652,7 @@ export function BlockInsertMenu({ editor, insertAfterPos, anchor, onClose }: Blo
                       <p className="text-xs text-muted-foreground">{t(item.descKey as TKey)}</p>
                     </div>
                     {item.shortcut && (
-                      <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                      <span className="text-ui-xs shrink-0 text-muted-foreground/60">
                         {formatShortcut(item.shortcut)}
                       </span>
                     )}

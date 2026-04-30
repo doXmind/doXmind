@@ -63,7 +63,7 @@ function MiniThemeCard({
       </div>
       <span
         className={cn(
-          "text-[10px] leading-tight",
+          "text-ui-xs leading-tight",
           isActive ? "font-medium text-foreground" : "text-muted-foreground"
         )}
       >
@@ -98,7 +98,7 @@ export function ThemePickerPanel() {
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        <div className="text-ui-xs font-medium uppercase tracking-wider text-muted-foreground">
           Light
         </div>
         <div className="grid grid-cols-4 gap-1">
@@ -114,7 +114,7 @@ export function ThemePickerPanel() {
       </div>
 
       <div className="space-y-1.5">
-        <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        <div className="text-ui-xs font-medium uppercase tracking-wider text-muted-foreground">
           Dark
         </div>
         <div className="grid grid-cols-4 gap-1">

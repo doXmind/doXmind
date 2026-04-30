@@ -430,7 +430,7 @@ export function MermaidEditorPanel({
                     return (
                       <div key={tpl.label}>
                         {showCategory && (
-                          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <div className="text-ui-xs px-2 py-1 font-semibold uppercase tracking-wider text-muted-foreground">
                             {tpl.category}
                           </div>
                         )}
@@ -491,16 +491,14 @@ export function MermaidEditorPanel({
       {/* Keyboard hints */}
       <div className="mt-2 text-xs text-muted-foreground">
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Ctrl+Enter</kbd>{" "}
+          <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Ctrl+Enter</kbd>{" "}
           {t("mermaid.toSave")}
         </span>
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Esc</kbd>{" "}
-          {t("mermaid.toCancel")}
+          <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Esc</kbd> {t("mermaid.toCancel")}
         </span>
         <span>
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Tab</kbd>{" "}
-          {t("mermaid.toIndent")}
+          <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Tab</kbd> {t("mermaid.toIndent")}
         </span>
       </div>
     </div>

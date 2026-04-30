@@ -158,7 +158,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
                   <div className="flex items-center gap-1.5">
                     <span
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                        "text-ui-xs inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-medium",
                         config.color
                       )}
                     >
@@ -171,7 +171,7 @@ export function VersionHistoryPanel({ fileId, isOpen, onClose }: VersionHistoryP
                       {version.summary}
                     </p>
                   )}
-                  <p className="mt-1 text-[11px] text-muted-foreground/70">
+                  <p className="text-ui-xs mt-1 text-muted-foreground/70">
                     {formatDate(date)} at {formatTime(date)}
                   </p>
                 </div>

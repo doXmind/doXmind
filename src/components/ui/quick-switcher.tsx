@@ -201,7 +201,7 @@ export function QuickSwitcher() {
                   <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate text-left">{file.name}</span>
                   {isCurrent && (
-                    <span className="flex-shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    <span className="text-ui-xs flex-shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
                       {t("current")}
                     </span>
                   )}
@@ -217,18 +217,18 @@ export function QuickSwitcher() {
         {/* Footer hint */}
         <div className="flex items-center justify-between border-t border-border bg-muted/30 px-4 py-2">
           <span className="text-xs text-muted-foreground">
-            <kbd className="mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
+            <kbd className="text-ui-xs mr-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
               Tab
             </kbd>
             or
-            <kbd className="mx-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
+            <kbd className="text-ui-xs mx-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
               ↑↓
             </kbd>
             {t("navigate")}
           </span>
           <span className="text-xs text-muted-foreground">
             Release
-            <kbd className="mx-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 text-[10px] font-medium">
+            <kbd className="text-ui-xs mx-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-medium">
               Ctrl
             </kbd>
             to open

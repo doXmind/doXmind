@@ -213,7 +213,7 @@ export function StatusCell({
                 if (catChoices.length === 0 && search.trim()) return null;
                 return (
                   <div key={cat.id}>
-                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                    <div className="text-ui-xs px-2 py-1 font-semibold uppercase tracking-wider text-muted-foreground/60">
                       {cat.name}
                     </div>
                     {catChoices.map((c) => {

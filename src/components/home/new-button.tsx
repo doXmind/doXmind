@@ -48,7 +48,7 @@ export const NewButton = memo(function NewButton({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="sidebar-action-button h-7 w-7 rounded-lg"
           aria-label={t("newDocument")}
         >
           <Plus className="h-4 w-4" />

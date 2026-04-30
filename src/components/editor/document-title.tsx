@@ -1,15 +1,22 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Smile, Share2, FilePlus } from "lucide-react";
+import { Smile, Download, FilePlus, ImagePlus } from "lucide-react";
+import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import { useFileStore } from "@/stores/file-store";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { ShareDialog } from "@/components/share/share-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { BreadcrumbNav } from "./breadcrumb-nav";
 import { CoverPickerModal } from "./cover-picker-modal";
-import { ImagePlus } from "lucide-react";
+import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 interface DocumentTitleProps {
@@ -28,8 +35,35 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
   const displayName = fileName.replace(/\.md$/, "");
   const [value, setValue] = useState(displayName);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showShareDialog, setShowShareDialog] = useState(false);
   const [showCoverModal, setShowCoverModal] = useState(false);
+  const t = useTranslations("editor");
+
+  const handleExport = useCallback(
+    (format: "markdown" | "pdf" | "docx") => {
+      if (!file) return;
+      const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
+      toast.promise(
+        api.exportFile(fileId, format).then((blob) => {
+          const baseName = fileName.replace(/\.md$/, "");
+          const extension = format === "markdown" ? "md" : format;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${baseName}.${extension}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }),
+        {
+          loading: t("exportingAs", { format: formatLabel }),
+          success: t("exportedAs", { format: formatLabel }),
+          error: t("failedToExportAs", { format: formatLabel }),
+        }
+      );
+    },
+    [file, fileId, fileName, t]
+  );
   const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const iconButtonRef = useRef<HTMLButtonElement>(null);
@@ -171,18 +205,37 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
           spellCheck={false}
         />
 
-        {/* Share button */}
-        <Tooltip content="Share document" side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowShareDialog(true)}
-            className="mt-1 h-9 w-9 flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground dark:text-muted-foreground/60"
-            aria-label="Share document"
-          >
-            <Share2 className="h-4 w-4" />
-          </Button>
-        </Tooltip>
+        {/* Export menu — replaces the legacy share button (no sharing in
+            the local-first build, but exporting the doc to md/pdf/docx is
+            the natural action from this slot). */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Tooltip content={t("export")} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="mt-1 h-9 w-9 flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground dark:text-muted-foreground/60"
+                aria-label={t("export")}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => handleExport("markdown")}>
+              <Download className="mr-2 h-4 w-4" />
+              {t("exportAsMarkdown")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport("pdf")}>
+              <Download className="mr-2 h-4 w-4" />
+              {t("exportAsPDF")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport("docx")}>
+              <Download className="mr-2 h-4 w-4" />
+              {t("exportAsWord")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Emoji picker */}
@@ -193,14 +246,6 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
           anchorRect={(iconButtonRef.current ?? addIconButtonRef.current)!.getBoundingClientRect()}
         />
       )}
-
-      {/* Share dialog */}
-      <ShareDialog
-        open={showShareDialog}
-        onClose={() => setShowShareDialog(false)}
-        fileId={fileId}
-        fileName={fileName}
-      />
 
       {/* Cover picker modal */}
       <CoverPickerModal

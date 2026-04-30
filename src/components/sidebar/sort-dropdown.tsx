@@ -36,7 +36,7 @@ export function SortDropdown({ iconOnly = false, ariaLabel }: SortDropdownProps)
         <button
           className={
             iconOnly
-              ? "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              ? "sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
               : "flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           }
           aria-label={ariaLabel ?? t("sortFiles")}

@@ -370,7 +370,7 @@ function TypeDropdown({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value as PropertyType)}
-        className="appearance-none rounded border border-border bg-background px-1.5 py-0.5 pr-5 text-[10px] font-normal text-muted-foreground hover:border-primary/50 focus:outline-none"
+        className="text-ui-xs appearance-none rounded border border-border bg-background px-1.5 py-0.5 pr-5 font-normal text-muted-foreground hover:border-primary/50 focus:outline-none"
       >
         {PROPERTY_TYPES.map((type) => (
           <option key={type} value={type}>

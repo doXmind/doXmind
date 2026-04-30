@@ -27,7 +27,7 @@ function NavButton({ icon, label, isActive, onClick }: NavButtonProps) {
       )}
     >
       <div className="flex h-6 w-6 items-center justify-center">{icon}</div>
-      <span className="text-[10px] font-medium">{label}</span>
+      <span className="text-ui-xs font-medium">{label}</span>
     </button>
   );
 }

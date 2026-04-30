@@ -120,7 +120,7 @@ export function DatabaseToolbar({
           <Filter className="h-3 w-3" />
           {t("filter")}
           {filters.length > 0 && (
-            <span className="rounded-full bg-blue-600 px-1.5 text-[10px] font-medium text-white dark:bg-blue-400 dark:text-blue-950">
+            <span className="text-ui-xs rounded-full bg-blue-600 px-1.5 font-medium text-white dark:bg-blue-400 dark:text-blue-950">
               {filters.length}
             </span>
           )}
@@ -139,7 +139,7 @@ export function DatabaseToolbar({
           <ArrowUpDown className="h-3 w-3" />
           {t("sort")}
           {sorts.length > 0 && (
-            <span className="rounded-full bg-blue-600 px-1.5 text-[10px] font-medium text-white dark:bg-blue-400 dark:text-blue-950">
+            <span className="text-ui-xs rounded-full bg-blue-600 px-1.5 font-medium text-white dark:bg-blue-400 dark:text-blue-950">
               {sorts.length}
             </span>
           )}
@@ -201,7 +201,7 @@ export function DatabaseToolbar({
           <SlidersHorizontal className="h-3 w-3" />
           {t("properties")}
           {hiddenCount > 0 && (
-            <span className="rounded-full bg-blue-600 px-1.5 text-[10px] font-medium text-white dark:bg-blue-400 dark:text-blue-950">
+            <span className="text-ui-xs rounded-full bg-blue-600 px-1.5 font-medium text-white dark:bg-blue-400 dark:text-blue-950">
               {hiddenCount}
             </span>
           )}

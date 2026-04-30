@@ -429,7 +429,7 @@ export function MobileBlockInsertSheet() {
                   grouped.map((group, groupIndex) => (
                     <div key={group.category}>
                       {groupIndex > 0 && <div className="mx-2 my-1 h-px bg-border/30" />}
-                      <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                      <div className="text-ui-xs px-2 pb-0.5 pt-2 font-semibold uppercase tracking-wider text-muted-foreground/70">
                         {categoryLabels[group.category] ?? group.category}
                       </div>
                       {group.items.map((cmd) => (

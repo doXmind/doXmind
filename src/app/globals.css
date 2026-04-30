@@ -11,6 +11,20 @@
 
 @layer base {
   :root {
+    /* Unified UI text sizing. AppearanceInjector overwrites
+       --ui-font-size-base / --ui-code-font-size-base from the user's
+       settings; everything below derives from those two so a single
+       slider rescales the whole UI in one shot. */
+    --ui-font-size-base: 13px;
+    --ui-code-font-size-base: 12px;
+    --ui-text-xs: max(10px, calc(var(--ui-font-size-base) - 2px));
+    --ui-text-sm: max(11px, calc(var(--ui-font-size-base) - 1px));
+    --ui-text-base: var(--ui-font-size-base);
+    --ui-text-md: calc(var(--ui-font-size-base) + 1px);
+    --ui-text-lg: calc(var(--ui-font-size-base) + 2px);
+    --ui-text-xl: calc(var(--ui-font-size-base) + 4px);
+    --ui-text-2xl: calc(var(--ui-font-size-base) + 8px);
+
     /* Notion-exact light mode palette */
     --background: 0 0% 100%; /* #FFFFFF — editor/content surface */
     --foreground: 45 8% 20%; /* #37352F — Notion's exact text color */
@@ -33,6 +47,17 @@
     --input: 60 4% 91%;
     --ring: 45 8% 20%;
     --sidebar: 0 0% 100%; /* same as --background for unified look */
+    /* Light mode: keep alpha higher than dark — black text needs to stay
+       readable over arbitrary wallpapers when vibrancy shows through. */
+    --sidebar-translucent-bg: rgba(247, 247, 248, 0.55);
+    --sidebar-hover: #eeeeef;
+    --sidebar-active: #e7e8eb;
+    --sidebar-active-shadow: 0 1px 2px rgba(26, 28, 31, 0.05);
+    --sidebar-active-border: rgba(26, 28, 31, 0.06);
+    --chrome-material-bg: rgba(250, 250, 251, 0.62);
+    --chrome-pill-bg: rgba(255, 255, 255, 0.62);
+    --chrome-border: rgba(26, 28, 31, 0.1);
+    --content-surface-bg: hsl(var(--background));
     --radius: 0.5rem;
 
     /* Animation durations */
@@ -109,6 +134,20 @@
     --input: 0 0% 18%;
     --ring: 0 0% 80%;
     --sidebar: 0 0% 10%; /* same as --background for unified look */
+    /* Low-alpha by default — desktop-only build sits over NSVisualEffectView
+       Sidebar material on macOS, so the sidebar is meant to read as glass.
+       In a non-Tauri browser preview the same value yields a translucent
+       dark surface over the body color, which is acceptable (no vibrancy
+       expected in that mode anyway). */
+    --sidebar-translucent-bg: rgba(37, 37, 37, 0.2);
+    --sidebar-hover: rgba(255, 255, 255, 0.075);
+    --sidebar-active: rgba(255, 255, 255, 0.115);
+    --sidebar-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+    --sidebar-active-border: rgba(255, 255, 255, 0.055);
+    --chrome-material-bg: rgba(22, 22, 22, 0.55);
+    --chrome-pill-bg: rgba(255, 255, 255, 0.06);
+    --chrome-border: rgba(255, 255, 255, 0.075);
+    --content-surface-bg: hsl(var(--background));
 
     /* Diff Review — Notion-inspired palette (dark): gray deleted, blue inserted */
     --diff-deleted-bg: rgba(255, 255, 255, 0.04);
@@ -193,6 +232,114 @@
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Anchor the unified UI text size at the body level so any element
+       that doesn't override font-size inherits from here. */
+    font-size: var(--ui-text-base);
+  }
+}
+
+/* Tailwind text-* utility overrides — every text size in the app derives
+   from --ui-font-size-base so the appearance settings slider rescales
+   the whole UI uniformly. `!important` guarantees we win over Tailwind's
+   generated `.text-sm { font-size: 0.875rem }` regardless of layer
+   ordering. The .ProseMirror reset below restores native size cascade
+   inside the editor so headings/body still size themselves. */
+@layer utilities {
+  .text-xs {
+    font-size: var(--ui-text-xs) !important;
+    line-height: 1.4 !important;
+  }
+  .text-sm {
+    font-size: var(--ui-text-sm) !important;
+    line-height: 1.45 !important;
+  }
+  .text-base {
+    font-size: var(--ui-text-base) !important;
+    line-height: 1.5 !important;
+  }
+  .text-lg {
+    font-size: var(--ui-text-lg) !important;
+    line-height: 1.5 !important;
+  }
+  .text-xl {
+    font-size: var(--ui-text-xl) !important;
+    line-height: 1.4 !important;
+  }
+  .text-2xl {
+    font-size: var(--ui-text-2xl) !important;
+    line-height: 1.3 !important;
+  }
+
+  /* Named UI text utilities for callsites that want an explicit step. */
+  .text-ui-xs {
+    font-size: var(--ui-text-xs) !important;
+  }
+  .text-ui-sm {
+    font-size: var(--ui-text-sm) !important;
+  }
+  .text-ui-base {
+    font-size: var(--ui-text-base) !important;
+  }
+  .text-ui-md {
+    font-size: var(--ui-text-md) !important;
+  }
+  .text-ui-lg {
+    font-size: var(--ui-text-lg) !important;
+  }
+  .text-ui-code {
+    font-size: var(--ui-code-font-size-base) !important;
+  }
+}
+
+/* Editor content (TipTap / .ProseMirror) keeps its own typography
+   cascade — drop the `!important` enforcement inside the editor so
+   headings, blockquotes, code, etc. can size themselves. We reset only
+   font-size + line-height; color/weight/family inherit normally. The
+   inner selector uses a high-specificity tag list so it beats the
+   chrome utility's `!important` for any Tailwind text-* class that
+   happens to be applied inside the editor. */
+.ProseMirror,
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6,
+.ProseMirror p,
+.ProseMirror li,
+.ProseMirror blockquote {
+  font-size: revert !important;
+  line-height: revert !important;
+}
+
+/* Mono surfaces follow the separate code-font slider. The .ProseMirror
+   selectors keep editor inline code and code blocks scaling with the
+   user's preferred code size, independent of the UI base. */
+code,
+kbd,
+samp,
+.font-mono,
+.ProseMirror code,
+.ProseMirror pre {
+  font-size: var(--ui-code-font-size-base);
+}
+
+@layer base {
+  html.is-tauri-macos,
+  html.is-tauri-macos body {
+    background: transparent !important;
+  }
+
+  /* Tauri/macOS-only refinement: when the editor sits over the native
+     NSVisualEffectView, the content surface becomes slightly translucent
+     so the chrome header blends into the vibrancy seam. The sidebar bg
+     itself is low-alpha by default (see `.dark` / `:root`), so it doesn't
+     need a separate Tauri-specific override. */
+  html.is-tauri-macos.dark {
+    --content-surface-bg: rgba(24, 24, 24, 0.92);
+  }
+  html.is-tauri-macos:not(.dark) {
+    --content-surface-bg: rgba(255, 255, 255, 0.94);
   }
 
   /* Global text selection - Notion-style blue highlight */
@@ -220,6 +367,131 @@
 /* Sidebar background utility */
 .bg-sidebar {
   background-color: hsl(var(--sidebar));
+}
+
+.sidebar-glass {
+  background: var(--sidebar-translucent-bg);
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+}
+
+.desktop-app-shell,
+.desktop-window-shell {
+  background: hsl(var(--background));
+}
+
+.desktop-content-surface {
+  background: var(--content-surface-bg);
+}
+
+.desktop-chrome-header {
+  position: relative;
+  background: var(--chrome-material-bg);
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+}
+
+.desktop-chrome-header::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--chrome-border);
+}
+
+.desktop-header-button {
+  color: hsl(var(--muted-foreground));
+}
+
+.desktop-header-button:hover,
+.desktop-header-button[data-state="open"] {
+  background: var(--sidebar-hover);
+  color: hsl(var(--foreground));
+}
+
+.desktop-chrome-left-controls {
+  padding-left: 12px;
+}
+
+html.is-tauri-macos .desktop-app-shell,
+html.is-tauri-macos .desktop-window-shell {
+  background: transparent;
+}
+
+html.is-tauri-macos .desktop-chrome-header {
+  grid-template-columns: max(var(--files-sidebar-width, 304px), 124px) minmax(0, 1fr) auto;
+  /* Right of the sidebar seam, the header should read as a continuation
+     of the editor surface — same opacity, same color — so there's no
+     visible band where the header ends and the content begins. Left
+     stays glass over the native vibrancy. */
+  background: linear-gradient(
+    to right,
+    var(--sidebar-translucent-bg) 0,
+    var(--sidebar-translucent-bg) var(--files-sidebar-width, 304px),
+    var(--content-surface-bg) var(--files-sidebar-width, 304px),
+    var(--content-surface-bg) 100%
+  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.is-tauri-macos .desktop-chrome-header::after {
+  left: var(--files-sidebar-width, 304px);
+}
+
+html.is-tauri-macos .desktop-chrome-left-controls {
+  padding-left: 78px;
+}
+
+html.is-tauri-macos .sidebar-glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.sidebar-action-button {
+  color: hsl(var(--muted-foreground));
+}
+
+.sidebar-action-button:hover,
+.sidebar-action-button[data-state="open"] {
+  background: var(--sidebar-hover);
+  color: hsl(var(--foreground));
+}
+
+.sidebar-action-button:focus-visible {
+  outline: none;
+  background: var(--sidebar-active);
+  color: hsl(var(--foreground));
+  box-shadow:
+    inset 0 0 0 1px var(--sidebar-active-border),
+    0 0 0 2px rgba(51, 156, 255, 0.34);
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.sidebar-scrollbar:hover::-webkit-scrollbar-thumb,
+.sidebar-scrollbar:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.dark .sidebar-scrollbar:hover::-webkit-scrollbar-thumb,
+.dark .sidebar-scrollbar:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 /* Panel elevation — minimal Notion-style depth */

@@ -92,38 +92,27 @@ export function UnifiedHeader() {
     <>
       <header
         data-tauri-drag-region
-        className={cn(
-          // 1fr_auto_1fr keeps the centered title pill in the visual middle
-          // of the window regardless of how much the left/right action
-          // groups change width (e.g. when no file is open).
-          //
-          // In dark mode the sidebar and main pane both use --background
-          // (#1a1a1a). Match that here so the only visible horizontal seam
-          // is the `border-b` line — picking a different shade (we used to
-          // hard-code #161616) caused a second, parallel "phantom" line at
-          // the header/content boundary from the colour transition.
-          // Light mode keeps the original dark header strip because the
-          // header's icon colours are hard-coded for a dark surface.
-          "relative z-20 grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-b border-border/50 bg-[#161616] pr-3 text-foreground dark:bg-background",
-          // On macOS Tauri the real traffic lights live at ~12px from the
-          // left, ~18px from the top — leave 78px so the green button has
-          // breathing room before our first sidebar toggle.
-          isMacTauri ? "pl-[78px]" : "pl-3"
-        )}
+        className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center pr-3 text-foreground"
+        style={{
+          gridTemplateColumns: "max(var(--files-sidebar-width, 304px), 124px) minmax(0, 1fr) auto",
+        }}
       >
-        <div data-tauri-drag-region className="flex min-w-0 items-center gap-2">
+        <div
+          data-tauri-drag-region
+          className={cn(
+            "desktop-chrome-left-controls flex min-w-0 items-center gap-2",
+            !isMacTauri && "pl-3"
+          )}
+        >
           <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
-              className={cn(
-                "hover:bg-white/8 h-7 w-7 rounded-md text-zinc-400 hover:text-zinc-100",
-                isFilesSidebarOpen && "bg-white/8 text-zinc-100"
-              )}
+              className="desktop-header-button h-7 w-7 rounded-md"
               onClick={toggleFilesSidebar}
               aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
             >
-              <PanelLeft className="h-4 w-4" />
+              <PanelLeft className="h-[13px] w-[13px]" />
             </Button>
           </Tooltip>
 
@@ -131,35 +120,35 @@ export function UnifiedHeader() {
             <Button
               variant="ghost"
               size="icon"
-              className="hover:bg-white/8 h-7 w-7 rounded-md text-zinc-500 hover:text-zinc-200"
+              className="desktop-header-button h-7 w-7 rounded-md"
               onClick={() => window.history.back()}
               aria-label={t("back")}
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-[13px] w-[13px]" />
             </Button>
           </Tooltip>
           <Tooltip content={t("forward")} side="bottom">
             <Button
               variant="ghost"
               size="icon"
-              className="hover:bg-white/8 h-7 w-7 rounded-md text-zinc-500 hover:text-zinc-200"
+              className="desktop-header-button h-7 w-7 rounded-md"
               onClick={() => window.history.forward()}
               aria-label={t("forward")}
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-[13px] w-[13px]" />
             </Button>
           </Tooltip>
         </div>
 
-        <div data-tauri-drag-region className="flex min-w-0 justify-center px-4">
+        <div data-tauri-drag-region className="flex min-w-0 justify-start px-4">
           <div
             data-tauri-drag-region
-            className="flex h-8 min-w-0 max-w-[min(680px,100%)] items-center gap-2 rounded-md border border-white/10 bg-[#1f1f1f] px-3 shadow-sm"
+            className="flex h-8 min-w-0 max-w-[min(520px,100%)] items-center gap-2 rounded-md px-1.5"
             aria-label={title}
           >
             <span
               data-tauri-drag-region
-              className="min-w-0 truncate text-[13px] font-semibold text-zinc-100"
+              className="text-ui-base min-w-0 truncate font-semibold text-foreground"
             >
               {title}
             </span>
@@ -173,7 +162,7 @@ export function UnifiedHeader() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="hover:bg-white/8 h-7 w-7 rounded-md text-zinc-400 hover:text-zinc-100"
+                  className="desktop-header-button h-7 w-7 rounded-md"
                   onClick={() => setPresentationMode(true)}
                   aria-label={t("present")}
                 >
@@ -181,14 +170,14 @@ export function UnifiedHeader() {
                 </Button>
               </Tooltip>
 
-              <div className="h-5 w-px bg-white/10" />
+              <div className="h-5 w-px bg-[var(--chrome-border)]" />
 
               <Tooltip content={saveLabel} side="bottom">
-                <div className="flex h-7 items-center gap-1.5 rounded-md border border-white/10 bg-[#202020] px-2 text-[12px] font-semibold text-zinc-300">
+                <div className="text-ui-xs flex h-7 items-center gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-muted-foreground">
                   {isSaving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                   ) : (
-                    <CloudUpload className="h-3.5 w-3.5 text-zinc-400" />
+                    <CloudUpload className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
                   <span>{isDirty ? t("unsavedChanges") : t("saved")}</span>
                 </div>
@@ -199,7 +188,7 @@ export function UnifiedHeader() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-1.5 rounded-md border border-white/10 bg-[#202020] px-2 text-[12px] font-semibold text-zinc-200 hover:bg-white/10 hover:text-white"
+                    className="text-ui-xs h-7 gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-foreground hover:bg-[var(--sidebar-hover)] hover:text-foreground"
                     aria-label={t("export")}
                   >
                     <Download className="h-3.5 w-3.5" />
@@ -222,14 +211,14 @@ export function UnifiedHeader() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div className="h-5 w-px bg-white/10" />
+              <div className="h-5 w-px bg-[var(--chrome-border)]" />
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="hover:bg-white/8 h-7 w-7 rounded-md text-zinc-400 hover:text-zinc-100"
+                    className="desktop-header-button h-7 w-7 rounded-md"
                     aria-label={tSettings("appearance")}
                   >
                     <Palette className="h-3.5 w-3.5" />
@@ -248,8 +237,8 @@ export function UnifiedHeader() {
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "hover:bg-white/8 h-7 w-7 rounded-md text-zinc-400 hover:text-zinc-100",
-                    isSearchBarOpen && "bg-white/10 text-zinc-100"
+                    "desktop-header-button h-7 w-7 rounded-md",
+                    isSearchBarOpen && "bg-[var(--sidebar-active)] text-foreground"
                   )}
                   onClick={toggleSearchBar}
                   aria-label={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
@@ -264,7 +253,7 @@ export function UnifiedHeader() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="hover:bg-white/8 h-7 w-7 rounded-md text-zinc-400 hover:text-zinc-100"
+                      className="desktop-header-button h-7 w-7 rounded-md"
                       aria-label={t("moreActions")}
                     >
                       <MoreHorizontal className="h-3.5 w-3.5" />

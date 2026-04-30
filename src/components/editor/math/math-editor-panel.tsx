@@ -226,14 +226,14 @@ export function MathEditorPanel({
       {/* Keyboard hints */}
       <div className="mt-2 text-xs text-muted-foreground">
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Enter</kbd> {t("enterToSave")}
+          <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Enter</kbd> {t("enterToSave")}
         </span>
         <span className="mr-3">
-          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Esc</kbd> {t("escToCancel")}
+          <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Esc</kbd> {t("escToCancel")}
         </span>
         {displayMode && (
           <span>
-            <kbd className="rounded bg-muted px-1 py-0.5 text-[10px]">Shift+Enter</kbd>{" "}
+            <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Shift+Enter</kbd>{" "}
             {t("shiftEnterNewline")}
           </span>
         )}
