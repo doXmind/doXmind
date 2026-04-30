@@ -2,14 +2,22 @@ import type {
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
+  MarkdownSearchOptions,
+  MarkdownSearchResults,
   StorageAdapter,
   StorageCreateInput,
   StorageWriteInput,
   WorkspaceEntry,
+  WorkspaceIndexEntry,
+  WorkspaceIndexQuery,
 } from "./types";
+import { entriesToWorkspaceIndex } from "./search";
+
+type TauriInvoker = <T>(command: string, payload: Record<string, unknown>) => Promise<T>;
 
 export interface DiskStorageAdapterOptions {
   root?: string | null;
+  invoke?: TauriInvoker;
 }
 
 interface WorkspaceScanResultDto {
@@ -34,13 +42,24 @@ interface DocReadResultDto {
   source: "sidecar" | "markdown" | "empty";
 }
 
+interface MarkdownSearchResultDto {
+  path: string;
+  title?: string | null;
+  matches: Array<{
+    line: number;
+    preview: string;
+  }>;
+}
+
 export class DiskStorageAdapter implements StorageAdapter {
   readonly mode = "disk" as const;
 
   private root: string | null;
+  private readonly invoke: TauriInvoker;
 
   constructor(options: DiskStorageAdapterOptions = {}) {
     this.root = options.root ?? null;
+    this.invoke = options.invoke ?? invokeTauri;
   }
 
   setRoot(root: string | null): void {
@@ -49,13 +68,14 @@ export class DiskStorageAdapter implements StorageAdapter {
 
   async list(): Promise<WorkspaceEntry[]> {
     const root = this.requireRoot();
-    const result = await invokeTauri<WorkspaceScanResultDto>("workspace_scan", { root });
+    const result = await this.invoke<WorkspaceScanResultDto>("workspace_scan", { root });
     this.root = result.root;
+    await this.invoke("workspace_index_rebuild", { root: this.root });
     return entriesFromDocuments(result.documents);
   }
 
   async read(handle: DocumentHandle): Promise<DocumentContent> {
-    const result = await invokeTauri<DocReadResultDto>("doc_read", {
+    const result = await this.invoke<DocReadResultDto>("doc_read", {
       path: this.absolutePath(handle),
     });
     return {
@@ -76,7 +96,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     const markdown = content.markdown ?? existing.markdown ?? "";
     const html = content.html ?? existing.html ?? "";
 
-    await invokeTauri<void>("doc_write_workspace", {
+    await this.invoke<void>("doc_write_workspace", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
       payload: {
@@ -94,7 +114,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     const kind = input.kind ?? "document";
     if (kind === "folder") {
       const path = childPath(input.parent, input.name);
-      await invokeTauri<void>("workspace_create_folder", {
+      await this.invoke<void>("workspace_create_folder", {
         root: this.requireRoot(),
         path,
       });
@@ -110,7 +130,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       created: now,
       updated: now,
     };
-    const document = await invokeTauri<WorkspaceDocumentDto>("doc_create", {
+    const document = await this.invoke<WorkspaceDocumentDto>("doc_create", {
       root: this.requireRoot(),
       payload: {
         path,
@@ -130,7 +150,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       handle.kind === "folder" ? name : ensureMarkdownExtension(name)
     );
     if (handle.kind === "folder") {
-      await invokeTauri<void>("workspace_rename_folder", {
+      await this.invoke<void>("workspace_rename_folder", {
         root: this.requireRoot(),
         oldPath: currentPath,
         newPath,
@@ -138,7 +158,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       return folderEntryFromPath(newPath);
     }
 
-    const document = await invokeTauri<WorkspaceDocumentDto>("doc_rename", {
+    const document = await this.invoke<WorkspaceDocumentDto>("doc_rename", {
       root: this.requireRoot(),
       oldPath: currentPath,
       newPath,
@@ -150,7 +170,7 @@ export class DiskStorageAdapter implements StorageAdapter {
     const currentPath = requireHandlePath(handle);
     const newPath = childPath(parent, basename(currentPath));
     if (handle.kind === "folder") {
-      await invokeTauri<void>("workspace_rename_folder", {
+      await this.invoke<void>("workspace_rename_folder", {
         root: this.requireRoot(),
         oldPath: currentPath,
         newPath,
@@ -158,7 +178,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       return folderEntryFromPath(newPath);
     }
 
-    const document = await invokeTauri<WorkspaceDocumentDto>("doc_move", {
+    const document = await this.invoke<WorkspaceDocumentDto>("doc_move", {
       root: this.requireRoot(),
       oldPath: currentPath,
       newPath,
@@ -168,17 +188,65 @@ export class DiskStorageAdapter implements StorageAdapter {
 
   async delete(handle: DocumentHandle): Promise<void> {
     if (handle.kind === "folder") {
-      await invokeTauri<void>("workspace_delete_folder", {
+      await this.invoke<void>("workspace_delete_folder", {
         root: this.requireRoot(),
         path: requireHandlePath(handle),
       });
       return;
     }
 
-    await invokeTauri<void>("doc_delete", {
+    await this.invoke<void>("doc_delete", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
     });
+  }
+
+  async queryWorkspaceIndex(query: WorkspaceIndexQuery = {}): Promise<WorkspaceIndexEntry[]> {
+    return entriesToWorkspaceIndex(await this.list(), query);
+  }
+
+  async searchMarkdown(
+    query: string,
+    options: MarkdownSearchOptions = {}
+  ): Promise<MarkdownSearchResults> {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return { results: [] };
+
+    const entries = await this.list();
+    const entriesByPath = new Map(
+      entries
+        .filter((entry) => entry.kind === "document")
+        .map((entry) => [entry.handle.relPath ?? entry.handle.path ?? "", entry])
+    );
+    const fileIdSet = options.fileIds ? new Set(options.fileIds) : null;
+    const results = await this.invoke<MarkdownSearchResultDto[]>("workspace_markdown_search", {
+      root: this.requireRoot(),
+      query: normalizedQuery,
+      limit: options.limit,
+    });
+
+    return {
+      results: results
+        .flatMap((result) => {
+          const entry = entriesByPath.get(result.path);
+          if (!entry || (fileIdSet && !fileIdSet.has(entry.handle.id))) return [];
+          const firstMatch = result.matches[0];
+          return [
+            {
+              id: `${entry.handle.id}:${firstMatch?.line ?? 0}`,
+              content: firstMatch?.preview ?? result.title ?? entry.name,
+              metadata: {
+                fileId: entry.handle.id,
+                name: entry.name,
+                path: result.path,
+                chunkIndex: firstMatch?.line,
+              },
+              score: 1,
+            },
+          ];
+        })
+        .slice(0, options.limit ?? 50),
+    };
   }
 
   private requireRoot(): string {

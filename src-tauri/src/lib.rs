@@ -15,6 +15,7 @@ use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{cmp, collections::BTreeMap};
 
 use doxmind_sidecar::{DocMeta, DocPayload, ReadResult, Source};
 use serde::{Deserialize, Serialize};
@@ -190,6 +191,28 @@ struct WorkspaceDocumentDto {
     has_sidecar: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceIndexDto {
+    version: u32,
+    ids: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkdownSearchResultDto {
+    path: String,
+    title: Option<String>,
+    matches: Vec<MarkdownSearchMatchDto>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkdownSearchMatchDto {
+    line: usize,
+    preview: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DocCreatePayloadDto {
@@ -218,6 +241,12 @@ struct DeleteResultDto {
     sidecar_path: Option<String>,
     trash_path: String,
     sidecar_trash_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetImportResultDto {
+    path: String,
 }
 
 #[tauri::command]
@@ -265,6 +294,30 @@ fn workspace_scan(root: String) -> Result<WorkspaceScanResultDto, String> {
         root: root.to_string_lossy().into_owned(),
         documents,
     })
+}
+
+#[tauri::command]
+fn workspace_index_rebuild(root: String) -> Result<WorkspaceIndexDto, String> {
+    let root = canonical_workspace_root(&root)?;
+    let index = rebuild_workspace_index(&root)?;
+    write_workspace_index(&root, &index)?;
+    Ok(index)
+}
+
+#[tauri::command]
+fn workspace_index_read(root: String) -> Result<WorkspaceIndexDto, String> {
+    let root = canonical_workspace_root(&root)?;
+    read_workspace_index(&root)
+}
+
+#[tauri::command]
+fn workspace_markdown_search(
+    root: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<MarkdownSearchResultDto>, String> {
+    let root = canonical_workspace_root(&root)?;
+    search_workspace_markdown(&root, &query, limit)
 }
 
 #[tauri::command]
@@ -387,6 +440,44 @@ fn workspace_delete_folder(root: String, path: String) -> Result<DeleteResultDto
         sidecar_path: None,
         trash_path: relative_path_string(&root, &trash_path)?,
         sidecar_trash_path: None,
+    })
+}
+
+#[tauri::command]
+fn workspace_import_asset(
+    root: String,
+    document_path: String,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Result<AssetImportResultDto, String> {
+    let root = canonical_workspace_root(&root)?;
+    ensure_markdown_path(&document_path)?;
+    let document = resolve_existing_workspace_path(&root, &document_path)?;
+    if !document.is_file() {
+        return Err(format!("document is not a file: {document_path}"));
+    }
+    if bytes.is_empty() {
+        return Err("asset is empty".into());
+    }
+
+    let safe_name = sanitize_asset_filename(&filename);
+    let assets_dir = document
+        .parent()
+        .ok_or_else(|| format!("document path has no parent: {document_path}"))?
+        .join("assets");
+    fs::create_dir_all(&assets_dir)
+        .map_err(|err| format!("failed to create assets directory: {err}"))?;
+    let destination = unique_asset_path(&assets_dir, &safe_name);
+    fs::write(&destination, bytes).map_err(|err| format!("failed to write asset: {err}"))?;
+
+    Ok(AssetImportResultDto {
+        path: format!(
+            "./assets/{}",
+            destination
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or(safe_name)
+        ),
     })
 }
 
@@ -533,11 +624,41 @@ fn scan_workspace_dir(
     Ok(())
 }
 
+fn collect_workspace_markdown_paths(
+    root: &Path,
+    dir: &Path,
+    paths: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|err| format!("failed to read directory: {err}"))? {
+        let entry = entry.map_err(|err| format!("failed to read directory entry: {err}"))?;
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect file type: {err}"))?;
+
+        if file_type.is_dir() {
+            if is_ignored_scan_dir(&file_name) {
+                continue;
+            }
+            collect_workspace_markdown_paths(root, &path, paths)?;
+            continue;
+        }
+
+        if file_type.is_file() && !is_hidden_sidecar_name(&file_name) && is_markdown_file(&path) {
+            ensure_path_within_root(root, &path)?;
+            paths.push(path);
+        }
+    }
+    Ok(())
+}
+
 fn is_ignored_scan_dir(name: &str) -> bool {
-    matches!(
-        name,
-        ".git" | "node_modules" | "target" | ".next" | "out" | "dist" | "build" | ".trash"
-    )
+    is_hidden_sidecar_name(name)
+        || matches!(
+            name,
+            ".git" | "node_modules" | "target" | ".next" | "out" | "dist" | "build" | ".trash"
+        )
 }
 
 fn is_hidden_sidecar_name(name: &str) -> bool {
@@ -624,6 +745,135 @@ fn stable_path_id(path: &str) -> String {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     format!("path:{hash:016x}")
+}
+
+fn rebuild_workspace_index(root: &Path) -> Result<WorkspaceIndexDto, String> {
+    let mut paths = Vec::new();
+    collect_workspace_markdown_paths(root, root, &mut paths)?;
+    paths.sort_by_key(|p| relative_path_string(root, p));
+
+    let mut ids = BTreeMap::new();
+    for path in paths {
+        let raw = fs::read_to_string(&path)
+            .map_err(|err| format!("failed to read markdown document for index: {err}"))?;
+        let (frontmatter_id, _) = parse_frontmatter_scan_fields(&raw);
+        if let Some(id) = frontmatter_id {
+            ids.entry(id).or_insert(relative_path_string(root, &path)?);
+        }
+    }
+
+    Ok(WorkspaceIndexDto { version: 1, ids })
+}
+
+fn workspace_index_path(root: &Path) -> PathBuf {
+    root.join(".doxmind").join("index.json")
+}
+
+fn write_workspace_index(root: &Path, index: &WorkspaceIndexDto) -> Result<(), String> {
+    let path = workspace_index_path(root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create workspace index directory: {err}"))?;
+    }
+    let raw = serde_json::to_string_pretty(index)
+        .map_err(|err| format!("failed to serialize workspace index: {err}"))?;
+    fs::write(path, raw).map_err(|err| format!("failed to write workspace index: {err}"))
+}
+
+fn read_workspace_index(root: &Path) -> Result<WorkspaceIndexDto, String> {
+    let path = workspace_index_path(root);
+    if !path.exists() {
+        return Ok(WorkspaceIndexDto {
+            version: 1,
+            ids: BTreeMap::new(),
+        });
+    }
+    let raw =
+        fs::read_to_string(path).map_err(|err| format!("failed to read workspace index: {err}"))?;
+    let index: WorkspaceIndexDto = serde_json::from_str(&raw)
+        .map_err(|err| format!("failed to parse workspace index: {err}"))?;
+    if index.version != 1 {
+        return Err(format!(
+            "unsupported workspace index version: {}",
+            index.version
+        ));
+    }
+    validate_workspace_index_paths(root, &index)?;
+    Ok(index)
+}
+
+fn validate_workspace_index_paths(root: &Path, index: &WorkspaceIndexDto) -> Result<(), String> {
+    for path in index.ids.values() {
+        ensure_markdown_path(path)?;
+        let candidate = resolve_workspace_path_for_write(root, path)?;
+        ensure_path_within_root(root, &candidate)?;
+    }
+    Ok(())
+}
+
+fn search_workspace_markdown(
+    root: &Path,
+    query: &str,
+    limit: Option<usize>,
+) -> Result<Vec<MarkdownSearchResultDto>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err("search query is required".into());
+    }
+
+    let max_results = cmp::min(limit.unwrap_or(50), 200);
+    if max_results == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut paths = Vec::new();
+    collect_workspace_markdown_paths(root, root, &mut paths)?;
+    paths.sort_by_key(|p| relative_path_string(root, p));
+
+    let needle = query.to_lowercase();
+    let mut results = Vec::new();
+    for path in paths {
+        let raw = fs::read_to_string(&path)
+            .map_err(|err| format!("failed to read markdown document for search: {err}"))?;
+        let (_, title) = parse_frontmatter_scan_fields(&raw);
+        let matches = markdown_line_matches(&raw, &needle);
+        if matches.is_empty() {
+            continue;
+        }
+
+        results.push(MarkdownSearchResultDto {
+            path: relative_path_string(root, &path)?,
+            title,
+            matches,
+        });
+
+        if results.len() >= max_results {
+            break;
+        }
+    }
+
+    Ok(results)
+}
+
+fn markdown_line_matches(raw: &str, needle: &str) -> Vec<MarkdownSearchMatchDto> {
+    raw.lines()
+        .enumerate()
+        .filter(|(_, line)| line.to_lowercase().contains(needle))
+        .take(3)
+        .map(|(index, line)| MarkdownSearchMatchDto {
+            line: index + 1,
+            preview: compact_search_preview(line),
+        })
+        .collect()
+}
+
+fn compact_search_preview(line: &str) -> String {
+    let trimmed = line.trim();
+    const MAX_CHARS: usize = 160;
+    if trimmed.chars().count() <= MAX_CHARS {
+        return trimmed.to_string();
+    }
+    trimmed.chars().take(MAX_CHARS).collect::<String>()
 }
 
 fn move_document_pair(
@@ -734,6 +984,54 @@ fn unique_trash_dir_path(root: &Path, path: &str) -> Result<PathBuf, String> {
     Err("failed to allocate workspace trash path".into())
 }
 
+fn sanitize_asset_filename(filename: &str) -> String {
+    let name = Path::new(filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("image");
+    let cleaned = name
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            ch if ch.is_control() => '_',
+            ch => ch,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_matches('.')
+        .to_string();
+    if cleaned.is_empty() {
+        "image".to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn unique_asset_path(assets_dir: &Path, filename: &str) -> PathBuf {
+    let first = assets_dir.join(filename);
+    if !first.exists() {
+        return first;
+    }
+
+    let path = Path::new(filename);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("image");
+    let extension = path.extension().and_then(|ext| ext.to_str());
+    for counter in 2.. {
+        let name = match extension {
+            Some(ext) => format!("{stem} ({counter}).{ext}"),
+            None => format!("{stem} ({counter})"),
+        };
+        let candidate = assets_dir.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    unreachable!("infinite counter should always produce a unique path")
+}
+
 fn unix_nanos() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -807,13 +1105,17 @@ window.__TAURI_PLATFORM__ = "{platform}";
             doc_write,
             doc_write_workspace,
             workspace_scan,
+            workspace_index_rebuild,
+            workspace_index_read,
+            workspace_markdown_search,
             doc_create,
             doc_rename,
             doc_move,
             doc_delete,
             workspace_create_folder,
             workspace_rename_folder,
-            workspace_delete_folder
+            workspace_delete_folder,
+            workspace_import_asset
         ])
         .setup(move |app| {
             // Spawn the backend.
@@ -1061,6 +1363,122 @@ mod tests {
         assert_eq!(scan.documents[0].id, "doc-1");
         assert_eq!(scan.documents[0].id_source, "frontmatter");
         assert_eq!(scan.documents[0].title.as_deref(), Some("Project Plan"));
+    }
+
+    #[test]
+    fn workspace_index_rebuild_writes_frontmatter_id_cache_only() {
+        let workspace = TempWorkspace::new("index-rebuild");
+        write_file(
+            &workspace.path.join("notes/Plan.md"),
+            "---\nid: plan-1\ntitle: Plan\n---\n\n# Body\n",
+        );
+        write_file(&workspace.path.join("notes/No Id.md"), "# No Id\n");
+        write_file(
+            &workspace.path.join(".trash/Deleted.md"),
+            "---\nid: deleted\n---\n",
+        );
+        write_file(
+            &workspace.path.join(".doxmind/Cached.md"),
+            "---\nid: cached\n---\n",
+        );
+        write_file(
+            &workspace.path.join(".git/Ignored.md"),
+            "---\nid: git\n---\n",
+        );
+
+        let index = workspace_index_rebuild(workspace.root()).expect("rebuild index");
+
+        assert_eq!(index.version, 1);
+        assert_eq!(index.ids.len(), 1);
+        assert_eq!(
+            index.ids.get("plan-1").map(String::as_str),
+            Some("notes/Plan.md")
+        );
+        assert!(workspace.path.join(".doxmind/index.json").exists());
+
+        let cached = workspace_index_read(workspace.root()).expect("read index");
+        assert_eq!(cached, index);
+    }
+
+    #[test]
+    fn workspace_index_read_missing_cache_returns_empty_index() {
+        let workspace = TempWorkspace::new("index-missing");
+
+        let index = workspace_index_read(workspace.root()).expect("read missing index");
+
+        assert_eq!(index.version, 1);
+        assert!(index.ids.is_empty());
+        assert!(!workspace.path.join(".doxmind/index.json").exists());
+    }
+
+    #[test]
+    fn workspace_index_read_rejects_escaped_cached_paths() {
+        let workspace = TempWorkspace::new("index-escape");
+        write_file(
+            &workspace.path.join(".doxmind/index.json"),
+            r#"{"version":1,"ids":{"bad":"../outside.md"}}"#,
+        );
+
+        assert!(workspace_index_read(workspace.root()).is_err());
+    }
+
+    #[test]
+    fn workspace_markdown_search_finds_content_and_ignores_cache_dirs() {
+        let workspace = TempWorkspace::new("markdown-search");
+        write_file(
+            &workspace.path.join("Notes.md"),
+            "---\nid: notes\ntitle: \"Meeting Notes\"\n---\n\nAlpha roadmap\nbeta ALPHA\n",
+        );
+        write_file(&workspace.path.join("Other.md"), "# Other\nNo match\n");
+        write_file(
+            &workspace.path.join(".doxmind/Indexed.md"),
+            "Alpha hidden\n",
+        );
+        write_file(
+            &workspace.path.join("node_modules/pkg/Readme.md"),
+            "Alpha dependency\n",
+        );
+
+        let results = workspace_markdown_search(workspace.root(), "alpha".into(), Some(10))
+            .expect("search markdown");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].path, "Notes.md");
+        assert_eq!(results[0].title.as_deref(), Some("Meeting Notes"));
+        assert_eq!(results[0].matches.len(), 2);
+        assert_eq!(results[0].matches[0].line, 6);
+        assert_eq!(results[0].matches[0].preview, "Alpha roadmap");
+        assert_eq!(results[0].matches[1].line, 7);
+        assert_eq!(results[0].matches[1].preview, "beta ALPHA");
+    }
+
+    #[test]
+    fn workspace_markdown_search_rejects_empty_query() {
+        let workspace = TempWorkspace::new("markdown-search-empty");
+
+        assert!(workspace_markdown_search(workspace.root(), "  ".into(), None).is_err());
+    }
+
+    #[test]
+    fn workspace_import_asset_writes_relative_assets_without_overwrite() {
+        let workspace = TempWorkspace::new("asset-import");
+        write_file(&workspace.path.join("notes/doc.md"), "# Doc\n");
+        write_file(&workspace.path.join("notes/assets/image.png"), "old");
+
+        let imported = workspace_import_asset(
+            workspace.root(),
+            "notes/doc.md".into(),
+            "../image.png".into(),
+            vec![1, 2, 3],
+        )
+        .expect("import asset");
+
+        assert_eq!(imported.path, "./assets/image (2).png");
+        assert_eq!(
+            fs::read(workspace.path.join("notes/assets/image (2).png")).expect("read asset"),
+            vec![1, 2, 3]
+        );
+        assert!(!workspace.path.join("image.png").exists());
     }
 
     #[test]

@@ -45,7 +45,7 @@ export function UnifiedHeader() {
     setKeyboardShortcutsOpen,
     setPresentationMode,
   } = useLayoutStore();
-  const { currentFileId, files } = useFileStore();
+  const { currentFileId, files, workspaceMode } = useFileStore();
   const { isDirty, isSaving } = useEditorStore();
   const tSettings = useTranslations("settings");
   const t = useTranslations("editor");
@@ -67,6 +67,26 @@ export function UnifiedHeader() {
   const handleExport = (format: "markdown" | "pdf" | "docx") => {
     if (!currentFile) return;
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
+
+    if (workspaceMode === "disk") {
+      if (format !== "markdown") {
+        toast.error(t("diskExportOnlyMarkdown"));
+        return;
+      }
+      const markdown = currentFile.contentMarkdown ?? currentFile.content ?? "";
+      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+      const baseName = currentFile.name.replace(/\.md$/, "");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${baseName}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(t("exportedAs", { format: formatLabel }));
+      return;
+    }
 
     toast.promise(
       api.exportFile(currentFile.id, format).then((blob) => {
@@ -265,13 +285,17 @@ export function UnifiedHeader() {
                   </DropdownMenuTrigger>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={toggleVersionHistory}>
-                    <Clock className="mr-2 h-4 w-4" />
-                    {t("versionHistory")}
-                    {isVersionHistoryOpen && <Check className="ml-auto h-4 w-4" />}
-                  </DropdownMenuItem>
+                  {workspaceMode === "db" && (
+                    <>
+                      <DropdownMenuItem onClick={toggleVersionHistory}>
+                        <Clock className="mr-2 h-4 w-4" />
+                        {t("versionHistory")}
+                        {isVersionHistoryOpen && <Check className="ml-auto h-4 w-4" />}
+                      </DropdownMenuItem>
 
-                  <DropdownMenuSeparator />
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
                   <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
                     <Keyboard className="mr-2 h-4 w-4" />
                     {t("keyboardShortcuts")}

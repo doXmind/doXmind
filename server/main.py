@@ -18,6 +18,7 @@ from api import (
     files,
     images,
     import_file,
+    migration,
     versions,
 )
 from config import CORS_ORIGINS, get_cors_headers, get_settings
@@ -105,6 +106,7 @@ app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(import_file.router, prefix="/api/import", tags=["import"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(databases.router, prefix="/api/databases", tags=["databases"])
+app.include_router(migration.router, prefix="/api/migration", tags=["migration"])
 
 
 @app.get("/")

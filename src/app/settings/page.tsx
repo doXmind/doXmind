@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { SettingsSidebar } from "@/components/settings/settings-sidebar";
 import { GeneralTab } from "@/components/settings/general-tab";
 import { TrashTab } from "@/components/settings/trash-tab";
+import { WorkspaceTab } from "@/components/settings/workspace-tab";
 import { toSettingsTabId, type SettingsTabId } from "@/components/settings/settings-tabs";
 
 export default function SettingsPage() {
@@ -34,6 +35,7 @@ export default function SettingsPage() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-8 pb-12 pt-2">
             {activeTab === "general" && <GeneralTab />}
+            {activeTab === "workspace" && <WorkspaceTab />}
             {activeTab === "trash" && <TrashTab />}
           </div>
         </div>

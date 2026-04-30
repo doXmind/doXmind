@@ -25,6 +25,8 @@ Properties:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 import shutil
 import sqlite3
@@ -38,13 +40,11 @@ _SERVER_ROOT = Path(__file__).resolve().parent.parent
 if str(_SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(_SERVER_ROOT))
 
-from utils.markdown_converter import html_to_markdown  # noqa: E402
+from utils.markdown_converter import html_to_markdown  # noqa: E402,I001
 
 
 _INVALID_FS_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_IMAGE_URL_RE = re.compile(
-    r'/api/images/(?P<user>[^/"\'\s)]+)/(?P<file>[^"\'\s)]+)'
-)
+_IMAGE_URL_RE = re.compile(r'/api/images/(?P<path>[^"\'\s)]+)')
 
 
 def _sanitize(name: str, *, is_folder: bool) -> str:
@@ -113,9 +113,42 @@ def _unique_path(parent: Path, base: str, ext: str) -> Path:
     return candidate
 
 
+def _sidecar_path_for(markdown_path: Path) -> Path:
+    stem = markdown_path.name
+    lower = stem.lower()
+    if lower.endswith(".markdown"):
+        stem = stem[: -len(".markdown")]
+    elif lower.endswith(".md"):
+        stem = stem[: -len(".md")]
+    return markdown_path.with_name(f".{stem}.doxmind")
+
+
+def _hash_markdown(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _write_sidecar(markdown_path: Path, row: sqlite3.Row, markdown_content: str) -> bool:
+    html = row["content"] or ""
+    if not html and not markdown_content.strip():
+        return False
+    sidecar = {
+        "version": 1,
+        "id": row["id"],
+        "html": html,
+        "markdown_hash": _hash_markdown(markdown_content),
+        "updated_at": _iso(row["updated_at"]) or datetime.utcnow().isoformat(),
+        "extras": {"databases": {}},
+    }
+    _sidecar_path_for(markdown_path).write_text(
+        json.dumps(sidecar, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return True
+
+
 def _rewrite_images(
     markdown: str,
-    images_root: Path,
+    image_roots: list[Path],
     assets_dir: Path,
     seen: set[Path],
 ) -> tuple[str, int, list[str]]:
@@ -128,11 +161,17 @@ def _rewrite_images(
 
     def _replace(match: re.Match[str]) -> str:
         nonlocal copied
-        user = match.group("user")
-        filename = match.group("file")
-        src = images_root / user / filename
-        if not src.exists():
-            missing.append(str(src))
+        image_path = match.group("path")
+        parts = [part for part in image_path.split("/") if part and part not in {".", ".."}]
+        filename = parts[-1] if parts else "image"
+        candidates: list[Path] = []
+        for root in image_roots:
+            if parts:
+                candidates.append(root.joinpath(*parts))
+                candidates.append(root / filename)
+        src = next((candidate for candidate in candidates if candidate.exists()), None)
+        if src is None:
+            missing.append(str(candidates[0] if candidates else image_path))
             return match.group(0)
         dest = assets_dir / filename
         if dest not in seen:
@@ -155,7 +194,10 @@ def dump(db_path: Path, out_dir: Path, force: bool) -> None:
         )
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    images_root = db_path.parent / "storage" / "images"
+    image_roots = [
+        db_path.parent / "uploads" / "images",
+        db_path.parent / "storage" / "images",
+    ]
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -175,6 +217,7 @@ def dump(db_path: Path, out_dir: Path, force: bool) -> None:
         "images_copied": 0,
         "images_missing": 0,
         "fallback_html": 0,
+        "sidecars_written": 0,
     }
     seen_assets: set[Path] = set()
     missing_images: list[str] = []
@@ -200,14 +243,17 @@ def dump(db_path: Path, out_dir: Path, force: bool) -> None:
 
             assets_dir = parent_path / "assets"
             md, copied, missing = _rewrite_images(
-                md, images_root, assets_dir, seen_assets
+                md, image_roots, assets_dir, seen_assets
             )
             stats["images_copied"] += copied
             stats["images_missing"] += len(missing)
             missing_images.extend(missing)
 
             file_path = _unique_path(parent_path, base, ".md")
-            file_path.write_text(_frontmatter(row) + md, encoding="utf-8")
+            markdown_content = _frontmatter(row) + md
+            file_path.write_text(markdown_content, encoding="utf-8")
+            if _write_sidecar(file_path, row, markdown_content):
+                stats["sidecars_written"] += 1
             stats["docs"] += 1
 
     walk(None, out_dir)

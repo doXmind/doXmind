@@ -24,7 +24,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 
 import { useThemeManager } from "@/hooks/use-theme-manager";
-import { api, SearchResultItem } from "@/lib/api";
+import { createStorageAdapter, searchMarkdown, type MarkdownSearchResult } from "@/lib/storage";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 
 interface CommandPaletteProps {
@@ -60,13 +60,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const listRef = React.useRef<HTMLDivElement>(null);
 
   // Search state
-  const [fileSearchResults, setFileSearchResults] = React.useState<SearchResultItem[]>([]);
+  const [fileSearchResults, setFileSearchResults] = React.useState<MarkdownSearchResult[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
   const [searchError, setSearchError] = React.useState<string | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const router = useRouter();
-  const { files, createFile, setCurrentFile } = useFileStore();
+  const { files, createFile, setCurrentFile, workspaceMode, workspaceRoot } = useFileStore();
   const {
     toggleSidebar,
     setKeyboardShortcutsOpen,
@@ -96,9 +96,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     setSearchError(null);
 
     try {
-      const filesRes = await api
-        .searchFiles(searchQuery, undefined, 10, controller.signal)
-        .catch(() => null);
+      const adapter = createStorageAdapter({
+        mode: workspaceMode,
+        disk: { root: workspaceRoot },
+      });
+      const filesRes = await searchMarkdown(adapter, searchQuery, {
+        limit: 10,
+        signal: controller.signal,
+      }).catch(() => null);
 
       if (filesRes) setFileSearchResults(filesRes.results);
     } catch (error) {
@@ -250,7 +255,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       icon: <FileText className="h-4 w-4" />,
       category: "searchFiles" as const,
       action: () => {
-        const fileId = result.metadata.file_id;
+        const fileId = result.metadata.fileId;
         const start = result.metadata?.start as number | undefined;
 
         // Open the file first
@@ -276,7 +281,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       },
       keywords: [],
       preview: result.content.slice(0, 100),
-      score: result.distance !== undefined ? Math.round((1 - result.distance) * 100) : undefined,
+      score: result.score !== undefined ? Math.round(result.score * 100) : undefined,
     }));
   }, [fileSearchResults, setCurrentFile, router, onClose, editor]);
 

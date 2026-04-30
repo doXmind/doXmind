@@ -63,6 +63,49 @@ export interface StorageCreateInput {
   content?: StorageWriteInput;
 }
 
+export interface WorkspaceIndexQuery {
+  query?: string;
+  limit?: number;
+  includeFolders?: boolean;
+}
+
+export interface WorkspaceIndexEntry {
+  handle: DocumentHandle;
+  id: string;
+  kind: WorkspaceEntryKind;
+  name: string;
+  title: string;
+  path?: string | null;
+  parent: DocumentHandle | null;
+  preview?: string;
+  icon?: string | null;
+  updatedAt: string;
+}
+
+export interface MarkdownSearchOptions {
+  fileIds?: string[];
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+export interface MarkdownSearchResult {
+  id: string;
+  content: string;
+  metadata: {
+    fileId: string;
+    name?: string;
+    path?: string | null;
+    start?: number;
+    end?: number;
+    chunkIndex?: number;
+  };
+  score?: number;
+}
+
+export interface MarkdownSearchResults {
+  results: MarkdownSearchResult[];
+}
+
 export interface StorageAdapter {
   readonly mode: WorkspaceMode;
 
@@ -73,4 +116,6 @@ export interface StorageAdapter {
   rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
   move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;
   delete(handle: DocumentHandle): Promise<void>;
+  queryWorkspaceIndex?(query?: WorkspaceIndexQuery): Promise<WorkspaceIndexEntry[]>;
+  searchMarkdown?(query: string, options?: MarkdownSearchOptions): Promise<MarkdownSearchResults>;
 }

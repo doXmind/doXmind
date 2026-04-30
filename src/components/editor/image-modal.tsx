@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { parseUploadError } from "@/lib/utils/image-upload-errors";
+import { useFileStore } from "@/stores/file-store";
 
 interface ImageModalProps {
   open: boolean;
@@ -22,6 +23,7 @@ type Tab = "upload" | "url";
 export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
   const t = useTranslations("editor");
   const tc = useTranslations("common");
+  const { currentFileId, files, workspaceMode, workspaceRoot } = useFileStore();
   const [tab, setTab] = React.useState<Tab>("upload");
   const [url, setUrl] = React.useState("");
   const [alt, setAlt] = React.useState("");
@@ -63,11 +65,18 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
     reader.onload = (e) => setPreview(e.target?.result as string);
     reader.readAsDataURL(file);
 
-    // Upload to server
+    // Upload to the active storage backend.
     setIsUploading(true);
     try {
-      const result = await api.uploadImage(file);
-      onConfirm(result.url, alt.trim() || file.name.replace(/\.[^.]+$/, ""));
+      const uploadedUrl =
+        workspaceMode === "disk"
+          ? await importDiskWorkspaceAsset({
+              file,
+              currentFile: files.find((item) => item.id === currentFileId),
+              workspaceRoot,
+            })
+          : (await api.uploadImage(file)).url;
+      onConfirm(uploadedUrl, alt.trim() || file.name.replace(/\.[^.]+$/, ""));
       onClose();
     } catch (error) {
       // Show error and keep modal open for retry
@@ -284,4 +293,29 @@ export function ImageModal({ open, onClose, onConfirm }: ImageModalProps) {
       )}
     </Modal>
   );
+}
+
+async function importDiskWorkspaceAsset({
+  file,
+  currentFile,
+  workspaceRoot,
+}: {
+  file: File;
+  currentFile: ReturnType<typeof useFileStore.getState>["files"][number] | undefined;
+  workspaceRoot: string | null;
+}): Promise<string> {
+  const documentPath = currentFile?.storageHandle?.relPath ?? currentFile?.storageHandle?.path;
+  if (!workspaceRoot || !documentPath) {
+    throw new Error("No disk workspace document is open");
+  }
+
+  const { invoke } = await import("@tauri-apps/api/core");
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+  const result = await invoke<{ path: string }>("workspace_import_asset", {
+    root: workspaceRoot,
+    documentPath,
+    filename: file.name,
+    bytes,
+  });
+  return result.path;
 }

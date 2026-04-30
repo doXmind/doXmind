@@ -25,8 +25,15 @@ interface DocumentTitleProps {
 }
 
 export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitleProps) {
-  const { renameFile, getFile, setFileIcon, createFile, setCurrentFile, setCoverImage } =
-    useFileStore();
+  const {
+    renameFile,
+    getFile,
+    setFileIcon,
+    createFile,
+    setCurrentFile,
+    setCoverImage,
+    workspaceMode,
+  } = useFileStore();
   const router = useRouter();
   const file = getFile(fileId);
   const icon = file?.icon ?? null;
@@ -41,6 +48,27 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
     (format: "markdown" | "pdf" | "docx") => {
       if (!file) return;
       const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
+
+      if (workspaceMode === "disk") {
+        if (format !== "markdown") {
+          toast.error(t("diskExportOnlyMarkdown"));
+          return;
+        }
+        const markdown = file.contentMarkdown ?? file.content ?? "";
+        const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+        const baseName = fileName.replace(/\.md$/, "");
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${baseName}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(t("exportedAs", { format: formatLabel }));
+        return;
+      }
+
       toast.promise(
         api.exportFile(fileId, format).then((blob) => {
           const baseName = fileName.replace(/\.md$/, "");
@@ -61,7 +89,7 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
         }
       );
     },
-    [file, fileId, fileName, t]
+    [file, fileId, fileName, t, workspaceMode]
   );
   const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);

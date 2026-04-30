@@ -3,15 +3,27 @@ import { api, type ApiClient } from "@/lib/api";
 import type {
   DocumentContent,
   DocumentHandle,
+  MarkdownSearchOptions,
+  MarkdownSearchResults,
   StorageAdapter,
   StorageCreateInput,
   StorageWriteInput,
   WorkspaceEntry,
+  WorkspaceIndexEntry,
+  WorkspaceIndexQuery,
 } from "./types";
+import { entriesToWorkspaceIndex } from "./search";
 
 type FilesApi = Pick<
   ApiClient,
-  "listFiles" | "getFile" | "createFile" | "updateFile" | "createFolder" | "moveFile" | "deleteFile"
+  | "listFiles"
+  | "getFile"
+  | "createFile"
+  | "updateFile"
+  | "createFolder"
+  | "moveFile"
+  | "deleteFile"
+  | "searchFiles"
 >;
 
 interface DbFileRecord {
@@ -110,6 +122,38 @@ export class DbStorageAdapter implements StorageAdapter {
 
   async delete(handle: DocumentHandle): Promise<void> {
     await this.apiClient.deleteFile(handle.id);
+  }
+
+  async queryWorkspaceIndex(query: WorkspaceIndexQuery = {}): Promise<WorkspaceIndexEntry[]> {
+    const entries = await this.list();
+    return entriesToWorkspaceIndex(entries, query);
+  }
+
+  async searchMarkdown(
+    query: string,
+    options: MarkdownSearchOptions = {}
+  ): Promise<MarkdownSearchResults> {
+    const result = await this.apiClient.searchFiles(
+      query,
+      options.fileIds,
+      options.limit,
+      options.signal
+    );
+
+    return {
+      results: result.results.map((item) => ({
+        id: item.id,
+        content: item.content,
+        metadata: {
+          fileId: item.metadata.file_id,
+          name: item.metadata.name,
+          start: item.metadata.start,
+          end: item.metadata.end,
+          chunkIndex: item.metadata.chunk_index,
+        },
+        score: item.distance === undefined ? undefined : 1 - item.distance,
+      })),
+    };
   }
 
   private toHandle(id: string): DocumentHandle {

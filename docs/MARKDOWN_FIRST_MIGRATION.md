@@ -223,7 +223,7 @@ Status: done
 
 ### Phase 5: Existing DB Migration
 
-Status: todo
+Status: done
 
 目标：把旧 SQLite 文档导出成 workspace markdown tree。
 
@@ -247,7 +247,7 @@ Status: todo
 
 ### Phase 6: 富特性迁移
 
-Status: todo
+Status: done
 
 优先级从高到低：
 

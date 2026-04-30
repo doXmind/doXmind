@@ -1,4 +1,4 @@
-import { Settings, Trash2 } from "lucide-react";
+import { FolderKanban, Settings, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface SettingsTab {
@@ -9,6 +9,7 @@ export interface SettingsTab {
 
 export const SETTINGS_TABS = [
   { id: "general", icon: Settings, labelKey: "tabGeneral" },
+  { id: "workspace", icon: FolderKanban, labelKey: "tabWorkspace" },
   { id: "trash", icon: Trash2, labelKey: "tabTrash" },
 ] as const satisfies readonly SettingsTab[];
 
