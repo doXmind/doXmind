@@ -33,6 +33,7 @@ export function FilesSidebar() {
   const isLoading = useFileStore((s) => s.isLoading);
   const isSynced = useFileStore((s) => s.isSynced);
   const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
+  const openSingleFile = useFileStore((s) => s.openSingleFile);
   const openCommandPalette = useLayoutStore((s) => s.openCommandPalette);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   // Workspace toggle is available in any Tauri shell (debug or release). It
@@ -174,34 +175,20 @@ export function FilesSidebar() {
       });
       if (!selected || Array.isArray(selected)) return;
 
-      // VSCode-style semantics: opening a single file mounts its parent
-      // directory as the workspace, then focuses the picked file. The
-      // user gets the surrounding files in the sidebar for free.
+      // VSCode-style: open file means just that one file. No workspace
+      // mount, no sibling tree.
       const normalized = selected.replace(/\\/g, "/");
       const lastSlash = normalized.lastIndexOf("/");
       if (lastSlash <= 0) {
         toast.error(t("openFileNoParent"));
         return;
       }
-      const parentDir = selected.slice(0, lastSlash);
       const fileBase = normalized.slice(lastSlash + 1);
 
-      await openDiskWorkspace(parentDir);
-      // After loadFiles() resolves, the new workspace's files are in the
-      // store. Match by relative path (top-level only — we only descended
-      // one level by picking a single file).
-      const match = useFileStore
-        .getState()
-        .files.find((f) => f.storageHandle?.relPath === fileBase);
-      if (match) {
-        navigateToEditorFile(match.id);
-        toast.success(t("openedFile", { name: fileBase }));
-      } else {
-        // Workspace mounted but file vanished between pick + scan — rare,
-        // tell the user the dir opened so the workspace switch isn't a
-        // silent no-op.
-        toast.success(t("workspaceOpened"));
-      }
+      await openSingleFile(selected);
+      const id = useFileStore.getState().currentFileId;
+      if (id) navigateToEditorFile(id);
+      toast.success(t("openedFile", { name: fileBase }));
     } catch (error) {
       log.error("Failed to open file", error);
       const { title, description } = getErrorMessage(error);

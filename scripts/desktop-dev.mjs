@@ -33,6 +33,7 @@
  */
 
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +42,43 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { buildDevApp } from "./build-dev-app.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// Latest mtime under a directory tree, recursively. Returns 0 if none.
+async function latestMtime(dirPath) {
+  let latest = 0;
+  async function walk(p) {
+    const stat = await fs.stat(p).catch(() => null);
+    if (!stat) return;
+    if (stat.isFile()) {
+      latest = Math.max(latest, stat.mtimeMs);
+      return;
+    }
+    if (stat.isDirectory()) {
+      const entries = await fs.readdir(p);
+      for (const name of entries) await walk(path.join(p, name));
+    }
+  }
+  await walk(dirPath);
+  return latest;
+}
+
+// `tauri::generate_context!()` is a proc-macro that reads OUT_DIR/capabilities.json
+// at compile time, but cargo doesn't track that file as a source dependency —
+// so editing capabilities/*.json regenerates the schema yet leaves the
+// previously linked binary untouched, and the runtime ACL stays stale.
+// Touch the lib's main source to bump its fingerprint so the macro re-runs.
+async function invalidateLibIfCapabilitiesChanged() {
+  // Workspace root, not src-tauri/target.
+  const binary = path.join(REPO_ROOT, "target/debug/doxmind");
+  const binStat = await fs.stat(binary).catch(() => null);
+  if (!binStat) return; // first build — nothing to invalidate
+  const capsMtime = await latestMtime(path.join(REPO_ROOT, "src-tauri/capabilities"));
+  if (capsMtime <= binStat.mtimeMs) return;
+  const libRs = path.join(REPO_ROOT, "src-tauri/src/lib.rs");
+  const now = new Date();
+  await fs.utimes(libRs, now, now).catch(() => {});
+  console.log("[desktop-dev] capabilities changed — touched src/lib.rs to force rebuild");
+}
 
 function tryListen(port, host) {
   return new Promise((resolve) => {
@@ -163,6 +201,7 @@ async function main() {
   //    (which would clobber the running dev server's .next/ directory).
   console.log("[desktop-dev] compiling cargo binary…");
   try {
+    await invalidateLibIfCapabilitiesChanged();
     await spawnAwait("cargo", ["build"], {
       cwd: path.join(REPO_ROOT, "src-tauri"),
     });

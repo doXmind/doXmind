@@ -41,6 +41,12 @@ export function UnifiedHeader() {
   const currentFile = useFileStore((s) =>
     s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
   );
+  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
+  const isSingleFileMode = useFileStore((s) => s.isSingleFileMode);
+  // The sidebar toggle only makes sense when there is a tree to show.
+  // Hide it in single-file / no-workspace modes so the button doesn't
+  // become a dead end.
+  const hasWorkspace = !!workspaceRoot && !isSingleFileMode;
   const currentFileName = currentFile?.name;
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
@@ -110,17 +116,19 @@ export function UnifiedHeader() {
             !isMacTauri && "pl-3"
           )}
         >
-          <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="desktop-header-button h-7 w-7 rounded-md"
-              onClick={toggleFilesSidebar}
-              aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
-            >
-              <PanelLeft className="h-[13px] w-[13px]" />
-            </Button>
-          </Tooltip>
+          {hasWorkspace && (
+            <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="desktop-header-button h-7 w-7 rounded-md"
+                onClick={toggleFilesSidebar}
+                aria-label={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")}
+              >
+                <PanelLeft className="h-[13px] w-[13px]" />
+              </Button>
+            </Tooltip>
+          )}
 
           <Tooltip content={t("back")} side="bottom">
             <Button

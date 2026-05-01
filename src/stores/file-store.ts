@@ -67,6 +67,15 @@ interface FileState {
   workspaceMode: WorkspaceMode;
   workspaceRoot: string | null;
   recentWorkspaces: string[];
+  // VSCode-style "loose file" mode: a single file is open but no folder is
+  // mounted as a workspace. The sidebar tree is hidden in this mode and
+  // `files` contains exactly one entry. `singleFileRoot` is the picked
+  // file's parent directory — used by adapter ops that still need a
+  // workspace root (write, readBinary, PDF state). Neither field is
+  // persisted, so a cold boot always returns to the previously persisted
+  // workspace (or Welcome).
+  isSingleFileMode: boolean;
+  singleFileRoot: string | null;
   isLoading: boolean;
   isSynced: boolean;
   sortBy: SortOption;
@@ -79,6 +88,7 @@ interface FileState {
   loadFiles: () => Promise<void>;
   loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
   openDiskWorkspace: (root: string) => Promise<void>;
+  openSingleFile: (absolutePath: string) => Promise<void>;
   createFile: (
     name: string,
     content?: string,
@@ -150,10 +160,22 @@ interface FileState {
   emptyTrash: () => Promise<void>;
 }
 
-function getAdapter(state: Pick<FileState, "workspaceMode" | "workspaceRoot">): StorageAdapter {
+function effectiveRoot(
+  state: Pick<FileState, "workspaceRoot" | "isSingleFileMode" | "singleFileRoot">
+): string | null {
+  // In single-file mode the loose file's parent directory is the only path
+  // an adapter needs to do real I/O. We don't reuse `workspaceRoot` for this
+  // because we want the previously persisted workspace to stay around for
+  // when the user closes the loose file.
+  return state.isSingleFileMode ? state.singleFileRoot : state.workspaceRoot;
+}
+
+function getAdapter(
+  state: Pick<FileState, "workspaceMode" | "workspaceRoot" | "isSingleFileMode" | "singleFileRoot">
+): StorageAdapter {
   return createStorageAdapter({
     mode: state.workspaceMode,
-    disk: { root: state.workspaceRoot },
+    disk: { root: effectiveRoot(state) },
   });
 }
 
@@ -237,6 +259,8 @@ export const useFileStore = create<FileState>()(
       workspaceMode: "disk",
       workspaceRoot: null,
       recentWorkspaces: [],
+      isSingleFileMode: false,
+      singleFileRoot: null,
       isLoading: false,
       isSynced: false,
       sortBy: "modified-newest" as SortOption,
@@ -248,6 +272,13 @@ export const useFileStore = create<FileState>()(
       loadedContentIds: new Set<string>(),
 
       loadFiles: async () => {
+        // Loose-file mode owns `files` directly — scanning would replace
+        // the single open file with whatever happens to live in its parent
+        // directory, which is the bug we're trying to avoid.
+        if (get().isSingleFileMode) {
+          set({ isSynced: true, isLoading: false });
+          return;
+        }
         set({ isLoading: true });
         try {
           let adapterState = get();
@@ -381,9 +412,102 @@ export const useFileStore = create<FileState>()(
           currentFileId: null,
           currentFolderId: null,
           loadedContentIds: new Set(),
+          isSingleFileMode: false,
+          singleFileRoot: null,
           isSynced: false,
         }));
         await get().loadFiles();
+      },
+
+      openSingleFile: async (absolutePath: string) => {
+        const trimmed = absolutePath.trim();
+        if (!trimmed) return;
+
+        const normalized = trimmed.replaceAll("\\", "/");
+        const lastSlash = normalized.lastIndexOf("/");
+        if (lastSlash <= 0) {
+          throw new Error("openSingleFile requires an absolute path");
+        }
+        const parentDir = trimmed.slice(0, lastSlash);
+        const fileBase = normalized.slice(lastSlash + 1);
+
+        // Build an adapter scoped to the picked file's parent directory.
+        // We don't mutate `workspaceRoot` so the user's previously opened
+        // workspace stays persisted for the next session.
+        const adapter = createStorageAdapter({
+          mode: "disk",
+          disk: { root: parentDir },
+        });
+
+        const documentType = documentTypeFromName(fileBase);
+        const handle: DocumentHandle = {
+          mode: "disk",
+          id: `path:${fileBase}`,
+          kind: "document",
+          documentType,
+          path: fileBase,
+          relPath: fileBase,
+        };
+
+        const now = new Date().toISOString();
+        let looseFile: FileItem;
+
+        if (documentType === "pdf") {
+          // PDF binary is loaded on demand by the editor; we just need a
+          // stable FileItem so the editor can resolve the current file.
+          looseFile = {
+            id: handle.id,
+            name: fileBase,
+            content: "",
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            isFavorite: false,
+            icon: null,
+            coverImageUrl: null,
+            coverPosition: 0.5,
+            createdAt: now,
+            updatedAt: now,
+            wordCount: 0,
+            preview: "",
+            documentType: "pdf",
+            storageHandle: handle,
+          };
+        } else {
+          const content = await adapter.read(handle);
+          syncDatabasesForDocument(content.extras, content.html, content.markdown);
+          looseFile = {
+            id: content.handle.id || handle.id,
+            name: fileBase,
+            content: content.html,
+            contentMarkdown: content.markdown ?? null,
+            isFolder: false,
+            parentId: null,
+            position: 0,
+            isFavorite: content.meta?.favorite ?? false,
+            icon: content.meta?.icon ?? null,
+            coverImageUrl: null,
+            coverPosition: 0.5,
+            createdAt: content.meta?.created || now,
+            updatedAt: content.meta?.updated || now,
+            wordCount: 0,
+            preview: "",
+            documentType: "markdown",
+            storageHandle: content.handle,
+          };
+        }
+
+        set({
+          isSingleFileMode: true,
+          singleFileRoot: parentDir,
+          files: [looseFile],
+          currentFileId: looseFile.id,
+          currentFolderId: null,
+          loadedContentIds: new Set([looseFile.id]),
+          selectedFileIds: new Set(),
+          isSynced: true,
+          isLoading: false,
+        });
       },
 
       createFile: async (

@@ -96,14 +96,18 @@ async function rmIfExists(p) {
 export async function buildDevApp({ devUrl, backendUrl } = {}) {
   if (!devUrl) throw new Error("buildDevApp: devUrl is required");
 
-  const binaryPath = path.join(REPO_ROOT, "src-tauri/target/debug/doxmind");
+  // Cargo.toml at the repo root declares a workspace, so cargo builds into
+  // `<repo>/target/` — not `<repo>/src-tauri/target/`. The latter is a stale
+  // pre-workspace directory; reading from it would hardlink an outdated
+  // binary and silently mask any capability/code edits.
+  const binaryPath = path.join(REPO_ROOT, "target/debug/doxmind");
   await fs.access(binaryPath).catch(() => {
     throw new Error(
       `Cargo binary not found at ${binaryPath}. Run \`cargo build\` in src-tauri first.`
     );
   });
 
-  const appPath = path.join(REPO_ROOT, "src-tauri/target/debug/dev-app/doXmind.app");
+  const appPath = path.join(REPO_ROOT, "target/debug/dev-app/doXmind.app");
   const macOSDir = path.join(appPath, "Contents/MacOS");
   const resourcesDir = path.join(appPath, "Contents/Resources");
   const wrappedBinary = path.join(macOSDir, "doXmind");

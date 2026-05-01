@@ -27,6 +27,13 @@ export function DesktopEditor() {
   const isCurrentFileLoaded = useFileStore((s) =>
     s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
   );
+  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
+  const isSingleFileMode = useFileStore((s) => s.isSingleFileMode);
+  // VSCode-style: only show the files sidebar when a folder is mounted.
+  // Single-file and "nothing open" modes hide it entirely so we never leak
+  // the picked file's siblings into the rail. The user can still toggle
+  // it via the header — but with no workspace there's nothing to render.
+  const hasWorkspace = !!workspaceRoot && !isSingleFileMode;
 
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
@@ -48,7 +55,8 @@ export function DesktopEditor() {
   // macOS WebView. The instant column snap is less decorative, but keeps
   // sidebar toggles responsive.
   const filesGridTransition = "none";
-  const filesSidebarColPx = !isFocusMode && isFilesSidebarOpen ? filesSidebarWidth : 0;
+  const filesSidebarColPx =
+    !isFocusMode && hasWorkspace && isFilesSidebarOpen ? filesSidebarWidth : 0;
   // Handle column stays 0 — ResizeHandle is `w-0` and uses absolutely
   // positioned children for both the hit area and the visible separator.
   // Giving the column any pixel width creates a transparent strip that
@@ -61,15 +69,23 @@ export function DesktopEditor() {
   const outlineGridTransition = "none";
 
   const shellStyle = {
-    "--files-sidebar-width": !isFocusMode && isFilesSidebarOpen ? `${filesSidebarWidth}px` : "0px",
+    "--files-sidebar-width":
+      !isFocusMode && hasWorkspace && isFilesSidebarOpen ? `${filesSidebarWidth}px` : "0px",
   } as CSSProperties;
 
   useEffect(() => {
-    setFilesSidebarOpen(true);
+    // Only auto-open the sidebar when there's an actual workspace to show.
+    // Without this guard the sidebar pops back open every time React
+    // re-runs the effect, even in single-file / no-workspace modes.
+    if (hasWorkspace) {
+      setFilesSidebarOpen(true);
+    } else {
+      setFilesSidebarOpen(false);
+    }
     if (filesSidebarWidth < 288) {
       setFilesSidebarWidth(304);
     }
-  }, [filesSidebarWidth, setFilesSidebarOpen, setFilesSidebarWidth]);
+  }, [filesSidebarWidth, hasWorkspace, setFilesSidebarOpen, setFilesSidebarWidth]);
 
   return (
     <AppShell hideHeader>
@@ -85,14 +101,14 @@ export function DesktopEditor() {
             }}
           >
             <aside className="min-w-0 overflow-hidden">
-              {!isFocusMode && (
+              {!isFocusMode && hasWorkspace && (
                 <div style={{ minWidth: filesSidebarWidth }} className="h-full">
                   <FilesSidebar />
                 </div>
               )}
             </aside>
             <div className="min-w-0 overflow-hidden">
-              {!isFocusMode && isFilesSidebarOpen && (
+              {!isFocusMode && hasWorkspace && isFilesSidebarOpen && (
                 <ResizeHandle
                   side="left"
                   onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}

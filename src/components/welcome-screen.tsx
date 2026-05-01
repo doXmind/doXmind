@@ -66,6 +66,7 @@ export function WelcomeScreen() {
   const createFile = useFileStore((s) => s.createFile);
   const currentFolderId = useFileStore((s) => s.currentFolderId);
   const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
+  const openSingleFile = useFileStore((s) => s.openSingleFile);
 
   const [isCreatingMd, setIsCreatingMd] = useState(false);
   const [isCreatingPdf, setIsCreatingPdf] = useState(false);
@@ -157,27 +158,22 @@ export function WelcomeScreen() {
       });
       if (!selected || Array.isArray(selected)) return;
 
-      // VSCode-style: the picked file's parent dir becomes the workspace,
-      // then we focus the file itself.
+      // VSCode-style: opening a single file is just that — one file in
+      // the editor, no folder mounted, no sibling tree leaked into the
+      // sidebar. The store keeps any previously persisted workspace
+      // around so the user can return to it later.
       const normalized = selected.replace(/\\/g, "/");
       const lastSlash = normalized.lastIndexOf("/");
       if (lastSlash <= 0) {
         toast.error(tSidebar("openFileNoParent"));
         return;
       }
-      const parentDir = selected.slice(0, lastSlash);
       const fileBase = normalized.slice(lastSlash + 1);
 
-      await openDiskWorkspace(parentDir);
-      const match = useFileStore
-        .getState()
-        .files.find((f) => f.storageHandle?.relPath === fileBase);
-      if (match) {
-        navigateToEditorFile(match.id);
-        toast.success(tSidebar("openedFile", { name: fileBase }));
-      } else {
-        toast.success(tSidebar("workspaceOpened"));
-      }
+      await openSingleFile(selected);
+      const id = useFileStore.getState().currentFileId;
+      if (id) navigateToEditorFile(id);
+      toast.success(tSidebar("openedFile", { name: fileBase }));
     } catch (error) {
       log.error("Failed to open file", error);
       const { title, description } = getErrorMessage(error);
