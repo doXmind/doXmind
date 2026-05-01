@@ -18,7 +18,7 @@ hiddenimports += collect_submodules("aiosqlite")
 hiddenimports += collect_submodules("sqlalchemy.dialects.sqlite")
 hiddenimports += collect_submodules("email_validator")
 # Local packages — collect everything so dynamic imports (router glob,
-# middleware, agents) resolve at runtime.
+# middleware) resolve at runtime.
 hiddenimports += collect_submodules("api")
 hiddenimports += collect_submodules("services")
 hiddenimports += collect_submodules("db")

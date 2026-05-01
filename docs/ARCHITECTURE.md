@@ -1,1927 +1,335 @@
-# doXmind Mini 架构文档
+# Architecture
 
-> AI 驱动的 Markdown 写作助手 - "Cursor for Writing"
+This document describes the runtime architecture of doXmind Mini, the local
+sidecar edition. It is the entry point for understanding how the editor, the
+storage layer, and the desktop shell fit together.
 
-## 目录
+For the migration log that traces how we got here, see
+[`MARKDOWN_FIRST_MIGRATION.md`](./MARKDOWN_FIRST_MIGRATION.md). For the product
+boundary (what is intentionally excluded), see `README.md` and
+`AGENTS.md`.
 
-1. [项目概述](#1-项目概述)
-2. [系统架构图](#2-系统架构图)
-3. [技术栈](#3-技术栈)
-4. [前端架构](#4-前端架构)
-5. [后端架构](#5-后端架构)
-6. [核心功能交互流程](#6-核心功能交互流程)
-7. [数据模型](#7-数据模型)
-8. [外部服务集成](#8-外部服务集成)
-9. [安全架构](#9-安全架构)
-10. [性能优化策略](#10-性能优化策略)
-11. [遥测与事件采集](#11-遥测与事件采集)
-12. [部署架构](#12-部署架构)
-13. [监控与日志](#13-监控与日志)
-14. [未来规划](#14-未来规划)
+## Product shape
 
----
+doXmind Mini is a local-first, single-user desktop document editor. There is
+no auth, sync, sharing, billing, telemetry, or AI runtime in this branch.
+Documents live on the user's filesystem; the app reads and writes them in
+place.
 
-## 1. 项目概述
+The product surface is intentionally narrow:
 
-doXmind Mini 是一款 AI 驱动的 Markdown 写作助手，将 TipTap 富文本编辑器与 Claude AI 深度集成，提供实时对话、快速编辑、自动补全、RAG 知识库检索等功能。
+- A user opens a folder ("workspace") of Markdown files.
+- The editor renders each `.md` as rich content via TipTap.
+- Editor-only state (block colors, embedded databases, cached HTML) is
+  stored in a hidden `.doxmind` sidecar next to each `.md`.
+- Import, OCR, and export run locally with no network calls.
 
-### 核心特性
+## Source of truth: the dual-file model
 
-| 特性           | 描述                                     |
-| -------------- | ---------------------------------------- |
-| **智能对话**   | 基于 Claude 的实时流式对话，支持扩展思考 |
-| **快速编辑**   | 选中文本一键润色、翻译、扩写、缩写       |
-| **自动补全**   | 输入时 AI 预测下文，Tab 键接受           |
-| **知识库 RAG** | 上传文档作为对话上下文，向量检索         |
-| **版本历史**   | AI 编辑自动保存版本，支持回滚            |
-| **多格式导出** | 支持 PDF、DOCX、Markdown 导出            |
-| **移动端适配** | 响应式设计，手势操作，语音输入           |
+Every document is two files on disk:
 
----
-
-## 2. 系统架构图
-
-### 2.1 整体架构
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           用户层 (User Layer)                            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │   Desktop   │  │   Mobile    │  │   Tablet    │  │  公开分享链接  │    │
-│  │   Browser   │  │   Browser   │  │   Browser   │  │  /shared/*   │    │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘    │
-└─────────┼────────────────┼────────────────┼────────────────┼───────────┘
-          │                │                │                │
-          └────────────────┴────────────────┴────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        前端层 (Frontend Layer)                           │
-│  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │                     Next.js 15 (App Router)                        │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │ │
-│  │  │  /editor     │  │  /login      │  │  /shared/[t] │              │ │
-│  │  │  主编辑页面   │  │  登录页面     │  │  公开分享页   │              │ │
-│  │  └──────┬───────┘  └──────────────┘  └──────────────┘              │ │
-│  │         │                                                          │ │
-│  │  ┌──────┴──────────────────────────────────────────────────────┐   │ │
-│  │  │                    Zustand State Stores                     │   │ │
-│  │  │  file-store │ chat-store │ editor-store │ kb-store │ ...   │   │ │
-│  │  └──────┬──────────────────────────────────────────────────────┘   │ │
-│  │         │                                                          │ │
-│  │  ┌──────┴──────────────────────────────────────────────────────┐   │ │
-│  │  │                    TipTap Editor Engine                      │   │ │
-│  │  │  Extensions: Diff Review │ Autocomplete │ Search │ Math     │   │ │
-│  │  └─────────────────────────────────────────────────────────────┘   │ │
-│  └────────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │ REST API + SSE
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         后端层 (Backend Layer)                           │
-│  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │                      FastAPI Application                           │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │ │
-│  │  │ /api/    │  │ /api/    │  │ /api/    │  │ /api/    │           │ │
-│  │  │ auth     │  │ files    │  │ chat     │  │ kb       │           │ │
-│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘           │ │
-│  │       │             │             │             │                  │ │
-│  │  ┌────┴─────────────┴─────────────┴─────────────┴─────────────┐   │ │
-│  │  │                    Services Layer                          │   │ │
-│  │  │  LLMService │ RAGService │ AuthService │ ExportService     │   │ │
-│  │  └────┬───────────────────────────────────────────────────────┘   │ │
-│  │       │                                                           │ │
-│  │  ┌────┴──────────────────────────────────────────────────────┐    │ │
-│  │  │              WritingAgent (LangGraph)                      │    │ │
-│  │  │  Tools: str_replace │ insert │ search_documents │ ...     │    │ │
-│  │  └───────────────────────────────────────────────────────────┘    │ │
-│  └────────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-            ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-            │  PostgreSQL  │ │   pgvector   │ │    Claude    │
-            │  (SQLAlchemy)│ │  (Embeddings)│ │     API      │
-            └──────────────┘ └──────────────┘ └──────────────┘
+```text
+~/Documents/notes/
+├── Project Plan.md          # portable, user-facing Markdown
+└── .Project Plan.doxmind    # hidden sidecar with editor HTML + extras
 ```
 
-### 2.2 三栏布局架构
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          Header (导航栏)                              │
-│  ┌──────────┐  ┌────────────────────────────────────────┐  ┌──────┐ │
-│  │ 侧边栏开关 │  │             文件名                      │  │ 用户 │ │
-│  └──────────┘  └────────────────────────────────────────┘  └──────┘ │
-├──────────────┬───────────────────────────────────┬──────────────────┤
-│              │                                   │                  │
-│   Sidebar    │            Editor                 │    Chat Panel    │
-│   侧边栏      │            编辑器                  │    对话面板       │
-│              │                                   │                  │
-│ ┌──────────┐ │  ┌─────────────────────────────┐  │ ┌──────────────┐ │
-│ │ 文件列表  │ │  │                             │  │ │  历史消息     │ │
-│ │          │ │  │    TipTap WYSIWYG Editor    │  │ │              │ │
-│ │ - 文件1  │ │  │                             │  │ │  User: ...   │ │
-│ │ - 文件2  │ │  │    工具栏 (格式化按钮)        │  │ │  AI: ...     │ │
-│ │ - 文件3  │ │  │    ────────────────────     │  │ │              │ │
-│ └──────────┘ │  │                             │  │ ├──────────────┤ │
-│              │  │    文档内容区域               │  │ │  上下文附件   │ │
-│ ┌──────────┐ │  │                             │  │ │  [选中文本]   │ │
-│ │ 知识库    │ │  │                             │  │ │  [图片预览]   │ │
-│ │          │ │  │    Bubble Menu (选中菜单)    │  │ ├──────────────┤ │
-│ │ 已上传:   │ │  │    Quick Edit Menu         │  │ │  输入框       │ │
-│ │ - doc1   │ │  │                             │  │ │  [发送] [设置]│ │
-│ │ - doc2   │ │  └─────────────────────────────┘  │ └──────────────┘ │
-│ └──────────┘ │                                   │                  │
-│              │                                   │                  │
-└──────────────┴───────────────────────────────────┴──────────────────┘
-```
-
-### 2.3 数据流架构
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         数据流向图                                    │
-└─────────────────────────────────────────────────────────────────────┘
-
-用户输入                处理层                   存储层             外部服务
-───────                ─────                   ─────             ──────
-
-┌─────────┐       ┌──────────────┐       ┌──────────────┐    ┌─────────┐
-│ 编辑文档  │──────▶│ editor-store │──────▶│  PostgreSQL  │    │ Claude  │
-└─────────┘       └──────────────┘       │    files     │    │   API   │
-     │                   │               └──────────────┘    └────▲────┘
-     │                   │ debounce 500ms                         │
-     ▼                   ▼                                        │
-┌─────────┐       ┌──────────────┐       ┌──────────────┐         │
-│ 发送消息  │──────▶│  chat-store  │──────▶│ conversations │         │
-└─────────┘       └──────────────┘       │   messages   │         │
-     │                   │               └──────────────┘         │
-     │                   │ SSE Stream                             │
-     ▼                   ▼                                        │
-┌─────────┐       ┌──────────────┐       ┌──────────────┐         │
-│ 上传知识库│──────▶│   kb-store   │──────▶│   pgvector   │─────────┤
-└─────────┘       └──────────────┘       │  embeddings  │         │
-                                         └──────────────┘         │
-                                                                  │
-┌─────────┐       ┌──────────────┐                                │
-│ 快速编辑  │──────▶│ Quick Edit   │────────────────────────────────┘
-└─────────┘       │   Handler    │
-                  └──────────────┘
-```
-
----
-
-## 3. 技术栈
-
-### 3.1 前端技术栈
-
-| 类别         | 技术          | 版本 | 用途               |
-| ------------ | ------------- | ---- | ------------------ |
-| **框架**     | Next.js       | 15   | App Router, RSC    |
-| **UI 库**    | React         | 19   | 组件化开发         |
-| **编辑器**   | TipTap        | 2.x  | WYSIWYG 富文本编辑 |
-| **状态管理** | Zustand       | 5.x  | 轻量级状态管理     |
-| **样式**     | Tailwind CSS  | 3.x  | 原子化 CSS         |
-| **动画**     | Framer Motion | 11.x | 声明式动画         |
-| **类型**     | TypeScript    | 5.x  | 类型安全           |
-| **测试**     | Vitest + RTL  | -    | 单元/组件测试      |
-
-### 3.2 后端技术栈
-
-| 类别         | 技术          | 版本   | 用途            |
-| ------------ | ------------- | ------ | --------------- |
-| **框架**     | FastAPI       | 0.115+ | 异步 REST API   |
-| **运行时**   | Python        | 3.12   | 后端语言        |
-| **ORM**      | SQLAlchemy    | 2.0    | 异步数据库操作  |
-| **数据库**   | PostgreSQL    | 16     | 主数据库        |
-| **向量存储** | pgvector      | -      | 向量检索        |
-| **AI 框架**  | Anthropic SDK | -      | Claude API 调用 |
-| **Agent**    | LangGraph     | -      | AI 工作流编排   |
-| **测试**     | pytest        | -      | 后端测试        |
-
-### 3.3 基础设施
-
-| 类别       | 技术           | 用途           |
-| ---------- | -------------- | -------------- |
-| **容器化** | Docker Compose | 本地开发环境   |
-| **部署**   | Heroku         | 生产环境       |
-| **CI/CD**  | GitHub Actions | 自动化测试部署 |
-| **监控**   | 自定义 Logger  | 结构化日志     |
-
----
-
-## 4. 前端架构
-
-### 4.1 目录结构
-
-```
-src/
-├── app/                      # Next.js App Router
-│   ├── editor/               # 主编辑页面
-│   │   └── page.tsx          # 入口组件
-│   ├── login/                # 登录页
-│   ├── shared/[token]/       # 公开分享页
-│   ├── auth/callback/        # OAuth 回调
-│   └── layout.tsx            # 根布局
-│
-├── components/               # React 组件
-│   ├── editor/               # 编辑器相关
-│   │   ├── editor.tsx        # TipTap 主编辑器
-│   │   ├── editor-toolbar.tsx# 格式化工具栏
-│   │   ├── bubble-menu.tsx   # 选中文本菜单
-│   │   ├── diff-review-toolbar.tsx # Diff 审查栏
-│   │   ├── slash-commands.tsx# 斜杠命令
-│   │   └── mindlines/        # 大纲视图
-│   │
-│   ├── ai/                   # AI 功能组件
-│   │   ├── chat-panel.tsx    # 对话面板
-│   │   ├── chat-message.tsx  # 消息渲染
-│   │   ├── quick-edit-menu.tsx # 快速编辑菜单
-│   │   ├── thinking-indicator.tsx # 思考指示器
-│   │   └── tool-indicator.tsx# 工具调用指示器
-│   │
-│   ├── mobile/               # 移动端组件
-│   │   ├── mobile-editor-layout.tsx
-│   │   ├── floating-ai-input.tsx
-│   │   └── mobile-chat-sheet.tsx
-│   │
-│   ├── kb/                   # 知识库组件
-│   │   ├── knowledge-base-panel.tsx
-│   │   └── kb-upload-zone.tsx
-│   │
-│   ├── layout/               # 布局组件
-│   │   ├── app-shell.tsx     # 应用外壳
-│   │   ├── sidebar.tsx       # 侧边栏
-│   │   └── header.tsx        # 顶部导航
-│   │
-│   └── ui/                   # 通用 UI 组件
-│       ├── button.tsx
-│       ├── modal.tsx
-│       └── command-palette.tsx
-│
-├── extensions/               # TipTap 扩展
-│   ├── autocomplete-extension.ts
-│   ├── diff-review-extension.ts
-│   ├── search-extension.ts
-│   ├── code-block/
-│   └── math/
-│
-├── hooks/                    # 自定义 Hooks
-│   ├── use-chat.ts           # 对话逻辑
-│   ├── use-autocomplete.ts   # 自动补全
-│   ├── use-quick-edit.ts     # 快速编辑
-│   ├── use-diff-review.ts    # Diff 审查
-│   └── use-voice-recording.ts# 语音录入
-│
-├── stores/                   # Zustand 状态管理
-│   ├── file-store.ts         # 文件状态
-│   ├── chat-store.ts         # 对话状态
-│   ├── editor-store.ts       # 编辑器状态
-│   ├── kb-store.ts           # 知识库状态
-│   └── streaming-store.ts    # 流式响应状态
-│
-├── lib/                      # 工具库
-│   ├── api.ts                # API 客户端
-│   ├── streaming.ts          # SSE 解析
-│   ├── diff-utils.ts         # Diff 算法
-│   └── markdown.ts           # Markdown 转换
-│
-└── types/                    # TypeScript 类型
-    ├── file.ts
-    ├── chat.ts
-    └── editor.ts
-```
-
-### 4.2 状态管理架构
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       Zustand Store 架构                             │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   file-store    │     │   chat-store    │     │  editor-store   │
-├─────────────────┤     ├─────────────────┤     ├─────────────────┤
-│ State:          │     │ State:          │     │ State:          │
-│ - files[]       │     │ - conversations │     │ - isDirty       │
-│ - currentFileId │     │ - activeConvId  │     │ - selection     │
-│ - isLoading     │     │ - isStreaming   │     │ - pendingEdits  │
-│ - isSynced      │     │                 │     │ - quickEditOpen │
-├─────────────────┤     ├─────────────────┤     ├─────────────────┤
-│ Actions:        │     │ Actions:        │     │ Actions:        │
-│ - createFile()  │     │ - sendMessage() │     │ - setSelection()│
-│ - updateFile()  │     │ - clearHistory()│     │ - applyEdit()   │
-│ - deleteFile()  │     │ - loadHistory() │     │ - revertEdit()  │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    │      Persistence        │
-                    │    (localStorage)       │
-                    └─────────────────────────┘
-
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    kb-store     │     │ streaming-store │     │  layout-store   │
-├─────────────────┤     ├─────────────────┤     ├─────────────────┤
-│ State:          │     │ State:          │     │ State:          │
-│ - attachments   │     │ - isStreaming   │     │ - isChatOpen    │
-│ - uploadProgress│     │ - currentTool   │     │ - isSidebarOpen │
-│ - pollingStatus │     │ - thinking      │     │ - panelWidths   │
-├─────────────────┤     │ - todos[]       │     ├─────────────────┤
-│ Actions:        │     ├─────────────────┤     │ Actions:        │
-│ - uploadFile()  │     │ Actions:        │     │ - toggleChat()  │
-│ - deleteFile()  │     │ - setStreaming()│     │ - toggleSidebar()
-│ - searchKB()    │     │ - addTodo()     │     │ - setPanelWidth()
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-```
-
-### 4.3 组件层次结构
-
-```
-App (layout.tsx)
-└── AuthProvider
-    └── AppShell
-        ├── Header
-        │   ├── SidebarToggle
-        │   ├── FileNameInput
-        │   └── UserMenu
-        │
-        ├── Sidebar (可折叠)
-        │   ├── FileList
-        │   │   └── FileItem[]
-        │   └── KnowledgeBasePanel
-        │       ├── KBUploadZone
-        │       └── KBAttachmentItem[]
-        │
-        ├── Editor (主内容区)
-        │   ├── EditorToolbar
-        │   │   └── FormatButtons[]
-        │   ├── TipTapEditor
-        │   │   ├── BubbleMenu
-        │   │   ├── SlashCommands
-        │   │   └── CustomExtensions
-        │   ├── DiffReviewToolbar
-        │   └── SearchBar
-        │
-        └── ChatPanel (可折叠)
-            ├── ChatMessages
-            │   ├── ChatMessage[]
-            │   │   ├── ThinkingIndicator
-            │   │   ├── ToolIndicator
-            │   │   └── MessageContent
-            │   └── StreamingMessage
-            ├── ContextPills
-            │   └── ContextItem[]
-            └── ChatInput
-                ├── AttachmentMenu
-                └── ChatSettings
-```
-
-### 4.4 TipTap 扩展架构
-
-```
-TipTap Editor
-├── 核心扩展 (Built-in)
-│   ├── StarterKit
-│   ├── Placeholder
-│   ├── Typography
-│   └── CharacterCount
-│
-├── 格式扩展
-│   ├── Highlight
-│   ├── Underline
-│   ├── TextAlign
-│   ├── Subscript / Superscript
-│   └── TaskList / TaskItem
-│
-├── 内容扩展
-│   ├── Table
-│   ├── Image (ResizableImage)
-│   ├── Link
-│   ├── CodeBlock (语法高亮)
-│   └── Math (LaTeX 公式)
-│
-└── 自定义扩展 (Custom)
-    ├── DiffReviewExtension
-    │   └── 显示/管理 AI 编辑的 diff
-    ├── AutocompleteExtension
-    │   └── 输入时 AI 补全建议
-    ├── SearchExtension
-    │   └── 文档内搜索高亮
-    ├── SpellcheckExtension
-    │   └── 拼写/语法检查
-    └── BlockSelectionExtension
-        └── 移动端块级选择
-```
-
----
-
-## 5. 后端架构
-
-### 5.1 目录结构
-
-```
-server/
-├── main.py                   # FastAPI 入口
-├── config.py                 # 配置管理
-│
-├── api/                      # API 路由层
-│   ├── auth.py               # 认证路由
-│   ├── files.py              # 文件 CRUD
-│   ├── chat.py               # 对话路由
-│   ├── edit.py               # 快速编辑
-│   ├── autocomplete.py       # 自动补全
-│   ├── knowledge_base.py     # 知识库
-│   ├── export.py             # 导出
-│   ├── import_file.py        # 导入
-│   ├── shares.py             # 公开分享
-│   ├── versions.py           # 版本历史
-│   └── speech.py             # 语音转写
-│
-├── services/                 # 服务层
-│   ├── llm_service.py        # Claude API 封装
-│   ├── rag_service.py        # 向量检索服务
-│   ├── auth_service.py       # 认证服务
-│   ├── oauth_service.py      # OAuth 服务
-│   ├── user_service.py       # 用户服务
-│   ├── export_service.py     # 导出服务
-│   └── email_service.py      # 邮件服务
-│
-├── agents/                   # AI Agent 层
-│   ├── writing_agent.py      # 写作助手 Agent
-│   ├── prompts.py            # 系统提示词
-│   └── tools/
-│       ├── definitions.py    # 工具定义
-│       └── handlers.py       # 工具执行
-│
-├── db/                       # 数据层
-│   ├── database.py           # 模型定义
-│   └── migrations/           # 数据库迁移
-│
-├── prompts/                  # 提示词模板
-│   ├── system.txt
-│   ├── quick_edit.txt
-│   └── autocomplete.txt
-│
-└── tests/                    # 测试
-    ├── unit/
-    └── integration/
-```
-
-### 5.2 分层架构
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          API Layer (Routers)                        │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │ auth.py  │ │ files.py │ │ chat.py  │ │  kb.py   │ │export.py │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
-│       │            │            │            │            │         │
-└───────┼────────────┼────────────┼────────────┼────────────┼─────────┘
-        │            │            │            │            │
-        ▼            ▼            ▼            ▼            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Service Layer (Business Logic)               │
-│  ┌────────────────┐ ┌────────────────┐ ┌────────────────┐          │
-│  │  AuthService   │ │  LLMService    │ │  RAGService    │          │
-│  │  - JWT 生成     │ │  - Claude 调用  │ │  - 向量检索     │          │
-│  │  - OAuth 处理   │ │  - 流式响应     │ │  - 文档嵌入     │          │
-│  └────────────────┘ └────────────────┘ └────────────────┘          │
-│                                                                     │
-│  ┌────────────────┐ ┌────────────────┐ ┌────────────────┐          │
-│  │  UserService   │ │ ExportService  │ │  EmailService  │          │
-│  │  - 用户 CRUD    │ │  - PDF/DOCX    │ │  - 验证邮件     │          │
-│  └────────────────┘ └────────────────┘ └────────────────┘          │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Agent Layer (AI Orchestration)              │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                      WritingAgent                              │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │ │
-│  │  │  Tool Loop   │  │   Prompts    │  │  Tool Defs   │         │ │
-│  │  │  工具执行循环  │  │   提示词管理  │  │   工具定义    │         │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘         │ │
-│  │                                                                │ │
-│  │  Tools:                                                        │ │
-│  │  ├── view_document       # 查看文档                            │ │
-│  │  ├── str_replace_editor  # 字符串替换                          │ │
-│  │  ├── insert_text         # 插入文本                            │ │
-│  │  ├── replace_document    # 替换整个文档                         │ │
-│  │  ├── search_documents    # 搜索知识库                          │ │
-│  │  └── read_document       # 读取知识库文档                       │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Data Layer (Database)                       │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                   SQLAlchemy 2.0 (Async)                       │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │ │
-│  │  │    Users    │  │    Files    │  │Conversations│            │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘            │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │ │
-│  │  │  Messages   │  │FileVersions │  │ Attachments │            │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘            │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                   pgvector (Vector Store)                      │ │
-│  │  ┌─────────────────────────────────────────────────────────┐  │ │
-│  │  │  vector_embeddings (chunk_id, embedding, metadata)      │  │ │
-│  │  └─────────────────────────────────────────────────────────┘  │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 5.3 API 端点总览
-
-| 模块             | 端点                                  | 方法   | 描述           |
-| ---------------- | ------------------------------------- | ------ | -------------- |
-| **Auth**         | `/api/auth/login`                     | POST   | 用户登录       |
-|                  | `/api/auth/register`                  | POST   | 用户注册       |
-|                  | `/api/auth/oauth/{provider}`          | GET    | OAuth 发起     |
-|                  | `/api/auth/oauth/{provider}/callback` | GET    | OAuth 回调     |
-| **Files**        | `/api/files`                          | GET    | 获取文件列表   |
-|                  | `/api/files`                          | POST   | 创建文件       |
-|                  | `/api/files/{id}`                     | PUT    | 更新文件       |
-|                  | `/api/files/{id}`                     | DELETE | 删除文件       |
-| **Chat**         | `/api/chat/stream`                    | POST   | 流式对话 (SSE) |
-|                  | `/api/chat/conversations/{fileId}`    | GET    | 获取对话历史   |
-|                  | `/api/chat/messages`                  | POST   | 保存消息       |
-| **Edit**         | `/api/edit/quick`                     | POST   | 快速编辑 (SSE) |
-| **Autocomplete** | `/api/autocomplete/`                  | POST   | 自动补全 (SSE) |
-| **KB**           | `/api/kb/{convId}/attachments`        | POST   | 上传附件       |
-|                  | `/api/kb/{convId}/attachments`        | GET    | 获取附件列表   |
-|                  | `/api/kb/search`                      | POST   | 搜索知识库     |
-| **Export**       | `/api/export/`                        | POST   | 导出文件       |
-| **Versions**     | `/api/versions/{fileId}`              | GET    | 获取版本历史   |
-|                  | `/api/versions/{versionId}/revert`    | POST   | 回滚版本       |
-| **Shares**       | `/api/shares`                         | POST   | 创建分享       |
-|                  | `/api/shares/{token}`                 | GET    | 获取分享内容   |
-
----
-
-## 6. 核心功能交互流程
-
-### 6.1 AI 对话流式响应
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      AI 对话流式响应流程                              │
-└─────────────────────────────────────────────────────────────────────┘
-
-用户                    前端                     后端                  Claude
-────                    ────                     ────                  ──────
-
-  │                       │                       │                      │
-  │  1. 输入消息并发送     │                       │                      │
-  ├──────────────────────▶│                       │                      │
-  │                       │                       │                      │
-  │                       │  2. POST /api/chat/stream                    │
-  │                       │  { message, fileId, contexts }               │
-  │                       ├──────────────────────▶│                      │
-  │                       │                       │                      │
-  │                       │                       │  3. 构建 Prompt      │
-  │                       │                       │  - 系统提示词         │
-  │                       │                       │  - 文件内容          │
-  │                       │                       │  - 对话历史          │
-  │                       │                       │  - 知识库上下文       │
-  │                       │                       │                      │
-  │                       │                       │  4. Claude API 调用  │
-  │                       │                       ├─────────────────────▶│
-  │                       │                       │                      │
-  │                       │                       │  5. 流式返回 tokens  │
-  │                       │                       │◀─────────────────────┤
-  │                       │                       │                      │
-  │                       │  6. SSE: text_chunk   │                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │  7. 实时显示文字       │                       │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-  │                       │                       │  8. 工具调用         │
-  │                       │                       │  (str_replace_editor)│
-  │                       │                       │◀─────────────────────┤
-  │                       │                       │                      │
-  │                       │  9. SSE: tool_call    │                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │  10. 显示工具调用指示  │                       │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-  │                       │                       │  11. 执行工具       │
-  │                       │                       │  - 应用文本替换      │
-  │                       │                       │                      │
-  │                       │  12. SSE: tool_result │                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │  13. 编辑器显示 diff   │                       │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-  │                       │  14. SSE: done        │                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │  15. 保存消息到历史    │                       │                      │
-  │                       ├──────────────────────▶│                      │
-  │                       │                       │                      │
-```
-
-**SSE 事件类型:**
-
-| 事件类型      | 数据结构                                             | 描述         |
-| ------------- | ---------------------------------------------------- | ------------ |
-| `text_chunk`  | `{ content: string }`                                | 流式文本片段 |
-| `tool_call`   | `{ name: string, input: object }`                    | 工具调用开始 |
-| `tool_result` | `{ name: string, output: object }`                   | 工具执行结果 |
-| `thinking`    | `{ content: string }`                                | 扩展思考内容 |
-| `todo_item`   | `{ content: string, status: string }`                | 任务项解析   |
-| `edit`        | `{ type: string, old_str: string, new_str: string }` | 编辑操作     |
-| `done`        | `{}`                                                 | 响应完成     |
-| `error`       | `{ message: string }`                                | 错误信息     |
-
-### 6.2 快速编辑 (Quick Edit)
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        快速编辑交互流程                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-用户                    编辑器                   后端                  Claude
-────                    ─────                   ────                  ──────
-
-  │                       │                       │                      │
-  │  1. 选中文本           │                       │                      │
-  ├──────────────────────▶│                       │                      │
-  │                       │                       │                      │
-  │  2. 右键 Quick Edit   │                       │                      │
-  │     选择 "修正语法"    │                       │                      │
-  ├──────────────────────▶│                       │                      │
-  │                       │                       │                      │
-  │                       │  3. POST /api/edit/quick                     │
-  │                       │  { text, action: "fix-grammar", context }    │
-  │                       ├──────────────────────▶│                      │
-  │                       │                       │                      │
-  │                       │                       │  4. 构建快速编辑提示  │
-  │                       │                       │     + 用户选中文本    │
-  │                       │                       │                      │
-  │                       │                       │  5. Claude 流式响应   │
-  │                       │                       ├─────────────────────▶│
-  │                       │                       │◀─────────────────────┤
-  │                       │                       │                      │
-  │                       │  6. SSE 流式返回       │                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │                       │  7. 实时预览修改后文本  │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-  │  8. 自动替换选中文本   │                       │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-  │                       │  9. 保存到撤销栈       │                      │
-  │                       │     (支持 Ctrl+Z)     │                      │
-  │                       │                       │                      │
-```
-
-**快速编辑操作类型:**
-
-| 操作     | Action ID      | 描述               |
-| -------- | -------------- | ------------------ |
-| 修正语法 | `fix-grammar`  | 修复语法和拼写错误 |
-| 润色     | `improve`      | 提升文字质量       |
-| 简化     | `simplify`     | 简化表达           |
-| 扩写     | `expand`       | 展开详细描述       |
-| 缩写     | `shorten`      | 精简内容           |
-| 专业化   | `professional` | 转为正式语气       |
-| 口语化   | `casual`       | 转为轻松语气       |
-| 翻译英文 | `translate-en` | 翻译为英文         |
-| 翻译中文 | `translate-zh` | 翻译为中文         |
-
-### 6.3 自动补全 (Autocomplete)
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        自动补全交互流程                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-用户                    编辑器                   后端                  Claude
-────                    ─────                   ────                  ──────
-
-  │                       │                       │                      │
-  │  1. 输入文字          │                       │                      │
-  │     "今天天气"        │                       │                      │
-  ├──────────────────────▶│                       │                      │
-  │                       │                       │                      │
-  │                       │  2. Debounce 300ms    │                      │
-  │                       │     检测触发条件       │                      │
-  │                       │     (2+字符单词)       │                      │
-  │                       │                       │                      │
-  │                       │  3. POST /api/autocomplete                   │
-  │                       │  { textBefore, textAfter, fileName }         │
-  │                       ├──────────────────────▶│                      │
-  │                       │                       │                      │
-  │                       │                       │  4. 检查缓存         │
-  │                       │                       │  5. Claude 生成补全  │
-  │                       │                       ├─────────────────────▶│
-  │                       │                       │◀─────────────────────┤
-  │                       │                       │                      │
-  │                       │  6. 返回补全建议       │                      │
-  │                       │     "很好，适合出门"   │                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │  7. 显示灰色预览文本   │                       │                      │
-  │     "今天天气|很好，适合出门"                  │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-  │  8. 按 Tab 接受       │                       │                      │
-  ├──────────────────────▶│                       │                      │
-  │                       │                       │                      │
-  │  9. 插入补全文本      │                       │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-```
-
-### 6.4 知识库 RAG 检索
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        知识库 RAG 检索流程                            │
-└─────────────────────────────────────────────────────────────────────┘
-
-用户                    前端                     后端                  外部服务
-────                    ────                     ────                  ─────
-
-=== 阶段一: 文档上传 ===
-
-  │                       │                       │                      │
-  │  1. 拖拽上传 PDF      │                       │                      │
-  ├──────────────────────▶│                       │                      │
-  │                       │                       │                      │
-  │                       │  2. FormData POST     │                      │
-  │                       │  /api/kb/{convId}/attachments               │
-  │                       ├──────────────────────▶│                      │
-  │                       │                       │                      │
-  │                       │                       │  3. 提取文本         │
-  │                       │                       │     (Gemini API)     │
-  │                       │                       ├─────────────────────▶│
-  │                       │                       │◀─────────────────────┤
-  │                       │                       │                      │
-  │                       │                       │  4. 文档分块         │
-  │                       │                       │  - Overlap (1000/200)│
-  │                       │                       │  - Sentence          │
-  │                       │                       │                      │
-  │                       │                       │  5. 生成 Embeddings  │
-  │                       │                       │  (OpenAI API)        │
-  │                       │                       ├─────────────────────▶│
-  │                       │                       │◀─────────────────────┤
-  │                       │                       │                      │
-  │                       │                       │  6. 存入 pgvector    │
-  │                       │                       │                      │
-  │                       │  7. 返回 attachment_id│                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │  8. 显示上传成功      │                       │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-
-=== 阶段二: 对话中检索 ===
-
-  │                       │                       │                      │
-  │  9. 发送消息          │                       │                      │
-  │     "根据文档，..."   │                       │                      │
-  ├──────────────────────▶│                       │                      │
-  │                       │                       │                      │
-  │                       │  10. POST /api/chat/stream                   │
-  │                       ├──────────────────────▶│                      │
-  │                       │                       │                      │
-  │                       │                       │  11. Agent 调用工具  │
-  │                       │                       │  search_documents    │
-  │                       │                       │                      │
-  │                       │                       │  12. 向量相似度搜索  │
-  │                       │                       │  - Query Embedding   │
-  │                       │                       │  - pgvector 检索     │
-  │                       │                       │  - 返回 Top-K 结果   │
-  │                       │                       │                      │
-  │                       │                       │  13. 注入检索结果    │
-  │                       │                       │      到 Prompt       │
-  │                       │                       │                      │
-  │                       │                       │  14. Claude 生成响应 │
-  │                       │                       ├─────────────────────▶│
-  │                       │                       │◀─────────────────────┤
-  │                       │                       │                      │
-  │                       │  15. 流式返回响应      │                      │
-  │                       │◀──────────────────────┤                      │
-  │                       │                       │                      │
-  │  16. 显示带引用的回答 │                       │                      │
-  │◀──────────────────────┤                       │                      │
-  │                       │                       │                      │
-```
-
-**向量存储结构:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      pgvector 存储结构                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-Table: vector_embeddings
-┌────────────┬───────────────┬──────────────────────────────────────┐
-│  chunk_id  │   embedding   │              metadata                │
-│  (UUID)    │  (vector[1536])│            (JSONB)                  │
-├────────────┼───────────────┼──────────────────────────────────────┤
-│  abc123    │  [0.1, 0.2...] │ { "conversation_id": "conv1",       │
-│            │               │   "attachment_id": "att1",           │
-│            │               │   "filename": "report.pdf",          │
-│            │               │   "chunk_index": 0,                  │
-│            │               │   "text": "原始文本内容..." }         │
-├────────────┼───────────────┼──────────────────────────────────────┤
-│  def456    │  [0.3, 0.1...] │ { "conversation_id": "conv1",       │
-│            │               │   "attachment_id": "att1",           │
-│            │               │   "filename": "report.pdf",          │
-│            │               │   "chunk_index": 1,                  │
-│            │               │   "text": "原始文本内容..." }         │
-└────────────┴───────────────┴──────────────────────────────────────┘
-
-检索流程:
-1. Query: "项目进度如何?"
-2. Embed query → [0.2, 0.15, ...]
-3. SELECT * FROM vector_embeddings
-   WHERE metadata->>'conversation_id' = 'conv1'
-   ORDER BY embedding <=> query_embedding
-   LIMIT 5
-4. 返回最相似的 5 个文本块
-```
-
-### 6.5 Diff 审查与版本管理
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      Diff 审查与版本管理流程                          │
-└─────────────────────────────────────────────────────────────────────┘
-
-用户                    编辑器                   后端
-────                    ─────                   ────
-
-=== AI 编辑产生 Diff ===
-
-  │                       │                       │
-  │  1. AI 执行 str_replace                       │
-  │     tool                                      │
-  │                       │◀──────────────────────┤
-  │                       │                       │
-  │                       │  2. DiffReviewExtension
-  │                       │     标记修改区域       │
-  │                       │                       │
-  │  3. 显示 Diff 高亮    │                       │
-  │     - 删除: 红色背景   │                       │
-  │     - 新增: 绿色背景   │                       │
-  │◀──────────────────────┤                       │
-  │                       │                       │
-  │                       │  4. 显示 Accept/Reject│
-  │                       │     工具栏             │
-  │◀──────────────────────┤                       │
-  │                       │                       │
-
-=== 用户接受修改 ===
-
-  │                       │                       │
-  │  5. 点击 "Accept"     │                       │
-  ├──────────────────────▶│                       │
-  │                       │                       │
-  │                       │  6. 清除 Diff 标记    │
-  │                       │     保留新内容         │
-  │                       │                       │
-  │                       │  7. 创建 FileVersion  │
-  │                       │     { diff, summary } │
-  │                       ├──────────────────────▶│
-  │                       │                       │
-  │  8. 显示最终内容      │                       │
-  │◀──────────────────────┤                       │
-  │                       │                       │
-
-=== 用户拒绝修改 ===
-
-  │                       │                       │
-  │  5. 点击 "Reject"     │                       │
-  ├──────────────────────▶│                       │
-  │                       │                       │
-  │                       │  6. 恢复原始内容      │
-  │                       │     清除 Diff 标记    │
-  │                       │                       │
-  │  7. 显示原始内容      │                       │
-  │◀──────────────────────┤                       │
-  │                       │                       │
-
-=== 查看版本历史 ===
-
-  │                       │                       │
-  │  8. 打开版本历史面板  │                       │
-  ├──────────────────────▶│                       │
-  │                       │                       │
-  │                       │  9. GET /api/versions/{fileId}              │
-  │                       ├──────────────────────▶│
-  │                       │                       │
-  │                       │  10. 返回版本列表     │
-  │                       │◀──────────────────────┤
-  │                       │                       │
-  │  11. 显示版本时间线   │                       │
-  │      - v3: "修复语法" │                       │
-  │      - v2: "扩展段落" │                       │
-  │      - v1: "初始版本" │                       │
-  │◀──────────────────────┤                       │
-  │                       │                       │
-  │  12. 点击回滚到 v2    │                       │
-  ├──────────────────────▶│                       │
-  │                       │                       │
-  │                       │  13. POST /api/versions/{v2}/revert         │
-  │                       ├──────────────────────▶│
-  │                       │                       │
-  │  14. 文档恢复到 v2    │                       │
-  │◀──────────────────────┤                       │
-  │                       │                       │
-```
-
-### 6.6 用户认证流程
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        用户认证流程                                   │
-└─────────────────────────────────────────────────────────────────────┘
-
-=== 邮箱密码登录 ===
-
-用户                    前端                     后端
-────                    ────                     ────
-
-  │                       │                       │
-  │  1. 输入邮箱密码      │                       │
-  ├──────────────────────▶│                       │
-  │                       │                       │
-  │                       │  2. POST /api/auth/login
-  │                       │  { email, password }  │
-  │                       ├──────────────────────▶│
-  │                       │                       │
-  │                       │                       │  3. 验证密码
-  │                       │                       │     bcrypt compare
-  │                       │                       │
-  │                       │                       │  4. 生成 JWT
-  │                       │                       │     { user_id, exp }
-  │                       │                       │
-  │                       │  5. 返回 token + user │
-  │                       │◀──────────────────────┤
-  │                       │                       │
-  │                       │  6. 存储到 localStorage│
-  │                       │     设置 Cookie       │
-  │                       │                       │
-  │  7. 跳转到 /editor   │                       │
-  │◀──────────────────────┤                       │
-  │                       │                       │
-
-
-=== OAuth 登录 (Google) ===
-
-用户                    前端                     后端               Google
-────                    ────                     ────               ──────
-
-  │                       │                       │                    │
-  │  1. 点击 Google 登录  │                       │                    │
-  ├──────────────────────▶│                       │                    │
-  │                       │                       │                    │
-  │                       │  2. 重定向到          │                    │
-  │                       │  /api/auth/oauth/google                    │
-  │                       ├──────────────────────▶│                    │
-  │                       │                       │                    │
-  │                       │                       │  3. 生成 state     │
-  │                       │                       │     PKCE 参数      │
-  │                       │                       │                    │
-  │  4. 重定向到 Google   │                       │                    │
-  │◀─────────────────────────────────────────────┤                    │
-  │                       │                       │                    │
-  │  5. Google 登录授权   │                       │                    │
-  ├────────────────────────────────────────────────────────────────────▶
-  │                       │                       │                    │
-  │  6. 携带 code 回调    │                       │                    │
-  │     /api/auth/oauth/google/callback?code=xxx                       │
-  │◀────────────────────────────────────────────────────────────────────
-  │                       │                       │                    │
-  │                       ├──────────────────────▶│                    │
-  │                       │                       │                    │
-  │                       │                       │  7. 用 code 换 token
-  │                       │                       ├───────────────────▶│
-  │                       │                       │◀───────────────────┤
-  │                       │                       │                    │
-  │                       │                       │  8. 获取用户信息   │
-  │                       │                       ├───────────────────▶│
-  │                       │                       │◀───────────────────┤
-  │                       │                       │                    │
-  │                       │                       │  9. 创建/更新用户  │
-  │                       │                       │     生成 JWT       │
-  │                       │                       │                    │
-  │  10. 重定向到 /editor │                       │                    │
-  │      (带 token cookie)│                       │                    │
-  │◀──────────────────────┤◀──────────────────────┤                    │
-  │                       │                       │                    │
-```
-
-### 6.7 移动端特性交互
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        移动端布局切换                                 │
-└─────────────────────────────────────────────────────────────────────┘
-
-Desktop (>= 1024px)              Mobile (< 1024px)
-─────────────────────            ─────────────────
-
-┌───────┬───────────┬───────┐    ┌─────────────────────┐
-│       │           │       │    │       Header        │
-│Sidebar│  Editor   │ Chat  │    ├─────────────────────┤
-│       │           │       │    │                     │
-│ 固定   │   固定    │ 固定  │    │      Editor         │
-│ 显示   │   显示    │ 显示  │    │                     │
-│       │           │       │    │   (全屏宽度)         │
-│       │           │       │    │                     │
-└───────┴───────────┴───────┘    ├─────────────────────┤
-                                 │  Floating AI Input  │
-                                 └─────────────────────┘
-
-                                 ┌─────────────────────┐
-                                 │ 手势操作:            │
-                                 │ - 右滑 → 打开侧边栏  │
-                                 │ - 左滑 → 打开大纲    │
-                                 │ - 点击底栏 → AI对话  │
-                                 └─────────────────────┘
-
-=== 块选择模式 ===
-
-┌─────────────────────────────┐
-│ ┌─────────────────────────┐ │
-│ │  [≡] 段落 1             │ │  ← 拖动手柄
-│ │  这是第一段文字...       │ │
-│ └─────────────────────────┘ │
-│                             │
-│ ┌─────────────────────────┐ │
-│ │  [≡] 段落 2 ✓ (已选中)   │ │  ← 高亮选中
-│ │  这是第二段文字...       │ │
-│ └─────────────────────────┘ │
-│                             │
-│ ┌─────────────────────────┐ │
-│ │  [≡] 段落 3             │ │
-│ │  这是第三段文字...       │ │
-│ └─────────────────────────┘ │
-│                             │
-│ ┌─────────────────────────┐ │
-│ │ [润色] [翻译] [扩写] ... │ │  ← 快速操作栏
-│ └─────────────────────────┘ │
-└─────────────────────────────┘
-
-=== 语音输入 ===
-
-┌─────────────────────────────┐
-│                             │
-│        🎤 录音中...         │
-│                             │
-│    ~~~~~~~~~~~~             │  ← 波形可视化
-│                             │
-│   [取消]        [完成]      │
-│                             │
-└─────────────────────────────┘
-          │
-          ▼
-POST /api/speech/transcribe
-          │
-          ▼
-  Whisper API → 文本转写
-          │
-          ▼
-    填入输入框或编辑器
-```
-
----
-
-## 7. 数据模型
-
-### 7.1 数据库 ER 图
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        数据库实体关系图                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
-│      Users       │       │      Files       │       │  FileVersions    │
-├──────────────────┤       ├──────────────────┤       ├──────────────────┤
-│ id (PK)          │       │ id (PK)          │       │ id (PK)          │
-│ email (unique)   │       │ user_id (FK)     │───────│ file_id (FK)     │
-│ password_hash    │──┐    │ name             │       │ content          │
-│ name             │  │    │ content          │       │ diff (JSON)      │
-│ avatar           │  │    │ created_at       │       │ edit_type        │
-│ oauth_provider   │  │    │ updated_at       │       │ summary          │
-│ oauth_id         │  │    └──────────────────┘       │ created_at       │
-│ created_at       │  │             │                 └──────────────────┘
-└──────────────────┘  │             │
-         │            │             │
-         │            │    ┌────────┴────────┐
-         │            │    │                 │
-         │            │    ▼                 ▼
-         │            │  ┌──────────────────┐  ┌──────────────────┐
-         │            │  │  Conversations   │  │     Shares       │
-         │            │  ├──────────────────┤  ├──────────────────┤
-         │            └─▶│ id (PK)          │  │ id (PK)          │
-         │               │ user_id (FK)     │  │ file_id (FK)     │
-         │               │ file_id (FK)     │  │ token (unique)   │
-         │               │ created_at       │  │ expires_at       │
-         │               └──────────────────┘  │ created_at       │
-         │                        │            └──────────────────┘
-         │                        │
-         │                        ▼
-         │               ┌──────────────────┐
-         │               │     Messages     │
-         │               ├──────────────────┤
-         │               │ id (PK)          │
-         │               │ conversation_id  │
-         │               │ role             │
-         │               │ content          │
-         │               │ thinking (JSON)  │
-         │               │ tool_calls (JSON)│
-         │               │ edits (JSON)     │
-         │               │ contexts (JSON)  │
-         │               │ created_at       │
-         │               └──────────────────┘
-         │
-         │               ┌──────────────────┐
-         │               │ConversationAttach│
-         │               ├──────────────────┤
-         │               │ id (PK)          │
-         │               │ conversation_id  │
-         │               │ filename         │
-         │               │ file_type        │
-         │               │ status           │
-         │               │ error_message    │
-         │               │ created_at       │
-         │               └──────────────────┘
-         │
-         │               ┌──────────────────┐
-         │               │ EmailVerification│
-         │               ├──────────────────┤
-         │               │ id (PK)          │
-         └──────────────▶│ user_id (FK)     │
-                         │ token (unique)   │
-                         │ expires_at       │
-                         └──────────────────┘
-```
-
-### 7.2 核心 TypeScript 类型
-
-```typescript
-// 文件
-interface FileItem {
-  id: string;
-  name: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// 对话
-interface Conversation {
-  id: string;
-  fileId: string;
-  messages: ChatMessage[];
-  createdAt: string;
-}
-
-// 消息
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  thinking?: string; // 扩展思考内容
-  toolCalls?: ToolCall[]; // 工具调用记录
-  edits?: EditOperation[]; // 编辑操作
-  contexts?: MessageContext[]; // 上下文附件
-  createdAt: string;
-}
-
-// 工具调用
-interface ToolCall {
-  name: string;
-  input: Record<string, unknown>;
-  output: string;
-  success: boolean;
-}
-
-// 编辑操作
-interface EditOperation {
-  type: "str_replace" | "insert" | "replace_all";
-  file_id: string;
-  file_name: string;
-  old_str?: string;
-  new_str?: string;
-  new_content?: string;
-  success: boolean;
-}
-
-// 消息上下文
-type MessageContext =
-  | { type: "selection"; text: string }
-  | { type: "image"; src: string; base64: string; mediaType: string };
-
-// 知识库附件
-interface KBAttachment {
-  id: string;
-  conversationId: string;
-  filename: string;
-  fileType: string;
-  status: "processing" | "ready" | "error";
-  errorMessage?: string;
-  createdAt: string;
-}
-
-// 文件版本
-interface FileVersion {
-  id: string;
-  fileId: string;
-  content: string;
-  diff: DiffChange[];
-  editType: "ai_edit" | "manual" | "revert";
-  summary: string;
-  createdAt: string;
+The `.md` file is the contract with the outside world. It can be edited in
+any editor, synced via Dropbox or git, or read by another tool. It carries
+YAML frontmatter for metadata (`id`, `updated_at`).
+
+The `.doxmind` sidecar is JSON and stores:
+
+```json
+{
+  "version": 1,
+  "id": "dfe24100-bb43-4f93-8553-2d9fdcc50172",
+  "html": "<p>...</p>",
+  "markdown_hash": "sha256:abc123...",
+  "updated_at": "2026-04-29T17:38:00Z",
+  "extras": { "databases": {} }
 }
 ```
 
-### 7.3 Python Pydantic 模型
+`extras.databases` is the target home for doXmind-only block data
+(database blocks, custom block extensions). Anything that does not round-trip
+through Markdown belongs here.
 
-```python
-# 请求模型
-class ChatRequest(BaseModel):
-    message: str
-    file_id: str
-    conversation_id: Optional[str] = None
-    contexts: Optional[List[MessageContext]] = None
-    images: Optional[List[ImageData]] = None
-    mode: Optional[str] = "default"  # default | thinking | web
+### Open
 
-class QuickEditRequest(BaseModel):
-    text: str
-    action: str  # fix-grammar, improve, simplify, etc.
-    context: Optional[str] = None
+1. Read `.md`, split frontmatter from body.
+2. Look for the same-name hidden `.doxmind` sidecar.
+3. If absent, import the Markdown into editor HTML.
+4. If present and `markdown_hash` matches the body, use `sidecar.html`.
+5. If present and the hash differs, treat external Markdown edits as
+   authoritative and regenerate the sidecar on next save.
 
-class AutocompleteRequest(BaseModel):
-    text_before: str
-    text_after: str
-    file_name: Optional[str] = None
+### Save
 
-# 响应模型
-class FileResponse(BaseModel):
-    id: str
-    name: str
-    content: str
-    created_at: datetime
-    updated_at: datetime
+1. Write `.md` from `editor.getMarkdown()`.
+2. Compute the hash of the Markdown just written.
+3. Write `.doxmind` with `{ html, markdown_hash, id, extras }`.
 
-class ConversationResponse(BaseModel):
-    id: str
-    file_id: str
-    messages: List[MessageResponse]
-    created_at: datetime
+The hash is the synchronization primitive. If a third party edits the `.md`
+out from under us, the next open detects the divergence and the user's
+view follows the file, not a stale sidecar.
 
-class MessageResponse(BaseModel):
-    id: str
-    role: str
-    content: str
-    thinking: Optional[str] = None
-    tool_calls: Optional[List[Dict]] = None
-    edits: Optional[List[Dict]] = None
-    contexts: Optional[List[Dict]] = None
-    created_at: datetime
+## Three-layer architecture
+
+The implementation is split across three layers with strict ownership:
+
+```text
+┌───────────────────────────────────────────────────────────┐
+│  Frontend: Next.js 15 + React 19 + TipTap + Zustand       │
+│  ─ src/                                                   │
+└───────────────────────────────────────────────────────────┘
+            │                                  │
+            │ Tauri command bridge             │ HTTP (browser dev mode)
+            ▼                                  ▼
+┌─────────────────────────┐     ┌─────────────────────────────┐
+│  Tauri shell (Rust)     │     │  FastAPI sidecar (Python)   │
+│  ─ src-tauri/           │     │  ─ server/                  │
+│  thin wrapper           │     │  workspace/invoke shim,     │
+│  over the core crate    │     │  import, OCR, images        │
+└─────────────────────────┘     └─────────────────────────────┘
+            │                                  │
+            └─────────────┬────────────────────┘
+                          ▼
+       ┌──────────────────────────────────────┐
+       │  doxmind-sidecar core (Rust)         │
+       │  ─ crates/sidecar/                   │
+       │  owns .md + .doxmind I/O,            │
+       │  hashing, frontmatter parsing        │
+       └──────────────────────────────────────┘
+                          │
+                          ▼
+                    User filesystem
+                  (~/Documents/notes/)
 ```
 
----
+### `crates/sidecar` — the storage core
 
-## 8. 外部服务集成
+The Rust crate `doxmind-sidecar` is the only code that knows how a
+`.md + .doxmind` pair is read, hashed, written, and recovered from a partial
+write. Its public surface (see `crates/sidecar/src/lib.rs`):
 
-### 8.1 服务依赖图
+- `read_doc(md_path) -> ReadResult` — splits frontmatter, reads the
+  sidecar if present, returns body + `DocMeta` + parsed sidecar JSON.
+- `write_doc(md_path, payload)` — atomic write of the pair via
+  temporary siblings, ensuring the `.md` and `.doxmind` either both
+  update or neither does.
+- `sidecar_path_for(md_path)` — canonical sidecar location.
+- `hash_markdown(content)` — the SHA-256 used for `markdown_hash`.
+- `markdown_to_html(body)` — the import path used when no sidecar exists.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        外部服务集成                                   │
-└─────────────────────────────────────────────────────────────────────┘
+Anything outside this crate that touches `.doxmind` files directly is a
+bug. The Tauri shell and FastAPI server are required to call into this
+crate (or its mirror) for all document I/O.
 
-                         doXmind Backend
-                               │
-           ┌───────────────────┼───────────────────┐
-           │                   │                   │
-           ▼                   ▼                   ▼
-   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-   │   Anthropic  │    │    OpenAI    │    │    Google    │
-   │   Claude API │    │     API      │    │  Gemini API  │
-   ├──────────────┤    ├──────────────┤    ├──────────────┤
-   │ - 对话生成    │    │ - Embeddings │    │ - 文档转换   │
-   │ - 工具调用    │    │   (1536维)   │    │ - PDF→MD    │
-   │ - 流式响应    │    │ - Whisper    │    │ - DOCX→MD   │
-   │ - 扩展思考    │    │   (语音转写) │    │              │
-   │ - Files API  │    │              │    │              │
-   └──────────────┘    └──────────────┘    └──────────────┘
-           │                   │
-           │                   │
-           │                   ▼
-           │           ┌──────────────┐    ┌──────────────┐
-           │           │ LanguageTool │    │CourtListener │
-           │           ├──────────────┤    ├──────────────┤
-           │           │ - 拼写检查    │    │ - 案例法律   │
-           │           │ - 语法检查    │    │ - 法律文档   │
-           │           │ - 多语言支持  │    │ - 法院数据   │
-           │           └──────────────┘    └──────────────┘
-           │
-           ▼
-   ┌──────────────────────────────────────┐
-   │              OAuth Providers          │
-   │  ┌──────────────┐  ┌──────────────┐  │
-   │  │    Google    │  │    GitHub    │  │
-   │  │    OAuth     │  │    OAuth     │  │
-   │  └──────────────┘  └──────────────┘  │
-   └──────────────────────────────────────┘
+### `src-tauri` — the desktop shell
 
-   ┌──────────────────────────────────────┐
-   │              Email Service            │
-   │  ┌──────────────┐  ┌──────────────┐  │
-   │  │   SendGrid   │  │     SMTP     │  │
-   │  │    API       │  │    Server    │  │
-   │  └──────────────┘  └──────────────┘  │
-   └──────────────────────────────────────┘
-```
+The Tauri app (`src-tauri/src/lib.rs`) exposes the storage core to the
+frontend as Tauri commands:
 
-### 8.2 环境变量配置
+- `doc_read(path)`, `doc_write(path, payload)` — single-file operations.
+- `doc_create`, `doc_rename`, `doc_delete` — manage `.md + .doxmind`
+  pairs together.
+- `workspace_scan(root)`, `workspace_index_rebuild(root)`,
+  `workspace_index_read(root)`, `workspace_markdown_search(root, query)`
+  — folder-level operations.
+- `workspace_default_root()` — default workspace location.
 
-```bash
-# === 核心 AI 服务 ===
-ANTHROPIC_API_KEY=sk-ant-xxx        # Claude API 密钥
-OPENAI_API_KEY=sk-xxx               # OpenAI API (Embeddings + Whisper)
-GEMINI_API_KEY=xxx                  # Google Gemini (文档转换)
+In the desktop build, the frontend talks directly to these commands. The
+FastAPI sidecar still runs (for import / OCR / images) but is _not_ on
+the document storage path.
 
-# === 数据库 ===
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db  # PostgreSQL
-# 或本地开发
-DATABASE_URL=sqlite+aiosqlite:///./doxmind.db
+### `server/` — the FastAPI sidecar
 
-# === 认证 ===
-JWT_SECRET_KEY=your-secret-key-here
-JWT_ALGORITHM=HS256
-JWT_EXPIRE_MINUTES=10080            # 7天
+FastAPI is a localhost service mounted at four routers (see
+`server/main.py`):
 
-# === OAuth ===
-GOOGLE_OAUTH_CLIENT_ID=xxx
-GOOGLE_OAUTH_CLIENT_SECRET=xxx
-GITHUB_OAUTH_CLIENT_ID=xxx
-GITHUB_OAUTH_CLIENT_SECRET=xxx
+| Router        | Purpose                                               |
+| ------------- | ----------------------------------------------------- |
+| `import_file` | Convert PDFs, DOCX, PPTX, scanned images to Markdown. |
+| `marker`      | Lifecycle for the optional Marker OCR models.         |
+| `images`      | Local image upload and serving.                       |
+| `workspace`   | Localhost mirror of the Tauri command surface for     |
+|               | browser dev mode (`POST /api/workspace/invoke`).      |
 
-# === 邮件 ===
-SENDGRID_API_KEY=SG.xxx             # 或使用 SMTP
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=user
-SMTP_PASSWORD=pass
+Browser dev mode (`npm run dev`) cannot call Tauri commands, so the
+FastAPI workspace router exposes the same command names over HTTP. The
+Python implementation in `server/api/workspace.py` performs the same
+`.md + .doxmind` operations as the Rust core; the long-term direction is
+to have it shell out to the Rust crate or a sidecar binary so there is
+exactly one implementation.
 
-# === 功能配置 ===
-DEBUG=false                         # 调试模式
-CORS_ORIGINS=["https://your-domain.com"]
-MAX_FILE_SIZE=52428800              # 50MB
-WEB_SEARCH_MAX_USES=3               # Web 搜索限制
-WEB_FETCH_MAX_USES=3                # Web 抓取限制
+What FastAPI no longer does:
 
-# === 模型配置 ===
-DEFAULT_MODEL=claude-opus-4-5-20251101
-FAST_MODEL=claude-3-5-sonnet-20241022
-MAX_OUTPUT_TOKENS=4096
-EMBEDDING_MODEL=text-embedding-3-small
-```
+- No `files` / `versions` / `export` / `databases` routers — all four
+  were removed when the dual-file model became the source of truth.
+- No JWT, OAuth, or session middleware.
+- No multi-user query layer.
 
----
+### SQLite, currently
 
-## 9. 安全架构
+`server/db/database.py` retains a single table — `AppMetadata` — used
+for app-level key/value storage (last opened workspace, schema version
+sentinel). It is _not_ a document store. There is no Alembic; the table
+is created via `Base.metadata.create_all` on startup.
 
-### 9.1 认证与授权
+This row of state is a candidate for replacement by
+`~/.doxmind/config.json` once the workspace boot path no longer needs
+SQLite at all.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        安全架构                                      │
-└─────────────────────────────────────────────────────────────────────┘
+## Frontend
 
-                      ┌─────────────────┐
-                      │   用户请求       │
-                      └────────┬────────┘
-                               │
-                               ▼
-                      ┌─────────────────┐
-                      │   CORS 检查     │
-                      │ (Origin 白名单) │
-                      └────────┬────────┘
-                               │
-                               ▼
-                      ┌─────────────────┐
-                      │   速率限制       │
-                      │  (SlowAPI)      │
-                      └────────┬────────┘
-                               │
-                               ▼
-                      ┌─────────────────┐
-                      │   JWT 验证      │
-                      │ - 签名验证       │
-                      │ - 过期检查       │
-                      │ - 用户提取       │
-                      └────────┬────────┘
-                               │
-                ┌──────────────┼──────────────┐
-                │              │              │
-                ▼              ▼              ▼
-         ┌──────────┐   ┌──────────┐   ┌──────────┐
-         │ 公开路由  │   │ 认证路由  │   │ 管理路由  │
-         │ /shared  │   │ /api/*   │   │ /admin   │
-         │ /health  │   │          │   │ (未实现) │
-         └──────────┘   └──────────┘   └──────────┘
-                               │
-                               ▼
-                      ┌─────────────────┐
-                      │   资源隔离       │
-                      │ user_id 过滤    │
-                      │ (只访问自己数据) │
-                      └─────────────────┘
-```
+Next.js 15 App Router, React 19, TipTap, Zustand, Tailwind. Source under
+`src/`.
 
-### 9.2 安全措施清单
+### Editor entry
 
-| 层面         | 措施           | 实现                |
-| ------------ | -------------- | ------------------- |
-| **认证**     | JWT Token      | HS256 签名，7天过期 |
-| **密码**     | bcrypt 哈希    | 12 轮加盐哈希       |
-| **传输**     | HTTPS Only     | 强制 HTTPS          |
-| **CORS**     | Origin 白名单  | 配置允许域名列表    |
-| **CSP**      | 内容安全策略   | 防止 XSS 攻击       |
-| **速率限制** | SlowAPI        | 每分钟请求限制      |
-| **数据隔离** | user_id 过滤   | 查询强制用户过滤    |
-| **输入验证** | Pydantic       | 请求体自动验证      |
-| **SQL 注入** | SQLAlchemy ORM | 参数化查询          |
-| **敏感信息** | 环境变量       | 不硬编码密钥        |
+`src/app/editor/[[...fileId]]/page.tsx` is the editor route. It dispatches
+to `desktop-editor.tsx` or `mobile-editor-layout.tsx` based on the layout
+store.
 
-### 9.3 中间件配置
+### Stores
 
-```python
-# CORS 配置
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+Each Zustand store owns a single concern (see `src/stores/`):
 
-# 安全头
-@app.middleware("http")
-async def add_security_headers(request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000"
-    response.headers["Content-Security-Policy"] = "default-src 'self'"
-    return response
+| Store                 | Owns                                                 |
+| --------------------- | ---------------------------------------------------- |
+| `file-store`          | Workspace tree, current document, save lifecycle.    |
+| `editor-store`        | Editor instance reference, dirty state, undo state.  |
+| `editor-ref-store`    | Imperative editor handle for cross-component calls.  |
+| `layout-store`        | Sidebar, focus mode, command palette, mobile gates.  |
+| `outline-store`       | Heading outline derived from the current document.   |
+| `block-selection`     | Multi-block selection range.                         |
+| `database-store`      | Database-block rendering state.                      |
+| `appearance-store`    | Theme, font, density.                                |
+| `settings-store`      | User settings persisted to `~/.doxmind/config.json`. |
+| `marker-store`        | Marker OCR model download / install state.           |
+| `folder-import-store` | Folder import progress (shared across surfaces).     |
 
-# 速率限制
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+The boundary rule: stores hold UI and ephemeral state; the on-disk truth
+is owned by the Rust core. Stores ask for documents and react to writes;
+they never persist editor HTML themselves.
+
+### Editor extensions
+
+TipTap extensions live under `src/extensions/`. Each extension is a
+self-contained block or behavior:
+
+- Custom blocks: `callout`, `columns`, `database`, `mermaid`, `math`,
+  `code-block`, `toggle`, `toc`, `web-bookmark`, `resizable-image`.
+- Editor behaviors: `block-handle`, `block-selection`,
+  `inline-comment`, `block-color`, `link-paste`, `page-link`,
+  `search`, `trailing-node`, `atom-block-lift`.
+
+Extensions that need to round-trip through Markdown emit / parse fenced
+blocks. Extensions that store doXmind-only state (e.g. database blocks)
+write to `extras` in the sidecar.
+
+## Import pipeline
+
+`server/services/document_converter.py` routes by extension:
+
+| Format                         | Strategy                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------- |
+| `.pdf` (native text)           | **PyMuPDF4LLM** — fast path, no models. Falls back when avg chars/page < 40.            |
+| `.pdf` (scanned / image-heavy) | **Marker** (Surya layout + OCR). Lazy-loaded; uses `TORCH_DEVICE=mps` on Apple Silicon. |
+| `.docx`                        | **mammoth** → HTML → markdownify.                                                       |
+| `.pptx`                        | **python-pptx** with a custom slide-by-slide markdown emitter.                          |
+| `.md` / `.markdown`            | passthrough.                                                                            |
+
+`markitdown` was removed because of OCR and complex-layout quality
+issues. Do not reintroduce it.
+
+### Marker model lifecycle
+
+Marker needs ~2 GB of Surya weights from HuggingFace. Models are _not_
+bundled. On the first scanned PDF:
+
+1. Backend returns `409 MARKER_MODELS_REQUIRED`.
+2. Frontend (`marker-store` + `marker-download-prompt`) shows a confirm
+   modal.
+3. On accept, frontend POSTs `/api/import/marker/download` and polls
+   `/api/import/marker/status` until `installed`.
+4. The original import retries automatically.
+
+Install state is recorded at `~/.doxmind/marker-models.json`. Delete
+that file to force a re-download.
+
+### Packaging note
+
+`marker-pdf` brings in PyTorch + Surya, which inflates the PyInstaller
+bundle. Single-file builds work for development; the macOS `.app` build
+will likely move to a directory bundle (or ship a thin venv) to keep
+launch latency reasonable.
+
+## Repository layout
+
+```text
+local-desk/
+├── src/                  Frontend (Next.js, React, Zustand, TipTap)
+│   ├── app/              App Router routes
+│   ├── components/       UI components and editor surfaces
+│   ├── extensions/       TipTap extensions and custom blocks
+│   ├── stores/           Zustand stores
+│   └── lib/              Utilities (markdown, logger, import-folder)
+├── server/               FastAPI sidecar (Python 3.12)
+│   ├── api/              Routers: import_file, marker, images, workspace
+│   ├── services/         Pure-Python services (converter, storage,
+│   │                     export, content sanitizer)
+│   ├── db/               SQLite metadata (AppMetadata only)
+│   └── main.py           App factory
+├── src-tauri/            Tauri desktop shell (Rust)
+├── crates/sidecar/       doxmind-sidecar core crate (Rust)
+├── scripts/              Local dev / build orchestration (Node)
+└── docs/
+    ├── ARCHITECTURE.md         (this file)
+    └── MARKDOWN_FIRST_MIGRATION.md
 ```
 
----
-
-## 10. 性能优化策略
-
-### 10.1 前端优化
-
-| 策略           | 实现             | 效果                 |
-| -------------- | ---------------- | -------------------- |
-| **防抖保存**   | 500ms debounce   | 减少 API 调用        |
-| **流式渲染**   | SSE 实时显示     | 降低感知延迟         |
-| **代码分割**   | Next.js 动态导入 | 减少首屏加载         |
-| **图片优化**   | Next/Image       | 自动压缩和 lazy load |
-| **状态持久化** | Zustand persist  | 减少重复请求         |
-| **乐观更新**   | 本地先更新       | 即时 UI 反馈         |
-| **虚拟滚动**   | 未实现 (TODO)    | 长列表性能           |
-
-### 10.2 后端优化
-
-| 策略         | 实现              | 效果           |
-| ------------ | ----------------- | -------------- |
-| **异步 I/O** | asyncio + aiohttp | 高并发处理     |
-| **连接池**   | SQLAlchemy pool   | 数据库连接复用 |
-| **流式响应** | SSE Generator     | 内存友好       |
-| **向量索引** | pgvector HNSW     | 快速相似度检索 |
-| **补全缓存** | LRU Cache         | 减少 LLM 调用  |
-| **批量嵌入** | OpenAI batch      | 减少 API 往返  |
-
-### 10.3 数据库优化
-
-```sql
--- 索引优化
-CREATE INDEX idx_files_user_id ON files(user_id);
-CREATE INDEX idx_files_updated_at ON files(updated_at DESC);
-CREATE INDEX idx_conversations_file_id ON conversations(file_id);
-CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
-CREATE INDEX idx_messages_created_at ON messages(created_at DESC);
-
--- pgvector 索引 (HNSW)
-CREATE INDEX ON vector_embeddings
-USING hnsw (embedding vector_cosine_ops)
-WITH (m = 16, ef_construction = 64);
-```
-
----
-
-## 11. 遥测与事件采集
-
-### 11.1 事件采集架构
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        遥测事件采集流程                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-用户交互                前端                      后端                  存储
-────────                ────                      ────                  ────
-
-  │                         │                           │                      │
-  │  1. 用户操作             │                           │                      │
-  │     (接受diff,          │                           │                      │
-  │      反馈评价等)         │                           │                      │
-  ├────────────────────────▶│                           │                      │
-  │                         │                           │                      │
-  │                         │  2. telemetry.track*()    │                      │
-  │                         │     添加到队列             │                      │
-  │                         │                           │                      │
-  │                         │  3. 批量发送 (数量=10 或   │                      │
-  │                         │     定时器=30秒)          │                      │
-  │                         │                           │                      │
-  │                         │  4. POST /api/telemetry/events                   │
-  │                         ├──────────────────────────▶│                      │
-  │                         │                           │                      │
-  │                         │                           │  5. 检查用户设置     │
-  │                         │                           │                      │
-  │                         │                           │  6. 提取 RLHF 字段   │
-  │                         │                           │                      │
-  │                         │                           │  7. 存储事件         │
-  │                         │                           ├─────────────────────▶│
-  │                         │                           │                      │
-  │                         │  8. {status: ok}          │                      │
-  │                         │◀──────────────────────────┤                      │
-  │                         │                           │                      │
-```
-
-### 11.2 遥测事件类型
-
-| 事件类型                 | 分类      | 采集数据                       | 用途          |
-| ------------------------ | --------- | ------------------------------ | ------------- |
-| `diff_hunk_accepted`     | Diff 审查 | 原始内容、AI建议、决策时间     | RLHF 正向信号 |
-| `diff_hunk_rejected`     | Diff 审查 | 原始内容、AI建议、决策时间     | RLHF 负向信号 |
-| `diff_all_accepted`      | Diff 审查 | 批量接受数量                   | 使用模式      |
-| `diff_all_rejected`      | Diff 审查 | 批量拒绝数量                   | 使用模式      |
-| `autocomplete_shown`     | 自动补全  | 建议ID、触发模式、延迟         | 显示追踪      |
-| `autocomplete_accepted`  | 自动补全  | 光标前文本、建议内容、决策速度 | RLHF 正向信号 |
-| `autocomplete_dismissed` | 自动补全  | 光标前文本、建议内容、取消原因 | RLHF 负向信号 |
-| `autocomplete_partial`   | 自动补全  | 部分接受信息                   | 用户偏好      |
-| `chat_feedback`          | 对话      | 用户提示、AI回复、评分(+1/-1)  | RLHF 训练     |
-| `chat_regenerate`        | 对话      | 重新生成请求                   | 负向信号      |
-| `edit_applied`           | 编辑操作  | 编辑类型、成功状态             | 功能使用      |
-| `post_ai_edit`           | 编辑操作  | AI原始输出、用户最终内容       | 偏好学习      |
-| `undo_after_ai`          | 编辑操作  | AI操作类型、撤销时间           | 负向信号      |
-| `feature_used`           | 使用统计  | 功能名称、结果、耗时           | 分析          |
-| `session_summary`        | 使用统计  | 会话时长、消息数量             | 聚合统计      |
-
-### 11.3 RLHF 数据提取
-
-后端从遥测事件中提取训练对:
-
-```
-事件类型                → RLHF 字段
-─────────────────────────────────────────────────────────────────
-diff_hunk_accepted      → chosen=ai建议, rejected=原始内容
-diff_hunk_rejected      → chosen=原始内容, rejected=ai建议
-chat_feedback (+1)      → chosen=ai回复
-chat_feedback (-1)      → rejected=ai回复
-autocomplete_accepted   → chosen=建议内容, context=光标前文本
-post_ai_edit            → chosen=用户最终内容, rejected=ai原始输出
-```
-
-### 11.4 用户隐私控制
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        遥测设置界面                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  [✓] 帮助改进 doXmind (主开关)                               │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-│  启用后,允许采集:                                                   │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  [✓] 编辑反馈 (diff 接受/拒绝决策)                           │   │
-│  │  [✓] 对话反馈 (点赞/点踩评价)                                │   │
-│  │  [✓] 自动补全使用 (接受/取消)                                │   │
-│  │  [✓] 使用统计 (功能使用、会话数据)                           │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-│  注意: 关闭主开关后,仅采集匿名聚合统计                              │
-│        敏感内容将被替换为 "[redacted]"                              │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**设置表:**
-
-| 设置项                      | 默认值 | 描述                |
-| --------------------------- | ------ | ------------------- |
-| `productImprovementEnabled` | true   | 详细采集的主开关    |
-| `collectEditFeedback`       | true   | Diff 审查和编辑操作 |
-| `collectChatFeedback`       | true   | 对话反馈信号        |
-| `collectAutocompleteStats`  | true   | 自动补全交互        |
-| `collectUsageStats`         | true   | 功能使用和会话摘要  |
-
-### 11.5 前端组件
-
-```
-TelemetryService (src/lib/telemetry.ts)
-├── 事件队列管理
-│   ├── 批量大小: 10 个事件
-│   ├── 刷新间隔: 30 秒
-│   └── 页面卸载: navigator.sendBeacon()
-│
-├── 追踪方法
-│   ├── trackDiffHunkAccepted(original, suggestion, decisionMs)
-│   ├── trackDiffHunkRejected(original, suggestion, decisionMs)
-│   ├── trackAutocompleteShown(suggestionId, triggerMode, latency)
-│   ├── trackAutocompleteAccepted(textBefore, suggestion, decisionMs)
-│   ├── trackAutocompleteDismissed(textBefore, suggestion, reason)
-│   ├── trackChatFeedback(prompt, response, rating, messageId)
-│   ├── trackPostAIEdit(originalOutput, finalContent)
-│   ├── trackUndoAfterAI(operationType, timeToUndo)
-│   └── trackFeatureUsed(feature, outcome, duration)
-│
-└── 设置同步
-    ├── 本地存储持久化
-    └── 后端同步 via PUT /api/telemetry/settings
-
-集成点:
-├── diff-review-store.ts     → Diff 接受/拒绝追踪
-├── use-autocomplete.ts      → 自动补全生命周期
-├── message-feedback.tsx     → 对话点赞/点踩
-├── editor.tsx               → AI操作后撤销检测
-└── telemetry-settings.tsx   → 用户偏好设置界面
-```
-
-### 11.6 后端 API
-
-| 端点                      | 方法 | 描述                     |
-| ------------------------- | ---- | ------------------------ |
-| `/api/telemetry/events`   | POST | 批量提交事件 (最多100个) |
-| `/api/telemetry/settings` | GET  | 获取用户遥测设置         |
-| `/api/telemetry/settings` | PUT  | 更新用户遥测设置         |
-
-**事件存储模型:**
-
-```sql
-CREATE TABLE telemetry_events (
-    id UUID PRIMARY KEY,
-    user_id UUID REFERENCES users(id),     -- 可为空 (匿名事件)
-    event_type VARCHAR(50) NOT NULL,
-    event_data JSONB NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    chosen_content TEXT,                    -- RLHF: 用户偏好的输出
-    rejected_content TEXT,                  -- RLHF: 被拒绝的输出
-    context TEXT                            -- RLHF: 输入上下文
-);
-
-CREATE INDEX idx_telemetry_user_type ON telemetry_events(user_id, event_type);
-CREATE INDEX idx_telemetry_created ON telemetry_events(created_at);
-```
-
-### 11.7 决策速度分类
-
-```
-决策时间               分类              解读
-──────────────────────────────────────────────────────────
-< 1 秒                 instant          强烈偏好
-1-3 秒                 quick            明确偏好
-3-10 秒                normal           深思熟虑的决策
-> 10 秒                delayed          不确定/复杂
-```
-
----
-
-## 12. 部署架构
-
-### 12.1 Docker Compose 开发环境
-
-```yaml
-version: "3.8"
-services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: doxmind
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  backend:
-    build: ./server
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/doxmind
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-    depends_on:
-      - postgres
-    ports:
-      - "8000:8000"
-
-  frontend:
-    build: .
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-    depends_on:
-      - backend
-    ports:
-      - "3000:3000"
-
-volumes:
-  postgres_data:
-```
-
-### 12.2 生产部署架构
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        生产部署架构                                   │
-└─────────────────────────────────────────────────────────────────────┘
-
-                         ┌─────────────────┐
-                         │   CDN (Vercel)  │
-                         │   静态资源缓存   │
-                         └────────┬────────┘
-                                  │
-                                  ▼
-                         ┌─────────────────┐
-                         │   Load Balancer │
-                         │   (Heroku)      │
-                         └────────┬────────┘
-                                  │
-                    ┌─────────────┴─────────────┐
-                    ▼                           ▼
-           ┌─────────────────┐         ┌─────────────────┐
-           │   Frontend      │         │   Backend       │
-           │   (Next.js)     │         │   (FastAPI)     │
-           │   Dyno x2       │         │   Dyno x2       │
-           └─────────────────┘         └────────┬────────┘
-                                                │
-                                       ┌────────┴────────┐
-                                       ▼                 ▼
-                              ┌─────────────────┐  ┌─────────────────┐
-                              │   PostgreSQL    │  │   Redis         │
-                              │   (Heroku)      │  │   (Session)     │
-                              │   + pgvector    │  │   (可选)        │
-                              └─────────────────┘  └─────────────────┘
-```
-
----
-
-## 13. 监控与日志
-
-### 13.1 日志架构
-
-```python
-# 结构化日志配置
-import structlog
-
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.JSONRenderer()
-    ],
-    wrapper_class=structlog.BoundLogger,
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-)
-
-# 使用示例
-logger = structlog.get_logger()
-logger.info("chat_request", user_id=user.id, file_id=file_id, mode=mode)
-logger.error("llm_error", error=str(e), model=model)
-```
-
-### 13.2 关键指标
-
-| 指标                    | 类型      | 描述             |
-| ----------------------- | --------- | ---------------- |
-| `chat_latency_ms`       | Histogram | 对话响应延迟     |
-| `llm_tokens_used`       | Counter   | LLM Token 使用量 |
-| `api_requests_total`    | Counter   | API 请求总数     |
-| `api_errors_total`      | Counter   | API 错误数       |
-| `db_query_duration_ms`  | Histogram | 数据库查询耗时   |
-| `rag_search_latency_ms` | Histogram | RAG 检索延迟     |
-| `active_users`          | Gauge     | 当前活跃用户数   |
-
----
-
-## 14. 未来规划
-
-### 14.1 技术演进
-
-| 特性         | 优先级 | 描述                       |
-| ------------ | ------ | -------------------------- |
-| **实时协作** | P1     | WebSocket 多人实时编辑     |
-| **混合搜索** | P1     | BM25 + 语义搜索结合        |
-| **记忆系统** | P2     | 用户偏好和写作风格学习     |
-| **离线模式** | P2     | Service Worker + IndexedDB |
-| **原生应用** | P3     | React Native 移动端        |
-| **插件系统** | P3     | 可扩展编辑器功能           |
-
-### 14.2 架构改进
-
-```
-未来架构演进方向:
-
-1. 微服务拆分
-   - Auth Service
-   - Document Service
-   - AI Service
-   - RAG Service
-
-2. 消息队列引入
-   - 文档处理异步化
-   - Embedding 生成队列
-   - 通知推送
-
-3. 缓存层优化
-   - Redis 会话缓存
-   - CDN 静态资源
-   - 查询结果缓存
-
-4. 可观测性增强
-   - OpenTelemetry 链路追踪
-   - Prometheus + Grafana 监控
-   - Sentry 错误追踪
-```
-
----
-
-## 附录
-
-### A. 常用命令
-
-```bash
-# 前端开发
-npm run dev           # 启动开发服务器
-npm run build         # 生产构建
-npm run lint:fix      # 修复代码风格
-npm test              # 运行测试
-
-# 后端开发
-cd server
-python main.py        # 启动后端
-pytest                # 运行测试
-ruff format .         # 格式化代码
-
-# Docker
-docker-compose up -d  # 启动所有服务
-docker-compose logs -f # 查看日志
-```
-
-### B. API 文档
-
-开发模式下可访问:
-
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-### C. 参考资源
-
-- [TipTap 文档](https://tiptap.dev/docs)
-- [Zustand 文档](https://docs.pmnd.rs/zustand)
-- [FastAPI 文档](https://fastapi.tiangolo.com)
-- [Anthropic Claude API](https://docs.anthropic.com)
-- [pgvector 文档](https://github.com/pgvector/pgvector)
-
----
-
-_文档版本: 1.1.0_
-_最后更新: 2026-02-10_
+## Storage ownership at a glance
+
+| Concern                         | Owner                                   |
+| ------------------------------- | --------------------------------------- |
+| Document Markdown body          | `~/.../Foo.md` (user filesystem)        |
+| Editor HTML, sidecar id, extras | `~/.../.Foo.doxmind` (sidecar)          |
+| Database-block content          | `extras.databases` in the sidecar       |
+| Workspace pointer + settings    | `~/.doxmind/config.json`                |
+| Marker model install state      | `~/.doxmind/marker-models.json`         |
+| App-level metadata              | `~/.doxmind/doxmind.db` (`AppMetadata`) |
+| Imported images                 | Workspace `assets/` folder              |
+
+Anything not in this table should be treated as either a bug or a new
+ownership decision that needs to be added here.
+
+## Migration state
+
+The migration to the dual-file model is tracked in
+[`MARKDOWN_FIRST_MIGRATION.md`](./MARKDOWN_FIRST_MIGRATION.md). The
+high-level state at the time of writing:
+
+- Phases 1–6 (Cargo workspace, Tauri integration, `doc_read`/`doc_write`,
+  storage boundary on the frontend, sidecar extras, image path
+  rewriting) — landed.
+- Phase 7 (delete remaining DB-backed runtime paths) — _partially_ done:
+  the `files` / `versions` / `export` / `databases` routers and their
+  frontend consumers have been removed; the SQLite `AppMetadata` row
+  remains as a small trailing edge.
+
+When a phase moves, update the migration doc and update the relevant
+section of this file in the same PR.
+
+## Removed surface
+
+Per `README.md` and `AGENTS.md`, the following are intentionally absent
+from this branch and should not be reintroduced without an explicit
+product decision: JWT auth, OAuth, password reset, email verification,
+Stripe billing, credits, quotas, sharing links, community publishing,
+comments, follows, bookmarks, notifications, telemetry, RLHF reporting,
+S3, Postgres, Redis, Docker deployment, hosted cloud sync, chat,
+agents, providers, OpenRouter, autocomplete, quick edit, document
+review, prompts, knowledge-base retrieval, and `markitdown`-based
+import.
