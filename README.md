@@ -34,14 +34,14 @@ doXmind is built for people who want a polished document editor without giving u
 
 ## What It Feels Like
 
-| Work in doXmind          | It should give you                                                             |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| Create a new note        | A clean Markdown file in your local workspace                                  |
-| Add rich blocks          | Tables, code, math, images, diagrams, tasks, and database blocks in one editor |
-| Edit the `.md` elsewhere | doXmind reloads the external Markdown and treats it as the source of truth     |
-| Move a workspace folder  | The Markdown and `.doxmind` sidecars move together                             |
-| Import office files      | Local Markdown output from PDF, DOCX, PPTX, or existing Markdown               |
-| Work offline             | A complete editor without required cloud services or accounts                  |
+| Work in doXmind          | It should give you                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| Create a new note        | A clean Markdown file in your local workspace                                                  |
+| Add rich blocks          | Callouts, tasks, toggles, links, bookmarks, tables, code, math, media, diagrams, and databases |
+| Edit the `.md` elsewhere | doXmind reloads the external Markdown and treats it as the source of truth                     |
+| Move a workspace folder  | The Markdown and `.doxmind` sidecars move together                                             |
+| Import office files      | Local Markdown output from PDF, DOCX, PPTX, or existing Markdown                               |
+| Work offline             | A complete editor without required cloud services or accounts                                  |
 
 ## Local Markdown Workspace
 
@@ -55,10 +55,10 @@ The default workspace is `~/Documents/doXmind`. You can also point the app at an
 
 ## Rich Blocks
 
-The editor supports the document blocks that are expected in a modern knowledge workspace: headings, lists, tasks, quotes, tables, code blocks, math, images, Mermaid diagrams, embeds, and local database blocks.
+The editor supports the document blocks expected in a modern knowledge workspace: headings, lists, tasks, quotes, callouts, toggles, columns, compact tables, page links, web bookmarks, code blocks, math, images, Mermaid diagrams, and local database blocks.
 
 <p align="center">
-  <img src="docs/readme/doxmind-blocks.png" width="900" alt="doXmind rich block rendering with table, code, and math" />
+  <img src="docs/readme/doxmind-blocks.png" width="900" alt="doXmind rich block rendering with callouts, tasks, tables, bookmarks, code, math, and diagrams" />
 </p>
 
 Portable Markdown remains the user-facing file. When a block needs more state than Markdown can represent cleanly, doXmind stores that state in the sidecar.
