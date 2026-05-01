@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { DocumentHandle } from "@/lib/storage";
+import type { WorkspaceDocumentType } from "@/lib/storage/types";
 
 export interface FileItem {
   id: string;
@@ -10,6 +11,7 @@ export interface FileItem {
   content: string;
   contentMarkdown?: string | null; // Cached markdown for local preview/search
   storageHandle?: DocumentHandle;
+  documentType?: WorkspaceDocumentType;
   isFolder: boolean;
   parentId: string | null;
   position: number;

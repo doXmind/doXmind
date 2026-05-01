@@ -5,7 +5,7 @@ import { PanelLeftOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { FilesSidebar } from "@/components/sidebar/files-sidebar";
-import { Editor } from "@/components/editor/editor";
+import { DocumentWorkspace } from "@/components/workspace/document-workspace";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeScreen } from "@/components/welcome-screen";
@@ -16,6 +16,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { cn } from "@/lib/utils";
+import { isMarkdownFile } from "@/lib/document-types";
 
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
@@ -40,7 +41,7 @@ export function DesktopEditor() {
 
   const editor = useEditorRefStore((s) => s.editor);
   const { headings, activeId, navigateTo } = useHeadings(editor);
-  const hasHeadings = headings.length > 0;
+  const hasHeadings = !!currentFile && isMarkdownFile(currentFile) && headings.length > 0;
 
   // Do not animate grid-template-columns here. Even optimized grid column
   // animation forces the heavy TipTap editor to reflow on every frame in the
@@ -165,7 +166,7 @@ export function DesktopEditor() {
                 <ErrorBoundary>
                   {currentFile ? (
                     isCurrentFileLoaded ? (
-                      <Editor file={currentFile} />
+                      <DocumentWorkspace file={currentFile} />
                     ) : (
                       <LoadingPlaceholder />
                     )

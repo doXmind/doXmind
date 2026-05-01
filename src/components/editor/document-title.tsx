@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Smile, FilePlus, ImagePlus } from "lucide-react";
 import { useFileStore } from "@/stores/file-store";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { CoverPickerModal } from "./cover-picker-modal";
-import { useRouter } from "next/navigation";
 
 interface DocumentTitleProps {
   fileId: string;
@@ -14,15 +14,7 @@ interface DocumentTitleProps {
 }
 
 export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitleProps) {
-  const {
-    renameFile,
-    getFile,
-    setFileIcon,
-    createFile,
-    setCurrentFile,
-    setCoverImage,
-  } = useFileStore();
-  const router = useRouter();
+  const { renameFile, getFile, setFileIcon, createFile, setCoverImage } = useFileStore();
   const file = getFile(fileId);
   const icon = file?.icon ?? null;
   const hasCover = !!file?.coverImageUrl;
@@ -40,12 +32,11 @@ export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitle
     try {
       // Create sub-page nested under the current file
       const newFileId = await createFile("Untitled.md", "", fileId);
-      setCurrentFile(newFileId);
-      router.push(`/editor/${newFileId}`);
+      navigateToEditorFile(newFileId);
     } catch {
       // silently ignore if creation fails
     }
-  }, [createFile, fileId, setCurrentFile, router]);
+  }, [createFile, fileId]);
 
   // Sync value when file changes
   useEffect(() => {

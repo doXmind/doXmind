@@ -9,6 +9,7 @@ import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import { syncDatabasesForDocument } from "@/stores/database-store";
 import type { FileItem } from "@/types";
+import { documentTypeFromName } from "@/lib/document-types";
 import {
   createStorageAdapter,
   type DocumentHandle,
@@ -217,6 +218,7 @@ function fileFromEntry(entry: WorkspaceEntry, existingContent?: string): FileIte
     updatedAt: entry.updatedAt,
     wordCount: entry.wordCount || 0,
     preview: entry.preview || "",
+    documentType: entry.documentType ?? documentTypeFromName(entry.name),
     storageHandle: entry.handle,
   };
 }
@@ -253,10 +255,7 @@ export const useFileStore = create<FileState>()(
         set({ isLoading: true });
         try {
           let adapterState = get();
-          if (
-            !adapterState.workspaceRoot ||
-            isEphemeralWorkspaceRoot(adapterState.workspaceRoot)
-          ) {
+          if (!adapterState.workspaceRoot || isEphemeralWorkspaceRoot(adapterState.workspaceRoot)) {
             const defaultRoot = await resolveDefaultDiskWorkspaceRoot();
             if (defaultRoot) {
               set((state) => ({
@@ -336,6 +335,12 @@ export const useFileStore = create<FileState>()(
         try {
           const file = get().files.find((f) => f.id === fileId);
           if (!file) return;
+          if (file.documentType === "pdf") {
+            set((state) => ({
+              loadedContentIds: new Set([...state.loadedContentIds, fileId]),
+            }));
+            return;
+          }
           const fullFile = await getAdapter(get()).read(handleForFile(file));
           syncDatabasesForDocument(fullFile.extras, fullFile.html, fullFile.markdown);
           set((state) => {

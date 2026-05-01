@@ -3,9 +3,9 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { FileText, Clock } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 
@@ -24,10 +24,8 @@ function QuickSwitcherContent() {
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const listRef = React.useRef<HTMLDivElement>(null);
 
-  const router = useRouter();
   const files = useFileStore((s) => s.files);
   const currentFileId = useFileStore((s) => s.currentFileId);
-  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
   const setQuickSwitcherOpen = useLayoutStore((s) => s.setQuickSwitcherOpen);
   const t = useTranslations("quickSwitcher");
 
@@ -59,11 +57,10 @@ function QuickSwitcherContent() {
   // Navigate to selected file
   const navigateToFile = React.useCallback(
     (fileId: string) => {
-      setCurrentFile(fileId);
-      router.push(`/editor/${fileId}`);
+      navigateToEditorFile(fileId);
       setQuickSwitcherOpen(false);
     },
-    [setCurrentFile, router, setQuickSwitcherOpen]
+    [setQuickSwitcherOpen]
   );
 
   // Handle keyboard events

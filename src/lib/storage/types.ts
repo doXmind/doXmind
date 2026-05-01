@@ -1,11 +1,13 @@
 export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
+export type WorkspaceDocumentType = "markdown" | "pdf";
 
 export interface DocumentHandle {
   mode: WorkspaceMode;
   id: string;
   kind?: WorkspaceEntryKind;
+  documentType?: WorkspaceDocumentType;
   path?: string | null;
   relPath?: string | null;
 }
@@ -18,6 +20,7 @@ export interface DocumentContent {
   meta?: DocumentMeta;
   extras?: unknown;
   source?: "sidecar" | "markdown" | "empty";
+  documentType?: WorkspaceDocumentType;
   updatedAt: string;
 }
 
@@ -42,6 +45,7 @@ export interface WorkspaceEntry {
   updatedAt: string;
   preview?: string;
   wordCount?: number;
+  documentType?: WorkspaceDocumentType;
   isFavorite?: boolean;
   icon?: string | null;
   coverImageUrl?: string | null;
@@ -54,6 +58,66 @@ export interface StorageWriteInput {
   name?: string;
   meta?: DocumentMeta;
   extras?: unknown;
+}
+
+export interface PdfEditorState {
+  version: 1;
+  edits?: Record<string, { text: string }>;
+  textEdits?: Record<
+    string,
+    {
+      pageIndex: number;
+      text: string;
+      originalText: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      fontSize: number;
+      originalFontSize?: number;
+      fontName?: string;
+      fontFamily?: string;
+      color?: string;
+      bold?: boolean;
+      italic?: boolean;
+      styleRanges?: PdfTextStyleRange[];
+    }
+  >;
+  freeText?: Array<{
+    id: string;
+    pageIndex: number;
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize: number;
+    fontFamily?: string;
+    color?: string;
+    bold?: boolean;
+    italic?: boolean;
+    textAlign?: "left" | "center" | "right";
+    styleRanges?: PdfTextStyleRange[];
+  }>;
+  highlights?: Array<{
+    id: string;
+    pageIndex: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    color?: string;
+    opacity?: number;
+  }>;
+}
+
+export interface PdfTextStyleRange {
+  start: number;
+  end: number;
+  color?: string;
+  highlightColor?: string;
+  bold?: boolean;
+  italic?: boolean;
 }
 
 export interface StorageCreateInput {
@@ -112,6 +176,9 @@ export interface StorageAdapter {
   list(parent?: DocumentHandle | null): Promise<WorkspaceEntry[]>;
   read(handle: DocumentHandle): Promise<DocumentContent>;
   write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent>;
+  readBinary?(handle: DocumentHandle): Promise<Uint8Array>;
+  readPdfEditorState?(handle: DocumentHandle): Promise<PdfEditorState | null>;
+  writePdfEditorState?(handle: DocumentHandle, state: PdfEditorState): Promise<void>;
   create(input: StorageCreateInput): Promise<WorkspaceEntry>;
   rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
   move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;

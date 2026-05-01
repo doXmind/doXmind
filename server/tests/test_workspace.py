@@ -93,3 +93,35 @@ def test_workspace_folder_and_search(sync_client, tmp_path):
     assert index["ids"] == {"search-doc": "Folder/Search.md"}
     assert json.loads((tmp_path / ".doxmind" / "index.json").read_text()) == index
 
+
+def test_workspace_pdf_scan_binary_and_editor_state(sync_client, tmp_path):
+    root = str(tmp_path)
+    pdf_bytes = b"%PDF-1.4\n% doxmind test pdf\n"
+    (tmp_path / "Application.pdf").write_bytes(pdf_bytes)
+    (tmp_path / "Notes.md").write_text("needle line", encoding="utf-8")
+
+    scan = invoke(sync_client, "workspace_scan", {"root": root})
+    pdf_doc = next(doc for doc in scan["documents"] if doc["path"] == "Application.pdf")
+    assert pdf_doc["documentType"] == "pdf"
+    assert pdf_doc["title"] == "Application"
+
+    results = invoke(sync_client, "workspace_markdown_search", {"root": root, "query": "PDF"})
+    assert results == []
+
+    binary = invoke(sync_client, "workspace_read_binary", {"root": root, "path": "Application.pdf"})
+    assert bytes(binary) == pdf_bytes
+
+    state = {"version": 1, "edits": {"1:0": {"text": "Edited company name"}}}
+    invoke(
+        sync_client,
+        "workspace_write_pdf_editor_state",
+        {"root": root, "path": "Application.pdf", "payload": state},
+    )
+    assert (tmp_path / ".Application.pdf.doxmind").exists()
+
+    restored = invoke(
+        sync_client,
+        "workspace_read_pdf_editor_state",
+        {"root": root, "path": "Application.pdf"},
+    )
+    assert restored == state

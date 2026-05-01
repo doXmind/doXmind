@@ -5,9 +5,9 @@ import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { FileText, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { useRouter } from "next/navigation";
 
 export function PageLinkNodeView({
   node,
@@ -17,7 +17,6 @@ export function PageLinkNodeView({
   deleteNode,
 }: NodeViewProps) {
   const { pageId, pageTitle, pageIcon } = node.attrs;
-  const router = useRouter();
   const currentFileId = useFileStore((s) => s.currentFileId);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -32,7 +31,7 @@ export function PageLinkNodeView({
   const handleClick = () => {
     if (!pageId || isDeleted) return;
     if (currentFileId !== pageId) {
-      router.push(`/editor/${pageId}`);
+      navigateToEditorFile(pageId);
     }
   };
 

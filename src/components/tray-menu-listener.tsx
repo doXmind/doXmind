@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 
 // Bridges native macOS tray-menu clicks (emitted from src-tauri/src/lib.rs)
@@ -34,7 +35,7 @@ export function TrayMenuListener() {
         const name = `Untitled-${maxNum + 1}.md`;
         try {
           const newId = await createFile(name, "", null);
-          router.push(`/editor/${newId}`);
+          navigateToEditorFile(newId);
         } catch {
           // The store already surfaces failures via the global toaster.
         }
