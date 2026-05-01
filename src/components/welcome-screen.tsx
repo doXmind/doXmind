@@ -2,37 +2,30 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { motion } from "framer-motion";
-import { File, FileSymlink, Folder } from "lucide-react";
-import { useFileStore, type RecentEntry } from "@/stores/file-store";
-import { openWindowForTarget } from "@/lib/window";
-import { Button } from "@/components/ui/button";
-import { cn, getErrorMessage } from "@/lib/utils";
-import { storeLogger } from "@/lib/logger";
 import { toast } from "sonner";
+import { useFileStore } from "@/stores/file-store";
+import { useAppearanceStore } from "@/stores/appearance-store";
+import { getErrorMessage } from "@/lib/utils";
+import { storeLogger } from "@/lib/logger";
+import { useIsTauri } from "@/hooks/use-is-tauri";
+import { pickNativeFolder } from "@/lib/native-dialog";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { ContinuumWelcome } from "@/components/welcome/continuum";
+import { StratigraphyWelcome } from "@/components/welcome/stratigraphy";
+import { TerminalWelcome } from "@/components/welcome/terminal";
+import { PaperWelcome } from "@/components/welcome/paper";
+import type {
+  WelcomeRecentFile,
+  WelcomeRecentWorkspace,
+  WelcomeVariantProps,
+} from "@/components/welcome/types";
 
 const log = storeLogger.child("Welcome");
 
-const RECENT_LIMIT = 8;
+const RECENT_FILE_LIMIT = 12;
+const RECENT_WORKSPACE_LIMIT = 8;
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.06, delayChildren: 0.05 },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 8 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.3, ease: [0.25, 0.1, 0.25, 1] as const },
-  },
-};
-
-function pathLabel(absolutePath: string): { name: string; parent: string } {
+function workspaceLabel(absolutePath: string): { name: string; parent: string } {
   const normalized = absolutePath.replaceAll("\\", "/").replace(/\/+$/, "");
   const parts = normalized.split("/").filter(Boolean);
   const name = parts.pop() ?? normalized;
@@ -41,66 +34,51 @@ function pathLabel(absolutePath: string): { name: string; parent: string } {
 }
 
 export function WelcomeScreen() {
-  const t = useTranslations("welcome");
   const tSidebar = useTranslations("sidebar");
-  const recentsRaw = useFileStore((s) => s.recents);
-  const openTarget = useFileStore((s) => s.openTarget);
-  const rootPath = useFileStore((s) => s.rootPath);
-  const openFilePath = useFileStore((s) => s.openFilePath);
-  const openFolder = useFileStore((s) => s.openFolder);
-  const openFile = useFileStore((s) => s.openFile);
+  const welcomeMode = useAppearanceStore((s) => s.welcomeMode);
+  const { isTauri: isDesktopShell } = useIsTauri();
 
-  // Open Folder/File only do anything inside the Tauri shell — the browser
-  // build can't pick a real disk path. Hide the buttons on the web.
-  const isDesktopShell = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
+  const recentWorkspacesRaw = useFileStore((s) => s.recentWorkspaces);
+  const recentFilesRaw = useFileStore((s) => s.recentFiles);
+  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
+  const isSingleFileMode = useFileStore((s) => s.isSingleFileMode);
+  const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
+  const openRecentFile = useFileStore((s) => s.openRecentFile);
+  const createFile = useFileStore((s) => s.createFile);
 
-  // Drop the row that matches whatever is open right now to avoid a no-op
-  // entry at the top.
-  const recents = useMemo<RecentEntry[]>(() => {
-    return recentsRaw
-      .filter((r) => {
-        if (openTarget === "folder" && r.kind === "folder" && r.path === rootPath) return false;
-        if (openTarget === "file" && r.kind === "file" && r.path === openFilePath) return false;
-        return true;
-      })
-      .slice(0, RECENT_LIMIT);
-  }, [recentsRaw, openTarget, rootPath, openFilePath]);
+  // The "New" action only makes sense when a folder is mounted — a new
+  // file needs somewhere to live. Single-file mode counts as "no workspace"
+  // because the loose file's parent dir isn't ours to write into.
+  const hasWorkspace = workspaceRoot !== null && !isSingleFileMode;
 
-  // VSCode-style: plain click reuses the current window (which is already on
-  // the welcome screen, so there's nothing to lose). Holding ⌘ / Shift / Ctrl
-  // routes through Rust, which focuses an existing window with the same
-  // target or opens a fresh one.
-  const wantsNewWindow = (event: React.MouseEvent | React.KeyboardEvent): boolean =>
-    event.metaKey || event.ctrlKey || event.shiftKey;
+  const recentWorkspaces = useMemo<WelcomeRecentWorkspace[]>(() => {
+    const skip = isSingleFileMode ? null : workspaceRoot;
+    return recentWorkspacesRaw
+      .filter((p) => p !== skip)
+      .slice(0, RECENT_WORKSPACE_LIMIT)
+      .map((path) => {
+        const { name, parent } = workspaceLabel(path);
+        return { path, name, parent };
+      });
+  }, [recentWorkspacesRaw, workspaceRoot, isSingleFileMode]);
 
-  const dispatchOpen = async (entry: RecentEntry, inNewWindow: boolean): Promise<void> => {
-    if (inNewWindow) {
-      await openWindowForTarget(entry);
-      return;
-    }
-    if (entry.kind === "folder") {
-      await openFolder(entry.path);
-    } else {
-      await openFile(entry.path);
-    }
-  };
+  const recentFiles = useMemo<WelcomeRecentFile[]>(() => {
+    return recentFilesRaw
+      .slice()
+      .sort((a, b) => new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime())
+      .slice(0, RECENT_FILE_LIMIT);
+  }, [recentFilesRaw]);
 
-  const handleOpenFolder = async (event: React.MouseEvent) => {
+  const handleOpenFolder = async () => {
     if (!isDesktopShell) {
       toast.error(tSidebar("openWorkspaceRequiresDesktop"));
       return;
     }
-    const inNewWindow = wantsNewWindow(event);
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: tSidebar("openFolder"),
-      });
-      if (!selected || Array.isArray(selected)) return;
-      await dispatchOpen({ kind: "folder", path: selected }, inNewWindow);
-      if (!inNewWindow) toast.success(tSidebar("workspaceOpened"));
+      const selected = await pickNativeFolder(tSidebar("openFolder"));
+      if (!selected) return;
+      await openDiskWorkspace(selected);
+      toast.success(tSidebar("workspaceOpened"));
     } catch (error) {
       log.error("Failed to open folder", error);
       const { title, description } = getErrorMessage(error);
@@ -108,114 +86,72 @@ export function WelcomeScreen() {
     }
   };
 
-  const handleOpenFile = async (event: React.MouseEvent) => {
-    if (!isDesktopShell) {
-      toast.error(tSidebar("openWorkspaceRequiresDesktop"));
-      return;
-    }
-    const inNewWindow = wantsNewWindow(event);
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: false,
-        multiple: false,
-        title: tSidebar("openFile"),
-        filters: [
-          {
-            name: tSidebar("openFileFilter"),
-            extensions: ["md", "markdown", "pdf"],
-          },
-        ],
-      });
-      if (!selected || Array.isArray(selected)) return;
-      const normalized = selected.replace(/\\/g, "/");
-      const lastSlash = normalized.lastIndexOf("/");
-      if (lastSlash <= 0) {
-        toast.error(tSidebar("openFileNoParent"));
-        return;
+  const handleCreateNew = async () => {
+    if (!hasWorkspace) return;
+    // Mirror the sidebar's Untitled-N convention so the new file slots in
+    // next to whatever the user already has at the root.
+    const rootFiles = useFileStore
+      .getState()
+      .files.filter((f) => !f.isFolder && f.parentId === null);
+    let maxNum = 0;
+    for (const file of rootFiles) {
+      const match = file.name.match(/^Untitled-(\d+)\.md$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
       }
-      const fileBase = normalized.slice(lastSlash + 1);
-      await dispatchOpen({ kind: "file", path: selected }, inNewWindow);
-      if (!inNewWindow) toast.success(tSidebar("openedFile", { name: fileBase }));
-    } catch (error) {
-      log.error("Failed to open file", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
     }
-  };
-
-  const handleOpenRecent = async (entry: RecentEntry, event: React.MouseEvent) => {
+    const name = `Untitled-${maxNum + 1}.md`;
     try {
-      await dispatchOpen(entry, wantsNewWindow(event));
+      const newId = await createFile(name, "", null, { documentType: "markdown" });
+      navigateToEditorFile(newId);
     } catch (error) {
-      log.error("Failed to open recent", error);
+      log.error("Failed to create new document", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     }
   };
 
-  return (
-    <div className="relative flex flex-1 items-start justify-center overflow-y-auto px-6 pb-12 pt-24 transition-colors duration-200">
-      <motion.div
-        className="w-full max-w-md"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        <motion.div variants={itemVariants} className="grid grid-cols-2 gap-2">
-          <Button
-            variant="secondary"
-            onClick={handleOpenFolder}
-            className="h-11 justify-center gap-2 text-sm"
-          >
-            <Folder className="h-4 w-4" />
-            {tSidebar("openFolder")}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={handleOpenFile}
-            className="h-11 justify-center gap-2 text-sm"
-          >
-            <FileSymlink className="h-4 w-4" />
-            {tSidebar("openFile")}
-          </Button>
-        </motion.div>
+  const handleOpenRecentWorkspace = async (path: string) => {
+    try {
+      await openDiskWorkspace(path);
+    } catch (error) {
+      log.error("Failed to open recent workspace", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
 
-        <motion.div variants={itemVariants} className="mt-8 space-y-2">
-          <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
-            {t("recentWorkspaces")}
-          </h2>
-          {recents.length === 0 ? (
-            <p className="px-1 py-3 text-sm text-muted-foreground/70">{t("noRecentWorkspaces")}</p>
-          ) : (
-            <ul className="space-y-0.5">
-              {recents.map((entry) => {
-                const { name, parent } = pathLabel(entry.path);
-                const Icon = entry.kind === "folder" ? Folder : File;
-                return (
-                  <li key={`${entry.kind}:${entry.path}`}>
-                    <button
-                      type="button"
-                      onClick={(event) => handleOpenRecent(entry, event)}
-                      title={`${entry.path}\n⌘ click to open in new window`}
-                      className={cn(
-                        "group flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors",
-                        "hover:bg-[var(--sidebar-hover)] focus:bg-[var(--sidebar-hover)] focus:outline-none"
-                      )}
-                    >
-                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground/70" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-foreground">{name}</div>
-                        <div className="truncate text-xs text-muted-foreground/70">{parent}</div>
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </motion.div>
-      </motion.div>
-    </div>
-  );
+  const handleOpenRecentFile = async (file: WelcomeRecentFile) => {
+    try {
+      await openRecentFile(file);
+    } catch (error) {
+      log.error("Failed to open recent file", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const variantProps: WelcomeVariantProps = {
+    recentFiles,
+    recentWorkspaces,
+    isDesktopShell,
+    hasWorkspace,
+    onOpenFolder: handleOpenFolder,
+    onCreateNew: handleCreateNew,
+    onOpenRecentFile: handleOpenRecentFile,
+    onOpenRecentWorkspace: handleOpenRecentWorkspace,
+  };
+
+  switch (welcomeMode) {
+    case "continuum":
+      return <ContinuumWelcome {...variantProps} />;
+    case "terminal":
+      return <TerminalWelcome {...variantProps} />;
+    case "paper":
+      return <PaperWelcome {...variantProps} />;
+    case "stratigraphy":
+    default:
+      return <StratigraphyWelcome {...variantProps} />;
+  }
 }
