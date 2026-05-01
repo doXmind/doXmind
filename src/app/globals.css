@@ -128,13 +128,13 @@
     --accent: 0 0% 22%; /* #383838 — visible hover on dark popover */
     --accent-foreground: 0 0% 95%;
     /* `--destructive` doubles as the `text-destructive` color for
-       menu items like "Move to Trash". The shadcn dark default
-       (`0 62.8% 30.6%`) reads fine on a destructive button surface but
-       sits at ~3:1 contrast as text over our near-black sidebar — too
-       dim. Lifted to a red-400 lightness so the label pops without
-       turning neon. Foreground stays near-white for buttons that flip
-       the relationship (light text on the destructive bg). */
-    --destructive: 0 84% 65%;
+       menu items like "Move to Trash". On near-black popover surfaces
+       the previous 65% lightness still read as a muted brick red — bumped
+       to ~74% (Tailwind red-400 territory) so the label clearly registers
+       as "danger" without crossing into neon. Foreground stays near-white
+       for buttons that flip the relationship (light text on the
+       destructive bg). */
+    --destructive: 0 92% 74%;
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 18%; /* #2f2f2f — Notion's exact border */
     --border-subtle: 0 0% 14%;

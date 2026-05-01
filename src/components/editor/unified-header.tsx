@@ -67,6 +67,14 @@ export function UnifiedHeader() {
     if (!currentFile) return;
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
 
+    // PDF export when the active document is a PDF: hand off to the PDF
+    // editor (PyMuPDF redact + insert_htmlbox pipeline). The editor owns
+    // the raw bytes + edits, so it does the actual download.
+    if (format === "pdf" && isPdfFile(currentFile)) {
+      window.dispatchEvent(new CustomEvent("doxmind:export-pdf"));
+      return;
+    }
+
     if (format !== "markdown") {
       toast.error(t("diskExportOnlyMarkdown"));
       return;

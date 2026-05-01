@@ -15,9 +15,10 @@ import {
   Loader2,
   MousePointer2,
   Plus,
-  Save,
+  RotateCcw,
   Trash2,
   Type,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -28,8 +29,21 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { createStorageAdapter, type PdfEditorState } from "@/lib/storage";
 import { getDisplayName } from "@/lib/document-types";
 import { getPdfjs } from "@/lib/pdf/pdfjs";
+import {
+  fetchPdfBlocks,
+  migrateLegacyTextEdits,
+  paragraphsFromResponse,
+  type PdfParagraph,
+} from "@/lib/pdf/parse-blocks";
+import {
+  exportEditedPdfViaBackend,
+  type ExportEditsPayload,
+  type ExportPagePayload,
+  type ExportTextEditPayload,
+} from "@/lib/pdf/export-edited";
 import { cn } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
+import { useEditorStore } from "@/stores/editor-store";
 
 interface PdfTextBox {
   id: string;
@@ -48,6 +62,27 @@ interface PdfTextBox {
   bold?: boolean;
   italic?: boolean;
   styleRanges?: PdfTextStyleRange[];
+  /**
+   * Phase 2: when true this box came from PyMuPDF's paragraph block detection
+   * rather than pdf.js's per-run extraction. The width is the paragraph
+   * container width (used for flow-wrap), not the rendered text width.
+   */
+  isParagraph?: boolean;
+  textAlign?: "left" | "center" | "right";
+  /**
+   * Phase 5: when true the paragraph is marked for true content-stream
+   * erasure on export — PyMuPDF redacts the rect and writes nothing back.
+   * Single-run boxes ignore this flag; only paragraph mode honors it.
+   */
+  deleted?: boolean;
+  /**
+   * Phase 5b: parse-time bbox for the paragraph. Stays fixed even if the
+   * user drags the paragraph somewhere else; used as the redaction rect on
+   * export so the original glyphs are erased at their real location.
+   */
+  originalBbox?: { x: number; y: number; width: number; height: number };
+  /** Original PyMuPDF line/span geometry; required for redact-and-rewrite export. */
+  originalLines?: import("@/lib/pdf/parse-blocks").PdfBlocksLine[];
 }
 
 interface PdfFreeTextBox {
@@ -142,6 +177,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const textEditsRef = useRef<Record<string, PdfTextBox>>({});
   const legacyEditsRef = useRef<Record<string, { text: string }>>({});
+  const paragraphModeRef = useRef(false);
   const isDraggingBlockRef = useRef(false);
   const deleteActiveObjectRef = useRef<() => void>(() => undefined);
   const workspaceMode = useFileStore((s) => s.workspaceMode);
@@ -153,6 +189,17 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const [textBoxes, setTextBoxes] = useState<PdfTextBox[]>([]);
   const [textEdits, setTextEdits] = useState<Record<string, PdfTextBox>>({});
   const [legacyEdits, setLegacyEdits] = useState<Record<string, { text: string }>>({});
+  /**
+   * Paragraph mode (Phase 2): when the PyMuPDF sidecar returns blocks for
+   * this PDF we replace the single-run pdf.js extraction with layout-aware
+   * paragraphs. `paragraphMode === false` keeps the legacy code path so the
+   * editor still works if the sidecar is offline.
+   */
+  const [paragraphMode, setParagraphMode] = useState(false);
+  /** Paragraph-shaped PdfTextBoxes from the backend, indexed by page. */
+  const [paragraphBoxesByPage, setParagraphBoxesByPage] = useState<Record<number, PdfTextBox[]>>(
+    {}
+  );
   const [freeTextBoxes, setFreeTextBoxes] = useState<PdfFreeTextBox[]>([]);
   const [highlightBoxes, setHighlightBoxes] = useState<PdfHighlightBox[]>([]);
   const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null);
@@ -213,6 +260,31 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   useEffect(() => {
     legacyEditsRef.current = legacyEdits;
   }, [legacyEdits]);
+
+  useEffect(() => {
+    paragraphModeRef.current = paragraphMode;
+  }, [paragraphMode]);
+
+  // When paragraph mode is on, populate textBoxes for the current page from
+  // backend-derived paragraph boxes. Edits from textEdits are overlaid so the
+  // editor immediately reflects user changes & migrated v1 edits.
+  useEffect(() => {
+    if (!paragraphMode) return;
+    const baseBoxes = paragraphBoxesByPage[currentPageIndex] ?? [];
+    const overlay = textEditsRef.current ?? {};
+    const merged = baseBoxes.map((box) => {
+      const edit = overlay[box.id];
+      if (!edit) return box;
+      return {
+        ...box,
+        ...edit,
+        originalText: box.originalText,
+        originalLines: box.originalLines,
+        isParagraph: true,
+      };
+    });
+    setTextBoxes(merged);
+  }, [paragraphMode, paragraphBoxesByPage, currentPageIndex, textEdits]);
 
   // Clear text-range selection when active object changes away from a text-like
   useEffect(() => {
@@ -295,6 +367,61 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setLegacyEdits(normalized.legacyEdits);
         setFreeTextBoxes(normalized.freeText);
         setHighlightBoxes(normalized.highlights);
+
+        // Phase 2: try the PyMuPDF sidecar for paragraph-aware blocks.
+        // On failure (sidecar offline / older build) we silently keep the
+        // legacy single-run path — the editor stays fully functional.
+        const blocksBytes = new Uint8Array(bytes);
+        const blocks = await fetchPdfBlocks(blocksBytes);
+        if (cancelled) return;
+        if (blocks) {
+          const allParagraphs = paragraphsFromResponse(blocks);
+          // Apply persisted v2 edits, then migrate any leftover v1 textEdits.
+          const persistedV2 = normalized.paragraphEdits;
+          const editedById = new Map<string, PdfParagraph>(allParagraphs.map((p) => [p.id, p]));
+          for (const [id, edit] of Object.entries(persistedV2)) {
+            const base = editedById.get(id);
+            if (!base) continue;
+            // Persisted edits override current bbox (= where the user
+            // last left it) but originalBbox / originalLines stay at the
+            // parse-time values from PyMuPDF.
+            editedById.set(id, {
+              ...base,
+              ...edit,
+              originalBbox: base.originalBbox,
+              originalLines: base.originalLines,
+            });
+          }
+          const migrated = migrateLegacyTextEdits(
+            normalized.textEdits,
+            Array.from(editedById.values())
+          );
+
+          // Convert paragraphs into PdfTextBox-shaped boxes so the existing
+          // render & toolbar code paths keep working. The `isParagraph` flag
+          // tells the renderer to flow-wrap inside `bbox.width`.
+          const boxesByPage: Record<number, PdfTextBox[]> = {};
+          const editsByParagraphId: Record<string, PdfTextBox> = {};
+          for (const para of migrated.paragraphs) {
+            const box = paragraphToTextBox(para);
+            (boxesByPage[para.pageIndex] ??= []).push(box);
+            if (
+              para.text !== para.originalText ||
+              Boolean(para.styleRanges?.length) ||
+              Boolean(para.deleted)
+            ) {
+              editsByParagraphId[para.id] = box;
+            }
+          }
+          setParagraphBoxesByPage(boxesByPage);
+          // Treat these like ordinary textEdits so save/render code paths
+          // don't need to branch on the model.
+          setTextEdits(editsByParagraphId);
+          setParagraphMode(true);
+        } else {
+          setParagraphMode(false);
+          setParagraphBoxesByPage({});
+        }
       } catch (error) {
         console.error(error);
         if (!cancelled) setStatus("error");
@@ -339,6 +466,15 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           viewport,
           transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
         }).promise;
+
+        // Paragraph mode owns textBoxes via a separate effect; skip the
+        // single-run extraction so we don't clobber it.
+        if (paragraphModeRef.current) {
+          if (cancelled) return;
+          setPageSize({ width: baseViewport.width, height: baseViewport.height });
+          setStatus("ready");
+          return;
+        }
 
         const textContent = await page.getTextContent();
         const migratedEdits: Record<string, PdfTextBox> = {};
@@ -506,6 +642,17 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
               bold: undefined,
               italic: undefined,
               styleRanges: undefined,
+              textAlign: undefined,
+              deleted: undefined,
+              // For paragraph mode: also undo any drag.
+              ...(original.originalBbox
+                ? {
+                    x: original.originalBbox.x,
+                    y: original.originalBbox.y,
+                    width: original.originalBbox.width,
+                    height: original.originalBbox.height,
+                  }
+                : {}),
             };
             commitTextBoxEdit(reset);
             return boxes.map((box) => (box.id === current.id ? reset : box));
@@ -520,6 +667,27 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setHighlightBoxes((boxes) => boxes.filter((box) => box.id !== current.id));
       }
       return null;
+    });
+  }, []);
+
+  /**
+   * Phase 5: toggle the `deleted` flag on the active paragraph. On export,
+   * deleted paragraphs are erased from the content stream by PyMuPDF without
+   * a replacement — the rect just becomes empty.
+   */
+  const setActiveParagraphDeleted = useCallback((deleted: boolean) => {
+    setActiveObject((current) => {
+      if (!current || current.kind !== "text") return current;
+      setTextBoxes((boxes) => {
+        const target = boxes.find((box) => box.id === current.id);
+        if (!target?.isParagraph) return boxes;
+        const next = { ...target, deleted: deleted || undefined };
+        commitTextBoxEdit(next);
+        return boxes.map((box) => (box.id === current.id ? next : box));
+      });
+      // Clear text-range selection so toolbar collapses to the paragraph state.
+      setActiveTextSelection(null);
+      return current;
     });
   }, []);
 
@@ -747,14 +915,75 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     });
   };
 
-  const handleSave = () => {
-    const changedTextEdits = Object.fromEntries(
-      Object.entries(textEdits).filter(([, box]) => isTextBoxEdited(box))
-    );
-    const hasChanges =
-      Object.keys(changedTextEdits).length > 0 ||
-      freeTextBoxes.length > 0 ||
-      highlightBoxes.length > 0;
+  const setEditorDirty = useEditorStore((s) => s.setDirty);
+  const setEditorSaving = useEditorStore((s) => s.setSaving);
+
+  /**
+   * Snapshot of edits keyed for change detection. Used by both auto-save
+   * (debounced disk writes) and explicit export.
+   */
+  const collectChangedEdits = useCallback(
+    () => ({
+      changedTextEdits: Object.fromEntries(
+        Object.entries(textEdits).filter(([, box]) => isTextBoxEdited(box))
+      ),
+      hasChanges:
+        Object.values(textEdits).some(isTextBoxEdited) ||
+        freeTextBoxes.length > 0 ||
+        highlightBoxes.length > 0,
+    }),
+    [textEdits, freeTextBoxes, highlightBoxes]
+  );
+
+  /**
+   * Auto-save: silent debounced persist of pdf-edit-state.json. Drives the
+   * header "Saved" / "Saving" pill via the editor-store. Never downloads
+   * the rendered PDF — that's the explicit Export action.
+   */
+  useEffect(() => {
+    if (status !== "ready") return;
+    const { changedTextEdits, hasChanges } = collectChangedEdits();
+    if (!hasChanges) {
+      setEditorDirty(false);
+      return;
+    }
+    setEditorDirty(true);
+    if (!adapter.writePdfEditorState || !file.storageHandle) return;
+    const handle = file.storageHandle;
+    const state = pdfEditorStateFromData(changedTextEdits, freeTextBoxes, highlightBoxes);
+    const handle_ms = setTimeout(async () => {
+      setEditorSaving(true);
+      try {
+        // Call through the adapter so `this` stays bound — destructuring
+        // the method strips its `this` and the inner `this.invoke()` blows
+        // up at runtime.
+        await adapter.writePdfEditorState!(handle, state);
+        setEditorDirty(false);
+      } catch (error) {
+        console.error("Auto-save failed", error);
+      } finally {
+        setEditorSaving(false);
+      }
+    }, 600);
+    return () => clearTimeout(handle_ms);
+  }, [
+    status,
+    collectChangedEdits,
+    adapter.writePdfEditorState,
+    file.storageHandle,
+    freeTextBoxes,
+    highlightBoxes,
+    setEditorDirty,
+    setEditorSaving,
+  ]);
+
+  /**
+   * Explicit export — triggered by the header dropdown via a window event
+   * (cross-component decoupling). Persists the latest state and downloads
+   * the rewritten PDF.
+   */
+  const handleExportPdf = useCallback(() => {
+    const { changedTextEdits, hasChanges } = collectChangedEdits();
     if (!hasChanges) {
       toast.message("No PDF changes yet");
       return;
@@ -766,17 +995,50 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         ? adapter.writePdfEditorState(file.storageHandle, state)
         : Promise.resolve();
 
-    toast.promise(
-      persistState.then(() =>
-        exportEditedPdf(sourceBytes, changedTextEdits, freeTextBoxes, highlightBoxes, file.name)
-      ),
-      {
-        loading: "Exporting edited PDF...",
-        success: "Edited PDF exported",
-        error: "Failed to export edited PDF",
+    const payload = buildExportPayload(changedTextEdits, freeTextBoxes, highlightBoxes);
+
+    const exportPipeline = async () => {
+      if (!sourceBytes) throw new Error("PDF bytes are not loaded");
+      // Phase 3: prefer the PyMuPDF sidecar (true content-stream rewrite,
+      // multi-style HTML, alignment, real glyph erasure). Fall back to the
+      // legacy pdf-lib overlay export if the sidecar is offline.
+      const fromBackend = await exportEditedPdfViaBackend(sourceBytes, payload);
+      if (fromBackend) {
+        downloadBytes(fromBackend, editedFileName(file.name), "application/pdf");
+        return;
       }
-    );
-  };
+      await exportEditedPdf(
+        sourceBytes,
+        changedTextEdits,
+        freeTextBoxes,
+        highlightBoxes,
+        file.name
+      );
+    };
+
+    toast.promise(persistState.then(exportPipeline), {
+      loading: "Exporting edited PDF...",
+      success: "Edited PDF exported",
+      error: "Failed to export edited PDF",
+    });
+  }, [
+    collectChangedEdits,
+    adapter,
+    file.storageHandle,
+    file.name,
+    freeTextBoxes,
+    highlightBoxes,
+    sourceBytes,
+  ]);
+
+  // Listen for header-dispatched export requests so the PDF download lives
+  // entirely under the global Export menu — no rail-button duplication.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => handleExportPdf();
+    window.addEventListener("doxmind:export-pdf", handler);
+    return () => window.removeEventListener("doxmind:export-pdf", handler);
+  }, [handleExportPdf]);
 
   useLayoutEffect(() => {
     if (!activeObject) {
@@ -855,7 +1117,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
         setActiveTextSelection(null);
       }}
     >
-      <PdfToolRail tool={tool} onToolChange={setTool} onSave={handleSave} />
+      <PdfToolRail tool={tool} onToolChange={setTool} />
 
       <aside
         className="bg-sidebar hidden w-[148px] shrink-0 border-r border-border/60 md:flex md:flex-col"
@@ -1021,7 +1283,9 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
                     const blockBox = activeRenderedBlock;
                     if (!blockBox || !activeObject) return null;
                     const draggable =
-                      activeObject.kind === "free-text" || activeObject.kind === "highlight";
+                      activeObject.kind === "free-text" ||
+                      activeObject.kind === "highlight" ||
+                      Boolean(activeObject.kind === "text" && activeTextBox?.isParagraph);
                     const onStartDrag = (event: ReactPointerEvent<HTMLElement>) => {
                       if (activeObject.kind === "free-text" && activeFreeTextBox) {
                         startBlockDrag(
@@ -1047,6 +1311,16 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
                           (next) => updateHighlightBox(activeHighlightBox.id, next),
                           `highlight-${activeHighlightBox.id}`
                         );
+                        return;
+                      }
+                      if (activeObject.kind === "text" && activeTextBox?.isParagraph) {
+                        startBlockDrag(
+                          event,
+                          { x: activeTextBox.x, y: activeTextBox.y },
+                          { width: activeTextBox.width, height: activeTextBox.height },
+                          (next) => updateTextBox(activeTextBox.id, next),
+                          `text-${activeTextBox.id}`
+                        );
                       }
                     };
                     return (
@@ -1059,31 +1333,56 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
                     );
                   })()}
                   {dragGuides && (
-                    <div className="pointer-events-none absolute inset-0 z-40">
-                      {dragGuides.vertical.map((g, i) => (
-                        <div
-                          key={`v-${i}`}
-                          className="absolute bg-pink-500/90 shadow-[0_0_0_0.5px_rgba(255,255,255,0.6)]"
-                          style={{
-                            left: g.x * scale - 0.5,
-                            top: g.y0 * scale,
-                            width: 1,
-                            height: Math.max(1, (g.y1 - g.y0) * scale),
-                          }}
-                        />
-                      ))}
-                      {dragGuides.horizontal.map((g, i) => (
-                        <div
-                          key={`h-${i}`}
-                          className="absolute bg-pink-500/90 shadow-[0_0_0_0.5px_rgba(255,255,255,0.6)]"
-                          style={{
-                            left: g.x0 * scale,
-                            top: g.y * scale - 0.5,
-                            width: Math.max(1, (g.x1 - g.x0) * scale),
-                            height: 1,
-                          }}
-                        />
-                      ))}
+                    <div
+                      className="pointer-events-none absolute inset-0 z-40"
+                      style={{ ["--guide" as string]: "#ff2d6d" }}
+                    >
+                      {dragGuides.vertical.map((g, i) => {
+                        const x = g.x * scale;
+                        const y0 = g.y0 * scale;
+                        const y1 = g.y1 * scale;
+                        return (
+                          <div key={`v-${i}`}>
+                            <div
+                              className="absolute"
+                              style={{
+                                left: x - 0.5,
+                                top: y0,
+                                width: 1,
+                                height: Math.max(1, y1 - y0),
+                                background: "var(--guide)",
+                                boxShadow:
+                                  "0 0 0 0.5px rgba(255,255,255,0.65), 0 0 6px rgba(255,45,109,0.45)",
+                              }}
+                            />
+                            <GuideEndpoint cx={x} cy={y0} />
+                            <GuideEndpoint cx={x} cy={y1} />
+                          </div>
+                        );
+                      })}
+                      {dragGuides.horizontal.map((g, i) => {
+                        const y = g.y * scale;
+                        const x0 = g.x0 * scale;
+                        const x1 = g.x1 * scale;
+                        return (
+                          <div key={`h-${i}`}>
+                            <div
+                              className="absolute"
+                              style={{
+                                left: x0,
+                                top: y - 0.5,
+                                width: Math.max(1, x1 - x0),
+                                height: 1,
+                                background: "var(--guide)",
+                                boxShadow:
+                                  "0 0 0 0.5px rgba(255,255,255,0.65), 0 0 6px rgba(255,45,109,0.45)",
+                              }}
+                            />
+                            <GuideEndpoint cx={x0} cy={y} />
+                            <GuideEndpoint cx={x1} cy={y} />
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </>
@@ -1123,6 +1422,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
           onUpdateFreeTextBox={updateFreeTextBox}
           onUpdateHighlightBox={updateHighlightBox}
           onDelete={() => deleteActiveObjectRef.current()}
+          onSetParagraphDeleted={setActiveParagraphDeleted}
         />
       )}
     </div>
@@ -1186,13 +1486,40 @@ function PdfExistingText({
 }) {
   const editableRef = useRef<HTMLSpanElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
+  // True between `compositionstart` and `compositionend`. While composing
+  // (e.g. Chinese IME picking candidate characters), we MUST NOT touch
+  // state — re-rendering the segment spans pulls the DOM out from under
+  // the IME and aborts the composition.
+  const composingRef = useRef(false);
   const visible = isTextBoxEdited(box) || active;
+  const [overflowExtra, setOverflowExtra] = useState(0);
 
   useEffect(() => {
     if (active && editableRef.current && document.activeElement !== editableRef.current) {
       editableRef.current.focus();
     }
   }, [active]);
+
+  // Measure how far the rendered span exceeds the original bbox height so the
+  // cover can grow to whiteout any overflow lines (otherwise next-paragraph
+  // canvas content bleeds through behind wrapped text).
+  useLayoutEffect(() => {
+    if (!box.isParagraph || !editableRef.current) {
+      setOverflowExtra(0);
+      return;
+    }
+    const node = editableRef.current;
+    const update = () => {
+      const measured = node.getBoundingClientRect().height / scale;
+      const baseHeight = box.originalBbox?.height ?? box.height;
+      setOverflowExtra(Math.max(0, measured - baseHeight));
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(update);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [box.isParagraph, box.originalBbox?.height, box.height, box.text, box.styleRanges, scale]);
 
   useLayoutEffect(() => {
     const target = pendingCaretRef.current;
@@ -1216,11 +1543,37 @@ function PdfExistingText({
     onSelectionRestored();
   }, [pendingSelectionRestore, box.id, box.styleRanges, box.text, onSelectionRestored]);
 
+  // We do NOT render children inside the editable via React. Browsers'
+  // contenteditable (especially after select-all + delete) detach inner
+  // nodes the React fiber tree still tracks, so the next reconciliation
+  // calls removeChild on a node that's no longer a child and crashes.
+  // Instead we own the inner DOM imperatively below.
+  const editableSnapshot = {
+    text: box.text,
+    ranges: box.styleRanges,
+    deleted: Boolean(box.deleted),
+    originalText: box.originalText,
+    baseStyle: {
+      color: visible ? (box.color ?? "#111111") : "transparent",
+      bold: Boolean(box.bold),
+      italic: Boolean(box.italic),
+    },
+  };
+  const lastSyncedRef = useRef<typeof editableSnapshot | null>(null);
+
+  useLayoutEffect(() => {
+    syncEditableDom(editableRef.current, editableSnapshot, lastSyncedRef, pendingCaretRef);
+  });
+
   return (
     <div
       className={cn(
         "group absolute m-0 bg-transparent p-0 text-left outline-none",
-        visible ? "z-20 overflow-visible" : "overflow-hidden"
+        visible ? "overflow-visible" : "overflow-hidden",
+        // Active paragraph sits above all other visible paragraphs so its
+        // overflow (e.g. wrapped lines below originalBbox) is never clipped
+        // by a sibling paragraph's cover.
+        active ? "z-40" : visible ? "z-20" : ""
       )}
       style={scaledBoxStyle(box, scale)}
       onPointerDown={(event) => {
@@ -1231,39 +1584,101 @@ function PdfExistingText({
       {visible && (
         <div
           className="pointer-events-none absolute z-0 bg-white"
-          style={textBoxCoverStyle(box, scale)}
+          style={textBoxCoverStyle(box, scale, overflowExtra)}
         />
       )}
       <span
         ref={editableRef}
         data-pdf-editable-id={box.id}
-        contentEditable
+        contentEditable={box.deleted ? false : "plaintext-only"}
         suppressContentEditableWarning
         className={cn(
-          "relative z-10 inline-block min-h-full whitespace-pre outline-none",
-          visible ? "text-black" : "text-transparent"
+          "relative z-10 min-h-full outline-none",
+          // Paragraph mode flows into the bbox width; single-run is inline+nowrap.
+          box.isParagraph ? "block whitespace-pre-wrap" : "inline-block whitespace-pre",
+          visible ? "text-black" : "text-transparent",
+          box.deleted && "text-muted-foreground/60 line-through"
         )}
         style={textSpanStyle(box, visible)}
         onFocus={onSelect}
-        onInput={(event) => {
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={(event) => {
+          composingRef.current = false;
+          if (box.deleted) return;
           const node = event.currentTarget;
           pendingCaretRef.current = getCaretOffsetWithin(node);
-          onChange(node.textContent ?? "");
+          const newText = extractPlainText(node);
+          // Tell the imperative sync to leave the DOM alone next render —
+          // the user's IME just put the right text there.
+          lastSyncedRef.current = { ...editableSnapshot, text: newText };
+          onChange(newText);
         }}
-        onBlur={(event) => onChange(event.currentTarget.textContent ?? "")}
+        onInput={(event) => {
+          if (box.deleted) {
+            // Drop the input — deleted paragraphs are read-only placeholders.
+            event.currentTarget.textContent = box.originalText;
+            return;
+          }
+          // Don't touch state mid-composition; the IME holds the caret
+          // anchor and any re-render kills the in-progress candidate.
+          if (composingRef.current) return;
+          const node = event.currentTarget;
+          pendingCaretRef.current = getCaretOffsetWithin(node);
+          const newText = extractPlainText(node);
+          // The DOM is already at `newText`; pre-bump the synced snapshot
+          // so the next render's useLayoutEffect skips and the caret stays.
+          lastSyncedRef.current = { ...editableSnapshot, text: newText };
+          onChange(newText);
+        }}
+        onBlur={(event) => {
+          if (box.deleted) return;
+          onChange(extractPlainText(event.currentTarget));
+        }}
+        onPaste={(event) => {
+          if (box.deleted) {
+            event.preventDefault();
+            return;
+          }
+          // Intercept paste so browser-inserted HTML never lands in our DOM.
+          // Only `text/plain` reaches state; `pre-wrap` rendering handles
+          // newlines.
+          event.preventDefault();
+          const pasted = event.clipboardData?.getData("text/plain") ?? "";
+          if (!pasted) return;
+          const node = event.currentTarget;
+          const offset = getCaretOffsetWithin(node) ?? box.text.length;
+          const next = box.text.slice(0, offset) + pasted + box.text.slice(offset);
+          pendingCaretRef.current = offset + pasted.length;
+          onChange(next);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.stopPropagation();
             onClear();
+            return;
+          }
+          if (box.deleted) return;
+          // While the IME is composing, Enter selects the candidate — let
+          // it fall through to the input method instead of inserting `\n`.
+          // `nativeEvent.isComposing` covers all modern browsers; keyCode
+          // 229 is the historical fallback Safari/Webkit still emits.
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          // Intercept Enter so the browser doesn't insert <br>/<div> nodes
+          // that React's reconciliation can't reach (segment-span keys
+          // happily match around them, leaving phantom characters).
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const node = editableRef.current;
+            if (!node) return;
+            const offset = getCaretOffsetWithin(node) ?? box.text.length;
+            const next = box.text.slice(0, offset) + "\n" + box.text.slice(offset);
+            pendingCaretRef.current = offset + 1;
+            onChange(next);
           }
         }}
-      >
-        {renderStyledTextRuns(box.text, box.styleRanges, {
-          color: visible ? (box.color ?? "#111111") : "transparent",
-          bold: Boolean(box.bold),
-          italic: Boolean(box.italic),
-        })}
-      </span>
+      />
     </div>
   );
 }
@@ -1287,6 +1702,8 @@ function FreeTextObject({
 }) {
   const editableRef = useRef<HTMLSpanElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
+  // See PdfExistingText: skip state writes while the IME is mid-composition.
+  const composingRef = useRef(false);
 
   useEffect(() => {
     if (active && editableRef.current && document.activeElement !== editableRef.current) {
@@ -1316,6 +1733,24 @@ function FreeTextObject({
     onSelectionRestored();
   }, [pendingSelectionRestore, box.id, box.styleRanges, box.text, onSelectionRestored]);
 
+  // Imperative DOM management: see PdfExistingText for the rationale.
+  const editableSnapshot = {
+    text: box.text,
+    ranges: box.styleRanges,
+    deleted: false,
+    originalText: box.text,
+    baseStyle: {
+      color: box.color ?? "#111111",
+      bold: Boolean(box.bold),
+      italic: Boolean(box.italic),
+    },
+  };
+  const lastSyncedRef = useRef<typeof editableSnapshot | null>(null);
+
+  useLayoutEffect(() => {
+    syncEditableDom(editableRef.current, editableSnapshot, lastSyncedRef, pendingCaretRef);
+  });
+
   return (
     <div
       className={cn(
@@ -1330,24 +1765,55 @@ function FreeTextObject({
       <span
         ref={editableRef}
         data-pdf-editable-id={box.id}
-        contentEditable={active}
+        contentEditable={active ? "plaintext-only" : false}
         suppressContentEditableWarning
         className="inline-block min-h-full whitespace-pre outline-none"
         style={freeTextSpanStyle(box)}
         onFocus={onSelect}
-        onInput={(event) => {
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={(event) => {
+          composingRef.current = false;
           const node = event.currentTarget;
           pendingCaretRef.current = getCaretOffsetWithin(node);
-          onChange(box.id, node.textContent ?? "");
+          const newText = extractPlainText(node);
+          lastSyncedRef.current = { ...editableSnapshot, text: newText };
+          onChange(box.id, newText);
         }}
-        onBlur={(event) => onChange(box.id, event.currentTarget.textContent ?? "")}
-      >
-        {renderStyledTextRuns(box.text, box.styleRanges, {
-          color: box.color ?? "#111111",
-          bold: Boolean(box.bold),
-          italic: Boolean(box.italic),
-        })}
-      </span>
+        onInput={(event) => {
+          if (composingRef.current) return;
+          const node = event.currentTarget;
+          pendingCaretRef.current = getCaretOffsetWithin(node);
+          const newText = extractPlainText(node);
+          lastSyncedRef.current = { ...editableSnapshot, text: newText };
+          onChange(box.id, newText);
+        }}
+        onBlur={(event) => onChange(box.id, extractPlainText(event.currentTarget))}
+        onPaste={(event) => {
+          event.preventDefault();
+          const pasted = event.clipboardData?.getData("text/plain") ?? "";
+          if (!pasted) return;
+          const node = event.currentTarget;
+          const offset = getCaretOffsetWithin(node) ?? box.text.length;
+          const next = box.text.slice(0, offset) + pasted + box.text.slice(offset);
+          pendingCaretRef.current = offset + pasted.length;
+          onChange(box.id, next);
+        }}
+        onKeyDown={(event) => {
+          // While the IME is composing, Enter selects the candidate — let
+          // it through to the input method instead of inserting `\n`.
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          const node = editableRef.current;
+          if (!node) return;
+          const offset = getCaretOffsetWithin(node) ?? box.text.length;
+          const next = box.text.slice(0, offset) + "\n" + box.text.slice(offset);
+          pendingCaretRef.current = offset + 1;
+          onChange(box.id, next);
+        }}
+      />
     </div>
   );
 }
@@ -1490,11 +1956,9 @@ function PdfPageThumbnail({
 function PdfToolRail({
   tool,
   onToolChange,
-  onSave,
 }: {
   tool: PdfTool;
   onToolChange: (tool: PdfTool) => void;
-  onSave: () => void;
 }) {
   return (
     <div
@@ -1514,10 +1978,6 @@ function PdfToolRail({
         onClick={() => onToolChange("add-text")}
       >
         <Plus className="h-4 w-4" />
-      </ToolButton>
-      <div className="flex-1" />
-      <ToolButton active={false} label="Export edited PDF" onClick={onSave}>
-        <Save className="h-4 w-4" />
       </ToolButton>
     </div>
   );
@@ -1571,6 +2031,7 @@ function FloatingToolbar({
   onUpdateFreeTextBox,
   onUpdateHighlightBox,
   onDelete,
+  onSetParagraphDeleted,
 }: {
   rect: Rect;
   activeTextBox: PdfTextBox | null;
@@ -1583,6 +2044,7 @@ function FloatingToolbar({
   onUpdateFreeTextBox: (id: string, patch: Partial<PdfFreeTextBox>) => void;
   onUpdateHighlightBox: (id: string, patch: Partial<PdfHighlightBox>) => void;
   onDelete: () => void;
+  onSetParagraphDeleted: (deleted: boolean) => void;
 }) {
   const activeTextLike = activeTextBox ?? activeFreeTextBox;
   const hasRangeSelection = Boolean(
@@ -1664,32 +2126,53 @@ function FloatingToolbar({
             disabled={hasRangeSelection}
           />
 
-          {activeFreeTextBox && !hasRangeSelection && (
-            <>
-              <ToolbarDivider />
-              <ToolbarIconButton
-                label="Align left"
-                active={activeFreeTextBox.textAlign === "left" || !activeFreeTextBox.textAlign}
-                onClick={() => onUpdateFreeTextBox(activeFreeTextBox.id, { textAlign: "left" })}
-              >
-                <AlignLeft className="h-3.5 w-3.5" />
-              </ToolbarIconButton>
-              <ToolbarIconButton
-                label="Align center"
-                active={activeFreeTextBox.textAlign === "center"}
-                onClick={() => onUpdateFreeTextBox(activeFreeTextBox.id, { textAlign: "center" })}
-              >
-                <AlignCenter className="h-3.5 w-3.5" />
-              </ToolbarIconButton>
-              <ToolbarIconButton
-                label="Align right"
-                active={activeFreeTextBox.textAlign === "right"}
-                onClick={() => onUpdateFreeTextBox(activeFreeTextBox.id, { textAlign: "right" })}
-              >
-                <AlignRight className="h-3.5 w-3.5" />
-              </ToolbarIconButton>
-            </>
-          )}
+          {(() => {
+            // Alignment targets: free-text annotations OR paragraph-mode PDF
+            // boxes (both have a meaningful container width). Hidden when the
+            // user has a non-collapsed selection — that range owns the toolbar.
+            if (hasRangeSelection) return null;
+            type Align = "left" | "center" | "right";
+            const target =
+              activeFreeTextBox &&
+              ({
+                align: (activeFreeTextBox.textAlign ?? "left") as Align,
+                set: (a: Align) => onUpdateFreeTextBox(activeFreeTextBox.id, { textAlign: a }),
+              } as const);
+            const paraTarget =
+              activeTextBox?.isParagraph &&
+              ({
+                align: (activeTextBox.textAlign ?? "left") as Align,
+                set: (a: Align) => onUpdateTextBox(activeTextBox.id, { textAlign: a }),
+              } as const);
+            const t = target || paraTarget;
+            if (!t) return null;
+            return (
+              <>
+                <ToolbarDivider />
+                <ToolbarIconButton
+                  label="Align left"
+                  active={t.align === "left"}
+                  onClick={() => t.set("left")}
+                >
+                  <AlignLeft className="h-3.5 w-3.5" />
+                </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Align center"
+                  active={t.align === "center"}
+                  onClick={() => t.set("center")}
+                >
+                  <AlignCenter className="h-3.5 w-3.5" />
+                </ToolbarIconButton>
+                <ToolbarIconButton
+                  label="Align right"
+                  active={t.align === "right"}
+                  onClick={() => t.set("right")}
+                >
+                  <AlignRight className="h-3.5 w-3.5" />
+                </ToolbarIconButton>
+              </>
+            );
+          })()}
 
           <ToolbarDivider />
 
@@ -1754,20 +2237,66 @@ function FloatingToolbar({
         </>
       )}
 
-      {(activeFreeTextBox ||
-        activeHighlightBox ||
-        (activeTextBox && isTextBoxEdited(activeTextBox))) && (
-        <>
-          <ToolbarDivider />
-          <ToolbarIconButton
-            label={activeTextBox ? "Reset to original" : "Delete"}
-            onClick={onDelete}
-            danger
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </ToolbarIconButton>
-        </>
-      )}
+      {(() => {
+        // Tri-state trash for paragraphs: Delete (mark for redaction) /
+        // Restore (un-delete) / Reset (revert edits to original).
+        if (activeTextBox?.isParagraph) {
+          if (activeTextBox.deleted) {
+            return (
+              <>
+                <ToolbarDivider />
+                <ToolbarIconButton
+                  label="Restore original text"
+                  onClick={() => onSetParagraphDeleted(false)}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </ToolbarIconButton>
+              </>
+            );
+          }
+          if (isTextBoxEdited(activeTextBox)) {
+            return (
+              <>
+                <ToolbarDivider />
+                <ToolbarIconButton label="Reset to original" onClick={onDelete} danger>
+                  <Undo2 className="h-3.5 w-3.5" />
+                </ToolbarIconButton>
+              </>
+            );
+          }
+          return (
+            <>
+              <ToolbarDivider />
+              <ToolbarIconButton
+                label="Delete from PDF"
+                onClick={() => onSetParagraphDeleted(true)}
+                danger
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </ToolbarIconButton>
+            </>
+          );
+        }
+        if (
+          activeFreeTextBox ||
+          activeHighlightBox ||
+          (activeTextBox && isTextBoxEdited(activeTextBox))
+        ) {
+          return (
+            <>
+              <ToolbarDivider />
+              <ToolbarIconButton
+                label={activeTextBox ? "Reset to original" : "Delete"}
+                onClick={onDelete}
+                danger
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </ToolbarIconButton>
+            </>
+          );
+        }
+        return null;
+      })()}
     </div>
   );
 }
@@ -1940,6 +2469,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function GuideEndpoint({ cx, cy }: { cx: number; cy: number }) {
+  const size = 6;
+  return (
+    <div
+      className="absolute rounded-full bg-white"
+      style={{
+        left: cx - size / 2,
+        top: cy - size / 2,
+        width: size,
+        height: size,
+        boxShadow:
+          "inset 0 0 0 1.5px var(--guide), 0 0 0 0.5px rgba(255,255,255,0.65), 0 0 4px rgba(255,45,109,0.45)",
+      }}
+      aria-hidden
+    />
+  );
+}
+
 function snapAxis(
   draggedStart: number,
   draggedSize: number,
@@ -2008,6 +2555,7 @@ function normalizePdfEditorState(state: PdfEditorState | null): {
   legacyEdits: Record<string, { text: string }>;
   freeText: PdfFreeTextBox[];
   highlights: PdfHighlightBox[];
+  paragraphEdits: Record<string, Partial<PdfParagraph>>;
 } {
   const textEdits: Record<string, PdfTextBox> = {};
   for (const [id, edit] of Object.entries(state?.textEdits ?? {})) {
@@ -2021,11 +2569,31 @@ function normalizePdfEditorState(state: PdfEditorState | null): {
     legacyEdits[id] = edit;
   }
 
+  const paragraphEdits: Record<string, Partial<PdfParagraph>> = {};
+  for (const [id, edit] of Object.entries(state?.paragraphEdits ?? {})) {
+    paragraphEdits[id] = {
+      id,
+      pageIndex: edit.pageIndex,
+      text: edit.text,
+      originalText: edit.originalText,
+      bbox: edit.bbox,
+      fontSize: edit.fontSize,
+      fontFamily: edit.fontFamily,
+      color: edit.color,
+      bold: edit.bold,
+      italic: edit.italic,
+      textAlign: edit.textAlign,
+      styleRanges: edit.styleRanges,
+      deleted: edit.deleted,
+    };
+  }
+
   return {
     textEdits,
     legacyEdits,
     freeText: state?.freeText ?? [],
     highlights: state?.highlights ?? [],
+    paragraphEdits,
   };
 }
 
@@ -2034,13 +2602,42 @@ function pdfEditorStateFromData(
   freeText: PdfFreeTextBox[],
   highlights: PdfHighlightBox[]
 ): PdfEditorState {
+  // Phase 2: split paragraph-mode edits into v2 paragraphEdits, keep legacy
+  // single-run edits in v1 textEdits. Bump version to 2 if any paragraph edit
+  // is present so older builds know not to misinterpret the file.
+  const paragraphEntries: [string, PdfTextBox][] = [];
+  const singleRunEntries: [string, PdfTextBox][] = [];
+  for (const entry of Object.entries(textEdits)) {
+    (entry[1].isParagraph ? paragraphEntries : singleRunEntries).push(entry);
+  }
+
+  const paragraphEdits = paragraphEntries.length
+    ? Object.fromEntries(
+        paragraphEntries.map(([id, box]) => [
+          id,
+          {
+            pageIndex: box.pageIndex,
+            text: box.text,
+            originalText: box.originalText,
+            bbox: { x: box.x, y: box.y, width: box.width, height: box.height },
+            fontSize: box.fontSize,
+            fontFamily: box.fontFamily,
+            color: box.color,
+            bold: box.bold,
+            italic: box.italic,
+            textAlign: box.textAlign,
+            styleRanges: box.styleRanges,
+            deleted: box.deleted,
+          },
+        ])
+      )
+    : undefined;
+
   return {
-    version: 1,
-    edits: Object.fromEntries(
-      Object.entries(textEdits).map(([id, box]) => [id, { text: box.text }])
-    ),
+    version: paragraphEdits ? 2 : 1,
+    edits: Object.fromEntries(singleRunEntries.map(([id, box]) => [id, { text: box.text }])),
     textEdits: Object.fromEntries(
-      Object.entries(textEdits).map(([id, box]) => [
+      singleRunEntries.map(([id, box]) => [
         id,
         {
           pageIndex: box.pageIndex,
@@ -2061,8 +2658,99 @@ function pdfEditorStateFromData(
         },
       ])
     ),
+    paragraphEdits,
     freeText,
     highlights,
+  };
+}
+
+function buildExportPayload(
+  textEdits: Record<string, PdfTextBox>,
+  freeTextBoxes: PdfFreeTextBox[],
+  highlightBoxes: PdfHighlightBox[]
+): ExportEditsPayload {
+  const byPage = new Map<number, ExportPagePayload>();
+  const ensurePage = (pageIndex: number) => {
+    let page = byPage.get(pageIndex);
+    if (!page) {
+      page = { pageIndex, textEdits: [], freeText: [], highlights: [] };
+      byPage.set(pageIndex, page);
+    }
+    return page;
+  };
+
+  const textEditPayloadFromBox = (box: PdfTextBox | PdfFreeTextBox): ExportTextEditPayload => {
+    const original = "originalBbox" in box && box.originalBbox ? box.originalBbox : null;
+    const rectMoved =
+      original !== null &&
+      (Math.abs(original.x - box.x) > 0.5 ||
+        Math.abs(original.y - box.y) > 0.5 ||
+        Math.abs(original.width - box.width) > 0.5 ||
+        Math.abs(original.height - box.height) > 0.5);
+    return {
+      rect: [box.x, box.y, box.width, box.height],
+      originalRect: rectMoved
+        ? [original!.x, original!.y, original!.width, original!.height]
+        : undefined,
+      text: box.text,
+      fontSize: box.fontSize,
+      fontFamily: box.fontFamily,
+      color: box.color,
+      bold: box.bold,
+      italic: box.italic,
+      align: "textAlign" in box ? box.textAlign : undefined,
+      deleted: "deleted" in box ? box.deleted : undefined,
+      styleRanges: box.styleRanges?.map((r) => ({
+        start: r.start,
+        end: r.end,
+        color: r.color,
+        highlightColor: r.highlightColor,
+        bold: r.bold,
+        italic: r.italic,
+      })),
+    };
+  };
+
+  for (const box of Object.values(textEdits)) {
+    ensurePage(box.pageIndex).textEdits!.push(textEditPayloadFromBox(box));
+  }
+  for (const box of freeTextBoxes) {
+    ensurePage(box.pageIndex).freeText!.push(textEditPayloadFromBox(box));
+  }
+  for (const hl of highlightBoxes) {
+    ensurePage(hl.pageIndex).highlights!.push({
+      rect: [hl.x, hl.y, hl.width, hl.height],
+      color: hl.color,
+      opacity: hl.opacity,
+    });
+  }
+
+  return { pages: Array.from(byPage.values()) };
+}
+
+function paragraphToTextBox(para: PdfParagraph): PdfTextBox {
+  return {
+    id: para.id,
+    pageIndex: para.pageIndex,
+    text: para.text,
+    originalText: para.originalText,
+    x: para.bbox.x,
+    y: para.bbox.y,
+    width: para.bbox.width,
+    height: para.bbox.height,
+    fontSize: para.fontSize,
+    originalFontSize: para.fontSize,
+    fontFamily: para.fontFamily,
+    color: para.color,
+    bold: para.bold,
+    italic: para.italic,
+    styleRanges: para.styleRanges,
+    isParagraph: true,
+    textAlign: para.textAlign,
+    originalLines: para.originalLines,
+    // Always sourced from the parse-time bbox (preserved through migration),
+    // never the live `para.bbox` which may have been moved by the user.
+    originalBbox: { ...para.originalBbox },
   };
 }
 
@@ -2082,6 +2770,24 @@ function pagePointFromPointer(
 }
 
 function scaledBoxStyle(box: PdfTextBox, scale: number): CSSProperties {
+  if (box.isParagraph) {
+    // PyMuPDF returns the EXACT extent of the original glyphs. Our HTML
+    // fallback font is ~1-3% wider, which would force `pre-wrap` to wrap
+    // content that fit on one line in the source PDF. Reserve a few extra
+    // pixels of width so the editor matches the original layout. The cover
+    // and the redact rect on export still use the unbuffered originalBbox.
+    const widthBuffer = 8 / scale;
+    return {
+      left: box.x * scale,
+      top: box.y * scale,
+      width: (box.width + widthBuffer) * scale,
+      minHeight: box.height * scale,
+      fontSize: box.fontSize * scale,
+      fontFamily: textBoxFontFamily(box),
+      lineHeight: 1.2,
+      textAlign: box.textAlign ?? "left",
+    };
+  }
   return {
     left: box.x * scale,
     top: box.y * scale,
@@ -2130,6 +2836,7 @@ function freeTextSpanStyle(box: PdfFreeTextBox): CSSProperties {
 }
 
 function textBoxSelectionWidth(box: PdfTextBox): number {
+  if (box.isParagraph) return Math.max(box.width, 10);
   return Math.max(measurePdfText(box.text, box), 10);
 }
 
@@ -2146,6 +2853,10 @@ function freeTextSelectionWidth(box: PdfFreeTextBox): number {
 }
 
 function textBoxCoverWidth(box: PdfTextBox): number {
+  if (box.isParagraph) {
+    // Paragraph cover follows the paragraph container, not the rendered text.
+    return Math.max(box.width, 10);
+  }
   return Math.max(
     box.width,
     measurePdfText(box.originalText, box),
@@ -2154,14 +2865,27 @@ function textBoxCoverWidth(box: PdfTextBox): number {
   );
 }
 
-function textBoxCoverStyle(box: PdfTextBox, scale: number): CSSProperties {
+function textBoxCoverStyle(box: PdfTextBox, scale: number, overflowExtra = 0): CSSProperties {
   const padX = Math.max(3, box.fontSize * 0.18) * scale;
   const padY = Math.max(4, box.fontSize * 0.38) * scale;
+  // For dragged paragraphs the cover stays anchored at the parse-time
+  // bbox (original glyph location). The container moved, so we offset
+  // the cover backward to land on top of the original.
+  const original = box.originalBbox;
+  const offsetX = original ? (original.x - box.x) * scale : 0;
+  const offsetY = original ? (original.y - box.y) * scale : 0;
+  const coverWidth = original
+    ? Math.max(original.width, 10) * scale
+    : textBoxCoverWidth(box) * scale;
+  // Paragraph mode: when wrapped content extends below originalBbox we grow
+  // the cover so the canvas underneath the overflow stays whited out.
+  const baseHeight = original ? original.height * scale : box.height * scale;
+  const coverHeight = baseHeight + Math.max(0, overflowExtra) * scale;
   return {
-    left: -padX,
-    top: -padY,
-    width: textBoxCoverWidth(box) * scale + padX * 2,
-    height: box.height * scale + padY * 2,
+    left: -padX + offsetX,
+    top: -padY + offsetY,
+    width: coverWidth + padX * 2,
+    height: coverHeight + padY * 2,
   };
 }
 
@@ -2205,7 +2929,9 @@ function isTextBoxEdited(box: PdfTextBox): boolean {
     Boolean(box.color) ||
     Boolean(box.bold) ||
     Boolean(box.italic) ||
-    Boolean(box.styleRanges?.length)
+    Boolean(box.styleRanges?.length) ||
+    Boolean(box.deleted) ||
+    Boolean(box.textAlign && box.textAlign !== "left")
   );
 }
 
@@ -2250,6 +2976,48 @@ function selectionOffsetsInElement(element: HTMLElement, selection: Selection) {
   const start = preSelectionRange.toString().length;
   const selectedLength = range.toString().length;
   return selectedLength > 0 ? { start, end: start + selectedLength } : null;
+}
+
+/**
+ * Plain-text extraction that respects line breaks.
+ *
+ * `Element.textContent` collapses `<br>` and block-level elements into a
+ * continuous string with no separators — so when a browser inserts
+ * `<div>foo</div>` for an Enter key, textContent reads as `"foo"` and we
+ * lose the line. This walker emits `\n` for `<br>` and at block boundaries
+ * so user-perceived newlines round-trip into our state.
+ */
+function extractPlainText(element: HTMLElement): string {
+  const out: string[] = [];
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out.push((node as Text).data);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    const tag = el.tagName;
+    if (tag === "BR") {
+      out.push("\n");
+      return;
+    }
+    const isBlock =
+      tag === "DIV" || tag === "P" || tag === "LI" || tag === "TR" || tag === "BLOCKQUOTE";
+    const previous = out[out.length - 1];
+    if (isBlock && previous !== undefined && !previous.endsWith("\n") && out.length > 0) {
+      out.push("\n");
+    }
+    el.childNodes.forEach(walk);
+    if (isBlock) {
+      const last = out[out.length - 1];
+      if (last !== undefined && !last.endsWith("\n")) out.push("\n");
+    }
+  };
+  element.childNodes.forEach(walk);
+  // Trim a single trailing newline that block-collapse adds at the end.
+  let text = out.join("");
+  if (text.endsWith("\n")) text = text.slice(0, -1);
+  return text;
 }
 
 function getCaretOffsetWithin(element: HTMLElement): number | null {
@@ -2329,25 +3097,97 @@ function setCaretOffsetWithin(element: HTMLElement, offset: number) {
   selection.addRange(range);
 }
 
-function renderStyledTextRuns(
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Serialize the styled text runs to an HTML string.
+ *
+ * Used for imperative DOM sync of contenteditable elements. We can't render
+ * children via React there: contenteditable defaults (select-all → delete)
+ * remove inner nodes from the DOM out from under React, leaving its fiber
+ * tree pointing at detached nodes. Next commit's removeChild then crashes
+ * with "node is not a child of this node". Owning the inner DOM ourselves
+ * keeps state and DOM in sync regardless of what the browser does.
+ */
+function buildStyledRunsHtml(
   text: string,
   ranges: PdfTextStyleRange[] | undefined,
   baseStyle: { color: string; bold: boolean; italic: boolean }
-) {
+): string {
   const segments = textSegmentsFromRanges(text, ranges, baseStyle);
-  return segments.map((segment, index) => (
-    <span
-      key={`${segment.start}-${segment.end}-${index}`}
-      style={{
-        color: segment.color,
-        backgroundColor: segment.highlightColor,
-        fontWeight: segment.bold ? 700 : undefined,
-        fontStyle: segment.italic ? "italic" : undefined,
-      }}
-    >
-      {segment.text}
-    </span>
-  ));
+  if (segments.length === 0) return "";
+  return segments
+    .map((segment) => {
+      const styles: string[] = [];
+      if (segment.color) styles.push(`color:${segment.color}`);
+      if (segment.highlightColor) styles.push(`background-color:${segment.highlightColor}`);
+      if (segment.bold) styles.push("font-weight:700");
+      if (segment.italic) styles.push("font-style:italic");
+      const styleAttr = styles.length ? ` style="${styles.join(";")}"` : "";
+      return `<span${styleAttr}>${escapeHtml(segment.text)}</span>`;
+    })
+    .join("");
+}
+
+interface EditableSnapshot {
+  text: string;
+  ranges: PdfTextStyleRange[] | undefined;
+  deleted: boolean;
+  originalText: string;
+  baseStyle: { color: string; bold: boolean; italic: boolean };
+}
+
+/**
+ * Imperatively reconcile a contenteditable element's inner DOM with state.
+ *
+ * Skips when the snapshot matches what we last wrote (which the input
+ * handler pre-bumps on user edit), so user typing is never clobbered. On
+ * actual change (programmatic style flip / external prop update) we save
+ * the current caret offset, replace innerHTML, and restore the caret.
+ */
+function syncEditableDom(
+  node: HTMLElement | null,
+  snapshot: EditableSnapshot,
+  lastRef: { current: EditableSnapshot | null },
+  pendingCaretRef: { current: number | null }
+): void {
+  if (!node) return;
+  const last = lastRef.current;
+  if (
+    last &&
+    last.text === snapshot.text &&
+    last.ranges === snapshot.ranges &&
+    last.deleted === snapshot.deleted &&
+    last.originalText === snapshot.originalText &&
+    last.baseStyle.color === snapshot.baseStyle.color &&
+    last.baseStyle.bold === snapshot.baseStyle.bold &&
+    last.baseStyle.italic === snapshot.baseStyle.italic
+  ) {
+    return;
+  }
+
+  const isFocused = typeof document !== "undefined" && document.activeElement === node;
+  const caretBefore = isFocused ? getCaretOffsetWithin(node) : null;
+
+  const html = snapshot.deleted
+    ? escapeHtml(snapshot.originalText)
+    : buildStyledRunsHtml(snapshot.text, snapshot.ranges, snapshot.baseStyle);
+  node.innerHTML = html;
+
+  lastRef.current = { ...snapshot, baseStyle: { ...snapshot.baseStyle } };
+
+  const target = pendingCaretRef.current ?? caretBefore;
+  pendingCaretRef.current = null;
+  if (target !== null && isFocused) {
+    setCaretOffsetWithin(node, target);
+  }
 }
 
 function textSegmentsFromRanges(

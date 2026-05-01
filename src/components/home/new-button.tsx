@@ -1,16 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import {
-  FileArchive,
-  FilePlus,
-  FolderPlus,
-  LayoutTemplate,
-  Loader2,
-  Plus,
-  ScanText,
-  Upload,
-} from "lucide-react";
+import { FolderPlus, LayoutTemplate, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,28 +11,24 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useTranslations } from "next-intl";
+import { MarkdownGlyph, PdfGlyph } from "@/components/icons/document-glyphs";
 
 interface NewButtonProps {
+  /** Default markdown create — kept for backwards compat. */
   onCreateFile: () => void;
+  /** Optional explicit PDF create. When omitted the PDF entry is hidden. */
+  onCreatePdf?: () => void;
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
-  onImportFile: () => void;
-  /** Optional — only wired up where the OCR pipeline makes sense. */
-  onImportFileOcr?: () => void;
-  onImportWorkspace?: () => void;
-  isImporting: boolean;
   disableFolder?: boolean;
   hideFolder?: boolean;
 }
 
 export const NewButton = memo(function NewButton({
   onCreateFile,
+  onCreatePdf,
   onCreateFolder,
   onOpenTemplatePicker,
-  onImportFile,
-  onImportFileOcr,
-  onImportWorkspace,
-  isImporting,
   disableFolder,
   hideFolder,
 }: NewButtonProps) {
@@ -60,9 +47,15 @@ export const NewButton = memo(function NewButton({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem onClick={onCreateFile}>
-          <FilePlus className="mr-2 h-4 w-4" />
-          {t("newDocument")}
+          <MarkdownGlyph className="mr-2 h-4 w-4" />
+          {t("newMarkdown")}
         </DropdownMenuItem>
+        {onCreatePdf && (
+          <DropdownMenuItem onClick={onCreatePdf}>
+            <PdfGlyph className="mr-2 h-4 w-4" />
+            {t("newPdf")}
+          </DropdownMenuItem>
+        )}
         {!hideFolder && (
           <DropdownMenuItem onClick={onCreateFolder} disabled={disableFolder}>
             <FolderPlus className="mr-2 h-4 w-4" />
@@ -74,26 +67,6 @@ export const NewButton = memo(function NewButton({
           <LayoutTemplate className="mr-2 h-4 w-4" />
           {t("fromTemplate")}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onImportFile} disabled={isImporting}>
-          {isImporting ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Upload className="mr-2 h-4 w-4" />
-          )}
-          {t("importFile")}
-        </DropdownMenuItem>
-        {onImportFileOcr && (
-          <DropdownMenuItem onClick={onImportFileOcr} disabled={isImporting}>
-            <ScanText className="mr-2 h-4 w-4" />
-            {t("importFileWithOcr")}
-          </DropdownMenuItem>
-        )}
-        {onImportWorkspace && (
-          <DropdownMenuItem onClick={onImportWorkspace}>
-            <FileArchive className="mr-2 h-4 w-4" />
-            {t("importWorkspace")}
-          </DropdownMenuItem>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

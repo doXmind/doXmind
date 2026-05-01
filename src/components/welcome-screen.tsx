@@ -1,24 +1,18 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Folder, FilePlus, Upload, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { FileSymlink, Folder, Loader2 } from "lucide-react";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 import { Button } from "@/components/ui/button";
 import { AnimatedLogo } from "@/components/ui/animated-logo";
-import { ImportFolderProgressModal } from "@/components/sidebar/import-folder-progress";
-import {
-  importLocalFolder,
-  entriesFromFileList,
-  entriesFromDataTransfer,
-  type FolderImportProgress,
-} from "@/lib/import-folder";
+import { MarkdownGlyph, PdfGlyph } from "@/components/icons/document-glyphs";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
+import { isPdfFile } from "@/lib/document-types";
 import { toast } from "sonner";
-import { WelcomeOcrRow } from "@/components/welcome-ocr-row";
 
 const log = storeLogger.child("Welcome");
 
@@ -60,7 +54,6 @@ function formatRecentDate(iso: string, t: (k: string) => string): string {
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   if (isSameDay(d, yesterday)) return t("yesterday");
-  // Within the last week → weekday name; otherwise locale date.
   const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
   if (diffDays < 7) return d.toLocaleDateString([], { weekday: "long" });
   return d.toLocaleDateString();
@@ -68,25 +61,18 @@ function formatRecentDate(iso: string, t: (k: string) => string): string {
 
 export function WelcomeScreen() {
   const t = useTranslations("welcome");
+  const tSidebar = useTranslations("sidebar");
   const files = useFileStore((s) => s.files);
   const createFile = useFileStore((s) => s.createFile);
-  const importFile = useFileStore((s) => s.importFile);
-  const createFolder = useFileStore((s) => s.createFolder);
   const currentFolderId = useFileStore((s) => s.currentFolderId);
+  const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  // Pinned to .pdf for the OCR row's "Open scanned PDF" affordance —
-  // OCR doesn't apply to docx/pptx/md, so we narrow the picker.
-  const ocrFileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
-  const folderImportAbortRef = useRef<AbortController | null>(null);
+  const [isCreatingMd, setIsCreatingMd] = useState(false);
+  const [isCreatingPdf, setIsCreatingPdf] = useState(false);
 
-  const [isCreating, setIsCreating] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [folderImportProgress, setFolderImportProgress] = useState<FolderImportProgress | null>(
-    null
-  );
+  // The "Open Folder" button only does anything inside the Tauri shell —
+  // the browser build can't pick a real disk path. Hide it on the web.
+  const isDesktopShell = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
 
   const recentFiles = useMemo<FileItem[]>(
     () =>
@@ -97,237 +83,172 @@ export function WelcomeScreen() {
     [files]
   );
 
-  const handleCreateFile = async () => {
-    setIsCreating(true);
+  const handleCreateMarkdown = async () => {
+    setIsCreatingMd(true);
     try {
-      const newId = await createFile("Untitled.md", "", currentFolderId);
+      const newId = await createFile("Untitled.md", "", currentFolderId, {
+        documentType: "markdown",
+      });
       navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create file", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     } finally {
-      setIsCreating(false);
+      setIsCreatingMd(false);
     }
   };
 
-  const handleOpenFileClick = () => fileInputRef.current?.click();
-  const handleOpenFolderClick = () => folderInputRef.current?.click();
-  const handleOpenOcrFileClick = () => ocrFileInputRef.current?.click();
-
-  const makeFileInputChange =
-    (mode: "auto" | "ocr") => async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      e.target.value = "";
-
-      setIsImporting(true);
-      const toastId = toast.loading(t("importingFile"));
-      try {
-        const newId = await importFile(
-          file,
-          currentFolderId,
-          mode === "ocr" ? { mode } : undefined
-        );
-        if (newId) {
-          navigateToEditorFile(newId);
-          toast.success(file.name, { id: toastId });
-        } else {
-          // null = deferred behind the Marker download prompt — but on
-          // the welcome screen the row already shows installed=true
-          // before this code path can run, so this branch only fires if
-          // the auto-fallback kicks in for a near-empty PDF.
-          toast.dismiss(toastId);
-        }
-      } catch (error) {
-        log.error("Failed to import file", error);
-        const { title, description } = getErrorMessage(error);
-        toast.error(title, { id: toastId, description });
-      } finally {
-        setIsImporting(false);
-      }
-    };
-
-  const handleFileInputChange = makeFileInputChange("auto");
-  const handleOcrFileInputChange = makeFileInputChange("ocr");
-
-  /** Run the folder import pipeline given an already-normalized entry
-      list. Used by both the picker change handler and folder-drop. */
-  const runFolderImport = async (
-    entries: ReturnType<typeof entriesFromFileList>,
-    rootHint: string
-  ) => {
-    const abort = new AbortController();
-    folderImportAbortRef.current = abort;
-    setFolderImportProgress({
-      total: 0,
-      done: 0,
-      succeeded: 0,
-      failed: 0,
-      skipped: 0,
-      currentFileName: null,
-      rootFolderName: rootHint,
-      isComplete: false,
-      cancelled: false,
-    });
-
+  const handleCreatePdf = async () => {
+    setIsCreatingPdf(true);
     try {
-      await importLocalFolder({
-        entries,
-        parentId: null,
-        createFolder: (name, parentId) => createFolder(name, parentId, { silent: true }),
-        importFile: (file, parentId) => importFile(file, parentId, { silent: true }),
-        onProgress: (p) => setFolderImportProgress({ ...p }),
-        signal: abort.signal,
+      const newId = await createFile("Untitled.pdf", "", currentFolderId, {
+        documentType: "pdf",
       });
+      navigateToEditorFile(newId);
     } catch (error) {
-      log.error("Folder import failed", error);
+      log.error("Failed to create PDF", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     } finally {
-      folderImportAbortRef.current = null;
+      setIsCreatingPdf(false);
     }
   };
 
-  const handleFolderInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.files;
-    if (!picked || picked.length === 0) return;
-    const entries = entriesFromFileList(picked);
-    e.target.value = "";
-    const rootHint = picked[0]?.webkitRelativePath.split("/")[0] ?? "—";
-    await runFolderImport(entries, rootHint);
+  const handleOpenFolder = async () => {
+    if (!isDesktopShell) {
+      toast.error(tSidebar("openWorkspaceRequiresDesktop"));
+      return;
+    }
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: tSidebar("openFolder"),
+      });
+      if (!selected || Array.isArray(selected)) return;
+      await openDiskWorkspace(selected);
+      toast.success(tSidebar("workspaceOpened"));
+    } catch (error) {
+      log.error("Failed to open folder", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
+  const handleOpenFile = async () => {
+    if (!isDesktopShell) {
+      toast.error(tSidebar("openWorkspaceRequiresDesktop"));
+      return;
+    }
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: false,
+        multiple: false,
+        title: tSidebar("openFile"),
+        filters: [
+          {
+            name: tSidebar("openFileFilter"),
+            extensions: ["md", "markdown", "pdf"],
+          },
+        ],
+      });
+      if (!selected || Array.isArray(selected)) return;
+
+      // VSCode-style: the picked file's parent dir becomes the workspace,
+      // then we focus the file itself.
+      const normalized = selected.replace(/\\/g, "/");
+      const lastSlash = normalized.lastIndexOf("/");
+      if (lastSlash <= 0) {
+        toast.error(tSidebar("openFileNoParent"));
+        return;
+      }
+      const parentDir = selected.slice(0, lastSlash);
+      const fileBase = normalized.slice(lastSlash + 1);
+
+      await openDiskWorkspace(parentDir);
+      const match = useFileStore
+        .getState()
+        .files.find((f) => f.storageHandle?.relPath === fileBase);
+      if (match) {
+        navigateToEditorFile(match.id);
+        toast.success(tSidebar("openedFile", { name: fileBase }));
+      } else {
+        toast.success(tSidebar("workspaceOpened"));
+      }
+    } catch (error) {
+      log.error("Failed to open file", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
   };
 
   const openRecent = (id: string) => {
     navigateToEditorFile(id);
   };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-
-      // Walk the drop's FileSystem entries — this is the only way to
-      // recurse into dropped directories (DataTransfer.files would just
-      // hand back a single zero-byte File for the folder itself).
-      const entries = await entriesFromDataTransfer(e.dataTransfer);
-
-      // Folder drop: any entry has a path with a "/". A loose drop of
-      // one or more standalone files goes to the single-file flow if
-      // it's just one file, or to the folder-import flow otherwise.
-      const isFolderDrop =
-        !!entries && (entries.length > 1 || entries.some((en) => en.relPath.includes("/")));
-
-      if (isFolderDrop && entries) {
-        // Pull the rootHint from the first entry that actually lives
-        // inside a directory; loose-file drops fall back to "Imported"
-        // (matching importLocalFolder's own logic).
-        const firstNested = entries.find((en) => en.relPath.includes("/"));
-        const rootSeg = firstNested?.relPath.split("/")[0] ?? "Imported";
-        await runFolderImport(entries, rootSeg);
-        return;
-      }
-
-      // Single-file path: prefer the entry's File (it carries the real
-      // bytes from the FS API); fall back to the legacy DataTransfer.files
-      // shape on platforms that don't expose entries.
-      const file = entries?.[0]?.file ?? e.dataTransfer.files?.[0];
-      if (!file) return;
-      setIsImporting(true);
-      try {
-        const newId = await importFile(file, currentFolderId);
-        if (newId) {
-          navigateToEditorFile(newId);
-        }
-      } catch (error) {
-        log.error("Failed to import dropped file", error);
-        const { title, description } = getErrorMessage(error);
-        toast.error(title, { description });
-      } finally {
-        setIsImporting(false);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runFolderImport reads stable store actions
-    [importFile, currentFolderId]
-  );
-
   return (
-    <div
-      className={cn(
-        "relative flex flex-1 items-start justify-center overflow-y-auto px-6 pb-12 pt-16 md:pt-24",
-        "transition-colors duration-200",
-        isDragging && "bg-primary/5"
-      )}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
+    <div className="relative flex flex-1 items-start justify-center overflow-y-auto px-6 pb-12 pt-16 transition-colors duration-200 md:pt-24">
       <motion.div
         className="w-full max-w-md"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
       >
-        {/* Logo (the AnimatedLogo includes the doXmind wordmark; we don't
-            render the name a second time below it). */}
         <motion.div variants={itemVariants} className="flex flex-col items-center gap-3 pb-8">
           <AnimatedLogo size="md" />
           <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
         </motion.div>
 
-        {/* Action buttons */}
         <motion.div variants={itemVariants} className="space-y-2">
-          <Button
-            onClick={handleCreateFile}
-            disabled={isCreating || isImporting}
-            className="h-11 w-full justify-center gap-2 text-sm font-medium"
-          >
-            {isCreating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FilePlus className="h-4 w-4" />
-            )}
-            {t("newDocument")}
-          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              onClick={handleCreateMarkdown}
+              disabled={isCreatingMd}
+              className="h-11 justify-center gap-2 text-sm font-medium"
+            >
+              {isCreatingMd ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MarkdownGlyph className="h-4 w-4" />
+              )}
+              {tSidebar("newMarkdown")}
+            </Button>
+            <Button
+              onClick={handleCreatePdf}
+              disabled={isCreatingPdf}
+              className="h-11 justify-center gap-2 text-sm font-medium"
+            >
+              {isCreatingPdf ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <PdfGlyph className="h-4 w-4" />
+              )}
+              {tSidebar("newPdf")}
+            </Button>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="secondary"
-              onClick={handleOpenFileClick}
-              disabled={isImporting}
-              className="h-10 justify-center gap-2 text-sm"
-            >
-              {isImporting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <FileText className="h-4 w-4" />
-              )}
-              {t("openFile")}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleOpenFolderClick}
-              disabled={folderImportProgress !== null && !folderImportProgress.isComplete}
+              onClick={handleOpenFolder}
               className="h-10 justify-center gap-2 text-sm"
             >
               <Folder className="h-4 w-4" />
-              {t("openFolder")}
+              {tSidebar("openFolder")}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleOpenFile}
+              className="h-10 justify-center gap-2 text-sm"
+            >
+              <FileSymlink className="h-4 w-4" />
+              {tSidebar("openFile")}
             </Button>
           </div>
-          {/* Status-aware row: lets the user install the offline OCR
-              engine without leaving the welcome screen and, once
-              installed, jump straight into a scanned-PDF picker. */}
-          <WelcomeOcrRow onUseOcr={handleOpenOcrFileClick} />
         </motion.div>
 
-        {/* Recent files */}
         <motion.div variants={itemVariants} className="mt-10 space-y-2">
           <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
             {t("recent")}
@@ -346,10 +267,14 @@ export function WelcomeScreen() {
                       "hover:bg-[var(--sidebar-hover)] focus:bg-[var(--sidebar-hover)] focus:outline-none"
                     )}
                   >
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                    {isPdfFile(f) ? (
+                      <PdfGlyph className="h-4 w-4 shrink-0" />
+                    ) : (
+                      <MarkdownGlyph className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm text-foreground">
-                        {f.name.replace(/\.md$/i, "")}
+                        {f.name.replace(/\.(md|markdown|pdf)$/i, "")}
                       </div>
                     </div>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
@@ -361,71 +286,7 @@ export function WelcomeScreen() {
             </ul>
           )}
         </motion.div>
-
-        {/* Drop hint */}
-        <motion.div
-          variants={itemVariants}
-          className={cn(
-            "mt-8 flex items-center justify-center gap-2 text-xs text-muted-foreground/70",
-            isDragging && "font-medium text-primary"
-          )}
-        >
-          <Upload className="h-3.5 w-3.5" />
-          <span>{isDragging ? t("dropToImport") : t("orDropFile")}</span>
-        </motion.div>
       </motion.div>
-
-      {/* Hidden inputs for native pickers */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,.docx,.md,.markdown"
-        onChange={handleFileInputChange}
-        className="hidden"
-      />
-      <input
-        ref={ocrFileInputRef}
-        type="file"
-        accept=".pdf"
-        onChange={handleOcrFileInputChange}
-        className="hidden"
-      />
-      {/* `webkitdirectory` / `directory` aren't in React's input typings,
-          so the spread carries them through as plain HTML attributes —
-          rendered into the DOM at JSX time, before any `.click()` can
-          fire. (The previous mount-effect approach occasionally lost
-          this race in dev/strict-mode and the picker fell back to
-          single-file mode, which then yielded an empty entry list and
-          the dreaded "Nothing to import" outcome.) */}
-      <input
-        ref={folderInputRef}
-        type="file"
-        multiple
-        onChange={handleFolderInputChange}
-        className="hidden"
-        {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
-      />
-
-      {/* Drag overlay */}
-      <AnimatePresence>
-        {isDragging && (
-          <motion.div
-            className="pointer-events-none absolute inset-4 rounded-xl border-2 border-dashed border-primary/40"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Folder import progress */}
-      <ImportFolderProgressModal
-        open={folderImportProgress !== null}
-        progress={folderImportProgress}
-        onCancel={() => folderImportAbortRef.current?.abort()}
-        onClose={() => setFolderImportProgress(null)}
-      />
     </div>
   );
 }

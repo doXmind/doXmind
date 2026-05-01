@@ -153,6 +153,25 @@ export class DiskStorageAdapter implements StorageAdapter {
       return folderEntryFromPath(path);
     }
 
+    const documentType = input.documentType ?? (/\.pdf$/i.test(input.name) ? "pdf" : "markdown");
+
+    if (documentType === "pdf") {
+      if (!input.binary || input.binary.byteLength === 0) {
+        throw new Error("Creating a PDF requires non-empty binary bytes");
+      }
+      const path = ensurePdfExtension(childPath(input.parent, input.name));
+      // Tauri's IPC serializes Uint8Array as a JSON number array — that's how
+      // the existing `workspace_read_binary` command returns bytes too. The
+      // HTTP fallback (`/api/workspace/invoke`) re-uses the same shape via
+      // JSON, so a plain array works for both transports.
+      const document = await this.invoke<WorkspaceDocumentDto>("doc_create_pdf", {
+        root: this.requireRoot(),
+        path,
+        bytes: Array.from(input.binary),
+      });
+      return entryFromDocument(document);
+    }
+
     const path = ensureMarkdownExtension(childPath(input.parent, input.name));
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
@@ -505,6 +524,10 @@ function trimSlashes(path: string): string {
 
 function ensureMarkdownExtension(name: string): string {
   return /\.(md|markdown)$/i.test(name) ? name : `${name}.md`;
+}
+
+function ensurePdfExtension(name: string): string {
+  return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
 }
 
 function stripMarkdownExtension(name: string): string {

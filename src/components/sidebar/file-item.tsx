@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  Archive,
-  FileText,
-  MoreHorizontal,
-  Check,
-  X,
-  CheckSquare,
-  Square,
-  Pin,
-  PinOff,
-} from "lucide-react";
+import { Archive, MoreHorizontal, Check, X, CheckSquare, Square, Pin, PinOff } from "lucide-react";
+import { MarkdownGlyph, PdfGlyph } from "@/components/icons/document-glyphs";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
@@ -29,7 +20,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
-import { getDisplayName, withOriginalExtension } from "@/lib/document-types";
+import { getDisplayName, isPdfFile, withOriginalExtension } from "@/lib/document-types";
 
 const log = storeLogger.child("FileItem");
 const getNameWithoutExtension = getDisplayName;
@@ -419,8 +410,10 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           <span className="flex h-5 w-5 items-center justify-center text-sm md:text-xs">
             {file.icon}
           </span>
+        ) : isPdfFile(file) ? (
+          <PdfGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : (
-          <FileText className="h-5 w-5 text-muted-foreground/70 md:h-[18px] md:w-[18px]" />
+          <MarkdownGlyph className="h-5 w-5 text-muted-foreground/70 md:h-[18px] md:w-[18px]" />
         )}
       </div>
 

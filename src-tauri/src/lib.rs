@@ -423,6 +423,32 @@ async fn doc_create(
 }
 
 #[tauri::command]
+fn doc_create_pdf(
+    root: String,
+    path: String,
+    bytes: Vec<u8>,
+) -> Result<WorkspaceDocumentDto, String> {
+    let root = canonical_workspace_root(&root)?;
+    ensure_pdf_path(&path)?;
+    let resolved = resolve_workspace_path_for_write(&root, &path)?;
+    if resolved.exists() {
+        return Err(format!("document already exists: {path}"));
+    }
+    if let Some(parent) = resolved.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create destination directory: {err}"))?;
+    }
+    // Sanity-check the magic header. The frontend feeds us pdf-lib output, but
+    // a corrupt blob would otherwise silently land on disk and only blow up at
+    // open time.
+    if !bytes.starts_with(b"%PDF-") {
+        return Err("payload is not a PDF (missing %PDF- header)".into());
+    }
+    fs::write(&resolved, &bytes).map_err(|err| format!("failed to write PDF: {err}"))?;
+    document_dto_for_path(&resolved, relative_path_string(&root, &resolved)?)
+}
+
+#[tauri::command]
 fn doc_rename(
     root: String,
     old_path: String,
@@ -624,6 +650,17 @@ fn ensure_markdown_path(path: &str) -> Result<(), String> {
         _ => Err(format!(
             "document path must end in .md or .markdown: {path}"
         )),
+    }
+}
+
+fn ensure_pdf_path(path: &str) -> Result<(), String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("pdf") => Ok(()),
+        _ => Err(format!("document path must end in .pdf: {path}")),
     }
 }
 
@@ -1221,6 +1258,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_index_read,
             workspace_markdown_search,
             doc_create,
+            doc_create_pdf,
             doc_rename,
             doc_move,
             doc_delete,

@@ -15,12 +15,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import markdown
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from api.import_file import markdown_to_html
-
 router = APIRouter()
+
+
+def markdown_to_html(md: str) -> str:
+    """Render markdown to HTML for the editor.
+
+    No `codehilite` extension — TipTap can't parse the wrapper spans it
+    emits; the frontend uses lowlight for syntax highlighting instead.
+    """
+    return markdown.markdown(md, extensions=["tables", "fenced_code"])
 
 SIDECAR_VERSION = 1
 IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build", ".trash"}
@@ -81,6 +89,12 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         )
     if command == "doc_create":
         return doc_create(str(payload.get("root") or ""), payload.get("payload") or {})
+    if command == "doc_create_pdf":
+        return doc_create_pdf(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            payload.get("bytes") or [],
+        )
     if command == "doc_rename":
         return move_document_pair(
             str(payload.get("root") or ""),
@@ -257,6 +271,25 @@ def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     return document_dto_for_path(workspace, path)
 
 
+def doc_create_pdf(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]:
+    workspace = canonical_workspace_root(root)
+    ensure_pdf_path(rel_path)
+    path = resolve_workspace_path_for_write(workspace, rel_path)
+    if path.exists():
+        raise ValueError(f"document already exists: {rel_path}")
+    if not isinstance(byte_list, (list, tuple)):
+        raise ValueError("PDF bytes payload must be a list of unsigned bytes")
+    try:
+        data = bytes(int(b) & 0xFF for b in byte_list)
+    except (TypeError, ValueError) as err:
+        raise ValueError(f"invalid PDF bytes payload: {err}") from err
+    if not data.startswith(b"%PDF-"):
+        raise ValueError("payload is not a PDF (missing %PDF- header)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, data)
+    return document_dto_for_path(workspace, path)
+
+
 def write_doc(path: Path, payload: dict[str, Any]) -> None:
     meta = dict(payload.get("meta") or {})
     if not str(meta.get("id") or "").strip():
@@ -392,6 +425,11 @@ def validate_relative_path(path: str) -> Path:
 def ensure_markdown_path(path: str) -> None:
     if Path(path).suffix.lower() not in {".md", ".markdown"}:
         raise ValueError(f"document path must end in .md or .markdown: {path}")
+
+
+def ensure_pdf_path(path: str) -> None:
+    if Path(path).suffix.lower() != ".pdf":
+        raise ValueError(f"document path must end in .pdf: {path}")
 
 
 def resolve_existing_workspace_path(root: Path, rel_path: str) -> Path:

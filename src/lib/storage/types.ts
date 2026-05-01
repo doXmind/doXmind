@@ -61,7 +61,7 @@ export interface StorageWriteInput {
 }
 
 export interface PdfEditorState {
-  version: 1;
+  version: 1 | 2;
   edits?: Record<string, { text: string }>;
   textEdits?: Record<
     string,
@@ -81,6 +81,29 @@ export interface PdfEditorState {
       bold?: boolean;
       italic?: boolean;
       styleRanges?: PdfTextStyleRange[];
+    }
+  >;
+  /**
+   * v2 paragraph-level edits keyed by stable paragraph id (e.g. "p0-b3").
+   *
+   * Populated by the PyMuPDF-backed parse-blocks endpoint. Preserves the
+   * original block geometry + lines so export can redact-and-rewrite cleanly.
+   */
+  paragraphEdits?: Record<
+    string,
+    {
+      pageIndex: number;
+      text: string;
+      originalText: string;
+      bbox: { x: number; y: number; width: number; height: number };
+      fontSize: number;
+      fontFamily?: string;
+      color?: string;
+      bold?: boolean;
+      italic?: boolean;
+      textAlign?: "left" | "center" | "right";
+      styleRanges?: PdfTextStyleRange[];
+      deleted?: boolean;
     }
   >;
   freeText?: Array<{
@@ -125,6 +148,12 @@ export interface StorageCreateInput {
   kind?: WorkspaceEntryKind;
   parent?: DocumentHandle | null;
   content?: StorageWriteInput;
+  /**
+   * For PDF documents only. When provided, the adapter writes the bytes
+   * verbatim instead of going through the Markdown sidecar pipeline.
+   */
+  documentType?: WorkspaceDocumentType;
+  binary?: Uint8Array;
 }
 
 export interface WorkspaceIndexQuery {

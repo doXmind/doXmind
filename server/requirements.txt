@@ -23,19 +23,11 @@ fpdf2==2.8.5
 python-docx==1.1.2
 beautifulsoup4==4.12.3
 
-# Import — multi-router pipeline (replaces markitdown)
-#   PDF (native text)  → pymupdf4llm  (fast path, milliseconds, no models)
-#   PDF (scanned/dense) → marker-pdf   (Surya layout + OCR; downloads ~2GB on first use)
-#   DOCX               → mammoth      (clean docx → HTML)
-#   PPTX               → python-pptx  (slide-by-slide markdown emitter)
-#
-# All four are kept lightweight enough for `pip install` in dev. Marker pulls
-# in PyTorch transitively — that is the heavy bit. Bundling for Tauri will need
-# its own strategy (see CLAUDE.md), this file is for `server/.venv` dev runs.
-pymupdf4llm>=0.0.17
-marker-pdf>=1.4.0
-mammoth>=1.8.0
-python-pptx>=1.0.2
+# PDF editor parse + export pipeline lives on PyMuPDF directly. No
+# DOCX / PPTX / scan-OCR conversion happens server-side any more — the
+# workspace folder is the source of truth and external formats are
+# expected to land there as `.md` or `.pdf` directly.
+pymupdf>=1.24.0
 
 # Testing
 pytest==8.3.4

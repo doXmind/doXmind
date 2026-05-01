@@ -1,10 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { api } from "@/lib/api";
 import { apiUrl } from "@/lib/api/base";
-import { ImportError, type ImportMode } from "@/lib/api/files";
-import { useMarkerStore } from "@/stores/marker-store";
-import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import { syncDatabasesForDocument } from "@/stores/database-store";
@@ -83,12 +79,12 @@ interface FileState {
   loadFiles: () => Promise<void>;
   loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
   openDiskWorkspace: (root: string) => Promise<void>;
-  createFile: (name: string, content?: string, parentId?: string | null) => Promise<string>;
-  importFile: (
-    file: File,
+  createFile: (
+    name: string,
+    content?: string,
     parentId?: string | null,
-    options?: { silent?: boolean; mode?: ImportMode }
-  ) => Promise<string | null>;
+    options?: { documentType?: "markdown" | "pdf" }
+  ) => Promise<string>;
   updateFile: (
     id: string,
     updates: Partial<Pick<FileItem, "name" | "content" | "contentMarkdown">>
@@ -390,19 +386,44 @@ export const useFileStore = create<FileState>()(
         await get().loadFiles();
       },
 
-      createFile: async (name: string, content: string = "", parentId: string | null = null) => {
+      createFile: async (
+        name: string,
+        content: string = "",
+        parentId: string | null = null,
+        options?: { documentType?: "markdown" | "pdf" }
+      ) => {
         try {
           // Validate parentId exists (folder or file for sub-pages); fall back to root if stale
           const validParentId =
             parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
-          const entry = await getAdapter(get()).create({
-            name,
-            kind: "document",
-            parent: parentHandleForId(get().files, validParentId),
-            content: { html: content, markdown: "" },
-          });
-          const newFile = { ...fileFromEntry(entry, content), content };
+          const documentType = options?.documentType ?? (/\.pdf$/i.test(name) ? "pdf" : "markdown");
+
+          let entry;
+          let storedContent = content;
+          if (documentType === "pdf") {
+            const { createBlankPdfBytes } = await import("@/lib/pdf/blank-pdf");
+            const bytes = await createBlankPdfBytes();
+            entry = await getAdapter(get()).create({
+              name,
+              kind: "document",
+              parent: parentHandleForId(get().files, validParentId),
+              documentType: "pdf",
+              binary: bytes,
+            });
+            // PDFs aren't displayed via `content` — the editor reads the
+            // binary on demand. Keep the in-memory content empty so we don't
+            // accidentally feed PDF bytes into a markdown viewer.
+            storedContent = "";
+          } else {
+            entry = await getAdapter(get()).create({
+              name,
+              kind: "document",
+              parent: parentHandleForId(get().files, validParentId),
+              content: { html: content, markdown: "" },
+            });
+          }
+          const newFile = { ...fileFromEntry(entry, storedContent), content: storedContent };
 
           set((state) => ({
             files: [newFile, ...state.files],
@@ -415,68 +436,6 @@ export const useFileStore = create<FileState>()(
           return newFile.id;
         } catch (error) {
           log.error("Failed to create file", error);
-          throw error;
-        }
-      },
-
-      importFile: async (
-        file: File,
-        parentId?: string | null,
-        options?: { silent?: boolean; mode?: ImportMode }
-      ) => {
-        // No client-side size cap — this is a local-first desktop build,
-        // the sidecar is on 127.0.0.1 and the data dir is the user's own
-        // disk. Big academic PDFs and scans use the Marker fallback in
-        // the converter router; the per-format dispatch is on the server.
-        try {
-          const imported = /\.(md|markdown)$/i.test(file.name)
-            ? {
-                name: file.name,
-                markdown: await file.text(),
-                html: "",
-              }
-            : await api.convertFile(file, { mode: options?.mode }).then((converted) => ({
-                name: converted.name,
-                markdown: converted.content_markdown,
-                html: converted.content,
-              }));
-          const htmlContent = imported.html || markdownToHtml(imported.markdown);
-          const entry = await getAdapter(get()).create({
-            name: imported.name,
-            kind: "document",
-            parent: parentHandleForId(get().files, parentId),
-            content: { html: htmlContent, markdown: imported.markdown },
-          });
-          const newFile = {
-            ...fileFromEntry(entry, htmlContent),
-            contentMarkdown: imported.markdown,
-            wordCount: imported.markdown.split(/\s+/).filter(Boolean).length,
-            preview: imported.markdown
-              .replace(/[#*_`>\-[\]()]/g, "")
-              .trim()
-              .slice(0, 200),
-          };
-          if (options?.silent) {
-            set((state) => ({ files: [newFile, ...state.files] }));
-          } else {
-            set((state) => ({
-              files: [newFile, ...state.files],
-              currentFileId: newFile.id,
-              loadedContentIds: new Set([...state.loadedContentIds, newFile.id]),
-            }));
-          }
-          eventBus.emit("storage:changed");
-          return newFile.id;
-        } catch (error) {
-          // Scanned PDF that needs the Marker fallback, but the OCR
-          // weights aren't downloaded yet. Hand off to the marker store,
-          // which will prompt the user, kick off the download, and
-          // re-call this same `importFile` once the models are ready.
-          if (error instanceof ImportError && error.code === "MARKER_MODELS_REQUIRED") {
-            useMarkerStore.getState().enqueueImport({ file, parentId, options });
-            return null;
-          }
-          log.error("Failed to import file", error);
           throw error;
         }
       },

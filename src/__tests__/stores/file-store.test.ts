@@ -1,18 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { invokeMock, convertFileMock } = vi.hoisted(() => ({
+const { invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
-  convertFileMock: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
-}));
-
-vi.mock("@/lib/api", () => ({
-  api: {
-    convertFile: convertFileMock,
-  },
 }));
 
 import { useFileStore } from "@/stores/file-store";
@@ -156,33 +149,33 @@ describe("useFileStore disk workspace", () => {
     expect(useFileStore.getState().getFile("doc-new")?.content).toBe("<p>Draft</p>");
   });
 
-  it("imports converted office/PDF files into the disk workspace", async () => {
-    convertFileMock.mockResolvedValueOnce({
-      name: "Import.md",
-      content: "<p>Converted</p>",
-      content_markdown: "Converted",
-    });
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === "doc_create") {
+  it("creates a blank PDF as binary via doc_create_pdf", async () => {
+    invokeMock.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      if (command === "doc_create_pdf") {
+        // Sanity-check the payload shape: bytes are passed as a JSON-safe
+        // number array, and the path keeps its `.pdf` extension.
+        expect(payload.path).toBe("Untitled.pdf");
+        expect(Array.isArray(payload.bytes)).toBe(true);
+        expect((payload.bytes as number[]).length).toBeGreaterThan(0);
         return {
-          id: "doc-import",
-          idSource: "frontmatter",
-          path: "Import.md",
-          name: "Import.md",
-          title: "Import",
-          hasSidecar: true,
+          id: "doc-pdf",
+          idSource: "path",
+          path: "Untitled.pdf",
+          name: "Untitled.pdf",
+          title: "Untitled",
+          documentType: "pdf",
+          hasSidecar: false,
         };
       }
       throw new Error(`Unexpected command: ${command}`);
     });
 
-    const id = await useFileStore.getState().importFile(
-      new File(["fake"], "Import.pdf", { type: "application/pdf" })
-    );
+    const id = await useFileStore
+      .getState()
+      .createFile("Untitled.pdf", "", null, { documentType: "pdf" });
 
-    expect(id).toBe("doc-import");
-    expect(convertFileMock).toHaveBeenCalledOnce();
-    expect(useFileStore.getState().getFile("doc-import")?.contentMarkdown).toBe("Converted");
+    expect(id).toBe("doc-pdf");
+    expect(useFileStore.getState().currentFileId).toBe("doc-pdf");
   });
 
   it("writes content updates through doc_write_workspace", async () => {
