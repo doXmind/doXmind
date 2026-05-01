@@ -18,17 +18,10 @@ import {
   MoreHorizontal,
   Minimize2,
   SquarePen,
-  Upload,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { FileItem } from "./file-item";
 import { NewButton } from "@/components/home/new-button";
 import { SortDropdown } from "./sort-dropdown";
@@ -42,12 +35,9 @@ const log = storeLogger.child("FolderTree");
 
 interface FolderTreeProps {
   onCreateFile: (parentId?: string | null) => void;
+  onCreatePdf: (parentId?: string | null) => void;
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
-  onImportFile: () => void;
-  onImportFileOcr: () => void;
-  onImportFolder: () => void;
-  isImporting: boolean;
 }
 
 function SidebarSection({
@@ -96,12 +86,9 @@ function HeaderIconButton({
 
 export function FolderTree({
   onCreateFile,
+  onCreatePdf,
   onCreateFolder,
   onOpenTemplatePicker,
-  onImportFile,
-  onImportFileOcr,
-  onImportFolder,
-  isImporting: isFileImporting,
 }: FolderTreeProps) {
   const t = useTranslations("sidebar");
 
@@ -120,14 +107,11 @@ export function FolderTree({
   const renameFile = useFileStore((s) => s.renameFile);
   const deleteFile = useFileStore((s) => s.deleteFile);
   const restoreFile = useFileStore((s) => s.restoreFile);
-  const importFile = useFileStore((s) => s.importFile);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
   const [favoritesExpanded, setFavoritesExpanded] = useState(true);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
-  const [, setIsImporting] = useState(false);
-  const [, setImportProgress] = useState({ current: 0, total: 0 });
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folderId: string } | null>(
@@ -174,41 +158,10 @@ export function FolderTree({
     e.stopPropagation();
     setDragOverFolderId(null);
 
-    // Check if dropping external files (from computer)
-    const droppedFiles = e.dataTransfer.files;
-    if (droppedFiles && droppedFiles.length > 0) {
-      // Import external files
-      const fileCount = droppedFiles.length;
-
-      setIsImporting(true);
-      setImportProgress({ current: 0, total: fileCount });
-
-      let failCount = 0;
-
-      for (let i = 0; i < fileCount; i++) {
-        const file = droppedFiles[i];
-        setImportProgress({ current: i + 1, total: fileCount });
-
-        try {
-          await importFile(file, folderId);
-        } catch (error) {
-          failCount++;
-          log.error("Failed to import file", error);
-        }
-      }
-
-      setIsImporting(false);
-      setImportProgress({ current: 0, total: 0 });
-
-      // Only show toast for errors
-      if (failCount > 0) {
-        toast.error(t("failedToImportCount", { count: failCount }));
-      }
-
-      return;
-    }
-
-    // Otherwise, handle internal file move
+    // External file drops are intentionally ignored — the workspace folder
+    // is the source of truth, so users move external files in via Finder /
+    // Explorer rather than through the app. Only internal moves are
+    // accepted here.
     const draggedFileId = e.dataTransfer.getData("text/plain");
     if (draggedFileId && draggedFileId !== folderId) {
       try {
@@ -441,27 +394,9 @@ export function FolderTree({
       <Tooltip content={t("organizeFolders")} side="top">
         <SortDropdown iconOnly ariaLabel={t("organizeFolders")} />
       </Tooltip>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
-            aria-label={t("newFolder")}
-            title={t("newFolder")}
-          >
-            <FolderPlus className="h-4 w-4" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={onCreateFolder}>
-            <FolderPlus className="mr-2 h-4 w-4" />
-            {t("newFolder")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onImportFolder}>
-            <Upload className="mr-2 h-4 w-4" />
-            {t("importFolder")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <HeaderIconButton label={t("newFolder")} onClick={onCreateFolder}>
+        <FolderPlus className="h-4 w-4" />
+      </HeaderIconButton>
     </>
   );
 
@@ -472,11 +407,9 @@ export function FolderTree({
       </Tooltip>
       <NewButton
         onCreateFile={onCreateFile}
+        onCreatePdf={onCreatePdf}
         onCreateFolder={onCreateFolder}
         onOpenTemplatePicker={onOpenTemplatePicker}
-        onImportFile={onImportFile}
-        onImportFileOcr={onImportFileOcr}
-        isImporting={isFileImporting}
         hideFolder
       />
     </>

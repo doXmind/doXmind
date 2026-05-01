@@ -2,6 +2,8 @@ import type {
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
+  PdfEditorState,
+  WorkspaceDocumentType,
   MarkdownSearchOptions,
   MarkdownSearchResults,
   StorageAdapter,
@@ -32,6 +34,7 @@ interface WorkspaceDocumentDto {
   path: string;
   name: string;
   title?: string | null;
+  documentType?: WorkspaceDocumentType;
   hasSidecar: boolean;
 }
 
@@ -76,6 +79,10 @@ export class DiskStorageAdapter implements StorageAdapter {
   }
 
   async read(handle: DocumentHandle): Promise<DocumentContent> {
+    if ((handle.documentType ?? documentTypeFromPath(requireHandlePath(handle))) === "pdf") {
+      throw new Error("PDF documents are binary; use readBinary instead");
+    }
+
     const result = await this.invoke<DocReadResultDto>("doc_read", {
       path: this.absolutePath(handle),
     });
@@ -87,8 +94,32 @@ export class DiskStorageAdapter implements StorageAdapter {
       meta: result.meta,
       extras: result.extras,
       source: result.source,
+      documentType: "markdown",
       updatedAt: result.meta.updated || new Date().toISOString(),
     };
+  }
+
+  async readBinary(handle: DocumentHandle): Promise<Uint8Array> {
+    const bytes = await this.invoke<number[]>("workspace_read_binary", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+    });
+    return new Uint8Array(bytes);
+  }
+
+  async readPdfEditorState(handle: DocumentHandle): Promise<PdfEditorState | null> {
+    return this.invoke<PdfEditorState | null>("workspace_read_pdf_editor_state", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+    });
+  }
+
+  async writePdfEditorState(handle: DocumentHandle, state: PdfEditorState): Promise<void> {
+    await this.invoke<void>("workspace_write_pdf_editor_state", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+      payload: state,
+    });
   }
 
   async write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent> {
@@ -120,6 +151,25 @@ export class DiskStorageAdapter implements StorageAdapter {
         path,
       });
       return folderEntryFromPath(path);
+    }
+
+    const documentType = input.documentType ?? (/\.pdf$/i.test(input.name) ? "pdf" : "markdown");
+
+    if (documentType === "pdf") {
+      if (!input.binary || input.binary.byteLength === 0) {
+        throw new Error("Creating a PDF requires non-empty binary bytes");
+      }
+      const path = ensurePdfExtension(childPath(input.parent, input.name));
+      // Tauri's IPC serializes Uint8Array as a JSON number array — that's how
+      // the existing `workspace_read_binary` command returns bytes too. The
+      // HTTP fallback (`/api/workspace/invoke`) re-uses the same shape via
+      // JSON, so a plain array works for both transports.
+      const document = await this.invoke<WorkspaceDocumentDto>("doc_create_pdf", {
+        root: this.requireRoot(),
+        path,
+        bytes: Array.from(input.binary),
+      });
+      return entryFromDocument(document);
     }
 
     const path = ensureMarkdownExtension(childPath(input.parent, input.name));
@@ -293,6 +343,7 @@ export class DiskStorageAdapter implements StorageAdapter {
       mode: "disk",
       id: result.meta.id || handle.id,
       kind: "document",
+      documentType: "markdown",
       path: relPath,
       relPath,
     };
@@ -365,17 +416,19 @@ function entryFromDocument(doc: WorkspaceDocumentDto): WorkspaceEntry {
       mode: "disk",
       id: doc.id,
       kind: "document",
+      documentType: doc.documentType ?? documentTypeFromPath(doc.path),
       path: doc.path,
       relPath: doc.path,
     },
     kind: "document",
-    name: stripMarkdownExtension(doc.name),
+    name: doc.title || stripDocumentExtension(doc.name),
     parent: parentPath ? folderHandle(parentPath) : null,
     position: 0,
     createdAt: now,
     updatedAt: now,
     preview: doc.title || "",
     wordCount: 0,
+    documentType: doc.documentType ?? documentTypeFromPath(doc.path),
     isFavorite: false,
     icon: null,
     coverImageUrl: null,
@@ -473,6 +526,18 @@ function ensureMarkdownExtension(name: string): string {
   return /\.(md|markdown)$/i.test(name) ? name : `${name}.md`;
 }
 
+function ensurePdfExtension(name: string): string {
+  return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
+}
+
 function stripMarkdownExtension(name: string): string {
   return name.replace(/\.(md|markdown)$/i, "");
+}
+
+function stripDocumentExtension(name: string): string {
+  return name.replace(/\.(md|markdown|pdf)$/i, "");
+}
+
+function documentTypeFromPath(path: string): WorkspaceDocumentType {
+  return /\.pdf$/i.test(path) ? "pdf" : "markdown";
 }

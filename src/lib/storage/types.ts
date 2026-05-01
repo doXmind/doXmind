@@ -1,11 +1,13 @@
 export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
+export type WorkspaceDocumentType = "markdown" | "pdf";
 
 export interface DocumentHandle {
   mode: WorkspaceMode;
   id: string;
   kind?: WorkspaceEntryKind;
+  documentType?: WorkspaceDocumentType;
   path?: string | null;
   relPath?: string | null;
 }
@@ -18,6 +20,7 @@ export interface DocumentContent {
   meta?: DocumentMeta;
   extras?: unknown;
   source?: "sidecar" | "markdown" | "empty";
+  documentType?: WorkspaceDocumentType;
   updatedAt: string;
 }
 
@@ -42,6 +45,7 @@ export interface WorkspaceEntry {
   updatedAt: string;
   preview?: string;
   wordCount?: number;
+  documentType?: WorkspaceDocumentType;
   isFavorite?: boolean;
   icon?: string | null;
   coverImageUrl?: string | null;
@@ -56,11 +60,100 @@ export interface StorageWriteInput {
   extras?: unknown;
 }
 
+export interface PdfEditorState {
+  version: 1 | 2;
+  edits?: Record<string, { text: string }>;
+  textEdits?: Record<
+    string,
+    {
+      pageIndex: number;
+      text: string;
+      originalText: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      fontSize: number;
+      originalFontSize?: number;
+      fontName?: string;
+      fontFamily?: string;
+      color?: string;
+      bold?: boolean;
+      italic?: boolean;
+      styleRanges?: PdfTextStyleRange[];
+    }
+  >;
+  /**
+   * v2 paragraph-level edits keyed by stable paragraph id (e.g. "p0-b3").
+   *
+   * Populated by the PyMuPDF-backed parse-blocks endpoint. Preserves the
+   * original block geometry + lines so export can redact-and-rewrite cleanly.
+   */
+  paragraphEdits?: Record<
+    string,
+    {
+      pageIndex: number;
+      text: string;
+      originalText: string;
+      bbox: { x: number; y: number; width: number; height: number };
+      fontSize: number;
+      fontFamily?: string;
+      color?: string;
+      bold?: boolean;
+      italic?: boolean;
+      textAlign?: "left" | "center" | "right";
+      styleRanges?: PdfTextStyleRange[];
+      deleted?: boolean;
+    }
+  >;
+  freeText?: Array<{
+    id: string;
+    pageIndex: number;
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize: number;
+    fontFamily?: string;
+    color?: string;
+    bold?: boolean;
+    italic?: boolean;
+    textAlign?: "left" | "center" | "right";
+    styleRanges?: PdfTextStyleRange[];
+  }>;
+  highlights?: Array<{
+    id: string;
+    pageIndex: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    color?: string;
+    opacity?: number;
+  }>;
+}
+
+export interface PdfTextStyleRange {
+  start: number;
+  end: number;
+  color?: string;
+  highlightColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
 export interface StorageCreateInput {
   name: string;
   kind?: WorkspaceEntryKind;
   parent?: DocumentHandle | null;
   content?: StorageWriteInput;
+  /**
+   * For PDF documents only. When provided, the adapter writes the bytes
+   * verbatim instead of going through the Markdown sidecar pipeline.
+   */
+  documentType?: WorkspaceDocumentType;
+  binary?: Uint8Array;
 }
 
 export interface WorkspaceIndexQuery {
@@ -112,6 +205,9 @@ export interface StorageAdapter {
   list(parent?: DocumentHandle | null): Promise<WorkspaceEntry[]>;
   read(handle: DocumentHandle): Promise<DocumentContent>;
   write(handle: DocumentHandle, content: StorageWriteInput): Promise<DocumentContent>;
+  readBinary?(handle: DocumentHandle): Promise<Uint8Array>;
+  readPdfEditorState?(handle: DocumentHandle): Promise<PdfEditorState | null>;
+  writePdfEditorState?(handle: DocumentHandle, state: PdfEditorState): Promise<void>;
   create(input: StorageCreateInput): Promise<WorkspaceEntry>;
   rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
   move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;

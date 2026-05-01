@@ -5,7 +5,6 @@ import { MotionConfig } from "framer-motion";
 import { useThemeManager } from "@/hooks/use-theme-manager";
 import { TrayMenuListener } from "@/components/tray-menu-listener";
 import { AppearanceInjector } from "@/components/appearance-injector";
-import { MarkerDownloadPrompt } from "@/components/marker-download-prompt";
 
 function ThemeInitializer() {
   useThemeManager();
@@ -27,7 +26,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AppearanceInjector />
         <TrayMenuListener />
         {children}
-        <MarkerDownloadPrompt />
       </MotionConfig>
     </ThemeProvider>
   );

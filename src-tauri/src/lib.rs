@@ -11,6 +11,7 @@
 //!   4. On exit, kill the sidecar so we don't leave an orphaned uvicorn.
 
 use std::fs;
+use std::io;
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
@@ -197,6 +198,7 @@ struct WorkspaceDocumentDto {
     path: String,
     name: String,
     title: Option<String>,
+    document_type: String,
     has_sidecar: bool,
 }
 
@@ -306,6 +308,65 @@ async fn doc_write_workspace(
 }
 
 #[tauri::command]
+fn workspace_read_binary(root: String, path: String) -> Result<Vec<u8>, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_pdf_file(&path) {
+        return Err("binary workspace reads are only enabled for PDFs".to_string());
+    }
+    fs::read(path).map_err(|err| format!("failed to read binary workspace file: {err}"))
+}
+
+#[tauri::command]
+fn workspace_read_pdf_editor_state(
+    root: String,
+    path: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_pdf_file(&path) {
+        return Err("PDF editor state is only enabled for PDFs".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let raw = match fs::read_to_string(sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to read PDF sidecar: {err}")),
+    };
+    let sidecar: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|err| format!("invalid PDF sidecar JSON: {err}"))?;
+    Ok(sidecar.get("pdf_editor").cloned())
+}
+
+#[tauri::command]
+fn workspace_write_pdf_editor_state(
+    root: String,
+    path: String,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_pdf_file(&path) {
+        return Err("PDF editor state is only enabled for PDFs".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let rel_path = relative_path_string(&root, &path)?;
+    let sidecar = serde_json::json!({
+        "version": 1,
+        "id": stable_path_id(&rel_path),
+        "source_path": rel_path,
+        "updated_at_unix_nanos": unix_nanos().to_string(),
+        "pdf_editor": payload,
+    });
+    fs::write(
+        sidecar_path,
+        serde_json::to_vec_pretty(&sidecar)
+            .map_err(|err| format!("failed to encode PDF sidecar: {err}"))?,
+    )
+    .map_err(|err| format!("failed to write PDF sidecar: {err}"))
+}
+
+#[tauri::command]
 fn workspace_scan(root: String) -> Result<WorkspaceScanResultDto, String> {
     let root = canonical_workspace_root(&root)?;
     let mut documents = Vec::new();
@@ -359,6 +420,32 @@ async fn doc_create(
         .map_err(|err| err.to_string())?;
 
     document_dto_for_path(&path, relative_path_string(&root, &path)?)
+}
+
+#[tauri::command]
+fn doc_create_pdf(
+    root: String,
+    path: String,
+    bytes: Vec<u8>,
+) -> Result<WorkspaceDocumentDto, String> {
+    let root = canonical_workspace_root(&root)?;
+    ensure_pdf_path(&path)?;
+    let resolved = resolve_workspace_path_for_write(&root, &path)?;
+    if resolved.exists() {
+        return Err(format!("document already exists: {path}"));
+    }
+    if let Some(parent) = resolved.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create destination directory: {err}"))?;
+    }
+    // Sanity-check the magic header. The frontend feeds us pdf-lib output, but
+    // a corrupt blob would otherwise silently land on disk and only blow up at
+    // open time.
+    if !bytes.starts_with(b"%PDF-") {
+        return Err("payload is not a PDF (missing %PDF- header)".into());
+    }
+    fs::write(&resolved, &bytes).map_err(|err| format!("failed to write PDF: {err}"))?;
+    document_dto_for_path(&resolved, relative_path_string(&root, &resolved)?)
 }
 
 #[tauri::command]
@@ -566,6 +653,17 @@ fn ensure_markdown_path(path: &str) -> Result<(), String> {
     }
 }
 
+fn ensure_pdf_path(path: &str) -> Result<(), String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("pdf") => Ok(()),
+        _ => Err(format!("document path must end in .pdf: {path}")),
+    }
+}
+
 fn resolve_existing_workspace_path(root: &Path, path: &str) -> Result<PathBuf, String> {
     let relative = validate_relative_path(path)?;
     let candidate = root.join(relative);
@@ -634,7 +732,10 @@ fn scan_workspace_dir(
             continue;
         }
 
-        if !file_type.is_file() || is_hidden_sidecar_name(&file_name) || !is_markdown_file(&path) {
+        if !file_type.is_file()
+            || is_hidden_sidecar_name(&file_name)
+            || !is_workspace_document_file(&path)
+        {
             continue;
         }
 
@@ -694,16 +795,37 @@ fn is_markdown_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_pdf_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false)
+}
+
+fn is_workspace_document_file(path: &Path) -> bool {
+    is_markdown_file(path) || is_pdf_file(path)
+}
+
 fn document_dto_for_path(
     path: &Path,
     relative_path: String,
 ) -> Result<WorkspaceDocumentDto, String> {
-    let raw = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read markdown document for scan: {err}"))?;
-    let (frontmatter_id, title) = parse_frontmatter_scan_fields(&raw);
-    let (id, id_source) = match frontmatter_id {
-        Some(id) => (id, "frontmatter".to_string()),
-        None => (stable_path_id(&relative_path), "path".to_string()),
+    let document_type = if is_pdf_file(path) { "pdf" } else { "markdown" }.to_string();
+    let (id, id_source, title) = if document_type == "markdown" {
+        let raw = fs::read_to_string(path)
+            .map_err(|err| format!("failed to read markdown document for scan: {err}"))?;
+        let (frontmatter_id, title) = parse_frontmatter_scan_fields(&raw);
+        match frontmatter_id {
+            Some(id) => (id, "frontmatter".to_string(), title),
+            None => (stable_path_id(&relative_path), "path".to_string(), title),
+        }
+    } else {
+        (
+            stable_path_id(&relative_path),
+            "path".to_string(),
+            path.file_stem()
+                .map(|name| name.to_string_lossy().into_owned()),
+        )
     };
 
     Ok(WorkspaceDocumentDto {
@@ -715,6 +837,7 @@ fn document_dto_for_path(
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default(),
         title,
+        document_type,
         has_sidecar: doxmind_sidecar::sidecar_path_for(path).exists(),
     })
 }
@@ -1127,11 +1250,15 @@ window.__TAURI_PLATFORM__ = "{platform}";
             doc_read,
             doc_write,
             doc_write_workspace,
+            workspace_read_binary,
+            workspace_read_pdf_editor_state,
+            workspace_write_pdf_editor_state,
             workspace_scan,
             workspace_index_rebuild,
             workspace_index_read,
             workspace_markdown_search,
             doc_create,
+            doc_create_pdf,
             doc_rename,
             doc_move,
             doc_delete,

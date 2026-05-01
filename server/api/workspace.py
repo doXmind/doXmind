@@ -15,12 +15,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import markdown
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from api.import_file import markdown_to_html
-
 router = APIRouter()
+
+
+def markdown_to_html(md: str) -> str:
+    """Render markdown to HTML for the editor.
+
+    No `codehilite` extension — TipTap can't parse the wrapper spans it
+    emits; the frontend uses lowlight for syntax highlighting instead.
+    """
+    return markdown.markdown(md, extensions=["tables", "fenced_code"])
 
 SIDECAR_VERSION = 1
 IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build", ".trash"}
@@ -57,6 +65,22 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         )
     if command == "doc_read":
         return read_doc(Path(str(payload.get("path") or "")))
+    if command == "workspace_read_binary":
+        return read_workspace_binary(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_read_pdf_editor_state":
+        return read_pdf_editor_state(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_write_pdf_editor_state":
+        return write_pdf_editor_state(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            payload.get("payload") or {},
+        )
     if command == "doc_write_workspace":
         return write_doc_workspace(
             str(payload.get("root") or ""),
@@ -65,6 +89,12 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
         )
     if command == "doc_create":
         return doc_create(str(payload.get("root") or ""), payload.get("payload") or {})
+    if command == "doc_create_pdf":
+        return doc_create_pdf(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            payload.get("bytes") or [],
+        )
     if command == "doc_rename":
         return move_document_pair(
             str(payload.get("root") or ""),
@@ -105,7 +135,11 @@ def workspace_scan(root: str) -> dict[str, Any]:
     for path in sorted(workspace.rglob("*")):
         if any(part in IGNORED_SCAN_DIRS for part in path.relative_to(workspace).parts[:-1]):
             continue
-        if not path.is_file() or is_hidden_sidecar_name(path.name) or not is_markdown_file(path):
+        if (
+            not path.is_file()
+            or is_hidden_sidecar_name(path.name)
+            or not is_workspace_document_file(path)
+        ):
             continue
         documents.append(document_dto_for_path(workspace, path))
     return {"root": str(workspace), "documents": documents}
@@ -134,6 +168,8 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
     results: list[dict[str, Any]] = []
 
     for doc in workspace_scan(root)["documents"]:
+        if doc.get("documentType") != "markdown":
+            continue
         path = workspace / doc["path"]
         raw = path.read_text(encoding="utf-8")
         matches = []
@@ -182,6 +218,41 @@ def read_doc(path: Path) -> dict[str, Any]:
     }
 
 
+def read_workspace_binary(root: str, rel_path: str) -> list[int]:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_pdf_file(path):
+        raise ValueError("binary workspace reads are only enabled for PDFs")
+    return list(path.read_bytes())
+
+
+def read_pdf_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_pdf_file(path):
+        raise ValueError("PDF editor state is only enabled for PDFs")
+    sidecar = read_sidecar(sidecar_path_for(path))
+    if not sidecar:
+        return None
+    state = sidecar.get("pdf_editor")
+    return state if isinstance(state, dict) else None
+
+
+def write_pdf_editor_state(root: str, rel_path: str, payload: dict[str, Any]) -> None:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_pdf_file(path):
+        raise ValueError("PDF editor state is only enabled for PDFs")
+    sidecar = {
+        "version": SIDECAR_VERSION,
+        "id": stable_path_id(relative_path_string(workspace, path)),
+        "source_path": relative_path_string(workspace, path),
+        "updated_at": now_iso(),
+        "pdf_editor": payload,
+    }
+    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
+
+
 def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> None:
     workspace = canonical_workspace_root(root)
     ensure_markdown_path(rel_path)
@@ -197,6 +268,25 @@ def doc_create(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     if path.exists():
         raise ValueError(f"document already exists: {rel_path}")
     write_doc(path, payload)
+    return document_dto_for_path(workspace, path)
+
+
+def doc_create_pdf(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]:
+    workspace = canonical_workspace_root(root)
+    ensure_pdf_path(rel_path)
+    path = resolve_workspace_path_for_write(workspace, rel_path)
+    if path.exists():
+        raise ValueError(f"document already exists: {rel_path}")
+    if not isinstance(byte_list, (list, tuple)):
+        raise ValueError("PDF bytes payload must be a list of unsigned bytes")
+    try:
+        data = bytes(int(b) & 0xFF for b in byte_list)
+    except (TypeError, ValueError) as err:
+        raise ValueError(f"invalid PDF bytes payload: {err}") from err
+    if not data.startswith(b"%PDF-"):
+        raise ValueError("payload is not a PDF (missing %PDF- header)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, data)
     return document_dto_for_path(workspace, path)
 
 
@@ -337,6 +427,11 @@ def ensure_markdown_path(path: str) -> None:
         raise ValueError(f"document path must end in .md or .markdown: {path}")
 
 
+def ensure_pdf_path(path: str) -> None:
+    if Path(path).suffix.lower() != ".pdf":
+        raise ValueError(f"document path must end in .pdf: {path}")
+
+
 def resolve_existing_workspace_path(root: Path, rel_path: str) -> Path:
     relative = validate_relative_path(rel_path)
     candidate = root / relative
@@ -361,17 +456,24 @@ def ensure_path_within_root(root: Path, path: Path) -> None:
 
 
 def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
-    raw = path.read_text(encoding="utf-8")
-    frontmatter_id, title = parse_frontmatter_scan_fields(raw)
     rel_path = relative_path_string(root, path)
-    id_source = "frontmatter" if frontmatter_id else "path"
-    doc_id = frontmatter_id or stable_path_id(rel_path)
+    document_type = "pdf" if is_pdf_file(path) else "markdown"
+    if document_type == "markdown":
+        raw = path.read_text(encoding="utf-8")
+        frontmatter_id, title = parse_frontmatter_scan_fields(raw)
+        id_source = "frontmatter" if frontmatter_id else "path"
+        doc_id = frontmatter_id or stable_path_id(rel_path)
+    else:
+        id_source = "path"
+        doc_id = stable_path_id(rel_path)
+        title = path.stem
     return {
         "id": doc_id,
         "idSource": id_source,
         "path": rel_path,
         "name": path.name,
         "title": title,
+        "documentType": document_type,
         "hasSidecar": sidecar_path_for(path).exists(),
     }
 
@@ -490,6 +592,14 @@ def is_hidden_sidecar_name(name: str) -> bool:
 
 def is_markdown_file(path: Path) -> bool:
     return path.suffix.lower() in {".md", ".markdown"}
+
+
+def is_pdf_file(path: Path) -> bool:
+    return path.suffix.lower() == ".pdf"
+
+
+def is_workspace_document_file(path: Path) -> bool:
+    return is_markdown_file(path) or is_pdf_file(path)
 
 
 def relative_path_string(root: Path, path: Path) -> str:

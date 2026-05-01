@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import dynamic from "next/dynamic";
 import { AppShell } from "@/components/layout/app-shell";
-import { Editor } from "@/components/editor/editor";
+import { DocumentWorkspace } from "@/components/workspace/document-workspace";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { useFileStore } from "@/stores/file-store";
@@ -56,7 +56,7 @@ export function MobileEditor() {
           <ErrorBoundary>
             {currentFile ? (
               loadedContentIds.has(currentFile.id) ? (
-                <Editor file={currentFile} />
+                <DocumentWorkspace file={currentFile} />
               ) : (
                 <LoadingPlaceholder />
               )

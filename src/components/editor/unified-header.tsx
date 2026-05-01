@@ -29,6 +29,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useIsTauri } from "@/hooks/use-is-tauri";
+import { getDisplayName, isPdfFile } from "@/lib/document-types";
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
@@ -37,9 +38,10 @@ export function UnifiedHeader() {
   const toggleSearchBar = useLayoutStore((s) => s.toggleSearchBar);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
   const setPresentationMode = useLayoutStore((s) => s.setPresentationMode);
-  const currentFileName = useFileStore((s) =>
-    s.currentFileId ? s.files.find((file) => file.id === s.currentFileId)?.name : undefined
+  const currentFile = useFileStore((s) =>
+    s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
   );
+  const currentFileName = currentFile?.name;
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
   const tSettings = useTranslations("settings");
@@ -48,7 +50,8 @@ export function UnifiedHeader() {
   // Only show a title when an actual document is loaded — on the
   // welcome screen there's no file to title, so showing "Untitled"
   // would just be noise.
-  const title = currentFileName ? currentFileName.replace(/\.md$/i, "") : "";
+  const isPdf = currentFile ? isPdfFile(currentFile) : false;
+  const title = currentFileName ? getDisplayName(currentFileName) : "";
   const saveLabel = isSaving ? t("saving") : isDirty ? t("unsavedChanges") : t("saved");
 
   // In the Tauri macOS build the native title bar is hidden via
@@ -63,6 +66,14 @@ export function UnifiedHeader() {
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
+
+    // PDF export when the active document is a PDF: hand off to the PDF
+    // editor (PyMuPDF redact + insert_htmlbox pipeline). The editor owns
+    // the raw bytes + edits, so it does the actual download.
+    if (format === "pdf" && isPdfFile(currentFile)) {
+      window.dispatchEvent(new CustomEvent("doxmind:export-pdf"));
+      return;
+    }
 
     if (format !== "markdown") {
       toast.error(t("diskExportOnlyMarkdown"));
@@ -155,17 +166,19 @@ export function UnifiedHeader() {
         <div data-tauri-drag-region className="flex items-center justify-end gap-1.5">
           {currentFileName && (
             <>
-              <Tooltip content={t("present")} side="bottom">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="desktop-header-button h-7 w-7 rounded-md"
-                  onClick={() => setPresentationMode(true)}
-                  aria-label={t("present")}
-                >
-                  <Play className="h-3.5 w-3.5" />
-                </Button>
-              </Tooltip>
+              {!isPdf && (
+                <Tooltip content={t("present")} side="bottom">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="desktop-header-button h-7 w-7 rounded-md"
+                    onClick={() => setPresentationMode(true)}
+                    aria-label={t("present")}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                  </Button>
+                </Tooltip>
+              )}
 
               <div className="h-5 w-px bg-[var(--chrome-border)]" />
 

@@ -14,13 +14,7 @@ interface DocumentTitleProps {
 }
 
 export function DocumentTitle({ fileId, fileName, onEnterEditor }: DocumentTitleProps) {
-  const {
-    renameFile,
-    getFile,
-    setFileIcon,
-    createFile,
-    setCoverImage,
-  } = useFileStore();
+  const { renameFile, getFile, setFileIcon, createFile, setCoverImage } = useFileStore();
   const file = getFile(fileId);
   const icon = file?.icon ?? null;
   const hasCover = !!file?.coverImageUrl;
