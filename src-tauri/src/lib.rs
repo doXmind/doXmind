@@ -19,7 +19,7 @@ use std::{cmp, collections::BTreeMap};
 
 use doxmind_sidecar::{DocMeta, DocPayload, ReadResult, Source};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
@@ -1217,6 +1217,13 @@ window.__TAURI_PLATFORM__ = "{platform}";
             }
 
             let window = builder.build()?;
+            let close_to_dock_window = window.clone();
+            window.on_window_event(move |event| {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = close_to_dock_window.minimize();
+                }
+            });
             #[cfg(target_os = "macos")]
             {
                 // corner_radius=None lets NSVisualEffectView fill the entire

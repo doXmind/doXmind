@@ -4,7 +4,6 @@ import Link from "next/link";
 import { FileText, FolderOpen, Search, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FolderTree } from "./folder-tree";
 import { BulkActionBar } from "./bulk-action-bar";
@@ -15,6 +14,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useTranslations, useLocale } from "next-intl";
 import {
   importLocalFolder,
@@ -27,7 +27,6 @@ const log = storeLogger.child("FilesSidebar");
 export function FilesSidebar() {
   const t = useTranslations("sidebar");
   const locale = useLocale();
-  const router = useRouter();
   const createFile = useFileStore((s) => s.createFile);
   const createFolder = useFileStore((s) => s.createFolder);
   const importFile = useFileStore((s) => s.importFile);
@@ -70,7 +69,7 @@ export function FilesSidebar() {
     const name = `Untitled-${maxNum + 1}.md`;
     try {
       const newId = await createFile(name, "", parentId);
-      router.push(`/editor/${newId}`);
+      navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create file", error);
       const { title, description } = getErrorMessage(error);
@@ -95,7 +94,7 @@ export function FilesSidebar() {
       const markdown = template.getContent(locale);
       const htmlContent = markdown ? markdownToHtml(markdown) : "";
       const newId = await createFile(name, htmlContent, null);
-      router.push(`/editor/${newId}`);
+      navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create file from template", error);
       const { title, description } = getErrorMessage(error);
@@ -216,7 +215,7 @@ export function FilesSidebar() {
       try {
         const newId = await importFile(file, null, mode === "auto" ? undefined : { mode });
         if (newId) {
-          router.push(`/editor/${newId}`);
+          navigateToEditorFile(newId);
           toast.success(t("imported", { name: file.name }), { id: toastId });
         } else {
           // null = deferred behind the Marker model download prompt.

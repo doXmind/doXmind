@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { FolderInput, Trash2, Download, X, AlertTriangle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -16,13 +15,13 @@ import { useFileStore } from "@/stores/file-store";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 
 const log = storeLogger.child("BulkActionBar");
 
 export function BulkActionBar() {
   const t = useTranslations("sidebar");
   const tc = useTranslations("common");
-  const router = useRouter();
   const { selectedFileIds, clearSelection, bulkMoveFiles, bulkDeleteFiles, getFolders, files } =
     useFileStore();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -53,7 +52,7 @@ export function BulkActionBar() {
       await bulkDeleteFiles(fileIds);
       // Navigate to the next file or welcome screen
       const nextId = useFileStore.getState().currentFileId;
-      router.push(nextId ? `/editor/${nextId}` : "/editor");
+      navigateToEditorFile(nextId);
       toast.success(t("movedFilesToTrash", { count: selectedCount }));
     } catch (error) {
       log.error("Failed to bulk delete files", error);

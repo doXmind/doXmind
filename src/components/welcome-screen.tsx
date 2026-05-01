@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { FileText, Folder, FilePlus, Upload, Loader2 } from "lucide-react";
@@ -17,6 +16,7 @@ import {
 } from "@/lib/import-folder";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { toast } from "sonner";
 import { WelcomeOcrRow } from "@/components/welcome-ocr-row";
 
@@ -67,13 +67,11 @@ function formatRecentDate(iso: string, t: (k: string) => string): string {
 }
 
 export function WelcomeScreen() {
-  const router = useRouter();
   const t = useTranslations("welcome");
   const files = useFileStore((s) => s.files);
   const createFile = useFileStore((s) => s.createFile);
   const importFile = useFileStore((s) => s.importFile);
   const createFolder = useFileStore((s) => s.createFolder);
-  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
   const currentFolderId = useFileStore((s) => s.currentFolderId);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,7 +101,7 @@ export function WelcomeScreen() {
     setIsCreating(true);
     try {
       const newId = await createFile("Untitled.md", "", currentFolderId);
-      router.push(`/editor/${newId}`);
+      navigateToEditorFile(newId);
     } catch (error) {
       log.error("Failed to create file", error);
       const { title, description } = getErrorMessage(error);
@@ -132,7 +130,7 @@ export function WelcomeScreen() {
           mode === "ocr" ? { mode } : undefined
         );
         if (newId) {
-          router.push(`/editor/${newId}`);
+          navigateToEditorFile(newId);
           toast.success(file.name, { id: toastId });
         } else {
           // null = deferred behind the Marker download prompt — but on
@@ -201,8 +199,7 @@ export function WelcomeScreen() {
   };
 
   const openRecent = (id: string) => {
-    setCurrentFile(id);
-    router.push(`/editor/${id}`);
+    navigateToEditorFile(id);
   };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -248,7 +245,7 @@ export function WelcomeScreen() {
       try {
         const newId = await importFile(file, currentFolderId);
         if (newId) {
-          router.push(`/editor/${newId}`);
+          navigateToEditorFile(newId);
         }
       } catch (error) {
         log.error("Failed to import dropped file", error);
@@ -259,7 +256,7 @@ export function WelcomeScreen() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runFolderImport reads stable store actions
-    [importFile, currentFolderId, router]
+    [importFile, currentFolderId]
   );
 
   return (

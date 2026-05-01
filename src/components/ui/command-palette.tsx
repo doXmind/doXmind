@@ -17,8 +17,8 @@ import {
   X,
   Columns,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -71,10 +71,8 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const [searchError, setSearchError] = React.useState<string | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
-  const router = useRouter();
   const files = useFileStore((s) => s.files);
   const createFile = useFileStore((s) => s.createFile);
-  const setCurrentFile = useFileStore((s) => s.setCurrentFile);
   const workspaceMode = useFileStore((s) => s.workspaceMode);
   const workspaceRoot = useFileStore((s) => s.workspaceRoot);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
@@ -146,7 +144,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         category: "file",
         action: async () => {
           const newId = await createFile("Untitled");
-          router.push(`/editor/${newId}`);
+          navigateToEditorFile(newId);
           onClose();
         },
         keywords: ["create", "new", "document", "file"],
@@ -218,8 +216,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       icon: <FileText className="h-4 w-4" />,
       category: "navigation" as const,
       action: () => {
-        setCurrentFile(file.id);
-        router.push(`/editor/${file.id}`);
+        navigateToEditorFile(file.id);
         onClose();
       },
       keywords: ["open", "go to", file.name.toLowerCase()],
@@ -229,8 +226,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   }, [
     files,
     createFile,
-    setCurrentFile,
-    router,
     toggleSidebar,
     setKeyboardShortcutsOpen,
     isSidebarOpen,
@@ -267,8 +262,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         const start = result.metadata?.start as number | undefined;
 
         // Open the file first
-        setCurrentFile(fileId);
-        router.push(`/editor/${fileId}`);
+        navigateToEditorFile(fileId);
 
         // If we have position info, navigate to it after file loads
         if (start !== undefined && editor) {
@@ -291,7 +285,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
       preview: result.content.slice(0, 100),
       score: result.score !== undefined ? Math.round(result.score * 100) : undefined,
     }));
-  }, [fileSearchResults, setCurrentFile, router, onClose, editor]);
+  }, [fileSearchResults, onClose, editor]);
 
   // Group filtered commands by category
   const groupedCommands = React.useMemo(() => {

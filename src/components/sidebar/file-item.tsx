@@ -12,7 +12,6 @@ import {
   PinOff,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -28,6 +27,7 @@ import {
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { storeLogger } from "@/lib/logger";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
 
 const log = storeLogger.child("FileItem");
@@ -41,7 +41,6 @@ interface FileItemProps {
 let lastClickedFileId: string | null = null;
 
 export function FileItem({ file, indent: _indent = false }: FileItemProps) {
-  const router = useRouter();
   const t = useTranslations("sidebar");
   // Fine-grained selectors — each FileItem only re-renders when its relevant state changes
   const isActive = useFileStore((s) => s.currentFileId === file.id);
@@ -272,7 +271,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       await deleteFile(file.id);
       // Navigate to the next file or welcome screen after deletion
       const nextId = useFileStore.getState().currentFileId;
-      router.push(nextId ? `/editor/${nextId}` : "/editor");
+      navigateToEditorFile(nextId);
       toast(`"${fileName}" moved to trash`, {
         action: {
           label: t("restore"),
