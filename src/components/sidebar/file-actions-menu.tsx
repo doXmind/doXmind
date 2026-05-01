@@ -1,6 +1,6 @@
 "use client";
 
-import { FileDown, Home, Pencil, Star, Trash2 } from "lucide-react";
+import { FileDown, FolderOpen, Home, Pencil, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import {
@@ -12,13 +12,12 @@ import {
 export interface FileActionsMenuItemsProps {
   /** Action handlers */
   onRename: () => void;
-  onToggleFavorite: () => void;
   onMoveToRoot: () => void;
+  onRevealInFinder: () => void;
   onExport: (format: "markdown" | "pdf" | "docx") => void;
   onDelete: () => void;
 
   /** State */
-  isFavorite: boolean;
   hasParent: boolean;
 
   /** Rendering variant */
@@ -33,12 +32,12 @@ export interface FileActionsMenuItemsProps {
 }
 
 /**
- * Shared menu items used by both the DropdownMenu (three-dot button)
+ * Shared menu items used by both the DropdownMenu (mobile three-dot button)
  * and the right-click ContextMenu in FileItem.
  *
  * Menu item indices (for keyboard navigation):
  *   0 - Rename
- *   1 - Favorite
+ *   1 - Reveal in Finder
  *   2 - Move to Root  (only when hasParent is true; shifts subsequent indices by 1)
  *   2+offset - Export Markdown
  *   3+offset - Export PDF
@@ -47,11 +46,10 @@ export interface FileActionsMenuItemsProps {
  */
 export function FileActionsMenuItems({
   onRename,
-  onToggleFavorite,
   onMoveToRoot,
+  onRevealInFinder,
   onExport,
   onDelete,
-  isFavorite,
   hasParent,
   variant,
   focusIndex = -1,
@@ -76,11 +74,11 @@ export function FileActionsMenuItems({
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
-            onToggleFavorite();
+            onRevealInFinder();
           }}
         >
-          <Star className={cn("mr-2 h-4 w-4", isFavorite && "fill-amber-500 text-amber-500")} />
-          {isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
+          <FolderOpen className="mr-2 h-4 w-4" />
+          {t("revealInFinder")}
         </DropdownMenuItem>
         {hasParent && (
           <>
@@ -172,15 +170,15 @@ export function FileActionsMenuItems({
         {t("rename")}
       </button>
 
-      {/* Favorite */}
+      {/* Reveal in Finder */}
       <button
         role="menuitem"
-        onClick={onToggleFavorite}
+        onClick={onRevealInFinder}
         onMouseEnter={() => setFocus(1)}
         className={contextItemClass(1)}
       >
-        <Star className={cn("mr-2 h-4 w-4", isFavorite && "fill-amber-500 text-amber-500")} />
-        {isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
+        <FolderOpen className="mr-2 h-4 w-4" />
+        {t("revealInFinder")}
       </button>
 
       {hasParent && (
@@ -258,7 +256,7 @@ export function FileActionsMenuItems({
  * Returns the total number of actionable items in the menu.
  * Used by the keyboard navigation handler in FileItem.
  *
- * Items: Rename, Favorite, [Move to Root], Export x3, Delete = 6 or 7
+ * Items: Rename, Reveal, [Move to Root], Export x3, Delete = 6 or 7
  */
 export function getMenuItemCount(hasParent: boolean): number {
   return hasParent ? 7 : 6;

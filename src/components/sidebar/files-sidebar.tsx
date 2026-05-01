@@ -1,22 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, FilePlus, FileSymlink, FolderOpen, Search, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { toast } from "sonner";
-import { useState } from "react";
-import { MarkdownGlyph, PdfGlyph } from "@/components/icons/document-glyphs";
+import { useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { FolderTree } from "./folder-tree";
+import { FolderTree, type FolderTreeHandle } from "./folder-tree";
 import { BulkActionBar } from "./bulk-action-bar";
 import { TemplatePicker, getLocalizedFileName, type FileTemplate } from "./template-picker";
+import { WorkspaceHeader } from "./workspace-header";
 import { useFileStore } from "@/stores/file-store";
-import { useLayoutStore } from "@/stores/layout-store";
 import { getErrorMessage } from "@/lib/utils";
 import { markdownToHtml } from "@/lib/markdown";
 import { storeLogger } from "@/lib/logger";
@@ -32,16 +25,8 @@ export function FilesSidebar() {
   const createFolder = useFileStore((s) => s.createFolder);
   const isLoading = useFileStore((s) => s.isLoading);
   const isSynced = useFileStore((s) => s.isSynced);
-  const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
-  const openSingleFile = useFileStore((s) => s.openSingleFile);
-  const openCommandPalette = useLayoutStore((s) => s.openCommandPalette);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
-  // Workspace toggle is available in any Tauri shell (debug or release). It
-  // used to be gated behind NODE_ENV / NEXT_PUBLIC_ENABLE_DISK_WORKSPACE,
-  // which hid the entry point in production and left users stranded inside
-  // disk mode with no way back; the gate has moved to the Tauri-presence
-  // check that the dialog import already requires.
-  const isDesktopShell = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
+  const folderTreeRef = useRef<FolderTreeHandle>(null);
 
   const handleCreateFile = async (parentId: string | null = null) => {
     const currentFiles = useFileStore
@@ -119,11 +104,11 @@ export function FilesSidebar() {
     }
   };
 
-  const handleCreateFolder = async () => {
-    const folders = useFileStore.getState().getFolders(null);
+  const handleCreateFolder = async (parentId: string | null = null) => {
+    const folders = useFileStore.getState().getFolders(parentId);
     const name = `New Folder ${folders.length + 1}`;
     try {
-      await createFolder(name, null);
+      await createFolder(name, parentId);
     } catch (error) {
       log.error("Failed to create folder", error);
       const { title, description } = getErrorMessage(error);
@@ -131,145 +116,29 @@ export function FilesSidebar() {
     }
   };
 
-  const handleOpenFolder = async () => {
-    if (!isDesktopShell) {
-      toast.error(t("openWorkspaceRequiresDesktop"));
-      return;
-    }
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: t("openFolder"),
-      });
-      if (!selected || Array.isArray(selected)) return;
-      await openDiskWorkspace(selected);
-      toast.success(t("workspaceOpened"));
-    } catch (error) {
-      log.error("Failed to open folder", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
-    }
-  };
-
-  const handleOpenFile = async () => {
-    if (!isDesktopShell) {
-      toast.error(t("openWorkspaceRequiresDesktop"));
-      return;
-    }
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: false,
-        multiple: false,
-        title: t("openFile"),
-        // Match the workspace's supported document types — anything else
-        // wouldn't render in the editor anyway.
-        filters: [
-          {
-            name: t("openFileFilter"),
-            extensions: ["md", "markdown", "pdf"],
-          },
-        ],
-      });
-      if (!selected || Array.isArray(selected)) return;
-
-      // VSCode-style: open file means just that one file. No workspace
-      // mount, no sibling tree.
-      const normalized = selected.replace(/\\/g, "/");
-      const lastSlash = normalized.lastIndexOf("/");
-      if (lastSlash <= 0) {
-        toast.error(t("openFileNoParent"));
-        return;
-      }
-      const fileBase = normalized.slice(lastSlash + 1);
-
-      await openSingleFile(selected);
-      const id = useFileStore.getState().currentFileId;
-      if (id) navigateToEditorFile(id);
-      toast.success(t("openedFile", { name: fileBase }));
-    } catch (error) {
-      log.error("Failed to open file", error);
-      const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
-    }
-  };
-
   return (
     <div className="sidebar-glass flex h-full flex-col border-r border-[var(--sidebar-active-border)] text-foreground">
-      <div className="px-3 pb-2 pt-2">
-        <div className="space-y-0.5">
-          {/* Single "New File" entry — the document-type choice is one
-              click deeper. Saves a row in the rail without hiding the
-              capability. The trigger keeps the same row chrome as the
-              other entries (icon + label + hover bg) plus a trailing
-              chevron to telegraph "this opens a menu". */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)] focus:outline-none focus-visible:bg-[var(--sidebar-hover)] data-[state=open]:bg-[var(--sidebar-hover)]"
-                aria-label={t("newFile")}
-              >
-                <FilePlus className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="flex-1">{t("newFile")}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" sideOffset={4} className="w-52">
-              <DropdownMenuItem onClick={() => handleCreateFile()}>
-                <MarkdownGlyph className="mr-2 h-4 w-4" />
-                {t("newMarkdown")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleCreatePdf()}>
-                <PdfGlyph className="mr-2 h-4 w-4" />
-                {t("newPdf")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <button
-            onClick={openCommandPalette}
-            className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
-          >
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span>{t("search")}</span>
-          </button>
-
-          {/* Open Folder + Open File: always shown — this is a desktop
-              product, the no-Tauri fallback is just a toast. The previous
-              `isDesktopShell` gate hid these on the SSR pass and racily
-              never re-rendered, leaving users stranded. */}
-          <button
-            onClick={handleOpenFolder}
-            className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
-            title={t("openWorkspaceFolderHint")}
-          >
-            <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="truncate">{t("openFolder")}</span>
-          </button>
-
-          <button
-            onClick={handleOpenFile}
-            className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
-            title={t("openFileHint")}
-          >
-            <FileSymlink className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="truncate">{t("openFile")}</span>
-          </button>
-        </div>
-      </div>
+      <WorkspaceHeader
+        onCreateFile={() => handleCreateFile(null)}
+        onCreatePdf={() => handleCreatePdf(null)}
+        onCreateFolder={() => handleCreateFolder(null)}
+        onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
+        onCollapseAll={() => folderTreeRef.current?.collapseAll()}
+      />
 
       <ScrollArea className="sidebar-scrollbar min-h-0 flex-1">
-        <div className="space-y-1 px-2.5 pb-3">
+        {/* min-h-full lets FolderTree's spacer reach the bottom of the
+            scroll viewport so right-clicks on empty space below the
+            last row still hit the empty-area context menu. */}
+        <div className="flex min-h-full flex-col px-2.5 pb-3 pt-1">
           {isLoading && !isSynced ? (
             <FileListSkeleton />
           ) : (
             <FolderTree
+              ref={folderTreeRef}
               onCreateFile={handleCreateFile}
               onCreatePdf={handleCreatePdf}
               onCreateFolder={handleCreateFolder}
-              onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
             />
           )}
         </div>
@@ -277,7 +146,7 @@ export function FilesSidebar() {
 
       <BulkActionBar />
 
-      <div className="space-y-0.5 px-3 pb-3 pt-2">
+      <div className="px-3 pb-3 pt-2">
         <Link
           href="/settings"
           className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"

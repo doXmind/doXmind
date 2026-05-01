@@ -29,7 +29,7 @@ import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useIsTauri } from "@/hooks/use-is-tauri";
-import { getDisplayName, isPdfFile } from "@/lib/document-types";
+import { getDisplayName, isExcelFile, isPdfFile } from "@/lib/document-types";
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
@@ -57,6 +57,7 @@ export function UnifiedHeader() {
   // welcome screen there's no file to title, so showing "Untitled"
   // would just be noise.
   const isPdf = currentFile ? isPdfFile(currentFile) : false;
+  const isExcel = currentFile ? isExcelFile(currentFile) : false;
   const title = currentFileName ? getDisplayName(currentFileName) : "";
   const saveLabel = isSaving ? t("saving") : isDirty ? t("unsavedChanges") : t("saved");
 
@@ -67,17 +68,26 @@ export function UnifiedHeader() {
   const { isTauri, platform } = useIsTauri();
   const isMacTauri = isTauri && platform === "macos";
 
-  const handleExport = (format: "markdown" | "pdf" | "docx") => {
+  const handleExport = (format: "markdown" | "pdf" | "docx" | "xlsx") => {
     const { currentFileId, files } = useFileStore.getState();
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
-    const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
+    const formatLabel =
+      format === "markdown" ? "Markdown" : format === "xlsx" ? "Excel" : format.toUpperCase();
 
     // PDF export when the active document is a PDF: hand off to the PDF
     // editor (PyMuPDF redact + insert_htmlbox pipeline). The editor owns
     // the raw bytes + edits, so it does the actual download.
     if (format === "pdf" && isPdfFile(currentFile)) {
       window.dispatchEvent(new CustomEvent("doxmind:export-pdf"));
+      return;
+    }
+
+    // Excel export — same pattern. The Excel editor holds the original
+    // bytes plus the sidecar edit payload and round-trips them through
+    // /api/excel/export-edited.
+    if (format === "xlsx" && isExcelFile(currentFile)) {
+      window.dispatchEvent(new CustomEvent("doxmind:export-xlsx"));
       return;
     }
 
@@ -214,18 +224,27 @@ export function UnifiedHeader() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                    <Download className="mr-2 h-4 w-4" />
-                    {t("exportAsMarkdown")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport("pdf")}>
-                    <Download className="mr-2 h-4 w-4" />
-                    {t("exportAsPDF")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExport("docx")}>
-                    <Download className="mr-2 h-4 w-4" />
-                    {t("exportAsWord")}
-                  </DropdownMenuItem>
+                  {isExcel ? (
+                    <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Export as Excel
+                    </DropdownMenuItem>
+                  ) : (
+                    <>
+                      <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                        <Download className="mr-2 h-4 w-4" />
+                        {t("exportAsMarkdown")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                        <Download className="mr-2 h-4 w-4" />
+                        {t("exportAsPDF")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport("docx")}>
+                        <Download className="mr-2 h-4 w-4" />
+                        {t("exportAsWord")}
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
 

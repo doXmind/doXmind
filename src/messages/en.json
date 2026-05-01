@@ -398,8 +398,6 @@
     }
   },
   "sidebar": {
-    "files": "Files",
-    "folders": "Folders",
     "settings": "Settings",
     "search": "Search",
     "newDocument": "New Document",
@@ -407,20 +405,15 @@
     "newMarkdown": "Markdown",
     "newPdf": "PDF",
     "newFolder": "New Folder",
-    "folderActions": "Folder actions",
     "collapseAll": "Collapse all",
-    "expandAll": "Expand all",
-    "organizeFolders": "Filter, sort, and organize folders",
-    "organizeFiles": "Filter, sort, and organize files",
     "fromTemplate": "From Template",
     "openFolder": "Open Folder",
     "openFile": "Open File",
-    "openFileHint": "Open a single .md or .pdf without mounting its folder",
     "openFileFilter": "Documents",
     "openFileNoParent": "That file path doesn't look valid — pick a file inside a folder.",
     "openedFile": "Opened {name}",
-    "openWorkspaceFolderHint": "Pick a folder of markdown files to use as your workspace",
     "openWorkspaceRequiresDesktop": "Opening folders and files requires the desktop app.",
+    "revealInFinder": "Reveal in Finder",
     "workspaceFolderActive": "Workspace Folder",
     "workspaceOpened": "Workspace folder opened",
     "done": "Done",
@@ -437,7 +430,6 @@
     "hideOutline": "Hide Outline",
     "noHeadings": "No headings in this document",
     "openDocForOutline": "Open a document to see its outline",
-    "favorites": "Favorites",
     "movedToFolder": "File moved to folder",
     "movedToRoot": "File moved to root",
     "failedToMove": "Failed to move file",
@@ -456,8 +448,6 @@
     "deleted": "Deleted",
     "deletePermanently": "Delete permanently",
     "permanentlyDeleteItems": "This will permanently delete {count} item(s). This cannot be undone.",
-    "addToFavorites": "Add to Favorites",
-    "removeFromFavorites": "Remove from Favorites",
     "moveToRoot": "Move to Root",
     "exportAs": "Export as",
     "markdownFormat": "Markdown",
@@ -558,10 +548,8 @@
     "previewText": "The quick brown fox jumps over the lazy dog. Writing is an exploration. You start from nothing and learn as you go."
   },
   "welcome": {
-    "subtitle": "The editor that thinks with you — not just for you.",
-    "recent": "Recent",
-    "noRecent": "No recent files",
-    "yesterday": "Yesterday"
+    "recentWorkspaces": "Recent workspaces",
+    "noRecentWorkspaces": "No recent workspaces"
   },
   "shortcuts": {
     "keyboardShortcuts": "Keyboard Shortcuts",

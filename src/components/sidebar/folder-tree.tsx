@@ -1,98 +1,70 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslations } from "next-intl";
 import {
+  Check,
+  FilePlus2,
+  FileText,
   Folder,
   FolderOpen,
-  ChevronRight,
-  ChevronDown,
-  Check,
-  X,
-  Trash2,
-  Pencil,
-  FileText,
-  Star,
   FolderPlus,
-  Maximize2,
-  MoreHorizontal,
-  Minimize2,
-  SquarePen,
+  Pencil,
+  Trash2,
+  X,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
-import { Tooltip } from "@/components/ui/tooltip";
 import { FileItem } from "./file-item";
-import { NewButton } from "@/components/home/new-button";
-import { SortDropdown } from "./sort-dropdown";
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem as FileItemType } from "@/types";
 import { toast } from "sonner";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
+import { revealFileInFinder } from "@/lib/storage/reveal";
 
 const log = storeLogger.child("FolderTree");
+
+type FolderMenuItem = {
+  id: "new-file" | "new-folder" | "rename" | "reveal" | "delete";
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  destructive?: boolean;
+};
+
+type EmptyMenuItem = {
+  id: "new-file" | "new-folder";
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+};
 
 interface FolderTreeProps {
   onCreateFile: (parentId?: string | null) => void;
   onCreatePdf: (parentId?: string | null) => void;
-  onCreateFolder: () => void;
-  onOpenTemplatePicker: () => void;
+  onCreateFolder: (parentId?: string | null) => void;
 }
 
-function SidebarSection({
-  title,
-  children,
-  actions,
-}: {
-  title: string;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-1">
-      <div className="flex h-7 items-center justify-between px-2.5">
-        <h2 className="text-ui-xs font-semibold uppercase leading-none tracking-wide text-muted-foreground/70">
-          {title}
-        </h2>
-        {actions ? <div className="flex items-center gap-0.5">{actions}</div> : null}
-      </div>
-      <div className="space-y-0.5">{children}</div>
-    </section>
-  );
+export interface FolderTreeHandle {
+  collapseAll: () => void;
+  hasExpandedFolders: () => boolean;
 }
 
-function HeaderIconButton({
-  label,
-  children,
-  onClick,
-}: {
-  label: string;
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip content={label} side="top">
-      <button
-        onClick={onClick}
-        className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
-        aria-label={label}
-      >
-        {children}
-      </button>
-    </Tooltip>
-  );
-}
-
-export function FolderTree({
-  onCreateFile,
-  onCreatePdf,
-  onCreateFolder,
-  onOpenTemplatePicker,
-}: FolderTreeProps) {
+export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function FolderTree(
+  { onCreateFile, onCreateFolder },
+  ref
+) {
   const t = useTranslations("sidebar");
 
-  // Fine-grained selectors — actions are stable refs, state values subscribed individually
   const files = useFileStore((s) => s.files);
   const activeParentId = useFileStore(
     (s) => s.files.find((file) => file.id === s.currentFileId)?.parentId ?? null
@@ -101,7 +73,6 @@ export function FolderTree({
   const getFolders = useFileStore((s) => s.getFolders);
   const getFilesInFolder = useFileStore((s) => s.getFilesInFolder);
   const getSubPages = useFileStore((s) => s.getSubPages);
-  const getFavorites = useFileStore((s) => s.getFavorites);
   const setCurrentFolder = useFileStore((s) => s.setCurrentFolder);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
   const renameFile = useFileStore((s) => s.renameFile);
@@ -109,17 +80,30 @@ export function FolderTree({
   const restoreFile = useFileStore((s) => s.restoreFile);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
-  const [favoritesExpanded, setFavoritesExpanded] = useState(true);
+
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState("");
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folderId: string } | null>(
-    null
-  );
-  const [contextMenuFocusIndex, setContextMenuFocusIndex] = useState(-1);
-  const [contextMenuReady, setContextMenuReady] = useState(false);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Folder context menu (right-click on a folder row)
+  const [folderMenu, setFolderMenu] = useState<{
+    x: number;
+    y: number;
+    items: FolderMenuItem[];
+  } | null>(null);
+  const [folderMenuFocus, setFolderMenuFocus] = useState(-1);
+  const [folderMenuReady, setFolderMenuReady] = useState(false);
+  const folderMenuRef = useRef<HTMLDivElement>(null);
+
+  // Empty-area context menu (right-click on workspace root area)
+  const [emptyMenu, setEmptyMenu] = useState<{
+    x: number;
+    y: number;
+    items: EmptyMenuItem[];
+  } | null>(null);
+  const [emptyMenuFocus, setEmptyMenuFocus] = useState(-1);
+  const emptyMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (currentFolderId) {
@@ -127,19 +111,25 @@ export function FolderTree({
     }
   }, [currentFolderId, setCurrentFolder]);
 
-  // Memoize derived data — recomputed only when files change.
-  // `files` is intentionally in deps as a change signal even though getFolders/etc.
-  // read it internally (ESLint can't see through the store method indirection).
-  const viewFolders = useMemo(
-    () => getFolders(null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
-    [files, getFolders]
-  );
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- files triggers recomputation through store methods
+  const viewFolders = useMemo(() => getFolders(null), [files, getFolders]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- same
   const rootFiles = useMemo(() => getFilesInFolder(null), [files, getFilesInFolder]);
   const allFolders = useMemo(() => files.filter((f) => f.isFolder), [files]);
 
-  // Drag and drop handlers for folders
+  const hasExpandedFolders = viewFolders.some((f) => !collapsedFolderIds.has(f.id));
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      collapseAll: () => setCollapsedFolderIds(new Set(allFolders.map((f) => f.id))),
+      hasExpandedFolders: () => hasExpandedFolders,
+    }),
+    [allFolders, hasExpandedFolders]
+  );
+
+  // Drag & drop: move files between folders. External file drops are
+  // intentionally ignored — the workspace folder is the source of truth.
   const handleDragOver = (e: React.DragEvent, folderId: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -158,10 +148,6 @@ export function FolderTree({
     e.stopPropagation();
     setDragOverFolderId(null);
 
-    // External file drops are intentionally ignored — the workspace folder
-    // is the source of truth, so users move external files in via Finder /
-    // Explorer rather than through the app. Only internal moves are
-    // accepted here.
     const draggedFileId = e.dataTransfer.getData("text/plain");
     if (draggedFileId && draggedFileId !== folderId) {
       try {
@@ -174,14 +160,13 @@ export function FolderTree({
     }
   };
 
-  // Folder rename handlers
+  // Folder rename
   const handleFolderRename = async () => {
     if (!renamingFolderId || !renamingFolderName.trim()) {
       setRenamingFolderId(null);
       setRenamingFolderName("");
       return;
     }
-
     try {
       await renameFile(renamingFolderId, renamingFolderName.trim());
       toast.success(t("folderRenamed"));
@@ -190,7 +175,6 @@ export function FolderTree({
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     }
-
     setRenamingFolderId(null);
     setRenamingFolderName("");
   };
@@ -209,85 +193,6 @@ export function FolderTree({
       clearJustCreatedFileId();
     }
   }, [allFolders, justCreatedFileId, clearJustCreatedFileId]);
-
-  // Context menu handlers
-  const handleContextMenu = useCallback((e: React.MouseEvent, folderId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Calculate position with viewport boundary check
-    const menuWidth = 180;
-    const menuHeight = 120;
-    let x = e.clientX;
-    let y = e.clientY;
-
-    if (x + menuWidth > window.innerWidth - 10) {
-      x = window.innerWidth - menuWidth - 10;
-    }
-    if (y + menuHeight > window.innerHeight - 10) {
-      y = window.innerHeight - menuHeight - 10;
-    }
-
-    setContextMenu({ x, y, folderId });
-    setContextMenuFocusIndex(-1);
-    setContextMenuReady(false);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setContextMenuReady(true);
-      });
-    });
-  }, []);
-
-  const handleFolderActionsClick = useCallback((e: React.MouseEvent, folderId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const menuWidth = 180;
-    const menuHeight = 120;
-    const rect = e.currentTarget.getBoundingClientRect();
-    let x = rect.right - menuWidth;
-    let y = rect.bottom + 6;
-
-    if (x < 10) {
-      x = 10;
-    }
-    if (x + menuWidth > window.innerWidth - 10) {
-      x = window.innerWidth - menuWidth - 10;
-    }
-    if (y + menuHeight > window.innerHeight - 10) {
-      y = rect.top - menuHeight - 6;
-    }
-
-    setContextMenu({ x, y, folderId });
-    setContextMenuFocusIndex(-1);
-    setContextMenuReady(false);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setContextMenuReady(true);
-      });
-    });
-  }, []);
-
-  const handleContextMenuRename = () => {
-    if (!contextMenu) return;
-    const folder = allFolders.find((f) => f.id === contextMenu.folderId);
-    if (folder) {
-      setRenamingFolderId(folder.id);
-      setRenamingFolderName(folder.name);
-    }
-    setContextMenu(null);
-  };
-
-  const handleContextMenuDelete = () => {
-    if (!contextMenu) return;
-    const folder = allFolders.find((f) => f.id === contextMenu.folderId);
-    if (folder) {
-      handleDeleteFolderDirect(folder);
-    }
-    setContextMenu(null);
-  };
 
   const handleDeleteFolderDirect = async (folder: FileItemType) => {
     const folderName = folder.name;
@@ -315,51 +220,169 @@ export function FolderTree({
     }
   };
 
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (!contextMenu) return;
+  // Build the right-click menu for a folder. Encapsulating the items in
+  // a single array makes keyboard navigation independent of which menu is
+  // open and which entries are present.
+  const buildFolderMenu = useCallback(
+    (folder: FileItemType): FolderMenuItem[] => [
+      {
+        id: "new-file",
+        label: t("newDocument"),
+        icon: <FilePlus2 className="mr-2 h-4 w-4" />,
+        onClick: () => onCreateFile(folder.id),
+      },
+      {
+        id: "new-folder",
+        label: t("newFolder"),
+        icon: <FolderPlus className="mr-2 h-4 w-4" />,
+        onClick: () => onCreateFolder(folder.id),
+      },
+      {
+        id: "rename",
+        label: t("rename"),
+        icon: <Pencil className="mr-2 h-4 w-4" />,
+        onClick: () => {
+          setRenamingFolderId(folder.id);
+          setRenamingFolderName(folder.name);
+        },
+      },
+      {
+        id: "reveal",
+        label: t("revealInFinder"),
+        icon: <FolderOpen className="mr-2 h-4 w-4" />,
+        onClick: async () => {
+          try {
+            await revealFileInFinder(folder);
+          } catch (error) {
+            log.error("Failed to reveal folder in Finder", error);
+            const { title, description } = getErrorMessage(error);
+            toast.error(title, { description });
+          }
+        },
+      },
+      {
+        id: "delete",
+        label: t("moveToTrash"),
+        icon: <Trash2 className="mr-2 h-4 w-4" />,
+        onClick: () => handleDeleteFolderDirect(folder),
+        destructive: true,
+      },
+    ],
+    // handleDeleteFolderDirect is stable enough — it reads from the store
+    // and from translations on each invocation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, onCreateFile, onCreateFolder]
+  );
 
+  const buildEmptyMenu = useCallback(
+    (): EmptyMenuItem[] => [
+      {
+        id: "new-file",
+        label: t("newDocument"),
+        icon: <FilePlus2 className="mr-2 h-4 w-4" />,
+        onClick: () => onCreateFile(null),
+      },
+      {
+        id: "new-folder",
+        label: t("newFolder"),
+        icon: <FolderPlus className="mr-2 h-4 w-4" />,
+        onClick: () => onCreateFolder(null),
+      },
+    ],
+    [t, onCreateFile, onCreateFolder]
+  );
+
+  // Position helpers — clamp to viewport so menus don't overflow.
+  const positionForMouse = (clientX: number, clientY: number, w: number, h: number) => {
+    let x = clientX;
+    let y = clientY;
+    if (x + w > window.innerWidth - 10) x = window.innerWidth - w - 10;
+    if (y + h > window.innerHeight - 10) y = window.innerHeight - h - 10;
+    return { x, y };
+  };
+
+  const handleFolderContextMenu = useCallback(
+    (e: React.MouseEvent, folder: FileItemType) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const items = buildFolderMenu(folder);
+      const { x, y } = positionForMouse(e.clientX, e.clientY, 200, items.length * 32 + 8);
+      setFolderMenu({ x, y, items });
+      setFolderMenuFocus(-1);
+      setFolderMenuReady(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setFolderMenuReady(true));
+      });
+    },
+    [buildFolderMenu]
+  );
+
+  const handleEmptyAreaContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const items = buildEmptyMenu();
+      const { x, y } = positionForMouse(e.clientX, e.clientY, 180, items.length * 32 + 8);
+      setEmptyMenu({ x, y, items });
+      setEmptyMenuFocus(-1);
+    },
+    [buildEmptyMenu]
+  );
+
+  // Close menus on outside click / Escape, support arrow-key nav.
+  useEffect(() => {
+    if (!folderMenu && !emptyMenu) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-        setContextMenu(null);
-        setContextMenuFocusIndex(-1);
+      if (folderMenuRef.current && !folderMenuRef.current.contains(e.target as Node)) {
+        setFolderMenu(null);
+        setFolderMenuFocus(-1);
+      }
+      if (emptyMenuRef.current && !emptyMenuRef.current.contains(e.target as Node)) {
+        setEmptyMenu(null);
+        setEmptyMenuFocus(-1);
       }
     };
-
     const handleKeyDown = (e: KeyboardEvent) => {
+      const active = folderMenu ?? emptyMenu;
+      if (!active) return;
+      const length = active.items.length;
+      const focus = folderMenu ? folderMenuFocus : emptyMenuFocus;
+      const setFocus = folderMenu ? setFolderMenuFocus : setEmptyMenuFocus;
+      const closeAll = () => {
+        setFolderMenu(null);
+        setFolderMenuFocus(-1);
+        setEmptyMenu(null);
+        setEmptyMenuFocus(-1);
+      };
       switch (e.key) {
         case "Escape":
           e.preventDefault();
-          setContextMenu(null);
-          setContextMenuFocusIndex(-1);
+          closeAll();
           break;
         case "ArrowDown":
           e.preventDefault();
-          setContextMenuFocusIndex((prev) => (prev + 1) % 2);
+          setFocus((focus + 1) % length);
           break;
         case "ArrowUp":
           e.preventDefault();
-          setContextMenuFocusIndex((prev) => (prev - 1 + 2) % 2);
+          setFocus((focus - 1 + length) % length);
           break;
         case "Enter":
           e.preventDefault();
-          if (contextMenuFocusIndex === 0) {
-            handleContextMenuRename();
-          } else if (contextMenuFocusIndex === 1) {
-            handleContextMenuDelete();
+          if (focus >= 0 && focus < length) {
+            const item = active.items[focus];
+            closeAll();
+            item.onClick();
           }
           break;
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers read contextMenu which is already a dep
-  }, [contextMenu, contextMenuFocusIndex]);
+  }, [folderMenu, emptyMenu, folderMenuFocus, emptyMenuFocus]);
 
   // Recursive renderer for files and their sub-pages
   const renderFileWithSubPages = (file: FileItemType) => {
@@ -375,45 +398,6 @@ export function FolderTree({
       </div>
     );
   };
-
-  const hasExpandedFolders = viewFolders.some((folder) => !collapsedFolderIds.has(folder.id));
-  const collapseToggleLabel = hasExpandedFolders ? t("collapseAll") : t("expandAll");
-
-  const folderActions = (
-    <>
-      <HeaderIconButton
-        label={collapseToggleLabel}
-        onClick={() =>
-          setCollapsedFolderIds(
-            hasExpandedFolders ? new Set(viewFolders.map((folder) => folder.id)) : new Set()
-          )
-        }
-      >
-        {hasExpandedFolders ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-      </HeaderIconButton>
-      <Tooltip content={t("organizeFolders")} side="top">
-        <SortDropdown iconOnly ariaLabel={t("organizeFolders")} />
-      </Tooltip>
-      <HeaderIconButton label={t("newFolder")} onClick={onCreateFolder}>
-        <FolderPlus className="h-4 w-4" />
-      </HeaderIconButton>
-    </>
-  );
-
-  const fileActions = (
-    <>
-      <Tooltip content={t("organizeFiles")} side="top">
-        <SortDropdown iconOnly ariaLabel={t("organizeFiles")} />
-      </Tooltip>
-      <NewButton
-        onCreateFile={onCreateFile}
-        onCreatePdf={onCreatePdf}
-        onCreateFolder={onCreateFolder}
-        onOpenTemplatePicker={onOpenTemplatePicker}
-        hideFolder
-      />
-    </>
-  );
 
   const folderRows = viewFolders.map((folder) => {
     const folderFiles = getFilesInFolder(folder.id);
@@ -436,8 +420,8 @@ export function FolderTree({
           )}
         >
           {renamingFolderId === folder.id ? (
-            <div className="flex w-full items-center gap-3 px-3 py-3 text-sm md:gap-2 md:px-2.5 md:py-1.5">
-              <Folder className="h-5 w-5 shrink-0 text-muted-foreground/80" />
+            <div className="flex w-full items-center gap-2 px-2.5 py-1.5 text-sm">
+              <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80" />
               <Input
                 value={renamingFolderName}
                 onChange={(e) => setRenamingFolderName(e.target.value)}
@@ -477,47 +461,22 @@ export function FolderTree({
               onClick={() => {
                 setCollapsedFolderIds((prev) => {
                   const next = new Set(prev);
-                  if (next.has(folder.id)) {
-                    next.delete(folder.id);
-                  } else {
-                    next.add(folder.id);
-                  }
+                  if (next.has(folder.id)) next.delete(folder.id);
+                  else next.add(folder.id);
                   return next;
                 });
               }}
-              onContextMenu={(e) => handleContextMenu(e, folder.id)}
-              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-2.5 text-sm transition-transform active:scale-[0.98] md:active:scale-100"
+              onContextMenu={(e) => handleFolderContextMenu(e, folder)}
+              className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-2.5 text-sm"
             >
               {isCollapsed ? (
                 <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
               ) : (
                 <FolderOpen className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
               )}
-
               <span className="text-ui-base min-w-0 flex-1 truncate font-semibold leading-5 text-foreground/80 transition-colors group-hover/folder:text-foreground">
                 {folder.name}
               </span>
-              <div className="ml-1 hidden items-center gap-0.5 opacity-0 transition-opacity group-focus-within/folder:opacity-100 group-hover/folder:opacity-100 md:flex">
-                <button
-                  onClick={(e) => handleFolderActionsClick(e, folder.id)}
-                  className="sidebar-action-button flex h-6 w-6 items-center justify-center rounded-md transition-colors"
-                  aria-label={t("folderActions")}
-                  title={t("folderActions")}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCreateFile(folder.id);
-                  }}
-                  className="sidebar-action-button flex h-6 w-6 items-center justify-center rounded-md transition-colors"
-                  aria-label={t("newDocument")}
-                  title={t("newDocument")}
-                >
-                  <SquarePen className="h-4 w-4" />
-                </button>
-              </div>
             </div>
           )}
         </div>
@@ -531,46 +490,20 @@ export function FolderTree({
   });
 
   return (
-    <div className="space-y-3">
-      {/* Favorites Section - only show at root when there are favorites */}
-      {getFavorites().length > 0 && (
-        <div className="mb-1">
-          <button
-            onClick={() => setFavoritesExpanded(!favoritesExpanded)}
-            className="text-ui-xs flex h-7 w-full items-center gap-1.5 rounded-lg px-2.5 font-semibold text-muted-foreground transition-colors hover:bg-[var(--sidebar-hover)] hover:text-foreground"
-          >
-            {favoritesExpanded ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-            <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
-            {t("favorites")}
-            <span className="text-ui-xs ml-auto font-normal text-muted-foreground/60">
-              {getFavorites().length}
-            </span>
-          </button>
-          {favoritesExpanded && (
-            <div className="space-y-0.5">
-              {getFavorites().map((file) => (
-                <div key={`fav-${file.id}`}>{renderFileWithSubPages(file)}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <SidebarSection title={t("folders")} actions={folderActions}>
+    <div
+      className="flex min-h-full flex-col"
+      onContextMenu={handleEmptyAreaContextMenu}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(e) => handleDrop(e, null)}
+    >
+      <div className="space-y-0.5">
         {folderRows}
-      </SidebarSection>
+        {rootFiles.map((file) => renderFileWithSubPages(file))}
+      </div>
 
-      {rootFiles.length > 0 && (
-        <SidebarSection title={t("files")} actions={fileActions}>
-          {rootFiles.map((file) => renderFileWithSubPages(file))}
-        </SidebarSection>
-      )}
-
-      {/* Empty state */}
       {files.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
           <FileText className="h-12 w-12 text-muted-foreground/30 dark:text-muted-foreground/50" />
@@ -581,51 +514,82 @@ export function FolderTree({
         </div>
       )}
 
-      {/* Context Menu */}
-      {contextMenu &&
+      {/* Spacer captures right-clicks below the last item so users can
+          create files anywhere in the empty area, not just on rows. */}
+      <div className="flex-1" aria-hidden />
+
+      {/* Folder context menu */}
+      {folderMenu &&
         createPortal(
           <div
-            ref={contextMenuRef}
-            className="fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg"
-            style={{
-              left: contextMenu.x,
-              top: contextMenu.y,
-            }}
+            ref={folderMenuRef}
+            role="menu"
+            className="fixed z-[9999] min-w-[200px] rounded-md border border-border bg-popover p-1 shadow-lg"
+            style={{ left: folderMenu.x, top: folderMenu.y }}
           >
-            {/* Rename */}
-            <button
-              role="menuitem"
-              onClick={handleContextMenuRename}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(0)}
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-                contextMenuReady && "hover:bg-accent hover:text-accent-foreground",
-                contextMenuFocusIndex === 0 && "bg-accent text-accent-foreground"
-              )}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              {t("rename")}
-            </button>
+            {folderMenu.items.map((item, index) => (
+              <button
+                key={item.id}
+                role="menuitem"
+                onMouseEnter={() => folderMenuReady && setFolderMenuFocus(index)}
+                onClick={() => {
+                  setFolderMenu(null);
+                  setFolderMenuFocus(-1);
+                  item.onClick();
+                }}
+                className={cn(
+                  "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+                  item.destructive && "text-destructive",
+                  folderMenuReady &&
+                    (item.destructive
+                      ? "hover:bg-destructive/10"
+                      : "hover:bg-accent hover:text-accent-foreground"),
+                  folderMenuFocus === index &&
+                    (item.destructive ? "bg-destructive/10" : "bg-accent text-accent-foreground")
+                )}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
 
-            <div className="my-1 h-px bg-border" />
-
-            {/* Delete */}
-            <button
-              role="menuitem"
-              onClick={handleContextMenuDelete}
-              onMouseEnter={() => contextMenuReady && setContextMenuFocusIndex(1)}
-              className={cn(
-                "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm text-destructive outline-none",
-                contextMenuReady && "hover:bg-destructive/10",
-                contextMenuFocusIndex === 1 && "bg-destructive/10"
-              )}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              {t("moveToTrash")}
-            </button>
+      {/* Empty-area context menu */}
+      {emptyMenu &&
+        createPortal(
+          <div
+            ref={emptyMenuRef}
+            role="menu"
+            className="fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg"
+            style={{ left: emptyMenu.x, top: emptyMenu.y }}
+          >
+            {emptyMenu.items.map((item, index) => (
+              <button
+                key={item.id}
+                role="menuitem"
+                onMouseEnter={() => setEmptyMenuFocus(index)}
+                onClick={() => {
+                  setEmptyMenu(null);
+                  setEmptyMenuFocus(-1);
+                  item.onClick();
+                }}
+                className={cn(
+                  "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  emptyMenuFocus === index && "bg-accent text-accent-foreground"
+                )}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
           </div>,
           document.body
         )}
     </div>
   );
-}
+});
+
+FolderTree.displayName = "FolderTree";

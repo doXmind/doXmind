@@ -29,6 +29,12 @@ beautifulsoup4==4.12.3
 # expected to land there as `.md` or `.pdf` directly.
 pymupdf>=1.24.0
 
+# Excel editor parse + export pipeline. openpyxl handles read/modify/write
+# of .xlsx and .xlsm with full style fidelity. We deliberately do not pull
+# in calamine here: it can't write, and the read speed gap only matters for
+# multi-MB sheets which the editor isn't optimised for yet.
+openpyxl>=3.1.5
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.2

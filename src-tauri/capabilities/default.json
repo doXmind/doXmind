@@ -17,6 +17,7 @@
     "shell:allow-open",
     "dialog:default",
     "opener:default",
+    "opener:allow-reveal-item-in-dir",
     "allow-workspace-commands"
   ]
 }

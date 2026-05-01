@@ -81,6 +81,17 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("path") or ""),
             payload.get("payload") or {},
         )
+    if command == "workspace_read_excel_editor_state":
+        return read_excel_editor_state(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+        )
+    if command == "workspace_write_excel_editor_state":
+        return write_excel_editor_state(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            payload.get("payload") or {},
+        )
     if command == "doc_write_workspace":
         return write_doc_workspace(
             str(payload.get("root") or ""),
@@ -221,8 +232,8 @@ def read_doc(path: Path) -> dict[str, Any]:
 def read_workspace_binary(root: str, rel_path: str) -> list[int]:
     workspace = canonical_workspace_root(root)
     path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_pdf_file(path):
-        raise ValueError("binary workspace reads are only enabled for PDFs")
+    if not is_pdf_file(path) and not is_excel_file(path):
+        raise ValueError("binary workspace reads are only enabled for PDF and Excel files")
     return list(path.read_bytes())
 
 
@@ -249,6 +260,33 @@ def write_pdf_editor_state(root: str, rel_path: str, payload: dict[str, Any]) ->
         "source_path": relative_path_string(workspace, path),
         "updated_at": now_iso(),
         "pdf_editor": payload,
+    }
+    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
+
+
+def read_excel_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_excel_file(path):
+        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm files")
+    sidecar = read_sidecar(sidecar_path_for(path))
+    if not sidecar:
+        return None
+    state = sidecar.get("excel_editor")
+    return state if isinstance(state, dict) else None
+
+
+def write_excel_editor_state(root: str, rel_path: str, payload: dict[str, Any]) -> None:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    if not is_excel_file(path):
+        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm files")
+    sidecar = {
+        "version": SIDECAR_VERSION,
+        "id": stable_path_id(relative_path_string(workspace, path)),
+        "source_path": relative_path_string(workspace, path),
+        "updated_at": now_iso(),
+        "excel_editor": payload,
     }
     atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
 
@@ -457,7 +495,12 @@ def ensure_path_within_root(root: Path, path: Path) -> None:
 
 def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
     rel_path = relative_path_string(root, path)
-    document_type = "pdf" if is_pdf_file(path) else "markdown"
+    if is_pdf_file(path):
+        document_type = "pdf"
+    elif is_excel_file(path):
+        document_type = "excel"
+    else:
+        document_type = "markdown"
     if document_type == "markdown":
         raw = path.read_text(encoding="utf-8")
         frontmatter_id, title = parse_frontmatter_scan_fields(raw)
@@ -598,8 +641,12 @@ def is_pdf_file(path: Path) -> bool:
     return path.suffix.lower() == ".pdf"
 
 
+def is_excel_file(path: Path) -> bool:
+    return path.suffix.lower() in {".xlsx", ".xlsm"}
+
+
 def is_workspace_document_file(path: Path) -> bool:
-    return is_markdown_file(path) or is_pdf_file(path)
+    return is_markdown_file(path) or is_pdf_file(path) or is_excel_file(path)
 
 
 def relative_path_string(root: Path, path: Path) -> str:

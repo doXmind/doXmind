@@ -362,7 +362,7 @@ export const useFileStore = create<FileState>()(
         try {
           const file = get().files.find((f) => f.id === fileId);
           if (!file) return;
-          if (file.documentType === "pdf") {
+          if (file.documentType === "pdf" || file.documentType === "excel") {
             set((state) => ({
               loadedContentIds: new Set([...state.loadedContentIds, fileId]),
             }));

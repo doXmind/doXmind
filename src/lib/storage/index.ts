@@ -2,6 +2,8 @@ export type {
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
+  ExcelCellStyle,
+  ExcelEditorState,
   MarkdownSearchOptions,
   MarkdownSearchResult,
   MarkdownSearchResults,

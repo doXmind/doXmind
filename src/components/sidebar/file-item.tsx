@@ -1,12 +1,12 @@
 "use client";
 
-import { Archive, MoreHorizontal, Check, X, CheckSquare, Square, Pin, PinOff } from "lucide-react";
+import { MoreHorizontal, Check, X, CheckSquare, Square } from "lucide-react";
 import { MarkdownGlyph, PdfGlyph } from "@/components/icons/document-glyphs";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -21,6 +21,7 @@ import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
 import { getDisplayName, isPdfFile, withOriginalExtension } from "@/lib/document-types";
+import { revealFileInFinder } from "@/lib/storage/reveal";
 
 const log = storeLogger.child("FileItem");
 const getNameWithoutExtension = getDisplayName;
@@ -41,7 +42,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const deleteFile = useFileStore((s) => s.deleteFile);
   const renameFile = useFileStore((s) => s.renameFile);
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
-  const toggleFavorite = useFileStore((s) => s.toggleFavorite);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
   const isSelected = useFileStore((s) => s.selectedFileIds.has(file.id));
@@ -88,7 +88,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         case " ":
           e.preventDefault();
           // Execute the action based on focused index
-          // Indices: 0=Rename, 1=Favorite, [2=MoveToRoot], 2+offset..4+offset=Export, 5+offset=Delete
+          // Indices: 0=Rename, 1=Reveal, [2=MoveToRoot], 2+offset..4+offset=Export, 5+offset=Delete
           if (contextMenuFocusIndex === 0) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -97,7 +97,11 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           } else if (contextMenuFocusIndex === 1) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            toggleFavorite(file.id);
+            revealFileInFinder(file).catch((error) => {
+              log.error("Failed to reveal file in Finder", error);
+              const { title, description } = getErrorMessage(error);
+              toast.error(title, { description });
+            });
           } else if (contextMenuFocusIndex === 2 && file.parentId) {
             // Move to Root (only when file is in a folder)
             setContextMenu(null);
@@ -324,9 +328,15 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     setIsRenaming(true);
   };
 
-  const handleContextMenuToggleFavorite = () => {
+  const handleContextMenuRevealInFinder = async () => {
     setContextMenu(null);
-    toggleFavorite(file.id);
+    try {
+      await revealFileInFinder(file);
+    } catch (error) {
+      log.error("Failed to reveal file in Finder", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
   };
 
   const handleContextMenuMoveToRoot = async () => {
@@ -367,21 +377,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             : "text-foreground/90 hover:bg-[var(--sidebar-hover)]"
       )}
     >
-      {!isRenaming && !isSelectionMode && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleFavorite(file.id);
-          }}
-          className="sidebar-action-button absolute left-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md opacity-0 transition-opacity focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
-          aria-label={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
-          title={file.isFavorite ? t("removeFromFavorites") : t("addToFavorites")}
-        >
-          {file.isFavorite ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-        </button>
-      )}
-
       {/* Checkbox for multi-select */}
       {(isSelectionMode || isSelected) && (
         <button
@@ -400,12 +395,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         </button>
       )}
 
-      <div
-        className={cn(
-          "relative flex h-5 w-5 flex-shrink-0 items-center justify-center transition-opacity",
-          !isRenaming && !isSelectionMode && "md:group-hover/file:opacity-0"
-        )}
-      >
+      <div className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
         {file.icon ? (
           <span className="flex h-5 w-5 items-center justify-center text-sm md:text-xs">
             {file.icon}
@@ -452,44 +442,24 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             </button>
           </div>
         ) : (
-          <div className="flex min-w-0 items-center gap-2">
-            <p
-              className={cn(
-                "text-ui-base min-w-0 flex-1 truncate leading-5",
-                isActive ? "font-semibold" : "font-medium"
-              )}
-            >
-              {getNameWithoutExtension(file.name)}
-            </p>
-            {file.isFavorite && (
-              <Pin className="h-3 w-3 flex-shrink-0 fill-muted-foreground/50 text-muted-foreground/50" />
+          <p
+            className={cn(
+              "text-ui-base min-w-0 truncate leading-5",
+              isActive ? "font-semibold" : "font-medium"
             )}
-          </div>
+          >
+            {getNameWithoutExtension(file.name)}
+          </p>
         )}
       </div>
 
       {!isRenaming && (
         <span
           aria-hidden
-          className="text-ui-xs pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-semibold text-muted-foreground/75 transition-opacity md:group-hover/file:opacity-0"
+          className="text-ui-xs pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-semibold text-muted-foreground/75"
         >
           {getRelativeTimeLabel(file.updatedAt)}
         </span>
-      )}
-
-      {!isRenaming && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDelete(e);
-          }}
-          className="sidebar-action-button absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md opacity-0 transition-opacity focus-visible:opacity-100 md:flex md:group-hover/file:opacity-100"
-          aria-label={t("moveToTrash")}
-          title={t("moveToTrash")}
-        >
-          <Archive className="h-3.5 w-3.5" />
-        </button>
       )}
 
       {/* Actions - Always visible on mobile via menu button */}
@@ -515,13 +485,20 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           <DropdownMenuContent align="end">
             <FileActionsMenuItems
               variant="dropdown"
-              isFavorite={!!file.isFavorite}
               hasParent={!!file.parentId}
               onRename={() => {
                 setNewName(getNameWithoutExtension(file.name));
                 setIsRenaming(true);
               }}
-              onToggleFavorite={() => toggleFavorite(file.id)}
+              onRevealInFinder={async () => {
+                try {
+                  await revealFileInFinder(file);
+                } catch (error) {
+                  log.error("Failed to reveal file in Finder", error);
+                  const { title, description } = getErrorMessage(error);
+                  toast.error(title, { description });
+                }
+              }}
               onMoveToRoot={async () => {
                 try {
                   await moveFileToFolder(file.id, null);
@@ -554,13 +531,12 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           >
             <FileActionsMenuItems
               variant="context"
-              isFavorite={!!file.isFavorite}
               hasParent={!!file.parentId}
               focusIndex={contextMenuFocusIndex}
               onFocusIndex={setContextMenuFocusIndex}
               contextMenuReady={contextMenuReady}
               onRename={handleContextMenuRename}
-              onToggleFavorite={handleContextMenuToggleFavorite}
+              onRevealInFinder={handleContextMenuRevealInFinder}
               onMoveToRoot={handleContextMenuMoveToRoot}
               onExport={handleContextMenuExport}
               onDelete={handleContextMenuDelete}

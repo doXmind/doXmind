@@ -311,8 +311,8 @@ async fn doc_write_workspace(
 fn workspace_read_binary(root: String, path: String) -> Result<Vec<u8>, String> {
     let root = canonical_workspace_root(&root)?;
     let path = resolve_existing_workspace_path(&root, &path)?;
-    if !is_pdf_file(&path) {
-        return Err("binary workspace reads are only enabled for PDFs".to_string());
+    if !is_pdf_file(&path) && !is_excel_file(&path) {
+        return Err("binary workspace reads are only enabled for PDF and Excel files".to_string());
     }
     fs::read(path).map_err(|err| format!("failed to read binary workspace file: {err}"))
 }
@@ -364,6 +364,55 @@ fn workspace_write_pdf_editor_state(
             .map_err(|err| format!("failed to encode PDF sidecar: {err}"))?,
     )
     .map_err(|err| format!("failed to write PDF sidecar: {err}"))
+}
+
+#[tauri::command]
+fn workspace_read_excel_editor_state(
+    root: String,
+    path: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_excel_file(&path) {
+        return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let raw = match fs::read_to_string(sidecar_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to read Excel sidecar: {err}")),
+    };
+    let sidecar: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|err| format!("invalid Excel sidecar JSON: {err}"))?;
+    Ok(sidecar.get("excel_editor").cloned())
+}
+
+#[tauri::command]
+fn workspace_write_excel_editor_state(
+    root: String,
+    path: String,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    let root = canonical_workspace_root(&root)?;
+    let path = resolve_existing_workspace_path(&root, &path)?;
+    if !is_excel_file(&path) {
+        return Err("Excel editor state is only enabled for .xlsx/.xlsm files".to_string());
+    }
+    let sidecar_path = doxmind_sidecar::sidecar_path_for(&path);
+    let rel_path = relative_path_string(&root, &path)?;
+    let sidecar = serde_json::json!({
+        "version": 1,
+        "id": stable_path_id(&rel_path),
+        "source_path": rel_path,
+        "updated_at_unix_nanos": unix_nanos().to_string(),
+        "excel_editor": payload,
+    });
+    fs::write(
+        sidecar_path,
+        serde_json::to_vec_pretty(&sidecar)
+            .map_err(|err| format!("failed to encode Excel sidecar: {err}"))?,
+    )
+    .map_err(|err| format!("failed to write Excel sidecar: {err}"))
 }
 
 #[tauri::command]
@@ -802,15 +851,32 @@ fn is_pdf_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_excel_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            let lowered = ext.to_ascii_lowercase();
+            matches!(lowered.as_str(), "xlsx" | "xlsm")
+        })
+        .unwrap_or(false)
+}
+
 fn is_workspace_document_file(path: &Path) -> bool {
-    is_markdown_file(path) || is_pdf_file(path)
+    is_markdown_file(path) || is_pdf_file(path) || is_excel_file(path)
 }
 
 fn document_dto_for_path(
     path: &Path,
     relative_path: String,
 ) -> Result<WorkspaceDocumentDto, String> {
-    let document_type = if is_pdf_file(path) { "pdf" } else { "markdown" }.to_string();
+    let document_type = if is_pdf_file(path) {
+        "pdf"
+    } else if is_excel_file(path) {
+        "excel"
+    } else {
+        "markdown"
+    }
+    .to_string();
     let (id, id_source, title) = if document_type == "markdown" {
         let raw = fs::read_to_string(path)
             .map_err(|err| format!("failed to read markdown document for scan: {err}"))?;
@@ -1253,6 +1319,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_read_binary,
             workspace_read_pdf_editor_state,
             workspace_write_pdf_editor_state,
+            workspace_read_excel_editor_state,
+            workspace_write_excel_editor_state,
             workspace_scan,
             workspace_index_rebuild,
             workspace_index_read,

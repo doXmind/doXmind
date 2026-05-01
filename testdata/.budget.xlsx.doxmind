@@ -1,0 +1,24 @@
+{
+  "excel_editor": {
+    "activeSheetId": "sheet-0",
+    "cells": {
+      "sheet-0!2,0": {
+        "formula": null,
+        "value": "South"
+      },
+      "sheet-0!4,2": {
+        "formula": null,
+        "value": 19.99
+      },
+      "sheet-0!6,0": {
+        "formula": null,
+        "value": "Total"
+      }
+    },
+    "version": 1
+  },
+  "id": "path:bfcb61426e8890c5",
+  "source_path": "budget.xlsx",
+  "updated_at_unix_nanos": "1777674306093567000",
+  "version": 1
+}

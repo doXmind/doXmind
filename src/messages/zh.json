@@ -398,8 +398,6 @@
     }
   },
   "sidebar": {
-    "files": "文件",
-    "folders": "文件夹",
     "settings": "设置",
     "search": "搜索",
     "newDocument": "新建文档",
@@ -407,20 +405,15 @@
     "newMarkdown": "Markdown",
     "newPdf": "PDF",
     "newFolder": "新建文件夹",
-    "folderActions": "文件夹操作",
     "collapseAll": "全部收起",
-    "expandAll": "全部展开",
-    "organizeFolders": "筛选、排序和整理文件夹",
-    "organizeFiles": "筛选、排序和整理文件",
     "fromTemplate": "从模板创建",
     "openFolder": "打开文件夹",
     "openFile": "打开文件",
-    "openFileHint": "只打开单个 .md 或 .pdf，不挂载所在目录",
     "openFileFilter": "文档",
     "openFileNoParent": "文件路径无效——请选一个位于文件夹内的文件。",
     "openedFile": "已打开 {name}",
-    "openWorkspaceFolderHint": "选择一个 Markdown 文件夹作为工作区",
     "openWorkspaceRequiresDesktop": "打开文件夹和文件需要桌面应用。",
+    "revealInFinder": "在访达中显示",
     "workspaceFolderActive": "工作区文件夹",
     "workspaceOpened": "已打开工作区文件夹",
     "done": "完成",
@@ -437,7 +430,6 @@
     "hideOutline": "隐藏大纲",
     "noHeadings": "文档中没有标题",
     "openDocForOutline": "打开文档以查看大纲",
-    "favorites": "收藏",
     "movedToFolder": "文件已移到文件夹",
     "movedToRoot": "文件已移到根目录",
     "failedToMove": "移动文件失败",
@@ -456,8 +448,6 @@
     "deleted": "已删除",
     "deletePermanently": "永久删除",
     "permanentlyDeleteItems": "将永久删除 {count} 个项目，此操作不可撤销。",
-    "addToFavorites": "添加到收藏",
-    "removeFromFavorites": "取消收藏",
     "moveToRoot": "移到根目录",
     "exportAs": "导出为",
     "markdownFormat": "Markdown",
@@ -558,10 +548,8 @@
     "previewText": "天地玄黄，宇宙洪荒。写作是一场探索，从无到有，边写边悟。"
   },
   "welcome": {
-    "subtitle": "与你同思，而非代你执笔。",
-    "recent": "最近",
-    "noRecent": "暂无最近文件",
-    "yesterday": "昨天"
+    "recentWorkspaces": "最近的工作区",
+    "noRecentWorkspaces": "暂无最近工作区"
   },
   "shortcuts": {
     "keyboardShortcuts": "快捷键",

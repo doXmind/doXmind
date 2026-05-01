@@ -2,6 +2,7 @@ import type {
   DocumentContent,
   DocumentHandle,
   DocumentMeta,
+  ExcelEditorState,
   PdfEditorState,
   WorkspaceDocumentType,
   MarkdownSearchOptions,
@@ -79,8 +80,12 @@ export class DiskStorageAdapter implements StorageAdapter {
   }
 
   async read(handle: DocumentHandle): Promise<DocumentContent> {
-    if ((handle.documentType ?? documentTypeFromPath(requireHandlePath(handle))) === "pdf") {
+    const docType = handle.documentType ?? documentTypeFromPath(requireHandlePath(handle));
+    if (docType === "pdf") {
       throw new Error("PDF documents are binary; use readBinary instead");
+    }
+    if (docType === "excel") {
+      throw new Error("Excel documents are binary; use readBinary instead");
     }
 
     const result = await this.invoke<DocReadResultDto>("doc_read", {
@@ -116,6 +121,21 @@ export class DiskStorageAdapter implements StorageAdapter {
 
   async writePdfEditorState(handle: DocumentHandle, state: PdfEditorState): Promise<void> {
     await this.invoke<void>("workspace_write_pdf_editor_state", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+      payload: state,
+    });
+  }
+
+  async readExcelEditorState(handle: DocumentHandle): Promise<ExcelEditorState | null> {
+    return this.invoke<ExcelEditorState | null>("workspace_read_excel_editor_state", {
+      root: this.requireRoot(),
+      path: requireHandlePath(handle),
+    });
+  }
+
+  async writeExcelEditorState(handle: DocumentHandle, state: ExcelEditorState): Promise<void> {
+    await this.invoke<void>("workspace_write_excel_editor_state", {
       root: this.requireRoot(),
       path: requireHandlePath(handle),
       payload: state,
@@ -535,9 +555,11 @@ function stripMarkdownExtension(name: string): string {
 }
 
 function stripDocumentExtension(name: string): string {
-  return name.replace(/\.(md|markdown|pdf)$/i, "");
+  return name.replace(/\.(md|markdown|pdf|xlsx|xlsm)$/i, "");
 }
 
 function documentTypeFromPath(path: string): WorkspaceDocumentType {
-  return /\.pdf$/i.test(path) ? "pdf" : "markdown";
+  if (/\.pdf$/i.test(path)) return "pdf";
+  if (/\.(xlsx|xlsm)$/i.test(path)) return "excel";
+  return "markdown";
 }

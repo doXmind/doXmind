@@ -1,7 +1,7 @@
 export type WorkspaceMode = "disk";
 
 export type WorkspaceEntryKind = "document" | "folder";
-export type WorkspaceDocumentType = "markdown" | "pdf";
+export type WorkspaceDocumentType = "markdown" | "pdf" | "excel";
 
 export interface DocumentHandle {
   mode: WorkspaceMode;
@@ -143,6 +143,53 @@ export interface PdfTextStyleRange {
   italic?: boolean;
 }
 
+/**
+ * Excel editor sidecar state. Stored under the `excel_editor` key in the
+ * `.doxmind` sidecar that lives next to the `.xlsx` file. The `.xlsx` itself
+ * remains the portable source of truth — `edits` are applied lazily on top of
+ * the parsed workbook and flushed back to the binary on export.
+ *
+ * The `cells` map is keyed by `"${sheetId}!${row},${col}"` (zero-based) so the
+ * shape matches the JSON cell model returned by `/api/excel/parse-workbook`.
+ * Empty diff slots can simply be omitted; the renderer falls back to the
+ * parsed value.
+ */
+export interface ExcelEditorState {
+  version: 1;
+  /** Sheet id of the tab the user had focused last. Restored on reopen. */
+  activeSheetId?: string;
+  /**
+   * Sparse cell-level edits keyed by `"${sheetId}!${row},${col}"`. `value`
+   * holds the user-facing string; `formula` (when present) takes precedence
+   * during recalculation. `null` value clears the cell.
+   */
+  cells?: Record<
+    string,
+    {
+      value?: string | number | boolean | null;
+      formula?: string | null;
+      numberFormat?: string;
+      style?: ExcelCellStyle;
+    }
+  >;
+  /** Optional row height overrides keyed by `"${sheetId}!${row}"`. */
+  rowHeights?: Record<string, number>;
+  /** Optional column width overrides keyed by `"${sheetId}!${col}"`. */
+  colWidths?: Record<string, number>;
+}
+
+export interface ExcelCellStyle {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+  background?: string;
+  textAlign?: "left" | "center" | "right";
+  verticalAlign?: "top" | "middle" | "bottom";
+  fontSize?: number;
+  fontFamily?: string;
+}
+
 export interface StorageCreateInput {
   name: string;
   kind?: WorkspaceEntryKind;
@@ -208,6 +255,8 @@ export interface StorageAdapter {
   readBinary?(handle: DocumentHandle): Promise<Uint8Array>;
   readPdfEditorState?(handle: DocumentHandle): Promise<PdfEditorState | null>;
   writePdfEditorState?(handle: DocumentHandle, state: PdfEditorState): Promise<void>;
+  readExcelEditorState?(handle: DocumentHandle): Promise<ExcelEditorState | null>;
+  writeExcelEditorState?(handle: DocumentHandle, state: ExcelEditorState): Promise<void>;
   create(input: StorageCreateInput): Promise<WorkspaceEntry>;
   rename(handle: DocumentHandle, name: string): Promise<WorkspaceEntry>;
   move(handle: DocumentHandle, parent: DocumentHandle | null): Promise<WorkspaceEntry>;
