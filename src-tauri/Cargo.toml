@@ -1,7 +1,7 @@
 [package]
 name = "doxmind"
-version = "0.1.0"
-description = "doXmind — local-first AI writing studio"
+version = "1.0.0"
+description = "doXmind — local-first Markdown workspace"
 authors = ["doXmind"]
 edition = "2021"
 rust-version = "1.77"

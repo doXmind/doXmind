@@ -26,26 +26,21 @@ hiddenimports += collect_submodules("utils")
 hiddenimports += collect_submodules("lib")
 
 datas: list[tuple[str, str]] = []
-# Marker / Surya / pymupdf4llm / mammoth / python-pptx ship a handful of
-# small bundled assets (font files, class label maps, default templates).
-# The Surya weights are NOT bundled — they live in the user's HuggingFace
-# cache and are downloaded on demand the first time a scanned PDF is
-# imported (see services/marker_state.py).
+# Lightweight release bundle:
 #
-# NOTE: bundling marker-pdf into a single PyInstaller binary inflates the
-# artifact significantly (PyTorch alone is ~800MB). When we cut the next
-# .app build we may want to switch the sidecar from a one-file PyInstaller
-# bundle to a directory bundle (or ship a thin venv) so the weights and
-# PyTorch don't have to be unpacked on every launch.
-for _pkg in ("marker", "surya", "pymupdf4llm", "pymupdf", "mammoth", "pptx"):
+# Keep the base app focused on local Markdown, workspace IO, DOCX/PPTX import,
+# and native-text PDF import. Scanned-PDF OCR is a large optional path; do not
+# bundle marker/surya/torch/transformers into every installer. Those packages
+# are loaded only when the user explicitly installs/runs OCR.
+for _pkg in ("pymupdf4llm", "pymupdf", "mammoth", "pptx"):
     try:
         datas += collect_data_files(_pkg)
     except Exception:
         pass
 
-# Marker / Surya pull in torch + transformers via dynamic imports that
-# PyInstaller can't always trace statically. Be explicit.
-for _pkg in ("torch", "transformers", "surya", "marker", "pymupdf4llm", "mammoth", "pptx"):
+# Be explicit only for the lightweight converter stack. Pulling marker/surya
+# here would also pull torch, transformers, sklearn, pandas, and friends.
+for _pkg in ("pymupdf4llm", "mammoth", "pptx"):
     try:
         hiddenimports += collect_submodules(_pkg)
     except Exception:
@@ -64,6 +59,18 @@ a = Analysis(
         # Trim the bundle: nothing in the desktop edition needs these.
         "tkinter",
         "matplotlib",
+        "marker",
+        "surya",
+        "torch",
+        "transformers",
+        "tensorflow",
+        "sklearn",
+        "scipy",
+        "pandas",
+        "boto3",
+        "botocore",
+        "onnxruntime",
+        "cv2",
         "IPython",
         "jupyter",
         "notebook",
@@ -91,6 +98,6 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=None,
+    codesign_identity="Developer ID Application: wangzhang wu (46KF5Z549N)",
     entitlements_file=None,
 )

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "doXmind",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.doxmind.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -28,12 +28,26 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
-      "signingIdentity": null,
-      "entitlements": null
+      "signingIdentity": "Developer ID Application: wangzhang wu (46KF5Z549N)",
+      "entitlements": null,
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
     },
     "category": "Productivity",
-    "shortDescription": "Local-first AI writing studio",
-    "longDescription": "doXmind is a local-first AI writing assistant — TipTap WYSIWYG editor, KB, autocomplete, and chat, all running on your machine."
+    "shortDescription": "Local-first Markdown workspace",
+    "longDescription": "doXmind is a local-first desktop Markdown workspace. Documents stay as portable .md files, while hidden .doxmind sidecars preserve rich editor state and structured blocks."
   },
   "plugins": {}
 }
