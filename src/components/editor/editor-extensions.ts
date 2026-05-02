@@ -41,17 +41,10 @@ import { BlockColorExtension } from "@/extensions/block-color-extension";
 import { AtomBlockLiftPlugin } from "@/extensions/atom-block-lift-plugin";
 import type { Extensions } from "@tiptap/react";
 
-export interface EditorExtensionsOptions {
-  /** Whether running on mobile device */
-  isMobile?: boolean;
-}
-
 /**
  * Get all editor extensions with their configurations
  */
-export function getEditorExtensions(options: EditorExtensionsOptions = {}): Extensions {
-  const { isMobile = false } = options;
-
+export function getEditorExtensions(): Extensions {
   const extensions: Extensions = [
     // Core editing
     StarterKit.configure({
@@ -161,27 +154,18 @@ export function getEditorExtensions(options: EditorExtensionsOptions = {}): Exte
     // Block color support (text and background colors for blocks)
     BlockColorExtension,
 
-    // Block selection (mobile: tap/longpress, desktop: keyboard/handle)
     BlockSelectionExtension.configure({
       enabled: true,
-      selectionMode: "desktop", // Block selection is desktop-only; mobile uses native editing
+      selectionMode: "desktop",
+    }),
+
+    BlockHandleExtension,
+
+    Placeholder.configure({
+      placeholder: "Type '/' for commands",
+      showOnlyCurrent: true,
     }),
   ];
-
-  // Desktop-only: Block handle (hover to show +/grip in left margin)
-  if (!isMobile) {
-    extensions.push(BlockHandleExtension);
-  }
-
-  // Only add Placeholder extension on desktop (mobile uses custom empty state UI)
-  if (!isMobile) {
-    extensions.push(
-      Placeholder.configure({
-        placeholder: "Type '/' for commands",
-        showOnlyCurrent: true,
-      })
-    );
-  }
 
   return extensions;
 }

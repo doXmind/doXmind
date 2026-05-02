@@ -7,7 +7,6 @@ import { Pencil, Copy, Trash2, ArrowUpFromLine } from "lucide-react";
 import katex from "katex";
 import { cn } from "@/lib/utils";
 import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
-import { useIsMobile } from "@/hooks/use-device-type";
 import { Tooltip } from "@/components/ui/tooltip";
 import { MathEditorPanel } from "./math-editor-panel";
 
@@ -29,7 +28,6 @@ export function MathNodeView({
   const tc = useTranslations("common");
   const { latex } = node.attrs;
   const isBlock = node.type.name === "blockMath";
-  const isMobile = useIsMobile();
 
   const [localLatex, setLocalLatex] = useState(latex || "");
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -235,7 +233,7 @@ export function MathNodeView({
         onMouseLeave={() => setIsHovered(false)}
       >
         {/* Overlay toolbar */}
-        {showToolbar && !isMobile && editor.isEditable && renderToolbar()}
+        {showToolbar && editor.isEditable && renderToolbar()}
 
         <span
           ref={renderedRef}

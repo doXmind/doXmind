@@ -16,7 +16,6 @@ import {
   DropdownMenuContent,
 } from "@/components/ui/dropdown-menu";
 import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store";
-import { useLayoutStore } from "@/stores/layout-store";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
@@ -200,12 +199,6 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       }
       setCurrentFile(file.id);
       lastClickedFileId = file.id;
-
-      // Auto-close mobile sidebar to prevent competing renders
-      // between the overlay and the editor content updating underneath
-      if (useLayoutStore.getState().isMobileSidebarOpen) {
-        useLayoutStore.getState().setMobileSidebarOpen(false);
-      }
     }
   };
 

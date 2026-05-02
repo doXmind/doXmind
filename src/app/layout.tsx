@@ -5,7 +5,6 @@ import "./styles/editor.css";
 import "./styles/code-block.css";
 import "./styles/math-mermaid.css";
 import "./styles/presentation.css";
-import "./styles/mobile.css";
 import "./styles/components.css";
 import { Providers } from "@/components/providers";
 import { ThemedToaster } from "@/components/themed-toaster";

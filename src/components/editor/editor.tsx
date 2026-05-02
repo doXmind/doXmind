@@ -13,7 +13,6 @@ import { SearchBar } from "./search-bar";
 import { StatusBar } from "./status-bar";
 import { DocumentTitle } from "./document-title";
 import { PageCover } from "./page-cover";
-import { useIsMobile } from "@/hooks/use-device-type";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem } from "@/stores/file-store";
@@ -65,7 +64,6 @@ export function Editor({ file: initialFile }: EditorProps) {
   // app stays in one font; no per-editor wrapper needed here.
   const lineHeight = useLayoutStore((s) => s.lineHeight);
 
-  const isMobile = useIsMobile();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const lastContentRef = useRef(file.content);
   const isFileSwitchingRef = useRef(false);
@@ -118,7 +116,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   );
 
   const editor = useEditor({
-    extensions: getEditorExtensions({ isMobile }),
+    extensions: getEditorExtensions(),
     content: file.content,
     editorProps: {
       ...defaultEditorProps,
@@ -231,12 +229,11 @@ export function Editor({ file: initialFile }: EditorProps) {
     };
   }, [debouncedSave, editor, persistContent]);
 
-  // Block selection is desktop-only; mobile always uses direct editing (Notion-style)
   useEffect(() => {
     if (editor && editor.commands.setBlockSelectionEnabled) {
-      editor.commands.setBlockSelectionEnabled(!isMobile);
+      editor.commands.setBlockSelectionEnabled(true);
     }
-  }, [editor, isMobile]);
+  }, [editor]);
 
   // Reset when file changes
   useEffect(() => {
@@ -340,10 +337,8 @@ export function Editor({ file: initialFile }: EditorProps) {
     };
   }, [file.content, editor]);
 
-  // Initialize hooks
-  useBlockKeyboardShortcuts(!isMobile ? editor : null);
+  useBlockKeyboardShortcuts(editor);
 
-  // Use keyboard shortcuts hook (Ctrl+Shift+O for outline)
   useEditorShortcuts();
 
   // Handle Image Modal confirm
@@ -386,73 +381,41 @@ export function Editor({ file: initialFile }: EditorProps) {
   }
 
   return (
-    <div className={cn("flex flex-col", !isMobile && "h-full")}>
-      <div className={cn("flex min-w-0 overflow-x-hidden", !isMobile && "min-h-0 flex-1")}>
-        {/* Main editor content area */}
-        <div
-          className={cn(
-            "relative flex min-w-0 flex-col overflow-hidden",
-            !isMobile && "min-h-0 flex-1"
-          )}
-        >
-          {/* On mobile, parent MobileEditorLayout handles scrolling, so skip ScrollArea entirely */}
-          {isMobile ? (
+    <div className="flex h-full flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-x-hidden">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-editor-scroll>
+            <PageCover fileId={file.id} />
             <div
               className={cn(
-                "mx-auto w-full max-w-full px-4 pb-24 pt-0 sm:max-w-4xl",
-                "mobile-edit-mode", // Always edit mode on mobile (Notion-style)
+                "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
+                editorWidth === "narrow" && "max-w-2xl",
+                editorWidth === "normal" && "max-w-3xl",
+                editorWidth === "wide" && "max-w-5xl",
+                editorWidth === "full" && "max-w-none",
                 lineHeight === "compact" && "editor-leading-compact",
                 lineHeight === "relaxed" && "editor-leading-relaxed"
               )}
             >
+              <DocumentTitle
+                fileId={file.id}
+                fileName={file.name}
+                onEnterEditor={() => editor.commands.focus("start")}
+              />
               <EditorContent editor={editor} />
             </div>
-          ) : (
-            <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-editor-scroll>
-              <PageCover fileId={file.id} />
-              <div
-                className={cn(
-                  "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
-                  editorWidth === "narrow" && "max-w-2xl",
-                  editorWidth === "normal" && "max-w-3xl",
-                  editorWidth === "wide" && "max-w-5xl",
-                  editorWidth === "full" && "max-w-none",
-                  lineHeight === "compact" && "editor-leading-compact",
-                  lineHeight === "relaxed" && "editor-leading-relaxed"
-                )}
-              >
-                <DocumentTitle
-                  fileId={file.id}
-                  fileName={file.name}
-                  onEnterEditor={() => editor.commands.focus("start")}
-                />
-                <EditorContent editor={editor} />
-              </div>
-            </ScrollArea>
-          )}
-          {/* Search Bar - positioned top right within editor area */}
+          </ScrollArea>
           <SearchBar />
-          {/* Status Bar - desktop only */}
-          {!isMobile && <StatusBar editor={editor} />}
+          <StatusBar editor={editor} />
         </div>
       </div>
 
-      {/* Block Handle - Desktop only (+ button and drag grip in left margin) */}
-      {!isMobile && editor && <BlockHandle editor={editor} />}
-      {/* Table Handles - Desktop only (column/row grips and edge + buttons) */}
-      {!isMobile && editor && <TableHandles editor={editor} />}
-      {/* Bubble Menus & Popups */}
-      {/* Mobile shows simplified BubbleMenu; desktop shows full menus */}
-      {/* Mobile uses MobileFormattingToolbar instead — BubbleMenu conflicts with native selection handles */}
-      {!isMobile && <BubbleMenuComponent editor={editor} />}
-      {!isMobile && (
-        <>
-          <LinkBubbleMenu editor={editor} />
-          <EditorContextMenu editor={editor} />
-        </>
-      )}
+      {editor && <BlockHandle editor={editor} />}
+      {editor && <TableHandles editor={editor} />}
+      <BubbleMenuComponent editor={editor} />
+      <LinkBubbleMenu editor={editor} />
+      <EditorContextMenu editor={editor} />
 
-      {/* Modals */}
       <ImageModal
         open={imageModalOpen}
         onClose={closeImageModal}

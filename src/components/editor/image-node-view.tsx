@@ -18,7 +18,6 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
-import { useIsMobile } from "@/hooks/use-device-type";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -46,7 +45,6 @@ export function ImageNodeView({
   const { src, alt, title, width, height, align } = node.attrs;
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const isMobile = useIsMobile();
 
   let nodePos: number | undefined;
   try {
@@ -239,11 +237,7 @@ export function ImageNodeView({
     <NodeViewWrapper className="image-node-wrapper" data-align={align}>
       <div
         ref={containerRef}
-        className={cn(
-          "image-container group",
-          resizeState?.isResizing && "is-resizing",
-          selected && isMobile && "mb-12 overflow-visible"
-        )}
+        className={cn("image-container group", resizeState?.isResizing && "is-resizing")}
         data-align={align}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
@@ -271,7 +265,7 @@ export function ImageNodeView({
         />
 
         {/* Notion-style overlay toolbar (top-right, inside the image) */}
-        {showToolbar && !isMobile && editor.isEditable && editMode === "none" && (
+        {showToolbar && editor.isEditable && editMode === "none" && (
           <div
             className="image-overlay-toolbar"
             onClick={(e) => e.stopPropagation()}
@@ -364,71 +358,6 @@ export function ImageNodeView({
           </div>
         )}
 
-        {/* Mobile compact action bar (appears on tap/select) */}
-        {selected && isMobile && editor.isEditable && editMode === "none" && (
-          <div
-            className="absolute -bottom-11 left-1/2 z-10 -translate-x-1/2"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div
-              className={cn(
-                "flex items-center gap-0.5 rounded-xl border border-border bg-popover/95",
-                "px-1.5 py-1 shadow-lg backdrop-blur"
-              )}
-            >
-              {isNested && (
-                <>
-                  <button
-                    type="button"
-                    className="rounded-lg p-2 active:bg-accent"
-                    onClick={handleLiftOut}
-                  >
-                    <ArrowUpFromLine className="h-4 w-4" />
-                  </button>
-                  <div className="mx-0.5 h-4 w-px bg-border" />
-                </>
-              )}
-              <button
-                type="button"
-                className={cn("rounded-lg p-2", align === "left" && "bg-accent")}
-                onClick={() => handleSetAlign("left")}
-              >
-                <AlignLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                className={cn("rounded-lg p-2", (!align || align === "center") && "bg-accent")}
-                onClick={() => handleSetAlign("center")}
-              >
-                <AlignCenter className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                className={cn("rounded-lg p-2", align === "right" && "bg-accent")}
-                onClick={() => handleSetAlign("right")}
-              >
-                <AlignRight className="h-4 w-4" />
-              </button>
-              <div className="mx-0.5 h-4 w-px bg-border" />
-              <button
-                type="button"
-                className="rounded-lg p-2 active:bg-accent"
-                onClick={handleDownload}
-              >
-                <Download className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                className="rounded-lg p-2 text-destructive active:bg-accent"
-                onClick={handleDelete}
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Inline input for URL/alt text editing (overlaid on image) */}
         {editMode !== "none" && (
           <div
@@ -460,7 +389,7 @@ export function ImageNodeView({
         )}
 
         {/* Notion-style edge resize handles (left and right vertical bars) */}
-        {showToolbar && !isMobile && editor.isEditable && (
+        {showToolbar && editor.isEditable && (
           <>
             <div
               className="image-resize-handle-left"

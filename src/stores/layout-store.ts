@@ -15,16 +15,6 @@ interface LayoutState {
   systemThemeEnabled: boolean;
   isHighContrast: boolean;
 
-  // Mobile-specific state (sheet/overlay approach - editor always visible)
-  isMobileSidebarOpen: boolean;
-  isMobileOutlineOpen: boolean;
-
-  // Mobile editor state
-  isMobileEditMode: boolean; // When true, editor uses desktop-style cursor editing instead of block selection
-
-  // Mobile formatting toolbar
-  isMobileBlockInsertOpen: boolean;
-
   // Keyboard shortcuts modal
   isKeyboardShortcutsOpen: boolean;
 
@@ -75,12 +65,6 @@ interface LayoutState {
   setHighContrast: (enabled: boolean) => void;
   toggleHighContrast: () => void;
 
-  // Mobile actions
-  setMobileSidebarOpen: (open: boolean) => void;
-  setMobileOutlineOpen: (open: boolean) => void;
-  toggleMobileSidebar: () => void;
-  toggleMobileOutline: () => void;
-
   // Keyboard shortcuts modal actions
   setKeyboardShortcutsOpen: (open: boolean) => void;
   toggleKeyboardShortcuts: () => void;
@@ -123,12 +107,6 @@ interface LayoutState {
   setSidebarWidth: (width: number) => void;
   setFilesSidebarWidth: (width: number) => void;
   resetPanelWidths: () => void;
-
-  toggleMobileEditMode: () => void;
-  setMobileEditMode: (enabled: boolean) => void;
-
-  // Mobile formatting toolbar actions
-  setMobileBlockInsertOpen: (open: boolean) => void;
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -144,15 +122,6 @@ export const useLayoutStore = create<LayoutState>()(
       preferredDarkTheme: "dark",
       systemThemeEnabled: true,
       isHighContrast: false,
-
-      // Mobile-specific state (sheet/overlay approach)
-      isMobileSidebarOpen: false,
-      isMobileOutlineOpen: false,
-
-      isMobileEditMode: true,
-
-      // Mobile formatting toolbar
-      isMobileBlockInsertOpen: false,
 
       // Keyboard shortcuts modal
       isKeyboardShortcutsOpen: false,
@@ -261,23 +230,6 @@ export const useLayoutStore = create<LayoutState>()(
           }
           return { isHighContrast: newValue };
         });
-      },
-
-      // Mobile actions
-      setMobileSidebarOpen: (open: boolean) => {
-        set({ isMobileSidebarOpen: open });
-      },
-
-      setMobileOutlineOpen: (open: boolean) => {
-        set({ isMobileOutlineOpen: open });
-      },
-
-      toggleMobileSidebar: () => {
-        set((state) => ({ isMobileSidebarOpen: !state.isMobileSidebarOpen }));
-      },
-
-      toggleMobileOutline: () => {
-        set((state) => ({ isMobileOutlineOpen: !state.isMobileOutlineOpen }));
       },
 
       // Keyboard shortcuts modal actions
@@ -389,19 +341,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       resetPanelWidths: () => {
         set({ sidebarWidth: 224, filesSidebarWidth: 304 });
-      },
-
-      toggleMobileEditMode: () => {
-        set((state) => ({ isMobileEditMode: !state.isMobileEditMode }));
-      },
-
-      setMobileEditMode: (enabled: boolean) => {
-        set({ isMobileEditMode: enabled });
-      },
-
-      // Mobile formatting toolbar actions
-      setMobileBlockInsertOpen: (open: boolean) => {
-        set({ isMobileBlockInsertOpen: open });
       },
     }),
     {

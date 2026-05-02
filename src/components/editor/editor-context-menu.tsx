@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/react";
 import { useTranslations } from "next-intl";
-import { useIsMobile } from "@/hooks/use-device-type";
 import {
   Scissors,
   Copy,
@@ -120,7 +119,6 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
   const [submenuFocusIndex, setSubmenuFocusIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const t = useTranslations("editor");
-  const isMobile = useIsMobile();
 
   const hasSelection = editor.state.selection.from !== editor.state.selection.to;
 
@@ -156,7 +154,6 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
     setIsPositionReady(true);
   }, [rawPosition]);
 
-  // Handle right-click on editor + mobile long-press
   useEffect(() => {
     const editorElement = editor.view.dom;
 
@@ -165,61 +162,11 @@ export function EditorContextMenu({ editor }: EditorContextMenuProps) {
       openMenu(e.clientX, e.clientY);
     };
 
-    // Mobile long-press handling
-    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-    let touchStartPos = { x: 0, y: 0 };
-    const LONG_PRESS_MS = 500;
-    const MOVE_THRESHOLD = 10;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1 || !editor.isEditable) return;
-      const touch = e.touches[0];
-      touchStartPos = { x: touch.clientX, y: touch.clientY };
-
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null;
-        if (navigator.vibrate) navigator.vibrate(30);
-        openMenu(touchStartPos.x, touchStartPos.y);
-      }, LONG_PRESS_MS);
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!longPressTimer) return;
-      const touch = e.touches[0];
-      const dx = touch.clientX - touchStartPos.x;
-      const dy = touch.clientY - touchStartPos.y;
-      if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-    };
-
-    const handleTouchEnd = () => {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-    };
-
     editorElement.addEventListener("contextmenu", handleContextMenu);
-    if (isMobile) {
-      editorElement.addEventListener("touchstart", handleTouchStart, { passive: true });
-      editorElement.addEventListener("touchmove", handleTouchMove, { passive: true });
-      editorElement.addEventListener("touchend", handleTouchEnd);
-      editorElement.addEventListener("touchcancel", handleTouchEnd);
-    }
-
     return () => {
       editorElement.removeEventListener("contextmenu", handleContextMenu);
-      if (isMobile) {
-        editorElement.removeEventListener("touchstart", handleTouchStart);
-        editorElement.removeEventListener("touchmove", handleTouchMove);
-        editorElement.removeEventListener("touchend", handleTouchEnd);
-        editorElement.removeEventListener("touchcancel", handleTouchEnd);
-      }
-      if (longPressTimer) clearTimeout(longPressTimer);
     };
-  }, [editor, isMobile, openMenu]);
+  }, [editor, openMenu]);
 
   // Close on outside click/tap
   useEffect(() => {

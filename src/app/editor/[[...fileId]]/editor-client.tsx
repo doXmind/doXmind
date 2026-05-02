@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useIsMobile } from "@/hooks/use-device-type";
 import { useHighContrast } from "@/hooks/use-high-contrast";
 import { useEditorKeyboardShortcuts } from "@/hooks/use-editor-keyboard-shortcuts";
 import { useFileUrlSync } from "@/hooks/use-file-url-sync";
@@ -14,10 +13,6 @@ import { openNewWindow, openWindowForTarget, syncRecentsToDock } from "@/lib/win
 
 const DesktopEditor = dynamic(
   () => import("./_components/desktop-editor").then((m) => ({ default: m.DesktopEditor })),
-  { ssr: false }
-);
-const MobileEditor = dynamic(
-  () => import("./_components/mobile-editor").then((m) => ({ default: m.MobileEditor })),
   { ssr: false }
 );
 
@@ -64,8 +59,6 @@ export function EditorClient() {
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
   const isCommandPaletteOpen = useLayoutStore((s) => s.isCommandPaletteOpen);
   const setCommandPaletteOpen = useLayoutStore((s) => s.setCommandPaletteOpen);
-
-  const isMobile = useIsMobile();
 
   // Boot: per-window state arrives via ?folder=... / ?file=... URL params,
   // set by Rust at window creation. If neither is present we land on the
@@ -144,7 +137,7 @@ export function EditorClient() {
 
   return (
     <>
-      {isMobile ? <MobileEditor /> : <DesktopEditor />}
+      <DesktopEditor />
 
       <KeyboardShortcutsModal
         open={isKeyboardShortcutsOpen}

@@ -6,7 +6,6 @@ import { Pencil, Copy, Trash2, ArrowUpFromLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { renderMermaidSvg } from "@/lib/mermaid-renderer";
 import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
-import { useIsMobile } from "@/hooks/use-device-type";
 import { Tooltip } from "@/components/ui/tooltip";
 import { MermaidEditorPanel } from "./mermaid-editor-panel";
 
@@ -25,7 +24,6 @@ export function MermaidNodeView({
   getPos,
 }: NodeViewProps) {
   const { code } = node.attrs;
-  const isMobile = useIsMobile();
 
   const [localCode, setLocalCode] = useState(code || "");
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -236,7 +234,7 @@ export function MermaidNodeView({
         onMouseLeave={() => setIsHovered(false)}
       >
         {/* Overlay toolbar - top-right inside chart (matching image block) */}
-        {showToolbar && !isMobile && editor.isEditable && (
+        {showToolbar && editor.isEditable && (
           <div
             className="image-overlay-toolbar"
             onClick={(e) => e.stopPropagation()}
