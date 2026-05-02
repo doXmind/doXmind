@@ -4,6 +4,8 @@
 identifier = "allow-workspace-commands"
 description = "Allows the main desktop window to manage local markdown workspace files and sidecars."
 commands.allow = [
+  "pick_workspace_folder",
+  "pick_workspace_file",
   "workspace_default_root",
   "doc_read",
   "doc_write",

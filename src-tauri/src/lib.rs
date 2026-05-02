@@ -25,6 +25,7 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
+use tauri_plugin_dialog::{DialogExt, FilePath};
 
 #[cfg(target_os = "macos")]
 mod dock_menu;
@@ -321,9 +322,63 @@ struct AssetImportResultDto {
     path: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DialogFileFilterDto {
+    name: String,
+    extensions: Vec<String>,
+}
+
+fn dialog_path_to_string(path: FilePath) -> Result<String, String> {
+    path.into_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|err| format!("failed to resolve selected path: {err}"))
+}
+
 #[tauri::command]
 fn get_backend_url(state: tauri::State<'_, BackendUrl>) -> String {
     state.0.clone()
+}
+
+#[tauri::command]
+async fn pick_workspace_folder(
+    app: AppHandle,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
+    let mut dialog = app.dialog().file();
+    if let Some(title) = title {
+        dialog = dialog.set_title(title);
+    }
+    dialog
+        .blocking_pick_folder()
+        .map(dialog_path_to_string)
+        .transpose()
+}
+
+#[tauri::command]
+async fn pick_workspace_file(
+    app: AppHandle,
+    title: Option<String>,
+    filters: Option<Vec<DialogFileFilterDto>>,
+) -> Result<Option<String>, String> {
+    let mut dialog = app.dialog().file();
+    if let Some(title) = title {
+        dialog = dialog.set_title(title);
+    }
+    if let Some(filters) = filters {
+        for filter in filters {
+            let extensions = filter
+                .extensions
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            dialog = dialog.add_filter(filter.name, &extensions);
+        }
+    }
+    dialog
+        .blocking_pick_file()
+        .map(dialog_path_to_string)
+        .transpose()
 }
 
 #[tauri::command]
@@ -1579,6 +1634,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .manage(InitScript(init_script.clone()))
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
+            pick_workspace_folder,
+            pick_workspace_file,
             workspace_default_root,
             doc_read,
             doc_write,

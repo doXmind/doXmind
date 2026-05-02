@@ -6,55 +6,31 @@
 //   stratigraphyLastDocs      "last {count} documents"
 //   stratigraphyEmptyTitle    "No layers yet"
 //   stratigraphyEmptyBody     "Open a file to start the stack."
-//   stratigraphyResume        "Resume"
 //   stratigraphyWordsSuffix   "w"
 //   actionNew                 "New"
-//   actionOpen                "Open"
 //   actionOpenFolder          "Open Folder"
-//   actionImport              "Import"
-//   recentWorkspaces          (already exists)
-//   noRecentWorkspaces        (already exists)
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
-import { ArrowRight, FolderOpen, Plus } from "lucide-react";
+import { FolderOpen, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  formatRelativeTime,
-  type WelcomeRecentFile,
-  type WelcomeVariantProps,
-} from "@/components/welcome/types";
+import { formatRelativeTime, type WelcomeVariantProps } from "@/components/welcome/types";
 
 const LAYER_LIMIT = 6;
-// 96px ribbon cap mirrors the prototype gauge; 250 words ~ "a paragraph" feels
-// like the right inflection point so most docs land in the visible range.
-const RIBBON_MAX_PX = 96;
-const RIBBON_REFERENCE_WORDS = 2500;
+
+// Pin the Hierarchy variant to its design typography regardless of the
+// app-wide font preference. Mono uses the .font-mono class which already
+// maps to JetBrains Mono in this project's globals.css.
+const FONT_SANS =
+  '"Helvetica Neue", Helvetica, -apple-system, "SF Pro Text", system-ui, sans-serif';
+const FONT_SERIF = '"Iowan Old Style", Palatino, Georgia, serif';
 
 const containerVariants = {
   hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.05, delayChildren: 0.04 },
-  },
+  visible: { opacity: 1, transition: { duration: 0.12 } },
 };
-
-const layerVariants = {
-  hidden: { opacity: 0, y: 6 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.32, ease: [0.25, 0.1, 0.25, 1] as const },
-  },
-};
-
-function ribbonWidth(words: number): number {
-  if (!Number.isFinite(words) || words <= 0) return 6;
-  const ratio = Math.min(1, words / RIBBON_REFERENCE_WORDS);
-  return Math.max(6, Math.round(ratio * RIBBON_MAX_PX));
-}
 
 interface StratigraphyLayer {
   key: string;
@@ -63,7 +39,79 @@ interface StratigraphyLayer {
   preview: string;
   words: number;
   when: string;
+  isDocument: boolean;
   onActivate: () => void;
+}
+
+interface HierarchyRowProps {
+  layer: StratigraphyLayer;
+  index: number;
+  isActive: boolean;
+  isFirst: boolean;
+}
+
+function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={layer.onActivate}
+        title={layer.subtitle}
+        className={cn(
+          "flex w-full items-baseline gap-5 py-3 text-left",
+          "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          !isFirst && "border-t border-border"
+        )}
+      >
+        <span
+          className={cn(
+            "w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em]",
+            isActive ? "font-medium text-foreground" : "text-muted-foreground"
+          )}
+        >
+          {String(index + 1).padStart(2, "0")}
+        </span>
+
+        <span
+          style={{ fontFamily: FONT_SANS }}
+          className={cn(
+            "min-w-0 flex-1 truncate text-[15px] leading-snug tracking-[-0.012em] text-foreground",
+            isActive ? "font-medium" : "font-normal"
+          )}
+        >
+          {layer.title}
+        </span>
+
+        <span
+          className={cn(
+            "shrink-0 font-mono text-[11px] tabular-nums",
+            isActive ? "text-muted-foreground" : "text-muted-foreground/70"
+          )}
+        >
+          {layer.when}
+        </span>
+
+        <span
+          aria-hidden="true"
+          className={cn(
+            "w-3.5 shrink-0 text-right font-mono text-[11px] leading-none text-foreground",
+            isActive ? "opacity-100" : "opacity-0"
+          )}
+        >
+          {"↵"}
+        </span>
+      </button>
+
+      {isActive && layer.preview ? (
+        <div
+          style={{ fontFamily: FONT_SERIF }}
+          className="max-w-[40rem] pb-3 pl-10 pr-2 text-[14.5px] leading-relaxed text-muted-foreground"
+        >
+          {layer.preview}
+        </div>
+      ) : null}
+    </li>
+  );
 }
 
 export function StratigraphyWelcome(props: WelcomeVariantProps) {
@@ -87,6 +135,7 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
         preview: file.preview,
         words: file.wordCount,
         when: formatRelativeTime(file.lastOpened),
+        isDocument: true,
         onActivate: () => onOpenRecentFile(file),
       }));
     }
@@ -97,158 +146,82 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
       preview: "",
       words: 0,
       when: workspace.path,
+      isDocument: false,
       onActivate: () => onOpenRecentWorkspace(workspace.path),
     }));
   }, [recentFiles, recentWorkspaces, onOpenRecentFile, onOpenRecentWorkspace]);
 
-  const topFile: WelcomeRecentFile | undefined = recentFiles[0];
   const isEmpty = layers.length === 0;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-background px-7 pt-6 text-foreground">
-      <div className="flex items-baseline justify-between">
-        <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
-          {t("stratigraphyHeader")}
-          <span className="mx-2 text-muted-foreground/60">{"·"}</span>
-          {t("stratigraphyLastDocs", { count: Math.max(layers.length, 1) })}
+    <div className="flex flex-1 flex-col overflow-hidden bg-background pt-6 text-foreground">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col overflow-hidden px-8">
+        <div className="flex items-baseline justify-between">
+          <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
+            {t("stratigraphyHeader")}
+            <span className="mx-2 text-muted-foreground/60">{"·"}</span>
+            {t("stratigraphyLastDocs", { count: Math.max(layers.length, 1) })}
+          </div>
+          <div className="font-mono text-[10.5px] text-muted-foreground">
+            {t("stratigraphyOldestHint")}
+          </div>
         </div>
-        <div className="font-mono text-[10.5px] text-muted-foreground">
-          {t("stratigraphyOldestHint")}
-        </div>
+
+        <motion.div
+          className="relative mt-3 flex flex-1 flex-col overflow-y-auto"
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          {isEmpty ? (
+            <div className="flex flex-1 items-center justify-center px-6 py-12">
+              <div className="max-w-sm border-t border-border bg-muted/40 px-6 py-10 text-center">
+                <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
+                  {t("stratigraphyEmptyTitle")}
+                </div>
+                <p className="mt-3 text-sm text-muted-foreground">{t("stratigraphyEmptyBody")}</p>
+              </div>
+            </div>
+          ) : (
+            <ol className="m-0 flex list-none flex-col p-0">
+              {layers.map((layer, index) => (
+                <HierarchyRow
+                  key={layer.key}
+                  layer={layer}
+                  index={index}
+                  isActive={index === 0 && recentFiles.length > 0}
+                  isFirst={index === 0}
+                />
+              ))}
+            </ol>
+          )}
+        </motion.div>
       </div>
 
-      <motion.div
-        className="relative mt-5 flex flex-1 flex-col overflow-y-auto"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        {isEmpty ? (
-          <div className="flex flex-1 items-center justify-center px-6 py-12">
-            <div className="max-w-sm border-t border-border bg-muted/40 px-6 py-10 text-center">
-              <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
-                {t("stratigraphyEmptyTitle")}
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground">{t("stratigraphyEmptyBody")}</p>
-            </div>
-          </div>
-        ) : (
-          layers.map((layer, index) => {
-            const isTop = index === 0 && recentFiles.length > 0;
-            // Each successive layer is inset by 18px on both sides so the
-            // stack reads as paper poking out from underneath the topmost.
-            const inset = index * 18;
-            return (
-              <motion.button
-                key={layer.key}
-                type="button"
-                variants={layerVariants}
-                onClick={layer.onActivate}
-                style={{ marginLeft: inset, marginRight: inset }}
-                className={cn(
-                  "group relative flex items-center gap-5 border-t border-border text-left transition-colors",
-                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  isTop
-                    ? "bg-card px-6 pb-6 pt-5 hover:bg-accent/60"
-                    : index % 2 === 1
-                      ? "bg-muted/30 px-6 py-3 hover:bg-muted/60"
-                      : "bg-muted/10 px-6 py-3 hover:bg-muted/40",
-                  index > 0 && "-mt-px"
-                )}
-              >
-                <div className="w-20 shrink-0 font-mono text-[10.5px] text-muted-foreground">
-                  <div
-                    className={cn(
-                      "font-medium",
-                      isTop ? "text-foreground" : "text-muted-foreground"
-                    )}
-                  >
-                    {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <div className="mt-0.5 truncate" title={layer.subtitle || layer.when}>
-                    {layer.when}
-                  </div>
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div
-                    className={cn(
-                      "truncate tracking-tight text-foreground",
-                      isTop ? "text-[22px] font-medium" : "text-sm font-normal"
-                    )}
-                  >
-                    {layer.title}
-                  </div>
-                  {isTop && layer.preview ? (
-                    <div className="mt-2 line-clamp-2 font-serif text-[14.5px] leading-snug text-muted-foreground">
-                      {layer.preview}
-                    </div>
-                  ) : null}
-                  {!isTop && layer.subtitle ? (
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground/70">
-                      {layer.subtitle}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="relative hidden shrink-0 sm:block" style={{ width: RIBBON_MAX_PX }}>
-                  <div
-                    className={cn("transition-all", isTop ? "h-10 bg-foreground" : "h-1 bg-border")}
-                    style={{ width: ribbonWidth(layer.words) }}
-                  />
-                  <div
-                    className={cn(
-                      "absolute right-0 font-mono text-[10px] text-muted-foreground",
-                      isTop ? "-top-4" : "-top-3.5"
-                    )}
-                  >
-                    {layer.words.toLocaleString()}
-                    {t("stratigraphyWordsSuffix")}
-                  </div>
-                </div>
-
-                {isTop && topFile ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenRecentFile(topFile);
-                    }}
-                    className="ml-2 shrink-0 gap-1.5"
-                  >
-                    {t("stratigraphyResume")}
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Button>
-                ) : null}
-              </motion.button>
-            );
-          })
-        )}
-      </motion.div>
-
-      <div className="mt-3 flex items-center gap-2 border-t border-border py-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onCreateNew}
-          disabled={!hasWorkspace}
-          className="gap-1.5 font-mono text-xs"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {t("actionNew")}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onOpenFolder}
-          className="gap-1.5 font-mono text-xs"
-        >
-          <FolderOpen className="h-3.5 w-3.5" />
-          {t("actionOpenFolder")}
-        </Button>
+      <div className="mx-auto w-full max-w-2xl px-8">
+        <div className="flex items-center gap-2 border-t border-border py-2.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onCreateNew}
+            disabled={!hasWorkspace}
+            className="gap-1.5 font-mono text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t("actionNew")}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onOpenFolder}
+            className="gap-1.5 font-mono text-xs"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            {t("actionOpenFolder")}
+          </Button>
+        </div>
       </div>
     </div>
   );

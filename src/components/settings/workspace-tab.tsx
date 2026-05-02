@@ -7,6 +7,8 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
+import { useIsTauri } from "@/hooks/use-is-tauri";
+import { pickNativeFolder } from "@/lib/native-dialog";
 
 export function WorkspaceTab() {
   const t = useTranslations("settings");
@@ -15,8 +17,8 @@ export function WorkspaceTab() {
   const recents = useFileStore((state) => state.recents);
   const openFolder = useFileStore((state) => state.openFolder);
   const [isOpening, setIsOpening] = useState(false);
+  const { isTauri: isDesktop } = useIsTauri();
 
-  const isDesktop = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
   // The settings tab is folder-centric, so file recents are filtered out.
   const recent = useMemo(() => recents.filter((r) => r.kind === "folder").slice(0, 4), [recents]);
   const currentFolder = openTarget === "folder" ? rootPath : null;
@@ -26,9 +28,7 @@ export function WorkspaceTab() {
       toast.error(t("workspaceDesktopRequired"));
       return null;
     }
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({ directory: true, multiple: false, title });
-    return selected && !Array.isArray(selected) ? selected : null;
+    return await pickNativeFolder(title);
   };
 
   const handleOpenWorkspace = async () => {
