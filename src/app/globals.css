@@ -622,9 +622,7 @@ html {
     scroll-behavior: auto !important;
   }
 
-  /* Disable specific animations */
-  .bubble-menu,
-  .table-bubble-menu {
+  .bubble-menu {
     animation: none !important;
   }
 }

@@ -138,22 +138,6 @@
   @apply rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background;
 }
 
-/* Block toolbar entrance animation */
-.block-toolbar-enter {
-  animation: blockToolbarFadeIn 0.15s ease-out;
-}
-
-@keyframes blockToolbarFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .ProseMirror .image-container img {
   @apply h-auto max-w-full rounded-lg;
   display: block;
@@ -500,13 +484,6 @@
   .ProseMirror .tableWrapper {
     max-width: calc(100vw - 2rem);
   }
-}
-
-/* Table bubble menu animation */
-.table-bubble-menu {
-  animation:
-    fadeIn 0.2s ease-out,
-    zoomIn 0.2s ease-out;
 }
 
 /* Table column/row highlight on handle hover */

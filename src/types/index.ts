@@ -1,7 +1,3 @@
-// =============================================================================
-// File Types
-// =============================================================================
-
 import type { DocumentHandle } from "@/lib/storage";
 import type { WorkspaceDocumentType } from "@/lib/storage/types";
 
@@ -9,7 +5,7 @@ export interface FileItem {
   id: string;
   name: string;
   content: string;
-  contentMarkdown?: string | null; // Cached markdown for local preview/search
+  contentMarkdown?: string | null;
   storageHandle?: DocumentHandle;
   documentType?: WorkspaceDocumentType;
   isFolder: boolean;
@@ -21,32 +17,9 @@ export interface FileItem {
   coverPosition: number;
   createdAt: string;
   updatedAt: string;
-  // Lightweight preview fields from list endpoint (avoids loading full content)
   wordCount: number;
   preview: string;
 }
-
-// =============================================================================
-// Editor Types
-// =============================================================================
-
-export interface Selection {
-  from: number;
-  to: number;
-  text: string;
-}
-
-// =============================================================================
-// API Types
-// =============================================================================
-
-export interface ApiError {
-  detail: string;
-  status?: number;
-}
-
-// Search Types
-// =============================================================================
 
 export interface SearchResult {
   id: string;
@@ -54,8 +27,8 @@ export interface SearchResult {
   metadata: {
     file_id: string;
     chunk_index: number;
-    start?: number; // Position in original document (for highlighting)
-    end?: number; // Position in original document (for highlighting)
+    start?: number;
+    end?: number;
     [key: string]: unknown;
   };
   distance?: number;
