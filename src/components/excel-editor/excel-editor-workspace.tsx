@@ -158,6 +158,27 @@ interface ExcelEditorWorkspaceProps {
   file: FileItem;
 }
 
+type ExcelTextDialogState = {
+  type: "text";
+  title: string;
+  description?: string;
+  defaultValue: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  resolve(value: string | null): void;
+};
+
+type ExcelConfirmDialogState = {
+  type: "confirm";
+  title: string;
+  description?: string;
+  confirmLabel?: string;
+  destructive?: boolean;
+  resolve(value: boolean): void;
+};
+
+type ExcelDialogState = ExcelTextDialogState | ExcelConfirmDialogState;
+
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 const SIDECAR_DEBOUNCE_MS = 350;
 const HISTORY_LIMIT = 50;
@@ -234,6 +255,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   const [findMatchCase, setFindMatchCase] = useState(false);
   const [findWholeCell, setFindWholeCell] = useState(false);
   const [findIndex, setFindIndex] = useState<number | null>(null);
+  const [dialog, setDialog] = useState<ExcelDialogState | null>(null);
 
   // Right-click context menu over a sheet tab — separate from the main
   // grid context menu so the surface enums don't collide.
@@ -283,6 +305,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   const cellGridRef = useRef<HTMLDivElement>(null);
   const cellInputRef = useRef<HTMLInputElement>(null);
   const formulaInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<ExcelDialogState | null>(null);
 
   useEffect(() => {
     editorStateRef.current = editorState;
@@ -293,6 +316,67 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  useEffect(() => {
+    dialogRef.current = dialog;
+  }, [dialog]);
+
+  const requestTextDialog = useCallback(
+    (options: {
+      title: string;
+      description?: string;
+      defaultValue?: string;
+      placeholder?: string;
+      confirmLabel?: string;
+    }) =>
+      new Promise<string | null>((resolve) => {
+        const current = dialogRef.current;
+        if (current?.type === "text") current.resolve(null);
+        else if (current?.type === "confirm") current.resolve(false);
+        setDialog({
+          type: "text",
+          title: options.title,
+          description: options.description,
+          defaultValue: options.defaultValue ?? "",
+          placeholder: options.placeholder,
+          confirmLabel: options.confirmLabel,
+          resolve,
+        });
+      }),
+    []
+  );
+
+  const requestConfirmDialog = useCallback(
+    (options: {
+      title: string;
+      description?: string;
+      confirmLabel?: string;
+      destructive?: boolean;
+    }) =>
+      new Promise<boolean>((resolve) => {
+        const current = dialogRef.current;
+        if (current?.type === "text") current.resolve(null);
+        else if (current?.type === "confirm") current.resolve(false);
+        setDialog({
+          type: "confirm",
+          title: options.title,
+          description: options.description,
+          confirmLabel: options.confirmLabel,
+          destructive: options.destructive,
+          resolve,
+        });
+      }),
+    []
+  );
+
+  const closeDialog = useCallback((value: string | boolean | null) => {
+    const current = dialogRef.current;
+    if (!current) return;
+    dialogRef.current = null;
+    setDialog(null);
+    if (current.type === "text") current.resolve(typeof value === "string" ? value : null);
+    else current.resolve(value === true);
+  }, []);
 
   // Format painter — armed style + ref for read inside `onSelectEnd`,
   // which runs from a window mouseup listener that captured the previous
@@ -822,8 +906,12 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
   const newRuleId = () => `cf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-  const cfPresetGreaterThan = useCallback(() => {
-    const input = window.prompt("Highlight cells greater than:", "0");
+  const cfPresetGreaterThan = useCallback(async () => {
+    const input = await requestTextDialog({
+      title: "Highlight cells greater than",
+      defaultValue: "0",
+      confirmLabel: "Apply",
+    });
     if (input === null) return;
     const value = Number(input);
     if (!Number.isFinite(value)) {
@@ -836,10 +924,14 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       condition: { kind: "cellValue", op: "gt", value },
       style: { background: "#FFF2CC", color: "#7F6000" },
     }));
-  }, [addConditionalFormatRule]);
+  }, [addConditionalFormatRule, requestTextDialog]);
 
-  const cfPresetLessThan = useCallback(() => {
-    const input = window.prompt("Highlight cells less than:", "0");
+  const cfPresetLessThan = useCallback(async () => {
+    const input = await requestTextDialog({
+      title: "Highlight cells less than",
+      defaultValue: "0",
+      confirmLabel: "Apply",
+    });
     if (input === null) return;
     const value = Number(input);
     if (!Number.isFinite(value)) {
@@ -852,12 +944,20 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       condition: { kind: "cellValue", op: "lt", value },
       style: { background: "#FCE4D6", color: "#9C0006" },
     }));
-  }, [addConditionalFormatRule]);
+  }, [addConditionalFormatRule, requestTextDialog]);
 
-  const cfPresetBetween = useCallback(() => {
-    const minInput = window.prompt("Min:", "0");
+  const cfPresetBetween = useCallback(async () => {
+    const minInput = await requestTextDialog({
+      title: "Minimum value",
+      defaultValue: "0",
+      confirmLabel: "Next",
+    });
     if (minInput === null) return;
-    const maxInput = window.prompt("Max:", "100");
+    const maxInput = await requestTextDialog({
+      title: "Maximum value",
+      defaultValue: "100",
+      confirmLabel: "Apply",
+    });
     if (maxInput === null) return;
     const min = Number(minInput);
     const max = Number(maxInput);
@@ -871,10 +971,14 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       condition: { kind: "between", min, max, inclusive: true },
       style: { background: "#C6EFCE", color: "#006100" },
     }));
-  }, [addConditionalFormatRule]);
+  }, [addConditionalFormatRule, requestTextDialog]);
 
-  const cfPresetContainsText = useCallback(() => {
-    const input = window.prompt("Highlight cells containing text:", "");
+  const cfPresetContainsText = useCallback(async () => {
+    const input = await requestTextDialog({
+      title: "Highlight cells containing text",
+      defaultValue: "",
+      confirmLabel: "Apply",
+    });
     if (input === null || input === "") return;
     addConditionalFormatRule((range) => ({
       id: newRuleId(),
@@ -882,7 +986,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       condition: { kind: "containsText", text: input, mode: "contains" },
       style: { background: "#DDEBF7", color: "#1F3864", bold: true },
     }));
-  }, [addConditionalFormatRule]);
+  }, [addConditionalFormatRule, requestTextDialog]);
 
   const cfPresetDuplicates = useCallback(() => {
     addConditionalFormatRule((range) => ({
@@ -906,12 +1010,17 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     }));
   }, [addConditionalFormatRule]);
 
-  const promptCellComment = useCallback(() => {
+  const promptCellComment = useCallback(async () => {
     if (!displaySheet || !selection) return;
     const origin = rangeOrigin(selection);
     const existing = commentsByCoord.get(coordKey(origin.row, origin.col));
     const sample = existing?.text ?? "";
-    const input = window.prompt("Comment text. Empty input clears the comment.", sample);
+    const input = await requestTextDialog({
+      title: "Cell comment",
+      description: "Leave empty to clear the comment.",
+      defaultValue: sample,
+      confirmLabel: "Save",
+    });
     if (input === null) return;
     const trimmed = input.trim();
     const b = rangeBounds(selection);
@@ -928,7 +1037,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       }
       return { ...base, version: 1, comments: next };
     });
-  }, [displaySheet, selection, commentsByCoord, mutateEditorState]);
+  }, [displaySheet, selection, commentsByCoord, mutateEditorState, requestTextDialog]);
 
   // ---------------------------------------------------------------------
   // Conditional formatting (per-sheet rules + range-stats cache)
@@ -976,16 +1085,19 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     [cfRulesForSheet, cfRangeStats, cellsByCoord, editsByCoord, computedValueAt]
   );
 
-  const promptListValidation = useCallback(() => {
+  const promptListValidation = useCallback(async () => {
     if (!displaySheet || !selection) return;
     const sample =
       validationsByCoord
         .get(coordKey(rangeOrigin(selection).row, rangeOrigin(selection).col))
         ?.values.join(", ") ?? "";
-    const input = window.prompt(
-      "Allowed values (comma-separated). Empty input clears the list.",
-      sample
-    );
+    const input = await requestTextDialog({
+      title: "Allowed values",
+      description: "Comma-separated values. Leave empty to clear the list.",
+      defaultValue: sample,
+      placeholder: "Open, Closed, Blocked",
+      confirmLabel: "Apply",
+    });
     if (input === null) return;
     const values = input
       .split(",")
@@ -1004,7 +1116,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       }
       return { ...base, version: 1, validations: next };
     });
-  }, [displaySheet, selection, validationsByCoord, mutateEditorState]);
+  }, [displaySheet, selection, validationsByCoord, mutateEditorState, requestTextDialog]);
 
   // Validation-list popover anchored at click — when user clicks the ▾
   // on a cell with a list validation we surface the picker here.
@@ -1414,14 +1526,15 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   }, [displayWorkbook, generateSheetName, newSheetId, applyWorkbookOpAndPersist, activeSheetId]);
 
   const renameSheetById = useCallback(
-    (sheetId: string) => {
+    async (sheetId: string) => {
       if (!displayWorkbook) return;
       const sheet = displayWorkbook.sheets.find((s) => s.id === sheetId);
       if (!sheet) return;
-      // For the spike we lean on `prompt` instead of building a modal —
-      // gets us inline editing semantics for free, and matches Excel's
-      // own modal flow closely enough.
-      const next = window.prompt("Rename sheet", sheet.name);
+      const next = await requestTextDialog({
+        title: "Rename sheet",
+        defaultValue: sheet.name,
+        confirmLabel: "Rename",
+      });
       if (!next) return;
       const trimmed = next.trim();
       if (!trimmed || trimmed === sheet.name) return;
@@ -1434,7 +1547,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       }
       applyWorkbookOpAndPersist({ type: "renameSheet", sheetId, name: trimmed });
     },
-    [displayWorkbook, applyWorkbookOpAndPersist]
+    [displayWorkbook, applyWorkbookOpAndPersist, requestTextDialog]
   );
 
   const duplicateSheetById = useCallback(
@@ -1456,7 +1569,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   );
 
   const deleteSheetById = useCallback(
-    (sheetId: string) => {
+    async (sheetId: string) => {
       if (!displayWorkbook) return;
       if (displayWorkbook.sheets.length <= 1) {
         toast.error("A workbook must have at least one sheet");
@@ -1464,11 +1577,16 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       }
       const sheet = displayWorkbook.sheets.find((s) => s.id === sheetId);
       if (!sheet) return;
-      const ok = window.confirm(`Delete "${sheet.name}"? This can't be undone after saving.`);
+      const ok = await requestConfirmDialog({
+        title: `Delete "${sheet.name}"?`,
+        description: "This cannot be undone after saving.",
+        confirmLabel: "Delete",
+        destructive: true,
+      });
       if (!ok) return;
       applyWorkbookOpAndPersist({ type: "deleteSheet", sheetId });
     },
-    [displayWorkbook, applyWorkbookOpAndPersist]
+    [displayWorkbook, applyWorkbookOpAndPersist, requestConfirmDialog]
   );
 
   // ---------------------------------------------------------------------
@@ -1552,6 +1670,11 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       if (text) setFindQuery(text);
     }
   }, [anchor, findQuery, cellsByCoord, editsByCoord, computedValueAt]);
+
+  useEffect(() => {
+    window.addEventListener("doxmind:excel-find", openFindPanel);
+    return () => window.removeEventListener("doxmind:excel-find", openFindPanel);
+  }, [openFindPanel]);
 
   const closeFindPanel = useCallback(() => {
     setFindOpen(false);
@@ -2005,12 +2128,18 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   // (underline + primary color) and the backend writes it via openpyxl's
   // `cell.hyperlink`. Empty input clears the existing link.
   // -------------------------------------------------------------------
-  const promptInsertLink = useCallback(() => {
+  const promptInsertLink = useCallback(async () => {
     if (!displaySheet || !anchor) return;
     const cell = cellsByCoord.get(coordKey(anchor.row, anchor.col));
     const patch = editsByCoord.get(coordKey(anchor.row, anchor.col));
     const currentLink = patch?.style?.hyperlink ?? cell?.style?.hyperlink ?? "";
-    const next = window.prompt("Link URL (leave empty to remove)", currentLink);
+    const next = await requestTextDialog({
+      title: "Link URL",
+      description: "Leave empty to remove the link.",
+      defaultValue: currentLink,
+      placeholder: "https://example.com",
+      confirmLabel: "Apply",
+    });
     if (next === null) return; // user cancelled
     const trimmed = next.trim();
     applyCellUpdates([
@@ -2020,7 +2149,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         patch: { style: { hyperlink: trimmed.length > 0 ? trimmed : undefined } },
       },
     ]);
-  }, [displaySheet, anchor, cellsByCoord, editsByCoord, applyCellUpdates]);
+  }, [displaySheet, anchor, cellsByCoord, editsByCoord, applyCellUpdates, requestTextDialog]);
 
   const applyNumberFormatToRange = useCallback(
     (format: string) => {
@@ -3502,6 +3631,8 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         </ContextMenuPortal>
       )}
 
+      {dialog && <ExcelInlineDialog state={dialog} onClose={closeDialog} />}
+
       {/* Right-click context menu — own portal + outside-click handling so
           we don't depend on DropdownMenu's controlled-open behavior, which
           didn't reliably dismiss for anchorPoint-based menus. */}
@@ -3668,6 +3799,89 @@ function ContextMenuItem({ children, shortcut, disabled, onSelect }: ContextMenu
       <span className="flex-1 text-left">{children}</span>
       {shortcut && <span className="ml-3 text-xs text-muted-foreground">{shortcut}</span>}
     </button>
+  );
+}
+
+function ExcelInlineDialog({
+  state,
+  onClose,
+}: {
+  state: ExcelDialogState;
+  onClose(value: string | boolean | null): void;
+}) {
+  const [draft, setDraft] = useState(state.type === "text" ? state.defaultValue : "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (state.type !== "text") return;
+    const id = window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [state]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose(state.type === "text" ? null : false);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [onClose, state.type]);
+
+  const confirm = () => onClose(state.type === "text" ? draft : true);
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={state.title}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose(state.type === "text" ? null : false);
+      }}
+    >
+      <div className="w-full max-w-sm rounded-lg border border-border/70 bg-popover p-4 text-popover-foreground shadow-xl">
+        <div className="text-ui-sm font-semibold text-foreground">{state.title}</div>
+        {state.description && (
+          <div className="text-ui-xs mt-1 text-muted-foreground">{state.description}</div>
+        )}
+        {state.type === "text" && (
+          <input
+            ref={inputRef}
+            type="text"
+            value={draft}
+            placeholder={state.placeholder}
+            spellCheck={false}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                confirm();
+              }
+            }}
+            className="text-ui-sm mt-3 h-9 w-full rounded-md border border-border/70 bg-background px-3 text-foreground outline-none focus:border-primary/50"
+          />
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={() => onClose(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={state.type === "confirm" && state.destructive ? "destructive" : "default"}
+            onClick={confirm}
+          >
+            {state.confirmLabel ?? (state.type === "confirm" ? "Confirm" : "OK")}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 

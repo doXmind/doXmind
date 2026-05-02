@@ -1,7 +1,12 @@
 "use client";
 
 import { MoreHorizontal, Check, X, CheckSquare, Square } from "lucide-react";
-import { MarkdownGlyph, PdfGlyph } from "@/components/icons/document-glyphs";
+import {
+  CsvGlyph,
+  MarkdownGlyph,
+  PdfGlyph,
+  SpreadsheetGlyph,
+} from "@/components/icons/document-glyphs";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
@@ -19,7 +24,12 @@ import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
-import { getDisplayName, isPdfFile, withOriginalExtension } from "@/lib/document-types";
+import {
+  getDisplayName,
+  isExcelFile,
+  isPdfFile,
+  withOriginalExtension,
+} from "@/lib/document-types";
 import { revealFileInFinder } from "@/lib/storage/reveal";
 
 const log = storeLogger.child("FileItem");
@@ -395,6 +405,10 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           </span>
         ) : isPdfFile(file) ? (
           <PdfGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
+        ) : isExcelFile(file) ? (
+          <SpreadsheetGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
+        ) : /\.csv$/i.test(file.name) ? (
+          <CsvGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : (
           <MarkdownGlyph className="h-5 w-5 text-muted-foreground/70 md:h-[18px] md:w-[18px]" />
         )}

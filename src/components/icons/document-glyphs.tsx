@@ -1,8 +1,8 @@
 /**
- * Inline SVG glyphs for the two document types we create on disk.
+ * Inline SVG glyphs for the document types we create on disk.
  *
  * Lucide ships generic file icons but they're indistinguishable at sidebar
- * size — these custom marks bake the file label ("MD" / "PDF") into the
+ * size — these custom marks bake the file label into the
  * sheet so a user can tell them apart in a dense file list. They also use
  * the dual-token color system (foreground + accent) so they read on both
  * light and dark themes without per-theme overrides.
@@ -97,6 +97,58 @@ export function PdfGlyph({ className, ...rest }: GlyphProps) {
         fill="white"
       >
         PDF
+      </text>
+    </DocumentSheet>
+  );
+}
+
+export function SpreadsheetGlyph({ className, ...rest }: GlyphProps) {
+  return (
+    <DocumentSheet
+      className={className}
+      accentClassName="text-emerald-600 dark:text-emerald-400"
+      {...rest}
+    >
+      <rect
+        x="7"
+        y="11.4"
+        width="10"
+        height="7"
+        rx="1"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.2}
+      />
+      <path
+        d="M10.3 11.4v7M13.7 11.4v7M7 14.8h10"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.2}
+        strokeLinecap="round"
+      />
+    </DocumentSheet>
+  );
+}
+
+export function CsvGlyph({ className, ...rest }: GlyphProps) {
+  return (
+    <DocumentSheet
+      className={className}
+      accentClassName="text-cyan-600 dark:text-cyan-400"
+      {...rest}
+    >
+      <rect x="6.4" y="12.5" width="11.2" height="5.2" rx="1.2" />
+      <text
+        x="12"
+        y="16.65"
+        textAnchor="middle"
+        fontFamily="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+        fontSize="3.35"
+        fontWeight={700}
+        letterSpacing="0"
+        fill="white"
+      >
+        CSV
       </text>
     </DocumentSheet>
   );

@@ -17,6 +17,7 @@
     "lint:fix": "eslint src --ext .js,.jsx,.ts,.tsx --fix",
     "type-check": "tsc --noEmit",
     "test": "cross-env VITE_CJS_IGNORE_WARNING=true vitest",
+    "preflight:excel": "cd server && .venv/bin/python -m pytest tests/test_excel_preflight_workflows.py",
     "test:ui": "cross-env VITE_CJS_IGNORE_WARNING=true vitest --ui",
     "test:coverage": "cross-env VITE_CJS_IGNORE_WARNING=true vitest run --coverage",
     "test:ci": "cross-env VITE_CJS_IGNORE_WARNING=true vitest run --reporter=verbose",

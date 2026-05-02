@@ -104,6 +104,14 @@ export function UnifiedHeader() {
     toast.success(t("exportedAs", { format: formatLabel }));
   };
 
+  const handleFind = () => {
+    if (currentFile && isExcelFile(currentFile)) {
+      window.dispatchEvent(new CustomEvent("doxmind:excel-find"));
+      return;
+    }
+    toggleSearchBar();
+  };
+
   return (
     <>
       <header
@@ -249,7 +257,7 @@ export function UnifiedHeader() {
                     "desktop-header-button h-7 w-7 rounded-md",
                     isSearchBarOpen && "bg-[var(--sidebar-active)] text-foreground"
                   )}
-                  onClick={toggleSearchBar}
+                  onClick={handleFind}
                   aria-label={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
                 >
                   <Search className="h-3.5 w-3.5" />

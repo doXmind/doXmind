@@ -861,7 +861,8 @@ function ExcelGridCell({
   // Hyperlinks override the cell's text color so the link reads as a link
   // — matches the convention in Sheets / Excel. User-set color still wins
   // (so they can paint a hyperlink red if they want).
-  const effectiveColor = style?.color ?? (style?.hyperlink ? "var(--primary)" : undefined);
+  const effectiveColor =
+    style?.color ?? (style?.hyperlink ? "var(--primary)" : readableTextColor(style?.background));
 
   // Resolve the text-overflow state. `textOverflow` wins; falls back to
   // legacy `wrapText` for sidecars saved before the 3-state model.
@@ -1194,6 +1195,35 @@ function verticalAlignToFlex(va: ExcelCellStyle["verticalAlign"]): string {
   if (va === "top") return "flex-start";
   if (va === "bottom") return "flex-end";
   return "center";
+}
+
+function readableTextColor(background: string | undefined): string | undefined {
+  const rgb = parseHexColor(background);
+  if (!rgb) return undefined;
+  const [r, g, b] = rgb.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.45 ? "#111827" : "#f9fafb";
+}
+
+function parseHexColor(color: string | undefined): [number, number, number] | null {
+  if (!color) return null;
+  const normalized = color.trim();
+  const short = normalized.match(/^#([0-9a-fA-F]{3})$/);
+  if (short) {
+    const [r, g, b] = short[1].split("").map((value) => parseInt(`${value}${value}`, 16));
+    return [r, g, b];
+  }
+  const long = normalized.match(/^#([0-9a-fA-F]{6})$/);
+  if (!long) return null;
+  const value = long[1];
+  return [
+    parseInt(value.slice(0, 2), 16),
+    parseInt(value.slice(2, 4), 16),
+    parseInt(value.slice(4, 6), 16),
+  ];
 }
 
 const BORDER_LINE_WIDTH: Record<ExcelBorderLineStyle, number> = {

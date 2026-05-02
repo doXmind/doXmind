@@ -635,7 +635,7 @@ def export_edited_workbook(
                     if r.min_row <= kwargs["end_row"]
                     and r.max_row >= kwargs["start_row"]
                     and r.min_col <= kwargs["end_column"]
-                    and r.max_col >= kwargs["start_row"]
+                    and r.max_col >= kwargs["start_column"]
                 ]
                 for r in intersecting:
                     sheet.unmerge_cells(str(r))
@@ -721,7 +721,8 @@ def export_edited_workbook(
                     allow_blank=True,
                     showDropDown=False,
                 )
-                dv.add(" ".join(cell_refs))
+                for cell_ref in cell_refs:
+                    dv.add(cell_ref)
                 sheet.add_data_validation(dv)
 
     # Cell comments — straight openpyxl Comment(text, author).

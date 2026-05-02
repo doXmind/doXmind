@@ -1,14 +1,18 @@
 {
+  "version": 1,
+  "id": "path:bfcb61426e8890c5",
+  "source_path": "budget.xlsx",
+  "updated_at": "2026-05-02T04:05:40Z",
   "excel_editor": {
     "activeSheetId": "sheet-0",
     "cells": {
       "sheet-0!2,0": {
         "formula": null,
-        "value": "South"
+        "value": "East"
       },
       "sheet-0!2,1": {
         "formula": null,
-        "value": 265
+        "value": 280
       },
       "sheet-0!3,2": {
         "formula": null,
@@ -25,6 +29,68 @@
       "sheet-0!6,0": {
         "formula": null,
         "value": "Total"
+      },
+      "sheet-0!1,1": {
+        "value": 95,
+        "formula": null
+      },
+      "sheet-0!1,3": {
+        "value": "Analyst note",
+        "formula": null,
+        "numberFormat": "\"$\"#,##0.00"
+      },
+      "sheet-0!2,3": {
+        "numberFormat": "\"$\"#,##0.00"
+      },
+      "sheet-0!3,3": {
+        "numberFormat": "\"$\"#,##0.00"
+      },
+      "sheet-0!4,3": {
+        "numberFormat": "\"$\"#,##0.00",
+        "value": "Approved",
+        "formula": null
+      },
+      "sheet-0!5,3": {
+        "numberFormat": "\"$\"#,##0.00"
+      },
+      "sheet-0!1,0": {
+        "style": {
+          "hyperlink": "https://example.com/finance-q1"
+        },
+        "value": "HQ",
+        "formula": null
+      },
+      "sheet-0!3,0": {
+        "value": "North",
+        "formula": null
+      },
+      "sheet-0!3,1": {
+        "value": 240,
+        "formula": null
+      },
+      "sheet-0!4,0": {
+        "value": "South",
+        "formula": null
+      },
+      "sheet-0!4,1": {
+        "value": 265,
+        "formula": null
+      },
+      "sheet-0!5,0": {
+        "value": "West",
+        "formula": null
+      },
+      "sheet-0!5,1": {
+        "value": 351,
+        "formula": null
+      },
+      "sheet-0!6,1": {
+        "formula": "=SUM(B2:B6)",
+        "value": null
+      },
+      "sheet-0!6,3": {
+        "formula": "=SUM(D2:D6)",
+        "value": null
       }
     },
     "ops": [
@@ -41,10 +107,97 @@
         "type": "deleteCol"
       }
     ],
-    "version": 1
-  },
-  "id": "path:bfcb61426e8890c5",
-  "source_path": "budget.xlsx",
-  "updated_at_unix_nanos": "1777689789203887000",
-  "version": 1
+    "version": 1,
+    "conditionalFormats": {
+      "sheet-0": [
+        {
+          "id": "cf-mont0u6p-i2jn",
+          "range": {
+            "top": 1,
+            "bottom": 5,
+            "left": 3,
+            "right": 3
+          },
+          "condition": {
+            "kind": "cellValue",
+            "op": "gt",
+            "value": 5000
+          },
+          "style": {
+            "background": "#FFF2CC",
+            "color": "#7F6000"
+          }
+        }
+      ]
+    },
+    "comments": {
+      "sheet-0!1,2": {
+        "text": "Finance reviewed price assumption",
+        "updatedAt": "2026-05-02T03:50:58.915Z"
+      }
+    },
+    "frozen": {
+      "sheet-0": {
+        "row": 1,
+        "col": 0
+      }
+    },
+    "filterMode": {
+      "sheet-0": true
+    },
+    "filters": {
+      "sheet-0!0": [
+        "South",
+        "East",
+        "West",
+        "Central",
+        "Total",
+        "",
+        "Figures are illustrative."
+      ]
+    },
+    "workbookOps": [
+      {
+        "type": "addSheet",
+        "sheetId": "sheet-user-c1b883ed-a3ed-4643-be5c-fbcb740a9720",
+        "name": "Sheet",
+        "afterSheetId": "sheet-0"
+      },
+      {
+        "type": "renameSheet",
+        "sheetId": "sheet-user-c1b883ed-a3ed-4643-be5c-fbcb740a9720",
+        "name": "Finance Scratch"
+      },
+      {
+        "type": "deleteSheet",
+        "sheetId": "sheet-user-c1b883ed-a3ed-4643-be5c-fbcb740a9720"
+      }
+    ],
+    "validations": {
+      "sheet-0!3,3": {
+        "type": "list",
+        "values": [
+          "Approved",
+          "Pending",
+          "Rework"
+        ]
+      },
+      "sheet-0!4,3": {
+        "type": "list",
+        "values": [
+          "Approved",
+          "Pending",
+          "Rework"
+        ]
+      },
+      "sheet-0!5,3": {
+        "type": "list",
+        "values": [
+          "Approved",
+          "Pending",
+          "Rework"
+        ]
+      }
+    }
+  }
 }
