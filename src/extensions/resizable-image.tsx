@@ -120,7 +120,6 @@ async function uploadAndInsertImage(file: File, view: any, pos?: number) {
     const errorMessage = parseUploadError(error);
     toast.error(errorMessage);
 
-    // Do NOT insert image - enforce S3-only storage
     return false;
   }
 }

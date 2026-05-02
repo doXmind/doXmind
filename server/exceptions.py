@@ -56,36 +56,12 @@ class NotFoundError(AppException):
         super().__init__(**kwargs)
 
 
-class ValidationError(AppException):
-    """Request validation failed (400)."""
-
-    status_code = 400
-    error_code = "VALIDATION_ERROR"
-    message = "Request validation failed"
-
-    def __init__(self, field: str = None, reason: str = None, **kwargs):
-        details = kwargs.pop("details", {})
-        if field:
-            details["field"] = field
-        if reason:
-            details["reason"] = reason
-        super().__init__(details=details, **kwargs)
-
-
 class BadRequestError(AppException):
     """Bad request (400)."""
 
     status_code = 400
     error_code = "BAD_REQUEST"
     message = "Bad request"
-
-
-class ConflictError(AppException):
-    """Resource conflict (409)."""
-
-    status_code = 409
-    error_code = "CONFLICT"
-    message = "Resource conflict"
 
 
 class FileTooLargeError(AppException):
@@ -102,31 +78,6 @@ class FileTooLargeError(AppException):
             details["max_size_mb"] = max_size / (1024 * 1024)
         if actual_size:
             details["actual_size_bytes"] = actual_size
-        super().__init__(details=details, **kwargs)
-
-
-class StorageLimitExceededError(AppException):
-    """Storage quota exceeded (413)."""
-
-    status_code = 413
-    error_code = "STORAGE_LIMIT_EXCEEDED"
-    message = "Storage limit exceeded. Please upgrade your plan."
-
-    def __init__(
-        self,
-        used_bytes: int = None,
-        limit_bytes: int = None,
-        file_size: int = None,
-        **kwargs,
-    ):
-        details = kwargs.pop("details", {})
-        if used_bytes is not None:
-            details["used_bytes"] = used_bytes
-        if limit_bytes is not None:
-            details["limit_bytes"] = limit_bytes
-            details["limit_mb"] = round(limit_bytes / (1024 * 1024))
-        if file_size is not None:
-            details["file_size"] = file_size
         super().__init__(details=details, **kwargs)
 
 
@@ -157,30 +108,3 @@ class InternalError(AppException):
     status_code = 500
     error_code = "INTERNAL_ERROR"
     message = "An internal error occurred"
-
-
-class ServiceUnavailableError(AppException):
-    """Service temporarily unavailable (503)."""
-
-    status_code = 503
-    error_code = "SERVICE_UNAVAILABLE"
-    message = "Service temporarily unavailable"
-
-
-# ============================================================================
-# Domain-Specific Errors
-# ============================================================================
-
-
-class FileProcessingError(InternalError):
-    """Error processing file (import/export)."""
-
-    error_code = "FILE_PROCESSING_ERROR"
-    message = "Failed to process file"
-
-
-class DocumentNotFoundError(NotFoundError):
-    """Document/file not found."""
-
-    def __init__(self, file_id: str = None, **kwargs):
-        super().__init__(resource="File", resource_id=file_id, **kwargs)

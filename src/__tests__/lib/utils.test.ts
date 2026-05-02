@@ -3,9 +3,7 @@ import { cn, debounce, formatErrorForToast, getErrorMessage } from "@/lib/utils"
 
 describe("cn", () => {
   it("merges conditional classes and resolves Tailwind conflicts", () => {
-    expect(cn("px-2 py-1", false && "hidden", "px-4", { block: true })).toBe(
-      "py-1 px-4 block"
-    );
+    expect(cn("px-2 py-1", false && "hidden", "px-4", { block: true })).toBe("py-1 px-4 block");
   });
 });
 
@@ -53,7 +51,7 @@ describe("error formatting", () => {
     const structured = { title: "Custom", description: "Custom error" };
 
     expect(getErrorMessage("Failed to fetch").title).toBe("Connection Error");
-    expect(getErrorMessage("401").title).toBe("Authentication Required");
+    expect(getErrorMessage("File too large").title).toBe("File Too Large");
     expect(getErrorMessage(structured)).toEqual(structured);
   });
 

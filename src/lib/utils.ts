@@ -14,22 +14,6 @@ export function formatDate(date: Date | string): string {
   });
 }
 
-export function formatRelativeDate(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMs / 3600000);
-  const diffDay = Math.floor(diffMs / 86400000);
-
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay === 1) return "Yesterday";
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return formatDate(d);
-}
-
 export function formatTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleTimeString("en-US", {
@@ -80,62 +64,34 @@ export function debounce<T extends (...args: any[]) => unknown>(
   return debounced;
 }
 
-export function generateId(): string {
-  return crypto.randomUUID();
-}
-
-/**
- * User-friendly error messages for common error scenarios
- */
 const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
-  // Network errors
   "Failed to fetch": {
     title: "Connection Error",
-    description:
-      "Unable to connect to the server. Please check your internet connection and try again.",
+    description: "Unable to reach the local server. Please try again.",
   },
   NetworkError: {
     title: "Network Error",
-    description: "A network error occurred. Please check your connection and try again.",
+    description: "A network error occurred. Please try again.",
   },
   "TypeError: Failed to fetch": {
     title: "Connection Error",
-    description: "Unable to reach the server. Please check if the server is running.",
+    description: "Unable to reach the local server. Please check if the backend is running.",
   },
-  // Server errors
   "500": {
     title: "Server Error",
-    description: "Something went wrong on our end. Please try again later.",
+    description: "Something went wrong. Please try again.",
   },
   "503": {
     title: "Service Unavailable",
     description: "The service is temporarily unavailable. Please try again in a few moments.",
   },
-  // Auth errors
-  "401": {
-    title: "Authentication Required",
-    description: "Please sign in to continue.",
-  },
-  "403": {
-    title: "Access Denied",
-    description: "You don't have permission to perform this action.",
-  },
-  // File errors
   "File too large": {
     title: "File Too Large",
-    description: "The file exceeds the maximum allowed size of 10MB.",
+    description: "The file exceeds the maximum allowed size.",
   },
   "Unsupported file type": {
     title: "Unsupported File",
-    description: "This file type is not supported. Please use PDF, DOCX, or Markdown files.",
-  },
-  "Rate limit exceeded": {
-    title: "Too Many Requests",
-    description: "You've made too many requests. Please wait a moment before trying again.",
-  },
-  STORAGE_LIMIT_EXCEEDED: {
-    title: "Storage Full",
-    description: "You've reached your storage limit. Delete some files to free up space.",
+    description: "This file type is not supported. Please use PDF, DOCX, XLSX, or Markdown files.",
   },
 };
 
