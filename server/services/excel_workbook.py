@@ -18,6 +18,8 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles.colors import Color
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -297,6 +299,8 @@ def _cell_style(cell: Cell) -> dict[str, Any]:
             style["italic"] = True
         if font.underline and font.underline != "none":
             style["underline"] = True
+        if font.strike:
+            style["strikethrough"] = True
         color = _color_to_hex(font.color)
         if color:
             style["color"] = color
@@ -317,7 +321,69 @@ def _cell_style(cell: Cell) -> dict[str, Any]:
             style["verticalAlign"] = (
                 "middle" if alignment.vertical == "center" else alignment.vertical
             )
+        if alignment.wrap_text:
+            style["wrapText"] = True
+        rotation = alignment.text_rotation
+        if isinstance(rotation, (int, float)) and rotation:
+            # Map openpyxl's split domain back to a single signed degree
+            # value the frontend understands (0–90 up, -1 to -90 down).
+            deg = int(rotation)
+            if 0 < deg <= 90:
+                style["rotation"] = deg
+            elif 90 < deg <= 180:
+                style["rotation"] = -(deg - 90)
+    if cell.hyperlink is not None:
+        target = getattr(cell.hyperlink, "target", None) or getattr(cell.hyperlink, "ref", None)
+        if isinstance(target, str) and target:
+            style["hyperlink"] = target
+    border = _border_to_dict(cell.border)
+    if border:
+        style["border"] = border
     return style
+
+
+_OPENPYXL_BORDER_STYLES = {
+    "thin": "thin",
+    "hair": "thin",
+    "medium": "medium",
+    "thick": "thick",
+    "double": "double",
+    "dashed": "dashed",
+    "mediumDashed": "dashed",
+    "dotted": "dotted",
+    "dashDot": "dashed",
+    "mediumDashDot": "dashed",
+    "dashDotDot": "dashed",
+    "mediumDashDotDot": "dashed",
+    "slantDashDot": "dashed",
+}
+
+
+def _side_to_dict(side: Any) -> dict[str, Any] | None:
+    if side is None:
+        return None
+    style_name = getattr(side, "style", None)
+    if not style_name:
+        return None
+    mapped = _OPENPYXL_BORDER_STYLES.get(style_name)
+    if not mapped:
+        return None
+    out: dict[str, Any] = {"style": mapped}
+    color = _color_to_hex(getattr(side, "color", None))
+    if color:
+        out["color"] = color
+    return out
+
+
+def _border_to_dict(border: Any) -> dict[str, Any] | None:
+    if border is None:
+        return None
+    out: dict[str, Any] = {}
+    for side_name in ("top", "right", "bottom", "left"):
+        side = _side_to_dict(getattr(border, side_name, None))
+        if side:
+            out[side_name] = side
+    return out or None
 
 
 def _color_to_hex(color: Any) -> str | None:
@@ -413,8 +479,65 @@ def export_edited_workbook(
     ops = edits.get("ops") or []
     if not isinstance(ops, list):
         raise ValueError("'edits.ops' must be an array")
+    workbook_ops = edits.get("workbookOps") or []
+    if not isinstance(workbook_ops, list):
+        raise ValueError("'edits.workbookOps' must be an array")
 
-    sheet_lookup = {f"sheet-{i}": name for i, name in enumerate(wb.sheetnames)}
+    # ------------------------------------------------------------------
+    # Phase 0: workbook-level ops (add / rename / duplicate / delete sheet).
+    #
+    # `sheet_lookup` maps the frontend's stable sheet ids (`"sheet-0"`,
+    # `"sheet-user-<uuid>"`, …) to the live openpyxl sheet name as the
+    # workbook mutates. Subsequent phases resolve sheet ids through this
+    # map so they target post-mutation tabs.
+    # ------------------------------------------------------------------
+    sheet_lookup: dict[str, str] = {
+        f"sheet-{i}": name for i, name in enumerate(wb.sheetnames)
+    }
+    for op in workbook_ops:
+        if not isinstance(op, dict):
+            continue
+        op_type = op.get("type")
+        if op_type == "addSheet":
+            sheet_id = str(op.get("sheetId") or "")
+            requested_name = str(op.get("name") or "Sheet")
+            unique_name = _unique_sheet_name(wb, requested_name)
+            after_id = op.get("afterSheetId")
+            anchor_name = sheet_lookup.get(str(after_id)) if after_id else None
+            anchor_index = (
+                wb.sheetnames.index(anchor_name) + 1 if anchor_name in wb.sheetnames else None
+            )
+            wb.create_sheet(title=unique_name, index=anchor_index)
+            sheet_lookup[sheet_id] = unique_name
+        elif op_type == "renameSheet":
+            sheet_id = str(op.get("sheetId") or "")
+            old_name = sheet_lookup.get(sheet_id)
+            if old_name is None or old_name not in wb.sheetnames:
+                continue
+            new_name = _unique_sheet_name(wb, str(op.get("name") or old_name), exclude=old_name)
+            wb[old_name].title = new_name
+            sheet_lookup[sheet_id] = new_name
+        elif op_type == "duplicateSheet":
+            source_id = str(op.get("sourceSheetId") or "")
+            source_name = sheet_lookup.get(source_id)
+            if source_name is None or source_name not in wb.sheetnames:
+                continue
+            new_id = str(op.get("sheetId") or "")
+            requested_name = str(op.get("name") or f"{source_name} (copy)")
+            unique_name = _unique_sheet_name(wb, requested_name)
+            copied = wb.copy_worksheet(wb[source_name])
+            copied.title = unique_name
+            sheet_lookup[new_id] = unique_name
+        elif op_type == "deleteSheet":
+            sheet_id = str(op.get("sheetId") or "")
+            target_name = sheet_lookup.get(sheet_id)
+            if target_name is None or target_name not in wb.sheetnames:
+                continue
+            if len(wb.sheetnames) <= 1:
+                # openpyxl refuses to delete the only sheet — match Excel.
+                continue
+            del wb[target_name]
+            sheet_lookup.pop(sheet_id, None)
 
     # ------------------------------------------------------------------
     # Phase 1: replay structural ops in order. After this point row/col
@@ -463,6 +586,50 @@ def export_edited_workbook(
             except (TypeError, ValueError):
                 continue
             sheet.delete_cols(index + 1, count)
+        elif op_type in {"mergeCells", "unmergeCells"}:
+            try:
+                top = int(op.get("top", 0))
+                left = int(op.get("left", 0))
+                bottom = int(op.get("bottom", 0))
+                right = int(op.get("right", 0))
+            except (TypeError, ValueError):
+                continue
+            if bottom < top or right < left:
+                continue
+            kwargs = dict(
+                start_row=top + 1,
+                start_column=left + 1,
+                end_row=bottom + 1,
+                end_column=right + 1,
+            )
+            if op_type == "mergeCells":
+                # Drop any pre-existing merges fully contained in the new
+                # one, otherwise openpyxl raises on overlapping ranges.
+                contained = [
+                    r
+                    for r in sheet.merged_cells.ranges
+                    if r.min_row >= kwargs["start_row"]
+                    and r.max_row <= kwargs["end_row"]
+                    and r.min_col >= kwargs["start_column"]
+                    and r.max_col <= kwargs["end_column"]
+                ]
+                for r in contained:
+                    sheet.unmerge_cells(str(r))
+                sheet.merge_cells(**kwargs)
+            else:
+                # unmerge_cells with explicit bounds requires the exact
+                # range; loop over intersecting ranges instead so users
+                # can clear arbitrary merges via a covering selection.
+                intersecting = [
+                    r
+                    for r in sheet.merged_cells.ranges
+                    if r.min_row <= kwargs["end_row"]
+                    and r.max_row >= kwargs["start_row"]
+                    and r.min_col <= kwargs["end_column"]
+                    and r.max_col >= kwargs["start_row"]
+                ]
+                for r in intersecting:
+                    sheet.unmerge_cells(str(r))
 
     for key, payload in cell_edits.items():
         sheet_name, row_idx, col_idx = _split_cell_key(key, sheet_lookup)
@@ -480,6 +647,9 @@ def export_edited_workbook(
             sheet[cell_ref] = value
         if "numberFormat" in payload and payload["numberFormat"]:
             sheet[cell_ref].number_format = str(payload["numberFormat"])
+        style_patch = payload.get("style")
+        if isinstance(style_patch, dict) and style_patch:
+            _apply_style_patch(sheet[cell_ref], style_patch)
 
     for key, height in (row_height_edits or {}).items():
         sheet_name, row_idx = _split_row_key(key, sheet_lookup)
@@ -497,6 +667,144 @@ def export_edited_workbook(
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+_VERTICAL_ALIGN_MAP = {"top": "top", "middle": "center", "bottom": "bottom"}
+_HORIZONTAL_ALIGN_MAP = {"left": "left", "center": "center", "right": "right"}
+
+_FRONTEND_BORDER_STYLES = {"thin", "medium", "thick", "double", "dashed", "dotted"}
+
+
+def _build_side(payload: Any) -> Side | None:
+    if not isinstance(payload, dict):
+        return None
+    style_name = payload.get("style")
+    if style_name not in _FRONTEND_BORDER_STYLES:
+        return None
+    color_hex = _normalise_hex(payload.get("color")) if payload.get("color") else None
+    color = Color(rgb=color_hex) if color_hex else None
+    return Side(style=style_name, color=color)
+
+
+def _build_border(payload: dict[str, Any]) -> Border:
+    """Translate the frontend's `ExcelBorderConfig` patch into an openpyxl
+    ``Border``. Sides absent from the patch (or that don't map to a known
+    style) are left as default ``Side`` objects with ``style=None``.
+    """
+    kwargs: dict[str, Any] = {}
+    for side_name in ("top", "right", "bottom", "left"):
+        if side_name in payload:
+            built = _build_side(payload[side_name])
+            kwargs[side_name] = built if built is not None else Side(style=None)
+    return Border(**kwargs)
+
+
+def _unique_sheet_name(wb: Workbook, preferred: str, *, exclude: str | None = None) -> str:
+    """Return a sheet name that's unique within ``wb``. openpyxl raises if a
+    duplicate title is assigned, so we suffix " 2", " 3", … until we find a
+    free slot. ``exclude`` lets a rename keep its original name even though
+    it's currently occupied.
+    """
+    base = (preferred or "Sheet").strip() or "Sheet"
+    # Excel caps sheet names at 31 chars.
+    base = base[:31]
+    taken = {n for n in wb.sheetnames if n != exclude}
+    if base not in taken:
+        return base
+    for i in range(2, 1000):
+        candidate = f"{base[: max(1, 31 - len(str(i)) - 1)]} {i}"
+        if candidate not in taken:
+            return candidate
+    return f"Sheet-{len(wb.sheetnames) + 1}"
+
+
+def _normalise_hex(color: str) -> str | None:
+    """Strip the leading `#` and pad to AARRGGBB so openpyxl is happy."""
+    if not isinstance(color, str):
+        return None
+    raw = color.strip().lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    if len(raw) == 6:
+        return f"FF{raw.upper()}"
+    if len(raw) == 8:
+        return raw.upper()
+    return None
+
+
+def _apply_style_patch(cell: Cell, patch: dict[str, Any]) -> None:
+    """Merge a frontend `ExcelCellStyle` patch onto an openpyxl cell.
+
+    The patch is sparse — only fields the user actually changed appear.
+    We rebuild the cell's `Font` / `Alignment` / `PatternFill` from the
+    existing values plus the override so that touching one attribute
+    doesn't reset the others (openpyxl's style objects are immutable, so
+    in-place mutation isn't an option).
+    """
+    font = cell.font
+    align = cell.alignment
+
+    new_font_kwargs: dict[str, Any] = {}
+    if "bold" in patch:
+        new_font_kwargs["bold"] = bool(patch["bold"])
+    if "italic" in patch:
+        new_font_kwargs["italic"] = bool(patch["italic"])
+    if "underline" in patch:
+        new_font_kwargs["underline"] = "single" if patch["underline"] else None
+    if "strikethrough" in patch:
+        new_font_kwargs["strike"] = bool(patch["strikethrough"])
+    if "fontSize" in patch and isinstance(patch["fontSize"], (int, float)):
+        new_font_kwargs["size"] = float(patch["fontSize"])
+    if "fontFamily" in patch and isinstance(patch["fontFamily"], str) and patch["fontFamily"]:
+        new_font_kwargs["name"] = patch["fontFamily"]
+    if "color" in patch:
+        argb = _normalise_hex(patch["color"]) if patch["color"] else None
+        new_font_kwargs["color"] = Color(rgb=argb) if argb else None
+    if new_font_kwargs:
+        cell.font = font.copy(**new_font_kwargs)
+
+    new_align_kwargs: dict[str, Any] = {}
+    if "textAlign" in patch and patch["textAlign"] in _HORIZONTAL_ALIGN_MAP:
+        new_align_kwargs["horizontal"] = _HORIZONTAL_ALIGN_MAP[patch["textAlign"]]
+    if "verticalAlign" in patch and patch["verticalAlign"] in _VERTICAL_ALIGN_MAP:
+        new_align_kwargs["vertical"] = _VERTICAL_ALIGN_MAP[patch["verticalAlign"]]
+    if "wrapText" in patch:
+        new_align_kwargs["wrap_text"] = bool(patch["wrapText"])
+    if "rotation" in patch and isinstance(patch["rotation"], (int, float)):
+        # openpyxl uses 0–90 for upward rotation, 91–180 for downward
+        # (encoded as 90 + abs(degrees)). Clamp to that domain.
+        deg = int(patch["rotation"])
+        if deg >= 0:
+            new_align_kwargs["text_rotation"] = max(0, min(90, deg))
+        else:
+            new_align_kwargs["text_rotation"] = max(91, min(180, 90 + abs(deg)))
+    if new_align_kwargs:
+        cell.alignment = align.copy(**new_align_kwargs)
+
+    if "hyperlink" in patch:
+        link = patch["hyperlink"]
+        if isinstance(link, str) and link:
+            cell.hyperlink = link
+        else:
+            cell.hyperlink = None
+
+    if "background" in patch:
+        bg = patch["background"]
+        argb = _normalise_hex(bg) if bg else None
+        if argb:
+            cell.fill = PatternFill(fill_type="solid", fgColor=argb, bgColor=argb)
+        else:
+            # Drop the user fill — leave the cell with whatever the parsed
+            # workbook had (openpyxl can't truly "delete" a fill, so we set
+            # an empty PatternFill which is the convention for "no fill").
+            cell.fill = PatternFill(fill_type=None)
+
+    if "border" in patch:
+        border_payload = patch["border"]
+        if isinstance(border_payload, dict):
+            cell.border = _build_border(border_payload)
+        elif border_payload is None:
+            cell.border = Border()
 
 
 def _split_cell_key(

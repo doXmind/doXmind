@@ -152,12 +152,12 @@ async function persistCurrentDatabases(state: DatabaseState, changedDbIds: strin
   const { useFileStore } = await import("@/stores/file-store");
   const { createStorageAdapter } = await import("@/lib/storage");
   const fileState = useFileStore.getState();
-  if (!fileState.workspaceRoot || !fileState.currentFileId) return;
+  if (!fileState.rootPath || !fileState.currentFileId) return;
 
   const file = fileState.files.find((item) => item.id === fileState.currentFileId);
   if (!file || file.isFolder) return;
 
-  const adapter = createStorageAdapter({ mode: "disk", disk: { root: fileState.workspaceRoot } });
+  const adapter = createStorageAdapter({ disk: { root: fileState.rootPath } });
   const current = await adapter.read(file.storageHandle ?? { mode: "disk", id: file.id });
   const existingExtras =
     current.extras && typeof current.extras === "object"
@@ -185,7 +185,11 @@ function normalizeProperty(raw: Record<string, unknown>, position: number): Prop
   };
 }
 
-function makeView(databaseId: string, view: Record<string, unknown>, position: number): DatabaseView {
+function makeView(
+  databaseId: string,
+  view: Record<string, unknown>,
+  position: number
+): DatabaseView {
   const created = nowIso();
   return {
     id: typeof view.id === "string" ? view.id : newId(),
@@ -193,9 +197,7 @@ function makeView(databaseId: string, view: Record<string, unknown>, position: n
     name: typeof view.name === "string" ? view.name : "Table View",
     type: typeof view.type === "string" ? (view.type as DatabaseView["type"]) : "table",
     config:
-      view.config && typeof view.config === "object"
-        ? (view.config as DatabaseView["config"])
-        : {},
+      view.config && typeof view.config === "object" ? (view.config as DatabaseView["config"]) : {},
     position,
     created_at: created,
     updated_at: created,
@@ -230,10 +232,9 @@ function createLocalDatabase(options: CreateDatabaseRequest = {}): DatabaseData 
     const rows = (options.rows ?? []).map((row, index) =>
       makeRow(databaseId, row as Record<string, unknown>, index)
     );
-    const views =
-      options.views?.length
-        ? options.views.map((view, index) => makeView(databaseId, view, index))
-        : [makeView(databaseId, { name: "Table View", type: "table" }, 0)];
+    const views = options.views?.length
+      ? options.views.map((view, index) => makeView(databaseId, view, index))
+      : [makeView(databaseId, { name: "Table View", type: "table" }, 0)];
 
     return {
       id: databaseId,
@@ -266,29 +267,28 @@ function createLocalDatabase(options: CreateDatabaseRequest = {}): DatabaseData 
       options: { choices },
     },
   ];
-  const views =
-    options.views?.length
-      ? options.views.map((view, index) =>
-          makeView(
-            databaseId,
-            {
-              ...view,
-              config:
-                view.type === "board" && !view.config
-                  ? { groupByPropertyId: statusPropId }
-                  : (view.config ?? {}),
-            },
-            index
-          )
+  const views = options.views?.length
+    ? options.views.map((view, index) =>
+        makeView(
+          databaseId,
+          {
+            ...view,
+            config:
+              view.type === "board" && !view.config
+                ? { groupByPropertyId: statusPropId }
+                : (view.config ?? {}),
+          },
+          index
         )
-      : [
-          makeView(databaseId, { name: "Table View", type: "table" }, 0),
-          makeView(
-            databaseId,
-            { name: "Board View", type: "board", config: { groupByPropertyId: statusPropId } },
-            1
-          ),
-        ];
+      )
+    : [
+        makeView(databaseId, { name: "Table View", type: "table" }, 0),
+        makeView(
+          databaseId,
+          { name: "Board View", type: "board", config: { groupByPropertyId: statusPropId } },
+          1
+        ),
+      ];
   const rows = ["To Do", "In Progress", "Done"].map((status, index) =>
     makeRow(
       databaseId,

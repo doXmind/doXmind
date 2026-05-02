@@ -20,8 +20,18 @@
  * later, and avoids bloating the workspace component further.
  */
 
-import type { ExcelCellStyle, ExcelEditorState, ExcelStructuralOp } from "@/lib/storage/types";
-import type { ExcelCellDto, ExcelMergeRange, ExcelSheetDto } from "@/lib/excel/parse-workbook";
+import type {
+  ExcelCellStyle,
+  ExcelEditorState,
+  ExcelStructuralOp,
+  ExcelWorkbookOp,
+} from "@/lib/storage/types";
+import type {
+  ExcelCellDto,
+  ExcelMergeRange,
+  ExcelSheetDto,
+  ExcelWorkbookDto,
+} from "@/lib/excel/parse-workbook";
 
 export interface ExcelCellPatch {
   value?: string | number | boolean | null;
@@ -78,6 +88,23 @@ export function applyOpsToSheet(
 
   for (const op of ops) {
     if (op.sheetId !== parsed.id) continue;
+    if (op.type === "mergeCells") {
+      // Drop any existing merge that fully equals or sits inside the new
+      // one (so re-merging an overlap doesn't leave a phantom inside).
+      merges = merges.filter(
+        (m) =>
+          !(m.top >= op.top && m.bottom <= op.bottom && m.left >= op.left && m.right <= op.right)
+      );
+      merges = [...merges, { top: op.top, bottom: op.bottom, left: op.left, right: op.right }];
+      continue;
+    }
+    if (op.type === "unmergeCells") {
+      merges = merges.filter(
+        (m) =>
+          !(m.top <= op.bottom && m.bottom >= op.top && m.left <= op.right && m.right >= op.left)
+      );
+      continue;
+    }
     cells = shiftCellsForOp(cells, op);
     merges = shiftMergesForOp(merges, op);
     if (op.type === "insertRow") {
@@ -112,6 +139,10 @@ function shiftCellsForOp(cells: ExcelCellDto[], op: ExcelStructuralOp): ExcelCel
       return cells
         .filter((c) => c.col < op.index || c.col >= op.index + op.count)
         .map((c) => (c.col >= op.index + op.count ? { ...c, col: c.col - op.count } : c));
+    default:
+      // Merge / unmerge ops don't shift cells — applyOpsToSheet handles
+      // them on the merges array directly and never calls in here.
+      return cells;
   }
 }
 
@@ -295,6 +326,116 @@ export function rangeOrigin(range: SelectionRange): { row: number; col: number }
   // The "anchor" cell — used for the formula bar and toolbar effective style.
   const b = rangeBounds(range);
   return { row: b.top, col: b.left };
+}
+
+// ---------------------------------------------------------------------------
+// Workbook-level ops
+// ---------------------------------------------------------------------------
+
+const NEW_SHEET_DEFAULT_ROWS = 100;
+const NEW_SHEET_DEFAULT_COLS = 26;
+
+function blankSheetDto(id: string, name: string, index: number): ExcelSheetDto {
+  return {
+    id,
+    name,
+    index,
+    rowCount: NEW_SHEET_DEFAULT_ROWS,
+    colCount: NEW_SHEET_DEFAULT_COLS,
+    rowHeights: {},
+    colWidths: {},
+    merges: [],
+    frozen: { row: 0, col: 0 },
+    cells: [],
+  };
+}
+
+/**
+ * Replay workbook-level ops onto the parsed workbook to derive the tab
+ * strip the user actually sees: includes added sheets, renames,
+ * duplicates, and excludes deleted ones.
+ */
+export function applyWorkbookOps(
+  workbook: ExcelWorkbookDto,
+  ops: ExcelWorkbookOp[] | undefined
+): ExcelWorkbookDto {
+  if (!ops || ops.length === 0) return workbook;
+  let sheets = [...workbook.sheets];
+  for (const op of ops) {
+    if (op.type === "addSheet") {
+      const idx = op.afterSheetId
+        ? sheets.findIndex((s) => s.id === op.afterSheetId)
+        : sheets.length - 1;
+      const insertAt = idx >= 0 ? idx + 1 : sheets.length;
+      const blank = blankSheetDto(op.sheetId, op.name, insertAt);
+      sheets = [...sheets.slice(0, insertAt), blank, ...sheets.slice(insertAt)];
+    } else if (op.type === "renameSheet") {
+      sheets = sheets.map((s) => (s.id === op.sheetId ? { ...s, name: op.name } : s));
+    } else if (op.type === "duplicateSheet") {
+      const idx = sheets.findIndex((s) => s.id === op.sourceSheetId);
+      if (idx < 0) continue;
+      const source = sheets[idx];
+      const copy: ExcelSheetDto = {
+        ...source,
+        id: op.sheetId,
+        name: op.name,
+        index: idx + 1,
+        rowHeights: { ...source.rowHeights },
+        colWidths: { ...source.colWidths },
+        // cells/merges arrays are reused — the renderer treats them as
+        // read-only and any user edits land in the patch overlay keyed by
+        // the new sheetId so they don't bleed back into the source.
+        cells: source.cells,
+        merges: source.merges,
+      };
+      sheets = [...sheets.slice(0, idx + 1), copy, ...sheets.slice(idx + 1)];
+    } else if (op.type === "deleteSheet") {
+      sheets = sheets.filter((s) => s.id !== op.sheetId);
+    }
+  }
+  sheets = sheets.map((s, i) => ({ ...s, index: i }));
+  return { ...workbook, sheets };
+}
+
+export function applyWorkbookOp(
+  state: ExcelEditorState | null,
+  op: ExcelWorkbookOp
+): ExcelEditorState {
+  const base: ExcelEditorState = state ?? { version: 1 };
+  let cells = base.cells;
+  let ops = base.ops;
+  let rowHeights = base.rowHeights;
+  let colWidths = base.colWidths;
+  if (op.type === "deleteSheet") {
+    // Drop everything keyed by the dropped sheet so undo doesn't
+    // resurrect orphaned edits, and the sidecar stays minimal.
+    cells = filterMapByPrefix(cells, `${op.sheetId}!`);
+    rowHeights = filterMapByPrefix(rowHeights, `${op.sheetId}!`);
+    colWidths = filterMapByPrefix(colWidths, `${op.sheetId}!`);
+    ops = ops?.filter((entry) => entry.sheetId !== op.sheetId);
+  }
+  return {
+    ...base,
+    version: 1,
+    cells,
+    ops,
+    rowHeights,
+    colWidths,
+    workbookOps: [...(base.workbookOps ?? []), op],
+  };
+}
+
+function filterMapByPrefix<T>(
+  map: Record<string, T> | undefined,
+  prefix: string
+): Record<string, T> | undefined {
+  if (!map) return map;
+  const out: Record<string, T> = {};
+  for (const [key, value] of Object.entries(map)) {
+    if (key.startsWith(prefix)) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

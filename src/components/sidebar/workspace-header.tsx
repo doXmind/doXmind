@@ -14,7 +14,7 @@ interface WorkspaceHeaderProps {
   onCollapseAll: () => void;
 }
 
-function workspaceLabel(root: string | null): string {
+function rootLabel(root: string | null): string {
   if (!root) return "";
   const normalized = root.replaceAll("\\", "/").replace(/\/+$/, "");
   return normalized.split("/").filter(Boolean).pop() ?? normalized;
@@ -28,44 +28,54 @@ export function WorkspaceHeader({
   onCollapseAll,
 }: WorkspaceHeaderProps) {
   const t = useTranslations("sidebar");
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
-  const label = workspaceLabel(workspaceRoot);
+  const openTarget = useFileStore((s) => s.openTarget);
+  const rootPath = useFileStore((s) => s.rootPath);
+  const openFilePath = useFileStore((s) => s.openFilePath);
+  // In file mode the rail represents one loose file. Showing the parent
+  // directory's basename + create buttons would invite the user to spray
+  // new files into wherever the loose file happened to live, which is
+  // almost never their intent.
+  const isFileMode = openTarget === "file";
+  const label = isFileMode ? rootLabel(openFilePath) : rootLabel(rootPath);
+  const titleAttr = isFileMode ? (openFilePath ?? undefined) : (rootPath ?? undefined);
 
   return (
     <div className="flex h-9 items-center justify-between gap-2 px-3">
       <h2
         className="text-ui-xs min-w-0 flex-1 truncate font-semibold uppercase tracking-wide text-muted-foreground/80"
-        title={workspaceRoot ?? undefined}
+        title={titleAttr}
       >
         {label}
       </h2>
-      <div className="flex items-center gap-0.5">
-        <NewButton
-          onCreateFile={onCreateFile}
-          onCreatePdf={onCreatePdf}
-          onCreateFolder={onCreateFolder}
-          onOpenTemplatePicker={onOpenTemplatePicker}
-          hideFolder
-        />
-        <Tooltip content={t("newFolder")} side="bottom">
-          <button
-            onClick={onCreateFolder}
-            className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
-            aria-label={t("newFolder")}
-          >
-            <FolderPlus className="h-4 w-4" />
-          </button>
-        </Tooltip>
-        <Tooltip content={t("collapseAll")} side="bottom">
-          <button
-            onClick={onCollapseAll}
-            className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
-            aria-label={t("collapseAll")}
-          >
-            <ChevronsDownUp className="h-4 w-4" />
-          </button>
-        </Tooltip>
-      </div>
+      {!isFileMode && (
+        <div className="flex items-center gap-0.5">
+          <NewButton
+            onCreateFile={onCreateFile}
+            onCreatePdf={onCreatePdf}
+            onCreateFolder={onCreateFolder}
+            onOpenTemplatePicker={onOpenTemplatePicker}
+            hideFolder
+          />
+          <Tooltip content={t("newFolder")} side="bottom">
+            <button
+              onClick={onCreateFolder}
+              className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
+              aria-label={t("newFolder")}
+            >
+              <FolderPlus className="h-4 w-4" />
+            </button>
+          </Tooltip>
+          <Tooltip content={t("collapseAll")} side="bottom">
+            <button
+              onClick={onCollapseAll}
+              className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
+              aria-label={t("collapseAll")}
+            >
+              <ChevronsDownUp className="h-4 w-4" />
+            </button>
+          </Tooltip>
+        </div>
+      )}
     </div>
   );
 }

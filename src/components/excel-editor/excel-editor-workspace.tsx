@@ -39,15 +39,32 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   AlignCenter,
+  AlignEndVertical,
   AlignLeft,
   AlignRight,
+  AlignStartVertical,
+  AlignVerticalJustifyCenter,
+  ArrowDownAZ,
+  ArrowUpAZ,
+  Baseline,
   Bold,
+  DollarSign,
   Eraser,
   Italic,
+  Link as LinkIcon,
   Loader2,
+  Merge,
+  PaintBucket,
+  Paintbrush,
+  Percent,
+  Plus,
   Redo2,
+  Sigma,
+  Split,
+  Strikethrough,
   Underline,
   Undo2,
+  WrapText,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -66,6 +83,8 @@ import {
 import {
   applyEditorStateOp,
   applyOpsToSheet,
+  applyWorkbookOp,
+  applyWorkbookOps,
   rangeBounds,
   rangeOrigin,
   singleCellRange,
@@ -83,10 +102,34 @@ import {
   parseDraft,
 } from "@/components/excel-editor/excel-sheet-view";
 import {
+  ExcelColorPicker,
+  FILL_COLOR_SWATCHES,
+  TEXT_COLOR_SWATCHES,
+} from "@/components/excel-editor/excel-color-picker";
+import { ExcelMenuButton } from "@/components/excel-editor/excel-menu-button";
+import { ExcelFontFamilyButton } from "@/components/excel-editor/excel-font-family-button";
+import {
+  ExcelBordersButton,
+  type BorderPattern,
+} from "@/components/excel-editor/excel-borders-button";
+import {
+  ExcelFindReplacePanel,
+  type FindMatch,
+} from "@/components/excel-editor/excel-find-replace-panel";
+import {
+  NUMBER_FORMAT_PRESETS,
+  QUICK_CURRENCY_FORMAT,
+  QUICK_PERCENT_FORMAT,
+  adjustDecimals,
+} from "@/lib/excel/format";
+import { DEFAULT_BORDER_SIDE, computeBorderForCell } from "@/lib/excel/borders";
+import {
   createStorageAdapter,
+  type ExcelBorderConfig,
   type ExcelCellStyle,
   type ExcelEditorState,
   type ExcelStructuralOp,
+  type ExcelWorkbookOp,
 } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
@@ -98,6 +141,17 @@ interface ExcelEditorWorkspaceProps {
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 const SIDECAR_DEBOUNCE_MS = 350;
 const HISTORY_LIMIT = 50;
+
+const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48] as const;
+const DEFAULT_FONT_SIZE = 11;
+
+function stepFontSize(current: number | undefined, delta: number): number {
+  const target = current ?? DEFAULT_FONT_SIZE;
+  if (delta > 0) {
+    return FONT_SIZES.find((s) => s > target) ?? FONT_SIZES[FONT_SIZES.length - 1];
+  }
+  return [...FONT_SIZES].reverse().find((s) => s < target) ?? FONT_SIZES[0];
+}
 
 interface ContextMenuState {
   x: number;
@@ -114,17 +168,9 @@ interface CellUpdate {
 }
 
 export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
+  const rootPath = useFileStore((s) => s.rootPath);
 
-  const adapter = useMemo(
-    () =>
-      createStorageAdapter({
-        mode: workspaceMode,
-        disk: { root: workspaceRoot },
-      }),
-    [workspaceMode, workspaceRoot]
-  );
+  const adapter = useMemo(() => createStorageAdapter({ disk: { root: rootPath } }), [rootPath]);
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -138,6 +184,23 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [history, setHistory] = useState<ExcelEditorState[]>([]);
   const [future, setFuture] = useState<ExcelEditorState[]>([]);
+
+  // Find & Replace state — kept here (not inside the panel) so the active
+  // match drives the workspace selection while the panel stays focused.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findReplace, setFindReplace] = useState("");
+  const [findMatchCase, setFindMatchCase] = useState(false);
+  const [findWholeCell, setFindWholeCell] = useState(false);
+  const [findIndex, setFindIndex] = useState<number | null>(null);
+
+  // Right-click context menu over a sheet tab — separate from the main
+  // grid context menu so the surface enums don't collide.
+  const [tabContextMenu, setTabContextMenu] = useState<{
+    x: number;
+    y: number;
+    sheetId: string;
+  } | null>(null);
 
   const xlsxBytesRef = useRef<Uint8Array | null>(null);
   const editorStateRef = useRef<ExcelEditorState | null>(null);
@@ -156,6 +219,15 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  // Format painter — armed style + ref for read inside `onSelectEnd`,
+  // which runs from a window mouseup listener that captured the previous
+  // closure.
+  const [paintStyle, setPaintStyle] = useState<ExcelCellStyle | null>(null);
+  const paintStyleRef = useRef<ExcelCellStyle | null>(null);
+  useEffect(() => {
+    paintStyleRef.current = paintStyle;
+  }, [paintStyle]);
 
   // ---------------------------------------------------------------------
   // Initial load
@@ -211,10 +283,33 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     };
   }, [adapter, file.name, file.storageHandle]);
 
+  // Display workbook = parsed workbook with workbook-level ops applied
+  // (added / renamed / duplicated / deleted sheets). The tab strip and
+  // sheet lookup all read from this so the user sees post-op state.
+  const displayWorkbook = useMemo<ExcelWorkbookDto | null>(() => {
+    if (!workbook) return null;
+    return applyWorkbookOps(workbook, editorState?.workbookOps);
+  }, [workbook, editorState?.workbookOps]);
+
   const activeSheet = useMemo<ExcelSheetDto | null>(() => {
-    if (!workbook || !activeSheetId) return null;
-    return workbook.sheets.find((s) => s.id === activeSheetId) ?? workbook.sheets[0] ?? null;
-  }, [workbook, activeSheetId]);
+    if (!displayWorkbook || !activeSheetId) return null;
+    return (
+      displayWorkbook.sheets.find((s) => s.id === activeSheetId) ??
+      displayWorkbook.sheets[0] ??
+      null
+    );
+  }, [displayWorkbook, activeSheetId]);
+
+  // If the active sheet was deleted from under us, snap to the first
+  // remaining sheet so the renderer doesn't show a stale empty state.
+  useEffect(() => {
+    if (!displayWorkbook) return;
+    if (!activeSheetId) return;
+    const exists = displayWorkbook.sheets.some((s) => s.id === activeSheetId);
+    if (!exists && displayWorkbook.sheets[0]) {
+      setActiveSheetId(displayWorkbook.sheets[0].id);
+    }
+  }, [displayWorkbook, activeSheetId]);
 
   // The sheet the renderer reads from = parsed sheet with structural ops
   // applied. Cells, merges, row/col counts and dimension overrides all
@@ -315,6 +410,26 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     return map;
   }, [displaySheet]);
 
+  // Per-cell merge classification used by the renderer:
+  //   - `anchors`: top-left of a merge → spans down to {bottom, right}
+  //   - `members`: cells inside a merge that are *not* the anchor (the
+  //     renderer skips them so the anchor cell can paint over them)
+  const mergeIndex = useMemo(() => {
+    const anchors = new Map<string, { bottom: number; right: number }>();
+    const members = new Set<string>();
+    if (!displaySheet) return { anchors, members };
+    for (const m of displaySheet.merges) {
+      anchors.set(coordKey(m.top, m.left), { bottom: m.bottom, right: m.right });
+      for (let r = m.top; r <= m.bottom; r++) {
+        for (let c = m.left; c <= m.right; c++) {
+          if (r === m.top && c === m.left) continue;
+          members.add(coordKey(r, c));
+        }
+      }
+    }
+    return { anchors, members };
+  }, [displaySheet]);
+
   const editsByCoord = useMemo(() => {
     const map = new Map<string, ExcelCellPatch>();
     if (!editorState?.cells || !displaySheet) return map;
@@ -384,6 +499,253 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     [mutateEditorState]
   );
 
+  const applyWorkbookOpAndPersist = useCallback(
+    (op: ExcelWorkbookOp) => {
+      mutateEditorState((prev) => applyWorkbookOp(prev, op));
+    },
+    [mutateEditorState]
+  );
+
+  // Pick a fresh sheet name like Excel ("Sheet2", "Sheet3", …) skipping
+  // names already in use so duplicates don't trip openpyxl on export.
+  const generateSheetName = useCallback(
+    (preferredBase: string): string => {
+      const taken = new Set((displayWorkbook?.sheets ?? []).map((s) => s.name.toLowerCase()));
+      if (!taken.has(preferredBase.toLowerCase())) return preferredBase;
+      for (let i = 2; i < 1000; i++) {
+        const candidate = `${preferredBase} ${i}`;
+        if (!taken.has(candidate.toLowerCase())) return candidate;
+      }
+      return `${preferredBase}-${Date.now()}`;
+    },
+    [displayWorkbook]
+  );
+
+  const newSheetId = useCallback(() => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `sheet-user-${crypto.randomUUID()}`;
+    }
+    return `sheet-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }, []);
+
+  const addSheet = useCallback(() => {
+    if (!displayWorkbook) return;
+    const sheetId = newSheetId();
+    const name = generateSheetName("Sheet");
+    applyWorkbookOpAndPersist({
+      type: "addSheet",
+      sheetId,
+      name,
+      afterSheetId: activeSheetId ?? undefined,
+    });
+    setActiveSheetId(sheetId);
+  }, [displayWorkbook, generateSheetName, newSheetId, applyWorkbookOpAndPersist, activeSheetId]);
+
+  const renameSheetById = useCallback(
+    (sheetId: string) => {
+      if (!displayWorkbook) return;
+      const sheet = displayWorkbook.sheets.find((s) => s.id === sheetId);
+      if (!sheet) return;
+      // For the spike we lean on `prompt` instead of building a modal —
+      // gets us inline editing semantics for free, and matches Excel's
+      // own modal flow closely enough.
+      const next = window.prompt("Rename sheet", sheet.name);
+      if (!next) return;
+      const trimmed = next.trim();
+      if (!trimmed || trimmed === sheet.name) return;
+      const taken = displayWorkbook.sheets.some(
+        (s) => s.id !== sheetId && s.name.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (taken) {
+        toast.error("A sheet with that name already exists");
+        return;
+      }
+      applyWorkbookOpAndPersist({ type: "renameSheet", sheetId, name: trimmed });
+    },
+    [displayWorkbook, applyWorkbookOpAndPersist]
+  );
+
+  const duplicateSheetById = useCallback(
+    (sheetId: string) => {
+      if (!displayWorkbook) return;
+      const source = displayWorkbook.sheets.find((s) => s.id === sheetId);
+      if (!source) return;
+      const id = newSheetId();
+      const name = generateSheetName(`${source.name} (copy)`);
+      applyWorkbookOpAndPersist({
+        type: "duplicateSheet",
+        sourceSheetId: sheetId,
+        sheetId: id,
+        name,
+      });
+      setActiveSheetId(id);
+    },
+    [displayWorkbook, generateSheetName, newSheetId, applyWorkbookOpAndPersist]
+  );
+
+  const deleteSheetById = useCallback(
+    (sheetId: string) => {
+      if (!displayWorkbook) return;
+      if (displayWorkbook.sheets.length <= 1) {
+        toast.error("A workbook must have at least one sheet");
+        return;
+      }
+      const sheet = displayWorkbook.sheets.find((s) => s.id === sheetId);
+      if (!sheet) return;
+      const ok = window.confirm(`Delete "${sheet.name}"? This can't be undone after saving.`);
+      if (!ok) return;
+      applyWorkbookOpAndPersist({ type: "deleteSheet", sheetId });
+    },
+    [displayWorkbook, applyWorkbookOpAndPersist]
+  );
+
+  // ---------------------------------------------------------------------
+  // Find & Replace
+  // ---------------------------------------------------------------------
+
+  const findMatches = useMemo<FindMatch[]>(() => {
+    if (!findOpen || !displaySheet || findQuery === "") return [];
+    const needle = findMatchCase ? findQuery : findQuery.toLowerCase();
+    const matches: FindMatch[] = [];
+    const visited = new Set<string>();
+    const consider = (row: number, col: number, text: string) => {
+      if (!text) return;
+      const haystack = findMatchCase ? text : text.toLowerCase();
+      const hit = findWholeCell ? haystack === needle : haystack.includes(needle);
+      if (hit) matches.push({ row, col });
+    };
+    for (const cell of displaySheet.cells) {
+      const key = coordKey(cell.row, cell.col);
+      visited.add(key);
+      const patch = editsByCoord.get(key);
+      consider(cell.row, cell.col, formatCellValue(cell, patch));
+    }
+    // Cells that exist only in the patch overlay (user-typed into a
+    // previously empty cell).
+    for (const [key, patch] of editsByCoord.entries()) {
+      if (visited.has(key)) continue;
+      const [rowStr, colStr] = key.split(":");
+      const row = Number(rowStr);
+      const col = Number(colStr);
+      consider(row, col, formatCellValue(undefined, patch));
+    }
+    matches.sort((a, b) => a.row - b.row || a.col - b.col);
+    return matches;
+  }, [findOpen, displaySheet, findQuery, findMatchCase, findWholeCell, editsByCoord]);
+
+  // Reset / clamp the cursor whenever the active match list changes.
+  useEffect(() => {
+    if (findMatches.length === 0) {
+      setFindIndex(null);
+      return;
+    }
+    setFindIndex((current) => {
+      if (current == null) return 0;
+      if (current >= findMatches.length) return findMatches.length - 1;
+      return current;
+    });
+  }, [findMatches]);
+
+  // Whenever the cursor moves, jump the selection there too — gives the
+  // user a visual breadcrumb that doesn't depend on a separate highlight.
+  useEffect(() => {
+    if (findIndex == null) return;
+    const match = findMatches[findIndex];
+    if (!match) return;
+    setSelection(singleCellRange(match.row, match.col));
+  }, [findIndex, findMatches]);
+
+  const findCurrentMatch = findIndex != null ? (findMatches[findIndex] ?? null) : null;
+
+  const openFindPanel = useCallback(() => {
+    setFindOpen(true);
+    if (anchor && !findQuery) {
+      // Seed with the current cell's display text — common Sheets
+      // convenience: ⌘F over a value pre-populates the search field.
+      const cell = cellsByCoord.get(coordKey(anchor.row, anchor.col));
+      const patch = editsByCoord.get(coordKey(anchor.row, anchor.col));
+      const text = formatCellValue(cell, patch);
+      if (text) setFindQuery(text);
+    }
+  }, [anchor, findQuery, cellsByCoord, editsByCoord]);
+
+  const closeFindPanel = useCallback(() => {
+    setFindOpen(false);
+    window.requestAnimationFrame(() => cellGridRef.current?.focus());
+  }, []);
+
+  const advanceFind = useCallback(
+    (direction: 1 | -1) => {
+      if (findMatches.length === 0) return;
+      setFindIndex((current) => {
+        if (current == null) return direction === 1 ? 0 : findMatches.length - 1;
+        return (current + direction + findMatches.length) % findMatches.length;
+      });
+    },
+    [findMatches.length]
+  );
+
+  const replaceCurrentMatch = useCallback(() => {
+    if (!displaySheet || findMatches.length === 0 || findIndex == null) return;
+    const match = findMatches[findIndex];
+    if (!match) return;
+    const cell = cellsByCoord.get(coordKey(match.row, match.col));
+    const patch = editsByCoord.get(coordKey(match.row, match.col));
+    if (patch?.formula || cell?.formula) {
+      // Skip formula cells — replacing inside computed text would clobber
+      // the formula. Find Next still walks past them.
+      advanceFind(1);
+      return;
+    }
+    const currentText = formatCellValue(cell, patch);
+    const nextText = findWholeCell
+      ? findReplace
+      : replaceInString(currentText, findQuery, findReplace, findMatchCase);
+    applyCellUpdates([{ row: match.row, col: match.col, patch: parseDraft(nextText) }]);
+    advanceFind(1);
+  }, [
+    displaySheet,
+    findMatches,
+    findIndex,
+    cellsByCoord,
+    editsByCoord,
+    findWholeCell,
+    findReplace,
+    findQuery,
+    findMatchCase,
+    applyCellUpdates,
+    advanceFind,
+  ]);
+
+  const replaceAllMatches = useCallback(() => {
+    if (!displaySheet || findMatches.length === 0) return;
+    const updates: CellUpdate[] = [];
+    for (const match of findMatches) {
+      const cell = cellsByCoord.get(coordKey(match.row, match.col));
+      const patch = editsByCoord.get(coordKey(match.row, match.col));
+      if (patch?.formula || cell?.formula) continue;
+      const currentText = formatCellValue(cell, patch);
+      const nextText = findWholeCell
+        ? findReplace
+        : replaceInString(currentText, findQuery, findReplace, findMatchCase);
+      if (nextText === currentText) continue;
+      updates.push({ row: match.row, col: match.col, patch: parseDraft(nextText) });
+    }
+    if (updates.length === 0) return;
+    applyCellUpdates(updates);
+    toast.success(`Replaced ${updates.length} ${updates.length === 1 ? "match" : "matches"}`);
+  }, [
+    displaySheet,
+    findMatches,
+    cellsByCoord,
+    editsByCoord,
+    findWholeCell,
+    findReplace,
+    findQuery,
+    findMatchCase,
+    applyCellUpdates,
+  ]);
+
   // ---------------------------------------------------------------------
   // Selection helpers
   // ---------------------------------------------------------------------
@@ -409,7 +771,29 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
   const onSelectEnd = useCallback(() => {
     // Drag finished — nothing to persist; selection is already in state.
-  }, []);
+    // Format painter consumes the just-finished selection: paint the
+    // captured style onto the range, then disarm.
+    if (paintStyleRef.current) {
+      const captured = paintStyleRef.current;
+      paintStyleRef.current = null;
+      // Defer to a microtask so the selection update has flushed.
+      window.setTimeout(() => {
+        if (!selectionRef.current) {
+          setPaintStyle(null);
+          return;
+        }
+        const b = rangeBounds(selectionRef.current);
+        const updates: CellUpdate[] = [];
+        for (let r = b.top; r <= b.bottom; r++) {
+          for (let c = b.left; c <= b.right; c++) {
+            updates.push({ row: r, col: c, patch: { style: { ...captured } } });
+          }
+        }
+        applyCellUpdates(updates);
+        setPaintStyle(null);
+      }, 0);
+    }
+  }, [applyCellUpdates]);
 
   const moveSelection = useCallback(
     (deltaRow: number, deltaCol: number, options?: { extend?: boolean }) => {
@@ -544,9 +928,227 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     () => applyStyleToRange({ underline: !effectiveStyleForAnchor?.underline }),
     [applyStyleToRange, effectiveStyleForAnchor]
   );
+  const toggleStrikethrough = useCallback(
+    () => applyStyleToRange({ strikethrough: !effectiveStyleForAnchor?.strikethrough }),
+    [applyStyleToRange, effectiveStyleForAnchor]
+  );
+  const toggleWrapText = useCallback(
+    () => applyStyleToRange({ wrapText: !effectiveStyleForAnchor?.wrapText }),
+    [applyStyleToRange, effectiveStyleForAnchor]
+  );
   const setAlign = useCallback(
     (textAlign: "left" | "center" | "right") => applyStyleToRange({ textAlign }),
     [applyStyleToRange]
+  );
+  const setVerticalAlign = useCallback(
+    (verticalAlign: "top" | "middle" | "bottom") => applyStyleToRange({ verticalAlign }),
+    [applyStyleToRange]
+  );
+  // `null` means the user hit "Reset" — we drop the override by writing
+  // `undefined`, which the JSON serialisation strips out, so on the next
+  // load the parsed cell's original color reappears (matching Excel's
+  // "remove formatting" semantics).
+  const setTextColor = useCallback(
+    (color: string | null) => applyStyleToRange({ color: color ?? undefined }),
+    [applyStyleToRange]
+  );
+  const setFillColor = useCallback(
+    (background: string | null) => applyStyleToRange({ background: background ?? undefined }),
+    [applyStyleToRange]
+  );
+  const adjustFontSize = useCallback(
+    (delta: number) => {
+      const next = stepFontSize(effectiveStyleForAnchor?.fontSize, delta);
+      applyStyleToRange({ fontSize: next });
+    },
+    [applyStyleToRange, effectiveStyleForAnchor]
+  );
+  const setFontFamily = useCallback(
+    (family: string | null) => applyStyleToRange({ fontFamily: family ?? undefined }),
+    [applyStyleToRange]
+  );
+
+  const applyBorderPattern = useCallback(
+    (pattern: BorderPattern) => {
+      if (!selection || !displaySheet) return;
+      const b = rangeBounds(selection);
+      const updates = buildRangeUpdates((row, col) => {
+        const cell = cellsByCoord.get(coordKey(row, col));
+        const patch = editsByCoord.get(coordKey(row, col));
+        const existing: ExcelBorderConfig | undefined = {
+          ...(cell?.style?.border ?? {}),
+          ...(patch?.style?.border ?? {}),
+        };
+        const nextBorder = computeBorderForCell(
+          pattern,
+          DEFAULT_BORDER_SIDE,
+          row,
+          col,
+          b,
+          existing
+        );
+        return { style: { border: nextBorder } };
+      });
+      applyCellUpdates(updates);
+    },
+    [selection, displaySheet, buildRangeUpdates, cellsByCoord, editsByCoord, applyCellUpdates]
+  );
+
+  // -------------------------------------------------------------------
+  // Σ — quick-insert aggregate formula (Sheets calls it "Functions"). The
+  // formula lands in the cell *just below* the selection (or just to the
+  // right, when the selection is a single row). This matches the Sheets
+  // / Excel default for a single click of the Σ button.
+  // -------------------------------------------------------------------
+  const insertAggregateFn = useCallback(
+    (fn: "SUM" | "AVERAGE" | "COUNT" | "MAX" | "MIN") => {
+      if (!displaySheet || !selection) return;
+      const b = rangeBounds(selection);
+      const isSingleRow = b.top === b.bottom;
+      const targetRow = isSingleRow ? b.top : b.bottom + 1;
+      const targetCol = isSingleRow ? b.right + 1 : b.left;
+      if (targetRow >= displaySheet.rowCount || targetCol >= displaySheet.colCount) {
+        toast.error("No empty cell adjacent to the selection — extend the sheet first");
+        return;
+      }
+      const range = `${columnLabel(b.left)}${b.top + 1}:${columnLabel(b.right)}${b.bottom + 1}`;
+      const formula = `=${fn}(${range})`;
+      applyCellUpdates([{ row: targetRow, col: targetCol, patch: { formula, value: null } }]);
+      setSelection(singleCellRange(targetRow, targetCol));
+    },
+    [displaySheet, selection, applyCellUpdates]
+  );
+
+  // -------------------------------------------------------------------
+  // Sort A→Z / Z→A — sorts rows in the selection by the leftmost column.
+  // We deliberately move *values only*, not styles or formulas: cells with
+  // formulas are left in place (formulas reference absolute coordinates
+  // that would break under row reordering — preserving them keeps the
+  // sheet computable). Anything else moves with its row.
+  // -------------------------------------------------------------------
+  const sortRangeBy = useCallback(
+    (direction: "asc" | "desc") => {
+      if (!displaySheet || !selection) return;
+      const b = rangeBounds(selection);
+      if (b.top === b.bottom) {
+        toast.message("Select more than one row to sort");
+        return;
+      }
+      type RowSnapshot = {
+        originalRow: number;
+        values: (string | number | boolean | null)[];
+        hasFormula: boolean;
+      };
+      const rows: RowSnapshot[] = [];
+      for (let r = b.top; r <= b.bottom; r++) {
+        const values: (string | number | boolean | null)[] = [];
+        let hasFormula = false;
+        for (let c = b.left; c <= b.right; c++) {
+          const cell = cellsByCoord.get(coordKey(r, c));
+          const patch = editsByCoord.get(coordKey(r, c));
+          if ((patch && "formula" in patch && patch.formula) || cell?.formula) hasFormula = true;
+          const value = patch && "value" in patch ? (patch.value ?? null) : (cell?.value ?? null);
+          values.push(value);
+        }
+        rows.push({ originalRow: r, values, hasFormula });
+      }
+      const formulaRowCount = rows.filter((r) => r.hasFormula).length;
+      // Skip rows that contain formulas — they stay anchored.
+      const sortable = rows.filter((r) => !r.hasFormula);
+      sortable.sort((a, b2) => {
+        const cmp = compareCellValues(a.values[0], b2.values[0]);
+        return direction === "asc" ? cmp : -cmp;
+      });
+      const updates: CellUpdate[] = [];
+      let nextSortable = 0;
+      for (let r = b.top; r <= b.bottom; r++) {
+        const isFormulaRow = rows.find((s) => s.originalRow === r)?.hasFormula;
+        if (isFormulaRow) continue;
+        const snap = sortable[nextSortable++];
+        if (!snap) continue;
+        for (let c = b.left; c <= b.right; c++) {
+          const j = c - b.left;
+          updates.push({
+            row: r,
+            col: c,
+            patch: { value: snap.values[j], formula: null },
+          });
+        }
+      }
+      if (updates.length === 0) return;
+      applyCellUpdates(updates);
+      if (formulaRowCount > 0) {
+        toast.message(`Sorted ${updates.length / (b.right - b.left + 1)} rows`, {
+          description: `${formulaRowCount} row(s) with formulas were left in place.`,
+        });
+      }
+    },
+    [displaySheet, selection, cellsByCoord, editsByCoord, applyCellUpdates]
+  );
+
+  // -------------------------------------------------------------------
+  // Format painter — capture the *effective* style of the current anchor,
+  // arm a one-shot "next selection paints" mode, then on next select-end
+  // apply that style across the freshly-selected range. The `paintStyle`
+  // state is declared up top alongside its mirror ref.
+  // -------------------------------------------------------------------
+  const togglePaintMode = useCallback(() => {
+    if (paintStyle) {
+      setPaintStyle(null);
+      return;
+    }
+    if (!effectiveStyleForAnchor) {
+      toast.message("Select a cell with formatting first");
+      return;
+    }
+    setPaintStyle({ ...effectiveStyleForAnchor });
+    toast.message("Format painter armed", {
+      description: "Click or drag to paint the captured style. Esc to cancel.",
+    });
+  }, [paintStyle, effectiveStyleForAnchor]);
+
+  // -------------------------------------------------------------------
+  // Insert link ⌘K — wraps the cell value as a hyperlink. The link itself
+  // lives in `style.hyperlink`; the renderer styles the cell as a link
+  // (underline + primary color) and the backend writes it via openpyxl's
+  // `cell.hyperlink`. Empty input clears the existing link.
+  // -------------------------------------------------------------------
+  const promptInsertLink = useCallback(() => {
+    if (!displaySheet || !anchor) return;
+    const cell = cellsByCoord.get(coordKey(anchor.row, anchor.col));
+    const patch = editsByCoord.get(coordKey(anchor.row, anchor.col));
+    const currentLink = patch?.style?.hyperlink ?? cell?.style?.hyperlink ?? "";
+    const next = window.prompt("Link URL (leave empty to remove)", currentLink);
+    if (next === null) return; // user cancelled
+    const trimmed = next.trim();
+    applyCellUpdates([
+      {
+        row: anchor.row,
+        col: anchor.col,
+        patch: { style: { hyperlink: trimmed.length > 0 ? trimmed : undefined } },
+      },
+    ]);
+  }, [displaySheet, anchor, cellsByCoord, editsByCoord, applyCellUpdates]);
+
+  const applyNumberFormatToRange = useCallback(
+    (format: string) => {
+      const updates = buildRangeUpdates(() => ({ numberFormat: format }));
+      applyCellUpdates(updates);
+    },
+    [buildRangeUpdates, applyCellUpdates]
+  );
+
+  const adjustDecimalsForRange = useCallback(
+    (delta: number) => {
+      const updates = buildRangeUpdates((row, col) => {
+        const cell = cellsByCoord.get(coordKey(row, col));
+        const patch = editsByCoord.get(coordKey(row, col));
+        const current = patch?.numberFormat ?? cell?.numberFormat;
+        return { numberFormat: adjustDecimals(current, delta) };
+      });
+      applyCellUpdates(updates);
+    },
+    [buildRangeUpdates, cellsByCoord, editsByCoord, applyCellUpdates]
   );
 
   const clearRange = useCallback(() => {
@@ -648,6 +1250,46 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     [applyOp, displaySheet]
   );
 
+  // Merge / unmerge — toggles based on selection. If the selection
+  // intersects any existing merge, we unmerge (so the user can "undo" a
+  // bad merge from the same button). Otherwise we merge — but only when
+  // there's at least 2 cells selected, since merging a single cell is a
+  // no-op in Excel.
+  const selectionMergeState = useMemo<"merge" | "unmerge" | "noop">(() => {
+    if (!displaySheet || !selection) return "noop";
+    const b = rangeBounds(selection);
+    const intersects = displaySheet.merges.some(
+      (m) => m.top <= b.bottom && m.bottom >= b.top && m.left <= b.right && m.right >= b.left
+    );
+    if (intersects) return "unmerge";
+    if (b.top === b.bottom && b.left === b.right) return "noop";
+    return "merge";
+  }, [displaySheet, selection]);
+
+  const toggleMerge = useCallback(() => {
+    if (!displaySheet || !selection) return;
+    const b = rangeBounds(selection);
+    if (selectionMergeState === "merge") {
+      applyOp({
+        type: "mergeCells",
+        sheetId: displaySheet.id,
+        top: b.top,
+        left: b.left,
+        bottom: b.bottom,
+        right: b.right,
+      });
+    } else if (selectionMergeState === "unmerge") {
+      applyOp({
+        type: "unmergeCells",
+        sheetId: displaySheet.id,
+        top: b.top,
+        left: b.left,
+        bottom: b.bottom,
+        right: b.right,
+      });
+    }
+  }, [displaySheet, selection, selectionMergeState, applyOp]);
+
   // ---------------------------------------------------------------------
   // Zoom + export
   // ---------------------------------------------------------------------
@@ -729,6 +1371,22 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           selectAll();
           return;
         }
+        if (k === "f") {
+          event.preventDefault();
+          openFindPanel();
+          return;
+        }
+        if (k === "h") {
+          // Convention from Excel — ⌘H also opens find/replace.
+          event.preventDefault();
+          openFindPanel();
+          return;
+        }
+        if (k === "k") {
+          event.preventDefault();
+          promptInsertLink();
+          return;
+        }
         if (k === "b") {
           event.preventDefault();
           toggleBold();
@@ -794,6 +1452,12 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       }
       if (event.key === "Escape") {
         event.preventDefault();
+        if (paintStyle) {
+          // First disarm the format painter — it's the most surprising
+          // mode to leave on by accident.
+          setPaintStyle(null);
+          return;
+        }
         if (
           selection &&
           (selection.startRow !== selection.endRow || selection.startCol !== selection.endCol)
@@ -836,6 +1500,9 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       undo,
       redo,
       selectAll,
+      openFindPanel,
+      promptInsertLink,
+      paintStyle,
     ]
   );
 
@@ -928,17 +1595,21 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      {/* Top toolbar */}
-      <div className="bg-sidebar flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-        <span className="text-ui-xs flex-1 truncate font-semibold text-foreground/90">
+      {/* Top toolbar — packed cluster matching Sheets / Excel. Allowed to
+          horizontally scroll on narrow displays so we never have to hide
+          actions behind a "more" overflow menu. */}
+      <div className="bg-sidebar flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3">
+        <span className="text-ui-xs max-w-[160px] shrink truncate font-semibold text-foreground/90">
           {displayName}
         </span>
         {isExporting && (
-          <span className="text-ui-xs flex items-center gap-1.5 text-muted-foreground">
+          <span className="text-ui-xs flex shrink-0 items-center gap-1.5 text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Exporting…
           </span>
         )}
-        <div className="flex items-center gap-1">
+
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Undo / Redo */}
           <Tooltip content="Undo (⌘Z)" side="bottom">
             <Button
               variant="ghost"
@@ -964,8 +1635,113 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             </Button>
           </Tooltip>
 
-          <div className="mx-1 h-5 w-px bg-border/60" />
+          <ToolbarSeparator />
 
+          {/* Number formats */}
+          <Tooltip content="Format as currency" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={() => applyNumberFormatToRange(QUICK_CURRENCY_FORMAT)}
+              disabled={!selection}
+              aria-label="Format as currency"
+            >
+              <DollarSign className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Format as percent" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={() => applyNumberFormatToRange(QUICK_PERCENT_FORMAT)}
+              disabled={!selection}
+              aria-label="Format as percent"
+            >
+              <Percent className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Decrease decimal places" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md font-mono text-xs"
+              onClick={() => adjustDecimalsForRange(-1)}
+              disabled={!selection}
+              aria-label="Decrease decimal places"
+            >
+              .0−
+            </Button>
+          </Tooltip>
+          <Tooltip content="Increase decimal places" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md font-mono text-xs"
+              onClick={() => adjustDecimalsForRange(1)}
+              disabled={!selection}
+              aria-label="Increase decimal places"
+            >
+              .0+
+            </Button>
+          </Tooltip>
+          <ExcelMenuButton
+            tooltip="More formats"
+            disabled={!selection}
+            width={260}
+            trigger={<span className="font-mono text-xs">123</span>}
+            items={NUMBER_FORMAT_PRESETS.map((preset) => ({
+              id: preset.id,
+              label: preset.label,
+              example: preset.example,
+              onSelect: () => applyNumberFormatToRange(preset.format),
+            }))}
+          />
+
+          <ToolbarSeparator />
+
+          {/* Font family */}
+          <ExcelFontFamilyButton
+            value={effectiveStyleForAnchor?.fontFamily}
+            disabled={!selection}
+            onChange={setFontFamily}
+          />
+
+          <ToolbarSeparator />
+
+          {/* Font size */}
+          <Tooltip content="Decrease font size" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={() => adjustFontSize(-1)}
+              disabled={!selection}
+              aria-label="Decrease font size"
+            >
+              <span className="text-base leading-none">−</span>
+            </Button>
+          </Tooltip>
+          <div className="text-ui-xs flex h-7 min-w-9 items-center justify-center rounded-md border border-border/70 bg-background px-2 font-semibold text-muted-foreground">
+            {effectiveStyleForAnchor?.fontSize ?? DEFAULT_FONT_SIZE}
+          </div>
+          <Tooltip content="Increase font size" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={() => adjustFontSize(1)}
+              disabled={!selection}
+              aria-label="Increase font size"
+            >
+              <span className="text-base leading-none">+</span>
+            </Button>
+          </Tooltip>
+
+          <ToolbarSeparator />
+
+          {/* Bold / Italic / Underline / Strikethrough */}
           <Tooltip content="Bold (⌘B)" side="bottom">
             <Button
               variant="ghost"
@@ -1011,9 +1787,49 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
               <Underline className="h-3.5 w-3.5" />
             </Button>
           </Tooltip>
+          <Tooltip content="Strikethrough" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                effectiveStyleForAnchor?.strikethrough && "bg-foreground/[0.08] text-foreground"
+              )}
+              onClick={toggleStrikethrough}
+              disabled={!selection}
+              aria-label="Strikethrough"
+            >
+              <Strikethrough className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
 
-          <div className="mx-1 h-5 w-px bg-border/60" />
+          {/* Color pickers */}
+          <ExcelColorPicker
+            tooltip="Text color"
+            value={effectiveStyleForAnchor?.color}
+            fallbackBar="currentColor"
+            swatches={TEXT_COLOR_SWATCHES}
+            resetLabel="Reset color"
+            disabled={!selection}
+            onChange={setTextColor}
+          >
+            <Baseline className="h-3.5 w-3.5" />
+          </ExcelColorPicker>
+          <ExcelColorPicker
+            tooltip="Fill color"
+            value={effectiveStyleForAnchor?.background}
+            fallbackBar="transparent"
+            swatches={FILL_COLOR_SWATCHES}
+            resetLabel="No fill"
+            disabled={!selection}
+            onChange={setFillColor}
+          >
+            <PaintBucket className="h-3.5 w-3.5" />
+          </ExcelColorPicker>
 
+          <ToolbarSeparator />
+
+          {/* Horizontal alignment */}
           <Tooltip content="Align left" side="bottom">
             <Button
               variant="ghost"
@@ -1063,7 +1879,101 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             </Button>
           </Tooltip>
 
-          <div className="mx-1 h-5 w-px bg-border/60" />
+          {/* Vertical alignment */}
+          <Tooltip content="Align top" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                effectiveStyleForAnchor?.verticalAlign === "top" &&
+                  "bg-foreground/[0.08] text-foreground"
+              )}
+              onClick={() => setVerticalAlign("top")}
+              disabled={!selection}
+              aria-label="Align top"
+            >
+              <AlignStartVertical className="h-3.5 w-3.5 rotate-90" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Align middle" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                effectiveStyleForAnchor?.verticalAlign === "middle" &&
+                  "bg-foreground/[0.08] text-foreground"
+              )}
+              onClick={() => setVerticalAlign("middle")}
+              disabled={!selection}
+              aria-label="Align middle"
+            >
+              <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Align bottom" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                effectiveStyleForAnchor?.verticalAlign === "bottom" &&
+                  "bg-foreground/[0.08] text-foreground"
+              )}
+              onClick={() => setVerticalAlign("bottom")}
+              disabled={!selection}
+              aria-label="Align bottom"
+            >
+              <AlignEndVertical className="h-3.5 w-3.5 rotate-90" />
+            </Button>
+          </Tooltip>
+
+          {/* Borders */}
+          <ExcelBordersButton disabled={!selection} onPattern={applyBorderPattern} />
+
+          {/* Merge cells */}
+          <Tooltip
+            content={selectionMergeState === "unmerge" ? "Unmerge cells" : "Merge cells"}
+            side="bottom"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                selectionMergeState === "unmerge" && "bg-foreground/[0.08] text-foreground"
+              )}
+              onClick={toggleMerge}
+              disabled={selectionMergeState === "noop"}
+              aria-label={selectionMergeState === "unmerge" ? "Unmerge cells" : "Merge cells"}
+            >
+              {selectionMergeState === "unmerge" ? (
+                <Split className="h-3.5 w-3.5" />
+              ) : (
+                <Merge className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </Tooltip>
+
+          {/* Wrap text */}
+          <Tooltip content="Wrap text" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                effectiveStyleForAnchor?.wrapText && "bg-foreground/[0.08] text-foreground"
+              )}
+              onClick={toggleWrapText}
+              disabled={!selection}
+              aria-label="Wrap text"
+            >
+              <WrapText className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+
+          <ToolbarSeparator />
 
           <Tooltip content="Clear (Delete)" side="bottom">
             <Button
@@ -1078,7 +1988,139 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             </Button>
           </Tooltip>
 
-          <div className="mx-1 h-5 w-px bg-border/60" />
+          <ToolbarSeparator />
+
+          {/* Σ — quick-insert aggregate formulas */}
+          <ExcelMenuButton
+            tooltip="Functions"
+            disabled={!selection}
+            width={200}
+            trigger={<Sigma className="h-3.5 w-3.5" />}
+            items={[
+              { id: "sum", label: "SUM", example: "Σ", onSelect: () => insertAggregateFn("SUM") },
+              {
+                id: "avg",
+                label: "AVERAGE",
+                example: "x̄",
+                onSelect: () => insertAggregateFn("AVERAGE"),
+              },
+              {
+                id: "count",
+                label: "COUNT",
+                example: "#",
+                onSelect: () => insertAggregateFn("COUNT"),
+              },
+              { id: "max", label: "MAX", example: "▲", onSelect: () => insertAggregateFn("MAX") },
+              { id: "min", label: "MIN", example: "▼", onSelect: () => insertAggregateFn("MIN") },
+            ]}
+          />
+
+          {/* Sort */}
+          <Tooltip content="Sort A → Z (by leftmost column)" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={() => sortRangeBy("asc")}
+              disabled={!selection}
+              aria-label="Sort A to Z"
+            >
+              <ArrowDownAZ className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Sort Z → A (by leftmost column)" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={() => sortRangeBy("desc")}
+              disabled={!selection}
+              aria-label="Sort Z to A"
+            >
+              <ArrowUpAZ className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+
+          {/* Format painter */}
+          <Tooltip content={paintStyle ? "Cancel format painter" : "Format painter"} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-7 w-7 rounded-md",
+                paintStyle && "bg-foreground/[0.08] text-foreground"
+              )}
+              onClick={togglePaintMode}
+              disabled={!selection && !paintStyle}
+              aria-label="Format painter"
+              aria-pressed={!!paintStyle}
+            >
+              <Paintbrush className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+
+          {/* Insert link */}
+          <Tooltip content="Insert link (⌘K)" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={promptInsertLink}
+              disabled={!anchor}
+              aria-label="Insert link"
+            >
+              <LinkIcon className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+
+          {/* Text rotation */}
+          <ExcelMenuButton
+            tooltip="Text rotation"
+            disabled={!selection}
+            width={220}
+            trigger={
+              <span
+                className="inline-flex items-center font-mono text-[10px] font-semibold"
+                style={{ transform: "rotate(-20deg)" }}
+              >
+                Ab
+              </span>
+            }
+            items={[
+              {
+                id: "0",
+                label: "None",
+                example: "0°",
+                onSelect: () => applyStyleToRange({ rotation: 0 }),
+              },
+              {
+                id: "45",
+                label: "Tilt up",
+                example: "45°",
+                onSelect: () => applyStyleToRange({ rotation: 45 }),
+              },
+              {
+                id: "-45",
+                label: "Tilt down",
+                example: "−45°",
+                onSelect: () => applyStyleToRange({ rotation: -45 }),
+              },
+              {
+                id: "90",
+                label: "Stack vertically",
+                example: "90°",
+                onSelect: () => applyStyleToRange({ rotation: 90 }),
+              },
+              {
+                id: "-90",
+                label: "Rotate down",
+                example: "−90°",
+                onSelect: () => applyStyleToRange({ rotation: -90 }),
+              },
+            ]}
+          />
+
+          <ToolbarSeparator />
 
           <Button
             variant="ghost"
@@ -1170,6 +2212,24 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             {errorMessage ?? "Could not open workbook."}
           </div>
         )}
+        {findOpen && (
+          <ExcelFindReplacePanel
+            initialQuery={findQuery}
+            matchCount={findMatches.length}
+            currentMatch={findCurrentMatch}
+            matchCaseEnabled={findMatchCase}
+            matchWholeCellEnabled={findWholeCell}
+            onQueryChange={setFindQuery}
+            onReplaceTextChange={setFindReplace}
+            onMatchCaseChange={setFindMatchCase}
+            onMatchWholeCellChange={setFindWholeCell}
+            onFindNext={() => advanceFind(1)}
+            onFindPrev={() => advanceFind(-1)}
+            onReplace={replaceCurrentMatch}
+            onReplaceAll={replaceAllMatches}
+            onClose={closeFindPanel}
+          />
+        )}
         {status === "ready" && displaySheet && (
           <ExcelSheetView
             key={displaySheet.id}
@@ -1178,6 +2238,8 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             zoom={zoom}
             cellsByCoord={cellsByCoord}
             editsByCoord={editsByCoord}
+            mergeAnchors={mergeIndex.anchors}
+            mergeMembers={mergeIndex.members}
             selection={selection}
             editing={editing}
             cellInputRef={cellInputRef}
@@ -1195,9 +2257,22 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       </div>
 
       {/* Sheet tabs */}
-      {workbook && workbook.sheets.length > 0 && (
+      {displayWorkbook && displayWorkbook.sheets.length > 0 && (
         <div className="bg-sidebar flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-t border-border/60 px-2">
-          {workbook.sheets.map((sheet) => {
+          <Tooltip content="Add sheet" side="top">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 rounded-md"
+              onClick={addSheet}
+              aria-label="Add sheet"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </Tooltip>
+          <ToolbarSeparator />
+          {displayWorkbook.sheets.map((sheet) => {
             const isActive = sheet.id === activeSheetId;
             return (
               <button
@@ -1210,12 +2285,41 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
                     : "border-transparent text-muted-foreground hover:bg-foreground/[0.04]"
                 )}
                 onClick={() => setActiveSheetId(sheet.id)}
+                onDoubleClick={() => renameSheetById(sheet.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setActiveSheetId(sheet.id);
+                  setTabContextMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    sheetId: sheet.id,
+                  });
+                }}
               >
                 {sheet.name}
               </button>
             );
           })}
         </div>
+      )}
+
+      {tabContextMenu && (
+        <ContextMenuPortal
+          x={tabContextMenu.x}
+          y={tabContextMenu.y}
+          onClose={() => setTabContextMenu(null)}
+        >
+          <ContextMenuItem onSelect={() => renameSheetById(tabContextMenu.sheetId)}>
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => duplicateSheetById(tabContextMenu.sheetId)}>
+            Duplicate
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => deleteSheetById(tabContextMenu.sheetId)}>
+            Delete
+          </ContextMenuItem>
+        </ContextMenuPortal>
       )}
 
       {/* Right-click context menu — own portal + outside-click handling so
@@ -1263,6 +2367,11 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           {contextMenu.surface === "cell" && (
             <>
               <ContextMenuSeparator />
+              {selectionMergeState !== "noop" && (
+                <ContextMenuItem onSelect={toggleMerge}>
+                  {selectionMergeState === "unmerge" ? "Unmerge cells" : "Merge cells"}
+                </ContextMenuItem>
+              )}
               <ContextMenuItem onSelect={toggleBold} shortcut="⌘B">
                 {effectiveStyleForAnchor?.bold ? "Remove bold" : "Bold"}
               </ContextMenuItem>
@@ -1386,6 +2495,10 @@ function ContextMenuSeparator() {
   return <div role="separator" className="my-1 h-px bg-border/60" />;
 }
 
+function ToolbarSeparator() {
+  return <div className="mx-1 h-5 w-px shrink-0 bg-border/60" aria-hidden />;
+}
+
 function clamp(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.max(min, Math.min(max, value));
@@ -1397,4 +2510,43 @@ function mergeStyle(
 ): ExcelCellStyle | undefined {
   if (!base && !overlay) return undefined;
   return { ...(base ?? {}), ...(overlay ?? {}) };
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceInString(
+  text: string,
+  needle: string,
+  replacement: string,
+  caseSensitive: boolean
+): string {
+  if (!needle) return text;
+  if (caseSensitive) return text.split(needle).join(replacement);
+  const re = new RegExp(escapeRegExp(needle), "gi");
+  return text.replace(re, replacement);
+}
+
+/** Sheets-style cell value comparator: numbers numerically, strings via
+ *  `localeCompare`, booleans (FALSE < TRUE), `null` last. Mixed-type rows
+ *  fall back to a stable bucketing so the result stays deterministic. */
+function compareCellValues(
+  a: string | number | boolean | null | undefined,
+  b: string | number | boolean | null | undefined
+): number {
+  const aEmpty = a === null || a === undefined || a === "";
+  const bEmpty = b === null || b === undefined || b === "";
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return 1;
+  if (bEmpty) return -1;
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
+  // Coerce to numbers when both are numeric-looking strings.
+  const an = typeof a === "string" ? Number(a) : a;
+  const bn = typeof b === "string" ? Number(b) : b;
+  if (typeof an === "number" && typeof bn === "number" && !Number.isNaN(an) && !Number.isNaN(bn)) {
+    return an - bn;
+  }
+  return String(a).localeCompare(String(b));
 }

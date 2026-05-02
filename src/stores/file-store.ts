@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { apiUrl } from "@/lib/api/base";
 import { storeLogger } from "@/lib/logger";
 import { eventBus } from "@/lib/events";
 import { syncDatabasesForDocument } from "@/stores/database-store";
@@ -11,7 +10,6 @@ import {
   type DocumentHandle,
   type StorageAdapter,
   type WorkspaceEntry,
-  type WorkspaceMode,
 } from "@/lib/storage";
 
 const log = storeLogger.child("File");
@@ -60,22 +58,31 @@ export function sortFilesByOption(files: FileItem[], sortBy: SortOption): FileIt
   }
 }
 
+// VSCode-style: at any moment the editor is in one of three states.
+// `none` shows the welcome screen with no sidebar. `folder` mounts the
+// directory tree. `file` opens exactly one loose file with no sibling
+// scan — its parent directory is still used as the storage root for I/O
+// (sidecar writes, PDF state, image lookups), but the sidebar shows just
+// the open file rather than leaking its neighbours.
+export type OpenTarget = "none" | "file" | "folder";
+
+export interface RecentEntry {
+  kind: "file" | "folder";
+  path: string;
+}
+
 interface FileState {
   files: FileItem[];
   currentFileId: string | null;
-  currentFolderId: string | null; // NEW: null = root view
-  workspaceMode: WorkspaceMode;
-  workspaceRoot: string | null;
-  recentWorkspaces: string[];
-  // VSCode-style "loose file" mode: a single file is open but no folder is
-  // mounted as a workspace. The sidebar tree is hidden in this mode and
-  // `files` contains exactly one entry. `singleFileRoot` is the picked
-  // file's parent directory — used by adapter ops that still need a
-  // workspace root (write, readBinary, PDF state). Neither field is
-  // persisted, so a cold boot always returns to the previously persisted
-  // workspace (or Welcome).
-  isSingleFileMode: boolean;
-  singleFileRoot: string | null;
+  currentFolderId: string | null; // null = root view
+  openTarget: OpenTarget;
+  // Active storage root: in `folder` mode this is the mounted folder, in
+  // `file` mode the parent directory of the open file, in `none` mode null.
+  rootPath: string | null;
+  // Absolute path of the open file when openTarget === "file". Persisted so
+  // cold boots can re-open it.
+  openFilePath: string | null;
+  recents: RecentEntry[];
   isLoading: boolean;
   isSynced: boolean;
   sortBy: SortOption;
@@ -87,8 +94,9 @@ interface FileState {
   // File actions
   loadFiles: () => Promise<void>;
   loadFileContent: (fileId: string, options?: { force?: boolean }) => Promise<void>;
-  openDiskWorkspace: (root: string) => Promise<void>;
-  openSingleFile: (absolutePath: string) => Promise<void>;
+  openFolder: (root: string) => Promise<void>;
+  openFile: (absolutePath: string) => Promise<void>;
+  closeOpened: () => void;
   createFile: (
     name: string,
     content?: string,
@@ -160,58 +168,17 @@ interface FileState {
   emptyTrash: () => Promise<void>;
 }
 
-function effectiveRoot(
-  state: Pick<FileState, "workspaceRoot" | "isSingleFileMode" | "singleFileRoot">
-): string | null {
-  // In single-file mode the loose file's parent directory is the only path
-  // an adapter needs to do real I/O. We don't reuse `workspaceRoot` for this
-  // because we want the previously persisted workspace to stay around for
-  // when the user closes the loose file.
-  return state.isSingleFileMode ? state.singleFileRoot : state.workspaceRoot;
+function getAdapter(state: Pick<FileState, "rootPath">): StorageAdapter {
+  return createStorageAdapter({ disk: { root: state.rootPath } });
 }
 
-function getAdapter(
-  state: Pick<FileState, "workspaceMode" | "workspaceRoot" | "isSingleFileMode" | "singleFileRoot">
-): StorageAdapter {
-  return createStorageAdapter({
-    mode: state.workspaceMode,
-    disk: { root: effectiveRoot(state) },
-  });
-}
+const RECENTS_LIMIT = 8;
 
-async function resolveDefaultDiskWorkspaceRoot(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return await invoke<string>("workspace_default_root");
-  } catch {
-    try {
-      const response = await fetch(apiUrl("/api/workspace/invoke"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: "workspace_default_root", payload: {} }),
-      });
-      if (!response.ok) return null;
-      return (await response.json()) as string;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function rememberWorkspace(root: string, state: Pick<FileState, "recentWorkspaces">): string[] {
-  return [root, ...state.recentWorkspaces.filter((item) => item !== root)].slice(0, 8);
-}
-
-function isEphemeralWorkspaceRoot(root: string | null | undefined): boolean {
-  if (!root) return false;
-  const normalized = root.replaceAll("\\", "/");
-  return (
-    normalized.startsWith("/tmp/") ||
-    normalized.startsWith("/private/tmp/") ||
-    normalized.includes("/var/folders/")
-  );
+function rememberRecent(entry: RecentEntry, state: Pick<FileState, "recents">): RecentEntry[] {
+  return [
+    entry,
+    ...state.recents.filter((r) => !(r.kind === entry.kind && r.path === entry.path)),
+  ].slice(0, RECENTS_LIMIT);
 }
 
 function handleForFile(file: FileItem): DocumentHandle {
@@ -256,11 +223,10 @@ export const useFileStore = create<FileState>()(
       files: [],
       currentFileId: null,
       currentFolderId: null,
-      workspaceMode: "disk",
-      workspaceRoot: null,
-      recentWorkspaces: [],
-      isSingleFileMode: false,
-      singleFileRoot: null,
+      openTarget: "none",
+      rootPath: null,
+      openFilePath: null,
+      recents: [],
       isLoading: false,
       isSynced: false,
       sortBy: "modified-newest" as SortOption,
@@ -272,29 +238,31 @@ export const useFileStore = create<FileState>()(
       loadedContentIds: new Set<string>(),
 
       loadFiles: async () => {
-        // Loose-file mode owns `files` directly — scanning would replace
-        // the single open file with whatever happens to live in its parent
-        // directory, which is the bug we're trying to avoid.
-        if (get().isSingleFileMode) {
-          set({ isSynced: true, isLoading: false });
+        const target = get().openTarget;
+        // Welcome screen — no I/O, but mark synced so consumers stop waiting.
+        if (target === "none") {
+          set({ files: [], isSynced: true, isLoading: false });
+          return;
+        }
+        // File mode owns `files` directly. If a cold boot rehydrated the
+        // persisted file path but content hasn't been loaded yet, re-open
+        // it to repopulate the single-file entry.
+        if (target === "file") {
+          if (get().files.length === 0 && get().openFilePath) {
+            try {
+              await get().openFile(get().openFilePath as string);
+            } catch (error) {
+              log.error("Failed to restore previously opened file", error);
+              set({ openTarget: "none", rootPath: null, openFilePath: null, isSynced: true });
+            }
+          } else {
+            set({ isSynced: true, isLoading: false });
+          }
           return;
         }
         set({ isLoading: true });
         try {
-          let adapterState = get();
-          if (!adapterState.workspaceRoot || isEphemeralWorkspaceRoot(adapterState.workspaceRoot)) {
-            const defaultRoot = await resolveDefaultDiskWorkspaceRoot();
-            if (defaultRoot) {
-              set((state) => ({
-                workspaceMode: "disk",
-                workspaceRoot: defaultRoot,
-                recentWorkspaces: rememberWorkspace(defaultRoot, state),
-              }));
-              adapterState = get();
-            }
-          }
-
-          const adapter = getAdapter(adapterState);
+          const adapter = getAdapter(get());
           const entries = await adapter.list();
           const newFileIds = new Set(entries.map((f) => f.handle.id));
 
@@ -401,43 +369,38 @@ export const useFileStore = create<FileState>()(
         }
       },
 
-      openDiskWorkspace: async (root: string) => {
+      openFolder: async (root: string) => {
         const trimmedRoot = root.trim();
         if (!trimmedRoot) return;
         set((state) => ({
-          workspaceMode: "disk",
-          workspaceRoot: trimmedRoot,
-          recentWorkspaces: rememberWorkspace(trimmedRoot, state),
+          openTarget: "folder",
+          rootPath: trimmedRoot,
+          openFilePath: null,
+          recents: rememberRecent({ kind: "folder", path: trimmedRoot }, state),
           files: [],
           currentFileId: null,
           currentFolderId: null,
           loadedContentIds: new Set(),
-          isSingleFileMode: false,
-          singleFileRoot: null,
           isSynced: false,
         }));
         await get().loadFiles();
       },
 
-      openSingleFile: async (absolutePath: string) => {
+      openFile: async (absolutePath: string) => {
         const trimmed = absolutePath.trim();
         if (!trimmed) return;
 
         const normalized = trimmed.replaceAll("\\", "/");
         const lastSlash = normalized.lastIndexOf("/");
         if (lastSlash <= 0) {
-          throw new Error("openSingleFile requires an absolute path");
+          throw new Error("openFile requires an absolute path");
         }
         const parentDir = trimmed.slice(0, lastSlash);
         const fileBase = normalized.slice(lastSlash + 1);
 
-        // Build an adapter scoped to the picked file's parent directory.
-        // We don't mutate `workspaceRoot` so the user's previously opened
-        // workspace stays persisted for the next session.
-        const adapter = createStorageAdapter({
-          mode: "disk",
-          disk: { root: parentDir },
-        });
+        // Adapter is scoped to the picked file's parent directory so sidecar
+        // I/O lands next to the file.
+        const adapter = createStorageAdapter({ disk: { root: parentDir } });
 
         const documentType = documentTypeFromName(fileBase);
         const handle: DocumentHandle = {
@@ -497,13 +460,30 @@ export const useFileStore = create<FileState>()(
           };
         }
 
-        set({
-          isSingleFileMode: true,
-          singleFileRoot: parentDir,
+        set((state) => ({
+          openTarget: "file",
+          rootPath: parentDir,
+          openFilePath: trimmed,
+          recents: rememberRecent({ kind: "file", path: trimmed }, state),
           files: [looseFile],
           currentFileId: looseFile.id,
           currentFolderId: null,
           loadedContentIds: new Set([looseFile.id]),
+          selectedFileIds: new Set(),
+          isSynced: true,
+          isLoading: false,
+        }));
+      },
+
+      closeOpened: () => {
+        set({
+          openTarget: "none",
+          rootPath: null,
+          openFilePath: null,
+          files: [],
+          currentFileId: null,
+          currentFolderId: null,
+          loadedContentIds: new Set(),
           selectedFileIds: new Set(),
           isSynced: true,
           isLoading: false,
@@ -1059,33 +1039,36 @@ export const useFileStore = create<FileState>()(
     }),
     {
       name: "doxmind-files",
-      // `currentFileId` intentionally NOT persisted — every cold boot
-      // should land on the WelcomeScreen instead of jumping back into
-      // whatever doc was last open. In-session navigation still works
-      // because the value lives in memory between renders.
+      // VSCode-style cold-boot restore: the previously open file or folder
+      // comes back. `currentFileId` itself is derived again from `loadFiles`
+      // / `openFile`, so we don't persist it directly.
       partialize: (state) => ({
         currentFolderId: state.currentFolderId,
-        workspaceMode: state.workspaceMode,
-        workspaceRoot: state.workspaceRoot,
-        recentWorkspaces: state.recentWorkspaces,
+        openTarget: state.openTarget,
+        rootPath: state.rootPath,
+        openFilePath: state.openFilePath,
+        recents: state.recents,
         sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<{
           currentFolderId: string | null;
-          workspaceMode: WorkspaceMode;
-          workspaceRoot: string | null;
-          recentWorkspaces: string[];
+          openTarget: OpenTarget;
+          rootPath: string | null;
+          openFilePath: string | null;
+          recents: RecentEntry[];
           sortBy: SortOption;
           expandedFolderIds: string[];
         }>;
+        const openTarget: OpenTarget = persisted.openTarget ?? "none";
         return {
           ...currentState,
           ...persisted,
-          workspaceMode: "disk",
-          workspaceRoot: persisted.workspaceRoot ?? null,
-          recentWorkspaces: persisted.recentWorkspaces ?? [],
+          openTarget,
+          rootPath: openTarget === "none" ? null : (persisted.rootPath ?? null),
+          openFilePath: openTarget === "file" ? (persisted.openFilePath ?? null) : null,
+          recents: persisted.recents ?? [],
           files: currentState.files, // Always use runtime files, never from localStorage
           expandedFolderIds: new Set(persisted.expandedFolderIds || []),
         };

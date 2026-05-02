@@ -34,8 +34,6 @@
   },
   "editor": {
     "untitled": "未命名",
-    "back": "返回",
-    "forward": "前进",
     "exitFocusMode": "退出专注模式 (F11)",
     "expandOutline": "展开大纲",
     "collapseOutline": "收起大纲",
@@ -548,8 +546,8 @@
     "previewText": "天地玄黄，宇宙洪荒。写作是一场探索，从无到有，边写边悟。"
   },
   "welcome": {
-    "recentWorkspaces": "最近的工作区",
-    "noRecentWorkspaces": "暂无最近工作区"
+    "recentWorkspaces": "最近打开",
+    "noRecentWorkspaces": "暂无最近打开"
   },
   "shortcuts": {
     "keyboardShortcuts": "快捷键",

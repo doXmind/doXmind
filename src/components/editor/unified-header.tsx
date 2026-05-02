@@ -4,8 +4,6 @@ import {
   Search,
   MoreHorizontal,
   PanelLeft,
-  ChevronLeft,
-  ChevronRight,
   Download,
   Keyboard,
   Palette,
@@ -41,12 +39,9 @@ export function UnifiedHeader() {
   const currentFile = useFileStore((s) =>
     s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
   );
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
-  const isSingleFileMode = useFileStore((s) => s.isSingleFileMode);
-  // The sidebar toggle only makes sense when there is a tree to show.
-  // Hide it in single-file / no-workspace modes so the button doesn't
-  // become a dead end.
-  const hasWorkspace = !!workspaceRoot && !isSingleFileMode;
+  const openTarget = useFileStore((s) => s.openTarget);
+  // Hide the sidebar toggle on the welcome screen — there's nothing to show.
+  const hasOpenTarget = openTarget !== "none";
   const currentFileName = currentFile?.name;
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
@@ -126,7 +121,7 @@ export function UnifiedHeader() {
             !isMacTauri && "pl-3"
           )}
         >
-          {hasWorkspace && (
+          {hasOpenTarget && (
             <Tooltip content={isFilesSidebarOpen ? t("hideFiles") : t("showFiles")} side="bottom">
               <Button
                 variant="ghost"
@@ -139,29 +134,6 @@ export function UnifiedHeader() {
               </Button>
             </Tooltip>
           )}
-
-          <Tooltip content={t("back")} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="desktop-header-button h-7 w-7 rounded-md"
-              onClick={() => window.history.back()}
-              aria-label={t("back")}
-            >
-              <ChevronLeft className="h-[13px] w-[13px]" />
-            </Button>
-          </Tooltip>
-          <Tooltip content={t("forward")} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="desktop-header-button h-7 w-7 rounded-md"
-              onClick={() => window.history.forward()}
-              aria-label={t("forward")}
-            >
-              <ChevronRight className="h-[13px] w-[13px]" />
-            </Button>
-          </Tooltip>
         </div>
 
         <div data-tauri-drag-region className="flex min-w-0 justify-start px-4">

@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import excel_editor, images, pdf_editor, workspace
-from config import CORS_ORIGINS, get_cors_headers, get_settings
+from config import CORS_ORIGIN_REGEX, CORS_ORIGINS, get_cors_headers, get_settings
 from db.database import engine as db_engine
 from db.database import init_db
 from exceptions import AppException
@@ -86,6 +86,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],

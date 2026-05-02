@@ -73,8 +73,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
 
   const files = useFileStore((s) => s.files);
   const createFile = useFileStore((s) => s.createFile);
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
+  const rootPath = useFileStore((s) => s.rootPath);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
@@ -102,10 +101,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     setSearchError(null);
 
     try {
-      const adapter = createStorageAdapter({
-        mode: workspaceMode,
-        disk: { root: workspaceRoot },
-      });
+      const adapter = createStorageAdapter({ disk: { root: rootPath } });
       const filesRes = await searchMarkdown(adapter, searchQuery, {
         limit: 10,
         signal: controller.signal,

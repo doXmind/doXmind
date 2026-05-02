@@ -4,6 +4,7 @@ Desktop edition: no auth, no cloud services, single-user SQLite on disk.
 """
 
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -85,18 +86,23 @@ def get_settings() -> Settings:
 # websites reading/writing the user's documents. Allowed origins:
 #   - Tauri WebView macOS:   tauri://localhost
 #   - Tauri WebView Windows: http://tauri.localhost
-#   - Local Next.js dev:     http://localhost:3000, http://127.0.0.1:3000
+#   - Local Next.js dev:     any localhost / 127.0.0.1 port (next dev falls
+#                            back to 3001/3002/... when 3000 is busy)
 CORS_ORIGINS = [
     "tauri://localhost",
     "http://tauri.localhost",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
 ]
+
+CORS_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
+_CORS_ORIGIN_PATTERN = re.compile(CORS_ORIGIN_REGEX)
 
 
 def get_cors_headers(origin: str | None) -> dict[str, str]:
     """Return CORS headers only when the request origin is on the allowlist."""
-    if not origin or origin not in CORS_ORIGINS:
+    if not origin:
+        return {}
+    if origin not in CORS_ORIGINS and not _CORS_ORIGIN_PATTERN.match(origin):
         return {}
     return {
         "Access-Control-Allow-Origin": origin,

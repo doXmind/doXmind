@@ -188,24 +188,80 @@ export interface ExcelEditorState {
    * changes against the original `.xlsx`.
    */
   ops?: ExcelStructuralOp[];
+  /**
+   * Workbook-level operations: add / rename / duplicate / delete sheets.
+   * Replayed *before* per-sheet `ops` so that sheet-id targets resolved by
+   * the cell/structural-op phases match the post-mutation tabs.
+   */
+  workbookOps?: ExcelWorkbookOp[];
 }
+
+export type ExcelWorkbookOp =
+  | { type: "addSheet"; sheetId: string; name: string; afterSheetId?: string | null }
+  | { type: "renameSheet"; sheetId: string; name: string }
+  | { type: "duplicateSheet"; sourceSheetId: string; sheetId: string; name: string }
+  | { type: "deleteSheet"; sheetId: string };
 
 export type ExcelStructuralOp =
   | { type: "insertRow"; sheetId: string; before: number; count: number }
   | { type: "deleteRow"; sheetId: string; index: number; count: number }
   | { type: "insertCol"; sheetId: string; before: number; count: number }
-  | { type: "deleteCol"; sheetId: string; index: number; count: number };
+  | { type: "deleteCol"; sheetId: string; index: number; count: number }
+  | {
+      type: "mergeCells";
+      sheetId: string;
+      top: number;
+      left: number;
+      bottom: number;
+      right: number;
+    }
+  | {
+      type: "unmergeCells";
+      sheetId: string;
+      top: number;
+      left: number;
+      bottom: number;
+      right: number;
+    };
+
+export type ExcelBorderLineStyle = "thin" | "medium" | "thick" | "double" | "dashed" | "dotted";
+
+export interface ExcelBorderSide {
+  style: ExcelBorderLineStyle;
+  color?: string;
+}
+
+/**
+ * Sparse per-side border config. A missing side falls back to the renderer's
+ * default gridline (or the parsed-cell border underneath); the picker
+ * computes the *full desired* config per cell so the wholesale replace done
+ * by `applyCellUpdates` matches the user's intent.
+ */
+export interface ExcelBorderConfig {
+  top?: ExcelBorderSide;
+  right?: ExcelBorderSide;
+  bottom?: ExcelBorderSide;
+  left?: ExcelBorderSide;
+}
 
 export interface ExcelCellStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  strikethrough?: boolean;
   color?: string;
   background?: string;
   textAlign?: "left" | "center" | "right";
   verticalAlign?: "top" | "middle" | "bottom";
+  /** When true, long text wraps within the cell instead of clipping. */
+  wrapText?: boolean;
   fontSize?: number;
   fontFamily?: string;
+  /** Counter-clockwise rotation in degrees, e.g. 0, 45, 90. */
+  rotation?: number;
+  /** Hyperlink URL — renders the cell as an underlined link. */
+  hyperlink?: string;
+  border?: ExcelBorderConfig;
 }
 
 export interface StorageCreateInput {

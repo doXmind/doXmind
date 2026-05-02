@@ -3,8 +3,8 @@
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
-import { FileSymlink, Folder } from "lucide-react";
-import { useFileStore } from "@/stores/file-store";
+import { File, FileSymlink, Folder } from "lucide-react";
+import { useFileStore, type RecentEntry } from "@/stores/file-store";
 import { Button } from "@/components/ui/button";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
@@ -31,7 +31,7 @@ const itemVariants = {
   },
 };
 
-function workspaceLabel(absolutePath: string): { name: string; parent: string } {
+function pathLabel(absolutePath: string): { name: string; parent: string } {
   const normalized = absolutePath.replaceAll("\\", "/").replace(/\/+$/, "");
   const parts = normalized.split("/").filter(Boolean);
   const name = parts.pop() ?? normalized;
@@ -42,23 +42,28 @@ function workspaceLabel(absolutePath: string): { name: string; parent: string } 
 export function WelcomeScreen() {
   const t = useTranslations("welcome");
   const tSidebar = useTranslations("sidebar");
-  const recentWorkspacesRaw = useFileStore((s) => s.recentWorkspaces);
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
-  const isSingleFileMode = useFileStore((s) => s.isSingleFileMode);
-  const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
-  const openSingleFile = useFileStore((s) => s.openSingleFile);
+  const recentsRaw = useFileStore((s) => s.recents);
+  const openTarget = useFileStore((s) => s.openTarget);
+  const rootPath = useFileStore((s) => s.rootPath);
+  const openFilePath = useFileStore((s) => s.openFilePath);
+  const openFolder = useFileStore((s) => s.openFolder);
+  const openFile = useFileStore((s) => s.openFile);
 
   // Open Folder/File only do anything inside the Tauri shell — the browser
   // build can't pick a real disk path. Hide the buttons on the web.
   const isDesktopShell = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
 
-  // Surface previously opened folders so the user can re-enter them with
-  // a single click. Skip whichever workspace is currently mounted to
-  // avoid a no-op row at the top.
-  const recentWorkspaces = useMemo<string[]>(() => {
-    const skip = isSingleFileMode ? null : workspaceRoot;
-    return recentWorkspacesRaw.filter((p) => p !== skip).slice(0, RECENT_LIMIT);
-  }, [recentWorkspacesRaw, workspaceRoot, isSingleFileMode]);
+  // Drop the row that matches whatever is open right now to avoid a no-op
+  // entry at the top.
+  const recents = useMemo<RecentEntry[]>(() => {
+    return recentsRaw
+      .filter((r) => {
+        if (openTarget === "folder" && r.kind === "folder" && r.path === rootPath) return false;
+        if (openTarget === "file" && r.kind === "file" && r.path === openFilePath) return false;
+        return true;
+      })
+      .slice(0, RECENT_LIMIT);
+  }, [recentsRaw, openTarget, rootPath, openFilePath]);
 
   const handleOpenFolder = async () => {
     if (!isDesktopShell) {
@@ -73,7 +78,7 @@ export function WelcomeScreen() {
         title: tSidebar("openFolder"),
       });
       if (!selected || Array.isArray(selected)) return;
-      await openDiskWorkspace(selected);
+      await openFolder(selected);
       toast.success(tSidebar("workspaceOpened"));
     } catch (error) {
       log.error("Failed to open folder", error);
@@ -108,7 +113,7 @@ export function WelcomeScreen() {
         return;
       }
       const fileBase = normalized.slice(lastSlash + 1);
-      await openSingleFile(selected);
+      await openFile(selected);
       toast.success(tSidebar("openedFile", { name: fileBase }));
     } catch (error) {
       log.error("Failed to open file", error);
@@ -117,11 +122,15 @@ export function WelcomeScreen() {
     }
   };
 
-  const handleOpenRecent = async (path: string) => {
+  const handleOpenRecent = async (entry: RecentEntry) => {
     try {
-      await openDiskWorkspace(path);
+      if (entry.kind === "folder") {
+        await openFolder(entry.path);
+      } else {
+        await openFile(entry.path);
+      }
     } catch (error) {
-      log.error("Failed to open recent workspace", error);
+      log.error("Failed to open recent", error);
       const { title, description } = getErrorMessage(error);
       toast.error(title, { description });
     }
@@ -158,24 +167,25 @@ export function WelcomeScreen() {
           <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
             {t("recentWorkspaces")}
           </h2>
-          {recentWorkspaces.length === 0 ? (
+          {recents.length === 0 ? (
             <p className="px-1 py-3 text-sm text-muted-foreground/70">{t("noRecentWorkspaces")}</p>
           ) : (
             <ul className="space-y-0.5">
-              {recentWorkspaces.map((path) => {
-                const { name, parent } = workspaceLabel(path);
+              {recents.map((entry) => {
+                const { name, parent } = pathLabel(entry.path);
+                const Icon = entry.kind === "folder" ? Folder : File;
                 return (
-                  <li key={path}>
+                  <li key={`${entry.kind}:${entry.path}`}>
                     <button
                       type="button"
-                      onClick={() => handleOpenRecent(path)}
-                      title={path}
+                      onClick={() => handleOpenRecent(entry)}
+                      title={entry.path}
                       className={cn(
                         "group flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors",
                         "hover:bg-[var(--sidebar-hover)] focus:bg-[var(--sidebar-hover)] focus:outline-none"
                       )}
                     >
-                      <Folder className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium text-foreground">{name}</div>
                         <div className="truncate text-xs text-muted-foreground/70">{parent}</div>

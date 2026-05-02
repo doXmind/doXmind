@@ -21,8 +21,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { EditAdvance, EditingCell, ExcelCellPatch, SelectionRange } from "@/lib/excel/state";
 import { rangeBounds, rangeContains } from "@/lib/excel/state";
+import { applyNumberFormat } from "@/lib/excel/format";
 import type { ExcelCellDto, ExcelSheetDto } from "@/lib/excel/parse-workbook";
-import type { ExcelCellStyle } from "@/lib/storage/types";
+import type { ExcelBorderLineStyle, ExcelBorderSide, ExcelCellStyle } from "@/lib/storage/types";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_ROW_HEIGHT_PX = 22;
@@ -38,6 +39,10 @@ export interface ExcelSheetViewProps {
   zoom: number;
   cellsByCoord: Map<string, ExcelCellDto>;
   editsByCoord: Map<string, ExcelCellPatch>;
+  /** Anchors of merged regions keyed by `coordKey(row, col)`. */
+  mergeAnchors: Map<string, { bottom: number; right: number }>;
+  /** Cells covered by a merge that aren't the anchor — skipped at render. */
+  mergeMembers: Set<string>;
   selection: SelectionRange | null;
   editing: EditingCell | null;
   cellInputRef: RefObject<HTMLInputElement | null>;
@@ -64,6 +69,8 @@ export function ExcelSheetView({
   zoom,
   cellsByCoord,
   editsByCoord,
+  mergeAnchors,
+  mergeMembers,
   selection,
   editing,
   cellInputRef,
@@ -290,8 +297,19 @@ export function ExcelSheetView({
                 virtualCols.map((virtualCol) => {
                   const row = virtualRow.index;
                   const col = virtualCol.index;
-                  const baseCell = cellsByCoord.get(coordKey(row, col));
-                  const patch = editsByCoord.get(coordKey(row, col));
+                  const key = coordKey(row, col);
+                  // Skip cells that are inside a merge but aren't the
+                  // anchor — the anchor cell paints over their footprint.
+                  if (mergeMembers.has(key)) return null;
+                  const mergeAnchor = mergeAnchors.get(key);
+                  let cellWidth = virtualCol.size;
+                  let cellHeight = virtualRow.size;
+                  if (mergeAnchor) {
+                    cellWidth = sumRange(colWidths, col, mergeAnchor.right);
+                    cellHeight = sumRange(rowHeights, row, mergeAnchor.bottom);
+                  }
+                  const baseCell = cellsByCoord.get(key);
+                  const patch = editsByCoord.get(key);
                   const inRange = selection ? rangeContains(selection, row, col) : false;
                   const isAnchor =
                     selection?.startRow === row && selection.startCol === col && !editing;
@@ -305,12 +323,13 @@ export function ExcelSheetView({
                       patch={patch}
                       left={virtualCol.start}
                       top={virtualRow.start}
-                      width={virtualCol.size}
-                      height={virtualRow.size}
+                      width={cellWidth}
+                      height={cellHeight}
                       zoom={zoom}
                       inRange={inRange}
                       isAnchor={isAnchor}
                       isEnd={isEnd}
+                      isMergeAnchor={!!mergeAnchor}
                       editing={isEditing ? editing : null}
                       inputRef={isEditing ? cellInputRef : undefined}
                       onMouseDown={(event) => {
@@ -361,6 +380,8 @@ interface ExcelGridCellProps {
   inRange: boolean;
   isAnchor: boolean;
   isEnd: boolean;
+  /** True when this cell is the top-left of a merge spanning width/height. */
+  isMergeAnchor?: boolean;
   editing: EditingCell | null;
   inputRef?: RefObject<HTMLInputElement | null>;
   onMouseDown(event: React.MouseEvent<HTMLDivElement>): void;
@@ -383,6 +404,7 @@ function ExcelGridCell({
   inRange,
   isAnchor,
   isEnd,
+  isMergeAnchor,
   editing,
   inputRef,
   onMouseDown,
@@ -396,31 +418,63 @@ function ExcelGridCell({
   const style = mergeStyle(cell?.style, patch?.style);
   const align = style?.textAlign ?? alignFromValue(cell, patch);
 
+  const decorations: string[] = [];
+  if (style?.underline) decorations.push("underline");
+  if (style?.strikethrough) decorations.push("line-through");
+  // Hyperlinks render as underlined primary-coloured text. We *add* the
+  // underline rather than replacing existing decorations so a hyperlink
+  // on a strikethrough cell still shows both lines.
+  if (style?.hyperlink && !decorations.includes("underline")) decorations.push("underline");
+
+  const border = style?.border;
+
+  // Hyperlinks override the cell's text color so the link reads as a link
+  // — matches the convention in Sheets / Excel. User-set color still wins
+  // (so they can paint a hyperlink red if they want).
+  const effectiveColor = style?.color ?? (style?.hyperlink ? "var(--primary)" : undefined);
+
   const wrapperStyle: CSSProperties = {
     left,
     top,
     width,
     height,
     background: style?.background,
-    color: style?.color,
+    color: effectiveColor,
     fontWeight: style?.bold ? 600 : undefined,
     fontStyle: style?.italic ? "italic" : undefined,
-    textDecoration: style?.underline ? "underline" : undefined,
+    textDecoration: decorations.length > 0 ? decorations.join(" ") : undefined,
     fontSize: style?.fontSize ? Math.round(style.fontSize * zoom) : Math.round(12 * zoom),
     fontFamily: style?.fontFamily,
     display: "flex",
     alignItems: verticalAlignToFlex(style?.verticalAlign),
     justifyContent: justifyFromAlign(align),
     textAlign: align,
+    whiteSpace: style?.wrapText ? "pre-wrap" : "nowrap",
+    wordBreak: style?.wrapText ? "break-word" : undefined,
+    borderTop: borderCss(border?.top),
+    borderRight: borderCss(border?.right),
+    borderBottom: borderCss(border?.bottom),
+    borderLeft: borderCss(border?.left),
+    cursor: style?.hyperlink ? "pointer" : undefined,
   };
 
   const showAnchorRing = isAnchor && !editing;
   const showEndRing = isEnd && !isAnchor && !editing;
 
+  const hyperlink = style?.hyperlink;
+
   return (
     <div
       role="gridcell"
-      onMouseDown={onMouseDown}
+      onMouseDown={(event) => {
+        // Cmd/Ctrl-click on a hyperlinked cell opens the URL in the
+        // user's browser (matches Sheets / Excel). The click still falls
+        // through to selection so the user keeps a visual breadcrumb.
+        if (hyperlink && (event.metaKey || event.ctrlKey)) {
+          window.open(hyperlink, "_blank", "noopener,noreferrer");
+        }
+        onMouseDown(event);
+      }}
       onMouseEnter={onMouseEnter}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
@@ -428,7 +482,11 @@ function ExcelGridCell({
         "absolute overflow-hidden border-b border-r border-border/60 px-1.5 py-0.5",
         inRange && !isAnchor && "bg-primary/[0.08]",
         showAnchorRing && "z-10 ring-2 ring-inset ring-primary/70",
-        showEndRing && "z-10 ring-1 ring-inset ring-primary/40"
+        showEndRing && "z-10 ring-1 ring-inset ring-primary/40",
+        // Merge anchors paint over their (skipped) member footprint — bump
+        // them above the default stacking context so neighbouring cells'
+        // gridlines don't bleed through the merge area.
+        isMergeAnchor && "z-[1]"
       )}
       style={wrapperStyle}
     >
@@ -442,7 +500,12 @@ function ExcelGridCell({
           onCancel={onCancel}
         />
       ) : (
-        <ExcelCellLabel cell={cell} patch={patch} />
+        <ExcelCellLabel
+          cell={cell}
+          patch={patch}
+          wrap={!!style?.wrapText}
+          rotation={style?.rotation}
+        />
       )}
     </div>
   );
@@ -495,13 +558,27 @@ const ExcelCellInput = ({
 function ExcelCellLabel({
   cell,
   patch,
+  wrap,
+  rotation,
 }: {
   cell: ExcelCellDto | undefined;
   patch: ExcelCellPatch | undefined;
+  wrap: boolean;
+  rotation?: number;
 }): ReactNode {
   const text = formatCellValue(cell, patch);
   if (!text) return null;
-  return <span className="block w-full truncate leading-tight">{text}</span>;
+  const rotated = typeof rotation === "number" && rotation !== 0;
+  return (
+    <span
+      className={cn("block w-full leading-tight", wrap ? "whitespace-pre-wrap" : "truncate")}
+      style={
+        rotated ? { transform: `rotate(${-rotation!}deg)`, transformOrigin: "center" } : undefined
+      }
+    >
+      {text}
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -526,18 +603,30 @@ export function formatCellValue(
   cell: ExcelCellDto | undefined,
   patch: ExcelCellPatch | undefined
 ): string {
+  // Effective number format: user override wins, else parse-time value.
+  const numberFormat = patch?.numberFormat ?? cell?.numberFormat;
+
+  // Patch supersedes the parsed cell. Formula text wins over its (possibly
+  // stale) cached numeric result so the user sees what they typed.
   if (patch) {
     if (patch.formula) return patch.formula;
-    if (patch.value === null || patch.value === undefined) return "";
-    return String(patch.value);
+    const value = patch.value !== undefined ? patch.value : cell?.value;
+    return renderValue(value, numberFormat);
   }
   if (!cell) return "";
-  if (cell.value === null || cell.value === undefined) return "";
-  if (typeof cell.value === "number") {
-    return cell.value.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  return renderValue(cell.value, numberFormat);
+}
+
+function renderValue(value: unknown, numberFormat: string | undefined): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number") {
+    if (numberFormat && numberFormat !== "General") {
+      return applyNumberFormat(value, numberFormat);
+    }
+    return value.toLocaleString(undefined, { maximumFractionDigits: 6 });
   }
-  if (typeof cell.value === "boolean") return cell.value ? "TRUE" : "FALSE";
-  return String(cell.value);
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  return String(value);
 }
 
 export function formulaOrValueAsString(source: ExcelCellDto | ExcelCellPatch | undefined): string {
@@ -568,6 +657,38 @@ function verticalAlignToFlex(va: ExcelCellStyle["verticalAlign"]): string {
   if (va === "top") return "flex-start";
   if (va === "bottom") return "flex-end";
   return "center";
+}
+
+const BORDER_LINE_WIDTH: Record<ExcelBorderLineStyle, number> = {
+  thin: 1,
+  medium: 2,
+  thick: 3,
+  double: 3,
+  dashed: 1,
+  dotted: 1,
+};
+
+const BORDER_LINE_CSS: Record<ExcelBorderLineStyle, string> = {
+  thin: "solid",
+  medium: "solid",
+  thick: "solid",
+  double: "double",
+  dashed: "dashed",
+  dotted: "dotted",
+};
+
+function borderCss(side: ExcelBorderSide | undefined): string | undefined {
+  if (!side || !side.style) return undefined;
+  const width = BORDER_LINE_WIDTH[side.style] ?? 1;
+  const cssStyle = BORDER_LINE_CSS[side.style] ?? "solid";
+  const color = side.color ?? "currentColor";
+  return `${width}px ${cssStyle} ${color}`;
+}
+
+function sumRange(sizes: number[], from: number, to: number): number {
+  let total = 0;
+  for (let i = from; i <= to; i++) total += sizes[i] ?? 0;
+  return total;
 }
 
 function mergeStyle(

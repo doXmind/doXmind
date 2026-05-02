@@ -27,13 +27,12 @@ export function DesktopEditor() {
   const isCurrentFileLoaded = useFileStore((s) =>
     s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
   );
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
-  const isSingleFileMode = useFileStore((s) => s.isSingleFileMode);
-  // VSCode-style: only show the files sidebar when a folder is mounted.
-  // Single-file and "nothing open" modes hide it entirely so we never leak
-  // the picked file's siblings into the rail. The user can still toggle
-  // it via the header — but with no workspace there's nothing to render.
-  const hasWorkspace = !!workspaceRoot && !isSingleFileMode;
+  const openTarget = useFileStore((s) => s.openTarget);
+  // VSCode-style: the sidebar appears whenever a file or folder is open
+  // and stays hidden on the welcome screen. In file mode the sidebar
+  // shows just the open file rather than scanning the parent directory,
+  // so we never leak the picked file's siblings into the rail.
+  const hasOpenTarget = openTarget !== "none";
 
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
@@ -56,7 +55,7 @@ export function DesktopEditor() {
   // sidebar toggles responsive.
   const filesGridTransition = "none";
   const filesSidebarColPx =
-    !isFocusMode && hasWorkspace && isFilesSidebarOpen ? filesSidebarWidth : 0;
+    !isFocusMode && hasOpenTarget && isFilesSidebarOpen ? filesSidebarWidth : 0;
   // Handle column stays 0 — ResizeHandle is `w-0` and uses absolutely
   // positioned children for both the hit area and the visible separator.
   // Giving the column any pixel width creates a transparent strip that
@@ -70,14 +69,14 @@ export function DesktopEditor() {
 
   const shellStyle = {
     "--files-sidebar-width":
-      !isFocusMode && hasWorkspace && isFilesSidebarOpen ? `${filesSidebarWidth}px` : "0px",
+      !isFocusMode && hasOpenTarget && isFilesSidebarOpen ? `${filesSidebarWidth}px` : "0px",
   } as CSSProperties;
 
   useEffect(() => {
-    // Only auto-open the sidebar when there's an actual workspace to show.
-    // Without this guard the sidebar pops back open every time React
-    // re-runs the effect, even in single-file / no-workspace modes.
-    if (hasWorkspace) {
+    // Auto-open the sidebar whenever a file or folder is opened, and
+    // collapse it on the welcome screen. Without the false branch the
+    // sidebar would linger from the previous session into the welcome.
+    if (hasOpenTarget) {
       setFilesSidebarOpen(true);
     } else {
       setFilesSidebarOpen(false);
@@ -85,7 +84,7 @@ export function DesktopEditor() {
     if (filesSidebarWidth < 288) {
       setFilesSidebarWidth(304);
     }
-  }, [filesSidebarWidth, hasWorkspace, setFilesSidebarOpen, setFilesSidebarWidth]);
+  }, [filesSidebarWidth, hasOpenTarget, setFilesSidebarOpen, setFilesSidebarWidth]);
 
   return (
     <AppShell hideHeader>
@@ -101,14 +100,14 @@ export function DesktopEditor() {
             }}
           >
             <aside className="min-w-0 overflow-hidden">
-              {!isFocusMode && hasWorkspace && (
+              {!isFocusMode && hasOpenTarget && (
                 <div style={{ minWidth: filesSidebarWidth }} className="h-full">
                   <FilesSidebar />
                 </div>
               )}
             </aside>
             <div className="min-w-0 overflow-hidden">
-              {!isFocusMode && hasWorkspace && isFilesSidebarOpen && (
+              {!isFocusMode && hasOpenTarget && isFilesSidebarOpen && (
                 <ResizeHandle
                   side="left"
                   onResize={(delta) => setFilesSidebarWidth(filesSidebarWidth + delta)}

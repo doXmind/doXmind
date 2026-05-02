@@ -2,11 +2,11 @@ import { useFileStore } from "@/stores/file-store";
 import type { FileItem } from "@/types";
 
 // Build the absolute on-disk path for a FileItem so we can hand it to
-// `revealItemInDir`. Workspace files live under `workspaceRoot`; loose
-// files live under `singleFileRoot`.
+// `revealItemInDir`. The active storage root lives at `rootPath` regardless
+// of whether a folder is mounted or a single file is open.
 export function absolutePathForFile(file: FileItem): string | null {
   const state = useFileStore.getState();
-  const root = state.isSingleFileMode ? state.singleFileRoot : state.workspaceRoot;
+  const root = state.rootPath;
   if (!root) return null;
   const relPath = file.storageHandle?.relPath || file.storageHandle?.path;
   if (!relPath) return null;

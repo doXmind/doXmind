@@ -47,7 +47,6 @@ interface EditorProps {
 export function Editor({ file: initialFile }: EditorProps) {
   // Subscribe to specific file via selector — avoids re-render when OTHER files change
   const updateFile = useFileStore((s) => s.updateFile);
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
   const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
   const file = storeFile || initialFile;
 
@@ -303,7 +302,7 @@ export function Editor({ file: initialFile }: EditorProps) {
   }, [file.id, editor]);
 
   // Sync editor when file content arrives late after navigation, and when a
-  // disk workspace document is refreshed after an external markdown edit.
+  // document is refreshed after an external markdown edit.
   useEffect(() => {
     if (!editor) return;
     const editorHTML = editor.getHTML();
@@ -312,8 +311,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       editorHTML === "<p></p>" ||
       editorHTML === "<p><br></p>" ||
       editorHTML === '<p><br class="ProseMirror-trailingBreak"></p>';
-    const shouldApplyDiskRefresh =
-      workspaceMode === "disk" && file.content !== lastContentRef.current;
+    const shouldApplyDiskRefresh = file.content !== lastContentRef.current;
     if (!isEmpty && !shouldApplyDiskRefresh) return;
     if (editorHTML === file.content) {
       lastContentRef.current = editorHTML;
@@ -340,7 +338,7 @@ export function Editor({ file: initialFile }: EditorProps) {
       clearTimeout(timeoutId);
       isFileSwitchingRef.current = false;
     };
-  }, [file.content, editor, workspaceMode]);
+  }, [file.content, editor]);
 
   // Initialize hooks
   useBlockKeyboardShortcuts(!isMobile ? editor : null);

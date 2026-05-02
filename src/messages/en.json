@@ -34,8 +34,6 @@
   },
   "editor": {
     "untitled": "Untitled",
-    "back": "Back",
-    "forward": "Forward",
     "exitFocusMode": "Exit Focus Mode (F11)",
     "expandOutline": "Expand outline",
     "collapseOutline": "Collapse outline",
@@ -548,8 +546,8 @@
     "previewText": "The quick brown fox jumps over the lazy dog. Writing is an exploration. You start from nothing and learn as you go."
   },
   "welcome": {
-    "recentWorkspaces": "Recent workspaces",
-    "noRecentWorkspaces": "No recent workspaces"
+    "recentWorkspaces": "Recent",
+    "noRecentWorkspaces": "Nothing opened yet"
   },
   "shortcuts": {
     "keyboardShortcuts": "Keyboard Shortcuts",

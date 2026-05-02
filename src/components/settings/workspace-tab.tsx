@@ -10,13 +10,16 @@ import { useFileStore } from "@/stores/file-store";
 
 export function WorkspaceTab() {
   const t = useTranslations("settings");
-  const workspaceRoot = useFileStore((state) => state.workspaceRoot);
-  const recentWorkspaces = useFileStore((state) => state.recentWorkspaces);
-  const openDiskWorkspace = useFileStore((state) => state.openDiskWorkspace);
+  const openTarget = useFileStore((state) => state.openTarget);
+  const rootPath = useFileStore((state) => state.rootPath);
+  const recents = useFileStore((state) => state.recents);
+  const openFolder = useFileStore((state) => state.openFolder);
   const [isOpening, setIsOpening] = useState(false);
 
   const isDesktop = typeof window !== "undefined" && "__TAURI_BACKEND_URL__" in window;
-  const recent = useMemo(() => recentWorkspaces.slice(0, 4), [recentWorkspaces]);
+  // The settings tab is folder-centric, so file recents are filtered out.
+  const recent = useMemo(() => recents.filter((r) => r.kind === "folder").slice(0, 4), [recents]);
+  const currentFolder = openTarget === "folder" ? rootPath : null;
 
   const chooseDirectory = async (title: string) => {
     if (!isDesktop) {
@@ -33,7 +36,7 @@ export function WorkspaceTab() {
     try {
       const selected = await chooseDirectory(t("openWorkspace"));
       if (!selected) return;
-      await openDiskWorkspace(selected);
+      await openFolder(selected);
       toast.success(t("workspaceOpened"));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
@@ -55,7 +58,7 @@ export function WorkspaceTab() {
                 {t("diskWorkspace")}
               </div>
               <p className="truncate text-sm text-muted-foreground">
-                {workspaceRoot || t("workspaceDesktopRequired")}
+                {currentFolder || t("workspaceDesktopRequired")}
               </p>
             </div>
           </div>
@@ -73,15 +76,15 @@ export function WorkspaceTab() {
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-foreground">{t("recentWorkspaces")}</h2>
           <div className="rounded-lg border border-border/40 bg-card p-2">
-            {recent.map((root) => (
+            {recent.map((entry) => (
               <button
-                key={root}
+                key={entry.path}
                 type="button"
                 className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-                onClick={() => openDiskWorkspace(root)}
+                onClick={() => openFolder(entry.path)}
               >
                 <FolderOpen className="h-4 w-4 shrink-0" />
-                <span className="truncate">{root}</span>
+                <span className="truncate">{entry.path}</span>
               </button>
             ))}
           </div>

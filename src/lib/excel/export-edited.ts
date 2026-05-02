@@ -48,11 +48,13 @@ function toExportPayload(state: ExcelEditorState): {
   rowHeights?: Record<string, number>;
   colWidths?: Record<string, number>;
   ops?: ExcelEditorState["ops"];
+  workbookOps?: ExcelEditorState["workbookOps"];
 } {
   return {
     cells: state.cells ?? {},
     rowHeights: state.rowHeights,
     colWidths: state.colWidths,
     ops: state.ops,
+    workbookOps: state.workbookOps,
   };
 }

@@ -180,8 +180,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const paragraphModeRef = useRef(false);
   const isDraggingBlockRef = useRef(false);
   const deleteActiveObjectRef = useRef<() => void>(() => undefined);
-  const workspaceMode = useFileStore((s) => s.workspaceMode);
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
+  const rootPath = useFileStore((s) => s.rootPath);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [pageSize, setPageSize] = useState<PageSize>({ width: 0, height: 0 });
   const [pageCount, setPageCount] = useState(0);
@@ -225,14 +224,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
     horizontal: Array<{ y: number; x0: number; x1: number }>;
   } | null>(null);
 
-  const adapter = useMemo(
-    () =>
-      createStorageAdapter({
-        mode: workspaceMode,
-        disk: { root: workspaceRoot },
-      }),
-    [workspaceMode, workspaceRoot]
-  );
+  const adapter = useMemo(() => createStorageAdapter({ disk: { root: rootPath } }), [rootPath]);
 
   const pageFreeTextBoxes = freeTextBoxes.filter((box) => box.pageIndex === currentPageIndex);
   const pageHighlightBoxes = highlightBoxes.filter((box) => box.pageIndex === currentPageIndex);
