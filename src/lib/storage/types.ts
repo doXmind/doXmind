@@ -194,6 +194,33 @@ export interface ExcelEditorState {
    * the cell/structural-op phases match the post-mutation tabs.
    */
   workbookOps?: ExcelWorkbookOp[];
+  /**
+   * Per-sheet column filters: when a column entry is present the user has
+   * checked a subset of its display values; rows whose cell in that
+   * column doesn't appear in the list are hidden. Keys are
+   * `${sheetId}!${col}`; values are the *visible* display strings.
+   */
+  filters?: Record<string, string[]>;
+  /** Per-sheet flag: shows the filter ▾ button on column headers. */
+  filterMode?: Record<string, boolean>;
+  /**
+   * Per-sheet freeze settings. `row` rows / `col` columns are pinned to
+   * the top-left of the viewport and don't scroll with the rest of the
+   * sheet. Keys are sheet ids; missing entry = no freeze.
+   */
+  frozen?: Record<string, { row: number; col: number }>;
+  /**
+   * Cell-level data validation rules. Keyed by `${sheetId}!${row},${col}`.
+   * Currently only "list" validation is supported — the cell becomes a
+   * dropdown picker over the listed values.
+   */
+  validations?: Record<string, ExcelDataValidation>;
+}
+
+export interface ExcelDataValidation {
+  type: "list";
+  /** Allowed display values, in order. */
+  values: string[];
 }
 
 export type ExcelWorkbookOp =
@@ -253,8 +280,16 @@ export interface ExcelCellStyle {
   background?: string;
   textAlign?: "left" | "center" | "right";
   verticalAlign?: "top" | "middle" | "bottom";
-  /** When true, long text wraps within the cell instead of clipping. */
+  /** Legacy two-state wrap toggle — superseded by `textOverflow` but
+   *  kept so older sidecars don't visually drift on reopen. */
   wrapText?: boolean;
+  /**
+   * Long-text behaviour. `clip` (default) truncates with ellipsis at the
+   * cell boundary; `wrap` breaks lines inside the cell; `overflow` lets
+   * the text spill outside the cell into adjacent (empty) space, mirroring
+   * Sheets / Excel's "Overflow" option.
+   */
+  textOverflow?: "clip" | "wrap" | "overflow";
   fontSize?: number;
   fontFamily?: string;
   /** Counter-clockwise rotation in degrees, e.g. 0, 45, 90. */

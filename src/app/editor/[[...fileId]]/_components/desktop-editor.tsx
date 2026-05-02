@@ -9,6 +9,7 @@ import { DocumentWorkspace } from "@/components/workspace/document-workspace";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeScreen } from "@/components/welcome-screen";
+import { EmptyEditor } from "@/components/empty-editor";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
@@ -187,8 +188,10 @@ export function DesktopEditor() {
                     )
                   ) : !isSynced && currentFileId ? (
                     <LoadingPlaceholder />
-                  ) : (
+                  ) : openTarget === "none" ? (
                     <WelcomeScreen />
+                  ) : (
+                    <EmptyEditor />
                   )}
                 </ErrorBoundary>
               </div>

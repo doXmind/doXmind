@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability set for the doXmind desktop window",
-  "windows": ["main"],
+  "windows": ["main", "doc-*"],
   "remote": {
     "urls": ["http://localhost:*/*", "http://127.0.0.1:*/*"]
   },

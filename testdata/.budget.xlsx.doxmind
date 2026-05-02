@@ -10,7 +10,15 @@
         "formula": null,
         "value": 265
       },
+      "sheet-0!3,2": {
+        "formula": null,
+        "value": 14.5
+      },
       "sheet-0!4,2": {
+        "formula": null,
+        "value": 19.99
+      },
+      "sheet-0!5,2": {
         "formula": null,
         "value": 19.99
       },
@@ -37,6 +45,6 @@
   },
   "id": "path:bfcb61426e8890c5",
   "source_path": "budget.xlsx",
-  "updated_at_unix_nanos": "1777683583750714000",
+  "updated_at_unix_nanos": "1777689789203887000",
   "version": 1
 }

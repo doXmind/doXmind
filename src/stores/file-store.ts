@@ -11,6 +11,7 @@ import {
   type StorageAdapter,
   type WorkspaceEntry,
 } from "@/lib/storage";
+import { registerWindowTarget, syncRecentsToDock, unregisterWindowTarget } from "@/lib/window";
 
 const log = storeLogger.child("File");
 
@@ -383,6 +384,8 @@ export const useFileStore = create<FileState>()(
           loadedContentIds: new Set(),
           isSynced: false,
         }));
+        void registerWindowTarget({ kind: "folder", path: trimmedRoot });
+        void syncRecentsToDock(get().recents);
         await get().loadFiles();
       },
 
@@ -473,6 +476,8 @@ export const useFileStore = create<FileState>()(
           isSynced: true,
           isLoading: false,
         }));
+        void registerWindowTarget({ kind: "file", path: trimmed });
+        void syncRecentsToDock(get().recents);
       },
 
       closeOpened: () => {
@@ -488,6 +493,7 @@ export const useFileStore = create<FileState>()(
           isSynced: true,
           isLoading: false,
         });
+        void unregisterWindowTarget();
       },
 
       createFile: async (
@@ -1039,37 +1045,26 @@ export const useFileStore = create<FileState>()(
     }),
     {
       name: "doxmind-files",
-      // VSCode-style cold-boot restore: the previously open file or folder
-      // comes back. `currentFileId` itself is derived again from `loadFiles`
-      // / `openFile`, so we don't persist it directly.
+      // Multi-window: each window tracks its own openTarget/rootPath in memory
+      // only. Persisting them would race across windows (same origin = shared
+      // localStorage). Per-window state arrives via URL params (?folder=... /
+      // ?file=...) at boot. Recents + UI prefs are global and shared.
       partialize: (state) => ({
-        currentFolderId: state.currentFolderId,
-        openTarget: state.openTarget,
-        rootPath: state.rootPath,
-        openFilePath: state.openFilePath,
         recents: state.recents,
         sortBy: state.sortBy,
         expandedFolderIds: Array.from(state.expandedFolderIds),
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<{
-          currentFolderId: string | null;
-          openTarget: OpenTarget;
-          rootPath: string | null;
-          openFilePath: string | null;
           recents: RecentEntry[];
           sortBy: SortOption;
           expandedFolderIds: string[];
         }>;
-        const openTarget: OpenTarget = persisted.openTarget ?? "none";
         return {
           ...currentState,
           ...persisted,
-          openTarget,
-          rootPath: openTarget === "none" ? null : (persisted.rootPath ?? null),
-          openFilePath: openTarget === "file" ? (persisted.openFilePath ?? null) : null,
           recents: persisted.recents ?? [],
-          files: currentState.files, // Always use runtime files, never from localStorage
+          files: currentState.files,
           expandedFolderIds: new Set(persisted.expandedFolderIds || []),
         };
       },

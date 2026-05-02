@@ -50,6 +50,7 @@ import {
   Bold,
   DollarSign,
   Eraser,
+  Filter as FilterIcon,
   Italic,
   Link as LinkIcon,
   Loader2,
@@ -94,6 +95,14 @@ import {
   type SelectionRange,
 } from "@/lib/excel/state";
 import {
+  applyCellsDiffToEngine,
+  createExcelEngine,
+  readEngineValue,
+  type ExcelEngine,
+} from "@/lib/excel/engine";
+import { HyperFormula } from "hyperformula";
+import { ExcelFormulaSuggest } from "@/components/excel-editor/excel-formula-suggest";
+import {
   ExcelSheetView,
   columnLabel,
   coordKey,
@@ -116,6 +125,7 @@ import {
   ExcelFindReplacePanel,
   type FindMatch,
 } from "@/components/excel-editor/excel-find-replace-panel";
+import { ExcelFilterPopover } from "@/components/excel-editor/excel-filter-popover";
 import {
   NUMBER_FORMAT_PRESETS,
   QUICK_CURRENCY_FORMAT,
@@ -144,6 +154,27 @@ const HISTORY_LIMIT = 50;
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48] as const;
 const DEFAULT_FONT_SIZE = 11;
+
+/** All HyperFormula-registered function names — fetched once at module
+ *  load. Used by formula autocomplete as the candidate pool. The list is
+ *  language-scoped; we use the `enGB` locale that HF defaults to. */
+const HF_FUNCTION_NAMES: string[] = (() => {
+  try {
+    const names = HyperFormula.getRegisteredFunctionNames("enGB");
+    return [...names].sort();
+  } catch {
+    return [];
+  }
+})();
+
+/** Walk back from `caret` over identifier characters to find where the
+ *  current function-name token starts. Returns `caret` when there's no
+ *  in-progress token. */
+function findCurrentFnTokenStart(draft: string, caret: number): number {
+  let i = Math.min(caret, draft.length);
+  while (i > 0 && /[A-Za-z]/.test(draft[i - 1])) i--;
+  return i;
+}
 
 function stepFontSize(current: number | undefined, delta: number): number {
   const target = current ?? DEFAULT_FONT_SIZE;
@@ -201,6 +232,39 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     y: number;
     sheetId: string;
   } | null>(null);
+
+  // AutoFill drag state: `fillSource` snapshots the selection at the
+  // moment the user mousedowns the bottom-right handle; `fillRange`
+  // tracks the in-progress fill rectangle as the cursor moves over
+  // cells. Both are cleared on mouseup (the fill commits then).
+  const [fillSource, setFillSource] = useState<SelectionRange | null>(null);
+  const [fillRange, setFillRange] = useState<SelectionRange | null>(null);
+  const fillSourceRef = useRef<SelectionRange | null>(null);
+  const fillRangeRef = useRef<SelectionRange | null>(null);
+  useEffect(() => {
+    fillSourceRef.current = fillSource;
+  }, [fillSource]);
+  useEffect(() => {
+    fillRangeRef.current = fillRange;
+  }, [fillRange]);
+
+  // Open column-filter popover state. Anchored at the click position;
+  // the workspace owns the value list so it can stay deduped + ordered
+  // identically to what the user sees in the cells.
+  const [filterPopover, setFilterPopover] = useState<{
+    col: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // HyperFormula engine + a generation counter. The engine itself lives
+  // in a ref (imperative API; we don't want to re-allocate on every
+  // render). `engineGen` exists purely so the renderer can re-render
+  // when computed values change — bump it after any mutation that
+  // could ripple through formulas.
+  const engineRef = useRef<ExcelEngine | null>(null);
+  const lastEngineCellsRef = useRef<ExcelEditorState["cells"] | undefined>(undefined);
+  const [engineGen, setEngineGen] = useState(0);
 
   const xlsxBytesRef = useRef<Uint8Array | null>(null);
   const editorStateRef = useRef<ExcelEditorState | null>(null);
@@ -316,12 +380,89 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   // already use post-op coordinates.
   const displaySheet = useMemo<ExcelSheetDto | null>(() => {
     if (!activeSheet) return null;
-    return applyOpsToSheet(activeSheet, editorState?.ops);
-  }, [activeSheet, editorState?.ops]);
+    const opped = applyOpsToSheet(activeSheet, editorState?.ops);
+    // Merge user-set row/col size overrides on top of the parsed
+    // dimensions so the renderer reads a single source of truth. The
+    // sidecar key shape is `${sheetId}!${index}`; the displaySheet's
+    // `colWidths` / `rowHeights` are unprefixed (just `${index}`).
+    const prefix = `${opped.id}!`;
+    let colWidths = opped.colWidths;
+    if (editorState?.colWidths) {
+      colWidths = { ...opped.colWidths };
+      for (const [key, value] of Object.entries(editorState.colWidths)) {
+        if (!key.startsWith(prefix)) continue;
+        colWidths[key.slice(prefix.length)] = value;
+      }
+    }
+    let rowHeights = opped.rowHeights;
+    if (editorState?.rowHeights) {
+      rowHeights = { ...opped.rowHeights };
+      for (const [key, value] of Object.entries(editorState.rowHeights)) {
+        if (!key.startsWith(prefix)) continue;
+        rowHeights[key.slice(prefix.length)] = value;
+      }
+    }
+    return { ...opped, colWidths, rowHeights };
+  }, [activeSheet, editorState?.ops, editorState?.colWidths, editorState?.rowHeights]);
 
   // ---------------------------------------------------------------------
-  // History-aware editorState mutation
+  // Formula recalc engine (HyperFormula)
+  //
+  // Full rebuild on workbook structure changes (sheet add/rename/etc.,
+  // row/col insert/delete) — those reshape the dependency graph in
+  // ways the incremental API can't always model. For plain cell edits
+  // we diff `editorState.cells` and push the deltas via `setCellContents`,
+  // which keeps recalc cost proportional to what actually changed.
   // ---------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!displayWorkbook) {
+      engineRef.current?.hf.destroy();
+      engineRef.current = null;
+      lastEngineCellsRef.current = undefined;
+      return;
+    }
+    const engine = createExcelEngine(displayWorkbook, editorStateRef.current);
+    engineRef.current?.hf.destroy();
+    engineRef.current = engine;
+    lastEngineCellsRef.current = editorStateRef.current?.cells;
+    setEngineGen((g) => g + 1);
+    return () => {
+      engine.hf.destroy();
+      if (engineRef.current === engine) engineRef.current = null;
+    };
+    // We intentionally don't depend on `editorState` here — the
+    // incremental sync below handles cell-value updates without
+    // re-allocating the whole engine.
+  }, [displayWorkbook, editorState?.ops, editorState?.workbookOps]);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const dirty = applyCellsDiffToEngine(engine, lastEngineCellsRef.current, editorState?.cells);
+    lastEngineCellsRef.current = editorState?.cells;
+    if (dirty) setEngineGen((g) => g + 1);
+  }, [editorState?.cells]);
+
+  /**
+   * Look up the *computed* value of a cell at (row, col) on the active
+   * sheet. Returns `null` when the engine isn't ready or the address is
+   * out of range — callers fall back to the parsed cell value.
+   *
+   * The renderer reads through this for every cell so formulas always
+   * show their current result, not openpyxl's parse-time cache.
+   */
+  const computedValueAt = useCallback(
+    (row: number, col: number): string | number | boolean | null => {
+      const engine = engineRef.current;
+      if (!engine || !displaySheet) return null;
+      // `engineGen` is read here purely to register a dependency for
+      // memoization — it isn't used in the lookup itself.
+      void engineGen;
+      return readEngineValue(engine, displaySheet.id, row, col);
+    },
+    [displaySheet, engineGen]
+  );
 
   const mutateEditorState = useCallback(
     (updater: (prev: ExcelEditorState | null) => ExcelEditorState) => {
@@ -506,6 +647,486 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     [mutateEditorState]
   );
 
+  // Column / row size overrides persist on the sidecar so the next reopen
+  // restores the user's layout. Units mirror what openpyxl writes to disk:
+  // `colWidths` is in Excel character units, `rowHeights` is in points.
+  const setColumnWidth = useCallback(
+    (col: number, charUnits: number) => {
+      if (!displaySheet) return;
+      const key = `${displaySheet.id}!${col}`;
+      mutateEditorState((prev) => {
+        const base: ExcelEditorState = prev ?? { version: 1 };
+        const next = { ...(base.colWidths ?? {}) };
+        next[key] = Math.max(2, Number(charUnits.toFixed(2)));
+        return { ...base, version: 1, colWidths: next };
+      });
+    },
+    [displaySheet, mutateEditorState]
+  );
+
+  const setRowHeight = useCallback(
+    (row: number, points: number) => {
+      if (!displaySheet) return;
+      const key = `${displaySheet.id}!${row}`;
+      mutateEditorState((prev) => {
+        const base: ExcelEditorState = prev ?? { version: 1 };
+        const next = { ...(base.rowHeights ?? {}) };
+        next[key] = Math.max(8, Number(points.toFixed(2)));
+        return { ...base, version: 1, rowHeights: next };
+      });
+    },
+    [displaySheet, mutateEditorState]
+  );
+
+  // Frozen panes — set both axes at once. `row` / `col` are zero-based
+  // counts (e.g. row=1 freezes the first row only). Pass {row:0,col:0}
+  // to clear the freeze entirely.
+  const setFrozenPanes = useCallback(
+    (row: number, col: number) => {
+      if (!displaySheet) return;
+      const sheetId = displaySheet.id;
+      mutateEditorState((prev) => {
+        const base: ExcelEditorState = prev ?? { version: 1 };
+        const next = { ...(base.frozen ?? {}) };
+        if (row <= 0 && col <= 0) delete next[sheetId];
+        else next[sheetId] = { row: Math.max(0, row), col: Math.max(0, col) };
+        return { ...base, version: 1, frozen: next };
+      });
+    },
+    [displaySheet, mutateEditorState]
+  );
+
+  // Effective freeze for the active sheet — patch overrides parsed.
+  const sheetFreeze = useMemo<{ row: number; col: number }>(() => {
+    if (!displaySheet) return { row: 0, col: 0 };
+    const override = editorState?.frozen?.[displaySheet.id];
+    if (override) return override;
+    return displaySheet.frozen ?? { row: 0, col: 0 };
+  }, [displaySheet, editorState?.frozen]);
+
+  // ---------------------------------------------------------------------
+  // Data validation (list type)
+  // ---------------------------------------------------------------------
+
+  const validationsByCoord = useMemo(() => {
+    const map = new Map<string, { type: "list"; values: string[] }>();
+    if (!editorState?.validations || !displaySheet) return map;
+    const prefix = `${displaySheet.id}!`;
+    for (const [key, val] of Object.entries(editorState.validations)) {
+      if (!key.startsWith(prefix)) continue;
+      const coords = key.slice(prefix.length);
+      const [rowStr, colStr] = coords.split(",");
+      const r = Number(rowStr);
+      const c = Number(colStr);
+      if (Number.isFinite(r) && Number.isFinite(c)) {
+        map.set(coordKey(r, c), val);
+      }
+    }
+    return map;
+  }, [editorState?.validations, displaySheet]);
+
+  const promptListValidation = useCallback(() => {
+    if (!displaySheet || !selection) return;
+    const sample =
+      validationsByCoord
+        .get(coordKey(rangeOrigin(selection).row, rangeOrigin(selection).col))
+        ?.values.join(", ") ?? "";
+    const input = window.prompt(
+      "Allowed values (comma-separated). Empty input clears the list.",
+      sample
+    );
+    if (input === null) return;
+    const values = input
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const b = rangeBounds(selection);
+    mutateEditorState((prev) => {
+      const base: ExcelEditorState = prev ?? { version: 1 };
+      const next = { ...(base.validations ?? {}) };
+      for (let r = b.top; r <= b.bottom; r++) {
+        for (let c = b.left; c <= b.right; c++) {
+          const key = `${displaySheet.id}!${r},${c}`;
+          if (values.length === 0) delete next[key];
+          else next[key] = { type: "list", values };
+        }
+      }
+      return { ...base, version: 1, validations: next };
+    });
+  }, [displaySheet, selection, validationsByCoord, mutateEditorState]);
+
+  // Validation-list popover anchored at click — when user clicks the ▾
+  // on a cell with a list validation we surface the picker here.
+  const [validationPopover, setValidationPopover] = useState<{
+    row: number;
+    col: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // ---------------------------------------------------------------------
+  // Formula autocomplete
+  //
+  // Lives at the workspace level so the cell input + the suggest popover
+  // share a single state machine: arrow-key navigation flows through the
+  // input's keyboard handler, the popover just renders the highlighted
+  // entry. Suggestions only show while the user is *typing* a function
+  // name token inside an `=`-prefixed cell.
+  // ---------------------------------------------------------------------
+  const [suggestIndex, setSuggestIndex] = useState(0);
+  const suggestItems = useMemo<string[]>(() => {
+    if (!editing) return [];
+    const draft = editing.draft;
+    if (!draft.startsWith("=")) return [];
+    // Caret-driven matching would be ideal, but we don't track caret —
+    // approximate with "current token = trailing identifier chars" which
+    // matches typical typing flow ("=SU" → suggest SUM/SUMIF/...).
+    const tokenStart = findCurrentFnTokenStart(draft, draft.length);
+    const prefix = draft.slice(tokenStart);
+    if (prefix.length === 0) return [];
+    const upper = prefix.toUpperCase();
+    return HF_FUNCTION_NAMES.filter((name) => name.startsWith(upper)).slice(0, 25);
+  }, [editing]);
+
+  // Reset the highlight whenever the suggestion list changes from under us.
+  useEffect(() => {
+    setSuggestIndex(0);
+  }, [suggestItems]);
+
+  /** Apply the suggested function name — replace the current token with
+   *  `${name}(` so the user can continue typing arguments. */
+  const acceptSuggestion = useCallback(
+    (name: string) => {
+      if (!editing) return;
+      const draft = editing.draft;
+      const tokenStart = findCurrentFnTokenStart(draft, draft.length);
+      const next = `${draft.slice(0, tokenStart)}${name}(`;
+      setEditing((prev) => (prev ? { ...prev, draft: next, freshDraft: false } : prev));
+    },
+    [editing]
+  );
+
+  /** Hook called by the cell input on key events. Returns `true` when
+   *  the suggest UI consumed the event (caller should `preventDefault`
+   *  and skip its own handling). */
+  const handleSuggestKey = useCallback(
+    (key: string): boolean => {
+      if (suggestItems.length === 0) return false;
+      if (key === "ArrowDown") {
+        setSuggestIndex((i) => (i + 1) % suggestItems.length);
+        return true;
+      }
+      if (key === "ArrowUp") {
+        setSuggestIndex((i) => (i - 1 + suggestItems.length) % suggestItems.length);
+        return true;
+      }
+      if (key === "Tab" || key === "Enter") {
+        const choice = suggestItems[suggestIndex];
+        if (choice) {
+          acceptSuggestion(choice);
+          return true;
+        }
+      }
+      return false;
+    },
+    [suggestItems, suggestIndex, acceptSuggestion]
+  );
+
+  // Anchor for the suggest popover — pinned to the active edit input's
+  // bottom-left so suggestions appear directly under the user's caret
+  // regardless of which surface (cell vs formula bar) they're typing on.
+  const [suggestAnchor, setSuggestAnchor] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!editing || suggestItems.length === 0) {
+      setSuggestAnchor(null);
+      return;
+    }
+    const input = editing.source === "formula-bar" ? formulaInputRef.current : cellInputRef.current;
+    if (!input) return;
+    const rect = input.getBoundingClientRect();
+    setSuggestAnchor({ x: rect.left, y: rect.bottom + 4 });
+  }, [editing, suggestItems]);
+
+  // ---------------------------------------------------------------------
+  // Column filters
+  // ---------------------------------------------------------------------
+
+  const sheetFilterMode = displaySheet ? !!editorState?.filterMode?.[displaySheet.id] : false;
+
+  const toggleFilterMode = useCallback(() => {
+    if (!displaySheet) return;
+    const sheetId = displaySheet.id;
+    mutateEditorState((prev) => {
+      const base: ExcelEditorState = prev ?? { version: 1 };
+      const nextMode = { ...(base.filterMode ?? {}) };
+      const willEnable = !nextMode[sheetId];
+      if (willEnable) nextMode[sheetId] = true;
+      else delete nextMode[sheetId];
+      // Turning filter mode off also drops every column filter for this
+      // sheet so hidden rows reappear automatically.
+      let nextFilters = base.filters;
+      if (!willEnable && base.filters) {
+        const prefix = `${sheetId}!`;
+        const stripped: Record<string, string[]> = {};
+        for (const [key, value] of Object.entries(base.filters)) {
+          if (!key.startsWith(prefix)) stripped[key] = value;
+        }
+        nextFilters = stripped;
+      }
+      return { ...base, version: 1, filterMode: nextMode, filters: nextFilters };
+    });
+  }, [displaySheet, mutateEditorState]);
+
+  const setColumnFilter = useCallback(
+    (col: number, visible: string[] | null) => {
+      if (!displaySheet) return;
+      const key = `${displaySheet.id}!${col}`;
+      mutateEditorState((prev) => {
+        const base: ExcelEditorState = prev ?? { version: 1 };
+        const next = { ...(base.filters ?? {}) };
+        if (visible === null || visible.length === 0) {
+          delete next[key];
+        } else {
+          next[key] = visible;
+        }
+        return { ...base, version: 1, filters: next };
+      });
+    },
+    [displaySheet, mutateEditorState]
+  );
+
+  // Distinct display values per column (lazily computed when the popover
+  // asks for them). We snapshot all rows except the header (row 0) since
+  // that's almost always a label that the user wouldn't want to hide.
+  const getColumnUniqueValues = useCallback(
+    (col: number): string[] => {
+      if (!displaySheet) return [];
+      const seen = new Set<string>();
+      const ordered: string[] = [];
+      for (let r = 1; r < displaySheet.rowCount; r++) {
+        const cell = cellsByCoord.get(coordKey(r, col));
+        const patch = editsByCoord.get(coordKey(r, col));
+        const text = formatCellValue(cell, patch, computedValueAt(r, col));
+        if (seen.has(text)) continue;
+        seen.add(text);
+        ordered.push(text);
+      }
+      return ordered;
+    },
+    [displaySheet, cellsByCoord, editsByCoord, computedValueAt]
+  );
+
+  // Rows hidden by any active column filter. Rebuilt whenever the
+  // filters or the cell content for the current sheet changes.
+  const hiddenRows = useMemo<Set<number>>(() => {
+    const set = new Set<number>();
+    if (!displaySheet || !editorState?.filters) return set;
+    const prefix = `${displaySheet.id}!`;
+    const colFilters: Array<{ col: number; allowed: Set<string> }> = [];
+    for (const [key, values] of Object.entries(editorState.filters)) {
+      if (!key.startsWith(prefix)) continue;
+      const col = Number(key.slice(prefix.length));
+      if (!Number.isFinite(col)) continue;
+      colFilters.push({ col, allowed: new Set(values) });
+    }
+    if (colFilters.length === 0) return set;
+    // Header row stays visible regardless of filters — matches Sheets.
+    for (let r = 1; r < displaySheet.rowCount; r++) {
+      for (const { col, allowed } of colFilters) {
+        const cell = cellsByCoord.get(coordKey(r, col));
+        const patch = editsByCoord.get(coordKey(r, col));
+        const text = formatCellValue(cell, patch, computedValueAt(r, col));
+        if (!allowed.has(text)) {
+          set.add(r);
+          break;
+        }
+      }
+    }
+    return set;
+  }, [displaySheet, editorState?.filters, cellsByCoord, editsByCoord, computedValueAt]);
+
+  const activeColumnFilters = useMemo<Set<number>>(() => {
+    const out = new Set<number>();
+    if (!displaySheet || !editorState?.filters) return out;
+    const prefix = `${displaySheet.id}!`;
+    for (const key of Object.keys(editorState.filters)) {
+      if (!key.startsWith(prefix)) continue;
+      const col = Number(key.slice(prefix.length));
+      if (Number.isFinite(col)) out.add(col);
+    }
+    return out;
+  }, [displaySheet, editorState?.filters]);
+
+  // ---------------------------------------------------------------------
+  // AutoFill — drag the bottom-right handle of the selection to extend
+  // it. We snap the fill rectangle to a single dominant axis so the user
+  // can pull straight down or straight right (matches Sheets / Excel).
+  // ---------------------------------------------------------------------
+
+  const beginAutoFill = useCallback(() => {
+    if (!selection) return;
+    setFillSource(selection);
+    setFillRange(null);
+  }, [selection]);
+
+  const extendAutoFill = useCallback((row: number, col: number) => {
+    const source = fillSourceRef.current;
+    if (!source) return;
+    const b = rangeBounds(source);
+    const dRow = row < b.top ? row - b.top : row > b.bottom ? row - b.bottom : 0;
+    const dCol = col < b.left ? col - b.left : col > b.right ? col - b.right : 0;
+    if (dRow === 0 && dCol === 0) {
+      setFillRange(source);
+      return;
+    }
+    // Snap to the dominant axis — Sheets behaviour. Equal magnitudes
+    // prefer vertical (the more common spreadsheet flow).
+    if (Math.abs(dRow) >= Math.abs(dCol)) {
+      setFillRange({
+        startRow: dRow > 0 ? b.top : row,
+        startCol: b.left,
+        endRow: dRow > 0 ? row : b.bottom,
+        endCol: b.right,
+      });
+    } else {
+      setFillRange({
+        startRow: b.top,
+        startCol: dCol > 0 ? b.left : col,
+        endRow: b.bottom,
+        endCol: dCol > 0 ? col : b.right,
+      });
+    }
+  }, []);
+
+  const commitAutoFill = useCallback(() => {
+    const source = fillSourceRef.current;
+    const range = fillRangeRef.current;
+    setFillSource(null);
+    setFillRange(null);
+    if (!source || !range || !displaySheet) return;
+    const sb = rangeBounds(source);
+    const fb = rangeBounds(range);
+    // Bail if the fill rectangle equals the source — nothing to do.
+    if (
+      sb.top === fb.top &&
+      sb.bottom === fb.bottom &&
+      sb.left === fb.left &&
+      sb.right === fb.right
+    ) {
+      return;
+    }
+    // Snapshot source values + styles so we can repeat / extrapolate.
+    const sourceRows = sb.bottom - sb.top + 1;
+    const sourceCols = sb.right - sb.left + 1;
+    type Snap = {
+      value: string | number | boolean | null;
+      formula: string | null;
+      style?: ExcelCellStyle;
+      numberFormat?: string;
+    };
+    const snapshot: Snap[][] = [];
+    for (let r = 0; r < sourceRows; r++) {
+      const row: Snap[] = [];
+      for (let c = 0; c < sourceCols; c++) {
+        const baseCell = cellsByCoord.get(coordKey(sb.top + r, sb.left + c));
+        const patch = editsByCoord.get(coordKey(sb.top + r, sb.left + c));
+        const value = patch && "value" in patch ? (patch.value ?? null) : (baseCell?.value ?? null);
+        const formula = patch?.formula ?? baseCell?.formula ?? null;
+        const style = mergeStyle(baseCell?.style, patch?.style);
+        const numberFormat = patch?.numberFormat ?? baseCell?.numberFormat;
+        row.push({ value, formula, style, numberFormat });
+      }
+      snapshot.push(row);
+    }
+    // Determine fill axis + direction.
+    const isVertical = fb.top !== sb.top || fb.bottom !== sb.bottom;
+    const fillingForward = isVertical ? fb.bottom > sb.bottom : fb.right > sb.right;
+
+    // Per-column (vertical fill) or per-row (horizontal fill) arithmetic
+    // step. NaN signals "not a clean numeric series — repeat instead".
+    const seriesSteps: number[] = isVertical
+      ? Array.from({ length: sourceCols }, (_, c) => {
+          if (sourceRows < 2) {
+            const v = snapshot[0][c].value;
+            return typeof v === "number" ? 1 : NaN;
+          }
+          const first = snapshot[0][c].value;
+          const last = snapshot[sourceRows - 1][c].value;
+          if (typeof first !== "number" || typeof last !== "number") return NaN;
+          return (last - first) / (sourceRows - 1);
+        })
+      : Array.from({ length: sourceRows }, (_, r) => {
+          if (sourceCols < 2) {
+            const v = snapshot[r][0].value;
+            return typeof v === "number" ? 1 : NaN;
+          }
+          const first = snapshot[r][0].value;
+          const last = snapshot[r][sourceCols - 1].value;
+          if (typeof first !== "number" || typeof last !== "number") return NaN;
+          return (last - first) / (sourceCols - 1);
+        });
+
+    const updates: CellUpdate[] = [];
+    for (let r = fb.top; r <= fb.bottom; r++) {
+      for (let c = fb.left; c <= fb.right; c++) {
+        // Skip the source rows/cols — they already hold the user's data.
+        if (r >= sb.top && r <= sb.bottom && c >= sb.left && c <= sb.right) continue;
+
+        // `step` measures how many cells past the source edge we are
+        // (positive forward, negative backward). For arithmetic series
+        // that's the multiplier on the per-axis step. For pattern repeat
+        // it picks which source row/col we wrap to.
+        const step = isVertical
+          ? fillingForward
+            ? r - sb.bottom
+            : -(sb.top - r)
+          : fillingForward
+            ? c - sb.right
+            : -(sb.left - c);
+
+        // The "anchor" cell in the source = last row/col when filling
+        // forward, first when backward. The series extrapolates from
+        // there; pattern-repeat falls back to the same anchor cell value
+        // when the series detection fails.
+        const srcRow = isVertical
+          ? fillingForward
+            ? sourceRows - 1 - ((Math.abs(step) - 1) % sourceRows)
+            : (Math.abs(step) - 1) % sourceRows
+          : r - sb.top;
+        const srcCol = isVertical
+          ? c - sb.left
+          : fillingForward
+            ? sourceCols - 1 - ((Math.abs(step) - 1) % sourceCols)
+            : (Math.abs(step) - 1) % sourceCols;
+        const snap = snapshot[srcRow]?.[srcCol];
+        if (!snap) continue;
+
+        const seriesIndex = isVertical ? srcCol : srcRow;
+        const stepValue = seriesSteps[seriesIndex];
+        let value: string | number | boolean | null = snap.value;
+        if (typeof snap.value === "number" && Number.isFinite(stepValue)) {
+          // Arithmetic extrapolation — `step` is already signed so the
+          // multiplication produces the right offset both forward and
+          // backward of the source range.
+          value = snap.value + stepValue * step;
+        }
+        updates.push({
+          row: r,
+          col: c,
+          patch: {
+            value,
+            formula: null,
+            numberFormat: snap.numberFormat,
+            style: snap.style,
+          },
+        });
+      }
+    }
+    if (updates.length === 0) return;
+    applyCellUpdates(updates);
+    setSelection(range);
+  }, [displaySheet, cellsByCoord, editsByCoord, applyCellUpdates]);
+
   // Pick a fresh sheet name like Excel ("Sheet2", "Sheet3", …) skipping
   // names already in use so duplicates don't trip openpyxl on export.
   const generateSheetName = useCallback(
@@ -618,7 +1239,11 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       const key = coordKey(cell.row, cell.col);
       visited.add(key);
       const patch = editsByCoord.get(key);
-      consider(cell.row, cell.col, formatCellValue(cell, patch));
+      consider(
+        cell.row,
+        cell.col,
+        formatCellValue(cell, patch, computedValueAt(cell.row, cell.col))
+      );
     }
     // Cells that exist only in the patch overlay (user-typed into a
     // previously empty cell).
@@ -627,11 +1252,19 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       const [rowStr, colStr] = key.split(":");
       const row = Number(rowStr);
       const col = Number(colStr);
-      consider(row, col, formatCellValue(undefined, patch));
+      consider(row, col, formatCellValue(undefined, patch, computedValueAt(row, col)));
     }
     matches.sort((a, b) => a.row - b.row || a.col - b.col);
     return matches;
-  }, [findOpen, displaySheet, findQuery, findMatchCase, findWholeCell, editsByCoord]);
+  }, [
+    findOpen,
+    displaySheet,
+    findQuery,
+    findMatchCase,
+    findWholeCell,
+    editsByCoord,
+    computedValueAt,
+  ]);
 
   // Reset / clamp the cursor whenever the active match list changes.
   useEffect(() => {
@@ -664,10 +1297,10 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       // convenience: ⌘F over a value pre-populates the search field.
       const cell = cellsByCoord.get(coordKey(anchor.row, anchor.col));
       const patch = editsByCoord.get(coordKey(anchor.row, anchor.col));
-      const text = formatCellValue(cell, patch);
+      const text = formatCellValue(cell, patch, computedValueAt(anchor.row, anchor.col));
       if (text) setFindQuery(text);
     }
-  }, [anchor, findQuery, cellsByCoord, editsByCoord]);
+  }, [anchor, findQuery, cellsByCoord, editsByCoord, computedValueAt]);
 
   const closeFindPanel = useCallback(() => {
     setFindOpen(false);
@@ -697,7 +1330,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       advanceFind(1);
       return;
     }
-    const currentText = formatCellValue(cell, patch);
+    const currentText = formatCellValue(cell, patch, computedValueAt(match.row, match.col));
     const nextText = findWholeCell
       ? findReplace
       : replaceInString(currentText, findQuery, findReplace, findMatchCase);
@@ -715,6 +1348,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     findMatchCase,
     applyCellUpdates,
     advanceFind,
+    computedValueAt,
   ]);
 
   const replaceAllMatches = useCallback(() => {
@@ -724,7 +1358,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       const cell = cellsByCoord.get(coordKey(match.row, match.col));
       const patch = editsByCoord.get(coordKey(match.row, match.col));
       if (patch?.formula || cell?.formula) continue;
-      const currentText = formatCellValue(cell, patch);
+      const currentText = formatCellValue(cell, patch, computedValueAt(match.row, match.col));
       const nextText = findWholeCell
         ? findReplace
         : replaceInString(currentText, findQuery, findReplace, findMatchCase);
@@ -932,10 +1566,17 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     () => applyStyleToRange({ strikethrough: !effectiveStyleForAnchor?.strikethrough }),
     [applyStyleToRange, effectiveStyleForAnchor]
   );
-  const toggleWrapText = useCallback(
-    () => applyStyleToRange({ wrapText: !effectiveStyleForAnchor?.wrapText }),
-    [applyStyleToRange, effectiveStyleForAnchor]
+  const setTextOverflow = useCallback(
+    (next: "clip" | "wrap" | "overflow") => {
+      // Also clear the legacy `wrapText` flag — new sidecars rely solely
+      // on `textOverflow`. Leaving `wrapText` set could shadow the new
+      // value on cells that round-trip through older code.
+      applyStyleToRange({ textOverflow: next, wrapText: undefined });
+    },
+    [applyStyleToRange]
   );
+  const currentTextOverflow: "clip" | "wrap" | "overflow" =
+    effectiveStyleForAnchor?.textOverflow ?? (effectiveStyleForAnchor?.wrapText ? "wrap" : "clip");
   const setAlign = useCallback(
     (textAlign: "left" | "center" | "right") => applyStyleToRange({ textAlign }),
     [applyStyleToRange]
@@ -1165,7 +1806,9 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       for (let c = b.left; c <= b.right; c++) {
         const cell = cellsByCoord.get(coordKey(r, c));
         const patch = editsByCoord.get(coordKey(r, c));
-        row.push(formatCellValue(cell, patch));
+        // Copy the *computed* value (what the user sees), not the
+        // formula text — matches Sheets / Excel paste-as-values default.
+        row.push(formatCellValue(cell, patch, computedValueAt(r, c)));
       }
       lines.push(row.join("\t"));
     }
@@ -1176,7 +1819,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       toast.error("Clipboard write was blocked");
     }
     return text;
-  }, [selection, displaySheet, cellsByCoord, editsByCoord]);
+  }, [selection, displaySheet, cellsByCoord, editsByCoord, computedValueAt]);
 
   const pasteFromClipboardIntoRange = useCallback(async () => {
     if (!selection || !displaySheet) return;
@@ -1595,564 +2238,701 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      {/* Top toolbar — packed cluster matching Sheets / Excel. Allowed to
-          horizontally scroll on narrow displays so we never have to hide
-          actions behind a "more" overflow menu. */}
-      <div className="bg-sidebar flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3">
-        <span className="text-ui-xs max-w-[160px] shrink truncate font-semibold text-foreground/90">
-          {displayName}
-        </span>
-        {isExporting && (
-          <span className="text-ui-xs flex shrink-0 items-center gap-1.5 text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Exporting…
+      {/* Top toolbar — split into two rows by frequency. Row 1 holds the
+          high-frequency cell-formatting cluster (font, B/I/U, colors,
+          alignment, borders, merge, clear). Row 2 holds the
+          data/view/operations cluster (validation, filter, freeze, Σ,
+          sort, format painter, link, rotation, zoom). Each row scrolls
+          horizontally on narrow displays. */}
+      <div className="bg-sidebar flex shrink-0 flex-col border-b border-border/60">
+        <div className="flex h-9 items-center gap-2 overflow-x-auto px-3">
+          <span className="text-ui-xs max-w-[160px] shrink truncate font-semibold text-foreground/90">
+            {displayName}
           </span>
-        )}
+          {isExporting && (
+            <span className="text-ui-xs flex shrink-0 items-center gap-1.5 text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Exporting…
+            </span>
+          )}
 
-        <div className="flex shrink-0 items-center gap-1">
-          {/* Undo / Redo */}
-          <Tooltip content="Undo (⌘Z)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={undo}
-              disabled={!canUndo}
-              aria-label="Undo"
-            >
-              <Undo2 className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Redo (⌘⇧Z)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={redo}
-              disabled={!canRedo}
-              aria-label="Redo"
-            >
-              <Redo2 className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          <ToolbarSeparator />
-
-          {/* Number formats */}
-          <Tooltip content="Format as currency" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={() => applyNumberFormatToRange(QUICK_CURRENCY_FORMAT)}
-              disabled={!selection}
-              aria-label="Format as currency"
-            >
-              <DollarSign className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Format as percent" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={() => applyNumberFormatToRange(QUICK_PERCENT_FORMAT)}
-              disabled={!selection}
-              aria-label="Format as percent"
-            >
-              <Percent className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Decrease decimal places" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md font-mono text-xs"
-              onClick={() => adjustDecimalsForRange(-1)}
-              disabled={!selection}
-              aria-label="Decrease decimal places"
-            >
-              .0−
-            </Button>
-          </Tooltip>
-          <Tooltip content="Increase decimal places" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md font-mono text-xs"
-              onClick={() => adjustDecimalsForRange(1)}
-              disabled={!selection}
-              aria-label="Increase decimal places"
-            >
-              .0+
-            </Button>
-          </Tooltip>
-          <ExcelMenuButton
-            tooltip="More formats"
-            disabled={!selection}
-            width={260}
-            trigger={<span className="font-mono text-xs">123</span>}
-            items={NUMBER_FORMAT_PRESETS.map((preset) => ({
-              id: preset.id,
-              label: preset.label,
-              example: preset.example,
-              onSelect: () => applyNumberFormatToRange(preset.format),
-            }))}
-          />
-
-          <ToolbarSeparator />
-
-          {/* Font family */}
-          <ExcelFontFamilyButton
-            value={effectiveStyleForAnchor?.fontFamily}
-            disabled={!selection}
-            onChange={setFontFamily}
-          />
-
-          <ToolbarSeparator />
-
-          {/* Font size */}
-          <Tooltip content="Decrease font size" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={() => adjustFontSize(-1)}
-              disabled={!selection}
-              aria-label="Decrease font size"
-            >
-              <span className="text-base leading-none">−</span>
-            </Button>
-          </Tooltip>
-          <div className="text-ui-xs flex h-7 min-w-9 items-center justify-center rounded-md border border-border/70 bg-background px-2 font-semibold text-muted-foreground">
-            {effectiveStyleForAnchor?.fontSize ?? DEFAULT_FONT_SIZE}
-          </div>
-          <Tooltip content="Increase font size" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={() => adjustFontSize(1)}
-              disabled={!selection}
-              aria-label="Increase font size"
-            >
-              <span className="text-base leading-none">+</span>
-            </Button>
-          </Tooltip>
-
-          <ToolbarSeparator />
-
-          {/* Bold / Italic / Underline / Strikethrough */}
-          <Tooltip content="Bold (⌘B)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.bold && "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={toggleBold}
-              disabled={!selection}
-              aria-label="Bold"
-            >
-              <Bold className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Italic (⌘I)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.italic && "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={toggleItalic}
-              disabled={!selection}
-              aria-label="Italic"
-            >
-              <Italic className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Underline (⌘U)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.underline && "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={toggleUnderline}
-              disabled={!selection}
-              aria-label="Underline"
-            >
-              <Underline className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Strikethrough" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.strikethrough && "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={toggleStrikethrough}
-              disabled={!selection}
-              aria-label="Strikethrough"
-            >
-              <Strikethrough className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          {/* Color pickers */}
-          <ExcelColorPicker
-            tooltip="Text color"
-            value={effectiveStyleForAnchor?.color}
-            fallbackBar="currentColor"
-            swatches={TEXT_COLOR_SWATCHES}
-            resetLabel="Reset color"
-            disabled={!selection}
-            onChange={setTextColor}
-          >
-            <Baseline className="h-3.5 w-3.5" />
-          </ExcelColorPicker>
-          <ExcelColorPicker
-            tooltip="Fill color"
-            value={effectiveStyleForAnchor?.background}
-            fallbackBar="transparent"
-            swatches={FILL_COLOR_SWATCHES}
-            resetLabel="No fill"
-            disabled={!selection}
-            onChange={setFillColor}
-          >
-            <PaintBucket className="h-3.5 w-3.5" />
-          </ExcelColorPicker>
-
-          <ToolbarSeparator />
-
-          {/* Horizontal alignment */}
-          <Tooltip content="Align left" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.textAlign === "left" &&
-                  "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={() => setAlign("left")}
-              disabled={!selection}
-              aria-label="Align left"
-            >
-              <AlignLeft className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Align center" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.textAlign === "center" &&
-                  "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={() => setAlign("center")}
-              disabled={!selection}
-              aria-label="Align center"
-            >
-              <AlignCenter className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Align right" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.textAlign === "right" &&
-                  "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={() => setAlign("right")}
-              disabled={!selection}
-              aria-label="Align right"
-            >
-              <AlignRight className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          {/* Vertical alignment */}
-          <Tooltip content="Align top" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.verticalAlign === "top" &&
-                  "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={() => setVerticalAlign("top")}
-              disabled={!selection}
-              aria-label="Align top"
-            >
-              <AlignStartVertical className="h-3.5 w-3.5 rotate-90" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Align middle" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.verticalAlign === "middle" &&
-                  "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={() => setVerticalAlign("middle")}
-              disabled={!selection}
-              aria-label="Align middle"
-            >
-              <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Align bottom" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.verticalAlign === "bottom" &&
-                  "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={() => setVerticalAlign("bottom")}
-              disabled={!selection}
-              aria-label="Align bottom"
-            >
-              <AlignEndVertical className="h-3.5 w-3.5 rotate-90" />
-            </Button>
-          </Tooltip>
-
-          {/* Borders */}
-          <ExcelBordersButton disabled={!selection} onPattern={applyBorderPattern} />
-
-          {/* Merge cells */}
-          <Tooltip
-            content={selectionMergeState === "unmerge" ? "Unmerge cells" : "Merge cells"}
-            side="bottom"
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                selectionMergeState === "unmerge" && "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={toggleMerge}
-              disabled={selectionMergeState === "noop"}
-              aria-label={selectionMergeState === "unmerge" ? "Unmerge cells" : "Merge cells"}
-            >
-              {selectionMergeState === "unmerge" ? (
-                <Split className="h-3.5 w-3.5" />
-              ) : (
-                <Merge className="h-3.5 w-3.5" />
-              )}
-            </Button>
-          </Tooltip>
-
-          {/* Wrap text */}
-          <Tooltip content="Wrap text" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                effectiveStyleForAnchor?.wrapText && "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={toggleWrapText}
-              disabled={!selection}
-              aria-label="Wrap text"
-            >
-              <WrapText className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          <ToolbarSeparator />
-
-          <Tooltip content="Clear (Delete)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={clearRange}
-              disabled={!selection}
-              aria-label="Clear range"
-            >
-              <Eraser className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          <ToolbarSeparator />
-
-          {/* Σ — quick-insert aggregate formulas */}
-          <ExcelMenuButton
-            tooltip="Functions"
-            disabled={!selection}
-            width={200}
-            trigger={<Sigma className="h-3.5 w-3.5" />}
-            items={[
-              { id: "sum", label: "SUM", example: "Σ", onSelect: () => insertAggregateFn("SUM") },
-              {
-                id: "avg",
-                label: "AVERAGE",
-                example: "x̄",
-                onSelect: () => insertAggregateFn("AVERAGE"),
-              },
-              {
-                id: "count",
-                label: "COUNT",
-                example: "#",
-                onSelect: () => insertAggregateFn("COUNT"),
-              },
-              { id: "max", label: "MAX", example: "▲", onSelect: () => insertAggregateFn("MAX") },
-              { id: "min", label: "MIN", example: "▼", onSelect: () => insertAggregateFn("MIN") },
-            ]}
-          />
-
-          {/* Sort */}
-          <Tooltip content="Sort A → Z (by leftmost column)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={() => sortRangeBy("asc")}
-              disabled={!selection}
-              aria-label="Sort A to Z"
-            >
-              <ArrowDownAZ className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Sort Z → A (by leftmost column)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={() => sortRangeBy("desc")}
-              disabled={!selection}
-              aria-label="Sort Z to A"
-            >
-              <ArrowUpAZ className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          {/* Format painter */}
-          <Tooltip content={paintStyle ? "Cancel format painter" : "Format painter"} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-7 w-7 rounded-md",
-                paintStyle && "bg-foreground/[0.08] text-foreground"
-              )}
-              onClick={togglePaintMode}
-              disabled={!selection && !paintStyle}
-              aria-label="Format painter"
-              aria-pressed={!!paintStyle}
-            >
-              <Paintbrush className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          {/* Insert link */}
-          <Tooltip content="Insert link (⌘K)" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md"
-              onClick={promptInsertLink}
-              disabled={!anchor}
-              aria-label="Insert link"
-            >
-              <LinkIcon className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-
-          {/* Text rotation */}
-          <ExcelMenuButton
-            tooltip="Text rotation"
-            disabled={!selection}
-            width={220}
-            trigger={
-              <span
-                className="inline-flex items-center font-mono text-[10px] font-semibold"
-                style={{ transform: "rotate(-20deg)" }}
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Undo / Redo */}
+            <Tooltip content="Undo (⌘Z)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={undo}
+                disabled={!canUndo}
+                aria-label="Undo"
               >
-                Ab
-              </span>
-            }
-            items={[
-              {
-                id: "0",
-                label: "None",
-                example: "0°",
-                onSelect: () => applyStyleToRange({ rotation: 0 }),
-              },
-              {
-                id: "45",
-                label: "Tilt up",
-                example: "45°",
-                onSelect: () => applyStyleToRange({ rotation: 45 }),
-              },
-              {
-                id: "-45",
-                label: "Tilt down",
-                example: "−45°",
-                onSelect: () => applyStyleToRange({ rotation: -45 }),
-              },
-              {
-                id: "90",
-                label: "Stack vertically",
-                example: "90°",
-                onSelect: () => applyStyleToRange({ rotation: 90 }),
-              },
-              {
-                id: "-90",
-                label: "Rotate down",
-                example: "−90°",
-                onSelect: () => applyStyleToRange({ rotation: -90 }),
-              },
-            ]}
-          />
+                <Undo2 className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Redo (⌘⇧Z)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={redo}
+                disabled={!canRedo}
+                aria-label="Redo"
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
 
-          <ToolbarSeparator />
+            <ToolbarSeparator />
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 rounded-md"
-            onClick={decreaseZoom}
-            disabled={zoom <= ZOOM_LEVELS[0]}
-            aria-label="Zoom out"
-          >
-            <ZoomOut className="h-3.5 w-3.5" />
-          </Button>
-          <div className="text-ui-xs flex h-7 min-w-16 items-center justify-center rounded-md border border-border/70 bg-background px-2 font-semibold text-muted-foreground">
-            {Math.round(zoom * 100)}%
+            {/* Number formats */}
+            <Tooltip content="Format as currency" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={() => applyNumberFormatToRange(QUICK_CURRENCY_FORMAT)}
+                disabled={!selection}
+                aria-label="Format as currency"
+              >
+                <DollarSign className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Format as percent" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={() => applyNumberFormatToRange(QUICK_PERCENT_FORMAT)}
+                disabled={!selection}
+                aria-label="Format as percent"
+              >
+                <Percent className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Decrease decimal places" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md font-mono text-xs"
+                onClick={() => adjustDecimalsForRange(-1)}
+                disabled={!selection}
+                aria-label="Decrease decimal places"
+              >
+                .0−
+              </Button>
+            </Tooltip>
+            <Tooltip content="Increase decimal places" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md font-mono text-xs"
+                onClick={() => adjustDecimalsForRange(1)}
+                disabled={!selection}
+                aria-label="Increase decimal places"
+              >
+                .0+
+              </Button>
+            </Tooltip>
+            <ExcelMenuButton
+              tooltip="More formats"
+              disabled={!selection}
+              width={260}
+              trigger={<span className="font-mono text-xs">123</span>}
+              items={NUMBER_FORMAT_PRESETS.map((preset) => ({
+                id: preset.id,
+                label: preset.label,
+                example: preset.example,
+                onSelect: () => applyNumberFormatToRange(preset.format),
+              }))}
+            />
+
+            <ToolbarSeparator />
+
+            {/* Font family */}
+            <ExcelFontFamilyButton
+              value={effectiveStyleForAnchor?.fontFamily}
+              disabled={!selection}
+              onChange={setFontFamily}
+            />
+
+            <ToolbarSeparator />
+
+            {/* Font size */}
+            <Tooltip content="Decrease font size" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={() => adjustFontSize(-1)}
+                disabled={!selection}
+                aria-label="Decrease font size"
+              >
+                <span className="text-base leading-none">−</span>
+              </Button>
+            </Tooltip>
+            <div className="text-ui-xs flex h-7 min-w-9 items-center justify-center rounded-md border border-border/70 bg-background px-2 font-semibold text-muted-foreground">
+              {effectiveStyleForAnchor?.fontSize ?? DEFAULT_FONT_SIZE}
+            </div>
+            <Tooltip content="Increase font size" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={() => adjustFontSize(1)}
+                disabled={!selection}
+                aria-label="Increase font size"
+              >
+                <span className="text-base leading-none">+</span>
+              </Button>
+            </Tooltip>
+
+            <ToolbarSeparator />
+
+            {/* Bold / Italic / Underline / Strikethrough */}
+            <Tooltip content="Bold (⌘B)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.bold && "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={toggleBold}
+                disabled={!selection}
+                aria-label="Bold"
+              >
+                <Bold className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Italic (⌘I)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.italic && "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={toggleItalic}
+                disabled={!selection}
+                aria-label="Italic"
+              >
+                <Italic className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Underline (⌘U)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.underline && "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={toggleUnderline}
+                disabled={!selection}
+                aria-label="Underline"
+              >
+                <Underline className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Strikethrough" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.strikethrough && "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={toggleStrikethrough}
+                disabled={!selection}
+                aria-label="Strikethrough"
+              >
+                <Strikethrough className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
+            {/* Color pickers */}
+            <ExcelColorPicker
+              tooltip="Text color"
+              value={effectiveStyleForAnchor?.color}
+              fallbackBar="currentColor"
+              swatches={TEXT_COLOR_SWATCHES}
+              resetLabel="Reset color"
+              disabled={!selection}
+              onChange={setTextColor}
+            >
+              <Baseline className="h-3.5 w-3.5" />
+            </ExcelColorPicker>
+            <ExcelColorPicker
+              tooltip="Fill color"
+              value={effectiveStyleForAnchor?.background}
+              fallbackBar="transparent"
+              swatches={FILL_COLOR_SWATCHES}
+              resetLabel="No fill"
+              disabled={!selection}
+              onChange={setFillColor}
+            >
+              <PaintBucket className="h-3.5 w-3.5" />
+            </ExcelColorPicker>
+
+            <ToolbarSeparator />
+
+            {/* Horizontal alignment */}
+            <Tooltip content="Align left" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.textAlign === "left" &&
+                    "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={() => setAlign("left")}
+                disabled={!selection}
+                aria-label="Align left"
+              >
+                <AlignLeft className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Align center" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.textAlign === "center" &&
+                    "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={() => setAlign("center")}
+                disabled={!selection}
+                aria-label="Align center"
+              >
+                <AlignCenter className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Align right" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.textAlign === "right" &&
+                    "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={() => setAlign("right")}
+                disabled={!selection}
+                aria-label="Align right"
+              >
+                <AlignRight className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
+            {/* Vertical alignment */}
+            <Tooltip content="Align top" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.verticalAlign === "top" &&
+                    "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={() => setVerticalAlign("top")}
+                disabled={!selection}
+                aria-label="Align top"
+              >
+                <AlignStartVertical className="h-3.5 w-3.5 rotate-90" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Align middle" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.verticalAlign === "middle" &&
+                    "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={() => setVerticalAlign("middle")}
+                disabled={!selection}
+                aria-label="Align middle"
+              >
+                <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Align bottom" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  effectiveStyleForAnchor?.verticalAlign === "bottom" &&
+                    "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={() => setVerticalAlign("bottom")}
+                disabled={!selection}
+                aria-label="Align bottom"
+              >
+                <AlignEndVertical className="h-3.5 w-3.5 rotate-90" />
+              </Button>
+            </Tooltip>
+
+            {/* Borders */}
+            <ExcelBordersButton disabled={!selection} onPattern={applyBorderPattern} />
+
+            {/* Merge cells */}
+            <Tooltip
+              content={selectionMergeState === "unmerge" ? "Unmerge cells" : "Merge cells"}
+              side="bottom"
+            >
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  selectionMergeState === "unmerge" && "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={toggleMerge}
+                disabled={selectionMergeState === "noop"}
+                aria-label={selectionMergeState === "unmerge" ? "Unmerge cells" : "Merge cells"}
+              >
+                {selectionMergeState === "unmerge" ? (
+                  <Split className="h-3.5 w-3.5" />
+                ) : (
+                  <Merge className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </Tooltip>
+
+            {/* Text overflow — cycles clip → wrap → overflow → clip. The
+              click toggles via `cycleTextOverflow`; the dropdown carat
+              opens an explicit menu. */}
+            <ExcelMenuButton
+              tooltip={`Text overflow (${currentTextOverflow})`}
+              disabled={!selection}
+              width={200}
+              trigger={
+                <span
+                  className={cn(
+                    "flex h-3.5 w-3.5 items-center justify-center rounded-sm",
+                    currentTextOverflow !== "clip" && "bg-foreground/[0.08] text-foreground"
+                  )}
+                >
+                  <WrapText className="h-3.5 w-3.5" />
+                </span>
+              }
+              items={[
+                {
+                  id: "clip",
+                  label: "Clip (truncate)",
+                  active: currentTextOverflow === "clip",
+                  onSelect: () => setTextOverflow("clip"),
+                },
+                {
+                  id: "wrap",
+                  label: "Wrap",
+                  active: currentTextOverflow === "wrap",
+                  onSelect: () => setTextOverflow("wrap"),
+                },
+                {
+                  id: "overflow",
+                  label: "Overflow",
+                  active: currentTextOverflow === "overflow",
+                  onSelect: () => setTextOverflow("overflow"),
+                },
+              ]}
+            />
+
+            <ToolbarSeparator />
+
+            <Tooltip content="Clear (Delete)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={clearRange}
+                disabled={!selection}
+                aria-label="Clear range"
+              >
+                <Eraser className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 rounded-md"
-            onClick={increaseZoom}
-            disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
-            aria-label="Zoom in"
-          >
-            <ZoomIn className="h-3.5 w-3.5" />
-          </Button>
+        </div>
+
+        {/* Row 2 — operations / data tools / view */}
+        <div className="flex h-9 items-center gap-2 overflow-x-auto border-t border-border/40 px-3">
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Data validation (list) */}
+            <Tooltip content="Data validation (list)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={promptListValidation}
+                disabled={!selection}
+                aria-label="Data validation (list)"
+              >
+                <span className="font-mono text-xs">⌃▾</span>
+              </Button>
+            </Tooltip>
+
+            {/* Filter — toggle the per-column filter dropdowns */}
+            <Tooltip content={sheetFilterMode ? "Turn off filter" : "Filter"} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  sheetFilterMode && "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={toggleFilterMode}
+                disabled={!displaySheet}
+                aria-pressed={sheetFilterMode}
+                aria-label="Toggle filter"
+              >
+                <FilterIcon className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
+            {/* View → Freeze panes */}
+            <ExcelMenuButton
+              tooltip="Freeze"
+              disabled={!displaySheet}
+              width={240}
+              trigger={<span className="font-mono text-[10px] font-semibold leading-none">⫼</span>}
+              items={[
+                {
+                  id: "none",
+                  label: "No freeze",
+                  active: sheetFreeze.row === 0 && sheetFreeze.col === 0,
+                  onSelect: () => setFrozenPanes(0, 0),
+                },
+                {
+                  id: "row1",
+                  label: "Freeze 1 row",
+                  active: sheetFreeze.row === 1 && sheetFreeze.col === 0,
+                  onSelect: () => setFrozenPanes(1, sheetFreeze.col),
+                },
+                {
+                  id: "row2",
+                  label: "Freeze 2 rows",
+                  active: sheetFreeze.row === 2 && sheetFreeze.col === 0,
+                  onSelect: () => setFrozenPanes(2, sheetFreeze.col),
+                },
+                {
+                  id: "uptoRow",
+                  label: anchor ? `Freeze up to row ${anchor.row + 1}` : "Freeze up to current row",
+                  onSelect: () => setFrozenPanes(anchor ? anchor.row + 1 : 0, sheetFreeze.col),
+                  disabled: !anchor,
+                },
+                {
+                  id: "col1",
+                  label: "Freeze 1 column",
+                  active: sheetFreeze.row === 0 && sheetFreeze.col === 1,
+                  onSelect: () => setFrozenPanes(sheetFreeze.row, 1),
+                },
+                {
+                  id: "col2",
+                  label: "Freeze 2 columns",
+                  active: sheetFreeze.row === 0 && sheetFreeze.col === 2,
+                  onSelect: () => setFrozenPanes(sheetFreeze.row, 2),
+                },
+                {
+                  id: "uptoCol",
+                  label: anchor
+                    ? `Freeze up to column ${columnLabel(anchor.col)}`
+                    : "Freeze up to current column",
+                  onSelect: () => setFrozenPanes(sheetFreeze.row, anchor ? anchor.col + 1 : 0),
+                  disabled: !anchor,
+                },
+              ]}
+            />
+
+            {/* Σ — quick-insert aggregate formulas */}
+            <ExcelMenuButton
+              tooltip="Functions"
+              disabled={!selection}
+              width={200}
+              trigger={<Sigma className="h-3.5 w-3.5" />}
+              items={[
+                { id: "sum", label: "SUM", example: "Σ", onSelect: () => insertAggregateFn("SUM") },
+                {
+                  id: "avg",
+                  label: "AVERAGE",
+                  example: "x̄",
+                  onSelect: () => insertAggregateFn("AVERAGE"),
+                },
+                {
+                  id: "count",
+                  label: "COUNT",
+                  example: "#",
+                  onSelect: () => insertAggregateFn("COUNT"),
+                },
+                { id: "max", label: "MAX", example: "▲", onSelect: () => insertAggregateFn("MAX") },
+                { id: "min", label: "MIN", example: "▼", onSelect: () => insertAggregateFn("MIN") },
+              ]}
+            />
+
+            {/* Sort */}
+            <Tooltip content="Sort A → Z (by leftmost column)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={() => sortRangeBy("asc")}
+                disabled={!selection}
+                aria-label="Sort A to Z"
+              >
+                <ArrowDownAZ className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Sort Z → A (by leftmost column)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={() => sortRangeBy("desc")}
+                disabled={!selection}
+                aria-label="Sort Z to A"
+              >
+                <ArrowUpAZ className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
+            {/* Format painter */}
+            <Tooltip
+              content={paintStyle ? "Cancel format painter" : "Format painter"}
+              side="bottom"
+            >
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md",
+                  paintStyle && "bg-foreground/[0.08] text-foreground"
+                )}
+                onClick={togglePaintMode}
+                disabled={!selection && !paintStyle}
+                aria-label="Format painter"
+                aria-pressed={!!paintStyle}
+              >
+                <Paintbrush className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
+            {/* Insert link */}
+            <Tooltip content="Insert link (⌘K)" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={promptInsertLink}
+                disabled={!anchor}
+                aria-label="Insert link"
+              >
+                <LinkIcon className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
+            {/* Text rotation */}
+            <ExcelMenuButton
+              tooltip="Text rotation"
+              disabled={!selection}
+              width={220}
+              trigger={
+                <span
+                  className="inline-flex items-center font-mono text-[10px] font-semibold"
+                  style={{ transform: "rotate(-20deg)" }}
+                >
+                  Ab
+                </span>
+              }
+              items={[
+                {
+                  id: "0",
+                  label: "None",
+                  example: "0°",
+                  onSelect: () => applyStyleToRange({ rotation: 0 }),
+                },
+                {
+                  id: "45",
+                  label: "Tilt up",
+                  example: "45°",
+                  onSelect: () => applyStyleToRange({ rotation: 45 }),
+                },
+                {
+                  id: "-45",
+                  label: "Tilt down",
+                  example: "−45°",
+                  onSelect: () => applyStyleToRange({ rotation: -45 }),
+                },
+                {
+                  id: "90",
+                  label: "Stack vertically",
+                  example: "90°",
+                  onSelect: () => applyStyleToRange({ rotation: 90 }),
+                },
+                {
+                  id: "-90",
+                  label: "Rotate down",
+                  example: "−90°",
+                  onSelect: () => applyStyleToRange({ rotation: -90 }),
+                },
+              ]}
+            />
+
+            <ToolbarSeparator />
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={decreaseZoom}
+              disabled={zoom <= ZOOM_LEVELS[0]}
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </Button>
+            <div className="text-ui-xs flex h-7 min-w-16 items-center justify-center rounded-md border border-border/70 bg-background px-2 font-semibold text-muted-foreground">
+              {Math.round(zoom * 100)}%
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-md"
+              onClick={increaseZoom}
+              disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* Formula bar */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 bg-background px-3">
-        <div className="text-ui-xs bg-sidebar flex h-7 min-w-12 items-center justify-center rounded-md border border-border/70 px-2 font-mono font-semibold text-muted-foreground">
-          {cellRefLabel || "—"}
-        </div>
+        <ExcelNameBox
+          label={cellRefLabel}
+          disabled={!displaySheet}
+          onSubmit={(input) => {
+            if (!displaySheet) return;
+            const range = parseRangeRef(input);
+            if (!range) {
+              toast.error("Couldn't read that cell reference");
+              return;
+            }
+            const maxRow = Math.max(0, displaySheet.rowCount - 1);
+            const maxCol = Math.max(0, displaySheet.colCount - 1);
+            setSelection({
+              startRow: clamp(range.startRow, 0, maxRow),
+              startCol: clamp(range.startCol, 0, maxCol),
+              endRow: clamp(range.endRow, 0, maxRow),
+              endCol: clamp(range.endCol, 0, maxCol),
+            });
+            window.requestAnimationFrame(() => cellGridRef.current?.focus());
+          }}
+        />
         <span className="text-ui-xs font-mono text-muted-foreground">fx</span>
         <input
           ref={formulaInputRef}
@@ -2176,6 +2956,13 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             updateDraft(event.target.value);
           }}
           onKeyDown={(event) => {
+            // Formula autocomplete first — same precedence as the in-cell
+            // input so both editing surfaces feel identical.
+            if (handleSuggestKey(event.key)) {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
             if (event.key === "Enter") {
               event.preventDefault();
               commitEditingCell({ dRow: event.shiftKey ? -1 : 1, dCol: 0 });
@@ -2252,6 +3039,26 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             onCancelEdit={cancelEdit}
             onContextMenuAt={openContextMenu}
             onKeyDown={handleGridKeyDown}
+            onResizeColumn={setColumnWidth}
+            onResizeRow={setRowHeight}
+            fillRange={fillRange}
+            onAutoFillStart={beginAutoFill}
+            onAutoFillExtend={extendAutoFill}
+            onAutoFillEnd={commitAutoFill}
+            computedValueAt={computedValueAt}
+            frozenRow={Math.max(0, Math.min(displaySheet.rowCount, sheetFreeze.row))}
+            frozenCol={Math.max(0, Math.min(displaySheet.colCount, sheetFreeze.col))}
+            hiddenRows={hiddenRows}
+            filterMode={sheetFilterMode}
+            activeColumnFilters={activeColumnFilters}
+            onOpenColumnFilter={(col, anchor) =>
+              setFilterPopover({ col, x: anchor.x, y: anchor.y })
+            }
+            validationsByCoord={validationsByCoord}
+            onOpenValidationPicker={(row, col, anchor) =>
+              setValidationPopover({ row, col, x: anchor.x, y: anchor.y })
+            }
+            onSuggestKey={handleSuggestKey}
           />
         )}
       </div>
@@ -2301,6 +3108,63 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             );
           })}
         </div>
+      )}
+
+      {suggestAnchor && suggestItems.length > 0 && (
+        <ExcelFormulaSuggest
+          anchor={suggestAnchor}
+          items={suggestItems}
+          selectedIndex={suggestIndex}
+          onPick={acceptSuggestion}
+        />
+      )}
+
+      {validationPopover &&
+        displaySheet &&
+        (() => {
+          const v = validationsByCoord.get(coordKey(validationPopover.row, validationPopover.col));
+          if (!v) {
+            // Stale — popover anchor outlived the validation entry.
+            return null;
+          }
+          return (
+            <ContextMenuPortal
+              x={validationPopover.x}
+              y={validationPopover.y}
+              onClose={() => setValidationPopover(null)}
+            >
+              {v.values.map((value) => (
+                <ContextMenuItem
+                  key={value}
+                  onSelect={() => {
+                    applyCellUpdates([
+                      {
+                        row: validationPopover.row,
+                        col: validationPopover.col,
+                        patch: parseDraft(value),
+                      },
+                    ]);
+                  }}
+                >
+                  {value}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuPortal>
+          );
+        })()}
+
+      {filterPopover && displaySheet && (
+        <ExcelFilterPopover
+          anchor={{ x: filterPopover.x, y: filterPopover.y }}
+          uniqueValues={getColumnUniqueValues(filterPopover.col)}
+          visibleValues={
+            editorState?.filters?.[`${displaySheet.id}!${filterPopover.col}`] ??
+            getColumnUniqueValues(filterPopover.col)
+          }
+          onApply={(visible) => setColumnFilter(filterPopover.col, visible)}
+          onClear={() => setColumnFilter(filterPopover.col, null)}
+          onClose={() => setFilterPopover(null)}
+        />
       )}
 
       {tabContextMenu && (
@@ -2499,6 +3363,59 @@ function ToolbarSeparator() {
   return <div className="mx-1 h-5 w-px shrink-0 bg-border/60" aria-hidden />;
 }
 
+interface ExcelNameBoxProps {
+  /** Current cell ref shown when the input isn't focused. */
+  label: string;
+  disabled?: boolean;
+  onSubmit(input: string): void;
+}
+
+/** Editable name box on the formula bar. Shows the current selection's
+ *  reference when unfocused; on Enter parses the input as `A1` /
+ *  `A1:C10` and navigates / re-selects. Esc + blur revert. */
+function ExcelNameBox({ label, disabled, onSubmit }: ExcelNameBoxProps) {
+  const [draft, setDraft] = useState(label);
+  const [focused, setFocused] = useState(false);
+  // Sync the displayed value to the live selection while the input
+  // isn't focused — without this the box would freeze on whatever the
+  // user last typed even after they navigated elsewhere.
+  useEffect(() => {
+    if (!focused) setDraft(label);
+  }, [label, focused]);
+  return (
+    <input
+      type="text"
+      value={focused ? draft : label || ""}
+      placeholder="—"
+      disabled={disabled}
+      spellCheck={false}
+      onFocus={(event) => {
+        setFocused(true);
+        setDraft(label);
+        event.currentTarget.select();
+      }}
+      onBlur={() => {
+        setFocused(false);
+        setDraft(label);
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (draft.trim()) onSubmit(draft);
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          setDraft(label);
+          event.currentTarget.blur();
+        }
+        event.stopPropagation();
+      }}
+      className="text-ui-xs bg-sidebar h-7 w-20 shrink-0 rounded-md border border-border/70 px-2 text-center font-mono font-semibold text-foreground/90 outline-none focus:border-primary/40 disabled:opacity-50"
+    />
+  );
+}
+
 function clamp(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.max(min, Math.min(max, value));
@@ -2526,6 +3443,43 @@ function replaceInString(
   if (caseSensitive) return text.split(needle).join(replacement);
   const re = new RegExp(escapeRegExp(needle), "gi");
   return text.replace(re, replacement);
+}
+
+/** Parse a single cell reference like "A5" or "AB12" into zero-based
+ *  `{ row, col }`. Returns `null` when the input doesn't match the
+ *  letters-then-digits shape — callers fall back to range parsing. */
+function parseCellRef(ref: string): { row: number; col: number } | null {
+  const match = /^([A-Za-z]+)([0-9]+)$/.exec(ref.trim());
+  if (!match) return null;
+  const letters = match[1].toUpperCase();
+  const rowOneBased = Number(match[2]);
+  if (!Number.isFinite(rowOneBased) || rowOneBased < 1) return null;
+  let col = 0;
+  for (const ch of letters) col = col * 26 + (ch.charCodeAt(0) - 64);
+  return { row: rowOneBased - 1, col: col - 1 };
+}
+
+/** Parse "A1:C10" into a `SelectionRange`. Single-cell input ("A1") yields
+ *  a degenerate range too, so callers can always feed the result back into
+ *  `setSelection`. */
+function parseRangeRef(ref: string): {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+} | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  const colon = trimmed.indexOf(":");
+  if (colon < 0) {
+    const single = parseCellRef(trimmed);
+    if (!single) return null;
+    return { startRow: single.row, startCol: single.col, endRow: single.row, endCol: single.col };
+  }
+  const start = parseCellRef(trimmed.slice(0, colon));
+  const end = parseCellRef(trimmed.slice(colon + 1));
+  if (!start || !end) return null;
+  return { startRow: start.row, startCol: start.col, endRow: end.row, endCol: end.col };
 }
 
 /** Sheets-style cell value comparator: numbers numerically, strings via

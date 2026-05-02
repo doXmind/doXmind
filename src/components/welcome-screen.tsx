@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
 import { File, FileSymlink, Folder } from "lucide-react";
 import { useFileStore, type RecentEntry } from "@/stores/file-store";
+import { openWindowForTarget } from "@/lib/window";
 import { Button } from "@/components/ui/button";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
@@ -65,11 +66,31 @@ export function WelcomeScreen() {
       .slice(0, RECENT_LIMIT);
   }, [recentsRaw, openTarget, rootPath, openFilePath]);
 
-  const handleOpenFolder = async () => {
+  // VSCode-style: plain click reuses the current window (which is already on
+  // the welcome screen, so there's nothing to lose). Holding ⌘ / Shift / Ctrl
+  // routes through Rust, which focuses an existing window with the same
+  // target or opens a fresh one.
+  const wantsNewWindow = (event: React.MouseEvent | React.KeyboardEvent): boolean =>
+    event.metaKey || event.ctrlKey || event.shiftKey;
+
+  const dispatchOpen = async (entry: RecentEntry, inNewWindow: boolean): Promise<void> => {
+    if (inNewWindow) {
+      await openWindowForTarget(entry);
+      return;
+    }
+    if (entry.kind === "folder") {
+      await openFolder(entry.path);
+    } else {
+      await openFile(entry.path);
+    }
+  };
+
+  const handleOpenFolder = async (event: React.MouseEvent) => {
     if (!isDesktopShell) {
       toast.error(tSidebar("openWorkspaceRequiresDesktop"));
       return;
     }
+    const inNewWindow = wantsNewWindow(event);
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
@@ -78,8 +99,8 @@ export function WelcomeScreen() {
         title: tSidebar("openFolder"),
       });
       if (!selected || Array.isArray(selected)) return;
-      await openFolder(selected);
-      toast.success(tSidebar("workspaceOpened"));
+      await dispatchOpen({ kind: "folder", path: selected }, inNewWindow);
+      if (!inNewWindow) toast.success(tSidebar("workspaceOpened"));
     } catch (error) {
       log.error("Failed to open folder", error);
       const { title, description } = getErrorMessage(error);
@@ -87,11 +108,12 @@ export function WelcomeScreen() {
     }
   };
 
-  const handleOpenFile = async () => {
+  const handleOpenFile = async (event: React.MouseEvent) => {
     if (!isDesktopShell) {
       toast.error(tSidebar("openWorkspaceRequiresDesktop"));
       return;
     }
+    const inNewWindow = wantsNewWindow(event);
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({
@@ -113,8 +135,8 @@ export function WelcomeScreen() {
         return;
       }
       const fileBase = normalized.slice(lastSlash + 1);
-      await openFile(selected);
-      toast.success(tSidebar("openedFile", { name: fileBase }));
+      await dispatchOpen({ kind: "file", path: selected }, inNewWindow);
+      if (!inNewWindow) toast.success(tSidebar("openedFile", { name: fileBase }));
     } catch (error) {
       log.error("Failed to open file", error);
       const { title, description } = getErrorMessage(error);
@@ -122,13 +144,9 @@ export function WelcomeScreen() {
     }
   };
 
-  const handleOpenRecent = async (entry: RecentEntry) => {
+  const handleOpenRecent = async (entry: RecentEntry, event: React.MouseEvent) => {
     try {
-      if (entry.kind === "folder") {
-        await openFolder(entry.path);
-      } else {
-        await openFile(entry.path);
-      }
+      await dispatchOpen(entry, wantsNewWindow(event));
     } catch (error) {
       log.error("Failed to open recent", error);
       const { title, description } = getErrorMessage(error);
@@ -178,8 +196,8 @@ export function WelcomeScreen() {
                   <li key={`${entry.kind}:${entry.path}`}>
                     <button
                       type="button"
-                      onClick={() => handleOpenRecent(entry)}
-                      title={entry.path}
+                      onClick={(event) => handleOpenRecent(entry, event)}
+                      title={`${entry.path}\n⌘ click to open in new window`}
                       className={cn(
                         "group flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors",
                         "hover:bg-[var(--sidebar-hover)] focus:bg-[var(--sidebar-hover)] focus:outline-none"

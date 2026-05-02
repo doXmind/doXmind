@@ -14,13 +14,20 @@ use std::fs;
 use std::io;
 use std::net::TcpListener;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{cmp, collections::BTreeMap};
+use std::{cmp, collections::BTreeMap, collections::HashMap};
 
 use doxmind_sidecar::{DocMeta, DocPayload, ReadResult, Source};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
+};
+
+#[cfg(target_os = "macos")]
+mod dock_menu;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
@@ -30,7 +37,6 @@ use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    Emitter,
 };
 
 #[cfg(target_os = "macos")]
@@ -63,6 +69,61 @@ impl Backend {
         Self {
             child: Mutex::new(None),
         }
+    }
+}
+
+/// What a window currently has open. The `kind` is "file" or "folder";
+/// `path` is the absolute on-disk path. The frontend stays the source of
+/// truth for "what's actually rendered", but Rust mirrors this so the dock
+/// menu (and future "focus existing" routing) can reason about windows
+/// without round-tripping to JS.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct OpenTarget {
+    kind: String,
+    path: String,
+}
+
+/// Per-window open-target registry. Keyed by Tauri window label.
+struct WindowRegistry {
+    open_targets: Mutex<HashMap<String, OpenTarget>>,
+    counter: AtomicU64,
+}
+
+impl WindowRegistry {
+    fn new() -> Self {
+        Self {
+            open_targets: Mutex::new(HashMap::new()),
+            counter: AtomicU64::new(0),
+        }
+    }
+
+    fn next_label(&self) -> String {
+        let n = self.counter.fetch_add(1, Ordering::Relaxed);
+        format!("doc-{n}")
+    }
+
+    fn set(&self, label: &str, target: OpenTarget) {
+        if let Ok(mut map) = self.open_targets.lock() {
+            map.insert(label.to_string(), target);
+        }
+    }
+
+    fn clear(&self, label: &str) {
+        if let Ok(mut map) = self.open_targets.lock() {
+            map.remove(label);
+        }
+    }
+
+    fn find_label(&self, target: &OpenTarget) -> Option<String> {
+        let map = self.open_targets.lock().ok()?;
+        map.iter().find_map(|(label, t)| {
+            if t == target {
+                Some(label.clone())
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -1264,6 +1325,210 @@ fn path_to_slash_string(path: &Path) -> String {
         .join("/")
 }
 
+/// Build the editor URL with optional `?folder=` / `?file=` params encoded
+/// safely. Mirrors the dev/prod webview URL resolution from `run()` so any
+/// new window inherits the same backend-aware shell.
+fn editor_webview_url(target: Option<&OpenTarget>) -> WebviewUrl {
+    let dev_url = std::env::var("DOXMIND_DEV_URL")
+        .ok()
+        .filter(|s| !s.is_empty());
+
+    if let Some(raw) = dev_url {
+        let trimmed = raw.trim_end_matches('/');
+        let base = format!("{trimmed}/editor/");
+        match Url::parse(&base) {
+            Ok(mut url) => {
+                if let Some(t) = target {
+                    url.query_pairs_mut().append_pair(&t.kind, &t.path);
+                }
+                return WebviewUrl::External(url);
+            }
+            Err(err) => {
+                log::warn!("[webview] ignoring invalid DOXMIND_DEV_URL ({raw}): {err}");
+            }
+        }
+    }
+
+    // App-relative path. WebviewUrl::App takes a relative URL; we encode the
+    // query with url::Url against a dummy base, then strip back to "editor/".
+    if let Some(t) = target {
+        let mut tmp = Url::parse("tauri://localhost/editor/").expect("static base parses");
+        tmp.query_pairs_mut().append_pair(&t.kind, &t.path);
+        let path_with_query = format!(
+            "editor/{query}",
+            query = tmp.query().map(|q| format!("?{q}")).unwrap_or_default()
+        );
+        WebviewUrl::App(path_with_query.into())
+    } else {
+        WebviewUrl::App("editor/".into())
+    }
+}
+
+/// Apply the macOS-specific window styling (overlay title bar, traffic lights,
+/// vibrancy). Called on every doXmind window so they all match.
+#[cfg(target_os = "macos")]
+fn apply_macos_window_chrome(window: &WebviewWindow) {
+    if let Err(err) = apply_vibrancy(
+        window,
+        NSVisualEffectMaterial::Sidebar,
+        Some(NSVisualEffectState::Active),
+        None,
+    ) {
+        log::warn!("[window] failed to apply macOS vibrancy: {err}");
+    }
+}
+
+/// Create a new editor window. The first window uses the fixed label "main"
+/// so legacy lookups (tray menu, etc.) still find it; subsequent windows
+/// use unique `doc-N` labels supplied by the registry.
+fn create_editor_window(
+    app: &AppHandle,
+    label: &str,
+    target: Option<OpenTarget>,
+    init_script: &str,
+) -> tauri::Result<WebviewWindow> {
+    if let Some(existing) = app.get_webview_window(label) {
+        return Ok(existing);
+    }
+
+    let webview_url = editor_webview_url(target.as_ref());
+    let mut builder = WebviewWindowBuilder::new(app, label, webview_url)
+        .title("doXmind")
+        .inner_size(1400.0, 900.0)
+        .min_inner_size(900.0, 600.0)
+        .resizable(true)
+        .initialization_script(init_script);
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .traffic_light_position(tauri::LogicalPosition::new(14.0, 24.0))
+            .hidden_title(true)
+            .transparent(true);
+    }
+
+    let window = builder.build()?;
+
+    // Pre-register the window's intended target so that a concurrent
+    // `focus_or_open_window` from the dock menu sees it immediately, even
+    // before the JS side calls `register_window_target` after boot.
+    if let Some(t) = target {
+        if let Some(registry) = app.try_state::<WindowRegistry>() {
+            registry.set(label, t);
+        }
+    }
+
+    let owned_label = label.to_string();
+    let close_handle = app.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            // Multi-window close model: only the last visible window minimizes
+            // (preserves the macOS "stay resident" feel from before). Any
+            // additional window closes for real, freeing its label so the same
+            // folder can be reopened later.
+            let visible_count = visible_window_count(&close_handle);
+            if visible_count <= 1 {
+                api.prevent_close();
+                if let Some(window) = close_handle.get_webview_window(&owned_label) {
+                    let _ = window.minimize();
+                }
+            } else {
+                if let Some(registry) = close_handle.try_state::<WindowRegistry>() {
+                    registry.clear(&owned_label);
+                }
+            }
+        }
+    });
+
+    #[cfg(target_os = "macos")]
+    apply_macos_window_chrome(&window);
+
+    let _ = window.show();
+    let _ = window.set_focus();
+
+    Ok(window)
+}
+
+/// Count windows that are currently visible (not minimized / hidden). Used by
+/// the close handler to decide between "minimize the last window" and "really
+/// close this one".
+fn visible_window_count(app: &AppHandle) -> usize {
+    app.webview_windows()
+        .values()
+        .filter(|w| w.is_visible().unwrap_or(false))
+        .count()
+}
+
+#[tauri::command]
+fn open_window_for_target(
+    app: AppHandle,
+    target: OpenTarget,
+    registry: tauri::State<'_, WindowRegistry>,
+    init_script: tauri::State<'_, InitScript>,
+) -> Result<String, String> {
+    if let Some(label) = registry.find_label(&target) {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+            return Ok(label);
+        }
+        // Stale entry — drop it and fall through to create a fresh window.
+        registry.clear(&label);
+    }
+
+    let label = registry.next_label();
+    create_editor_window(&app, &label, Some(target), &init_script.0).map_err(|e| e.to_string())?;
+    Ok(label)
+}
+
+#[tauri::command]
+fn open_new_window(
+    app: AppHandle,
+    registry: tauri::State<'_, WindowRegistry>,
+    init_script: tauri::State<'_, InitScript>,
+) -> Result<String, String> {
+    let label = registry.next_label();
+    create_editor_window(&app, &label, None, &init_script.0).map_err(|e| e.to_string())?;
+    Ok(label)
+}
+
+#[tauri::command]
+fn register_window_target(
+    window: WebviewWindow,
+    target: OpenTarget,
+    registry: tauri::State<'_, WindowRegistry>,
+) {
+    registry.set(window.label(), target);
+}
+
+#[tauri::command]
+fn unregister_window_target(
+    window: WebviewWindow,
+    registry: tauri::State<'_, WindowRegistry>,
+) {
+    registry.clear(window.label());
+}
+
+/// Receive the latest recents from any window. The dock menu reads this
+/// global state on every right-click, so the most recent push wins.
+#[tauri::command]
+fn dock_set_recents(recents: Vec<OpenTarget>) {
+    #[cfg(target_os = "macos")]
+    dock_menu::set_recents(recents);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = recents;
+    }
+}
+
+/// Holds the per-process WebView init script. We need it on hand whenever a
+/// new window is built, since it injects `__TAURI_BACKEND_URL__` and the
+/// platform class — without it, the new window's React tree can't reach the
+/// FastAPI sidecar.
+struct InitScript(String);
+
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .try_init()
@@ -1310,6 +1575,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .plugin(tauri_plugin_opener::init())
         .manage(BackendUrl(backend_url.clone()))
         .manage(backend_state)
+        .manage(WindowRegistry::new())
+        .manage(InitScript(init_script.clone()))
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
             workspace_default_root,
@@ -1333,7 +1600,12 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_create_folder,
             workspace_rename_folder,
             workspace_delete_folder,
-            workspace_import_asset
+            workspace_import_asset,
+            open_window_for_target,
+            open_new_window,
+            register_window_target,
+            unregister_window_target,
+            dock_set_recents
         ])
         .setup(move |app| {
             // Spawn the backend.
@@ -1350,93 +1622,15 @@ window.__TAURI_PLATFORM__ = "{platform}";
                 *state.child.lock().unwrap() = Some(child);
             }
 
-            // Build the main window with the backend URL pre-injected. On
-            // macOS, hide the title bar background and the title text so the
-            // app's own header takes over — the traffic-light buttons stay
-            // floating at the top-left and the in-page header gets enough
-            // left padding (see .is-tauri-macos in the frontend) to clear
-            // them.
-            // Load the editor shell directly. The marketing/home surface was
-            // removed, so desktop should boot into the local workspace rather
-            // than flashing "/" and waiting for a client redirect.
+            // Build the first window. Subsequent windows go through
+            // `open_window_for_target` / `open_new_window` and reuse the same
+            // helper so they share traffic-light placement, vibrancy, and
+            // close-to-dock semantics.
             //
-            // Use a trailing slash so the URL resolves to the editor index in
-            // both modes:
-            //   dev:  http://localhost:3000/editor/ (Next dev server)
-            //   prod: tauri://localhost/editor/     (static editor route)
-            // In dev mode the binary is normally launched by `tauri dev`,
-            // which bakes the right `devUrl` into the compiled config. The
-            // macOS dev flow (`scripts/desktop-dev.mjs`) takes a different
-            // path: it builds the binary, wraps it in a thin .app so macOS
-            // LaunchServices reports the correct bundle (and Mission Control
-            // shows our logo as the corner badge), and launches the .app via
-            // `open`. Compile-time config baking doesn't reach that .app, so
-            // we let it pass the dev URL through `DOXMIND_DEV_URL` instead
-            // (propagated via `LSEnvironment` in the wrapper's Info.plist).
-            let webview_url = std::env::var("DOXMIND_DEV_URL")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .and_then(|raw| {
-                    let trimmed = raw.trim_end_matches('/');
-                    let full = format!("{trimmed}/editor/");
-                    match full.parse::<tauri::Url>() {
-                        Ok(url) => Some(WebviewUrl::External(url)),
-                        Err(err) => {
-                            log::warn!("[webview] ignoring invalid DOXMIND_DEV_URL ({raw}): {err}");
-                            None
-                        }
-                    }
-                })
-                .unwrap_or_else(|| WebviewUrl::App("editor/".into()));
-
-            let mut builder = WebviewWindowBuilder::new(app, "main", webview_url)
-                .title("doXmind")
-                .inner_size(1400.0, 900.0)
-                .min_inner_size(900.0, 600.0)
-                .resizable(true)
-                .initialization_script(&init_script);
-
-            #[cfg(target_os = "macos")]
-            {
-                // Center the traffic lights vertically inside the 44px
-                // chrome header so they align with the icon buttons that
-                // sit immediately to the right of them. Tauri positions
-                // the cluster at this offset from the window's top-left;
-                // y is tuned visually rather than mathematically because
-                // macOS adds extra padding around the cluster.
-                builder = builder
-                    .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .traffic_light_position(tauri::LogicalPosition::new(14.0, 24.0))
-                    .hidden_title(true)
-                    .transparent(true);
-            }
-
-            let window = builder.build()?;
-            let close_to_dock_window = window.clone();
-            window.on_window_event(move |event| {
-                if let WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = close_to_dock_window.minimize();
-                }
-            });
-            #[cfg(target_os = "macos")]
-            {
-                // corner_radius=None lets NSVisualEffectView fill the entire
-                // window; passing Some(...) clips the vibrancy view to a
-                // smaller rounded rect that may not cover the full sidebar.
-                if let Err(err) = apply_vibrancy(
-                    &window,
-                    NSVisualEffectMaterial::Sidebar,
-                    Some(NSVisualEffectState::Active),
-                    None,
-                ) {
-                    log::warn!("[window] failed to apply macOS vibrancy: {err}");
-                }
-            }
-            // Show & focus once the WebView is ready (avoids the brief blank
-            // flash you get with the default config).
-            let _ = window.show();
-            let _ = window.set_focus();
+            // The first window keeps the literal label "main" because the tray
+            // menu's "Open doXmind" looks it up by that label. New windows get
+            // unique labels from the registry's counter.
+            create_editor_window(&app.handle(), "main", None, &init_script)?;
 
             #[cfg(target_os = "macos")]
             {
@@ -1444,6 +1638,9 @@ window.__TAURI_PLATFORM__ = "{platform}";
                 if let Err(err) = install_macos_tray(app.handle()) {
                     log::warn!("[tray] failed to install: {err}");
                 }
+                // Dock menu install is deferred to `RunEvent::Ready` below
+                // because NSApplication's delegate may not be set yet at this
+                // point in the lifecycle.
             }
 
             Ok(())
@@ -1453,9 +1650,25 @@ window.__TAURI_PLATFORM__ = "{platform}";
         .build(tauri::generate_context!())
         .expect("failed to build tauri app");
 
-    app.run(|handle, event| {
-        if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
-            shutdown_backend(handle);
+    #[cfg(target_os = "macos")]
+    let mut dock_installed = false;
+
+    app.run(move |handle, event| {
+        match event {
+            RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+                shutdown_backend(handle);
+            }
+            #[cfg(target_os = "macos")]
+            RunEvent::Ready => {
+                if !dock_installed {
+                    if let Err(err) = dock_menu::install(handle.clone()) {
+                        log::warn!("[dock] failed to install dock menu: {err}");
+                    } else {
+                        dock_installed = true;
+                    }
+                }
+            }
+            _ => {}
         }
     });
 }

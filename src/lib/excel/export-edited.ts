@@ -49,6 +49,8 @@ function toExportPayload(state: ExcelEditorState): {
   colWidths?: Record<string, number>;
   ops?: ExcelEditorState["ops"];
   workbookOps?: ExcelEditorState["workbookOps"];
+  frozen?: ExcelEditorState["frozen"];
+  validations?: ExcelEditorState["validations"];
 } {
   return {
     cells: state.cells ?? {},
@@ -56,5 +58,7 @@ function toExportPayload(state: ExcelEditorState): {
     colWidths: state.colWidths,
     ops: state.ops,
     workbookOps: state.workbookOps,
+    frozen: state.frozen,
+    validations: state.validations,
   };
 }

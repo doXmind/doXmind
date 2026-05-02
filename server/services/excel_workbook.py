@@ -22,6 +22,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.styles.colors import Color
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.workbook import Workbook
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
 logger = logging.getLogger(__name__)
@@ -664,6 +665,57 @@ def export_edited_workbook(
         letter = get_column_letter(col_idx + 1)
         wb[sheet_name].column_dimensions[letter].width = float(width)
 
+    # Freeze panes — openpyxl wants an A1-style cell reference whose
+    # top-left corner is the *first* unfrozen cell. {row:1,col:0} → "A2",
+    # {row:0,col:1} → "B1", {row:2,col:1} → "B3", and so on.
+    frozen_edits = edits.get("frozen") or {}
+    if isinstance(frozen_edits, dict):
+        for sheet_id, payload in frozen_edits.items():
+            sheet_name = sheet_lookup.get(str(sheet_id))
+            if sheet_name is None or not isinstance(payload, dict):
+                continue
+            row = max(0, int(payload.get("row", 0) or 0))
+            col = max(0, int(payload.get("col", 0) or 0))
+            if row == 0 and col == 0:
+                wb[sheet_name].freeze_panes = None
+            else:
+                wb[sheet_name].freeze_panes = f"{get_column_letter(col + 1)}{row + 1}"
+
+    # Data validation (list type) — group cells by sheet + value list so
+    # each unique list creates one DataValidation covering many ranges.
+    validations = edits.get("validations") or {}
+    if isinstance(validations, dict):
+        # sheet_name -> values_tuple -> [cell_refs]
+        grouped: dict[str, dict[tuple[str, ...], list[str]]] = {}
+        for key, payload in validations.items():
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("type") != "list":
+                continue
+            values = payload.get("values")
+            if not isinstance(values, list) or not values:
+                continue
+            sheet_name, row_idx, col_idx = _split_cell_key(str(key), sheet_lookup)
+            if sheet_name is None:
+                continue
+            cell_ref = f"{get_column_letter(col_idx + 1)}{row_idx + 1}"
+            tup = tuple(str(v) for v in values)
+            grouped.setdefault(sheet_name, {}).setdefault(tup, []).append(cell_ref)
+        for sheet_name, lists in grouped.items():
+            sheet = wb[sheet_name]
+            for values_tuple, cell_refs in lists.items():
+                # openpyxl's list-formula expects a quoted CSV. Escape
+                # double-quotes via doubling — Excel's own convention.
+                escaped = ",".join(v.replace('"', '""') for v in values_tuple)
+                dv = DataValidation(
+                    type="list",
+                    formula1=f'"{escaped}"',
+                    allow_blank=True,
+                    showDropDown=False,
+                )
+                dv.add(" ".join(cell_refs))
+                sheet.add_data_validation(dv)
+
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
@@ -770,6 +822,12 @@ def _apply_style_patch(cell: Cell, patch: dict[str, Any]) -> None:
         new_align_kwargs["vertical"] = _VERTICAL_ALIGN_MAP[patch["verticalAlign"]]
     if "wrapText" in patch:
         new_align_kwargs["wrap_text"] = bool(patch["wrapText"])
+    if "textOverflow" in patch:
+        # openpyxl only knows about `wrap_text` — collapse the 3-state
+        # frontend value to the closest Excel-native equivalent. "wrap"
+        # turns wrap on; "clip" / "overflow" both turn it off (Excel
+        # picks the actual clipping behaviour from cell width on its own).
+        new_align_kwargs["wrap_text"] = patch["textOverflow"] == "wrap"
     if "rotation" in patch and isinstance(patch["rotation"], (int, float)):
         # openpyxl uses 0–90 for upward rotation, 91–180 for downward
         # (encoded as 90 + abs(degrees)). Clamp to that domain.

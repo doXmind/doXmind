@@ -25,4 +25,9 @@ commands.allow = [
   "workspace_rename_folder",
   "workspace_delete_folder",
   "workspace_import_asset",
+  "open_window_for_target",
+  "open_new_window",
+  "register_window_target",
+  "unregister_window_target",
+  "dock_set_recents",
 ]
