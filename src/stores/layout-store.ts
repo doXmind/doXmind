@@ -5,10 +5,8 @@ import { DEFAULT_FONT_FAMILY } from "@/lib/font-options";
 
 interface LayoutState {
   // Desktop panel visibility
-  isSidebarOpen: boolean; // Outline sidebar
-  isFilesSidebarOpen: boolean; // Files sidebar (independent)
-  isMindlinesOpen: boolean;
-  isMindlinesCollapsed: boolean; // Collapsed = minimal line indicators, Expanded = full outline
+  isSidebarOpen: boolean; // Outline sidebar (right edge)
+  isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
   themeId: string;
   preferredLightTheme: string;
   preferredDarkTheme: string;
@@ -53,11 +51,7 @@ interface LayoutState {
   toggleSidebar: () => void;
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
-  toggleMindlines: () => void;
-  toggleMindlinesCollapsed: () => void;
   setSidebarOpen: (open: boolean) => void;
-  setMindlinesOpen: (open: boolean) => void;
-  setMindlinesCollapsed: (collapsed: boolean) => void;
   setThemeId: (id: string) => void;
   setPreferredLightTheme: (id: string) => void;
   setPreferredDarkTheme: (id: string) => void;
@@ -115,8 +109,6 @@ export const useLayoutStore = create<LayoutState>()(
       // Desktop panel visibility
       isSidebarOpen: false,
       isFilesSidebarOpen: true,
-      isMindlinesOpen: true,
-      isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
       themeId: "notion",
       preferredLightTheme: "notion",
       preferredDarkTheme: "dark",
@@ -170,24 +162,8 @@ export const useLayoutStore = create<LayoutState>()(
         set({ isFilesSidebarOpen: open });
       },
 
-      toggleMindlines: () => {
-        set((state) => ({ isMindlinesOpen: !state.isMindlinesOpen }));
-      },
-
-      toggleMindlinesCollapsed: () => {
-        set((state) => ({ isMindlinesCollapsed: !state.isMindlinesCollapsed }));
-      },
-
       setSidebarOpen: (open: boolean) => {
         set({ isSidebarOpen: open });
-      },
-
-      setMindlinesOpen: (open: boolean) => {
-        set({ isMindlinesOpen: open });
-      },
-
-      setMindlinesCollapsed: (collapsed: boolean) => {
-        set({ isMindlinesCollapsed: collapsed });
       },
 
       setThemeId: (id: string) => {
@@ -345,7 +321,7 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: "doxmind-layout",
-      version: 4,
+      version: 5,
       migrate: (persistedState: unknown, version: number) => {
         let state = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -376,14 +352,22 @@ export const useLayoutStore = create<LayoutState>()(
             filesSidebarWidth: 304,
           };
         }
+        if (version < 5) {
+          // Drop dead mindlines fields persisted by older versions —
+          // the outline panel is now driven purely by `isSidebarOpen`.
+          const {
+            isMindlinesOpen: _isMindlinesOpen,
+            isMindlinesCollapsed: _isMindlinesCollapsed,
+            ...rest
+          } = state;
+          state = rest;
+        }
         return state;
       },
       partialize: (state) => ({
         // Only persist these fields (not modals state)
         isSidebarOpen: state.isSidebarOpen,
         isFilesSidebarOpen: state.isFilesSidebarOpen,
-        isMindlinesOpen: state.isMindlinesOpen,
-        isMindlinesCollapsed: state.isMindlinesCollapsed,
         themeId: state.themeId,
         preferredLightTheme: state.preferredLightTheme,
         preferredDarkTheme: state.preferredDarkTheme,
