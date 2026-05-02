@@ -22,13 +22,6 @@ import { formatRelativeTime, type WelcomeVariantProps } from "@/components/welco
 
 const LAYER_LIMIT = 6;
 
-// Pin the Hierarchy variant to its design typography regardless of the
-// app-wide font preference. Mono uses the .font-mono class which already
-// maps to JetBrains Mono in this project's globals.css.
-const FONT_SANS =
-  '"Helvetica Neue", Helvetica, -apple-system, "SF Pro Text", system-ui, sans-serif';
-const FONT_SERIF = '"Iowan Old Style", Palatino, Georgia, serif';
-
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { duration: 0.12 } },
@@ -72,13 +65,8 @@ interface FirstRunStateProps {
 function FirstRunState({ tag, heading, steps }: FirstRunStateProps) {
   return (
     <div className="flex flex-1 flex-col justify-center pb-12 pt-6">
-      <div style={{ fontFamily: FONT_SANS }} className="text-[13px] text-muted-foreground">
-        {tag}
-      </div>
-      <h1
-        style={{ fontFamily: FONT_SANS }}
-        className="mt-2 text-[30px] font-semibold leading-[1.15] tracking-[-0.022em] text-foreground"
-      >
+      <div className="font-brand-sans text-[13px] text-muted-foreground">{tag}</div>
+      <h1 className="font-brand-sans mt-2 text-[30px] font-semibold leading-[1.15] tracking-[-0.022em] text-foreground">
         {heading}
       </h1>
 
@@ -98,16 +86,10 @@ function FirstRunState({ tag, heading, steps }: FirstRunStateProps) {
                 {String(index + 1).padStart(2, "0")}
               </span>
               <div className="min-w-0 flex-1">
-                <div
-                  style={{ fontFamily: FONT_SANS }}
-                  className="text-[15px] font-semibold tracking-[-0.012em] text-foreground"
-                >
+                <div className="font-brand-sans text-[15px] font-semibold tracking-[-0.012em] text-foreground">
                   {step.title}
                 </div>
-                <div
-                  style={{ fontFamily: FONT_SANS }}
-                  className="mt-1 text-[14px] leading-snug text-muted-foreground"
-                >
+                <div className="font-brand-sans mt-1 text-[14px] leading-snug text-muted-foreground">
                   {step.body}
                 </div>
               </div>
@@ -174,9 +156,8 @@ function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
         </span>
 
         <span
-          style={{ fontFamily: FONT_SANS }}
           className={cn(
-            "min-w-0 flex-1 truncate text-[15px] leading-snug tracking-[-0.012em] text-foreground",
+            "font-brand-sans min-w-0 flex-1 truncate text-[15px] leading-snug tracking-[-0.012em] text-foreground",
             isActive ? "font-medium" : "font-normal"
           )}
         >
@@ -204,10 +185,7 @@ function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
       </button>
 
       {isActive && layer.preview ? (
-        <div
-          style={{ fontFamily: FONT_SERIF }}
-          className="max-w-[40rem] pb-3 pl-10 pr-2 text-[14.5px] leading-relaxed text-muted-foreground"
-        >
+        <div className="font-brand-serif max-w-[40rem] pb-3 pl-10 pr-2 text-[14.5px] leading-relaxed text-muted-foreground">
           {layer.preview}
         </div>
       ) : null}

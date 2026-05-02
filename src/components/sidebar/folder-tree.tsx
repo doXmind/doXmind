@@ -23,12 +23,6 @@ import { revealFileInFinder } from "@/lib/storage/reveal";
 
 const log = storeLogger.child("FolderTree");
 
-// Pin the empty-state typography to the same Helvetica/SF stack used by
-// WelcomeScreen and WorkspaceHome so the three "empty" surfaces read as
-// one coherent design system, regardless of the user's app-wide font pref.
-const FONT_SANS =
-  '"Helvetica Neue", Helvetica, -apple-system, "SF Pro Text", system-ui, sans-serif';
-
 type FolderMenuItem = {
   id: "new-file" | "new-folder" | "rename" | "reveal" | "delete";
   label: string;
@@ -516,10 +510,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                 <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] text-muted-foreground transition-colors duration-150 group-hover:font-medium group-hover:text-foreground group-focus-visible:font-medium group-focus-visible:text-foreground">
                   01
                 </span>
-                <span
-                  style={{ fontFamily: FONT_SANS }}
-                  className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground"
-                >
+                <span className="font-brand-sans min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground">
                   {t("newDocument")}
                 </span>
               </button>
@@ -533,20 +524,14 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
                 <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] text-muted-foreground transition-colors duration-150 group-hover:font-medium group-hover:text-foreground group-focus-visible:font-medium group-focus-visible:text-foreground">
                   02
                 </span>
-                <span
-                  style={{ fontFamily: FONT_SANS }}
-                  className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground"
-                >
+                <span className="font-brand-sans min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground">
                   {t("newFolder")}
                 </span>
               </button>
             </li>
           </ol>
 
-          <p
-            style={{ fontFamily: FONT_SANS }}
-            className="mt-3 px-2 text-[11px] leading-snug text-muted-foreground/45"
-          >
+          <p className="font-brand-sans mt-3 px-2 text-[11px] leading-snug text-muted-foreground/45">
             {t("emptyTailHint")}
           </p>
         </div>

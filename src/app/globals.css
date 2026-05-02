@@ -25,6 +25,14 @@
     --ui-text-xl: calc(var(--ui-font-size-base) + 4px);
     --ui-text-2xl: calc(var(--ui-font-size-base) + 8px);
 
+    /* Brand typography stacks for "designed" surfaces (welcome, workspace
+       home, sidebar empty state). Consumed by the .font-brand-sans /
+       .font-brand-serif utilities below and mirrored as JS constants in
+       src/lib/typography.ts — keep both in sync. */
+    --brand-sans-stack:
+      "Helvetica Neue", Helvetica, -apple-system, "SF Pro Text", system-ui, sans-serif;
+    --brand-serif-stack: "Iowan Old Style", Palatino, Georgia, serif;
+
     /* Notion-exact light mode palette */
     --background: 0 0% 100%; /* #FFFFFF — editor/content surface */
     --foreground: 45 8% 20%; /* #37352F — Notion's exact text color */
@@ -329,6 +337,17 @@ samp,
   font-family:
     "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace !important;
+}
+
+/* Brand typography utilities for designed surfaces (welcome / workspace
+   home / sidebar empty state). `!important` mirrors `.font-mono` above:
+   these classes pin Helvetica/Iowan regardless of the user's global UI
+   font, giving onboarding/empty surfaces a stable identity. */
+.font-brand-sans {
+  font-family: var(--brand-sans-stack) !important;
+}
+.font-brand-serif {
+  font-family: var(--brand-serif-stack) !important;
 }
 
 @layer base {

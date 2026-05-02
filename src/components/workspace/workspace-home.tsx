@@ -11,9 +11,6 @@ import { toast } from "sonner";
 
 const log = storeLogger.child("WorkspaceHome");
 
-const FONT_SANS =
-  '"Helvetica Neue", Helvetica, -apple-system, "SF Pro Text", system-ui, sans-serif';
-
 function workspaceLabel(root: string | null): string {
   if (!root) return "";
   const normalized = root.replaceAll("\\", "/").replace(/\/+$/, "");
@@ -42,22 +39,15 @@ export function WorkspaceHome() {
     <div className="flex flex-1 flex-col overflow-hidden bg-background pt-6 text-foreground">
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center px-8 pb-20">
         <div
-          style={{ fontFamily: FONT_SANS }}
-          className="text-[13px] text-muted-foreground"
+          className="font-brand-sans text-[13px] text-muted-foreground"
           title={rootPath ?? undefined}
         >
           {label ? t("eyebrow", { name: label }) : t("eyebrowFallback")}
         </div>
-        <h1
-          style={{ fontFamily: FONT_SANS }}
-          className="mt-2 text-[30px] font-semibold leading-[1.15] text-foreground"
-        >
+        <h1 className="font-brand-sans mt-2 text-[30px] font-semibold leading-[1.15] text-foreground">
           {t("heading")}
         </h1>
-        <p
-          style={{ fontFamily: FONT_SANS }}
-          className="mt-5 max-w-xl text-[15px] leading-7 text-muted-foreground"
-        >
+        <p className="font-brand-sans mt-5 max-w-xl text-[15px] leading-7 text-muted-foreground">
           {t("body")}
         </p>
 
