@@ -153,6 +153,11 @@ export interface PdfTextStyleRange {
  * shape matches the JSON cell model returned by `/api/excel/parse-workbook`.
  * Empty diff slots can simply be omitted; the renderer falls back to the
  * parsed value.
+ *
+ * Cell coordinates are always interpreted in *post-op* space — i.e. the
+ * frontend transforms existing cell keys when a structural op is appended,
+ * so the renderer and the backend exporter agree on what `(row, col)` means
+ * after `ops` have been replayed.
  */
 export interface ExcelEditorState {
   version: 1;
@@ -176,7 +181,20 @@ export interface ExcelEditorState {
   rowHeights?: Record<string, number>;
   /** Optional column width overrides keyed by `"${sheetId}!${col}"`. */
   colWidths?: Record<string, number>;
+  /**
+   * Structural operations applied since the workbook was parsed. Replayed
+   * in order on export so openpyxl's `insert_rows` / `delete_rows` /
+   * `insert_cols` / `delete_cols` can re-create the user's structural
+   * changes against the original `.xlsx`.
+   */
+  ops?: ExcelStructuralOp[];
 }
+
+export type ExcelStructuralOp =
+  | { type: "insertRow"; sheetId: string; before: number; count: number }
+  | { type: "deleteRow"; sheetId: string; index: number; count: number }
+  | { type: "insertCol"; sheetId: string; before: number; count: number }
+  | { type: "deleteCol"; sheetId: string; index: number; count: number };
 
 export interface ExcelCellStyle {
   bold?: boolean;

@@ -4,6 +4,7 @@ export type {
   DocumentMeta,
   ExcelCellStyle,
   ExcelEditorState,
+  ExcelStructuralOp,
   MarkdownSearchOptions,
   MarkdownSearchResult,
   MarkdownSearchResults,

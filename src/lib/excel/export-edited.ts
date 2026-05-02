@@ -47,10 +47,12 @@ function toExportPayload(state: ExcelEditorState): {
   cells: Record<string, { value?: unknown; formula?: string | null; numberFormat?: string }>;
   rowHeights?: Record<string, number>;
   colWidths?: Record<string, number>;
+  ops?: ExcelEditorState["ops"];
 } {
   return {
     cells: state.cells ?? {},
     rowHeights: state.rowHeights,
     colWidths: state.colWidths,
+    ops: state.ops,
   };
 }

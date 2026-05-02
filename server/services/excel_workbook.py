@@ -376,6 +376,9 @@ def export_edited_workbook(
     ``edits`` shape mirrors :class:`ExcelEditorState` in the frontend::
 
         {
+          "ops": [
+            {"type": "insertRow", "sheetId": "sheet-0", "before": 2, "count": 1}
+          ],
           "cells": {
             "sheet-0!0,0": {"value": "Hello"},
             "sheet-0!1,2": {"formula": "=A1+B1"},
@@ -384,6 +387,12 @@ def export_edited_workbook(
           "rowHeights": {"sheet-0!0": 32.5},
           "colWidths":  {"sheet-0!4": 140.0}
         }
+
+    Structural ops (``insertRow`` / ``deleteRow`` / ``insertCol`` /
+    ``deleteCol``) are replayed first via openpyxl's ``insert_rows`` /
+    ``delete_rows`` / ``insert_cols`` / ``delete_cols``. The frontend has
+    already transformed cell-edit keys into post-op coordinates so the
+    cell phase that follows can write into the right targets.
 
     Anything not present in ``edits`` is left untouched in the original
     workbook — that's how we preserve charts, conditional formatting, etc.
@@ -401,8 +410,59 @@ def export_edited_workbook(
         raise ValueError("'edits.cells' must be an object")
     row_height_edits = edits.get("rowHeights") or {}
     col_width_edits = edits.get("colWidths") or {}
+    ops = edits.get("ops") or []
+    if not isinstance(ops, list):
+        raise ValueError("'edits.ops' must be an array")
 
     sheet_lookup = {f"sheet-{i}": name for i, name in enumerate(wb.sheetnames)}
+
+    # ------------------------------------------------------------------
+    # Phase 1: replay structural ops in order. After this point row/col
+    # indices used by the cell-edit phase are interpreted in the *post-op*
+    # space, which matches what the frontend stored.
+    #
+    # openpyxl's insert_rows / delete_rows / insert_cols / delete_cols use
+    # 1-based indices and shift everything below / right of the boundary.
+    # They do *not* update existing formulas — references to cells that
+    # got shifted are preserved as-is. Excel re-opens generally fix this
+    # via its calc engine; documenting here so we don't surprise anyone.
+    # ------------------------------------------------------------------
+    for op in ops:
+        if not isinstance(op, dict):
+            continue
+        sheet_name = sheet_lookup.get(str(op.get("sheetId") or ""))
+        if sheet_name is None:
+            continue
+        sheet = wb[sheet_name]
+        op_type = op.get("type")
+        try:
+            count = max(1, int(op.get("count", 1)))
+        except (TypeError, ValueError):
+            count = 1
+        if op_type == "insertRow":
+            try:
+                before = int(op.get("before", 0))
+            except (TypeError, ValueError):
+                continue
+            sheet.insert_rows(before + 1, count)
+        elif op_type == "deleteRow":
+            try:
+                index = int(op.get("index", 0))
+            except (TypeError, ValueError):
+                continue
+            sheet.delete_rows(index + 1, count)
+        elif op_type == "insertCol":
+            try:
+                before = int(op.get("before", 0))
+            except (TypeError, ValueError):
+                continue
+            sheet.insert_cols(before + 1, count)
+        elif op_type == "deleteCol":
+            try:
+                index = int(op.get("index", 0))
+            except (TypeError, ValueError):
+                continue
+            sheet.delete_cols(index + 1, count)
 
     for key, payload in cell_edits.items():
         sheet_name, row_idx, col_idx = _split_cell_key(key, sheet_lookup)
