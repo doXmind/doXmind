@@ -1,36 +1,43 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
-import dynamic from "next/dynamic";
-import { AnimatePresence, motion } from "framer-motion";
-import { GitBranch, FileText, PanelLeftClose } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useCallback } from "react";
+import { PanelRightClose } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
 import { OutlineView } from "@/components/editor/mindlines/outline-view";
-
-// Lazy load MindmapFlow (~100kB @xyflow/react) — only needed on button click
-const MindmapFlow = dynamic(
-  () =>
-    import("@/components/editor/mindlines/mindmap-flow").then((m) => ({
-      default: m.MindmapFlow,
-    })),
-  { ssr: false }
-);
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
+import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useTranslations } from "next-intl";
-import { Z_INDEX } from "@/lib/constants";
 import type { Heading } from "@/components/editor/mindlines/types";
+import { isMarkdownFile } from "@/lib/document-types";
 
+/**
+ * Outline panel (expanded state).
+ *
+ * Visual language follows the Notion no-rail / typography-only edition:
+ * - Mono uppercase eyebrow `OUTLINE · n`
+ * - Quiet doc title bound to the current file's display name
+ * - Pure-typography heading list (no rails, no row backgrounds)
+ * - Hover-reveal close affordance — header stays calm at rest
+ *
+ * Lives on the RIGHT side of the editor; close button sits on the LEFT
+ * edge of the header so it points back toward the document.
+ */
 export function Sidebar() {
   const t = useTranslations("sidebar");
   const editor = useEditorRefStore((s) => s.editor);
-  const { toggleSidebar } = useLayoutStore();
+  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const { headings, activeId, navigateTo } = useHeadings(editor);
-  const [isMindmapOpen, setIsMindmapOpen] = useState(false);
+
+  const currentFile = useFileStore((s) =>
+    s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
+  );
+  const docTitle =
+    currentFile && isMarkdownFile(currentFile)
+      ? currentFile.name || "Untitled"
+      : (currentFile?.name ?? "");
 
   const handleOutlineNavigate = useCallback(
     (heading: Heading) => {
@@ -39,87 +46,54 @@ export function Sidebar() {
     [navigateTo]
   );
 
-  const handleMindmapNodeClick = useCallback(
-    (heading: Heading) => {
-      navigateTo(heading);
-    },
-    [navigateTo]
-  );
-
   return (
-    <div className="flex h-full flex-col">
-      {/* Outline header */}
-      <div className="group flex items-center justify-between px-4 pb-2 pt-3">
-        <span className="text-ui-xs font-medium text-muted-foreground/70">{t("outline")}</span>
-        <div className="flex gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
-          <Tooltip content={t("mindmapView")} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsMindmapOpen(true)}
-              disabled={headings.length === 0}
-              aria-label={t("openMindmap")}
-              className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
-          <Tooltip content={t("hideOutline")} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleSidebar}
-              aria-label={t("hideOutline")}
-              className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
-            >
-              <PanelLeftClose className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
+    <div className="font-brand-sans group/outline flex h-full flex-col">
+      {/* Header: mono eyebrow + quiet doc title; hairline divider below */}
+      <div className="relative flex flex-col gap-2.5 border-b border-border/55 px-5 pb-3.5 pt-4">
+        <div className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
+          <span>{t("outline")}</span>
+          {headings.length > 0 && (
+            <>
+              <span className="text-muted-foreground/55">·</span>
+              <span>{headings.length}</span>
+            </>
+          )}
         </div>
+
+        {docTitle && (
+          <h2
+            className="text-balance text-[15px] font-semibold leading-[1.3] tracking-[-0.012em] text-foreground"
+            title={docTitle}
+          >
+            {docTitle}
+          </h2>
+        )}
+
+        {/* Hover-reveal close button on the LEFT edge of the panel */}
+        <Tooltip content={t("hideOutline")} side="left">
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={t("hideOutline")}
+            className="absolute left-1 top-3 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-accent/60 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40 group-hover/outline:opacity-100"
+          >
+            <PanelRightClose className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       </div>
 
-      {/* Outline content */}
+      {/* Outline body */}
       <ScrollArea className="autohide-scrollbar flex-1">
         {editor && headings.length > 0 ? (
-          <div className="px-2 pb-4">
-            <OutlineView
-              headings={headings}
-              activeId={activeId}
-              onNavigate={handleOutlineNavigate}
-            />
-          </div>
+          <OutlineView headings={headings} activeId={activeId} onNavigate={handleOutlineNavigate} />
         ) : (
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-            <FileText className="h-8 w-8 text-muted-foreground/40 dark:text-muted-foreground/60" />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               {editor ? t("noHeadings") : t("openDocForOutline")}
             </p>
           </div>
         )}
       </ScrollArea>
-
-      {/* Mindmap fullscreen overlay */}
-      {isMindmapOpen &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <AnimatePresence>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-background"
-              style={{ zIndex: Z_INDEX.MODAL }}
-            >
-              <MindmapFlow
-                headings={headings}
-                activeId={activeId}
-                onNodeClick={handleMindmapNodeClick}
-                onClose={() => setIsMindmapOpen(false)}
-              />
-            </motion.div>
-          </AnimatePresence>,
-          document.body
-        )}
     </div>
   );
 }

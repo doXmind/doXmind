@@ -57,8 +57,8 @@ export const ANIMATION_DURATION = {
 export const MINDLINES_WIDTH = {
   /** Expanded state width (full outline view) */
   EXPANDED: 280,
-  /** Collapsed state width (minimal line indicators) */
-  COLLAPSED: 48,
+  /** Collapsed state width (Notion-style minimap rail) */
+  COLLAPSED: 56,
 } as const;
 
 // =============================================================================

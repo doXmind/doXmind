@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Heading } from "./types";
 
@@ -12,22 +12,44 @@ interface OutlineViewProps {
 
 interface OutlineItemProps {
   heading: Heading;
-  activeId: string | null;
+  isActive: boolean;
+  hoveredId: string | null;
+  onHoverChange: (id: string | null) => void;
   onNavigate: (heading: Heading) => void;
 }
 
-const LEVEL_PADDING: Record<number, string> = {
-  1: "pl-3",
-  2: "pl-6",
-  3: "pl-9",
-  4: "pl-12",
-  5: "pl-14",
-  6: "pl-16",
-};
+const BASE_INDENT_PX = 16;
+const PER_LEVEL_INDENT_PX = 16;
 
-function OutlineItem({ heading, activeId, onNavigate }: OutlineItemProps) {
-  const isActive = heading.id === activeId;
+function levelWeightClass(level: number, isActive: boolean) {
+  if (isActive) return "font-semibold";
+  if (level <= 1) return "font-semibold";
+  if (level === 2) return "font-medium";
+  return "font-normal";
+}
+
+function levelOpacityClass(level: number, isActive: boolean, isHover: boolean) {
+  if (isActive || isHover) return "text-foreground";
+  if (level <= 1) return "text-foreground";
+  if (level === 2) return "text-foreground/[0.78]";
+  return "text-foreground/[0.55]";
+}
+
+function OutlineItem({
+  heading,
+  isActive,
+  hoveredId,
+  onHoverChange,
+  onNavigate,
+}: OutlineItemProps) {
   const itemRef = useRef<HTMLButtonElement>(null);
+  const isHover = hoveredId === heading.id;
+
+  // The list lives on the right edge of the editor — when text overflows,
+  // the pill tooltip floats LEFT into the doc area so it never escapes
+  // the window. (Matches the design's intent — interior side of the panel.)
+  const indentPx = BASE_INDENT_PX + (heading.level - 1) * PER_LEVEL_INDENT_PX;
+  const fontSize = heading.level === 1 ? 13.5 : 13;
 
   useEffect(() => {
     if (!isActive || !itemRef.current) return;
@@ -50,59 +72,60 @@ function OutlineItem({ heading, activeId, onNavigate }: OutlineItemProps) {
     }
   }, [isActive]);
 
-  const handleClick = useCallback(() => {
-    onNavigate(heading);
-  }, [heading, onNavigate]);
+  const handleClick = useCallback(() => onNavigate(heading), [heading, onNavigate]);
 
   return (
     <button
       ref={itemRef}
       type="button"
       onClick={handleClick}
-      className={cn(
-        "group relative flex w-full min-w-0 rounded-sm py-1.5 pr-2 text-left transition-colors",
-        LEVEL_PADDING[heading.level] ?? "pl-16",
-        "text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        isActive && "text-foreground"
-      )}
+      onMouseEnter={() => onHoverChange(heading.id)}
+      onMouseLeave={() => onHoverChange(null)}
+      onFocus={() => onHoverChange(heading.id)}
+      onBlur={() => onHoverChange(null)}
+      className="group relative flex w-full min-w-0 cursor-pointer items-center py-[5px] pr-3 text-left transition-colors duration-150 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+      style={{ paddingLeft: indentPx, minHeight: 26 }}
       aria-current={isActive ? "location" : undefined}
-      title={heading.text || "Untitled"}
+      title={undefined}
     >
       <span
         className={cn(
-          "absolute bottom-1.5 left-0 top-1.5 w-px rounded-full bg-border transition-colors",
-          isActive ? "bg-foreground" : "group-hover:bg-muted-foreground/50"
+          "min-w-0 flex-1 truncate leading-[1.4] tracking-[-0.005em] transition-colors duration-150",
+          levelWeightClass(heading.level, isActive),
+          levelOpacityClass(heading.level, isActive, isHover)
         )}
-        aria-hidden="true"
-      />
-      <span
-        className={cn(
-          "line-clamp-2 min-w-0 text-[13px] leading-snug",
-          heading.level === 1 && "font-medium",
-          heading.level >= 4 && "text-[12px]",
-          isActive && "font-medium"
-        )}
+        style={{ fontSize }}
       >
         {heading.text || "Untitled"}
       </span>
+
+      {isHover && heading.text && (
+        <span className="font-brand-sans pointer-events-none absolute right-[100%] top-1/2 z-10 -translate-x-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border/60 bg-popover px-2.5 py-1 text-[12px] font-medium text-popover-foreground shadow-[0_1px_2px_rgba(15,15,15,0.04),0_4px_12px_rgba(15,15,15,0.06)]">
+          {heading.text}
+        </span>
+      )}
     </button>
   );
 }
 
 export function OutlineView({ headings, activeId, onNavigate }: OutlineViewProps) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   if (headings.length === 0) {
     return (
-      <div className="px-3 py-4 text-sm text-muted-foreground">Add headings to see outline</div>
+      <div className="px-4 py-4 text-[12px] text-muted-foreground">Add headings to see outline</div>
     );
   }
 
   return (
-    <nav className="flex min-w-0 flex-col gap-0.5 px-2 py-1" aria-label="Document outline">
+    <nav className="font-brand-sans flex min-w-0 flex-col py-2.5" aria-label="Document outline">
       {headings.map((heading) => (
         <OutlineItem
           key={heading.id}
           heading={heading}
-          activeId={activeId}
+          isActive={heading.id === activeId}
+          hoveredId={hoveredId}
+          onHoverChange={setHoveredId}
           onNavigate={onNavigate}
         />
       ))}
