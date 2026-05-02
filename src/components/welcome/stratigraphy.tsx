@@ -219,7 +219,6 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
   const {
     recentFiles,
     recentWorkspaces,
-    hasWorkspace,
     onCreateNew,
     onOpenFolder,
     onStartWriting,
@@ -327,7 +326,6 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
             variant="ghost"
             size="sm"
             onClick={onCreateNew}
-            disabled={!hasWorkspace}
             className="gap-1.5 font-mono text-xs"
           >
             <Plus className="h-3.5 w-3.5" />

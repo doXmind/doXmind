@@ -235,8 +235,18 @@
   * {
     @apply border-border;
   }
+  html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
   body {
     @apply bg-background text-foreground;
+    width: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     /* Anchor the unified UI text size at the body level so any element
@@ -374,7 +384,20 @@ samp,
 
 .desktop-app-shell,
 .desktop-window-shell {
+  width: 100%;
+  max-width: 100vw;
+  min-width: 0;
+  overflow: hidden;
   background: hsl(var(--background));
+}
+
+.desktop-app-shell {
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
+.desktop-window-shell {
+  min-height: 0;
 }
 
 .desktop-content-surface {

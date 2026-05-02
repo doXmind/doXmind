@@ -41,16 +41,16 @@ export function OutlineCollapsed({
   }
 
   return (
-    <div className="flex flex-col gap-0.5 py-2">
+    <div className="flex flex-col gap-0.5 py-1.5">
       {headings.map((heading) => (
         <button
           key={heading.id}
           className={cn(
-            "flex h-5 cursor-pointer items-center rounded transition-colors",
-            "hover:bg-accent/50",
-            heading.id === activeId && "bg-accent"
+            "flex h-5 cursor-pointer items-center rounded-r-sm transition-colors",
+            "hover:bg-accent/45",
+            heading.id === activeId && "bg-accent/70"
           )}
-          style={{ paddingLeft: `${(heading.level - 1) * 8 + 8}px` }}
+          style={{ paddingLeft: `${Math.min((heading.level - 1) * 3 + 5, 16)}px` }}
           onClick={(e) => handleHeadingClick(e, heading)}
           title={`${heading.text || "Untitled"} - Click to navigate and expand`}
           aria-label={`Navigate to: ${heading.text || "Untitled"}`}

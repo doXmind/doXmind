@@ -23,6 +23,7 @@ export function FilesSidebar() {
   const locale = useLocale();
   const createFile = useFileStore((s) => s.createFile);
   const createFolder = useFileStore((s) => s.createFolder);
+  const files = useFileStore((s) => s.files);
   const isLoading = useFileStore((s) => s.isLoading);
   const isSynced = useFileStore((s) => s.isSynced);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
@@ -124,13 +125,14 @@ export function FilesSidebar() {
         onCreateFolder={() => handleCreateFolder(null)}
         onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
         onCollapseAll={() => folderTreeRef.current?.collapseAll()}
+        canCollapseAll={files.some((file) => file.isFolder)}
       />
 
       <ScrollArea className="sidebar-scrollbar min-h-0 flex-1">
         {/* min-h-full lets FolderTree's spacer reach the bottom of the
             scroll viewport so right-clicks on empty space below the
             last row still hit the empty-area context menu. */}
-        <div className="flex min-h-full flex-col px-2.5 pb-3 pt-1">
+        <div className="flex min-h-full flex-col px-2.5 pb-3 pt-2">
           {isLoading && !isSynced ? (
             <FileListSkeleton />
           ) : (

@@ -424,6 +424,8 @@
     "rename": "重命名",
     "moveToTrash": "移到回收站",
     "noFiles": "暂无文件",
+    "emptyEyebrow": "空文件夹",
+    "emptyTailHint": "右键空白处可继续添加。",
     "outline": "大纲",
     "toggleCollapseAll": "全部折叠/展开",
     "mindmapView": "思维导图视图",
@@ -587,6 +589,13 @@
     "actionOpen": "打开",
     "actionOpenFolder": "打开文件夹",
     "actionImport": "导入"
+  },
+  "workspaceHome": {
+    "eyebrow": "{name}",
+    "eyebrowFallback": "工作区",
+    "heading": "富文本写作，保留纯 Markdown。",
+    "body": "从左侧选择一份文档，或在这里新建一份。你创建的一切都会留在这个文件夹里。",
+    "newDocument": "新建文档"
   },
   "shortcuts": {
     "keyboardShortcuts": "快捷键",

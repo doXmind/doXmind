@@ -10,17 +10,7 @@ import {
   useState,
 } from "react";
 import { useTranslations } from "next-intl";
-import {
-  Check,
-  FilePlus2,
-  FileText,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  Pencil,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Check, FilePlus2, Folder, FolderOpen, FolderPlus, Pencil, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { FileItem } from "./file-item";
@@ -32,6 +22,12 @@ import { storeLogger } from "@/lib/logger";
 import { revealFileInFinder } from "@/lib/storage/reveal";
 
 const log = storeLogger.child("FolderTree");
+
+// Pin the empty-state typography to the same Helvetica/SF stack used by
+// WelcomeScreen and WorkspaceHome so the three "empty" surfaces read as
+// one coherent design system, regardless of the user's app-wide font pref.
+const FONT_SANS =
+  '"Helvetica Neue", Helvetica, -apple-system, "SF Pro Text", system-ui, sans-serif';
 
 type FolderMenuItem = {
   id: "new-file" | "new-folder" | "rename" | "reveal" | "delete";
@@ -505,12 +501,54 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       </div>
 
       {files.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-          <FileText className="h-12 w-12 text-muted-foreground/30 dark:text-muted-foreground/50" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">{t("noFiles")}</p>
-            <p className="text-xs text-muted-foreground/70">{t("createFirstFile")}</p>
+        <div className="px-1 pt-5">
+          <div className="px-2 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground/70">
+            {t("emptyEyebrow")}
           </div>
+
+          <ol className="m-0 mt-3 flex list-none flex-col p-0">
+            <li className="border-t border-border">
+              <button
+                type="button"
+                onClick={() => onCreateFile(null)}
+                className="group flex w-full items-baseline gap-3 px-2 py-2.5 text-left transition-colors duration-150 hover:bg-[var(--sidebar-hover)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] text-muted-foreground transition-colors duration-150 group-hover:font-medium group-hover:text-foreground group-focus-visible:font-medium group-focus-visible:text-foreground">
+                  01
+                </span>
+                <span
+                  style={{ fontFamily: FONT_SANS }}
+                  className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground"
+                >
+                  {t("newDocument")}
+                </span>
+              </button>
+            </li>
+            <li className="border-b border-t border-border">
+              <button
+                type="button"
+                onClick={() => onCreateFolder(null)}
+                className="group flex w-full items-baseline gap-3 px-2 py-2.5 text-left transition-colors duration-150 hover:bg-[var(--sidebar-hover)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] text-muted-foreground transition-colors duration-150 group-hover:font-medium group-hover:text-foreground group-focus-visible:font-medium group-focus-visible:text-foreground">
+                  02
+                </span>
+                <span
+                  style={{ fontFamily: FONT_SANS }}
+                  className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground"
+                >
+                  {t("newFolder")}
+                </span>
+              </button>
+            </li>
+          </ol>
+
+          <p
+            style={{ fontFamily: FONT_SANS }}
+            className="mt-3 px-2 text-[11px] leading-snug text-muted-foreground/45"
+          >
+            {t("emptyTailHint")}
+          </p>
         </div>
       )}
 

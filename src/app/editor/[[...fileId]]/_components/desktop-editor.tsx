@@ -1,7 +1,7 @@
 "use client";
 
 import { type CSSProperties, useEffect } from "react";
-import { PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Sidebar } from "@/components/sidebar/sidebar";
 import { FilesSidebar } from "@/components/sidebar/files-sidebar";
@@ -9,7 +9,7 @@ import { DocumentWorkspace } from "@/components/workspace/document-workspace";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeScreen } from "@/components/welcome-screen";
-import { EmptyEditor } from "@/components/empty-editor";
+import { WorkspaceHome } from "@/components/workspace/workspace-home";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
@@ -29,10 +29,10 @@ export function DesktopEditor() {
     s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
   );
   const openTarget = useFileStore((s) => s.openTarget);
-  // VSCode-style: the sidebar appears whenever a file or folder is open
-  // and stays hidden on the welcome screen. In file mode the sidebar
-  // shows just the open file rather than scanning the parent directory,
-  // so we never leak the picked file's siblings into the rail.
+  // VSCode-style: the sidebar appears whenever a file or folder is open.
+  // The welcome surface can remain mounted beside it, so opening a folder
+  // expands the file tree instead of replacing the main content with a blank
+  // editor state.
   const hasOpenTarget = openTarget !== "none";
 
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
@@ -63,10 +63,8 @@ export function DesktopEditor() {
   // exposes the NSVisualEffectView vibrancy as a stray vertical band
   // between sidebar and editor.
   const filesHandleColPx = 0;
-  const outlineColPx = !isFocusMode && hasHeadings ? (isSidebarOpen ? sidebarWidth : 44) : 0;
-  // Same reason as the files sidebar: the outline shares a grid with the
-  // editor surface, so animated width changes are expensive in Tauri/WebKit.
-  const outlineGridTransition = "none";
+  const outlineRailWidth = 28;
+  const outlineOverlayWidth = !isFocusMode && hasHeadings ? (isSidebarOpen ? sidebarWidth : 44) : 0;
 
   const shellStyle = {
     "--files-sidebar-width":
@@ -119,66 +117,77 @@ export function DesktopEditor() {
 
             <main
               id="main-content"
-              className="desktop-content-surface relative grid min-h-0 min-w-0 overflow-hidden bg-background"
-              style={{
-                gridTemplateColumns: `${outlineColPx}px minmax(0, 1fr)`,
-                transition: outlineGridTransition,
-              }}
+              className="desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background"
             >
-              <div className="relative min-w-0 overflow-hidden">
-                {/* Both outline states stay mounted and switch via opacity —
-                  swapping the DOM on every toggle remounts the whole
-                  OutlineView tree (one component per heading, each with
-                  its own useEffect + framer-motion chevron) which made
-                  the open/close noticeably janky on top of the editor's
-                  width reflow. Keeping them mounted reduces the toggle
-                  cost to a paint-only opacity transition. */}
-                {!isFocusMode && hasHeadings && (
-                  <>
-                    <div
-                      className={cn(
-                        "absolute inset-0 transition-opacity duration-150 ease-out",
-                        isSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
-                      )}
-                      aria-hidden={!isSidebarOpen}
+              {/* The outline is an overlay, not a layout column. Expanding it
+                must never resize the document surface or shift the writing
+                position; it only changes the navigation layer above the page. */}
+              {!isFocusMode && hasHeadings && (
+                <div
+                  className="pointer-events-none absolute inset-y-0 left-0 z-30 overflow-visible transition-[width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                  style={{ width: outlineOverlayWidth }}
+                >
+                  {/* Both outline states stay mounted and switch via opacity.
+                    This keeps scroll-spy state stable and avoids remounting
+                    the full outline tree during quick open/close cycles. */}
+                  <div
+                    className={cn(
+                      "bg-background/96 pointer-events-auto absolute inset-0 border-r border-border/45 shadow-[18px_0_32px_-30px_rgba(0,0,0,0.5)] backdrop-blur-md transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                      isSidebarOpen
+                        ? "translate-x-0 opacity-100"
+                        : "pointer-events-none -translate-x-2 opacity-0"
+                    )}
+                    aria-hidden={!isSidebarOpen}
+                  >
+                    <div style={{ width: sidebarWidth }} className="h-full">
+                      <Sidebar />
+                    </div>
+                    <button
+                      onClick={toggleSidebar}
+                      className="outline-edge-toggle absolute right-0 top-1/2 flex h-11 w-4 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-border/70 bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-border hover:text-foreground"
+                      title="Collapse outline"
+                      aria-label="Collapse outline"
                     >
-                      <div style={{ minWidth: sidebarWidth }} className="h-full">
-                        <Sidebar />
+                      <PanelLeftClose className="h-3.5 w-3.5" />
+                      <span className="sr-only">Collapse outline</span>
+                    </button>
+                  </div>
+                  <div
+                    className={cn(
+                      "pointer-events-auto absolute inset-y-0 left-0 bg-transparent transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                      !isSidebarOpen
+                        ? "translate-x-0 opacity-100"
+                        : "pointer-events-none -translate-x-1 opacity-0"
+                    )}
+                    style={{ width: outlineRailWidth }}
+                    aria-hidden={isSidebarOpen}
+                  >
+                    <div className="group flex h-full flex-col items-center border-r border-border/35 bg-background/70 backdrop-blur-sm">
+                      <div className="flex items-center justify-center py-2">
+                        <button
+                          onClick={toggleSidebar}
+                          className="outline-rail-toggle flex h-7 w-5 items-center justify-center rounded-full text-muted-foreground/65 transition-all duration-150 hover:bg-accent/70 hover:text-foreground group-hover:text-muted-foreground"
+                          title="Expand outline"
+                          aria-label="Expand outline"
+                        >
+                          <PanelLeftOpen className="h-3.5 w-3.5" />
+                          <span className="sr-only">Expand outline</span>
+                        </button>
+                      </div>
+                      <div className="scrollbar-none flex-1 overflow-y-auto">
+                        <OutlineCollapsed
+                          headings={headings}
+                          activeId={activeId}
+                          onNavigate={navigateTo}
+                          onExpand={toggleSidebar}
+                        />
                       </div>
                     </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 transition-opacity duration-150 ease-out",
-                        !isSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
-                      )}
-                      aria-hidden={isSidebarOpen}
-                    >
-                      <div className="flex h-full w-11 flex-col">
-                        <div className="flex items-center justify-center px-1.5 py-2">
-                          <button
-                            onClick={toggleSidebar}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
-                            title="Expand outline"
-                            aria-label="Expand outline"
-                          >
-                            <PanelLeftOpen className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <div className="scrollbar-none flex-1 overflow-y-auto">
-                          <OutlineCollapsed
-                            headings={headings}
-                            activeId={activeId}
-                            onNavigate={navigateTo}
-                            onExpand={toggleSidebar}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
+                  </div>
+                </div>
+              )}
 
-              <div className="relative flex min-w-0 flex-col overflow-hidden">
+              <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
                 <ErrorBoundary>
                   {currentFile ? (
                     isCurrentFileLoaded ? (
@@ -188,10 +197,10 @@ export function DesktopEditor() {
                     )
                   ) : !isSynced && currentFileId ? (
                     <LoadingPlaceholder />
-                  ) : openTarget === "none" ? (
-                    <WelcomeScreen />
+                  ) : openTarget === "folder" ? (
+                    <WorkspaceHome />
                   ) : (
-                    <EmptyEditor />
+                    <WelcomeScreen />
                   )}
                 </ErrorBoundary>
               </div>

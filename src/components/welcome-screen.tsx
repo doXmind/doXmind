@@ -44,8 +44,9 @@ export function WelcomeScreen() {
   const nextUntitledName = useFileStore((s) => s.nextUntitledName);
   const createTransientFile = useFileStore((s) => s.createTransientFile);
 
-  // The "New" action only makes sense when a folder is mounted — a new file
-  // needs somewhere to live. Loose-file mode intentionally disables it.
+  // With a mounted folder, New creates a real Markdown file in that workspace.
+  // Without one, it starts an untitled buffer and asks for a save location on
+  // first persist, matching the first-run "Start writing" path.
   const hasWorkspace = openTarget === "folder" && rootPath !== null;
 
   const recentWorkspaces = useMemo<WelcomeRecentWorkspace[]>(() => {
@@ -96,8 +97,11 @@ export function WelcomeScreen() {
   };
 
   const handleCreateNew = async () => {
-    if (!hasWorkspace) return;
     const name = nextUntitledName();
+    if (!hasWorkspace) {
+      handleStartWriting();
+      return;
+    }
     try {
       const newId = await createFile(name, "", null, { documentType: "markdown" });
       navigateToEditorFile(newId);

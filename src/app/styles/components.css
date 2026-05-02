@@ -134,9 +134,9 @@
 
 /* Line indicator for collapsed outline */
 .outline-line-indicator {
-  width: 12px;
+  width: 9px;
   height: 2px;
-  background-color: hsl(var(--muted-foreground) / 0.4);
+  background-color: hsl(var(--muted-foreground) / 0.34);
   border-radius: 1px;
   transition:
     background-color 0.15s ease,
@@ -145,12 +145,12 @@
 
 .outline-line-indicator:hover {
   background-color: hsl(var(--primary) / 0.6);
-  width: 16px;
+  width: 12px;
 }
 
 .outline-line-indicator.active {
   background-color: hsl(var(--primary));
-  width: 16px;
+  width: 12px;
 }
 
 /* ====================================

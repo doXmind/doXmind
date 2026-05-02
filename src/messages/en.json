@@ -400,11 +400,11 @@
   "sidebar": {
     "settings": "Settings",
     "search": "Search",
-    "newDocument": "New Document",
+    "newDocument": "New document",
     "newFile": "New File",
     "newMarkdown": "Markdown",
     "newPdf": "PDF",
-    "newFolder": "New Folder",
+    "newFolder": "New folder",
     "collapseAll": "Collapse all",
     "fromTemplate": "From Template",
     "openFolder": "Open Folder",
@@ -424,6 +424,8 @@
     "rename": "Rename",
     "moveToTrash": "Move to Trash",
     "noFiles": "No files yet",
+    "emptyEyebrow": "Empty",
+    "emptyTailHint": "Right-click anywhere to add more.",
     "outline": "Outline",
     "toggleCollapseAll": "Toggle collapse all",
     "mindmapView": "Mindmap view",
@@ -587,6 +589,13 @@
     "actionOpen": "Open",
     "actionOpenFolder": "Open Folder",
     "actionImport": "Import"
+  },
+  "workspaceHome": {
+    "eyebrow": "{name}",
+    "eyebrowFallback": "Workspace",
+    "heading": "Write richly. Keep plain Markdown.",
+    "body": "Choose a document from the sidebar, or start a new one here. Everything you create stays in this folder.",
+    "newDocument": "New document"
   },
   "shortcuts": {
     "keyboardShortcuts": "Keyboard Shortcuts",

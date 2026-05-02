@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronsUpDown, GitBranch, FileText, PanelLeftClose } from "lucide-react";
+import { GitBranch, FileText, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -19,18 +19,14 @@ const MindmapFlow = dynamic(
   { ssr: false }
 );
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
-import { useFileStore } from "@/stores/file-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
 import { useLayoutStore } from "@/stores/layout-store";
-import { useOutlineStore } from "@/stores/outline-store";
 import { useTranslations } from "next-intl";
-import { buildTree } from "@/components/editor/mindlines/use-tree";
 import { Z_INDEX } from "@/lib/constants";
 import type { Heading } from "@/components/editor/mindlines/types";
 
 export function Sidebar() {
   const t = useTranslations("sidebar");
-  const { currentFileId } = useFileStore();
   const editor = useEditorRefStore((s) => s.editor);
   const { toggleSidebar } = useLayoutStore();
   const { headings, activeId, navigateTo } = useHeadings(editor);
@@ -50,42 +46,12 @@ export function Sidebar() {
     [navigateTo]
   );
 
-  // Outline helpers
-  const { expandAll, collapseAll } = useOutlineStore();
-  const allNodeIds = headings.map((h) => h.id);
-  const handleToggleAllOutline = () => {
-    if (!currentFileId) return;
-    const tree = buildTree(headings);
-    const hasCollapsible = tree.some((n) => n.children.length > 0);
-    if (!hasCollapsible) return;
-    const collapsedNodes = useOutlineStore.getState().getCollapsedNodes(currentFileId);
-    if (collapsedNodes.size > 0) {
-      expandAll(currentFileId);
-    } else {
-      collapseAll(currentFileId, allNodeIds);
-    }
-  };
-
   return (
     <div className="flex h-full flex-col">
       {/* Outline header */}
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <span className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground/60">
-          {t("outline")}
-        </span>
-        <div className="flex gap-1">
-          <Tooltip content={t("toggleCollapseAll")} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleToggleAllOutline}
-              disabled={headings.length === 0}
-              aria-label={t("toggleCollapseAll")}
-              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-            >
-              <ChevronsUpDown className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
+      <div className="group flex items-center justify-between px-4 pb-2 pt-3">
+        <span className="text-ui-xs font-medium text-muted-foreground/70">{t("outline")}</span>
+        <div className="flex gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
           <Tooltip content={t("mindmapView")} side="bottom">
             <Button
               variant="ghost"
@@ -93,7 +59,7 @@ export function Sidebar() {
               onClick={() => setIsMindmapOpen(true)}
               disabled={headings.length === 0}
               aria-label={t("openMindmap")}
-              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+              className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
             >
               <GitBranch className="h-3.5 w-3.5" />
             </Button>
@@ -104,7 +70,7 @@ export function Sidebar() {
               size="icon"
               onClick={toggleSidebar}
               aria-label={t("hideOutline")}
-              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+              className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
             >
               <PanelLeftClose className="h-3.5 w-3.5" />
             </Button>
@@ -115,7 +81,7 @@ export function Sidebar() {
       {/* Outline content */}
       <ScrollArea className="autohide-scrollbar flex-1">
         {editor && headings.length > 0 ? (
-          <div className="p-2">
+          <div className="px-2 pb-4">
             <OutlineView
               headings={headings}
               activeId={activeId}
