@@ -55,8 +55,10 @@ import {
   Link as LinkIcon,
   Loader2,
   Merge,
+  MessageSquarePlus,
   PaintBucket,
   Paintbrush,
+  Palette,
   Percent,
   Plus,
   Redo2,
@@ -136,11 +138,19 @@ import { DEFAULT_BORDER_SIDE, computeBorderForCell } from "@/lib/excel/borders";
 import {
   createStorageAdapter,
   type ExcelBorderConfig,
+  type ExcelCellComment,
   type ExcelCellStyle,
+  type ExcelConditionalFormatRule,
   type ExcelEditorState,
   type ExcelStructuralOp,
   type ExcelWorkbookOp,
 } from "@/lib/storage";
+import {
+  buildRangeStats,
+  evaluateConditionalFormat,
+  type CFOverlay,
+  type RangeStats,
+} from "@/lib/excel/conditional-formats";
 import { cn } from "@/lib/utils";
 import { useFileStore, type FileItem } from "@/stores/file-store";
 
@@ -724,6 +734,247 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     }
     return map;
   }, [editorState?.validations, displaySheet]);
+
+  // ---------------------------------------------------------------------
+  // Cell comments (per-sheet lookup)
+  // ---------------------------------------------------------------------
+
+  const commentsByCoord = useMemo(() => {
+    const map = new Map<string, ExcelCellComment>();
+    if (!editorState?.comments || !displaySheet) return map;
+    const prefix = `${displaySheet.id}!`;
+    for (const [key, val] of Object.entries(editorState.comments)) {
+      if (!key.startsWith(prefix)) continue;
+      const coords = key.slice(prefix.length);
+      const [rowStr, colStr] = coords.split(",");
+      const r = Number(rowStr);
+      const c = Number(colStr);
+      if (Number.isFinite(r) && Number.isFinite(c)) map.set(coordKey(r, c), val);
+    }
+    return map;
+  }, [editorState?.comments, displaySheet]);
+
+  const commentAt = useCallback(
+    (row: number, col: number): ExcelCellComment | null =>
+      commentsByCoord.get(coordKey(row, col)) ?? null,
+    [commentsByCoord]
+  );
+
+  // ---------------------------------------------------------------------
+  // Conditional formatting actions
+  //
+  // The toolbar surfaces a few preset rules anchored at the current
+  // selection. Custom rule authoring beyond the presets is intentionally
+  // out of scope for the MVP — the menu is enough to cover the 90%
+  // case (highlight cells, top/bottom, color scale).
+  // ---------------------------------------------------------------------
+
+  const addConditionalFormatRule = useCallback(
+    (
+      build: (b: {
+        top: number;
+        left: number;
+        bottom: number;
+        right: number;
+      }) => ExcelConditionalFormatRule | null
+    ) => {
+      if (!displaySheet || !selection) return;
+      const range = rangeBounds(selection);
+      const rule = build(range);
+      if (!rule) return;
+      mutateEditorState((prev) => {
+        const base: ExcelEditorState = prev ?? { version: 1 };
+        const byId = { ...(base.conditionalFormats ?? {}) };
+        const list = byId[displaySheet.id] ?? [];
+        byId[displaySheet.id] = [...list, rule];
+        return { ...base, version: 1, conditionalFormats: byId };
+      });
+    },
+    [displaySheet, selection, mutateEditorState]
+  );
+
+  const clearConditionalFormatsForSelection = useCallback(() => {
+    if (!displaySheet || !selection) return;
+    const range = rangeBounds(selection);
+    mutateEditorState((prev) => {
+      const base: ExcelEditorState = prev ?? { version: 1 };
+      const list = base.conditionalFormats?.[displaySheet.id];
+      if (!list || list.length === 0) return base;
+      // Drop rules whose range is entirely inside the selection. Rules
+      // that only partially overlap are kept untouched — the user can
+      // expand the selection to wipe them, otherwise we'd silently
+      // erase data the user didn't ask to clear.
+      const next = list.filter((rule) => {
+        const r = rule.range;
+        const inside =
+          r.top >= range.top &&
+          r.bottom <= range.bottom &&
+          r.left >= range.left &&
+          r.right <= range.right;
+        return !inside;
+      });
+      const byId = { ...(base.conditionalFormats ?? {}) };
+      if (next.length === 0) delete byId[displaySheet.id];
+      else byId[displaySheet.id] = next;
+      return { ...base, version: 1, conditionalFormats: byId };
+    });
+  }, [displaySheet, selection, mutateEditorState]);
+
+  const newRuleId = () => `cf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  const cfPresetGreaterThan = useCallback(() => {
+    const input = window.prompt("Highlight cells greater than:", "0");
+    if (input === null) return;
+    const value = Number(input);
+    if (!Number.isFinite(value)) {
+      toast.error("Enter a number");
+      return;
+    }
+    addConditionalFormatRule((range) => ({
+      id: newRuleId(),
+      range,
+      condition: { kind: "cellValue", op: "gt", value },
+      style: { background: "#FFF2CC", color: "#7F6000" },
+    }));
+  }, [addConditionalFormatRule]);
+
+  const cfPresetLessThan = useCallback(() => {
+    const input = window.prompt("Highlight cells less than:", "0");
+    if (input === null) return;
+    const value = Number(input);
+    if (!Number.isFinite(value)) {
+      toast.error("Enter a number");
+      return;
+    }
+    addConditionalFormatRule((range) => ({
+      id: newRuleId(),
+      range,
+      condition: { kind: "cellValue", op: "lt", value },
+      style: { background: "#FCE4D6", color: "#9C0006" },
+    }));
+  }, [addConditionalFormatRule]);
+
+  const cfPresetBetween = useCallback(() => {
+    const minInput = window.prompt("Min:", "0");
+    if (minInput === null) return;
+    const maxInput = window.prompt("Max:", "100");
+    if (maxInput === null) return;
+    const min = Number(minInput);
+    const max = Number(maxInput);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      toast.error("Enter numbers");
+      return;
+    }
+    addConditionalFormatRule((range) => ({
+      id: newRuleId(),
+      range,
+      condition: { kind: "between", min, max, inclusive: true },
+      style: { background: "#C6EFCE", color: "#006100" },
+    }));
+  }, [addConditionalFormatRule]);
+
+  const cfPresetContainsText = useCallback(() => {
+    const input = window.prompt("Highlight cells containing text:", "");
+    if (input === null || input === "") return;
+    addConditionalFormatRule((range) => ({
+      id: newRuleId(),
+      range,
+      condition: { kind: "containsText", text: input, mode: "contains" },
+      style: { background: "#DDEBF7", color: "#1F3864", bold: true },
+    }));
+  }, [addConditionalFormatRule]);
+
+  const cfPresetDuplicates = useCallback(() => {
+    addConditionalFormatRule((range) => ({
+      id: newRuleId(),
+      range,
+      condition: { kind: "duplicate" },
+      style: { background: "#FFD6D6", color: "#9C0006" },
+    }));
+  }, [addConditionalFormatRule]);
+
+  const cfPresetColorScaleRG = useCallback(() => {
+    addConditionalFormatRule((range) => ({
+      id: newRuleId(),
+      range,
+      condition: {
+        kind: "colorScale",
+        min: { color: "#F8696B" },
+        mid: { color: "#FFEB84" },
+        max: { color: "#63BE7B" },
+      },
+    }));
+  }, [addConditionalFormatRule]);
+
+  const promptCellComment = useCallback(() => {
+    if (!displaySheet || !selection) return;
+    const origin = rangeOrigin(selection);
+    const existing = commentsByCoord.get(coordKey(origin.row, origin.col));
+    const sample = existing?.text ?? "";
+    const input = window.prompt("Comment text. Empty input clears the comment.", sample);
+    if (input === null) return;
+    const trimmed = input.trim();
+    const b = rangeBounds(selection);
+    mutateEditorState((prev) => {
+      const base: ExcelEditorState = prev ?? { version: 1 };
+      const next = { ...(base.comments ?? {}) };
+      const updatedAt = new Date().toISOString();
+      for (let r = b.top; r <= b.bottom; r++) {
+        for (let c = b.left; c <= b.right; c++) {
+          const key = `${displaySheet.id}!${r},${c}`;
+          if (trimmed === "") delete next[key];
+          else next[key] = { text: trimmed, updatedAt };
+        }
+      }
+      return { ...base, version: 1, comments: next };
+    });
+  }, [displaySheet, selection, commentsByCoord, mutateEditorState]);
+
+  // ---------------------------------------------------------------------
+  // Conditional formatting (per-sheet rules + range-stats cache)
+  // ---------------------------------------------------------------------
+
+  const cfRulesForSheet = useMemo<ExcelConditionalFormatRule[]>(() => {
+    if (!editorState?.conditionalFormats || !displaySheet) return [];
+    return editorState.conditionalFormats[displaySheet.id] ?? [];
+  }, [editorState?.conditionalFormats, displaySheet]);
+
+  // Range-stats cache: built once per render, keyed by rule id. The
+  // resolveValue closure walks the same `cellsByCoord` / `editsByCoord`
+  // the renderer reads from so the values match what the user sees.
+  const cfRangeStats = useMemo(() => {
+    if (cfRulesForSheet.length === 0) return new Map<string, RangeStats>();
+    return buildRangeStats(cfRulesForSheet, (row, col) => {
+      const key = coordKey(row, col);
+      const cell = cellsByCoord.get(key);
+      const patch = editsByCoord.get(key);
+      const computed = computedValueAt(row, col);
+      const display = formatCellValue(cell, patch, computed);
+      const valueRaw = patch && "value" in patch ? patch.value : (computed ?? cell?.value ?? null);
+      return { value: valueRaw, display };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfRulesForSheet, cellsByCoord, editsByCoord, computedValueAt, engineGen]);
+
+  const cfOverlayAt = useCallback(
+    (row: number, col: number): CFOverlay | null => {
+      if (cfRulesForSheet.length === 0) return null;
+      const key = coordKey(row, col);
+      const cell = cellsByCoord.get(key);
+      const patch = editsByCoord.get(key);
+      const computed = computedValueAt(row, col);
+      const display = formatCellValue(cell, patch, computed);
+      const valueRaw = patch && "value" in patch ? patch.value : (computed ?? cell?.value ?? null);
+      return evaluateConditionalFormat(cfRulesForSheet, {
+        row,
+        col,
+        value: valueRaw,
+        display,
+        rangeValuesByRuleId: cfRangeStats,
+      });
+    },
+    [cfRulesForSheet, cfRangeStats, cellsByCoord, editsByCoord, computedValueAt]
+  );
 
   const promptListValidation = useCallback(() => {
     if (!displaySheet || !selection) return;
@@ -2694,6 +2945,69 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
               </Button>
             </Tooltip>
 
+            {/* Conditional formatting — preset rules anchored at selection */}
+            <ExcelMenuButton
+              tooltip="Conditional formatting"
+              disabled={!selection}
+              width={260}
+              trigger={<Palette className="h-3.5 w-3.5" />}
+              items={[
+                {
+                  id: "gt",
+                  label: "Greater than…",
+                  example: "> N",
+                  onSelect: cfPresetGreaterThan,
+                },
+                {
+                  id: "lt",
+                  label: "Less than…",
+                  example: "< N",
+                  onSelect: cfPresetLessThan,
+                },
+                {
+                  id: "between",
+                  label: "Between…",
+                  example: "[a, b]",
+                  onSelect: cfPresetBetween,
+                },
+                {
+                  id: "contains",
+                  label: "Text contains…",
+                  example: "abc",
+                  onSelect: cfPresetContainsText,
+                },
+                {
+                  id: "duplicates",
+                  label: "Duplicate values",
+                  onSelect: cfPresetDuplicates,
+                },
+                {
+                  id: "color-scale",
+                  label: "Color scale (red→yellow→green)",
+                  onSelect: cfPresetColorScaleRG,
+                },
+                {
+                  id: "clear",
+                  label: "Clear rules in selection",
+                  onSelect: clearConditionalFormatsForSelection,
+                },
+              ]}
+            />
+
+            {/* Cell comment / note */}
+            <Tooltip content="Comment" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-md"
+                onClick={promptCellComment}
+                disabled={!selection}
+                aria-label="Comment"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+
             {/* View → Freeze panes */}
             <ExcelMenuButton
               tooltip="Freeze"
@@ -3058,6 +3372,8 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             onOpenValidationPicker={(row, col, anchor) =>
               setValidationPopover({ row, col, x: anchor.x, y: anchor.y })
             }
+            cfOverlayAt={cfOverlayAt}
+            commentAt={commentAt}
             onSuggestKey={handleSuggestKey}
           />
         )}

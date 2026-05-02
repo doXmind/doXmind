@@ -51,6 +51,8 @@ function toExportPayload(state: ExcelEditorState): {
   workbookOps?: ExcelEditorState["workbookOps"];
   frozen?: ExcelEditorState["frozen"];
   validations?: ExcelEditorState["validations"];
+  comments?: ExcelEditorState["comments"];
+  conditionalFormats?: ExcelEditorState["conditionalFormats"];
 } {
   return {
     cells: state.cells ?? {},
@@ -60,5 +62,7 @@ function toExportPayload(state: ExcelEditorState): {
     workbookOps: state.workbookOps,
     frozen: state.frozen,
     validations: state.validations,
+    comments: state.comments,
+    conditionalFormats: state.conditionalFormats,
   };
 }

@@ -18,8 +18,16 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.comments import Comment
+from openpyxl.formatting.rule import (
+    CellIsRule,
+    ColorScaleRule,
+    FormulaRule,
+    Rule,
+)
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.styles.colors import Color
+from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -716,9 +724,213 @@ def export_edited_workbook(
                 dv.add(" ".join(cell_refs))
                 sheet.add_data_validation(dv)
 
+    # Cell comments — straight openpyxl Comment(text, author).
+    comments = edits.get("comments") or {}
+    if isinstance(comments, dict):
+        for key, payload in comments.items():
+            if not isinstance(payload, dict):
+                continue
+            text = payload.get("text")
+            if not isinstance(text, str) or not text:
+                continue
+            author = payload.get("author") or "doXmind"
+            sheet_name, row_idx, col_idx = _split_cell_key(str(key), sheet_lookup)
+            if sheet_name is None:
+                continue
+            wb[sheet_name].cell(row=row_idx + 1, column=col_idx + 1).comment = Comment(
+                str(text), str(author)
+            )
+
+    # Conditional formatting — emit one Rule per CF entry. We use the
+    # high-level helpers (CellIsRule / ColorScaleRule / FormulaRule) so
+    # the produced .xlsx renders correctly in Excel and Sheets without
+    # us having to construct DifferentialStyle DXFs by hand for the
+    # plain-vanilla cases.
+    cfmts = edits.get("conditionalFormats") or {}
+    if isinstance(cfmts, dict):
+        for sheet_id, rules in cfmts.items():
+            sheet_name = sheet_lookup.get(str(sheet_id))
+            if sheet_name is None or sheet_name not in wb.sheetnames:
+                continue
+            if not isinstance(rules, list):
+                continue
+            sheet = wb[sheet_name]
+            for entry in rules:
+                _apply_cf_rule(sheet, entry)
+
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+def _apply_cf_rule(sheet: Worksheet, entry: Any) -> None:
+    """Translate a single sidecar CF entry into an openpyxl conditional-
+    formatting rule and attach it to ``sheet``. Silent no-op for malformed
+    payloads — keeping export resilient to old/partial sidecars."""
+    if not isinstance(entry, dict):
+        return
+    rng = entry.get("range")
+    if not isinstance(rng, dict):
+        return
+    try:
+        top = int(rng["top"])
+        left = int(rng["left"])
+        bottom = int(rng["bottom"])
+        right = int(rng["right"])
+    except (KeyError, TypeError, ValueError):
+        return
+    if top > bottom or left > right:
+        return
+    range_ref = (
+        f"{get_column_letter(left + 1)}{top + 1}"
+        f":{get_column_letter(right + 1)}{bottom + 1}"
+    )
+
+    cond = entry.get("condition") or {}
+    if not isinstance(cond, dict):
+        return
+    kind = cond.get("kind")
+    style = entry.get("style") or {}
+    fill, font = _build_dxf(style if isinstance(style, dict) else {})
+
+    if kind == "colorScale":
+        try:
+            min_color = _normalise_hex(cond.get("min", {}).get("color"))
+            max_color = _normalise_hex(cond.get("max", {}).get("color"))
+            mid_payload = cond.get("mid")
+            if not min_color or not max_color:
+                return
+            if isinstance(mid_payload, dict):
+                mid_color = _normalise_hex(mid_payload.get("color"))
+                rule = ColorScaleRule(
+                    start_type="min",
+                    start_color=min_color,
+                    mid_type="percentile",
+                    mid_value=50,
+                    mid_color=mid_color or "FFFFEB84",
+                    end_type="max",
+                    end_color=max_color,
+                )
+            else:
+                rule = ColorScaleRule(
+                    start_type="min",
+                    start_color=min_color,
+                    end_type="max",
+                    end_color=max_color,
+                )
+            sheet.conditional_formatting.add(range_ref, rule)
+        except Exception:
+            return
+        return
+
+    if kind == "cellValue":
+        op_map = {
+            "gt": "greaterThan",
+            "lt": "lessThan",
+            "gte": "greaterThanOrEqual",
+            "lte": "lessThanOrEqual",
+            "eq": "equal",
+            "neq": "notEqual",
+        }
+        operator = op_map.get(str(cond.get("op")))
+        value = cond.get("value")
+        if operator is None or value is None:
+            return
+        formula = [_format_cf_operand(value)]
+        rule = CellIsRule(operator=operator, formula=formula, fill=fill, font=font)
+        sheet.conditional_formatting.add(range_ref, rule)
+        return
+
+    if kind == "between":
+        try:
+            min_v = float(cond.get("min"))
+            max_v = float(cond.get("max"))
+        except (TypeError, ValueError):
+            return
+        rule = CellIsRule(
+            operator="between",
+            formula=[str(min_v), str(max_v)],
+            fill=fill,
+            font=font,
+        )
+        sheet.conditional_formatting.add(range_ref, rule)
+        return
+
+    if kind == "containsText":
+        text = cond.get("text")
+        if not isinstance(text, str) or text == "":
+            return
+        mode = str(cond.get("mode") or "contains")
+        anchor = f"{get_column_letter(left + 1)}{top + 1}"
+        escaped = text.replace('"', '""')
+        if mode == "contains":
+            formula = f'NOT(ISERROR(SEARCH("{escaped}",{anchor})))'
+        elif mode == "notContains":
+            formula = f'ISERROR(SEARCH("{escaped}",{anchor}))'
+        elif mode == "startsWith":
+            formula = f'LEFT({anchor},{len(text)})="{escaped}"'
+        elif mode == "endsWith":
+            formula = f'RIGHT({anchor},{len(text)})="{escaped}"'
+        else:
+            return
+        rule = FormulaRule(formula=[formula], fill=fill, font=font)
+        sheet.conditional_formatting.add(range_ref, rule)
+        return
+
+    if kind in ("duplicate", "unique"):
+        rule_type = "duplicateValues" if kind == "duplicate" else "uniqueValues"
+        dxf = DifferentialStyle(fill=fill, font=font)
+        rule = Rule(type=rule_type, dxf=dxf)
+        sheet.conditional_formatting.add(range_ref, rule)
+        return
+
+    if kind in ("blank", "notBlank"):
+        anchor = f"{get_column_letter(left + 1)}{top + 1}"
+        formula = f'LEN(TRIM({anchor}))=0' if kind == "blank" else f'LEN(TRIM({anchor}))>0'
+        rule = FormulaRule(formula=[formula], fill=fill, font=font)
+        sheet.conditional_formatting.add(range_ref, rule)
+        return
+
+
+def _format_cf_operand(value: Any) -> str:
+    """Format a CF operand for openpyxl's `formula` array. Numbers go in
+    bare; strings are double-quoted (with embedded quotes doubled)."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    s = str(value)
+    if s == "":
+        return '""'
+    try:
+        f = float(s)
+        return str(f)
+    except ValueError:
+        pass
+    escaped = s.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def _build_dxf(style: dict[str, Any]) -> tuple[PatternFill | None, Font | None]:
+    """Build the (fill, font) pair referenced by a CF rule's DifferentialStyle.
+    The frontend's CF style is intentionally a small subset of `ExcelCellStyle`
+    (background / color / bold / italic / underline / strikethrough)."""
+    fill = None
+    bg_hex = _normalise_hex(style.get("background")) if style.get("background") else None
+    if bg_hex:
+        fill = PatternFill(start_color=bg_hex, end_color=bg_hex, fill_type="solid")
+    font_kwargs: dict[str, Any] = {}
+    color_hex = _normalise_hex(style.get("color")) if style.get("color") else None
+    if color_hex:
+        font_kwargs["color"] = Color(rgb=color_hex)
+    if style.get("bold"):
+        font_kwargs["bold"] = True
+    if style.get("italic"):
+        font_kwargs["italic"] = True
+    if style.get("underline"):
+        font_kwargs["underline"] = "single"
+    if style.get("strikethrough"):
+        font_kwargs["strike"] = True
+    font = Font(**font_kwargs) if font_kwargs else None
+    return fill, font
 
 
 _VERTICAL_ALIGN_MAP = {"top": "top", "middle": "center", "bottom": "bottom"}

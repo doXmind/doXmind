@@ -215,6 +215,59 @@ export interface ExcelEditorState {
    * dropdown picker over the listed values.
    */
   validations?: Record<string, ExcelDataValidation>;
+  /**
+   * Cell-level notes / comments. Keyed by `${sheetId}!${row},${col}`. The
+   * renderer draws a small triangle indicator on the corner of the cell
+   * and shows the text on hover; the backend round-trips them through
+   * `openpyxl.comments.Comment` so they survive an export.
+   */
+  comments?: Record<string, ExcelCellComment>;
+  /**
+   * Per-sheet conditional-formatting rules. Evaluated by the renderer on
+   * top of the cell's static style; first matching rule wins (rules
+   * earlier in the list take precedence). Round-tripped into openpyxl
+   * `ConditionalFormatting` blocks on export.
+   */
+  conditionalFormats?: Record<string, ExcelConditionalFormatRule[]>;
+}
+
+export interface ExcelCellComment {
+  text: string;
+  author?: string;
+  /** ISO timestamp of last edit. Surfaced in the popover header. */
+  updatedAt?: string;
+}
+
+export type ExcelConditionalFormatCondition =
+  | { kind: "cellValue"; op: "gt" | "lt" | "gte" | "lte" | "eq" | "neq"; value: number | string }
+  | { kind: "between"; min: number; max: number; inclusive?: boolean }
+  | {
+      kind: "containsText";
+      text: string;
+      mode: "contains" | "notContains" | "startsWith" | "endsWith";
+      caseSensitive?: boolean;
+    }
+  | { kind: "duplicate" }
+  | { kind: "unique" }
+  | { kind: "blank" }
+  | { kind: "notBlank" }
+  | {
+      kind: "colorScale";
+      min: { value?: number; color: string };
+      mid?: { value?: number; color: string };
+      max: { value?: number; color: string };
+    };
+
+export interface ExcelConditionalFormatRule {
+  id: string;
+  /** Inclusive range over which the rule applies, in post-op coordinates. */
+  range: { top: number; left: number; bottom: number; right: number };
+  condition: ExcelConditionalFormatCondition;
+  /** For non-color-scale rules. Applied on top of the cell's base style. */
+  style?: Pick<
+    ExcelCellStyle,
+    "bold" | "italic" | "underline" | "strikethrough" | "color" | "background"
+  >;
 }
 
 export interface ExcelDataValidation {

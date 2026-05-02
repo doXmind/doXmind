@@ -23,7 +23,13 @@ import type { EditAdvance, EditingCell, ExcelCellPatch, SelectionRange } from "@
 import { rangeBounds, rangeContains } from "@/lib/excel/state";
 import { applyNumberFormat } from "@/lib/excel/format";
 import type { ExcelCellDto, ExcelSheetDto } from "@/lib/excel/parse-workbook";
-import type { ExcelBorderLineStyle, ExcelBorderSide, ExcelCellStyle } from "@/lib/storage/types";
+import type {
+  ExcelBorderLineStyle,
+  ExcelBorderSide,
+  ExcelCellComment,
+  ExcelCellStyle,
+} from "@/lib/storage/types";
+import type { CFOverlay } from "@/lib/excel/conditional-formats";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_ROW_HEIGHT_PX = 22;
@@ -99,6 +105,14 @@ export interface ExcelSheetViewProps {
   /** Mousedown on the validation ▾ — surfaces the picker. */
   onOpenValidationPicker(row: number, col: number, anchor: { x: number; y: number }): void;
   /**
+   * Conditional-format overlay lookup. Returns the per-cell style fragment
+   * computed by `evaluateConditionalFormat`, or `null` for cells with no
+   * matching rule. Layered on top of the static cell style at render time.
+   */
+  cfOverlayAt(row: number, col: number): CFOverlay | null;
+  /** Cell-level comment lookup. Drives the corner-triangle indicator + hover popover. */
+  commentAt(row: number, col: number): ExcelCellComment | null;
+  /**
    * Hook for the formula autocomplete popover. Returns `true` when the
    * key was consumed (cell input should skip its own handling).
    */
@@ -141,6 +155,8 @@ export function ExcelSheetView({
   validationsByCoord,
   onOpenValidationPicker,
   onSuggestKey,
+  cfOverlayAt,
+  commentAt,
 }: ExcelSheetViewProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -375,6 +391,8 @@ export function ExcelSheetView({
       row === Math.max(selection.startRow, selection.endRow) &&
       col === Math.max(selection.startCol, selection.endCol);
     const hasValidation = validationsByCoord.has(key);
+    const cfOverlay = cfOverlayAt(row, col);
+    const comment = commentAt(row, col);
     return (
       <ExcelGridCell
         key={`${keySuffix}:${row}:${col}`}
@@ -393,6 +411,8 @@ export function ExcelSheetView({
         isMergeAnchor={!!mergeAnchor}
         showFillHandle={showFillHandle}
         hasValidation={hasValidation}
+        cfOverlay={cfOverlay}
+        comment={comment}
         onValidationDownArrow={(event) =>
           onOpenValidationPicker(row, col, { x: event.clientX, y: event.clientY })
         }
@@ -772,6 +792,10 @@ interface ExcelGridCellProps {
   onValidationDownArrow?(event: React.MouseEvent<HTMLDivElement>): void;
   /** Formula-autocomplete key hook. */
   onSuggestKey?(key: string): boolean;
+  /** Conditional-format style overlay (background, font color, weight, etc). */
+  cfOverlay?: CFOverlay | null;
+  /** Cell-level comment; renders the corner indicator and hover popover. */
+  comment?: ExcelCellComment | null;
   editing: EditingCell | null;
   inputRef?: RefObject<HTMLInputElement | null>;
   onMouseDown(event: React.MouseEvent<HTMLDivElement>): void;
@@ -802,6 +826,8 @@ function ExcelGridCell({
   hasValidation,
   onValidationDownArrow,
   onSuggestKey,
+  cfOverlay,
+  comment,
   editing,
   inputRef,
   onMouseDown,
@@ -812,8 +838,15 @@ function ExcelGridCell({
   onCommit,
   onCancel,
 }: ExcelGridCellProps) {
-  const style = mergeStyle(cell?.style, patch?.style);
-  const align = style?.textAlign ?? alignFromValue(cell, patch);
+  const baseStyle = mergeStyle(cell?.style, patch?.style);
+  // Conditional-format overlay layers on top of the base style. CF only
+  // touches text-format-ish fields (bold/italic/decorations/colors) so
+  // the rest of the style (alignment, borders, font size, etc.) flows
+  // through untouched.
+  const style: ExcelCellStyle | undefined = cfOverlay
+    ? { ...(baseStyle ?? {}), ...cfOverlay }
+    : baseStyle;
+  const align = baseStyle?.textAlign ?? alignFromValue(cell, patch);
 
   const decorations: string[] = [];
   if (style?.underline) decorations.push("underline");
@@ -823,7 +856,7 @@ function ExcelGridCell({
   // on a strikethrough cell still shows both lines.
   if (style?.hyperlink && !decorations.includes("underline")) decorations.push("underline");
 
-  const border = style?.border;
+  const border = baseStyle?.border;
 
   // Hyperlinks override the cell's text color so the link reads as a link
   // — matches the convention in Sheets / Excel. User-set color still wins
@@ -924,6 +957,7 @@ function ExcelGridCell({
           ▾
         </div>
       )}
+      {comment && !editing && <ExcelCommentMarker comment={comment} />}
       {editing ? (
         <ExcelCellInput
           ref={inputRef}
@@ -1104,6 +1138,40 @@ export function formulaOrValueAsString(source: ExcelCellDto | ExcelCellPatch | u
   const value = "value" in source ? source.value : undefined;
   if (value === null || value === undefined) return "";
   return String(value);
+}
+
+/**
+ * Cell-comment indicator. Renders the small red triangle in the top-right
+ * corner (familiar Excel pattern) and a tooltip popover on hover. Uses the
+ * native `title` attr so the popover lives outside our React tree —
+ * comments are read-only annotations and the cell's selection / edit
+ * gestures stay intact.
+ */
+function ExcelCommentMarker({ comment }: { comment: ExcelCellComment }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <>
+      <div
+        aria-label="Cell comment"
+        className="absolute right-0 top-0 z-10 h-0 w-0 border-b-[6px] border-l-[6px] border-b-transparent border-l-red-500"
+        style={{ pointerEvents: "auto" }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      />
+      {hover && (
+        <div
+          role="tooltip"
+          className="absolute right-0 top-0 z-30 max-w-[240px] translate-x-full translate-y-[-4px] whitespace-pre-wrap rounded-sm border border-yellow-500/60 bg-yellow-50 px-2 py-1 text-[11px] text-foreground shadow-md dark:bg-yellow-100/10"
+          style={{ pointerEvents: "none" }}
+        >
+          {comment.author && (
+            <div className="mb-0.5 font-semibold text-foreground/80">{comment.author}</div>
+          )}
+          {comment.text}
+        </div>
+      )}
+    </>
+  );
 }
 
 function alignFromValue(

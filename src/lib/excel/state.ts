@@ -22,6 +22,7 @@
 
 import type {
   ExcelCellStyle,
+  ExcelConditionalFormatRule,
   ExcelEditorState,
   ExcelStructuralOp,
   ExcelWorkbookOp,
@@ -280,8 +281,75 @@ export function applyEditorStateOp(
     cells: transformCellsForOp(base.cells, op),
     rowHeights: transformDimensionMapForOp(base.rowHeights, op, "row"),
     colWidths: transformDimensionMapForOp(base.colWidths, op, "col"),
+    comments: transformCellsForOp(
+      base.comments as ExcelCellsMap | undefined,
+      op
+    ) as typeof base.comments,
+    conditionalFormats: transformConditionalFormatsForOp(base.conditionalFormats, op),
     ops: [...(base.ops ?? []), op],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Conditional-format transforms
+// ---------------------------------------------------------------------------
+
+function shiftIndex(
+  i: number,
+  start: number,
+  end: number,
+  insert: number,
+  mode: "insert" | "delete"
+): number | null {
+  if (mode === "insert") {
+    return i >= start ? i + insert : i;
+  }
+  if (i >= start && i < end) return null;
+  if (i >= end) return i - (end - start);
+  return i;
+}
+
+export function transformConditionalFormatsForOp(
+  byId: Record<string, ExcelConditionalFormatRule[]> | undefined,
+  op: ExcelStructuralOp
+): Record<string, ExcelConditionalFormatRule[]> | undefined {
+  if (!byId) return byId;
+  const list = byId[op.sheetId];
+  if (!list || list.length === 0) return byId;
+
+  const next: ExcelConditionalFormatRule[] = [];
+  for (const rule of list) {
+    let { top, bottom, left, right } = rule.range;
+
+    if (op.type === "insertRow" || op.type === "deleteRow") {
+      const mode = op.type === "insertRow" ? "insert" : "delete";
+      const start = op.type === "insertRow" ? op.before : op.index;
+      const end = op.type === "insertRow" ? op.before : op.index + op.count;
+      const insert = op.count;
+      const t = shiftIndex(top, start, end, insert, mode);
+      const b = shiftIndex(bottom, start, end, insert, mode);
+      // Drop only when the entire range collapsed away.
+      if (t === null && b === null) continue;
+      top = t ?? start;
+      bottom = b ?? Math.max(top, start);
+      if (op.type === "deleteRow" && top > bottom) continue;
+    } else if (op.type === "insertCol" || op.type === "deleteCol") {
+      const mode = op.type === "insertCol" ? "insert" : "delete";
+      const start = op.type === "insertCol" ? op.before : op.index;
+      const end = op.type === "insertCol" ? op.before : op.index + op.count;
+      const insert = op.count;
+      const l = shiftIndex(left, start, end, insert, mode);
+      const r = shiftIndex(right, start, end, insert, mode);
+      if (l === null && r === null) continue;
+      left = l ?? start;
+      right = r ?? Math.max(left, start);
+      if (op.type === "deleteCol" && left > right) continue;
+    }
+
+    next.push({ ...rule, range: { top, bottom, left, right } });
+  }
+
+  return { ...byId, [op.sheetId]: next };
 }
 
 // ---------------------------------------------------------------------------
@@ -406,12 +474,20 @@ export function applyWorkbookOp(
   let ops = base.ops;
   let rowHeights = base.rowHeights;
   let colWidths = base.colWidths;
+  let comments = base.comments;
+  let conditionalFormats = base.conditionalFormats;
   if (op.type === "deleteSheet") {
     // Drop everything keyed by the dropped sheet so undo doesn't
     // resurrect orphaned edits, and the sidecar stays minimal.
     cells = filterMapByPrefix(cells, `${op.sheetId}!`);
     rowHeights = filterMapByPrefix(rowHeights, `${op.sheetId}!`);
     colWidths = filterMapByPrefix(colWidths, `${op.sheetId}!`);
+    comments = filterMapByPrefix(comments, `${op.sheetId}!`);
+    if (conditionalFormats?.[op.sheetId]) {
+      const { [op.sheetId]: _drop, ...rest } = conditionalFormats;
+      void _drop;
+      conditionalFormats = rest;
+    }
     ops = ops?.filter((entry) => entry.sheetId !== op.sheetId);
   }
   return {
@@ -421,6 +497,8 @@ export function applyWorkbookOp(
     ops,
     rowHeights,
     colWidths,
+    comments,
+    conditionalFormats,
     workbookOps: [...(base.workbookOps ?? []), op],
   };
 }
