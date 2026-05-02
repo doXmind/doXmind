@@ -6,6 +6,7 @@ description = "Allows the main desktop window to manage local markdown workspace
 commands.allow = [
   "pick_workspace_folder",
   "pick_workspace_file",
+  "pick_save_location",
   "workspace_default_root",
   "doc_read",
   "doc_write",

@@ -1,9 +1,4 @@
-// Shared contract for the four welcome-screen variants.
-//
-// All four variant components (Continuum, Stratigraphy, Terminal, Paper) take
-// the SAME props so the parent welcome-screen.tsx can swap between them based
-// on the user's `welcomeMode` setting. Agents implementing variants must not
-// add or rename props — only consume them.
+// Shared contract for the welcome screen.
 
 import type { WorkspaceDocumentType } from "@/lib/storage/types";
 
@@ -47,6 +42,10 @@ export interface WelcomeVariantProps {
   hasWorkspace: boolean;
   onOpenFolder: () => void;
   onCreateNew: () => void;
+  // Start an in-memory untitled buffer (VSCode-style). Available even
+  // when no workspace is mounted; the editor will prompt for a save
+  // location on first persist.
+  onStartWriting: () => void;
   onOpenRecentFile: (file: WelcomeRecentFile) => void;
   onOpenRecentWorkspace: (path: string) => void;
 }

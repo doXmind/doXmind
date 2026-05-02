@@ -27,3 +27,18 @@ export async function pickNativeFile(
   }
   return await invoke<string | null>("pick_workspace_file", { title, filters });
 }
+
+export async function pickNativeSaveLocation(
+  title: string,
+  defaultName: string,
+  filters: NativeFileFilter[]
+): Promise<string | null> {
+  if (!isNativeDialogAvailable()) {
+    throw new Error("Native save dialogs require the desktop app.");
+  }
+  return await invoke<string | null>("pick_save_location", {
+    title,
+    defaultName,
+    filters,
+  });
+}

@@ -15,7 +15,9 @@ import { DocumentTitle } from "./document-title";
 import { PageCover } from "./page-cover";
 import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
-import { useFileStore, type FileItem } from "@/stores/file-store";
+import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
+import { pickNativeSaveLocation } from "@/lib/native-dialog";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -48,6 +50,12 @@ export function Editor({ file: initialFile }: EditorProps) {
   const updateFile = useFileStore((s) => s.updateFile);
   const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
   const file = storeFile || initialFile;
+  // Transient (untitled) buffer hooks — only relevant when file.id has the
+  // transient prefix. The slot is a ref so persistContent's deps array
+  // stays stable; we read the latest value via store snapshot inline.
+  const setTransientContent = useFileStore((s) => s.setTransientContent);
+  const materializeTransient = useFileStore((s) => s.materializeTransient);
+  const isTransient = file.id.startsWith(TRANSIENT_ID_PREFIX);
 
   // Editor store — actions are stable refs, state values subscribed individually
   const setDirty = useEditorStore((s) => s.setDirty);
@@ -84,6 +92,49 @@ export function Editor({ file: initialFile }: EditorProps) {
 
       setSaving(true);
       try {
+        // Untitled buffer (VSCode-style): the content lives only in the
+        // in-memory transient slot until the user picks a save location.
+        // The native Save-As dialog is the trigger to materialize.
+        if (isTransient) {
+          // Always update the in-memory copy first so a cancelled dialog
+          // doesn't lose what the user just typed.
+          setTransientContent(content, contentMarkdown ?? "");
+          const transient = useFileStore.getState().transientFile;
+          if (!transient) {
+            // Slot was discarded mid-save (window closed, etc.) — bail.
+            lastContentRef.current = content;
+            setDirty(false);
+            return;
+          }
+          const path = await pickNativeSaveLocation("Save as", transient.name, [
+            { name: "Markdown", extensions: ["md"] },
+          ]);
+          if (!path) {
+            // User dismissed the dialog. Keep typing in memory; the next
+            // debounced save will prompt again.
+            lastContentRef.current = content;
+            setDirty(false);
+            return;
+          }
+          // Re-read in case more typing happened during the dialog (the
+          // dialog is modal but be defensive).
+          const latest = useFileStore.getState().transientFile;
+          if (
+            latest &&
+            (latest.content !== content || latest.contentMarkdown !== contentMarkdown)
+          ) {
+            setTransientContent(latest.content, latest.contentMarkdown);
+          } else {
+            setTransientContent(content, contentMarkdown ?? "");
+          }
+          const newId = await materializeTransient(path);
+          lastContentRef.current = content;
+          setLastSavedAt(new Date().toISOString());
+          setDirty(false);
+          if (newId) navigateToEditorFile(newId);
+          return;
+        }
+
         await updateFile(file.id, { content, contentMarkdown });
         setLastSavedAt(new Date().toISOString());
         setDirty(false);
@@ -103,7 +154,16 @@ export function Editor({ file: initialFile }: EditorProps) {
         setSaving(false);
       }
     },
-    [file.id, updateFile, setSaving, setLastSavedAt, setDirty]
+    [
+      file.id,
+      isTransient,
+      updateFile,
+      setSaving,
+      setLastSavedAt,
+      setDirty,
+      setTransientContent,
+      materializeTransient,
+    ]
   );
 
   // Debounced save function

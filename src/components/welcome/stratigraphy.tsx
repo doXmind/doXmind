@@ -4,9 +4,11 @@
 //   stratigraphyHeader        "stratigraphy"
 //   stratigraphyOldestHint    "oldest ↓"
 //   stratigraphyLastDocs      "last {count} documents"
-//   stratigraphyEmptyTitle    "No layers yet"
-//   stratigraphyEmptyBody     "Open a file to start the stack."
 //   stratigraphyWordsSuffix   "w"
+//   firstRunTag               "Welcome to doxmind."
+//   firstRunHeading           "A quiet place to write, on your disk."
+//   firstRunStep{1,2,3}Title  bold step titles ("Choose a folder", ...)
+//   firstRunStep{1,2,3}Body   one-line explanation under each step
 //   actionNew                 "New"
 //   actionOpenFolder          "Open Folder"
 
@@ -48,6 +50,105 @@ interface HierarchyRowProps {
   index: number;
   isActive: boolean;
   isFirst: boolean;
+}
+
+interface FirstRunStep {
+  title: string;
+  body: string;
+  // When provided, the row renders as a button (hover tint + focus ring +
+  // pointer cursor). When omitted, the row stays purely informational.
+  onClick?: () => void;
+}
+
+interface FirstRunStateProps {
+  tag: string;
+  heading: string;
+  steps: FirstRunStep[];
+}
+
+// Brand-new-user state: 3-step onboarding card with mono index column,
+// bold step titles, and a one-line explanation under each. Matches the
+// "A quiet place to write, on your disk." direction.
+function FirstRunState({ tag, heading, steps }: FirstRunStateProps) {
+  return (
+    <div className="flex flex-1 flex-col justify-center pb-12 pt-6">
+      <div style={{ fontFamily: FONT_SANS }} className="text-[13px] text-muted-foreground">
+        {tag}
+      </div>
+      <h1
+        style={{ fontFamily: FONT_SANS }}
+        className="mt-2 text-[30px] font-semibold leading-[1.15] tracking-[-0.022em] text-foreground"
+      >
+        {heading}
+      </h1>
+
+      <ol className="m-0 mt-12 flex list-none flex-col p-0">
+        {steps.map((step, index) => {
+          const isInteractive = typeof step.onClick === "function";
+          const inner = (
+            <>
+              <span
+                className={cn(
+                  "w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] transition-colors duration-150",
+                  isInteractive
+                    ? "text-muted-foreground group-hover:text-foreground group-focus-visible:text-foreground"
+                    : "text-muted-foreground"
+                )}
+              >
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div
+                  style={{ fontFamily: FONT_SANS }}
+                  className="text-[15px] font-semibold tracking-[-0.012em] text-foreground"
+                >
+                  {step.title}
+                </div>
+                <div
+                  style={{ fontFamily: FONT_SANS }}
+                  className="mt-1 text-[14px] leading-snug text-muted-foreground"
+                >
+                  {step.body}
+                </div>
+              </div>
+            </>
+          );
+
+          const liBorder = cn(
+            "border-t border-border",
+            index === steps.length - 1 && "border-b border-border"
+          );
+
+          if (isInteractive) {
+            return (
+              <li key={index} className={liBorder}>
+                <button
+                  type="button"
+                  onClick={step.onClick}
+                  className={cn(
+                    "group flex w-full items-baseline gap-6 py-4 text-left transition-colors duration-150",
+                    "cursor-pointer hover:bg-muted/30",
+                    "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  )}
+                >
+                  {inner}
+                </button>
+              </li>
+            );
+          }
+
+          return (
+            <li
+              key={index}
+              className={cn("flex cursor-default items-baseline gap-6 py-4", liBorder)}
+            >
+              {inner}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
 }
 
 function HierarchyRow({ layer, index, isActive, isFirst }: HierarchyRowProps) {
@@ -121,6 +222,7 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
     hasWorkspace,
     onCreateNew,
     onOpenFolder,
+    onStartWriting,
     onOpenRecentFile,
     onOpenRecentWorkspace,
   } = props;
@@ -134,7 +236,7 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
         subtitle: file.workspacePath,
         preview: file.preview,
         words: file.wordCount,
-        when: formatRelativeTime(file.lastOpened),
+        when: file.lastOpened ? formatRelativeTime(file.lastOpened) : file.documentType,
         isDocument: true,
         onActivate: () => onOpenRecentFile(file),
       }));
@@ -151,51 +253,71 @@ export function StratigraphyWelcome(props: WelcomeVariantProps) {
     }));
   }, [recentFiles, recentWorkspaces, onOpenRecentFile, onOpenRecentWorkspace]);
 
-  const isEmpty = layers.length === 0;
+  // First-run = brand-new user with no document or workspace history at all.
+  // The standard list/header chrome doesn't make sense here — there's nothing
+  // to label and nothing to show — so swap to a typographic welcome that
+  // points at the action bar below.
+  const isFirstRun = recentFiles.length === 0 && recentWorkspaces.length === 0;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-background pt-6 text-foreground">
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col overflow-hidden px-8">
-        <div className="flex items-baseline justify-between">
-          <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
-            {t("stratigraphyHeader")}
-            <span className="mx-2 text-muted-foreground/60">{"·"}</span>
-            {t("stratigraphyLastDocs", { count: Math.max(layers.length, 1) })}
-          </div>
-          <div className="font-mono text-[10.5px] text-muted-foreground">
-            {t("stratigraphyOldestHint")}
-          </div>
-        </div>
-
-        <motion.div
-          className="relative mt-3 flex flex-1 flex-col overflow-y-auto"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          {isEmpty ? (
-            <div className="flex flex-1 items-center justify-center px-6 py-12">
-              <div className="max-w-sm border-t border-border bg-muted/40 px-6 py-10 text-center">
-                <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
-                  {t("stratigraphyEmptyTitle")}
-                </div>
-                <p className="mt-3 text-sm text-muted-foreground">{t("stratigraphyEmptyBody")}</p>
+        {isFirstRun ? (
+          <FirstRunState
+            tag={t("firstRunTag")}
+            heading={t("firstRunHeading")}
+            steps={[
+              {
+                title: t("firstRunStep1Title"),
+                body: t("firstRunStep1Body"),
+                onClick: onOpenFolder,
+              },
+              {
+                title: t("firstRunStep2Title"),
+                body: t("firstRunStep2Body"),
+                onClick: onStartWriting,
+              },
+              {
+                // Row 3 stays informational — the "remember last session"
+                // promise has no concrete action a brand-new user can take.
+                title: t("firstRunStep3Title"),
+                body: t("firstRunStep3Body"),
+              },
+            ]}
+          />
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between">
+              <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
+                {t("stratigraphyHeader")}
+                <span className="mx-2 text-muted-foreground/60">{"·"}</span>
+                {t("stratigraphyLastDocs", { count: Math.max(layers.length, 1) })}
+              </div>
+              <div className="font-mono text-[10.5px] text-muted-foreground">
+                {t("stratigraphyOldestHint")}
               </div>
             </div>
-          ) : (
-            <ol className="m-0 flex list-none flex-col p-0">
-              {layers.map((layer, index) => (
-                <HierarchyRow
-                  key={layer.key}
-                  layer={layer}
-                  index={index}
-                  isActive={index === 0 && recentFiles.length > 0}
-                  isFirst={index === 0}
-                />
-              ))}
-            </ol>
-          )}
-        </motion.div>
+
+            <motion.div
+              className="relative mt-3 flex flex-1 flex-col overflow-y-auto"
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+            >
+              <ol className="m-0 flex list-none flex-col p-0">
+                {layers.map((layer, index) => (
+                  <HierarchyRow
+                    key={layer.key}
+                    layer={layer}
+                    index={index}
+                    isActive={index === 0 && recentFiles.length > 0}
+                    isFirst={index === 0}
+                  />
+                ))}
+              </ol>
+            </motion.div>
+          </>
+        )}
       </div>
 
       <div className="mx-auto w-full max-w-2xl px-8">

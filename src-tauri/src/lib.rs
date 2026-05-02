@@ -382,6 +382,36 @@ async fn pick_workspace_file(
 }
 
 #[tauri::command]
+async fn pick_save_location(
+    app: AppHandle,
+    title: Option<String>,
+    default_name: Option<String>,
+    filters: Option<Vec<DialogFileFilterDto>>,
+) -> Result<Option<String>, String> {
+    let mut dialog = app.dialog().file();
+    if let Some(title) = title {
+        dialog = dialog.set_title(title);
+    }
+    if let Some(name) = default_name {
+        dialog = dialog.set_file_name(name);
+    }
+    if let Some(filters) = filters {
+        for filter in filters {
+            let extensions = filter
+                .extensions
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            dialog = dialog.add_filter(filter.name, &extensions);
+        }
+    }
+    dialog
+        .blocking_save_file()
+        .map(dialog_path_to_string)
+        .transpose()
+}
+
+#[tauri::command]
 fn workspace_default_root() -> Result<String, String> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -1636,6 +1666,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             get_backend_url,
             pick_workspace_folder,
             pick_workspace_file,
+            pick_save_location,
             workspace_default_root,
             doc_read,
             doc_write,

@@ -67,6 +67,23 @@ export function sortFilesByOption(files: FileItem[], sortBy: SortOption): FileIt
 // the open file rather than leaking its neighbours.
 export type OpenTarget = "none" | "file" | "folder";
 
+// VSCode-style untitled buffer: an in-memory document that has never
+// been written to disk. The editor sees it as a normal FileItem (added
+// to `files`) so routing/lookup work unchanged, but the editor's save
+// path detects the matching `transientFile` slot and triggers a Save-As
+// dialog before the first persist. Only one transient at a time for now.
+// Hyphen rather than colon to keep the id URL-segment safe (colons get
+// percent-encoded by some routers, breaking lookups via /editor/<id>).
+export const TRANSIENT_ID_PREFIX = "transient-";
+
+export interface TransientFile {
+  id: string;
+  name: string;
+  content: string;
+  contentMarkdown: string;
+  createdAt: string;
+}
+
 export interface RecentEntry {
   kind: "file" | "folder";
   path: string;
@@ -83,6 +100,10 @@ interface FileState {
   // Absolute path of the open file when openTarget === "file". Persisted so
   // cold boots can re-open it.
   openFilePath: string | null;
+  // In-memory untitled buffer. When set, `files` contains a synthetic
+  // FileItem with the same id; the editor reads/writes through this slot
+  // until the user picks a save location and `materializeTransient` runs.
+  transientFile: TransientFile | null;
   recents: RecentEntry[];
   isLoading: boolean;
   isSynced: boolean;
@@ -112,6 +133,13 @@ interface FileState {
   setCurrentFile: (id: string | null) => void;
   renameFile: (id: string, name: string) => Promise<void>;
   getFile: (id: string) => FileItem | undefined;
+
+  // Transient (untitled) buffer actions. See TransientFile.
+  nextUntitledName: () => string;
+  createTransientFile: (name: string) => string;
+  setTransientContent: (content: string, contentMarkdown: string) => void;
+  materializeTransient: (absolutePath: string) => Promise<string>;
+  discardTransient: () => void;
 
   // Favorites & Icons
   toggleFavorite: (fileId: string) => Promise<void>;
@@ -227,6 +255,7 @@ export const useFileStore = create<FileState>()(
       openTarget: "none",
       rootPath: null,
       openFilePath: null,
+      transientFile: null,
       recents: [],
       isLoading: false,
       isSynced: false,
@@ -485,6 +514,7 @@ export const useFileStore = create<FileState>()(
           openTarget: "none",
           rootPath: null,
           openFilePath: null,
+          transientFile: null,
           files: [],
           currentFileId: null,
           currentFolderId: null,
@@ -674,6 +704,134 @@ export const useFileStore = create<FileState>()(
 
       getFile: (id: string) => {
         return get().files.find((f) => f.id === id);
+      },
+
+      // ─── Transient (untitled) buffer ──────────────────────────────────
+      // Scans current root files for the next free Untitled-N.md slot.
+      // Shared by the action-bar `+ New` button and the welcome-screen
+      // "Start writing" path so the numbering stays consistent.
+      nextUntitledName: () => {
+        const rootFiles = get().files.filter((f) => !f.isFolder && f.parentId === null);
+        let maxNum = 0;
+        for (const file of rootFiles) {
+          const match = file.name.match(/^Untitled-(\d+)\.md$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+        return `Untitled-${maxNum + 1}.md`;
+      },
+
+      createTransientFile: (name: string) => {
+        const id = `${TRANSIENT_ID_PREFIX}${crypto.randomUUID()}`;
+        const now = new Date().toISOString();
+        const transient: TransientFile = {
+          id,
+          name,
+          content: "",
+          contentMarkdown: "",
+          createdAt: now,
+        };
+        const synthetic: FileItem = {
+          id,
+          name,
+          content: "",
+          contentMarkdown: "",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          icon: null,
+          coverImageUrl: null,
+          coverPosition: 0.5,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          documentType: "markdown",
+        };
+        set((state) => {
+          // Drop any existing transient — only one at a time for now.
+          const filteredFiles = state.transientFile
+            ? state.files.filter((f) => f.id !== state.transientFile!.id)
+            : state.files;
+          return {
+            transientFile: transient,
+            files: [synthetic, ...filteredFiles],
+            currentFileId: id,
+            justCreatedFileId: id,
+            isSynced: true,
+            isLoading: false,
+            loadedContentIds: new Set([...state.loadedContentIds, id]),
+          };
+        });
+        return id;
+      },
+
+      setTransientContent: (content: string, contentMarkdown: string) => {
+        const transient = get().transientFile;
+        if (!transient) return;
+        const updated: TransientFile = { ...transient, content, contentMarkdown };
+        set((state) => ({
+          transientFile: updated,
+          files: state.files.map((f) =>
+            f.id === transient.id
+              ? { ...f, content, contentMarkdown, updatedAt: new Date().toISOString() }
+              : f
+          ),
+        }));
+      },
+
+      materializeTransient: async (absolutePath: string) => {
+        const transient = get().transientFile;
+        if (!transient) {
+          throw new Error("No transient buffer to materialize");
+        }
+        const trimmed = absolutePath.trim();
+        const normalized = trimmed.replaceAll("\\", "/");
+        const lastSlash = normalized.lastIndexOf("/");
+        if (lastSlash <= 0) {
+          throw new Error("materializeTransient requires an absolute path");
+        }
+        const parentDir = trimmed.slice(0, lastSlash);
+        const fileBase = normalized.slice(lastSlash + 1);
+
+        // Adapter scoped to the chosen parent directory so the file lands
+        // exactly where the user picked, regardless of the current rootPath.
+        const adapter = createStorageAdapter({ disk: { root: parentDir } });
+        await adapter.create({
+          name: fileBase,
+          kind: "document",
+          parent: undefined,
+          content: { html: transient.content, markdown: transient.contentMarkdown },
+        });
+
+        // Drop the synthetic transient FileItem before openFile rebuilds
+        // the files array — keeps things consistent if anything reads in
+        // between.
+        set((state) => ({
+          files: state.files.filter((f) => f.id !== transient.id),
+          transientFile: null,
+        }));
+
+        // Switch to loose-file mode on the newly written path. openFile
+        // owns currentFileId / openFilePath / rootPath updates.
+        await get().openFile(trimmed);
+        return get().currentFileId ?? "";
+      },
+
+      discardTransient: () => {
+        const transient = get().transientFile;
+        if (!transient) return;
+        set((state) => ({
+          files: state.files.filter((f) => f.id !== transient.id),
+          transientFile: null,
+          currentFileId: state.currentFileId === transient.id ? null : state.currentFileId,
+          loadedContentIds: new Set(
+            Array.from(state.loadedContentIds).filter((id) => id !== transient.id)
+          ),
+        }));
       },
 
       // Favorites

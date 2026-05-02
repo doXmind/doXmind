@@ -4,16 +4,13 @@ import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { useFileStore } from "@/stores/file-store";
-import { useAppearanceStore } from "@/stores/appearance-store";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { useIsTauri } from "@/hooks/use-is-tauri";
 import { pickNativeFolder } from "@/lib/native-dialog";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
-import { ContinuumWelcome } from "@/components/welcome/continuum";
+import { documentTypeFromName } from "@/lib/document-types";
 import { StratigraphyWelcome } from "@/components/welcome/stratigraphy";
-import { TerminalWelcome } from "@/components/welcome/terminal";
-import { PaperWelcome } from "@/components/welcome/paper";
 import type {
   WelcomeRecentFile,
   WelcomeRecentWorkspace,
@@ -35,39 +32,51 @@ function workspaceLabel(absolutePath: string): { name: string; parent: string } 
 
 export function WelcomeScreen() {
   const tSidebar = useTranslations("sidebar");
-  const welcomeMode = useAppearanceStore((s) => s.welcomeMode);
   const { isTauri: isDesktopShell } = useIsTauri();
 
-  const recentWorkspacesRaw = useFileStore((s) => s.recentWorkspaces);
-  const recentFilesRaw = useFileStore((s) => s.recentFiles);
-  const workspaceRoot = useFileStore((s) => s.workspaceRoot);
-  const isSingleFileMode = useFileStore((s) => s.isSingleFileMode);
-  const openDiskWorkspace = useFileStore((s) => s.openDiskWorkspace);
-  const openRecentFile = useFileStore((s) => s.openRecentFile);
+  const recentsRaw = useFileStore((s) => s.recents);
+  const openTarget = useFileStore((s) => s.openTarget);
+  const rootPath = useFileStore((s) => s.rootPath);
+  const openFilePath = useFileStore((s) => s.openFilePath);
+  const openFolder = useFileStore((s) => s.openFolder);
+  const openFile = useFileStore((s) => s.openFile);
   const createFile = useFileStore((s) => s.createFile);
+  const nextUntitledName = useFileStore((s) => s.nextUntitledName);
+  const createTransientFile = useFileStore((s) => s.createTransientFile);
 
-  // The "New" action only makes sense when a folder is mounted — a new
-  // file needs somewhere to live. Single-file mode counts as "no workspace"
-  // because the loose file's parent dir isn't ours to write into.
-  const hasWorkspace = workspaceRoot !== null && !isSingleFileMode;
+  // The "New" action only makes sense when a folder is mounted — a new file
+  // needs somewhere to live. Loose-file mode intentionally disables it.
+  const hasWorkspace = openTarget === "folder" && rootPath !== null;
 
   const recentWorkspaces = useMemo<WelcomeRecentWorkspace[]>(() => {
-    const skip = isSingleFileMode ? null : workspaceRoot;
-    return recentWorkspacesRaw
-      .filter((p) => p !== skip)
+    const skip = openTarget === "folder" ? rootPath : null;
+    return recentsRaw
+      .filter((entry) => entry.kind === "folder" && entry.path !== skip)
       .slice(0, RECENT_WORKSPACE_LIMIT)
-      .map((path) => {
-        const { name, parent } = workspaceLabel(path);
-        return { path, name, parent };
+      .map((entry) => {
+        const { name, parent } = workspaceLabel(entry.path);
+        return { path: entry.path, name, parent };
       });
-  }, [recentWorkspacesRaw, workspaceRoot, isSingleFileMode]);
+  }, [recentsRaw, openTarget, rootPath]);
 
   const recentFiles = useMemo<WelcomeRecentFile[]>(() => {
-    return recentFilesRaw
-      .slice()
-      .sort((a, b) => new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime())
-      .slice(0, RECENT_FILE_LIMIT);
-  }, [recentFilesRaw]);
+    return recentsRaw
+      .filter((entry) => entry.kind === "file" && entry.path !== openFilePath)
+      .slice(0, RECENT_FILE_LIMIT)
+      .map((entry) => {
+        const { name, parent } = workspaceLabel(entry.path);
+        return {
+          absolutePath: entry.path,
+          workspacePath: parent,
+          name,
+          documentType: documentTypeFromName(name),
+          lastOpened: "",
+          editCount: 0,
+          wordCount: 0,
+          preview: parent,
+        };
+      });
+  }, [recentsRaw, openFilePath]);
 
   const handleOpenFolder = async () => {
     if (!isDesktopShell) {
@@ -77,7 +86,7 @@ export function WelcomeScreen() {
     try {
       const selected = await pickNativeFolder(tSidebar("openFolder"));
       if (!selected) return;
-      await openDiskWorkspace(selected);
+      await openFolder(selected);
       toast.success(tSidebar("workspaceOpened"));
     } catch (error) {
       log.error("Failed to open folder", error);
@@ -88,20 +97,7 @@ export function WelcomeScreen() {
 
   const handleCreateNew = async () => {
     if (!hasWorkspace) return;
-    // Mirror the sidebar's Untitled-N convention so the new file slots in
-    // next to whatever the user already has at the root.
-    const rootFiles = useFileStore
-      .getState()
-      .files.filter((f) => !f.isFolder && f.parentId === null);
-    let maxNum = 0;
-    for (const file of rootFiles) {
-      const match = file.name.match(/^Untitled-(\d+)\.md$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
-      }
-    }
-    const name = `Untitled-${maxNum + 1}.md`;
+    const name = nextUntitledName();
     try {
       const newId = await createFile(name, "", null, { documentType: "markdown" });
       navigateToEditorFile(newId);
@@ -112,9 +108,25 @@ export function WelcomeScreen() {
     }
   };
 
+  // VSCode-style: spin up an in-memory untitled buffer and route to it.
+  // The editor will prompt for a save location on the first persist via
+  // pickNativeSaveLocation. Available regardless of hasWorkspace — that's
+  // the whole point of the transient buffer pathway.
+  const handleStartWriting = () => {
+    try {
+      const name = nextUntitledName();
+      const id = createTransientFile(name);
+      navigateToEditorFile(id);
+    } catch (error) {
+      log.error("Failed to start untitled buffer", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
   const handleOpenRecentWorkspace = async (path: string) => {
     try {
-      await openDiskWorkspace(path);
+      await openFolder(path);
     } catch (error) {
       log.error("Failed to open recent workspace", error);
       const { title, description } = getErrorMessage(error);
@@ -124,7 +136,7 @@ export function WelcomeScreen() {
 
   const handleOpenRecentFile = async (file: WelcomeRecentFile) => {
     try {
-      await openRecentFile(file);
+      await openFile(file.absolutePath);
     } catch (error) {
       log.error("Failed to open recent file", error);
       const { title, description } = getErrorMessage(error);
@@ -139,19 +151,10 @@ export function WelcomeScreen() {
     hasWorkspace,
     onOpenFolder: handleOpenFolder,
     onCreateNew: handleCreateNew,
+    onStartWriting: handleStartWriting,
     onOpenRecentFile: handleOpenRecentFile,
     onOpenRecentWorkspace: handleOpenRecentWorkspace,
   };
 
-  switch (welcomeMode) {
-    case "continuum":
-      return <ContinuumWelcome {...variantProps} />;
-    case "terminal":
-      return <TerminalWelcome {...variantProps} />;
-    case "paper":
-      return <PaperWelcome {...variantProps} />;
-    case "stratigraphy":
-    default:
-      return <StratigraphyWelcome {...variantProps} />;
-  }
+  return <StratigraphyWelcome {...variantProps} />;
 }
