@@ -128,7 +128,7 @@ export function FilesSidebar() {
         canCollapseAll={files.some((file) => file.isFolder)}
       />
 
-      <ScrollArea className="sidebar-scrollbar min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         {/* min-h-full lets FolderTree's spacer reach the bottom of the
             scroll viewport so right-clicks on empty space below the
             last row still hit the empty-area context menu. */}
