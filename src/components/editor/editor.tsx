@@ -446,9 +446,15 @@ export function Editor({ file: initialFile }: EditorProps) {
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-editor-scroll>
             <PageCover fileId={file.id} />
+            {/* Notion-style left-anchored content. Writing surface sits
+              flush at the main column's left edge with a comfortable
+              padding, and a constrained max-width keeps line length
+              readable. Right-side empty space is intentional — it is
+              where the outline rail lives, and gives the page Notion's
+              characteristic "document on a desk" proportions. */}
             <div
               className={cn(
-                "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
+                "relative px-6 pb-4 pt-2 md:px-20 md:py-8",
                 editorWidth === "narrow" && "max-w-2xl",
                 editorWidth === "normal" && "max-w-3xl",
                 editorWidth === "wide" && "max-w-5xl",
