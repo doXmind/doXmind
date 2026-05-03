@@ -15,7 +15,6 @@ from openpyxl import load_workbook
 
 from services.excel_workbook import export_edited_workbook
 
-
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "testdata" / "budget.xlsx"
 

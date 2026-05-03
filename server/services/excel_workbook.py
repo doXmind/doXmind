@@ -25,7 +25,7 @@ from openpyxl.formatting.rule import (
     FormulaRule,
     Rule,
 )
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Border, Font, PatternFill, Side
 from openpyxl.styles.colors import Color
 from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.utils import get_column_letter
@@ -605,12 +605,12 @@ def export_edited_workbook(
                 continue
             if bottom < top or right < left:
                 continue
-            kwargs = dict(
-                start_row=top + 1,
-                start_column=left + 1,
-                end_row=bottom + 1,
-                end_column=right + 1,
-            )
+            kwargs = {
+                "start_row": top + 1,
+                "start_column": left + 1,
+                "end_row": bottom + 1,
+                "end_column": right + 1,
+            }
             if op_type == "mergeCells":
                 # Drop any pre-existing merges fully contained in the new
                 # one, otherwise openpyxl raises on overlapping ranges.
