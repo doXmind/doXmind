@@ -44,7 +44,7 @@ export function WorkspaceHeader({
   return (
     <div className="group flex h-11 items-center justify-between gap-2 px-3">
       <h2
-        className="text-ui-sm min-w-0 flex-1 truncate font-semibold leading-none text-foreground/75"
+        className="text-ui-sm min-w-0 flex-1 truncate font-semibold leading-none text-[var(--sidebar-title)]"
         title={titleAttr}
       >
         {label}

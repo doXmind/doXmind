@@ -60,6 +60,7 @@ export function DesktopEditor() {
   const filesHandleColPx = 0;
   // Outline lives in the collapsed rail and expands on hover.
   const outlineRailWidth = MINDLINES_WIDTH.COLLAPSED;
+  const outlineContentGutterPx = !isFocusMode && hasHeadings ? MINDLINES_WIDTH.CONTENT_GUTTER : 0;
 
   const shellStyle = {
     "--files-sidebar-width":
@@ -136,7 +137,10 @@ export function DesktopEditor() {
                 <ErrorBoundary>
                   {currentFile ? (
                     isCurrentFileLoaded ? (
-                      <DocumentWorkspace file={currentFile} />
+                      <DocumentWorkspace
+                        file={currentFile}
+                        reservedRightInset={outlineContentGutterPx}
+                      />
                     ) : (
                       <LoadingPlaceholder />
                     )

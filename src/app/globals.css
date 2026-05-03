@@ -53,14 +53,18 @@
     --border-subtle: 60 4% 94%;
     --input: 60 4% 91%;
     --ring: 45 8% 20%;
-    --sidebar: 0 0% 100%; /* same as --background for unified look */
-    /* Light mode: keep alpha higher than dark — black text needs to stay
-       readable over arbitrary wallpapers when vibrancy shows through. */
-    --sidebar-translucent-bg: rgba(247, 247, 248, 0.55);
-    --sidebar-hover: #eeeeef;
-    --sidebar-active: #e7e8eb;
-    --sidebar-active-shadow: 0 1px 2px rgba(26, 28, 31, 0.05);
-    --sidebar-active-border: rgba(26, 28, 31, 0.06);
+    --sidebar: 240 6% 96%; /* #f5f5f6 — quiet Finder-like sidebar surface */
+    /* Light mode keeps only a little translucency. Lower alpha makes the
+       macOS vibrancy material read as a disabled gray panel. */
+    --sidebar-translucent-bg: rgba(245, 245, 246, 0.92);
+    --sidebar-text: #374151;
+    --sidebar-title: #4b5563;
+    --sidebar-muted: #9ca3af;
+    --sidebar-icon: #7e8590;
+    --sidebar-hover: #eceef1;
+    --sidebar-active: #ffffff;
+    --sidebar-active-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    --sidebar-active-border: rgba(15, 23, 42, 0.1);
     --chrome-material-bg: rgba(250, 250, 251, 0.62);
     --chrome-pill-bg: rgba(255, 255, 255, 0.62);
     --chrome-border: rgba(26, 28, 31, 0.1);
@@ -154,6 +158,10 @@
        dark surface over the body color, which is acceptable (no vibrancy
        expected in that mode anyway). */
     --sidebar-translucent-bg: rgba(37, 37, 37, 0.2);
+    --sidebar-text: rgba(255, 255, 255, 0.82);
+    --sidebar-title: rgba(255, 255, 255, 0.72);
+    --sidebar-muted: rgba(255, 255, 255, 0.38);
+    --sidebar-icon: rgba(255, 255, 255, 0.48);
     --sidebar-hover: rgba(255, 255, 255, 0.075);
     --sidebar-active: rgba(255, 255, 255, 0.115);
     --sidebar-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
@@ -463,6 +471,23 @@ html.is-tauri-macos .desktop-window-shell {
   background: transparent;
 }
 
+/* Settings page is intentionally a solid paper surface — no native vibrancy
+   bleed-through and no backdrop blur. The design treats it as a calm
+   document, not a chrome overlay. The Helvetica-led brand sans matches the
+   design's `--ui` stack so chrome reads consistently across the app; we
+   intentionally avoid `!important` here so descendants with `font-mono`
+   (paths, version, JetBrains Mono code) still win. */
+.settings-surface,
+html.is-tauri-macos .settings-surface {
+  background: hsl(var(--background));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.settings-surface {
+  font-family: var(--brand-sans-stack);
+}
+
 html.is-tauri-macos .desktop-chrome-header {
   grid-template-columns: max(var(--files-sidebar-width, 304px), 124px) minmax(0, 1fr) auto;
   /* Right of the sidebar seam, the header should read as a continuation
@@ -494,7 +519,7 @@ html.is-tauri-macos .sidebar-glass {
 }
 
 .sidebar-action-button {
-  color: hsl(var(--muted-foreground));
+  color: var(--sidebar-icon);
 }
 
 .sidebar-action-button:hover,

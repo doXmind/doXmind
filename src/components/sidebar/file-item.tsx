@@ -377,7 +377,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           ? "bg-primary/10 ring-1 ring-primary/25 dark:bg-primary/20"
           : isActive
             ? "bg-[var(--sidebar-active)] text-foreground shadow-[var(--sidebar-active-shadow)] ring-1 ring-[var(--sidebar-active-border)]"
-            : "text-foreground/90 hover:bg-[var(--sidebar-hover)]"
+            : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)]"
       )}
     >
       {/* Checkbox for multi-select */}
@@ -410,7 +410,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         ) : /\.csv$/i.test(file.name) ? (
           <CsvGlyph className="h-5 w-5 md:h-[18px] md:w-[18px]" />
         ) : (
-          <MarkdownGlyph className="h-5 w-5 text-muted-foreground/70 md:h-[18px] md:w-[18px]" />
+          <MarkdownGlyph className="h-5 w-5 text-[var(--sidebar-icon)] md:h-[18px] md:w-[18px]" />
         )}
       </div>
 
@@ -463,7 +463,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
       {!isRenaming && (
         <span
           aria-hidden
-          className="text-ui-xs pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-semibold text-muted-foreground/75"
+          className="text-ui-xs pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-semibold text-[var(--sidebar-muted)]"
         >
           {getRelativeTimeLabel(file.updatedAt)}
         </span>

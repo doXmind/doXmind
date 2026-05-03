@@ -53,6 +53,8 @@ export const ANIMATION_DURATION = {
 export const MINDLINES_WIDTH = {
   /** Collapsed state width (Notion-style minimap rail) */
   COLLAPSED: 40,
+  /** Reserved editor content inset so text and wide blocks do not sit under the rail */
+  CONTENT_GUTTER: 128,
 } as const;
 
 /** Z-index layers for overlays */

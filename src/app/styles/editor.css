@@ -1,4 +1,19 @@
 /* Editor Styles */
+.editor-page-frame {
+  --editor-page-x: 1.5rem;
+  --editor-outline-gutter: 0px;
+  padding: 0.5rem var(--editor-page-x) 1rem var(--editor-page-x);
+}
+
+@media (min-width: 768px) {
+  .editor-page-frame {
+    --editor-page-x: 6rem;
+    padding-top: 2rem;
+    padding-right: calc(var(--editor-page-x) + var(--editor-outline-gutter));
+    padding-bottom: 2rem;
+  }
+}
+
 .ProseMirror {
   @apply min-h-[500px] px-4 pb-[50vh] pt-4 outline-none;
   font-size: 1rem;

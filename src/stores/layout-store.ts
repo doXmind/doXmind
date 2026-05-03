@@ -2,6 +2,12 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { FontFamilyId } from "@/lib/font-options";
 import { DEFAULT_FONT_FAMILY } from "@/lib/font-options";
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  REMOVED_THEME_IDS,
+  resolveThemeId,
+} from "@/lib/themes/registry";
 
 interface LayoutState {
   // Desktop panel visibility
@@ -96,9 +102,9 @@ export const useLayoutStore = create<LayoutState>()(
     (set) => ({
       // Desktop panel visibility
       isFilesSidebarOpen: true,
-      themeId: "notion",
-      preferredLightTheme: "notion",
-      preferredDarkTheme: "dark",
+      themeId: DEFAULT_LIGHT_THEME,
+      preferredLightTheme: DEFAULT_LIGHT_THEME,
+      preferredDarkTheme: DEFAULT_DARK_THEME,
       systemThemeEnabled: true,
       isHighContrast: false,
 
@@ -273,19 +279,19 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: "doxmind-layout",
-      version: 7,
+      version: 8,
       migrate: (persistedState: unknown, version: number) => {
         let state = persistedState as Record<string, unknown>;
         if (version < 2) {
           // Migrate from old theme field to new themeId system
           const oldTheme = state.theme as string | undefined;
-          const themeId = oldTheme === "dark" ? "dark" : "notion";
+          const themeId = oldTheme === "dark" ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
           const systemThemeEnabled = oldTheme === "system";
           state = {
             ...state,
             themeId,
-            preferredLightTheme: "notion",
-            preferredDarkTheme: "dark",
+            preferredLightTheme: DEFAULT_LIGHT_THEME,
+            preferredDarkTheme: DEFAULT_DARK_THEME,
             systemThemeEnabled,
             theme: undefined,
           };
@@ -317,6 +323,22 @@ export const useLayoutStore = create<LayoutState>()(
         if (version < 7) {
           const { editorWidth: _editorWidth, ...rest } = state;
           state = rest;
+        }
+        if (version < 8) {
+          // Theme registry was curated down to 5 themes. Map removed IDs to
+          // the closest surviving equivalent so persisted prefs don't fall
+          // back to a default that flips the user's base mode.
+          const remap = (id: unknown): string => {
+            const s = typeof id === "string" ? id : "";
+            if (REMOVED_THEME_IDS[s]) return REMOVED_THEME_IDS[s];
+            return resolveThemeId(s);
+          };
+          state = {
+            ...state,
+            themeId: remap(state.themeId),
+            preferredLightTheme: remap(state.preferredLightTheme),
+            preferredDarkTheme: remap(state.preferredDarkTheme),
+          };
         }
         return state;
       },

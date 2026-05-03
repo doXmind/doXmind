@@ -118,7 +118,7 @@ export function FilesSidebar() {
   };
 
   return (
-    <div className="sidebar-glass flex h-full flex-col border-r border-[var(--sidebar-active-border)] text-foreground">
+    <div className="sidebar-glass flex h-full flex-col border-r border-[var(--sidebar-active-border)] text-[var(--sidebar-text)]">
       <WorkspaceHeader
         onCreateFile={() => handleCreateFile(null)}
         onCreatePdf={() => handleCreatePdf(null)}
@@ -151,9 +151,9 @@ export function FilesSidebar() {
       <div className="px-3 pb-3 pt-2">
         <Link
           href="/settings"
-          className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 font-semibold text-foreground transition-colors hover:bg-[var(--sidebar-hover)]"
+          className="text-ui-base flex h-8 w-full items-center gap-3 rounded-lg px-2.5 font-semibold text-[var(--sidebar-text)] transition-colors hover:bg-[var(--sidebar-hover)]"
         >
-          <Settings className="h-4 w-4 text-muted-foreground" />
+          <Settings className="h-4 w-4 text-[var(--sidebar-icon)]" />
           {t("settings")}
         </Link>
       </div>

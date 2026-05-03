@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditor, EditorContent } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef } from "react";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 
@@ -42,9 +42,10 @@ function extractDatabaseIds(content: string): Set<string> {
 
 interface EditorProps {
   file: FileItem;
+  reservedRightInset?: number;
 }
 
-export function Editor({ file: initialFile }: EditorProps) {
+export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProps) {
   // Subscribe to specific file via selector — avoids re-render when OTHER files change
   const updateFile = useFileStore((s) => s.updateFile);
   const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
@@ -409,24 +410,37 @@ export function Editor({ file: initialFile }: EditorProps) {
   );
 
   // Set --right-extend CSS variable for Notion-style table rightward breakout.
-  // This is the exact pixel distance from PM content right edge to scroll area right edge.
+  // The available right edge excludes the outline gutter so tables do not
+  // expand under the collapsed rail.
   useEffect(() => {
     const el = scrollAreaRef.current;
     if (!el || !editor) return;
     const update = () => {
       const pm = editor.view.dom;
+      const desktopReservedInset = window.matchMedia("(min-width: 768px)").matches
+        ? reservedRightInset
+        : 0;
       const elRect = el.getBoundingClientRect();
       const pmPaddingRight = parseFloat(getComputedStyle(pm).paddingRight) || 0;
       const pmContentRight = pm.getBoundingClientRect().right - pmPaddingRight;
-      const rightExtend = Math.max(0, elRect.right - pmContentRight);
+      const availableRight = elRect.right - desktopReservedInset;
+      const rightExtend = Math.max(0, availableRight - pmContentRight);
       el.style.setProperty("--right-extend", `${rightExtend}px`);
     };
     const observer = new ResizeObserver(() => update());
     observer.observe(el);
+    window.addEventListener("resize", update);
     // Also update once now in case ResizeObserver already fired before editor was ready
     update();
-    return () => observer.disconnect();
-  }, [editor]);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [editor, reservedRightInset]);
+
+  const pageFrameStyle = {
+    "--editor-outline-gutter": `${reservedRightInset}px`,
+  } as CSSProperties;
 
   if (!editor) {
     return (
@@ -449,10 +463,11 @@ export function Editor({ file: initialFile }: EditorProps) {
               full-width mode). */}
             <div
               className={cn(
-                "relative px-6 pb-4 pt-2 md:px-24 md:py-8",
+                "editor-page-frame relative",
                 lineHeight === "compact" && "editor-leading-compact",
                 lineHeight === "relaxed" && "editor-leading-relaxed"
               )}
+              style={pageFrameStyle}
             >
               <DocumentTitle
                 fileId={file.id}

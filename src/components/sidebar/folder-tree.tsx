@@ -411,7 +411,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         >
           {renamingFolderId === folder.id ? (
             <div className="flex w-full items-center gap-2 px-2.5 py-1.5 text-sm">
-              <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80" />
+              <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)]" />
               <Input
                 value={renamingFolderName}
                 onChange={(e) => setRenamingFolderName(e.target.value)}
@@ -460,11 +460,11 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
               className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-2.5 text-sm"
             >
               {isCollapsed ? (
-                <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
+                <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)] transition-colors group-hover/folder:text-[var(--sidebar-text)]" />
               ) : (
-                <FolderOpen className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
+                <FolderOpen className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)] transition-colors group-hover/folder:text-[var(--sidebar-text)]" />
               )}
-              <span className="text-ui-base min-w-0 flex-1 truncate font-semibold leading-5 text-foreground/80 transition-colors group-hover/folder:text-foreground">
+              <span className="text-ui-base min-w-0 flex-1 truncate font-semibold leading-5 text-[var(--sidebar-text)] transition-colors group-hover/folder:text-foreground">
                 {folder.name}
               </span>
             </div>
