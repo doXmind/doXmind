@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   RefreshCw,
   X,
-  Columns,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
@@ -79,8 +78,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const isHighContrast = useLayoutStore((s) => s.isHighContrast);
   const toggleHighContrast = useLayoutStore((s) => s.toggleHighContrast);
-  const editorWidth = useLayoutStore((s) => s.editorWidth);
-  const cycleEditorWidth = useLayoutStore((s) => s.cycleEditorWidth);
   const { currentTheme, toggleBaseMode } = useThemeManager();
   const { editor } = useEditorRefStore();
 
@@ -179,17 +176,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         },
         keywords: ["contrast", "accessibility", "a11y", "vision"],
       },
-      {
-        id: "editor-width",
-        label: `Editor Width: ${editorWidth.charAt(0).toUpperCase() + editorWidth.slice(1)}`,
-        icon: <Columns className="h-4 w-4" />,
-        category: "view",
-        action: () => {
-          cycleEditorWidth();
-          onClose();
-        },
-        keywords: ["width", "narrow", "wide", "full", "page", "editor", "layout"],
-      },
       // Action commands
       {
         id: "keyboard-shortcuts",
@@ -227,8 +213,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
     isSidebarOpen,
     isHighContrast,
     toggleHighContrast,
-    editorWidth,
-    cycleEditorWidth,
     currentTheme,
     toggleBaseMode,
     onClose,

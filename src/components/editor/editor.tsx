@@ -67,7 +67,6 @@ export function Editor({ file: initialFile }: EditorProps) {
   const closeImageModal = useEditorStore((s) => s.closeImageModal);
 
   // Layout state — use individual selectors to avoid re-renders on unrelated layout changes
-  const editorWidth = useLayoutStore((s) => s.editorWidth);
   // fontFamily is applied at <html> by AppearanceInjector so the whole
   // app stays in one font; no per-editor wrapper needed here.
   const lineHeight = useLayoutStore((s) => s.lineHeight);
@@ -446,19 +445,14 @@ export function Editor({ file: initialFile }: EditorProps) {
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-editor-scroll>
             <PageCover fileId={file.id} />
-            {/* Notion-style left-anchored content. Writing surface sits
-              flush at the main column's left edge with a comfortable
-              padding, and a constrained max-width keeps line length
-              readable. Right-side empty space is intentional — it is
-              where the outline rail lives, and gives the page Notion's
-              characteristic "document on a desk" proportions. */}
+            {/* Notion full-width writing surface. The desktop IDE shows
+              one document at a time in a wide window, so the writing
+              area fills the main column with a symmetric 96px side
+              padding (matches Notion's --theme--page-padding in
+              full-width mode). */}
             <div
               className={cn(
-                "relative px-6 pb-4 pt-2 md:px-20 md:py-8",
-                editorWidth === "narrow" && "max-w-2xl",
-                editorWidth === "normal" && "max-w-3xl",
-                editorWidth === "wide" && "max-w-5xl",
-                editorWidth === "full" && "max-w-none",
+                "relative px-6 pb-4 pt-2 md:px-24 md:py-8",
                 lineHeight === "compact" && "editor-leading-compact",
                 lineHeight === "relaxed" && "editor-leading-relaxed"
               )}

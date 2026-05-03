@@ -35,9 +35,6 @@ interface LayoutState {
   // Quick file switcher
   isQuickSwitcherOpen: boolean;
 
-  // Editor content width preference
-  editorWidth: "narrow" | "normal" | "wide" | "full";
-
   // Typography preferences
   fontFamily: FontFamilyId;
   fontSize: "small" | "normal" | "large";
@@ -88,10 +85,6 @@ interface LayoutState {
   setQuickSwitcherOpen: (open: boolean) => void;
   toggleQuickSwitcher: () => void;
 
-  // Editor width actions
-  setEditorWidth: (width: "narrow" | "normal" | "wide" | "full") => void;
-  cycleEditorWidth: () => void;
-
   // Typography actions
   setFontFamily: (font: FontFamilyId) => void;
   setFontSize: (size: "small" | "normal" | "large") => void;
@@ -136,9 +129,6 @@ export const useLayoutStore = create<LayoutState>()(
 
       // Quick file switcher
       isQuickSwitcherOpen: false,
-
-      // Editor content width
-      editorWidth: "normal" as const,
 
       // Typography preferences
       fontFamily: DEFAULT_FONT_FAMILY,
@@ -274,25 +264,6 @@ export const useLayoutStore = create<LayoutState>()(
         set((state) => ({ isQuickSwitcherOpen: !state.isQuickSwitcherOpen }));
       },
 
-      // Editor width actions
-      setEditorWidth: (width: "narrow" | "normal" | "wide" | "full") => {
-        set({ editorWidth: width });
-      },
-
-      cycleEditorWidth: () => {
-        set((state) => {
-          const widths: Array<"narrow" | "normal" | "wide" | "full"> = [
-            "narrow",
-            "normal",
-            "wide",
-            "full",
-          ];
-          const currentIndex = widths.indexOf(state.editorWidth);
-          const nextIndex = (currentIndex + 1) % widths.length;
-          return { editorWidth: widths[nextIndex] };
-        });
-      },
-
       // Typography actions
       setFontFamily: (font: FontFamilyId) => {
         set({ fontFamily: font });
@@ -321,7 +292,7 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: "doxmind-layout",
-      version: 5,
+      version: 6,
       migrate: (persistedState: unknown, version: number) => {
         let state = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -362,6 +333,12 @@ export const useLayoutStore = create<LayoutState>()(
           } = state;
           state = rest;
         }
+        if (version < 6) {
+          // Drop the persisted editor-width tier — the writing surface
+          // now uses a single Notion full-width layout.
+          const { editorWidth: _editorWidth, ...rest } = state;
+          state = rest;
+        }
         return state;
       },
       partialize: (state) => ({
@@ -373,7 +350,6 @@ export const useLayoutStore = create<LayoutState>()(
         preferredDarkTheme: state.preferredDarkTheme,
         systemThemeEnabled: state.systemThemeEnabled,
         isHighContrast: state.isHighContrast,
-        editorWidth: state.editorWidth,
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,
         lineHeight: state.lineHeight,
