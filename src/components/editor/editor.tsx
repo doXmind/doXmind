@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditor, EditorContent } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef } from "react";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 
@@ -13,9 +13,10 @@ import { SearchBar } from "./search-bar";
 import { StatusBar } from "./status-bar";
 import { DocumentTitle } from "./document-title";
 import { PageCover } from "./page-cover";
-import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
-import { useFileStore, type FileItem } from "@/stores/file-store";
+import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
+import { pickNativeSaveLocation } from "@/lib/native-dialog";
+import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useEditorStore } from "@/stores/editor-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
@@ -41,13 +42,20 @@ function extractDatabaseIds(content: string): Set<string> {
 
 interface EditorProps {
   file: FileItem;
+  reservedRightInset?: number;
 }
 
-export function Editor({ file: initialFile }: EditorProps) {
+export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProps) {
   // Subscribe to specific file via selector — avoids re-render when OTHER files change
   const updateFile = useFileStore((s) => s.updateFile);
   const storeFile = useFileStore((s) => s.files.find((f) => f.id === initialFile.id));
   const file = storeFile || initialFile;
+  // Transient (untitled) buffer hooks — only relevant when file.id has the
+  // transient prefix. The slot is a ref so persistContent's deps array
+  // stays stable; we read the latest value via store snapshot inline.
+  const setTransientContent = useFileStore((s) => s.setTransientContent);
+  const materializeTransient = useFileStore((s) => s.materializeTransient);
+  const isTransient = file.id.startsWith(TRANSIENT_ID_PREFIX);
 
   // Editor store — actions are stable refs, state values subscribed individually
   const setDirty = useEditorStore((s) => s.setDirty);
@@ -59,7 +67,6 @@ export function Editor({ file: initialFile }: EditorProps) {
   const closeImageModal = useEditorStore((s) => s.closeImageModal);
 
   // Layout state — use individual selectors to avoid re-renders on unrelated layout changes
-  const editorWidth = useLayoutStore((s) => s.editorWidth);
   // fontFamily is applied at <html> by AppearanceInjector so the whole
   // app stays in one font; no per-editor wrapper needed here.
   const lineHeight = useLayoutStore((s) => s.lineHeight);
@@ -84,6 +91,49 @@ export function Editor({ file: initialFile }: EditorProps) {
 
       setSaving(true);
       try {
+        // Untitled buffer (VSCode-style): the content lives only in the
+        // in-memory transient slot until the user picks a save location.
+        // The native Save-As dialog is the trigger to materialize.
+        if (isTransient) {
+          // Always update the in-memory copy first so a cancelled dialog
+          // doesn't lose what the user just typed.
+          setTransientContent(content, contentMarkdown ?? "");
+          const transient = useFileStore.getState().transientFile;
+          if (!transient) {
+            // Slot was discarded mid-save (window closed, etc.) — bail.
+            lastContentRef.current = content;
+            setDirty(false);
+            return;
+          }
+          const path = await pickNativeSaveLocation("Save as", transient.name, [
+            { name: "Markdown", extensions: ["md"] },
+          ]);
+          if (!path) {
+            // User dismissed the dialog. Keep typing in memory; the next
+            // debounced save will prompt again.
+            lastContentRef.current = content;
+            setDirty(false);
+            return;
+          }
+          // Re-read in case more typing happened during the dialog (the
+          // dialog is modal but be defensive).
+          const latest = useFileStore.getState().transientFile;
+          if (
+            latest &&
+            (latest.content !== content || latest.contentMarkdown !== contentMarkdown)
+          ) {
+            setTransientContent(latest.content, latest.contentMarkdown);
+          } else {
+            setTransientContent(content, contentMarkdown ?? "");
+          }
+          const newId = await materializeTransient(path);
+          lastContentRef.current = content;
+          setLastSavedAt(new Date().toISOString());
+          setDirty(false);
+          if (newId) navigateToEditorFile(newId);
+          return;
+        }
+
         await updateFile(file.id, { content, contentMarkdown });
         setLastSavedAt(new Date().toISOString());
         setDirty(false);
@@ -103,7 +153,16 @@ export function Editor({ file: initialFile }: EditorProps) {
         setSaving(false);
       }
     },
-    [file.id, updateFile, setSaving, setLastSavedAt, setDirty]
+    [
+      file.id,
+      isTransient,
+      updateFile,
+      setSaving,
+      setLastSavedAt,
+      setDirty,
+      setTransientContent,
+      materializeTransient,
+    ]
   );
 
   // Debounced save function
@@ -339,8 +398,6 @@ export function Editor({ file: initialFile }: EditorProps) {
 
   useBlockKeyboardShortcuts(editor);
 
-  useEditorShortcuts();
-
   // Handle Image Modal confirm
   const handleImageModalConfirm = useCallback(
     (url: string, alt?: string) => {
@@ -353,24 +410,37 @@ export function Editor({ file: initialFile }: EditorProps) {
   );
 
   // Set --right-extend CSS variable for Notion-style table rightward breakout.
-  // This is the exact pixel distance from PM content right edge to scroll area right edge.
+  // The available right edge excludes the outline gutter so tables do not
+  // expand under the collapsed rail.
   useEffect(() => {
     const el = scrollAreaRef.current;
     if (!el || !editor) return;
     const update = () => {
       const pm = editor.view.dom;
+      const desktopReservedInset = window.matchMedia("(min-width: 768px)").matches
+        ? reservedRightInset
+        : 0;
       const elRect = el.getBoundingClientRect();
       const pmPaddingRight = parseFloat(getComputedStyle(pm).paddingRight) || 0;
       const pmContentRight = pm.getBoundingClientRect().right - pmPaddingRight;
-      const rightExtend = Math.max(0, elRect.right - pmContentRight);
+      const availableRight = elRect.right - desktopReservedInset;
+      const rightExtend = Math.max(0, availableRight - pmContentRight);
       el.style.setProperty("--right-extend", `${rightExtend}px`);
     };
     const observer = new ResizeObserver(() => update());
     observer.observe(el);
+    window.addEventListener("resize", update);
     // Also update once now in case ResizeObserver already fired before editor was ready
     update();
-    return () => observer.disconnect();
-  }, [editor]);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [editor, reservedRightInset]);
+
+  const pageFrameStyle = {
+    "--editor-outline-gutter": `${reservedRightInset}px`,
+  } as CSSProperties;
 
   if (!editor) {
     return (
@@ -386,16 +456,18 @@ export function Editor({ file: initialFile }: EditorProps) {
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-editor-scroll>
             <PageCover fileId={file.id} />
+            {/* Notion full-width writing surface. The desktop IDE shows
+              one document at a time in a wide window, so the writing
+              area fills the main column with a symmetric 96px side
+              padding (matches Notion's --theme--page-padding in
+              full-width mode). */}
             <div
               className={cn(
-                "relative mx-auto px-6 pb-4 pt-2 md:px-12 md:py-8",
-                editorWidth === "narrow" && "max-w-2xl",
-                editorWidth === "normal" && "max-w-3xl",
-                editorWidth === "wide" && "max-w-5xl",
-                editorWidth === "full" && "max-w-none",
+                "editor-page-frame relative",
                 lineHeight === "compact" && "editor-leading-compact",
                 lineHeight === "relaxed" && "editor-leading-relaxed"
               )}
+              style={pageFrameStyle}
             >
               <DocumentTitle
                 fileId={file.id}

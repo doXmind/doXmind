@@ -8,9 +8,10 @@ import type { FileItem } from "@/stores/file-store";
 
 interface DocumentWorkspaceProps {
   file: FileItem;
+  reservedRightInset?: number;
 }
 
-export function DocumentWorkspace({ file }: DocumentWorkspaceProps) {
+export function DocumentWorkspace({ file, reservedRightInset = 0 }: DocumentWorkspaceProps) {
   if (isPdfFile(file)) {
     return <PdfEditorWorkspace file={file} />;
   }
@@ -18,5 +19,5 @@ export function DocumentWorkspace({ file }: DocumentWorkspaceProps) {
     return <ExcelEditorWorkspace file={file} />;
   }
 
-  return <Editor file={file} />;
+  return <Editor file={file} reservedRightInset={reservedRightInset} />;
 }

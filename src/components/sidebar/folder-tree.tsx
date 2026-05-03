@@ -10,17 +10,7 @@ import {
   useState,
 } from "react";
 import { useTranslations } from "next-intl";
-import {
-  Check,
-  FilePlus2,
-  FileText,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  Pencil,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Check, FilePlus2, Folder, FolderOpen, FolderPlus, Pencil, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { FileItem } from "./file-item";
@@ -421,7 +411,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         >
           {renamingFolderId === folder.id ? (
             <div className="flex w-full items-center gap-2 px-2.5 py-1.5 text-sm">
-              <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80" />
+              <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)]" />
               <Input
                 value={renamingFolderName}
                 onChange={(e) => setRenamingFolderName(e.target.value)}
@@ -470,11 +460,11 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
               className="flex h-7 w-full cursor-pointer select-none items-center gap-2 px-2.5 text-sm"
             >
               {isCollapsed ? (
-                <Folder className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
+                <Folder className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)] transition-colors group-hover/folder:text-[var(--sidebar-text)]" />
               ) : (
-                <FolderOpen className="h-[18px] w-[18px] shrink-0 text-muted-foreground/80 transition-colors group-hover/folder:text-foreground/70" />
+                <FolderOpen className="h-[18px] w-[18px] shrink-0 text-[var(--sidebar-icon)] transition-colors group-hover/folder:text-[var(--sidebar-text)]" />
               )}
-              <span className="text-ui-base min-w-0 flex-1 truncate font-semibold leading-5 text-foreground/80 transition-colors group-hover/folder:text-foreground">
+              <span className="text-ui-base min-w-0 flex-1 truncate font-semibold leading-5 text-[var(--sidebar-text)] transition-colors group-hover/folder:text-foreground">
                 {folder.name}
               </span>
             </div>
@@ -505,12 +495,45 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
       </div>
 
       {files.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-          <FileText className="h-12 w-12 text-muted-foreground/30 dark:text-muted-foreground/50" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">{t("noFiles")}</p>
-            <p className="text-xs text-muted-foreground/70">{t("createFirstFile")}</p>
+        <div className="px-1 pt-5">
+          <div className="px-2 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground/70">
+            {t("emptyEyebrow")}
           </div>
+
+          <ol className="m-0 mt-3 flex list-none flex-col p-0">
+            <li className="border-t border-border">
+              <button
+                type="button"
+                onClick={() => onCreateFile(null)}
+                className="group flex w-full items-baseline gap-3 px-2 py-2.5 text-left transition-colors duration-150 hover:bg-[var(--sidebar-hover)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] text-muted-foreground transition-colors duration-150 group-hover:font-medium group-hover:text-foreground group-focus-visible:font-medium group-focus-visible:text-foreground">
+                  01
+                </span>
+                <span className="font-brand-sans min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground">
+                  {t("newDocument")}
+                </span>
+              </button>
+            </li>
+            <li className="border-b border-t border-border">
+              <button
+                type="button"
+                onClick={() => onCreateFolder(null)}
+                className="group flex w-full items-baseline gap-3 px-2 py-2.5 text-left transition-colors duration-150 hover:bg-[var(--sidebar-hover)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums tracking-[0.02em] text-muted-foreground transition-colors duration-150 group-hover:font-medium group-hover:text-foreground group-focus-visible:font-medium group-focus-visible:text-foreground">
+                  02
+                </span>
+                <span className="font-brand-sans min-w-0 flex-1 truncate text-[13px] tracking-[-0.012em] text-foreground/90 transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground">
+                  {t("newFolder")}
+                </span>
+              </button>
+            </li>
+          </ol>
+
+          <p className="font-brand-sans mt-3 px-2 text-[11px] leading-snug text-muted-foreground/45">
+            {t("emptyTailHint")}
+          </p>
         </div>
       )}
 

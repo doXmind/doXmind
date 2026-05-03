@@ -48,7 +48,6 @@ const shortcutGroups: ShortcutGroup[] = [
     shortcuts: [
       { keys: ["Ctrl", "K"], descriptionKey: "commandPalette" },
       { keys: ["Ctrl", "F"], descriptionKey: "findInDocument" },
-      { keys: ["Ctrl", "Shift", "O"], descriptionKey: "toggleOutline" },
       { keys: ["Ctrl", "?"], descriptionKey: "keyboardShortcuts" },
     ],
   },

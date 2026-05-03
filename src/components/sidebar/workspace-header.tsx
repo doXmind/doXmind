@@ -12,6 +12,7 @@ interface WorkspaceHeaderProps {
   onCreateFolder: () => void;
   onOpenTemplatePicker: () => void;
   onCollapseAll: () => void;
+  canCollapseAll?: boolean;
 }
 
 function rootLabel(root: string | null): string {
@@ -26,6 +27,7 @@ export function WorkspaceHeader({
   onCreateFolder,
   onOpenTemplatePicker,
   onCollapseAll,
+  canCollapseAll = true,
 }: WorkspaceHeaderProps) {
   const t = useTranslations("sidebar");
   const openTarget = useFileStore((s) => s.openTarget);
@@ -40,15 +42,15 @@ export function WorkspaceHeader({
   const titleAttr = isFileMode ? (openFilePath ?? undefined) : (rootPath ?? undefined);
 
   return (
-    <div className="flex h-9 items-center justify-between gap-2 px-3">
+    <div className="group flex h-11 items-center justify-between gap-2 px-3">
       <h2
-        className="text-ui-xs min-w-0 flex-1 truncate font-semibold uppercase tracking-wide text-muted-foreground/80"
+        className="text-ui-sm min-w-0 flex-1 truncate font-semibold leading-none text-[var(--sidebar-title)]"
         title={titleAttr}
       >
         {label}
       </h2>
       {!isFileMode && (
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
           <NewButton
             onCreateFile={onCreateFile}
             onCreatePdf={onCreatePdf}
@@ -65,15 +67,17 @@ export function WorkspaceHeader({
               <FolderPlus className="h-4 w-4" />
             </button>
           </Tooltip>
-          <Tooltip content={t("collapseAll")} side="bottom">
-            <button
-              onClick={onCollapseAll}
-              className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
-              aria-label={t("collapseAll")}
-            >
-              <ChevronsDownUp className="h-4 w-4" />
-            </button>
-          </Tooltip>
+          {canCollapseAll && (
+            <Tooltip content={t("collapseAll")} side="bottom">
+              <button
+                onClick={onCollapseAll}
+                className="sidebar-action-button flex h-7 w-7 items-center justify-center rounded-lg transition-colors"
+                aria-label={t("collapseAll")}
+              >
+                <ChevronsDownUp className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          )}
         </div>
       )}
     </div>

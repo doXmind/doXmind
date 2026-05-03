@@ -49,91 +49,12 @@ export const ANIMATION_DURATION = {
   LONG: 500,
 } as const;
 
-// =============================================================================
-// Mindlines Configuration
-// =============================================================================
-
-/** Mindlines sidebar width in pixels */
+/** Collapsed outline rail widths in pixels */
 export const MINDLINES_WIDTH = {
-  /** Expanded state width (full outline view) */
-  EXPANDED: 280,
-  /** Collapsed state width (minimal line indicators) */
-  COLLAPSED: 48,
-} as const;
-
-// =============================================================================
-// Mindmap/ReactFlow Configuration
-// =============================================================================
-
-/** Mindmap node dimensions by heading level */
-export const MINDMAP_NODE_WIDTH = {
-  /** H1 heading node width */
-  H1: 220,
-  /** H2 heading node width */
-  H2: 180,
-  /** H3+ heading node width */
-  H3: 160,
-} as const;
-
-/** Mindmap node height */
-export const MINDMAP_NODE_HEIGHT = 44;
-
-/** Mindmap fit view configuration */
-export const MINDMAP_FIT_VIEW = {
-  /** Padding around the fitted view (0-1) */
-  PADDING: 0.15,
-  /** Animation duration for fit view */
-  DURATION: 300,
-  /** Maximum zoom level */
-  MAX_ZOOM: 1.2,
-  /** Minimum zoom level */
-  MIN_ZOOM: 0.8,
-  /** Delay before triggering fit view after layout */
-  DELAY: 100,
-} as const;
-
-/** Mindmap center view configuration */
-export const MINDMAP_CENTER_VIEW = {
-  /** X offset from node center */
-  X_OFFSET: 100,
-  /** Y offset from node center (half of node height) */
-  Y_OFFSET: 22,
-  /** Default zoom level when centering */
-  ZOOM: 1,
-  /** Navigation animation duration */
-  NAV_DURATION: 200,
-  /** Center animation duration */
-  CENTER_DURATION: 500,
-} as const;
-
-// =============================================================================
-// Dagre Layout Configuration
-// =============================================================================
-
-/** Dagre graph layout settings */
-export const DAGRE_LAYOUT = {
-  /** Horizontal spacing between nodes */
-  NODE_SEPARATION: 60,
-  /** Vertical spacing between ranks/levels */
-  RANK_SEPARATION: 100,
-  /** Horizontal margin */
-  MARGIN_X: 20,
-  /** Vertical margin */
-  MARGIN_Y: 20,
-} as const;
-
-// =============================================================================
-// UI Element Thresholds
-// =============================================================================
-
-/** Text truncation thresholds */
-export const TEXT_TRUNCATION = {
-  /** Label length threshold for showing tooltip */
-  TOOLTIP_THRESHOLD: 25,
-  /** Max tooltip width in pixels */
-  MAX_TOOLTIP_WIDTH: 300,
-  /** Max label width in node (pixels) */
-  MAX_LABEL_WIDTH: 180,
+  /** Collapsed state width (Notion-style minimap rail) */
+  COLLAPSED: 40,
+  /** Reserved editor content inset so text and wide blocks do not sit under the rail */
+  CONTENT_GUTTER: 128,
 } as const;
 
 /** Z-index layers for overlays */

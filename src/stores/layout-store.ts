@@ -2,13 +2,16 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { FontFamilyId } from "@/lib/font-options";
 import { DEFAULT_FONT_FAMILY } from "@/lib/font-options";
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  REMOVED_THEME_IDS,
+  resolveThemeId,
+} from "@/lib/themes/registry";
 
 interface LayoutState {
   // Desktop panel visibility
-  isSidebarOpen: boolean; // Outline sidebar
-  isFilesSidebarOpen: boolean; // Files sidebar (independent)
-  isMindlinesOpen: boolean;
-  isMindlinesCollapsed: boolean; // Collapsed = minimal line indicators, Expanded = full outline
+  isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
   themeId: string;
   preferredLightTheme: string;
   preferredDarkTheme: string;
@@ -37,27 +40,17 @@ interface LayoutState {
   // Quick file switcher
   isQuickSwitcherOpen: boolean;
 
-  // Editor content width preference
-  editorWidth: "narrow" | "normal" | "wide" | "full";
-
   // Typography preferences
   fontFamily: FontFamilyId;
   fontSize: "small" | "normal" | "large";
   lineHeight: "compact" | "normal" | "relaxed";
 
   // Resizable panel widths (pixels)
-  sidebarWidth: number; // Outline sidebar width
   filesSidebarWidth: number; // Files sidebar width
 
   // Actions
-  toggleSidebar: () => void;
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
-  toggleMindlines: () => void;
-  toggleMindlinesCollapsed: () => void;
-  setSidebarOpen: (open: boolean) => void;
-  setMindlinesOpen: (open: boolean) => void;
-  setMindlinesCollapsed: (collapsed: boolean) => void;
   setThemeId: (id: string) => void;
   setPreferredLightTheme: (id: string) => void;
   setPreferredDarkTheme: (id: string) => void;
@@ -94,17 +87,12 @@ interface LayoutState {
   setQuickSwitcherOpen: (open: boolean) => void;
   toggleQuickSwitcher: () => void;
 
-  // Editor width actions
-  setEditorWidth: (width: "narrow" | "normal" | "wide" | "full") => void;
-  cycleEditorWidth: () => void;
-
   // Typography actions
   setFontFamily: (font: FontFamilyId) => void;
   setFontSize: (size: "small" | "normal" | "large") => void;
   setLineHeight: (height: "compact" | "normal" | "relaxed") => void;
 
   // Resizable panel actions
-  setSidebarWidth: (width: number) => void;
   setFilesSidebarWidth: (width: number) => void;
   resetPanelWidths: () => void;
 }
@@ -113,13 +101,10 @@ export const useLayoutStore = create<LayoutState>()(
   persist(
     (set) => ({
       // Desktop panel visibility
-      isSidebarOpen: false,
       isFilesSidebarOpen: true,
-      isMindlinesOpen: true,
-      isMindlinesCollapsed: false, // false = expanded (full outline), true = collapsed (line indicators)
-      themeId: "notion",
-      preferredLightTheme: "notion",
-      preferredDarkTheme: "dark",
+      themeId: DEFAULT_LIGHT_THEME,
+      preferredLightTheme: DEFAULT_LIGHT_THEME,
+      preferredDarkTheme: DEFAULT_DARK_THEME,
       systemThemeEnabled: true,
       isHighContrast: false,
 
@@ -145,49 +130,21 @@ export const useLayoutStore = create<LayoutState>()(
       // Quick file switcher
       isQuickSwitcherOpen: false,
 
-      // Editor content width
-      editorWidth: "normal" as const,
-
       // Typography preferences
       fontFamily: DEFAULT_FONT_FAMILY,
       fontSize: "normal" as const,
       lineHeight: "normal" as const,
 
       // Resizable panel widths
-      sidebarWidth: 224,
       filesSidebarWidth: 304,
 
       // Desktop actions
-      toggleSidebar: () => {
-        set((state) => ({ isSidebarOpen: !state.isSidebarOpen }));
-      },
-
       toggleFilesSidebar: () => {
         set((state) => ({ isFilesSidebarOpen: !state.isFilesSidebarOpen }));
       },
 
       setFilesSidebarOpen: (open: boolean) => {
         set({ isFilesSidebarOpen: open });
-      },
-
-      toggleMindlines: () => {
-        set((state) => ({ isMindlinesOpen: !state.isMindlinesOpen }));
-      },
-
-      toggleMindlinesCollapsed: () => {
-        set((state) => ({ isMindlinesCollapsed: !state.isMindlinesCollapsed }));
-      },
-
-      setSidebarOpen: (open: boolean) => {
-        set({ isSidebarOpen: open });
-      },
-
-      setMindlinesOpen: (open: boolean) => {
-        set({ isMindlinesOpen: open });
-      },
-
-      setMindlinesCollapsed: (collapsed: boolean) => {
-        set({ isMindlinesCollapsed: collapsed });
       },
 
       setThemeId: (id: string) => {
@@ -298,25 +255,6 @@ export const useLayoutStore = create<LayoutState>()(
         set((state) => ({ isQuickSwitcherOpen: !state.isQuickSwitcherOpen }));
       },
 
-      // Editor width actions
-      setEditorWidth: (width: "narrow" | "normal" | "wide" | "full") => {
-        set({ editorWidth: width });
-      },
-
-      cycleEditorWidth: () => {
-        set((state) => {
-          const widths: Array<"narrow" | "normal" | "wide" | "full"> = [
-            "narrow",
-            "normal",
-            "wide",
-            "full",
-          ];
-          const currentIndex = widths.indexOf(state.editorWidth);
-          const nextIndex = (currentIndex + 1) % widths.length;
-          return { editorWidth: widths[nextIndex] };
-        });
-      },
-
       // Typography actions
       setFontFamily: (font: FontFamilyId) => {
         set({ fontFamily: font });
@@ -331,33 +269,29 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       // Resizable panel actions
-      setSidebarWidth: (width: number) => {
-        set({ sidebarWidth: Math.max(200, Math.min(400, width)) });
-      },
-
       setFilesSidebarWidth: (width: number) => {
         set({ filesSidebarWidth: Math.max(200, Math.min(400, width)) });
       },
 
       resetPanelWidths: () => {
-        set({ sidebarWidth: 224, filesSidebarWidth: 304 });
+        set({ filesSidebarWidth: 304 });
       },
     }),
     {
       name: "doxmind-layout",
-      version: 4,
+      version: 8,
       migrate: (persistedState: unknown, version: number) => {
         let state = persistedState as Record<string, unknown>;
         if (version < 2) {
           // Migrate from old theme field to new themeId system
           const oldTheme = state.theme as string | undefined;
-          const themeId = oldTheme === "dark" ? "dark" : "notion";
+          const themeId = oldTheme === "dark" ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
           const systemThemeEnabled = oldTheme === "system";
           state = {
             ...state,
             themeId,
-            preferredLightTheme: "notion",
-            preferredDarkTheme: "dark",
+            preferredLightTheme: DEFAULT_LIGHT_THEME,
+            preferredDarkTheme: DEFAULT_DARK_THEME,
             systemThemeEnabled,
             theme: undefined,
           };
@@ -365,8 +299,6 @@ export const useLayoutStore = create<LayoutState>()(
         if (version < 3) {
           state = {
             ...state,
-            isSidebarOpen: false,
-            sidebarWidth: 224,
             filesSidebarWidth: 304,
           };
         }
@@ -376,24 +308,51 @@ export const useLayoutStore = create<LayoutState>()(
             filesSidebarWidth: 304,
           };
         }
+        if (version < 5) {
+          const {
+            isMindlinesOpen: _isMindlinesOpen,
+            isMindlinesCollapsed: _isMindlinesCollapsed,
+            ...rest
+          } = state;
+          state = rest;
+        }
+        if (version < 6) {
+          const { isSidebarOpen: _isSidebarOpen, sidebarWidth: _sidebarWidth, ...rest } = state;
+          state = rest;
+        }
+        if (version < 7) {
+          const { editorWidth: _editorWidth, ...rest } = state;
+          state = rest;
+        }
+        if (version < 8) {
+          // Theme registry was curated down to 5 themes. Map removed IDs to
+          // the closest surviving equivalent so persisted prefs don't fall
+          // back to a default that flips the user's base mode.
+          const remap = (id: unknown): string => {
+            const s = typeof id === "string" ? id : "";
+            if (REMOVED_THEME_IDS[s]) return REMOVED_THEME_IDS[s];
+            return resolveThemeId(s);
+          };
+          state = {
+            ...state,
+            themeId: remap(state.themeId),
+            preferredLightTheme: remap(state.preferredLightTheme),
+            preferredDarkTheme: remap(state.preferredDarkTheme),
+          };
+        }
         return state;
       },
       partialize: (state) => ({
         // Only persist these fields (not modals state)
-        isSidebarOpen: state.isSidebarOpen,
         isFilesSidebarOpen: state.isFilesSidebarOpen,
-        isMindlinesOpen: state.isMindlinesOpen,
-        isMindlinesCollapsed: state.isMindlinesCollapsed,
         themeId: state.themeId,
         preferredLightTheme: state.preferredLightTheme,
         preferredDarkTheme: state.preferredDarkTheme,
         systemThemeEnabled: state.systemThemeEnabled,
         isHighContrast: state.isHighContrast,
-        editorWidth: state.editorWidth,
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,
         lineHeight: state.lineHeight,
-        sidebarWidth: state.sidebarWidth,
         filesSidebarWidth: state.filesSidebarWidth,
       }),
     }

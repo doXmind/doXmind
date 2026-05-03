@@ -1,23 +1,21 @@
 "use client";
 
 import { type CSSProperties, useEffect } from "react";
-import { PanelLeftOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Sidebar } from "@/components/sidebar/sidebar";
 import { FilesSidebar } from "@/components/sidebar/files-sidebar";
 import { DocumentWorkspace } from "@/components/workspace/document-workspace";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeScreen } from "@/components/welcome-screen";
-import { EmptyEditor } from "@/components/empty-editor";
+import { WorkspaceHome } from "@/components/workspace/workspace-home";
 import { UnifiedHeader } from "@/components/editor/unified-header";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { cn } from "@/lib/utils";
 import { isMarkdownFile } from "@/lib/document-types";
+import { MINDLINES_WIDTH } from "@/lib/constants";
 
 export function DesktopEditor() {
   const currentFileId = useFileStore((s) => s.currentFileId);
@@ -29,19 +27,16 @@ export function DesktopEditor() {
     s.currentFileId ? s.loadedContentIds.has(s.currentFileId) : false
   );
   const openTarget = useFileStore((s) => s.openTarget);
-  // VSCode-style: the sidebar appears whenever a file or folder is open
-  // and stays hidden on the welcome screen. In file mode the sidebar
-  // shows just the open file rather than scanning the parent directory,
-  // so we never leak the picked file's siblings into the rail.
+  // VSCode-style: the sidebar appears whenever a file or folder is open.
+  // The welcome surface can remain mounted beside it, so opening a folder
+  // expands the file tree instead of replacing the main content with a blank
+  // editor state.
   const hasOpenTarget = openTarget !== "none";
 
-  const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
-  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
   const setFilesSidebarOpen = useLayoutStore((s) => s.setFilesSidebarOpen);
   const isFocusMode = useLayoutStore((s) => s.isFocusMode);
   const setFocusMode = useLayoutStore((s) => s.setFocusMode);
-  const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const filesSidebarWidth = useLayoutStore((s) => s.filesSidebarWidth);
   const setFilesSidebarWidth = useLayoutStore((s) => s.setFilesSidebarWidth);
   const resetPanelWidths = useLayoutStore((s) => s.resetPanelWidths);
@@ -63,10 +58,9 @@ export function DesktopEditor() {
   // exposes the NSVisualEffectView vibrancy as a stray vertical band
   // between sidebar and editor.
   const filesHandleColPx = 0;
-  const outlineColPx = !isFocusMode && hasHeadings ? (isSidebarOpen ? sidebarWidth : 44) : 0;
-  // Same reason as the files sidebar: the outline shares a grid with the
-  // editor surface, so animated width changes are expensive in Tauri/WebKit.
-  const outlineGridTransition = "none";
+  // Outline lives in the collapsed rail and expands on hover.
+  const outlineRailWidth = MINDLINES_WIDTH.COLLAPSED;
+  const outlineContentGutterPx = !isFocusMode && hasHeadings ? MINDLINES_WIDTH.CONTENT_GUTTER : 0;
 
   const shellStyle = {
     "--files-sidebar-width":
@@ -119,79 +113,43 @@ export function DesktopEditor() {
 
             <main
               id="main-content"
-              className="desktop-content-surface relative grid min-h-0 min-w-0 overflow-hidden bg-background"
-              style={{
-                gridTemplateColumns: `${outlineColPx}px minmax(0, 1fr)`,
-                transition: outlineGridTransition,
-              }}
+              className="desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background"
             >
-              <div className="relative min-w-0 overflow-hidden">
-                {/* Both outline states stay mounted and switch via opacity —
-                  swapping the DOM on every toggle remounts the whole
-                  OutlineView tree (one component per heading, each with
-                  its own useEffect + framer-motion chevron) which made
-                  the open/close noticeably janky on top of the editor's
-                  width reflow. Keeping them mounted reduces the toggle
-                  cost to a paint-only opacity transition. */}
-                {!isFocusMode && hasHeadings && (
-                  <>
-                    <div
-                      className={cn(
-                        "absolute inset-0 transition-opacity duration-150 ease-out",
-                        isSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
-                      )}
-                      aria-hidden={!isSidebarOpen}
-                    >
-                      <div style={{ minWidth: sidebarWidth }} className="h-full">
-                        <Sidebar />
-                      </div>
-                    </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 transition-opacity duration-150 ease-out",
-                        !isSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
-                      )}
-                      aria-hidden={isSidebarOpen}
-                    >
-                      <div className="flex h-full w-11 flex-col">
-                        <div className="flex items-center justify-center px-1.5 py-2">
-                          <button
-                            onClick={toggleSidebar}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
-                            title="Expand outline"
-                            aria-label="Expand outline"
-                          >
-                            <PanelLeftOpen className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <div className="scrollbar-none flex-1 overflow-y-auto">
-                          <OutlineCollapsed
-                            headings={headings}
-                            activeId={activeId}
-                            onNavigate={navigateTo}
-                            onExpand={toggleSidebar}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
+              {/* Outline rail — collapsed by default, expands into a floating
+                outline popover on hover. The rail is inset from the scrollbar
+                so it does not crowd the scroll edge. */}
+              {!isFocusMode && hasHeadings && (
+                <div
+                  className="pointer-events-none absolute bottom-[14vh] right-5 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-7"
+                  style={{ width: outlineRailWidth }}
+                >
+                  <div className="pointer-events-auto h-full w-full">
+                    <OutlineCollapsed
+                      headings={headings}
+                      activeId={activeId}
+                      onNavigate={navigateTo}
+                    />
+                  </div>
+                </div>
+              )}
 
-              <div className="relative flex min-w-0 flex-col overflow-hidden">
+              <div className="relative flex h-full min-w-0 flex-col overflow-hidden">
                 <ErrorBoundary>
                   {currentFile ? (
                     isCurrentFileLoaded ? (
-                      <DocumentWorkspace file={currentFile} />
+                      <DocumentWorkspace
+                        file={currentFile}
+                        reservedRightInset={outlineContentGutterPx}
+                      />
                     ) : (
                       <LoadingPlaceholder />
                     )
                   ) : !isSynced && currentFileId ? (
                     <LoadingPlaceholder />
-                  ) : openTarget === "none" ? (
-                    <WelcomeScreen />
+                  ) : openTarget === "folder" ? (
+                    <WorkspaceHome />
                   ) : (
-                    <EmptyEditor />
+                    <WelcomeScreen />
                   )}
                 </ErrorBoundary>
               </div>
