@@ -13,7 +13,6 @@ import { SearchBar } from "./search-bar";
 import { StatusBar } from "./status-bar";
 import { DocumentTitle } from "./document-title";
 import { PageCover } from "./page-cover";
-import { useEditorShortcuts } from "@/hooks/use-editor-shortcuts";
 import { useBlockKeyboardShortcuts } from "@/hooks/use-block-keyboard-shortcuts";
 import { useFileStore, type FileItem, TRANSIENT_ID_PREFIX } from "@/stores/file-store";
 import { pickNativeSaveLocation } from "@/lib/native-dialog";
@@ -397,8 +396,6 @@ export function Editor({ file: initialFile }: EditorProps) {
   }, [file.content, editor]);
 
   useBlockKeyboardShortcuts(editor);
-
-  useEditorShortcuts();
 
   // Handle Image Modal confirm
   const handleImageModalConfirm = useCallback(

@@ -7,6 +7,16 @@ import { getScrollParent } from "./utils/heading-utils";
 
 /** Scroll-spy threshold: fraction of viewport height from top */
 const SCROLLSPY_THRESHOLD = 0.2;
+const OUTLINE_MAX_LEVEL = 3;
+const MIN_OUTLINE_HEADINGS = 2;
+
+function getEditorScrollParent(editor: Editor) {
+  const editorDom = editor.view.dom as HTMLElement;
+  return (
+    editorDom.closest<HTMLElement>("[data-editor-scroll], [data-mobile-scroll]") ||
+    getScrollParent(editorDom)
+  );
+}
 
 function headingsEqual(a: Heading[], b: Heading[]) {
   if (a.length !== b.length) return false;
@@ -29,21 +39,28 @@ export function useHeadings(editor: Editor | null) {
 
   // Extract headings from editor content
   useEffect(() => {
-    if (!editor) return;
+    if (!editor) {
+      setHeadings([]);
+      setActiveId(null);
+      return;
+    }
 
     const updateHeadings = () => {
       const found: Heading[] = [];
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "heading" && node.attrs.level <= 6) {
+
+      editor.state.doc.forEach((node, offset) => {
+        if (node.type.name === "heading" && node.attrs.level <= OUTLINE_MAX_LEVEL) {
           found.push({
-            id: `h-${pos}`,
+            id: `h-${offset}`,
             level: node.attrs.level,
             text: node.textContent || "Untitled",
-            pos,
+            pos: offset,
           });
         }
       });
-      setHeadings((prev) => (headingsEqual(prev, found) ? prev : found));
+
+      const outlineHeadings = found.length >= MIN_OUTLINE_HEADINGS ? found : [];
+      setHeadings((prev) => (headingsEqual(prev, outlineHeadings) ? prev : outlineHeadings));
     };
 
     updateHeadings();
@@ -56,11 +73,12 @@ export function useHeadings(editor: Editor | null) {
   // Scroll-spy: track active heading based on scroll position
   // Finds the last heading whose top is above the threshold line (top ~20% of viewport)
   useEffect(() => {
-    if (!editor || headings.length === 0) return;
+    if (!editor || headings.length === 0) {
+      setActiveId(null);
+      return;
+    }
 
-    // On mobile, prefer data-mobile-scroll container (getScrollParent is unreliable there)
-    const mobileScroll = document.querySelector<HTMLElement>("[data-mobile-scroll]");
-    const scrollParent = mobileScroll || getScrollParent(editor.view.dom as HTMLElement);
+    const scrollParent = getEditorScrollParent(editor);
     let rafId: number | null = null;
 
     const findTopHeading = () => {
@@ -125,9 +143,7 @@ export function useHeadings(editor: Editor | null) {
         const element = dom instanceof HTMLElement ? dom : null;
         if (!element) return;
 
-        // On mobile, prefer the data-mobile-scroll container (more reliable)
-        const mobileScroll = document.querySelector<HTMLElement>("[data-mobile-scroll]");
-        const scrollParent = mobileScroll || getScrollParent(editor.view.dom as HTMLElement);
+        const scrollParent = getEditorScrollParent(editor);
         const elementRect = element.getBoundingClientRect();
         const containerRect = scrollParent.getBoundingClientRect();
         const relativeTop = elementRect.top - containerRect.top;

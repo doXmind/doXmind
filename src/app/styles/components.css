@@ -128,32 +128,6 @@
 }
 
 /* ====================================
-   Collapsed Outline Styles
-   Minimal line indicators for document structure
-   ==================================== */
-
-/* Line indicator for collapsed outline */
-.outline-line-indicator {
-  width: 9px;
-  height: 2px;
-  background-color: hsl(var(--muted-foreground) / 0.34);
-  border-radius: 1px;
-  transition:
-    background-color 0.15s ease,
-    width 0.15s ease;
-}
-
-.outline-line-indicator:hover {
-  background-color: hsl(var(--primary) / 0.6);
-  width: 12px;
-}
-
-.outline-line-indicator.active {
-  background-color: hsl(var(--primary));
-  width: 12px;
-}
-
-/* ====================================
    Block Handle & Drag-and-Drop Styles
    Desktop Notion-style block interactions
    ==================================== */

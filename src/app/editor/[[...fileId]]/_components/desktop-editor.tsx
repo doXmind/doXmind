@@ -1,9 +1,7 @@
 "use client";
 
 import { type CSSProperties, useEffect } from "react";
-import { PanelRightOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Sidebar } from "@/components/sidebar/sidebar";
 import { FilesSidebar } from "@/components/sidebar/files-sidebar";
 import { DocumentWorkspace } from "@/components/workspace/document-workspace";
 import { ResizeHandle } from "@/components/ui/resize-handle";
@@ -16,7 +14,6 @@ import { useHeadings } from "@/components/editor/mindlines/use-headings";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useEditorRefStore } from "@/stores/editor-ref-store";
-import { cn } from "@/lib/utils";
 import { isMarkdownFile } from "@/lib/document-types";
 import { MINDLINES_WIDTH } from "@/lib/constants";
 
@@ -36,13 +33,10 @@ export function DesktopEditor() {
   // editor state.
   const hasOpenTarget = openTarget !== "none";
 
-  const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
-  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
   const setFilesSidebarOpen = useLayoutStore((s) => s.setFilesSidebarOpen);
   const isFocusMode = useLayoutStore((s) => s.isFocusMode);
   const setFocusMode = useLayoutStore((s) => s.setFocusMode);
-  const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const filesSidebarWidth = useLayoutStore((s) => s.filesSidebarWidth);
   const setFilesSidebarWidth = useLayoutStore((s) => s.setFilesSidebarWidth);
   const resetPanelWidths = useLayoutStore((s) => s.resetPanelWidths);
@@ -64,12 +58,8 @@ export function DesktopEditor() {
   // exposes the NSVisualEffectView vibrancy as a stray vertical band
   // between sidebar and editor.
   const filesHandleColPx = 0;
-  // The overlay reserves only the rail's footprint when collapsed; expanding
-  // the panel floats it over the doc rather than reflowing the layout, so
-  // the writing position never shifts when toggling the outline.
+  // Outline lives in the collapsed rail and expands on hover.
   const outlineRailWidth = MINDLINES_WIDTH.COLLAPSED;
-  const outlineOverlayWidth =
-    !isFocusMode && hasHeadings ? (isSidebarOpen ? sidebarWidth : outlineRailWidth) : 0;
 
   const shellStyle = {
     "--files-sidebar-width":
@@ -124,65 +114,20 @@ export function DesktopEditor() {
               id="main-content"
               className="desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background"
             >
-              {/* The outline is an overlay, not a layout column. Expanding it
-                must never resize the document surface or shift the writing
-                position; it only changes the navigation layer above the page.
-                Lives on the RIGHT edge of the editor — balances the file
-                tree on the left and gives the writing surface a centered feel. */}
+              {/* Outline rail — collapsed by default, expands into a floating
+                outline popover on hover. The rail is inset from the scrollbar
+                so it does not crowd the scroll edge. */}
               {!isFocusMode && hasHeadings && (
                 <div
-                  className="pointer-events-none absolute inset-y-0 right-0 z-30 overflow-visible transition-[width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
-                  style={{ width: outlineOverlayWidth }}
+                  className="pointer-events-none absolute bottom-[14vh] right-5 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-7"
+                  style={{ width: outlineRailWidth }}
                 >
-                  {/* Both outline states stay mounted and switch via opacity.
-                    This keeps scroll-spy state stable and avoids remounting
-                    the full outline tree during quick open/close cycles. */}
-                  <div
-                    className={cn(
-                      "bg-background/96 pointer-events-auto absolute inset-0 border-l border-border/55 shadow-[-18px_0_32px_-30px_rgba(0,0,0,0.5)] backdrop-blur-md transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                      isSidebarOpen
-                        ? "translate-x-0 opacity-100"
-                        : "pointer-events-none translate-x-2 opacity-0"
-                    )}
-                    aria-hidden={!isSidebarOpen}
-                  >
-                    <div style={{ width: sidebarWidth }} className="ml-auto h-full">
-                      <Sidebar />
-                    </div>
-                  </div>
-                  <div
-                    onClick={toggleSidebar}
-                    className={cn(
-                      "outline-rail-trigger pointer-events-auto absolute inset-y-0 right-0 z-10 flex h-full cursor-pointer flex-col items-center bg-transparent transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                      "border-l border-border/35 bg-background/70 backdrop-blur-sm hover:bg-background/85",
-                      !isSidebarOpen
-                        ? "translate-x-0 opacity-100"
-                        : "pointer-events-none translate-x-1 opacity-0"
-                    )}
-                    style={{ width: outlineRailWidth }}
-                    aria-hidden={isSidebarOpen}
-                    role="button"
-                    aria-label="Show outline"
-                    tabIndex={isSidebarOpen ? -1 : 0}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        toggleSidebar();
-                      }
-                    }}
-                    title="Show outline"
-                  >
-                    <span className="flex w-full items-center justify-center py-2 text-muted-foreground/55">
-                      <PanelRightOpen className="h-3.5 w-3.5" />
-                    </span>
-                    <div className="scrollbar-none w-full flex-1 overflow-y-auto">
-                      <OutlineCollapsed
-                        headings={headings}
-                        activeId={activeId}
-                        onNavigate={navigateTo}
-                        onExpand={toggleSidebar}
-                      />
-                    </div>
+                  <div className="pointer-events-auto h-full w-full">
+                    <OutlineCollapsed
+                      headings={headings}
+                      activeId={activeId}
+                      onNavigate={navigateTo}
+                    />
                   </div>
                 </div>
               )}

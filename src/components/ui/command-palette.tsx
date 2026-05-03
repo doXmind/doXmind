@@ -8,7 +8,6 @@ import {
   FilePlus,
   Palette,
   Keyboard,
-  PanelLeft,
   ArrowRight,
   Contrast,
   Loader2,
@@ -73,9 +72,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   const files = useFileStore((s) => s.files);
   const createFile = useFileStore((s) => s.createFile);
   const rootPath = useFileStore((s) => s.rootPath);
-  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
-  const isSidebarOpen = useLayoutStore((s) => s.isSidebarOpen);
   const isHighContrast = useLayoutStore((s) => s.isHighContrast);
   const toggleHighContrast = useLayoutStore((s) => s.toggleHighContrast);
   const { currentTheme, toggleBaseMode } = useThemeManager();
@@ -142,18 +139,6 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
         },
         keywords: ["create", "new", "document", "file"],
       },
-      // View commands
-      {
-        id: "toggle-sidebar",
-        label: isSidebarOpen ? "Hide Sidebar" : "Show Sidebar",
-        icon: <PanelLeft className="h-4 w-4" />,
-        category: "view",
-        action: () => {
-          toggleSidebar();
-          onClose();
-        },
-        keywords: ["sidebar", "panel", "files", "toggle"],
-      },
       {
         id: "toggle-theme",
         label: currentTheme.baseMode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode",
@@ -208,9 +193,7 @@ function CommandPaletteContent({ onClose }: { onClose: () => void }) {
   }, [
     files,
     createFile,
-    toggleSidebar,
     setKeyboardShortcutsOpen,
-    isSidebarOpen,
     isHighContrast,
     toggleHighContrast,
     currentTheme,

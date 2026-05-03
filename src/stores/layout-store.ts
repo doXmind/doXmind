@@ -5,7 +5,6 @@ import { DEFAULT_FONT_FAMILY } from "@/lib/font-options";
 
 interface LayoutState {
   // Desktop panel visibility
-  isSidebarOpen: boolean; // Outline sidebar (right edge)
   isFilesSidebarOpen: boolean; // Files sidebar (left edge, independent)
   themeId: string;
   preferredLightTheme: string;
@@ -41,14 +40,11 @@ interface LayoutState {
   lineHeight: "compact" | "normal" | "relaxed";
 
   // Resizable panel widths (pixels)
-  sidebarWidth: number; // Outline sidebar width
   filesSidebarWidth: number; // Files sidebar width
 
   // Actions
-  toggleSidebar: () => void;
   toggleFilesSidebar: () => void;
   setFilesSidebarOpen: (open: boolean) => void;
-  setSidebarOpen: (open: boolean) => void;
   setThemeId: (id: string) => void;
   setPreferredLightTheme: (id: string) => void;
   setPreferredDarkTheme: (id: string) => void;
@@ -91,7 +87,6 @@ interface LayoutState {
   setLineHeight: (height: "compact" | "normal" | "relaxed") => void;
 
   // Resizable panel actions
-  setSidebarWidth: (width: number) => void;
   setFilesSidebarWidth: (width: number) => void;
   resetPanelWidths: () => void;
 }
@@ -100,7 +95,6 @@ export const useLayoutStore = create<LayoutState>()(
   persist(
     (set) => ({
       // Desktop panel visibility
-      isSidebarOpen: false,
       isFilesSidebarOpen: true,
       themeId: "notion",
       preferredLightTheme: "notion",
@@ -136,24 +130,15 @@ export const useLayoutStore = create<LayoutState>()(
       lineHeight: "normal" as const,
 
       // Resizable panel widths
-      sidebarWidth: 224,
       filesSidebarWidth: 304,
 
       // Desktop actions
-      toggleSidebar: () => {
-        set((state) => ({ isSidebarOpen: !state.isSidebarOpen }));
-      },
-
       toggleFilesSidebar: () => {
         set((state) => ({ isFilesSidebarOpen: !state.isFilesSidebarOpen }));
       },
 
       setFilesSidebarOpen: (open: boolean) => {
         set({ isFilesSidebarOpen: open });
-      },
-
-      setSidebarOpen: (open: boolean) => {
-        set({ isSidebarOpen: open });
       },
 
       setThemeId: (id: string) => {
@@ -278,21 +263,17 @@ export const useLayoutStore = create<LayoutState>()(
       },
 
       // Resizable panel actions
-      setSidebarWidth: (width: number) => {
-        set({ sidebarWidth: Math.max(200, Math.min(400, width)) });
-      },
-
       setFilesSidebarWidth: (width: number) => {
         set({ filesSidebarWidth: Math.max(200, Math.min(400, width)) });
       },
 
       resetPanelWidths: () => {
-        set({ sidebarWidth: 224, filesSidebarWidth: 304 });
+        set({ filesSidebarWidth: 304 });
       },
     }),
     {
       name: "doxmind-layout",
-      version: 6,
+      version: 7,
       migrate: (persistedState: unknown, version: number) => {
         let state = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -312,8 +293,6 @@ export const useLayoutStore = create<LayoutState>()(
         if (version < 3) {
           state = {
             ...state,
-            isSidebarOpen: false,
-            sidebarWidth: 224,
             filesSidebarWidth: 304,
           };
         }
@@ -324,8 +303,6 @@ export const useLayoutStore = create<LayoutState>()(
           };
         }
         if (version < 5) {
-          // Drop dead mindlines fields persisted by older versions —
-          // the outline panel is now driven purely by `isSidebarOpen`.
           const {
             isMindlinesOpen: _isMindlinesOpen,
             isMindlinesCollapsed: _isMindlinesCollapsed,
@@ -334,8 +311,10 @@ export const useLayoutStore = create<LayoutState>()(
           state = rest;
         }
         if (version < 6) {
-          // Drop the persisted editor-width tier — the writing surface
-          // now uses a single Notion full-width layout.
+          const { isSidebarOpen: _isSidebarOpen, sidebarWidth: _sidebarWidth, ...rest } = state;
+          state = rest;
+        }
+        if (version < 7) {
           const { editorWidth: _editorWidth, ...rest } = state;
           state = rest;
         }
@@ -343,7 +322,6 @@ export const useLayoutStore = create<LayoutState>()(
       },
       partialize: (state) => ({
         // Only persist these fields (not modals state)
-        isSidebarOpen: state.isSidebarOpen,
         isFilesSidebarOpen: state.isFilesSidebarOpen,
         themeId: state.themeId,
         preferredLightTheme: state.preferredLightTheme,
@@ -353,7 +331,6 @@ export const useLayoutStore = create<LayoutState>()(
         fontFamily: state.fontFamily,
         fontSize: state.fontSize,
         lineHeight: state.lineHeight,
-        sidebarWidth: state.sidebarWidth,
         filesSidebarWidth: state.filesSidebarWidth,
       }),
     }

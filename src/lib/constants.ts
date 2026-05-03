@@ -49,16 +49,10 @@ export const ANIMATION_DURATION = {
   LONG: 500,
 } as const;
 
-// =============================================================================
-// Outline Panel Configuration
-// =============================================================================
-
-/** Outline panel widths in pixels */
+/** Collapsed outline rail widths in pixels */
 export const MINDLINES_WIDTH = {
-  /** Expanded state width (full Notion-style outline view) */
-  EXPANDED: 280,
   /** Collapsed state width (Notion-style minimap rail) */
-  COLLAPSED: 56,
+  COLLAPSED: 40,
 } as const;
 
 /** Z-index layers for overlays */

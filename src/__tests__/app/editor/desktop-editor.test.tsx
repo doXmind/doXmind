@@ -12,16 +12,16 @@ vi.mock("@/components/sidebar/files-sidebar", () => ({
   FilesSidebar: () => <div data-testid="files-sidebar" />,
 }));
 
-vi.mock("@/components/sidebar/sidebar", () => ({
-  Sidebar: () => <div data-testid="outline-sidebar" />,
-}));
-
 vi.mock("@/components/welcome-screen", () => ({
   WelcomeScreen: () => <div data-testid="welcome-screen" />,
 }));
 
 vi.mock("@/components/workspace/document-workspace", () => ({
   DocumentWorkspace: () => <div data-testid="document-workspace" />,
+}));
+
+vi.mock("@/components/workspace/workspace-home", () => ({
+  WorkspaceHome: () => <div data-testid="workspace-home" />,
 }));
 
 vi.mock("@/components/editor/unified-header", () => ({
@@ -62,12 +62,10 @@ describe("DesktopEditor welcome shell", () => {
       isFocusMode: false,
       isFilesSidebarOpen: true,
       filesSidebarWidth: 304,
-      isSidebarOpen: true,
-      sidebarWidth: 280,
     });
   });
 
-  it("keeps the welcome surface visible when a folder is mounted with no selected file", () => {
+  it("keeps the workspace home visible when a folder is mounted with no selected file", () => {
     useFileStore.setState({
       openTarget: "folder",
       rootPath: "/tmp/workspace",
@@ -79,7 +77,7 @@ describe("DesktopEditor welcome shell", () => {
     render(<DesktopEditor />);
 
     expect(screen.getByTestId("files-sidebar")).toBeInTheDocument();
-    expect(screen.getByTestId("welcome-screen")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-home")).toBeInTheDocument();
     expect(screen.queryByTestId("document-workspace")).not.toBeInTheDocument();
   });
 });
