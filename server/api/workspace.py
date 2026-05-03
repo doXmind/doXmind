@@ -8,8 +8,10 @@ the source of truth as `.md` files plus hidden `.doxmind` sidecars.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +23,50 @@ from pydantic import BaseModel, Field
 
 router = APIRouter()
 
+TASK_ITEM_RE = re.compile(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$")
+
+
+def _render_task_item_text(text: str) -> str:
+    rendered = markdown.markdown(text, extensions=["sane_lists"])
+    if rendered.startswith("<p>") and rendered.endswith("</p>"):
+        return rendered
+    return f"<p>{html.escape(text)}</p>"
+
+
+def render_task_lists(md: str) -> str:
+    """Convert simple GitHub-style task list runs into TipTap task-list HTML."""
+    lines = md.splitlines()
+    output: list[str] = []
+    index = 0
+
+    while index < len(lines):
+        match = TASK_ITEM_RE.match(lines[index])
+        if not match:
+            output.append(lines[index])
+            index += 1
+            continue
+
+        indent = match.group(1)
+        task_items: list[tuple[bool, str]] = []
+        while index < len(lines):
+            item_match = TASK_ITEM_RE.match(lines[index])
+            if not item_match or item_match.group(1) != indent:
+                break
+            checked = item_match.group(2).lower() == "x"
+            task_items.append((checked, item_match.group(3)))
+            index += 1
+
+        output.append('<ul data-type="taskList">')
+        for checked, text in task_items:
+            checked_attr = "true" if checked else "false"
+            output.append(
+                f'<li data-type="taskItem" data-checked="{checked_attr}">'
+                f"{_render_task_item_text(text)}</li>"
+            )
+        output.append("</ul>")
+
+    return "\n".join(output)
+
 
 def markdown_to_html(md: str) -> str:
     """Render markdown to HTML for the editor.
@@ -28,7 +74,10 @@ def markdown_to_html(md: str) -> str:
     No `codehilite` extension — TipTap can't parse the wrapper spans it
     emits; the frontend uses lowlight for syntax highlighting instead.
     """
-    return markdown.markdown(md, extensions=["tables", "fenced_code"])
+    return markdown.markdown(
+        render_task_lists(md), extensions=["tables", "fenced_code", "sane_lists"]
+    )
+
 
 SIDECAR_VERSION = 1
 IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build", ".trash"}

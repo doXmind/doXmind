@@ -67,6 +67,23 @@ def test_external_markdown_edit_invalidates_sidecar(sync_client, tmp_path):
     assert read["extras"] is None
 
 
+def test_markdown_read_preserves_distinct_list_types(sync_client, tmp_path):
+    doc = tmp_path / "Lists.md"
+    doc.write_text(
+        "# Lists\n\n- Bullet\n\n1. Ordered\n\n- [ ] Todo\n- [x] Done\n",
+        encoding="utf-8",
+    )
+
+    read = invoke(sync_client, "doc_read", {"path": str(doc)})
+
+    assert read["source"] == "markdown"
+    assert "<ul>" in read["html"]
+    assert "<ol>" in read["html"]
+    assert '<ul data-type="taskList">' in read["html"]
+    assert '<li data-type="taskItem" data-checked="false"><p>Todo</p></li>' in read["html"]
+    assert '<li data-type="taskItem" data-checked="true"><p>Done</p></li>' in read["html"]
+
+
 def test_workspace_folder_and_search(sync_client, tmp_path):
     root = str(tmp_path)
     invoke(sync_client, "workspace_create_folder", {"root": root, "path": "Folder"})

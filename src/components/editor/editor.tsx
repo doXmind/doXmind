@@ -1,7 +1,15 @@
 "use client";
 
 import { useEditor, EditorContent } from "@tiptap/react";
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef } from "react";
+import { TextSelection } from "@tiptap/pm/state";
+import {
+  type CSSProperties,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 
@@ -185,8 +193,77 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       handleKeyDown: (view, event) => {
         if (event.isComposing) return false;
 
-        void view;
+        if (
+          event.key === "Enter" &&
+          !event.shiftKey &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey
+        ) {
+          const { state, dispatch } = view;
+          const { selection, schema } = state;
+          const paragraph = schema.nodes.paragraph;
+
+          if (selection.empty && paragraph) {
+            const { $from } = selection;
+            const parent = $from.parent;
+
+            if (parent.type.name === "heading" && $from.parentOffset === parent.content.size) {
+              event.preventDefault();
+
+              if (parent.content.size === 0) {
+                const tr = state.tr.setBlockType($from.before(), $from.after(), paragraph);
+                dispatch(
+                  tr
+                    .setSelection(
+                      TextSelection.create(tr.doc, Math.min($from.pos, tr.doc.content.size))
+                    )
+                    .scrollIntoView()
+                );
+                return true;
+              }
+
+              const insertPos = $from.after();
+              const tr = state.tr.insert(insertPos, paragraph.create());
+              dispatch(
+                tr.setSelection(TextSelection.create(tr.doc, insertPos + 1)).scrollIntoView()
+              );
+              return true;
+            }
+          }
+        }
+
         return false;
+      },
+      handleDOMEvents: {
+        mousedown: (view, event) => {
+          if (event.button !== 0) return false;
+
+          const editorDom = view.dom as HTMLElement;
+          const target = event.target as Element | null;
+          if (!target || !editorDom.contains(target)) return false;
+          if (target.closest('button,a,input,textarea,select,[role="button"]')) return false;
+
+          const lastBlock = Array.from(editorDom.children)
+            .reverse()
+            .find((child): child is HTMLElement => child instanceof HTMLElement);
+          if (!lastBlock) return false;
+
+          const editorRect = editorDom.getBoundingClientRect();
+          const lastBlockRect = lastBlock.getBoundingClientRect();
+          const isInsideEditorWidth =
+            event.clientX >= editorRect.left && event.clientX <= editorRect.right;
+          const isBelowLastBlock = event.clientY > lastBlockRect.bottom + 8;
+
+          if (!isInsideEditorWidth || !isBelowLastBlock) return false;
+
+          event.preventDefault();
+          view.dispatch(
+            view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).scrollIntoView()
+          );
+          view.focus();
+          return true;
+        },
       },
     },
     immediatelyRender: false, // Prevent SSR hydration mismatch
@@ -442,6 +519,39 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
     "--editor-outline-gutter": `${reservedRightInset}px`,
   } as CSSProperties;
 
+  const handleEditorWhitespaceMouseDown = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (!editor || event.button !== 0) return;
+
+      const target = event.target as Node | null;
+      if (!target) return;
+
+      const editorDom = editor.view.dom;
+      if (editorDom.contains(target)) return;
+
+      const targetElement = target instanceof Element ? target : target.parentElement;
+      if (
+        targetElement?.closest(
+          'button,a,input,textarea,select,[contenteditable="true"],[role="button"]'
+        )
+      ) {
+        return;
+      }
+
+      const editorRect = editorDom.getBoundingClientRect();
+      const wrapperRect = event.currentTarget.getBoundingClientRect();
+      const isInsideEditorColumn =
+        event.clientX >= wrapperRect.left && event.clientX <= wrapperRect.right;
+      const isBelowEditorContent = event.clientY > editorRect.bottom;
+
+      if (!isInsideEditorColumn || !isBelowEditorContent) return;
+
+      event.preventDefault();
+      editor.chain().focus("end").run();
+    },
+    [editor]
+  );
+
   if (!editor) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -454,7 +564,12 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 min-w-0 flex-1 overflow-x-hidden">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1" data-editor-scroll>
+          <ScrollArea
+            ref={scrollAreaRef}
+            className="min-h-0 flex-1"
+            data-editor-scroll
+            onMouseDown={handleEditorWhitespaceMouseDown}
+          >
             <PageCover fileId={file.id} />
             {/* Notion full-width writing surface. The desktop IDE shows
               one document at a time in a wide window, so the writing
