@@ -27,8 +27,7 @@
 
     /* Brand typography stacks for "designed" surfaces (welcome, workspace
        home, sidebar empty state). Consumed by the .font-brand-sans /
-       .font-brand-serif utilities below and mirrored as JS constants in
-       src/lib/typography.ts — keep both in sync. */
+       .font-brand-serif utilities below. */
     --brand-sans-stack:
       "Helvetica Neue", Helvetica, -apple-system, "SF Pro Text", system-ui, sans-serif;
     --brand-serif-stack: "Iowan Old Style", Palatino, Georgia, serif;

@@ -16,12 +16,8 @@ greenlet==3.1.1
 python-multipart==0.0.19
 httpx==0.28.1
 
-# Export
+# Markdown → HTML rendering for the workspace import path.
 markdown==3.7
-markdownify==1.2.0
-fpdf2==2.8.5
-python-docx==1.1.2
-beautifulsoup4==4.12.3
 
 # PDF editor parse + export pipeline lives on PyMuPDF directly. No
 # DOCX / PPTX / scan-OCR conversion happens server-side any more — the
