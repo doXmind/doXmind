@@ -153,6 +153,9 @@ class SyntheticDocumentFactory:
         `SidecarMigrationError` and leaves both files in place so the
         user can recover by renaming `.bak` back.
         """
+        assert for_path is not None, (
+            "migrate_legacy_sidecar requires for_path from production callers"
+        )
         try:
             raw_bytes = sidecar_path.read_bytes()
         except FileNotFoundError:
@@ -168,13 +171,19 @@ class SyntheticDocumentFactory:
         if block_type is None:
             return
 
-        target_path = for_path if for_path is not None else _path_for_sidecar(sidecar_path)
+        bak_path = _bak_path(sidecar_path)
+        if bak_path.exists():
+            raise SidecarMigrationError(
+                sidecar_path,
+                block_type,
+                f"a previous migration backup is in place at {bak_path}; investigate before retrying",
+            )
 
-        atomic_write(_bak_path(sidecar_path), raw_bytes)
+        atomic_write(bak_path, raw_bytes)
 
         try:
-            new_snapshot = _snapshot_from_legacy(target_path, block_type, sidecar)
-            self._write_sidecar(target_path, new_snapshot)
+            new_snapshot = _snapshot_from_legacy(for_path, block_type, sidecar)
+            self._write_sidecar(for_path, new_snapshot)
         except Exception as exc:
             raise SidecarMigrationError(
                 sidecar_path,

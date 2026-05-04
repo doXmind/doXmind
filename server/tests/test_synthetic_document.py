@@ -257,6 +257,29 @@ def test_migrate_legacy_sidecar_is_noop_on_markdown_shape(tmp_path):
     assert not bak_path.exists()
 
 
+def test_open_pdf_refuses_to_overwrite_existing_migration_backup(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+    bak_bytes = b"previous migration backup"
+    bak_path.write_bytes(bak_bytes)
+
+    with pytest.raises(SidecarMigrationError) as excinfo:
+        SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    assert "previous migration backup is in place" in excinfo.value.reason
+    assert sidecar_path.read_bytes() == raw_before
+    assert bak_path.read_bytes() == bak_bytes
+
+
+def test_migrate_legacy_sidecar_requires_for_path_from_production_callers(tmp_path):
+    sidecar_path = tmp_path / ".Application.pdf.doxmind"
+
+    with pytest.raises(AssertionError, match="requires for_path"):
+        SyntheticDocumentFactory().migrate_legacy_sidecar(sidecar_path)
+
+
 def test_migrate_legacy_sidecar_aborts_when_bak_write_fails(tmp_path, monkeypatch):
     pdf_path = _make_pdf(tmp_path)
     raw_before = _write_legacy_pdf_sidecar(pdf_path)
