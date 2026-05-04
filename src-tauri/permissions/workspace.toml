@@ -30,6 +30,7 @@ commands.allow = [
   "workspace_import_asset",
   "open_window_for_target",
   "open_new_window",
+  "force_open_new_window_for_target",
   "register_window_target",
   "unregister_window_target",
   "dock_set_recents",

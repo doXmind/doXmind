@@ -35,11 +35,22 @@ export async function unregisterWindowTarget(): Promise<void> {
   }
 }
 
-/** Focus an existing window with this target, or open a new one. */
+/** Focus an existing window with this target, or open a new one. Used by the
+ *  dock recents menu where the user's intent is "show me this," not
+ *  "duplicate it." */
 export async function openWindowForTarget(target: WindowTarget): Promise<void> {
   if (!isTauri()) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("open_window_for_target", { target });
+}
+
+/** Always spawn a new window for `target`, even if some window already shows
+ *  it. Use this for explicit "Open in New Window" affordances where the user
+ *  has chosen to duplicate. */
+export async function forceOpenNewWindowForTarget(target: WindowTarget): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("force_open_new_window_for_target", { target });
 }
 
 /** Open a fresh welcome-screen window. */

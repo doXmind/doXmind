@@ -4,6 +4,7 @@ import { ChevronsDownUp, FolderPlus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NewButton } from "@/components/home/new-button";
+import { WorkspaceSwitcher } from "@/components/sidebar/workspace-switcher";
 import { useFileStore } from "@/stores/file-store";
 
 interface WorkspaceHeaderProps {
@@ -45,12 +46,7 @@ export function WorkspaceHeader({
 
   return (
     <div className="group flex h-11 items-center justify-between gap-2 px-3">
-      <h2
-        className="text-ui-sm min-w-0 flex-1 truncate font-semibold leading-none text-[var(--sidebar-title)]"
-        title={titleAttr}
-      >
-        {label}
-      </h2>
+      <WorkspaceSwitcher label={label} titleAttr={titleAttr} />
       {!isFileMode && (
         <div className="flex items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
           <NewButton

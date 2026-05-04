@@ -1926,6 +1926,23 @@ fn open_new_window(
     Ok(label)
 }
 
+/// Always spawn a fresh window for `target`, even if some window already shows
+/// it. Differs from `open_window_for_target` (which de-duplicates by focusing
+/// the existing window) — used by the in-app "Open in New Window" affordance
+/// where the user explicitly wants another copy regardless of what's already
+/// open.
+#[tauri::command]
+fn force_open_new_window_for_target(
+    app: AppHandle,
+    target: OpenTarget,
+    registry: tauri::State<'_, WindowRegistry>,
+    init_script: tauri::State<'_, InitScript>,
+) -> Result<String, String> {
+    let label = registry.next_label();
+    create_editor_window(&app, &label, Some(target), &init_script.0).map_err(|e| e.to_string())?;
+    Ok(label)
+}
+
 #[tauri::command]
 fn register_window_target(
     window: WebviewWindow,
@@ -2098,6 +2115,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_import_asset,
             open_window_for_target,
             open_new_window,
+            force_open_new_window_for_target,
             register_window_target,
             unregister_window_target,
             dock_set_recents,
