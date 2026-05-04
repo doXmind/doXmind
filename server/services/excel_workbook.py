@@ -152,34 +152,35 @@ def _parse_sheet(
 
     cells: list[dict[str, Any]] = []
     if row_count and col_count:
-        for row_idx, formula_row in enumerate(
-            formula_sheet.iter_rows(
+        # Walk formula + value sheets in parallel with a single pass each.
+        # `wb_values` is `read_only=True` (SAX streaming), so calling
+        # `value_sheet.iter_rows(min_row=r, max_row=r)` once per row would
+        # rescan from the start of the XML stream every iteration —
+        # O(rows²) — which on a 1k-row sheet is tens of seconds. Zipping
+        # the two iterators lets each side stream end-to-end exactly once.
+        formula_iter = formula_sheet.iter_rows(
+            min_row=1,
+            max_row=row_count,
+            min_col=1,
+            max_col=col_count,
+        )
+        if value_sheet is not None:
+            value_iter = value_sheet.iter_rows(
                 min_row=1,
                 max_row=row_count,
                 min_col=1,
                 max_col=col_count,
+                values_only=True,
             )
-        ):
-            value_row: tuple[Any, ...] | None = None
-            if value_sheet is not None:
-                value_row_iter = next(
-                    iter(
-                        value_sheet.iter_rows(
-                            min_row=row_idx + 1,
-                            max_row=row_idx + 1,
-                            min_col=1,
-                            max_col=col_count,
-                            values_only=True,
-                        )
-                    ),
-                    None,
-                )
-                value_row = value_row_iter
+            paired: Any = zip(formula_iter, value_iter)
+        else:
+            paired = ((row, ()) for row in formula_iter)
 
+        for row_idx, (formula_row, value_row) in enumerate(paired):
             for col_idx, cell in enumerate(formula_row):
                 cached_value = (
                     value_row[col_idx]
-                    if value_row is not None and col_idx < len(value_row)
+                    if col_idx < len(value_row)
                     else None
                 )
                 dto = _cell_to_dto(
