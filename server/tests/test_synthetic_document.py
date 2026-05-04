@@ -8,6 +8,7 @@ sidecar migration introduced in slice 4 (#11).
 from __future__ import annotations
 
 import json
+import logging
 import multiprocessing
 import re
 from dataclasses import replace
@@ -311,6 +312,55 @@ def test_open_excel_migrates_legacy_sidecar_in_place(tmp_path):
     assert "excel_editor" not in on_disk
     slot = on_disk["extras"]["blocks"][document.block_id]
     assert slot["editor"] == {"version": 1, "sheets": []}
+
+
+def test_open_pdf_logs_migration_start_and_success(tmp_path, caplog):
+    pdf_path = _make_pdf(tmp_path)
+    _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    caplog.set_level(logging.INFO, logger=sd_module.__name__)
+
+    SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == sd_module.__name__
+        and record.getMessage() in {"migration.start", "migration.success"}
+    ]
+    assert [record.getMessage() for record in records] == [
+        "migration.start",
+        "migration.success",
+    ]
+    assert {record.sidecar_path for record in records} == {str(sidecar_path)}
+    assert {record.block_type for record in records} == {PDF_BLOCK_TYPE}
+
+
+def test_open_pdf_logs_migration_failure(tmp_path, caplog):
+    pdf_path = _make_pdf(tmp_path)
+    _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+    bak_path.write_bytes(b"previous migration backup")
+    caplog.set_level(logging.INFO, logger=sd_module.__name__)
+
+    with pytest.raises(SidecarMigrationError):
+        SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == sd_module.__name__
+        and record.getMessage() in {"migration.start", "migration.failure"}
+    ]
+    assert [record.getMessage() for record in records] == [
+        "migration.start",
+        "migration.failure",
+    ]
+    failure = records[1]
+    assert failure.sidecar_path == str(sidecar_path)
+    assert failure.block_type == PDF_BLOCK_TYPE
+    assert "previous migration backup is in place" in failure.reason
 
 
 def test_migrate_legacy_sidecar_is_noop_on_markdown_shape(tmp_path):
