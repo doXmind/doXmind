@@ -29,6 +29,10 @@ from typing import Any
 from services.markdown_document_state import DocumentSnapshot
 from services.sidecar_io import (
     SIDECAR_VERSION,
+    Corrupt,
+    CorruptSidecarError,
+    Loaded,
+    Missing,
     atomic_write,
     build_md_with_frontmatter,
     hash_markdown,
@@ -156,20 +160,19 @@ class SyntheticDocumentFactory:
         assert for_path is not None, (
             "migrate_legacy_sidecar requires for_path from production callers"
         )
-        try:
-            raw_bytes = sidecar_path.read_bytes()
-        except FileNotFoundError:
+        sidecar_result = read_sidecar(sidecar_path)
+        if isinstance(sidecar_result, Missing):
             return
-        try:
-            sidecar = json.loads(raw_bytes.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return
-        if not isinstance(sidecar, dict):
-            return
+        if isinstance(sidecar_result, Corrupt):
+            raise CorruptSidecarError(sidecar_path, None, sidecar_result.reason)
+        if not isinstance(sidecar_result, Loaded):
+            raise TypeError(f"unexpected sidecar read result: {type(sidecar_result).__name__}")
+        sidecar = sidecar_result.data
 
         block_type = _detect_legacy_block_type(sidecar)
         if block_type is None:
             return
+        raw_bytes = sidecar_path.read_bytes()
 
         bak_path = _bak_path(sidecar_path)
         if bak_path.exists():
@@ -195,19 +198,30 @@ class SyntheticDocumentFactory:
         if not path.is_absolute():
             raise ValueError("synthetic document path must be absolute")
         sc_path = sidecar_path_for(path)
-        sidecar = read_sidecar(sc_path)
+        sidecar_result = read_sidecar(sc_path)
 
-        if sidecar is None:
+        if isinstance(sidecar_result, Missing):
             return self._synthesize_new(path, block_type)
+        if isinstance(sidecar_result, Corrupt):
+            forensic_path = _write_forensic_copy(sc_path, sidecar_result.raw)
+            raise CorruptSidecarError(sc_path, forensic_path, sidecar_result.reason)
+        if not isinstance(sidecar_result, Loaded):
+            raise TypeError(f"unexpected sidecar read result: {type(sidecar_result).__name__}")
+        sidecar = sidecar_result.data
 
         if any(key in sidecar for key in _LEGACY_KEYS_BY_BLOCK_TYPE[block_type]):
             if _migration_disabled():
                 return self._synthesize_read_only_from_legacy(path, block_type, sidecar)
             self.migrate_legacy_sidecar(sc_path, for_path=path)
             migrated = read_sidecar(sc_path)
-            if migrated is None:
+            if isinstance(migrated, Missing):
                 raise SidecarMigrationError(sc_path, block_type, "sidecar missing after migration")
-            return self._read_markdown_shape(path, block_type, migrated)
+            if isinstance(migrated, Corrupt):
+                forensic_path = _write_forensic_copy(sc_path, migrated.raw)
+                raise CorruptSidecarError(sc_path, forensic_path, migrated.reason)
+            if not isinstance(migrated, Loaded):
+                raise TypeError(f"unexpected sidecar read result: {type(migrated).__name__}")
+            return self._read_markdown_shape(path, block_type, migrated.data)
 
         return self._read_markdown_shape(path, block_type, sidecar)
 
@@ -302,6 +316,13 @@ def _detect_legacy_block_type(sidecar: dict[str, Any]) -> str | None:
 
 def _bak_path(sidecar_path: Path) -> Path:
     return sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+
+def _write_forensic_copy(sidecar_path: Path, raw: bytes) -> Path:
+    timestamp = now_iso().replace(":", "-")
+    forensic_path = sidecar_path.parent / f"{sidecar_path.name}.corrupt-{timestamp}"
+    atomic_write(forensic_path, raw)
+    return forensic_path
 
 
 def _path_for_sidecar(sidecar_path: Path) -> Path:

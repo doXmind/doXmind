@@ -18,6 +18,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from services.sidecar_io import (
+    Corrupt,
+    CorruptSidecarError,
+    Loaded,
     atomic_write,
     now_iso,
     parse_frontmatter,
@@ -44,6 +47,13 @@ _scan_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 def _invalidate_scan_cache(root: str | Path) -> None:
     key = str(Path(root).resolve()) if root else ""
     _scan_cache.pop(key, None)
+
+
+def _write_forensic_copy(sidecar_path: Path, raw: bytes) -> Path:
+    timestamp = now_iso().replace(":", "-")
+    forensic_path = sidecar_path.parent / f"{sidecar_path.name}.corrupt-{timestamp}"
+    atomic_write(forensic_path, raw)
+    return forensic_path
 
 
 class WorkspaceInvokeRequest(BaseModel):
@@ -163,7 +173,9 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
     if command == "doc_delete":
         return doc_delete(str(payload.get("root") or ""), str(payload.get("path") or ""))
     if command == "workspace_create_folder":
-        return workspace_create_folder(str(payload.get("root") or ""), str(payload.get("path") or ""))
+        return workspace_create_folder(
+            str(payload.get("root") or ""), str(payload.get("path") or "")
+        )
     if command == "workspace_rename_folder":
         return workspace_rename_folder(
             str(payload.get("root") or ""),
@@ -171,7 +183,9 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("newPath") or ""),
         )
     if command == "workspace_delete_folder":
-        return workspace_delete_folder(str(payload.get("root") or ""), str(payload.get("path") or ""))
+        return workspace_delete_folder(
+            str(payload.get("root") or ""), str(payload.get("path") or "")
+        )
 
     raise HTTPException(status_code=404, detail=f"unsupported workspace command: {command}")
 
@@ -322,9 +336,7 @@ def read_pdf_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
     return _read_block_slot_combined(root, rel_path, _is_pdf_path, _open_pdf)
 
 
-def write_pdf_parsed_cache(
-    root: str, rel_path: str, source_hash: str, parsed: Any
-) -> None:
+def write_pdf_parsed_cache(root: str, rel_path: str, source_hash: str, parsed: Any) -> None:
     """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``."""
     if not source_hash.strip():
         raise ValueError("sourceHash is required")
@@ -353,9 +365,7 @@ def read_excel_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
     return _read_block_slot_combined(root, rel_path, _is_excel_path, _open_excel)
 
 
-def write_excel_parsed_cache(
-    root: str, rel_path: str, source_hash: str, parsed: Any
-) -> None:
+def write_excel_parsed_cache(root: str, rel_path: str, source_hash: str, parsed: Any) -> None:
     """Deprecated: delegates to ``SyntheticDocumentFactory.open_excel``."""
     if not source_hash.strip():
         raise ValueError("sourceHash is required")
@@ -481,11 +491,15 @@ def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> di
             existing_meta, _ = parse_frontmatter(raw)
         except OSError:
             existing_meta = {}
-        sidecar = read_sidecar(sidecar_path_for(path))
-        if sidecar:
-            if not existing_meta.get("id") and sidecar.get("id"):
-                existing_meta["id"] = sidecar["id"]
-            existing_extras = sidecar.get("extras")
+        sidecar_path = sidecar_path_for(path)
+        sidecar = read_sidecar(sidecar_path)
+        if isinstance(sidecar, Loaded):
+            if not existing_meta.get("id") and sidecar.data.get("id"):
+                existing_meta["id"] = sidecar.data["id"]
+            existing_extras = sidecar.data.get("extras")
+        elif isinstance(sidecar, Corrupt):
+            forensic_path = _write_forensic_copy(sidecar_path, sidecar.raw)
+            raise CorruptSidecarError(sidecar_path, forensic_path, sidecar.reason)
 
     merged_meta: dict[str, Any] = {**existing_meta, **incoming_meta}
     if not str(merged_meta.get("id") or "").strip():
@@ -621,7 +635,9 @@ def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
     _invalidate_scan_cache(workspace)
     return {
         "path": rel_path,
-        "sidecarPath": relative_path_string(workspace, sidecar_path) if sidecar_trash_path else None,
+        "sidecarPath": relative_path_string(workspace, sidecar_path)
+        if sidecar_trash_path
+        else None,
         "trashPath": relative_path_string(workspace, trash_path),
         "sidecarTrashPath": sidecar_trash_path,
     }

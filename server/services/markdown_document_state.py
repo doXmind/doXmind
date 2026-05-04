@@ -21,6 +21,10 @@ from typing import Any, Protocol
 
 from services.sidecar_io import (
     SIDECAR_VERSION,
+    Corrupt,
+    CorruptSidecarError,
+    Loaded,
+    Missing,
     atomic_write,
     build_md_with_frontmatter,
     hash_markdown,
@@ -116,9 +120,11 @@ class MarkdownDocumentState:
         raw = path.read_text(encoding="utf-8")
         meta, body = parse_frontmatter(raw)
         current_hash = hash_markdown(raw)
-        sidecar = read_sidecar(sidecar_path_for(path))
+        sidecar_path = sidecar_path_for(path)
+        sidecar_result = read_sidecar(sidecar_path)
 
-        if sidecar is not None:
+        if isinstance(sidecar_result, Loaded):
+            sidecar = sidecar_result.data
             sidecar_id = sidecar.get("id")
             if sidecar_id and meta.get("id") != sidecar_id:
                 meta["id"] = sidecar_id
@@ -149,6 +155,17 @@ class MarkdownDocumentState:
                 salvaged_extras=salvaged,
                 discarded_slots=discarded,
             )
+
+        if isinstance(sidecar_result, Corrupt):
+            forensic_path = _write_forensic_copy(sidecar_path, sidecar_result.raw)
+            raise CorruptSidecarError(
+                sidecar_path,
+                forensic_path,
+                sidecar_result.reason,
+            )
+
+        if not isinstance(sidecar_result, Missing):
+            raise TypeError(f"unexpected sidecar read result: {type(sidecar_result).__name__}")
 
         if not body.strip():
             return EmptyDocument(meta=meta)
@@ -188,7 +205,7 @@ class MarkdownDocumentState:
         sidecar_path = sidecar_path_for(path)
         existing = read_sidecar(sidecar_path)
 
-        if existing is None:
+        if isinstance(existing, Missing):
             raw = path.read_text(encoding="utf-8")
             sidecar: dict[str, Any] = {
                 "version": SIDECAR_VERSION,
@@ -196,15 +213,27 @@ class MarkdownDocumentState:
                 "extras": {slot_key: value},
                 "updated_at": now_iso(),
             }
-        else:
-            sidecar = dict(existing)
+        elif isinstance(existing, Loaded):
+            sidecar = dict(existing.data)
             extras_obj = sidecar.get("extras")
             extras = dict(extras_obj) if isinstance(extras_obj, dict) else {}
             extras[slot_key] = value
             sidecar["extras"] = extras
             sidecar["updated_at"] = now_iso()
+        elif isinstance(existing, Corrupt):
+            forensic_path = _write_forensic_copy(sidecar_path, existing.raw)
+            raise CorruptSidecarError(sidecar_path, forensic_path, existing.reason)
+        else:
+            raise TypeError(f"unexpected sidecar read result: {type(existing).__name__}")
 
         atomic_write(
             sidecar_path,
             json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
         )
+
+
+def _write_forensic_copy(sidecar_path: Path, raw: bytes) -> Path:
+    timestamp = now_iso().replace(":", "-")
+    forensic_path = sidecar_path.parent / f"{sidecar_path.name}.corrupt-{timestamp}"
+    atomic_write(forensic_path, raw)
+    return forensic_path

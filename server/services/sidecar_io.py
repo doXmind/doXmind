@@ -15,6 +15,7 @@ import json
 import os
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,41 @@ import markdown
 SIDECAR_VERSION = 1
 
 TASK_ITEM_RE = re.compile(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$")
+
+
+class SidecarReadResult:
+    __slots__ = ()
+
+
+@dataclass(frozen=True)
+class Missing(SidecarReadResult):
+    pass
+
+
+@dataclass(frozen=True)
+class Corrupt(SidecarReadResult):
+    raw: bytes
+    reason: str
+
+
+@dataclass(frozen=True)
+class Loaded(SidecarReadResult):
+    data: dict[str, Any]
+
+
+class CorruptSidecarError(Exception):
+    def __init__(
+        self,
+        sidecar_path: Path,
+        forensic_path: Path | None,
+        reason: str,
+    ) -> None:
+        super().__init__(
+            f"corrupt sidecar at {sidecar_path}: {reason}; forensic copy: {forensic_path}"
+        )
+        self.sidecar_path = sidecar_path
+        self.forensic_path = forensic_path
+        self.reason = reason
 
 
 def _render_task_item_text(text: str) -> str:
@@ -143,13 +179,18 @@ def build_md_with_frontmatter(meta: dict[str, Any], body: str) -> str:
     return f"---\n{chr(10).join(lines)}\n---\n\n{trimmed_body}\n"
 
 
-def read_sidecar(path: Path) -> dict[str, Any] | None:
+def read_sidecar(path: Path) -> SidecarReadResult:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
     except FileNotFoundError:
-        return None
-    except json.JSONDecodeError:
-        return None
+        return Missing()
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return Corrupt(raw=raw, reason=str(exc))
+    if not isinstance(parsed, dict):
+        return Corrupt(raw=raw, reason="sidecar JSON top level is not a dict")
+    return Loaded(data=parsed)
 
 
 def sidecar_path_for(md_path: Path) -> Path:
