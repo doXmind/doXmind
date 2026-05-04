@@ -25,7 +25,16 @@ export const notify = {
     return useNotificationStore.getState().pushError(title, options?.description);
   },
 
-  promise<T>(promise: Promise<T>, opts: PromiseOptions<T>): Promise<T> {
+  // Mirrors sonner's `toast.promise` shape but routes through our two
+  // surfaces: the running task lives in the header progress strip, and a
+  // rejection becomes a real error banner so the failure is actually
+  // visible (the strip itself only renders while a task is `running`).
+  //
+  // The returned promise *resolves* in both branches — it never rejects —
+  // because every call site fires it with `void` and an unhandled rejection
+  // would otherwise bubble up. Callers that need the resolved value can
+  // still `await` and discriminate on `undefined`.
+  promise<T>(promise: Promise<T>, opts: PromiseOptions<T>): Promise<T | undefined> {
     const id = useNotificationStore.getState().startProgress(opts.loading);
     return promise.then(
       (value) => {
@@ -36,7 +45,8 @@ export const notify = {
       (reason) => {
         const msg = typeof opts.error === "function" ? opts.error(reason) : opts.error;
         useNotificationStore.getState().failProgress(id, msg);
-        throw reason;
+        useNotificationStore.getState().pushError(msg);
+        return undefined;
       }
     );
   },

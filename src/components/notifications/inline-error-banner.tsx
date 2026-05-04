@@ -9,7 +9,6 @@ const AUTO_DISMISS_MS = 5000;
 
 export function InlineErrorBanner() {
   const errors = useNotificationStore((s) => s.errors);
-  const dismissError = useNotificationStore((s) => s.dismissError);
 
   return (
     <div
@@ -19,7 +18,7 @@ export function InlineErrorBanner() {
     >
       <AnimatePresence initial={false}>
         {errors.map((error) => (
-          <ErrorBannerRow key={error.id} error={error} onDismiss={() => dismissError(error.id)} />
+          <ErrorBannerRow key={error.id} error={error} />
         ))}
       </AnimatePresence>
     </div>
@@ -28,14 +27,23 @@ export function InlineErrorBanner() {
 
 interface ErrorBannerRowProps {
   error: NotificationError;
-  onDismiss: () => void;
 }
 
-function ErrorBannerRow({ error, onDismiss }: ErrorBannerRowProps) {
+function ErrorBannerRow({ error }: ErrorBannerRowProps) {
+  // Read the action from the store directly so the dismiss timer's
+  // dependencies depend only on the stable error id. An inline `onDismiss`
+  // arrow from the parent would change identity on every parent render and
+  // restart the auto-dismiss countdown — which would mean adding a second
+  // error before 5 s had reset every older row's timer.
   useEffect(() => {
-    const timer = window.setTimeout(onDismiss, AUTO_DISMISS_MS);
+    const id = error.id;
+    const timer = window.setTimeout(() => {
+      useNotificationStore.getState().dismissError(id);
+    }, AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [onDismiss]);
+  }, [error.id]);
+
+  const handleDismiss = () => useNotificationStore.getState().dismissError(error.id);
 
   return (
     <motion.div
@@ -65,7 +73,7 @@ function ErrorBannerRow({ error, onDismiss }: ErrorBannerRowProps) {
       </div>
       <button
         type="button"
-        onClick={onDismiss}
+        onClick={handleDismiss}
         aria-label="Dismiss notification"
         className="-mr-1 -mt-0.5 flex size-6 flex-shrink-0 cursor-pointer items-center justify-center rounded text-foreground/45 transition-colors hover:bg-foreground/[0.06] hover:text-foreground/80"
       >

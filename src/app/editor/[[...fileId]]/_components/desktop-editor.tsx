@@ -123,7 +123,14 @@ export function DesktopEditor() {
                   className="pointer-events-none absolute bottom-[14vh] right-5 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-7"
                   style={{ width: outlineRailWidth }}
                 >
-                  <div className="pointer-events-auto h-full w-full">
+                  {/* `relative` so the OutlineCollapsed root, which is
+                      `absolute right-0`, anchors to this 40px-wide column's
+                      right edge and grows leftward when expanded. Without
+                      relative positioning here, the absolute child would
+                      anchor to the outer fixed-width column above and the
+                      math would still work — but explicit relative keeps
+                      the contract local. */}
+                  <div className="pointer-events-auto relative h-full w-full">
                     <OutlineCollapsed
                       headings={headings}
                       activeId={activeId}

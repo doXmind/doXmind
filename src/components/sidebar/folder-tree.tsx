@@ -20,6 +20,7 @@ import { notify } from "@/lib/notifications";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { revealFileInFinder } from "@/lib/storage/reveal";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 
 const log = storeLogger.child("FolderTree");
 
@@ -181,14 +182,27 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     }
   }, [allFolders, justCreatedFileId, clearJustCreatedFileId]);
 
-  const handleDeleteFolderDirect = async (folder: FileItemType) => {
+  // Trash recovery is currently a stub (`loadTrash` always returns empty),
+  // so a misclick on a folder Delete is unrecoverable — and folders take
+  // their children with them. A confirm modal is the minimum safety net
+  // until the Trash workflow is wired up properly.
+  const [folderPendingDelete, setFolderPendingDelete] = useState<FileItemType | null>(null);
+
+  const handleDeleteFolderDirect = (folder: FileItemType) => {
+    setFolderPendingDelete(folder);
+  };
+
+  const handleDeleteFolderConfirmed = async () => {
+    const folder = folderPendingDelete;
+    if (!folder) return;
     try {
       await deleteFile(folder.id);
-      // Recovery path: Settings → Trash. Silent on the happy path.
     } catch (error) {
       log.error("Failed to delete folder", error);
       const { title, description } = getErrorMessage(error);
       notify.error(title, { description });
+    } finally {
+      setFolderPendingDelete(null);
     }
   };
 
@@ -240,9 +254,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
         destructive: true,
       },
     ],
-    // handleDeleteFolderDirect is stable enough — it reads from the store
-    // and from translations on each invocation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [t, onCreateFile, onCreateFolder]
   );
 
@@ -593,6 +604,15 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           </div>,
           document.body
         )}
+
+      <ConfirmModal
+        open={folderPendingDelete !== null}
+        onClose={() => setFolderPendingDelete(null)}
+        onConfirm={handleDeleteFolderConfirmed}
+        title={t("moveToTrashConfirmTitle", { count: 1 })}
+        description={t("moveToTrashDescSingle")}
+        confirmLabel={t("moveToTrash")}
+      />
     </div>
   );
 });

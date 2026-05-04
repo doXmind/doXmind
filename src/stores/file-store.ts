@@ -702,8 +702,12 @@ export const useFileStore = create<FileState>()(
           eventBus.emit("storage:changed");
         } catch (error) {
           log.error("Failed to delete file(s)", error);
-          // Revert on error
+          // Revert on error so the sidebar reflects what's actually on disk.
           await get().loadFiles();
+          // Re-throw so callers can surface a notification — this used to be
+          // swallowed, which left the file silently re-appearing with no
+          // explanation when the adapter rejected.
+          throw error;
         }
       },
 

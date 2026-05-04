@@ -24,6 +24,7 @@ import { useFileStore, type FileItem as FileItemType } from "@/stores/file-store
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { FileActionsMenuItems, getMenuItemCount } from "@/components/sidebar/file-actions-menu";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import {
   getDisplayName,
   isExcelFile,
@@ -65,6 +66,10 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
   const [contextMenuReady, setContextMenuReady] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [newName, setNewName] = useState(getNameWithoutExtension(file.name));
+  // Trash recovery is currently a stub (`loadTrash` always returns empty),
+  // so a misclick on Delete is unrecoverable. A confirm step is the minimum
+  // safety net while the Trash workflow is wired up properly.
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -257,15 +262,16 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     }
   };
 
-  const handleDelete = async (e?: React.MouseEvent) => {
+  const handleDelete = (e?: React.MouseEvent) => {
     e?.stopPropagation();
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirmed = async () => {
     try {
       await deleteFile(file.id);
-      // Navigate to the next file or welcome screen after deletion
       const nextId = useFileStore.getState().currentFileId;
       navigateToEditorFile(nextId);
-      // Recovery path: Settings → Trash. Notion-style: silence on the happy
-      // path; the file vanishing from the sidebar is itself the feedback.
     } catch (error) {
       log.error("Failed to delete file", error);
       notify.error(t("failedToDelete"));
@@ -556,6 +562,15 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
           </div>,
           document.body
         )}
+
+      <ConfirmModal
+        open={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={handleDeleteConfirmed}
+        title={t("moveToTrashConfirmTitle", { count: 1 })}
+        description={t("moveToTrashDescSingle")}
+        confirmLabel={t("moveToTrash")}
+      />
     </div>
   );
 }

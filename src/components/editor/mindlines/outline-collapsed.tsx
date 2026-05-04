@@ -141,8 +141,13 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   };
 
   return (
+    // Anchor to the parent column's right edge with `absolute right-0` so
+    // the wrapper grows leftward when it expands to the popover width —
+    // otherwise a normal-flow width change would push the popover off the
+    // right side of the viewport (the parent column is only 40 px wide and
+    // already inset against the window edge).
     <div
-      className="group/outline-rail relative flex h-full justify-end transition-[width] duration-100 ease-out"
+      className="group/outline-rail absolute right-0 top-0 flex h-full justify-end transition-[width] duration-100 ease-out"
       style={{ width: expanded ? POPOVER_WIDTH_PX : "100%" }}
       onMouseEnter={schedulePopoverOpen}
       onMouseLeave={schedulePopoverClose}

@@ -172,7 +172,7 @@ def _parse_sheet(
                 max_col=col_count,
                 values_only=True,
             )
-            paired: Any = zip(formula_iter, value_iter)
+            paired: Any = zip(formula_iter, value_iter, strict=True)
         else:
             paired = ((row, ()) for row in formula_iter)
 
