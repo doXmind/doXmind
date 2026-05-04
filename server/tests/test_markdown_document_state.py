@@ -13,6 +13,8 @@ from typing import Any
 
 import pytest
 
+from services.block_correlation import BlockCorrelation, CorrelationReport
+from services.external_ref_blocks import default_external_ref_block_registry
 from services.markdown_document_state import (
     DocumentSnapshot,
     EmptyDocument,
@@ -30,6 +32,12 @@ def _write_md(path: Path, body: str, meta_lines: list[str] | None = None) -> Non
         return
     frontmatter = "---\n" + "\n".join(meta_lines) + "\n---\n\n"
     path.write_text(frontmatter + body, encoding="utf-8")
+
+
+def _state_with_correlator() -> MarkdownDocumentState:
+    return MarkdownDocumentState(
+        correlator=BlockCorrelation(default_external_ref_block_registry())
+    )
 
 
 def test_used_sidecar_when_hash_matches(tmp_path: Path) -> None:
@@ -53,6 +61,59 @@ def test_used_sidecar_when_hash_matches(tmp_path: Path) -> None:
     assert outcome.meta["id"] == "doc-1"
     assert outcome.extras == {"databases": {}}
     assert outcome.correlation is None
+
+
+def test_configured_correlator_populates_empty_report_for_all_read_outcomes(
+    tmp_path: Path,
+) -> None:
+    used_state = _state_with_correlator()
+    used_path = tmp_path / "Used.md"
+    used_state.write_full(
+        used_path,
+        DocumentSnapshot(
+            html="<p>used</p>",
+            markdown="used",
+            meta={"id": "used-1"},
+            extras={"blocks": {}},
+        ),
+    )
+
+    stale_state = _state_with_correlator()
+    stale_path = tmp_path / "Stale.md"
+    stale_state.write_full(
+        stale_path,
+        DocumentSnapshot(
+            html="<p>stale</p>",
+            markdown="stale",
+            meta={"id": "stale-1"},
+            extras={"blocks": {}},
+        ),
+    )
+    stale_path.write_text("---\nid: stale-1\n---\n\nfresh\n", encoding="utf-8")
+
+    no_sidecar_path = tmp_path / "NoSidecar.md"
+    _write_md(no_sidecar_path, "body\n", meta_lines=["id: no-sidecar-1"])
+
+    empty_path = tmp_path / "Empty.md"
+    _write_md(empty_path, "", meta_lines=["id: empty-1"])
+
+    outcomes = (
+        used_state.read(used_path),
+        stale_state.read(stale_path),
+        _state_with_correlator().read(no_sidecar_path),
+        _state_with_correlator().read(empty_path),
+    )
+
+    assert isinstance(outcomes[0], UsedSidecar)
+    assert isinstance(outcomes[1], SidecarStale)
+    assert isinstance(outcomes[2], NoSidecar)
+    assert isinstance(outcomes[3], EmptyDocument)
+    assert [outcome.correlation for outcome in outcomes] == [
+        CorrelationReport(),
+        CorrelationReport(),
+        CorrelationReport(),
+        CorrelationReport(),
+    ]
 
 
 def test_no_sidecar_with_non_empty_body(tmp_path: Path) -> None:

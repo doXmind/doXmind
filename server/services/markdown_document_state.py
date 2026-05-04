@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from services.block_correlation import CorrelationReport, CorrelationResult
 from services.sidecar_io import (
     SIDECAR_VERSION,
     Corrupt,
@@ -34,10 +35,6 @@ from services.sidecar_io import (
     read_sidecar,
     sidecar_path_for,
 )
-
-
-class CorrelationReport:
-    """Placeholder for the Block correlation report that #4 will populate."""
 
 
 class Salvager(Protocol):
@@ -64,6 +61,15 @@ class _DiscardAllSalvager:
         extras: dict[str, Any],
     ) -> tuple[dict[str, Any], list[str]]:
         return {}, sorted(extras.keys())
+
+
+class Correlator(Protocol):
+    def correlate(
+        self,
+        *,
+        markdown_body: str,
+        extras: dict[str, Any],
+    ) -> CorrelationResult: ...
 
 
 @dataclass(frozen=True)
@@ -111,8 +117,13 @@ ReadOutcome = UsedSidecar | SidecarStale | NoSidecar | EmptyDocument
 
 
 class MarkdownDocumentState:
-    def __init__(self, salvager: Salvager | None = None) -> None:
+    def __init__(
+        self,
+        salvager: Salvager | None = None,
+        correlator: Correlator | None = None,
+    ) -> None:
         self._salvager: Salvager = salvager or _DiscardAllSalvager()
+        self._correlator = correlator
 
     def read(self, path: Path) -> ReadOutcome:
         if not path.is_absolute():
@@ -135,11 +146,13 @@ class MarkdownDocumentState:
                 extras = sidecar.get("extras")
                 if not isinstance(extras, dict) and extras is not None:
                     extras = None
+                correlation_result = self._correlate(markdown_body=body, extras=extras)
                 return UsedSidecar(
                     html=sidecar.get("html") or "",
                     markdown=body,
                     meta=meta,
-                    extras=extras,
+                    extras=_extras_from_correlation_result(extras, correlation_result),
+                    correlation=_report_from_correlation_result(correlation_result),
                 )
 
             existing_extras = sidecar.get("extras")
@@ -147,13 +160,16 @@ class MarkdownDocumentState:
             salvaged, discarded = self._salvager.salvage(
                 markdown_body=body, extras=extras_for_salvage
             )
+            correlation_result = self._correlate(markdown_body=body, extras=salvaged)
             fresh_html = "" if not body.strip() else markdown_to_html(body)
             return SidecarStale(
                 fresh_html=fresh_html,
                 markdown="" if not body.strip() else body,
                 meta=meta,
-                salvaged_extras=salvaged,
+                salvaged_extras=_extras_from_correlation_result(salvaged, correlation_result)
+                or {},
                 discarded_slots=discarded,
+                correlation=_report_from_correlation_result(correlation_result),
             )
 
         if isinstance(sidecar_result, Corrupt):
@@ -168,12 +184,18 @@ class MarkdownDocumentState:
             raise TypeError(f"unexpected sidecar read result: {type(sidecar_result).__name__}")
 
         if not body.strip():
-            return EmptyDocument(meta=meta)
+            correlation_result = self._correlate(markdown_body="", extras={})
+            return EmptyDocument(
+                meta=meta,
+                correlation=_report_from_correlation_result(correlation_result),
+            )
 
+        correlation_result = self._correlate(markdown_body=body, extras={})
         return NoSidecar(
             html=markdown_to_html(body),
             markdown=body,
             meta=meta,
+            correlation=_report_from_correlation_result(correlation_result),
         )
 
     def write_full(self, path: Path, snapshot: DocumentSnapshot) -> None:
@@ -230,6 +252,38 @@ class MarkdownDocumentState:
             sidecar_path,
             json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
         )
+
+    def _correlate(
+        self,
+        *,
+        markdown_body: str,
+        extras: dict[str, Any] | None,
+    ) -> CorrelationResult | None:
+        if self._correlator is None:
+            return None
+        return self._correlator.correlate(
+            markdown_body=markdown_body,
+            extras=extras if isinstance(extras, dict) else {},
+        )
+
+
+def _report_from_correlation_result(
+    correlation_result: CorrelationResult | None,
+) -> CorrelationReport | None:
+    if correlation_result is None:
+        return None
+    return correlation_result.report
+
+
+def _extras_from_correlation_result(
+    original_extras: dict[str, Any] | None,
+    correlation_result: CorrelationResult | None,
+) -> dict[str, Any] | None:
+    if correlation_result is None:
+        return original_extras
+    if original_extras is None and not correlation_result.resolved_extras:
+        return None
+    return correlation_result.resolved_extras
 
 
 def _write_forensic_copy(sidecar_path: Path, raw: bytes) -> Path:
