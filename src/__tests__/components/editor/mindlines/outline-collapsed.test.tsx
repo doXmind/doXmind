@@ -7,17 +7,29 @@ import type { Heading } from "@/components/editor/mindlines/types";
 import type { FileItem } from "@/types";
 
 // AnimatePresence's exit animation keeps elements mounted longer than the
-// store-driven open/close timers we're verifying. Stub it out so the dialog
-// unmounts the moment popoverOpen flips to false.
+// store-driven open/close timers we're verifying. Stub it out so the outline
+// unmounts the moment its state flips to closed.
 vi.mock("framer-motion", () => {
   const motion = new Proxy(
     {},
     {
       get:
         () =>
-        ({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children?: ReactNode }) => (
-          <div {...props}>{children}</div>
-        ),
+        ({
+          children,
+          ...props
+        }: HTMLAttributes<HTMLElement> & {
+          animate?: unknown;
+          children?: ReactNode;
+          exit?: unknown;
+          initial?: unknown;
+        }) => {
+          const passthrough = { ...props };
+          delete passthrough.animate;
+          delete passthrough.exit;
+          delete passthrough.initial;
+          return <div {...passthrough}>{children}</div>;
+        },
     }
   );
   return {
@@ -31,6 +43,30 @@ const headings: Heading[] = [
   { id: "h-10", level: 2, text: "Alpha", pos: 10 },
   { id: "h-20", level: 3, text: "Detail", pos: 20 },
 ];
+
+function rect({
+  left,
+  top,
+  width,
+  height,
+}: {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}) {
+  return {
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
 
 function markdownFile(): FileItem {
   return {
@@ -70,37 +106,96 @@ describe("OutlineCollapsed", () => {
   it("opens a floating outline on hover and closes after delay", () => {
     render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
 
-    expect(screen.queryByRole("dialog", { name: "Document outline" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
 
-    const railButton = screen.getByRole("button", { name: "Navigate to: Overview" });
-    const railRoot = railButton.parentElement?.parentElement;
-    expect(railRoot).toBeTruthy();
+    const railSensor = screen.getByTestId("outline-rail-hover-sensor");
 
-    fireEvent.mouseEnter(railRoot!);
+    fireEvent.mouseEnter(railSensor);
     act(() => vi.advanceTimersByTime(120));
 
-    expect(screen.getByRole("dialog", { name: "Document outline" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Navigate to: Overview" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute(
       "aria-current",
       "location"
     );
 
-    fireEvent.mouseLeave(railRoot!);
+    fireEvent.mouseLeave(railSensor, { clientX: 500, clientY: 500 });
     act(() => vi.advanceTimersByTime(179));
-    expect(screen.getByRole("dialog", { name: "Document outline" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(1));
-    expect(screen.queryByRole("dialog", { name: "Document outline" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
+  });
+
+  it("keeps hit testing scoped to the rail until the popover mounts", () => {
+    render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
+
+    const railRoot = screen.getByTestId("outline-rail-root");
+    const railTrigger = screen.getByTestId("outline-rail-trigger");
+    const railSensor = screen.getByTestId("outline-rail-hover-sensor");
+
+    fireEvent.mouseEnter(railSensor);
+
+    expect(railRoot).toHaveStyle({ width: "100%" });
+    expect(railTrigger).toHaveStyle({ width: "100%" });
+    expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
+    expect(railRoot).toHaveStyle({ width: "100%" });
+  });
+
+  it("keeps the primed open alive while the pointer remains in the rail hit area", () => {
+    render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
+
+    const railTrigger = screen.getByTestId("outline-rail-trigger");
+    const railSensor = screen.getByTestId("outline-rail-hover-sensor");
+    railTrigger.getBoundingClientRect = () => rect({ left: 920, top: 220, width: 24, height: 120 });
+
+    fireEvent.mouseEnter(railSensor);
+    fireEvent.mouseLeave(railSensor, { clientX: 925, clientY: 260 });
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
+  });
+
+  it("cancels a primed open when the pointer moves away from the safe corridor", () => {
+    render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
+
+    const railTrigger = screen.getByTestId("outline-rail-trigger");
+    const railSensor = screen.getByTestId("outline-rail-hover-sensor");
+    railTrigger.getBoundingClientRect = () => rect({ left: 920, top: 220, width: 24, height: 120 });
+
+    fireEvent.mouseEnter(railSensor);
+    fireEvent.mouseLeave(railSensor, { clientX: 500, clientY: 760 });
+    fireEvent.pointerMove(window, { clientX: 500, clientY: 760 });
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
+  });
+
+  it("closes the floating outline with Escape", () => {
+    render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
+
+    const railRoot = screen.getByTestId("outline-rail-root");
+    const railSensor = screen.getByTestId("outline-rail-hover-sensor");
+
+    fireEvent.mouseEnter(railSensor);
+    act(() => vi.advanceTimersByTime(120));
+    expect(screen.getByRole("navigation", { name: "Document outline" })).toBeInTheDocument();
+
+    fireEvent.keyDown(railRoot, { key: "Escape" });
+
+    expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument();
   });
 
   it("navigates from popover items without forcing editor focus", () => {
     const onNavigate = vi.fn();
     render(<OutlineCollapsed headings={headings} activeId="h-0" onNavigate={onNavigate} />);
 
-    const railRoot = screen.getByRole("button", { name: "Navigate to: Overview" }).parentElement
-      ?.parentElement;
-    fireEvent.mouseEnter(railRoot!);
+    fireEvent.mouseEnter(screen.getByTestId("outline-rail-hover-sensor"));
     act(() => vi.advanceTimersByTime(120));
 
     fireEvent.click(screen.getByRole("button", { name: "Detail" }));

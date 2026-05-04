@@ -703,7 +703,11 @@ export const useFileStore = create<FileState>()(
         } catch (error) {
           log.error("Failed to delete file(s)", error);
           // Revert on error so the sidebar reflects what's actually on disk.
-          await get().loadFiles();
+          try {
+            await get().loadFiles();
+          } catch (revertError) {
+            log.error("Failed to reload files after delete error", revertError);
+          }
           // Re-throw so callers can surface a notification — this used to be
           // swallowed, which left the file silently re-appearing with no
           // explanation when the adapter rejected.

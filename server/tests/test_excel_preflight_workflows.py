@@ -8,12 +8,15 @@ preflight catches sidecar/export regressions that would affect real users.
 
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
+import pytest
+from openpyxl import Workbook, load_workbook
 
-from services.excel_workbook import export_edited_workbook
+from services.excel_workbook import export_edited_workbook, parse_workbook
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "testdata" / "budget.xlsx"
@@ -25,6 +28,32 @@ def export_workbook(edits: dict[str, Any]):
     out.parent.mkdir(exist_ok=True)
     out.write_bytes(exported)
     return load_workbook(out)
+
+
+def divergent_iterator_workbook() -> bytes:
+    """Return malformed XLSX bytes whose read-only value stream ends early."""
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "Header"
+    ws["A2"] = "Dangling"
+
+    source = io.BytesIO()
+    wb.save(source)
+
+    malformed = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(source.getvalue())) as zin:
+        with zipfile.ZipFile(malformed, "w") as zout:
+            for item in zin.infolist():
+                payload = zin.read(item.filename)
+                if item.filename == "xl/worksheets/sheet1.xml":
+                    payload = payload.decode().replace('r="A2"', 'r="A3"').encode()
+                zout.writestr(item, payload)
+    return malformed.getvalue()
+
+
+def test_parse_workbook_funnels_malformed_xlsx_iterator_divergence():
+    with pytest.raises(ValueError, match=r"^failed to parse xlsx: zip\(\) argument 2"):
+        parse_workbook(divergent_iterator_workbook())
 
 
 def test_finance_budget_review_workflow_exports_review_artifacts():
