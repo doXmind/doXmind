@@ -1,8 +1,8 @@
 """Tests for ``services.synthetic_document``.
 
-Covers the three open paths (no sidecar / markdown-shape / legacy-shape)
-for both PDF and Excel, plus the round-trip: open → write_full → re-open
-preserves state.
+Covers the open paths (no sidecar / markdown-shape / legacy-shape) for
+both PDF and Excel, the round-trip after `write_full`, and the legacy
+sidecar migration introduced in slice 4 (#11).
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from services import synthetic_document as sd_module
 from services.sidecar_io import (
     SIDECAR_VERSION,
     atomic_write,
@@ -23,12 +24,14 @@ from services.synthetic_document import (
     EXCEL_BLOCK_TYPE,
     PDF_BLOCK_TYPE,
     LegacySidecarError,
+    ReadOnlyDocumentError,
+    SidecarMigrationError,
     SyntheticDocumentFactory,
 )
 
 
-def _write_legacy_pdf_sidecar(pdf_path: Path) -> None:
-    payload = {
+def _legacy_pdf_payload(pdf_path: Path) -> dict:
+    return {
         "version": SIDECAR_VERSION,
         "id": "legacy-pdf",
         "source_path": pdf_path.name,
@@ -36,11 +39,10 @@ def _write_legacy_pdf_sidecar(pdf_path: Path) -> None:
         "pdf_editor": {"version": 1, "edits": {"1:0": {"text": "x"}}},
         "pdf_parsed_cache": {"sourceHash": "abc", "parsed": {"pages": []}},
     }
-    atomic_write(sidecar_path_for(pdf_path), json.dumps(payload).encode())
 
 
-def _write_legacy_excel_sidecar(xlsx_path: Path) -> None:
-    payload = {
+def _legacy_excel_payload(xlsx_path: Path) -> dict:
+    return {
         "version": SIDECAR_VERSION,
         "id": "legacy-excel",
         "source_path": xlsx_path.name,
@@ -48,7 +50,18 @@ def _write_legacy_excel_sidecar(xlsx_path: Path) -> None:
         "excel_editor": {"version": 1, "sheets": []},
         "excel_parsed_cache": {"sourceHash": "abc", "parsed": {"sheets": []}},
     }
-    atomic_write(sidecar_path_for(xlsx_path), json.dumps(payload).encode())
+
+
+def _write_legacy_pdf_sidecar(pdf_path: Path) -> bytes:
+    raw = json.dumps(_legacy_pdf_payload(pdf_path)).encode()
+    atomic_write(sidecar_path_for(pdf_path), raw)
+    return raw
+
+
+def _write_legacy_excel_sidecar(xlsx_path: Path) -> bytes:
+    raw = json.dumps(_legacy_excel_payload(xlsx_path)).encode()
+    atomic_write(sidecar_path_for(xlsx_path), raw)
+    return raw
 
 
 def _make_pdf(tmp_path: Path, name: str = "Application.pdf") -> Path:
@@ -80,11 +93,10 @@ def test_open_pdf_with_no_sidecar_synthesizes_block_and_writes_markdown_shape_si
     assert re.fullmatch(r"[0-9a-f-]{36}", document.block_type) is None  # sanity: not a uuid
     assert re.fullmatch(r"[0-9a-f-]{36}", document.block_id), "block id must be uuid v4"
 
-    placeholder = (
-        f'<!-- pdf-block id="{document.block_id}" src="{pdf_path.name}" -->'
-    )
+    placeholder = f'<!-- pdf-block id="{document.block_id}" src="{pdf_path.name}" -->'
     assert placeholder in document.snapshot.markdown
     assert document.snapshot.extras == {"blocks": {document.block_id: {}}}
+    assert document.read_only is False
 
     # PDF binary must NOT be touched.
     assert pdf_path.read_bytes().startswith(b"%PDF-")
@@ -109,7 +121,6 @@ def test_open_pdf_with_markdown_shape_sidecar_passes_through(tmp_path):
     factory = SyntheticDocumentFactory()
     first = factory.open_pdf(pdf_path)
 
-    # Mutate the sidecar by hand and confirm a re-open does not modify it.
     sidecar_path = sidecar_path_for(pdf_path)
     raw_before = sidecar_path.read_text(encoding="utf-8")
 
@@ -121,27 +132,7 @@ def test_open_pdf_with_markdown_shape_sidecar_passes_through(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# PDF — legacy-shape sidecar raises
-# ---------------------------------------------------------------------------
-
-
-def test_open_pdf_with_legacy_sidecar_raises(tmp_path):
-    pdf_path = _make_pdf(tmp_path)
-    _write_legacy_pdf_sidecar(pdf_path)
-    sidecar_path = sidecar_path_for(pdf_path)
-    raw_before = sidecar_path.read_text(encoding="utf-8")
-
-    with pytest.raises(LegacySidecarError) as excinfo:
-        SyntheticDocumentFactory().open_pdf(pdf_path)
-
-    assert excinfo.value.block_type == PDF_BLOCK_TYPE
-    assert excinfo.value.sidecar_path == sidecar_path
-    # Legacy sidecar must not have been mutated.
-    assert sidecar_path.read_text(encoding="utf-8") == raw_before
-
-
-# ---------------------------------------------------------------------------
-# Excel — symmetric three cases
+# Excel — symmetric
 # ---------------------------------------------------------------------------
 
 
@@ -151,9 +142,7 @@ def test_open_excel_with_no_sidecar_synthesizes_block(tmp_path):
     document = SyntheticDocumentFactory().open_excel(xlsx_path)
 
     assert document.block_type == EXCEL_BLOCK_TYPE
-    placeholder = (
-        f'<!-- excel-block id="{document.block_id}" src="{xlsx_path.name}" -->'
-    )
+    placeholder = f'<!-- excel-block id="{document.block_id}" src="{xlsx_path.name}" -->'
     assert placeholder in document.snapshot.markdown
     assert document.snapshot.extras == {"blocks": {document.block_id: {}}}
 
@@ -174,16 +163,6 @@ def test_open_excel_with_markdown_shape_sidecar_passes_through(tmp_path):
 
     assert second.block_id == first.block_id
     assert sidecar_path.read_text(encoding="utf-8") == raw_before
-
-
-def test_open_excel_with_legacy_sidecar_raises(tmp_path):
-    xlsx_path = _make_excel(tmp_path)
-    _write_legacy_excel_sidecar(xlsx_path)
-
-    with pytest.raises(LegacySidecarError) as excinfo:
-        SyntheticDocumentFactory().open_excel(xlsx_path)
-
-    assert excinfo.value.block_type == EXCEL_BLOCK_TYPE
 
 
 # ---------------------------------------------------------------------------
@@ -211,5 +190,159 @@ def test_open_pdf_write_full_reopen_round_trips_block_state(tmp_path):
 
     assert reopened.block_id == document.block_id
     assert reopened.snapshot.extras == new_extras
-    # PDF binary still intact.
     assert pdf_path.read_bytes().startswith(b"%PDF-")
+
+
+# ---------------------------------------------------------------------------
+# Legacy sidecar migration (slice 4, #11)
+# ---------------------------------------------------------------------------
+
+
+def test_open_pdf_migrates_legacy_sidecar_in_place(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    document = SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    assert document.block_type == PDF_BLOCK_TYPE
+    assert document.read_only is False
+    assert bak_path.exists()
+    assert bak_path.read_bytes() == raw_before
+
+    on_disk = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert on_disk["version"] == SIDECAR_VERSION
+    assert "pdf_editor" not in on_disk
+    assert "pdf_parsed_cache" not in on_disk
+    slot = on_disk["extras"]["blocks"][document.block_id]
+    assert slot["editor"] == {"version": 1, "edits": {"1:0": {"text": "x"}}}
+    assert slot["parsedCache"] == {"sourceHash": "abc", "parsed": {"pages": []}}
+
+    # Document carries the migrated state.
+    assert document.snapshot.extras["blocks"][document.block_id]["editor"] == slot["editor"]
+
+    # User's PDF binary is untouched.
+    assert pdf_path.read_bytes().startswith(b"%PDF-")
+
+
+def test_open_excel_migrates_legacy_sidecar_in_place(tmp_path):
+    xlsx_path = _make_excel(tmp_path)
+    raw_before = _write_legacy_excel_sidecar(xlsx_path)
+    sidecar_path = sidecar_path_for(xlsx_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    document = SyntheticDocumentFactory().open_excel(xlsx_path)
+
+    assert bak_path.exists()
+    assert bak_path.read_bytes() == raw_before
+
+    on_disk = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert "excel_editor" not in on_disk
+    slot = on_disk["extras"]["blocks"][document.block_id]
+    assert slot["editor"] == {"version": 1, "sheets": []}
+
+
+def test_migrate_legacy_sidecar_is_noop_on_markdown_shape(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    factory = SyntheticDocumentFactory()
+    factory.open_pdf(pdf_path)  # produces markdown-shape sidecar
+    sidecar_path = sidecar_path_for(pdf_path)
+    raw_before = sidecar_path.read_bytes()
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    factory.migrate_legacy_sidecar(sidecar_path, for_path=pdf_path)
+
+    assert sidecar_path.read_bytes() == raw_before
+    assert not bak_path.exists()
+
+
+def test_migrate_legacy_sidecar_aborts_when_bak_write_fails(tmp_path, monkeypatch):
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    def boom(target: Path, data: bytes) -> None:
+        if target == bak_path:
+            raise OSError("simulated bak write failure")
+        # Any other write would mean migration progressed past the abort line.
+        raise AssertionError(f"unexpected atomic_write to {target}")
+
+    monkeypatch.setattr(sd_module, "atomic_write", boom)
+
+    with pytest.raises(OSError, match="simulated bak write failure"):
+        SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    # Original sidecar untouched, no bak written.
+    assert sidecar_path.read_bytes() == raw_before
+    assert not bak_path.exists()
+
+
+def test_migrate_legacy_sidecar_aborts_after_rewrite_failure(tmp_path, monkeypatch):
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    real_atomic_write = sd_module.atomic_write
+
+    def fail_on_rewrite(target: Path, data: bytes) -> None:
+        if target == bak_path:
+            real_atomic_write(target, data)
+            return
+        if target == sidecar_path:
+            raise OSError("simulated rewrite failure")
+        raise AssertionError(f"unexpected atomic_write to {target}")
+
+    monkeypatch.setattr(sd_module, "atomic_write", fail_on_rewrite)
+
+    with pytest.raises(SidecarMigrationError) as excinfo:
+        SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    assert excinfo.value.block_type == PDF_BLOCK_TYPE
+    # `.bak` exists with the original content, sidecar is unchanged →
+    # the user can recover by renaming `.bak` back.
+    assert bak_path.read_bytes() == raw_before
+    assert sidecar_path.read_bytes() == raw_before
+
+
+def test_open_pdf_in_read_only_mode_does_not_migrate(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOXMIND_SIDECAR_MIGRATE", "0")
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    factory = SyntheticDocumentFactory()
+    document = factory.open_pdf(pdf_path)
+
+    assert document.read_only is True
+    assert document.block_type == PDF_BLOCK_TYPE
+    slot = document.snapshot.extras["blocks"][document.block_id]
+    assert slot["editor"] == {"version": 1, "edits": {"1:0": {"text": "x"}}}
+    assert slot["parsedCache"] == {"sourceHash": "abc", "parsed": {"pages": []}}
+
+    # Disk state is untouched.
+    assert sidecar_path.read_bytes() == raw_before
+    assert not bak_path.exists()
+
+    # Subsequent writes are rejected.
+    new_extras = {
+        "blocks": {
+            document.block_id: {
+                "editor": {"version": 1, "edits": {"2:0": {"text": "y"}}},
+            }
+        }
+    }
+    with pytest.raises(ReadOnlyDocumentError):
+        factory.write_full(document, replace(document.snapshot, extras=new_extras))
+
+    # Confirm the sidecar still hasn't moved.
+    assert sidecar_path.read_bytes() == raw_before
+
+
+def test_legacy_error_hierarchy_lets_callers_catch_the_base_class():
+    # SidecarMigrationError is-a LegacySidecarError so legacy callers that
+    # caught the base class continue to work after slice 4.
+    assert issubclass(SidecarMigrationError, LegacySidecarError)
