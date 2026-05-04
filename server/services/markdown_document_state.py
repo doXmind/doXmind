@@ -181,3 +181,30 @@ class MarkdownDocumentState:
             sidecar_path_for(path),
             json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
         )
+
+    def write_slot(self, path: Path, slot_key: str, value: Any) -> None:
+        if not path.is_absolute():
+            raise ValueError("document path must be absolute")
+        sidecar_path = sidecar_path_for(path)
+        existing = read_sidecar(sidecar_path)
+
+        if existing is None:
+            raw = path.read_text(encoding="utf-8")
+            sidecar: dict[str, Any] = {
+                "version": SIDECAR_VERSION,
+                "markdown_hash": hash_markdown(raw),
+                "extras": {slot_key: value},
+                "updated_at": now_iso(),
+            }
+        else:
+            sidecar = dict(existing)
+            extras_obj = sidecar.get("extras")
+            extras = dict(extras_obj) if isinstance(extras_obj, dict) else {}
+            extras[slot_key] = value
+            sidecar["extras"] = extras
+            sidecar["updated_at"] = now_iso()
+
+        atomic_write(
+            sidecar_path,
+            json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
+        )

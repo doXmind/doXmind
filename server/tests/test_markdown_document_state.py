@@ -255,3 +255,126 @@ def test_custom_salvager_is_consulted_for_stale_sidecar(tmp_path: Path) -> None:
 def test_read_rejects_relative_path(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="absolute"):
         MarkdownDocumentState().read(Path("relative.md"))
+
+
+def test_write_slot_new_slot_preserves_other_extras(tmp_path: Path) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "Slot.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>x</p>",
+            markdown="x",
+            meta={"id": "doc-1"},
+            extras={"databases": {"d1": {"rows": [{"a": 1}]}}, "callouts": {"c1": "info"}},
+        ),
+    )
+
+    state.write_slot(path, "pdf_blocks", {"b1": {"page": 1}})
+
+    sidecar = json.loads(sidecar_path_for(path).read_text(encoding="utf-8"))
+    assert sidecar["extras"]["databases"] == {"d1": {"rows": [{"a": 1}]}}
+    assert sidecar["extras"]["callouts"] == {"c1": "info"}
+    assert sidecar["extras"]["pdf_blocks"] == {"b1": {"page": 1}}
+
+
+def test_write_slot_overwrite_preserves_other_extras(tmp_path: Path) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "Overwrite.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>x</p>",
+            markdown="x",
+            meta={"id": "doc-1"},
+            extras={"databases": {"d1": {"rows": []}}, "pdf_blocks": {"b1": {"page": 1}}},
+        ),
+    )
+
+    state.write_slot(path, "pdf_blocks", {"b1": {"page": 2}, "b2": {"page": 5}})
+
+    sidecar = json.loads(sidecar_path_for(path).read_text(encoding="utf-8"))
+    assert sidecar["extras"]["databases"] == {"d1": {"rows": []}}
+    assert sidecar["extras"]["pdf_blocks"] == {"b1": {"page": 2}, "b2": {"page": 5}}
+
+
+def test_two_write_slot_calls_retain_both_slots(tmp_path: Path) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "Both.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>x</p>",
+            markdown="x",
+            meta={"id": "doc-1"},
+            extras={},
+        ),
+    )
+
+    state.write_slot(path, "pdf_blocks", {"b1": 1})
+    state.write_slot(path, "excel_blocks", {"e1": 2})
+
+    sidecar = json.loads(sidecar_path_for(path).read_text(encoding="utf-8"))
+    assert sidecar["extras"] == {"pdf_blocks": {"b1": 1}, "excel_blocks": {"e1": 2}}
+
+
+def test_write_slot_then_read_returns_used_sidecar_with_merged_extras(tmp_path: Path) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "Merge.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>x</p>",
+            markdown="x",
+            meta={"id": "doc-1"},
+            extras={"databases": {"d1": {}}},
+        ),
+    )
+
+    state.write_slot(path, "pdf_blocks", {"b1": {"page": 7}})
+
+    outcome = state.read(path)
+
+    assert isinstance(outcome, UsedSidecar)
+    assert outcome.extras == {
+        "databases": {"d1": {}},
+        "pdf_blocks": {"b1": {"page": 7}},
+    }
+
+
+def test_write_slot_no_existing_sidecar_creates_minimal_sidecar(tmp_path: Path) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "Fresh.md"
+    _write_md(path, "# Body\n\ncontent\n", meta_lines=["id: ext-1"])
+
+    state.write_slot(path, "pdf_blocks", {"b1": {"page": 1}})
+
+    outcome = state.read(path)
+
+    assert isinstance(outcome, UsedSidecar)
+    assert outcome.extras == {"pdf_blocks": {"b1": {"page": 1}}}
+
+
+def test_write_slot_preserves_top_level_fields(tmp_path: Path) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "TopLevel.md"
+    state.write_full(
+        path,
+        DocumentSnapshot(
+            html="<p>preserved</p>",
+            markdown="preserved",
+            meta={"id": "doc-1"},
+            extras={"alpha": 1},
+        ),
+    )
+
+    sidecar_before = json.loads(sidecar_path_for(path).read_text(encoding="utf-8"))
+
+    state.write_slot(path, "beta", {"b": 2})
+
+    sidecar_after = json.loads(sidecar_path_for(path).read_text(encoding="utf-8"))
+    assert sidecar_after["html"] == sidecar_before["html"]
+    assert sidecar_after["version"] == sidecar_before["version"]
+    assert sidecar_after["id"] == sidecar_before["id"]
+    assert sidecar_after["markdown_hash"] == sidecar_before["markdown_hash"]
+    assert isinstance(sidecar_after["updated_at"], str)
