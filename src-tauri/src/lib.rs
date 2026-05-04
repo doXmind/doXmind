@@ -31,6 +31,7 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 mod dock_menu;
 #[cfg(target_os = "macos")]
 mod menu_bar;
+mod pdf_export;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
@@ -1978,6 +1979,23 @@ fn current_window_open_target(
         .and_then(|map| map.get(window.label()).cloned())
 }
 
+/// Save the active editor window as a PDF using the native print pipeline.
+/// On macOS this runs `NSPrintOperation` with `NSPrintSaveJob` disposition
+/// and `showsPrintPanel = NO`, so the file is written without any system
+/// dialog. NSPrintOperation honors `@media print`, so the same stylesheet
+/// that drives Cmd+P also drives this command.
+///
+/// Returns `Err("unsupported")` on platforms where the native pathway
+/// isn't wired up — the frontend treats that as a signal to fall back to
+/// `window.print()`.
+#[tauri::command]
+async fn save_window_pdf(
+    window: WebviewWindow,
+    target_path: String,
+) -> Result<(), String> {
+    pdf_export::save_window_pdf(window, target_path)
+}
+
 /// Holds the per-process WebView init script. We need it on hand whenever a
 /// new window is built, since it injects `__TAURI_BACKEND_URL__` and the
 /// platform class — without it, the new window's React tree can't reach the
@@ -2083,7 +2101,8 @@ window.__TAURI_PLATFORM__ = "{platform}";
             register_window_target,
             unregister_window_target,
             dock_set_recents,
-            current_window_open_target
+            current_window_open_target,
+            save_window_pdf
         ])
         .setup(move |app| {
             // Spawn the backend.

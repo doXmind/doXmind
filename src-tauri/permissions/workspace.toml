@@ -33,4 +33,5 @@ commands.allow = [
   "register_window_target",
   "unregister_window_target",
   "dock_set_recents",
+  "save_window_pdf",
 ]

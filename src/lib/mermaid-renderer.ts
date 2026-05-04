@@ -526,3 +526,46 @@ export function renderMermaidSvg(code: string): Promise<string> {
     });
   });
 }
+
+/**
+ * Render Mermaid with the light-mode theme regardless of editor state.
+ * Used by the PDF export pipeline so mermaid charts always print with
+ * light-friendly colors. Mermaid bakes theme colors as concrete fill/stroke
+ * attributes into the SVG, so CSS variable overrides via @media print
+ * cannot retroactively change an SVG that was rendered in dark mode.
+ *
+ * Forces a one-shot reinitialization with `lightThemeVars`. The next call
+ * to `renderMermaidSvg` (the regular path) will detect the theme mismatch
+ * and re-initialize back to whichever theme the document is in.
+ */
+export function renderMermaidSvgLight(code: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    renderQueue = renderQueue.then(async () => {
+      try {
+        if (!mermaidInstance) {
+          const { default: mermaid } = await import("mermaid");
+          mermaidInstance = mermaid;
+        }
+        mermaidInstance.initialize({
+          startOnLoad: false,
+          theme: "base",
+          themeVariables: lightThemeVars,
+          securityLevel: "loose",
+          suppressErrorRendering: true,
+        });
+        // Invalidate the cached theme so the next normal render path
+        // picks the document theme up via ensureInitialized().
+        lastTheme = "__pdf-export-light__";
+        const id = `mermaid-pdf-${Date.now()}-${renderCounter++}`;
+        const { svg } = await mermaidInstance.render(id, code);
+        const tempEl = document.getElementById(id);
+        if (tempEl && !tempEl.closest(".mermaid-rendered")) {
+          tempEl.remove();
+        }
+        resolve(svg);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}

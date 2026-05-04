@@ -31,6 +31,7 @@ import {
   withOriginalExtension,
 } from "@/lib/document-types";
 import { revealFileInFinder } from "@/lib/storage/reveal";
+import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
 
 const log = storeLogger.child("FileItem");
 const getNameWithoutExtension = getDisplayName;
@@ -292,6 +293,41 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
 
   const handleExport = (format: "markdown" | "pdf" | "docx") => {
     const formatLabel = format === "markdown" ? "Markdown" : format.toUpperCase();
+
+    // PDF: route through the print pipeline. The orchestrator handles
+    // navigating to this file (if it isn't already active), waiting for
+    // the editor to mount + render, mermaid light re-render, and
+    // restoring the user's previous navigation when done.
+    if (format === "pdf") {
+      const loadingId = toast.loading(t("exportingAs", { format: formatLabel }));
+      void (async () => {
+        try {
+          const result = await exportMarkdownAsPdf({
+            fileId: file.id,
+            fileName: file.name,
+          });
+          toast.dismiss(loadingId);
+          if (result.ok) {
+            // The browser-print fallback already shows the system save
+            // dialog as its own confirmation; only toast for the native
+            // path where there is no other UI signal.
+            if (result.via === "native") {
+              toast.success(t("exportedAs", { format: formatLabel }));
+            }
+            return;
+          }
+          // Silent on user cancel; surface real errors.
+          if (result.error && result.error !== "cancelled") {
+            toast.error(t("failedToExport", { format: formatLabel }));
+          }
+        } catch (err) {
+          toast.dismiss(loadingId);
+          log.error("Failed to export PDF", err);
+          toast.error(t("failedToExport", { format: formatLabel }));
+        }
+      })();
+      return;
+    }
 
     if (format !== "markdown") {
       toast.error(t("diskExportOnlyMarkdown"));

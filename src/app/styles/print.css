@@ -1,0 +1,889 @@
+/* =============================================================
+   doXmind print stylesheet (Markdown → PDF export)
+
+   Design notes:
+   - The exporter triggers `window.print()`. Browser/Tauri WebView
+     uses Chromium to render the page under @media print, then the
+     user picks "Save as PDF" (or our native command writes the PDF
+     directly via WebKit/WebView2).
+   - PDF must always be light mode regardless of editor theme. We
+     re-declare every relevant CSS custom property under @media print
+     with !important, which overrides:
+       1. The .dark class cascade in globals.css.
+       2. Inline styles set by themeBootstrapScript via
+          document.documentElement.style.setProperty(...) — those are
+          inline styles WITHOUT !important, so a stylesheet rule
+          with !important wins.
+   - We also support an `html[data-pdf-export="light"]` selector
+     for previewing the print output in DevTools without actually
+     printing. The orchestrator sets this attribute right before
+     calling window.print() and removes it on `afterprint`.
+   - Per-block rules cover every custom TipTap block (callout, code,
+     mermaid, math, database, web bookmark, page link, toggle,
+     columns, TOC, resizable image). Without these, blocks fall
+     through to default browser rendering and break in subtle ways.
+   ============================================================= */
+
+@media print {
+  /* ---------- Page setup ---------- */
+  @page {
+    size: A4;
+    margin: 18mm 16mm 22mm 16mm;
+  }
+
+  /* ---------- Light-mode forcing (override .dark + inline themes) ---------- */
+  html,
+  html.dark,
+  html.high-contrast,
+  html.dark.high-contrast,
+  html[data-theme] {
+    color-scheme: light !important;
+
+    /* Core surfaces */
+    --background: 0 0% 100% !important;
+    --foreground: 45 8% 20% !important;
+    --card: 0 0% 100% !important;
+    --card-foreground: 45 8% 20% !important;
+    --popover: 0 0% 100% !important;
+    --popover-foreground: 45 8% 20% !important;
+    --primary: 45 8% 20% !important;
+    --primary-foreground: 0 0% 100% !important;
+    --secondary: 40 10% 95% !important;
+    --secondary-foreground: 45 8% 20% !important;
+    --muted: 40 10% 95% !important;
+    --muted-foreground: 40 3% 46% !important;
+    --accent: 40 10% 95% !important;
+    --accent-foreground: 45 8% 20% !important;
+    --destructive: 0 84.2% 60.2% !important;
+    --destructive-foreground: 0 0% 98% !important;
+    --border: 60 4% 91% !important;
+    --border-subtle: 60 4% 94% !important;
+    --input: 60 4% 91% !important;
+    --ring: 45 8% 20% !important;
+
+    /* Sidebar tokens (chrome is hidden but a few rules fall back to these) */
+    --sidebar: 240 6% 96% !important;
+    --sidebar-translucent-bg: rgba(245, 245, 246, 1) !important;
+    --sidebar-text: #374151 !important;
+    --sidebar-title: #4b5563 !important;
+    --sidebar-muted: #9ca3af !important;
+    --sidebar-icon: #7e8590 !important;
+    --sidebar-hover: transparent !important;
+    --sidebar-active: #ffffff !important;
+
+    /* Window chrome */
+    --chrome-material-bg: rgba(250, 250, 251, 1) !important;
+    --chrome-pill-bg: rgba(255, 255, 255, 1) !important;
+    --chrome-border: rgba(26, 28, 31, 0.1) !important;
+    --content-surface-bg: #ffffff !important;
+
+    /* Status / callout palette */
+    --status-success-bg: rgba(34, 197, 94, 0.1) !important;
+    --status-success-border: rgba(34, 197, 94, 0.3) !important;
+    --status-error-bg: rgba(239, 68, 68, 0.1) !important;
+    --status-error-border: rgba(239, 68, 68, 0.3) !important;
+    --status-info-bg: rgba(59, 130, 246, 0.1) !important;
+    --status-info-border: rgba(59, 130, 246, 0.3) !important;
+    --status-warning-bg: rgba(251, 191, 36, 0.1) !important;
+    --status-warning-border: rgba(251, 191, 36, 0.3) !important;
+
+    /* Typography — lock to print-friendly sizes regardless of user prefs */
+    --ui-font-size-base: 11pt !important;
+    --ui-code-font-size-base: 9.5pt !important;
+  }
+
+  /* Reset html.dark cascade — anything that selects `.dark` directly
+     must be neutralized so dark-only rules in editor.css don't fire. */
+  html.dark {
+    color-scheme: light !important;
+  }
+
+  /* ---------- Hide all non-content chrome ---------- */
+  .desktop-chrome-header,
+  header,
+  aside,
+  nav,
+  .files-sidebar,
+  .sidebar-shell,
+  .desktop-chrome-left-controls,
+  .bubble-menu,
+  [role="toolbar"],
+  [data-resize-handle],
+  [data-drag-handle],
+  .block-handle,
+  .ProseMirror-gapcursor,
+  .ProseMirror-yjs-cursor,
+  .ProseMirror-selectednode::before,
+  .status-bar,
+  .editor-status-bar,
+  .editor-search-bar,
+  .editor-find-bar,
+  .floating-menu,
+  .tippy-box,
+  [data-radix-popper-content-wrapper],
+  [data-sonner-toaster],
+  .toolbar,
+  .editor-toolbar,
+  .editor-bubble-menu,
+  .link-bubble-menu,
+  .editor-context-menu,
+  .skip-to-content,
+  button[aria-label="Close"],
+  .doxmind-callout-icon-button,
+  .code-block-header button,
+  .code-block-copy-button,
+  .image-resize-handle,
+  .image-upload-placeholder,
+  .table-handles,
+  .database-toolbar,
+  .database-view-tabs-container,
+  .database-add-row,
+  .database-add-column,
+  .filter-sort-panel,
+  .toggle-chevron,
+  .notion-toggle-empty,
+  .toc-empty,
+  .web-bookmark-actions {
+    display: none !important;
+  }
+
+  /* ---------- Body / wrapper resets ---------- */
+  html,
+  body {
+    background: #ffffff !important;
+    color: #1f1f1f !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Tauri vibrancy backdrop -> transparent in editor surface; force solid */
+  html.is-tauri body,
+  html.is-tauri-macos body {
+    background: #ffffff !important;
+  }
+
+  main,
+  .editor-wrapper,
+  .editor-frame,
+  .editor-scroll-area,
+  [data-editor-scroll],
+  .editor-scroll-area > *,
+  .editor-page-frame {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  /* Radix ScrollArea injects a viewport with overflow:scroll — kill it
+     so the entire document flows through the print renderer instead of
+     getting clipped to the on-screen viewport. */
+  [data-radix-scroll-area-viewport],
+  [data-radix-scroll-area-content] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    transform: none !important;
+  }
+  [data-radix-scroll-area-scrollbar] {
+    display: none !important;
+  }
+
+  /* ---------- ProseMirror surface ---------- */
+  .ProseMirror {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 11pt !important;
+    line-height: 1.6 !important;
+    color: #1f1f1f !important;
+    background: #ffffff !important;
+    caret-color: transparent !important;
+  }
+
+  .ProseMirror,
+  .ProseMirror * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide any focus rings / selection halos */
+  .ProseMirror :focus,
+  .ProseMirror :focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  ::selection {
+    background: transparent !important;
+  }
+
+  /* ---------- Document title ---------- */
+  .document-title,
+  [data-document-title],
+  h1.editor-title {
+    font-size: 24pt !important;
+    line-height: 1.2 !important;
+    margin: 0 0 16pt 0 !important;
+    color: #1f1f1f !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  /* ---------- Headings ---------- */
+  .ProseMirror h1 {
+    font-size: 20pt !important;
+    line-height: 1.25 !important;
+    margin-top: 18pt !important;
+    margin-bottom: 8pt !important;
+    page-break-after: avoid;
+    break-after: avoid;
+    color: #1f1f1f !important;
+  }
+  .ProseMirror h2 {
+    font-size: 16pt !important;
+    line-height: 1.3 !important;
+    margin-top: 14pt !important;
+    margin-bottom: 6pt !important;
+    page-break-after: avoid;
+    break-after: avoid;
+    color: #1f1f1f !important;
+  }
+  .ProseMirror h3 {
+    font-size: 13pt !important;
+    line-height: 1.35 !important;
+    margin-top: 10pt !important;
+    margin-bottom: 4pt !important;
+    page-break-after: avoid;
+    break-after: avoid;
+    color: #1f1f1f !important;
+  }
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6 {
+    font-size: 11pt !important;
+    margin-top: 8pt !important;
+    margin-bottom: 2pt !important;
+    page-break-after: avoid;
+    break-after: avoid;
+    color: #1f1f1f !important;
+  }
+
+  /* ---------- Paragraphs / text ---------- */
+  .ProseMirror p {
+    margin: 0 0 8pt 0 !important;
+    orphans: 3;
+    widows: 3;
+    color: #1f1f1f !important;
+  }
+
+  .ProseMirror strong {
+    color: inherit !important;
+    font-weight: 600 !important;
+  }
+  .ProseMirror em {
+    color: inherit !important;
+  }
+
+  /* ---------- Lists ---------- */
+  .ProseMirror ul,
+  .ProseMirror ol {
+    padding-left: 22pt !important;
+    margin: 0 0 8pt 0 !important;
+  }
+  .ProseMirror li {
+    margin: 0 0 2pt 0 !important;
+    color: #1f1f1f !important;
+  }
+  .ProseMirror li > p {
+    margin: 0 !important;
+  }
+  /* Task lists */
+  .ProseMirror ul[data-type="taskList"] {
+    list-style: none !important;
+    padding-left: 4pt !important;
+  }
+  .ProseMirror ul[data-type="taskList"] li {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 6pt !important;
+  }
+  .ProseMirror ul[data-type="taskList"] li > label {
+    margin-top: 2pt !important;
+  }
+  .ProseMirror ul[data-type="taskList"] li[data-checked="true"] {
+    color: #6b6b6b !important;
+  }
+  .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+    text-decoration: line-through !important;
+  }
+  .ProseMirror ul[data-type="taskList"] input[type="checkbox"] {
+    width: 11pt !important;
+    height: 11pt !important;
+    accent-color: #1f1f1f !important;
+  }
+
+  /* ---------- Blockquote ---------- */
+  .ProseMirror blockquote {
+    border-left: 3px solid #c8c8c4 !important;
+    padding: 0 0 0 12pt !important;
+    margin: 8pt 0 !important;
+    color: #444 !important;
+    font-style: italic !important;
+    page-break-inside: avoid;
+  }
+
+  /* ---------- Inline code ---------- */
+  .ProseMirror code,
+  .ProseMirror p code,
+  .ProseMirror li code {
+    background: #f4f4f2 !important;
+    color: #c7254e !important;
+    border: 1px solid #ececec !important;
+    border-radius: 3px !important;
+    padding: 0.5pt 4pt !important;
+    font-size: 0.9em !important;
+    font-family: "SFMono-Regular", Menlo, Consolas, monospace !important;
+  }
+
+  /* ---------- Code block (lowlight) ---------- */
+  .ProseMirror .code-block-wrapper,
+  .ProseMirror pre {
+    margin: 8pt 0 !important;
+    page-break-inside: auto;
+    background: #fafafa !important;
+    border: 1px solid #e6e6e3 !important;
+    border-radius: 6px !important;
+    overflow: visible !important;
+  }
+  .ProseMirror .code-block-container {
+    background: #fafafa !important;
+    border: 1px solid #e6e6e3 !important;
+    border-radius: 6px !important;
+    overflow: visible !important;
+  }
+  .ProseMirror .code-block-header {
+    background: #f1f1ee !important;
+    border-bottom: 1px solid #e6e6e3 !important;
+    color: #555 !important;
+    padding: 3pt 8pt !important;
+    font-size: 8pt !important;
+  }
+  /* Hide all interactive elements in the code header but keep language label */
+  .ProseMirror .code-block-header button,
+  .ProseMirror .code-block-header [role="button"],
+  .ProseMirror .code-block-header [contenteditable] {
+    display: none !important;
+  }
+  .ProseMirror .code-block-body {
+    overflow: visible !important;
+    background: #fafafa !important;
+  }
+  .ProseMirror .code-block-content,
+  .ProseMirror pre code {
+    font-family: "SFMono-Regular", Menlo, Consolas, monospace !important;
+    font-size: 9pt !important;
+    line-height: 1.5 !important;
+    color: #1f1f1f !important;
+    background: transparent !important;
+    padding: 8pt 10pt !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow: visible !important;
+    border: 0 !important;
+  }
+  /* Line numbers — keep them visible but light */
+  .ProseMirror .line-number,
+  .ProseMirror .code-line-numbers {
+    color: #b3b3b3 !important;
+    background: transparent !important;
+    border-right: 1px solid #ececec !important;
+    user-select: none;
+  }
+  /* Lowlight (highlight.js) token colors — light theme.
+     We re-declare the full set so syntax colors survive regardless of
+     which hljs theme stylesheet was loaded. */
+  .ProseMirror .hljs,
+  .ProseMirror pre code.hljs,
+  .ProseMirror .code-block-content .hljs {
+    color: #383a42 !important;
+    background: transparent !important;
+  }
+  .ProseMirror .hljs-comment,
+  .ProseMirror .hljs-quote {
+    color: #a0a1a7 !important;
+    font-style: italic !important;
+  }
+  .ProseMirror .hljs-keyword,
+  .ProseMirror .hljs-selector-tag,
+  .ProseMirror .hljs-meta-keyword,
+  .ProseMirror .hljs-doctag,
+  .ProseMirror .hljs-tag {
+    color: #a626a4 !important;
+  }
+  .ProseMirror .hljs-string,
+  .ProseMirror .hljs-attr,
+  .ProseMirror .hljs-template-tag,
+  .ProseMirror .hljs-template-variable {
+    color: #50a14f !important;
+  }
+  .ProseMirror .hljs-number,
+  .ProseMirror .hljs-literal,
+  .ProseMirror .hljs-symbol,
+  .ProseMirror .hljs-bullet {
+    color: #986801 !important;
+  }
+  .ProseMirror .hljs-built_in,
+  .ProseMirror .hljs-builtin-name,
+  .ProseMirror .hljs-type,
+  .ProseMirror .hljs-class .hljs-title {
+    color: #c18401 !important;
+  }
+  .ProseMirror .hljs-function,
+  .ProseMirror .hljs-title,
+  .ProseMirror .hljs-section {
+    color: #4078f2 !important;
+  }
+  .ProseMirror .hljs-variable,
+  .ProseMirror .hljs-name,
+  .ProseMirror .hljs-attribute,
+  .ProseMirror .hljs-regexp {
+    color: #e45649 !important;
+  }
+  .ProseMirror .hljs-emphasis {
+    font-style: italic !important;
+  }
+  .ProseMirror .hljs-strong {
+    font-weight: 600 !important;
+  }
+
+  /* ---------- Math (KaTeX) ---------- */
+  .ProseMirror [data-type="block-math"],
+  .ProseMirror .block-math,
+  .ProseMirror .block-math-wrapper {
+    display: block !important;
+    text-align: center !important;
+    margin: 10pt 0 !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    overflow: visible !important;
+  }
+  .ProseMirror [data-type="inline-math"],
+  .ProseMirror .inline-math,
+  .ProseMirror .inline-math-wrapper {
+    display: inline !important;
+  }
+  .ProseMirror .katex,
+  .ProseMirror .katex-display,
+  .ProseMirror .katex * {
+    color: #1f1f1f !important;
+  }
+  .ProseMirror .katex-display {
+    margin: 6pt 0 !important;
+    overflow: visible !important;
+  }
+  /* Hide the math node empty placeholder + edit-affordance */
+  .ProseMirror .math-empty-placeholder,
+  .ProseMirror .math-edit-button {
+    display: none !important;
+  }
+
+  /* ---------- Mermaid ---------- */
+  .ProseMirror .mermaid-chart-wrapper,
+  .ProseMirror [data-type="mermaid-chart"] {
+    display: block !important;
+    margin: 10pt auto !important;
+    text-align: center !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    background: transparent !important;
+    border: 0 !important;
+  }
+  .ProseMirror .mermaid-chart-wrapper svg,
+  .ProseMirror [data-type="mermaid-chart"] svg {
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    width: auto !important;
+    margin: 0 auto !important;
+    display: block !important;
+  }
+  .ProseMirror .mermaid-empty-placeholder {
+    display: none !important;
+  }
+
+  /* ---------- Callouts ---------- */
+  .ProseMirror .doxmind-callout-wrapper {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin: 6pt 0 !important;
+  }
+  .ProseMirror .doxmind-callout-card {
+    background: rgb(241, 241, 239) !important;
+    color: #1f1f1f !important;
+    border-radius: 8px !important;
+    padding: 8pt 12pt !important;
+    display: grid !important;
+    grid-template-columns: 22pt minmax(0, 1fr) !important;
+    gap: 8pt !important;
+    border: 1px solid #e6e6e3 !important;
+    box-shadow: none !important;
+  }
+  .ProseMirror .doxmind-callout-icon-slot {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding-top: 1pt !important;
+  }
+  /* Replace the interactive emoji button with a plain emoji span.
+     The button itself is hidden above; we promote the inner <span> to
+     show the emoji glyph directly. */
+  .ProseMirror .doxmind-callout-icon-button {
+    display: flex !important;
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    width: auto !important;
+    height: auto !important;
+  }
+  .ProseMirror .doxmind-callout-icon-button > span {
+    display: inline-block !important;
+    font-size: 14pt !important;
+    line-height: 1 !important;
+  }
+  .ProseMirror .doxmind-callout-content {
+    color: #1f1f1f !important;
+  }
+  .ProseMirror .doxmind-callout-content > * {
+    color: #1f1f1f !important;
+  }
+  /* Type-specific accent left-border (light variants only) */
+  .ProseMirror [data-callout-type="info"] .doxmind-callout-card {
+    border-left: 3px solid rgba(59, 130, 246, 0.6) !important;
+  }
+  .ProseMirror [data-callout-type="warning"] .doxmind-callout-card {
+    border-left: 3px solid rgba(251, 191, 36, 0.7) !important;
+  }
+  .ProseMirror [data-callout-type="error"] .doxmind-callout-card {
+    border-left: 3px solid rgba(239, 68, 68, 0.6) !important;
+  }
+  .ProseMirror [data-callout-type="tip"] .doxmind-callout-card {
+    border-left: 3px solid rgba(34, 197, 94, 0.6) !important;
+  }
+
+  /* ---------- Toggle (always expanded, no chevron) ---------- */
+  .ProseMirror .notion-toggle,
+  .ProseMirror .notion-toggle-wrapper {
+    margin: 4pt 0 !important;
+  }
+  .ProseMirror .notion-toggle .toggle-chevron,
+  .ProseMirror .notion-toggle button[aria-label] {
+    display: none !important;
+  }
+  .ProseMirror .notion-toggle [data-toggle-summary] {
+    font-weight: 600 !important;
+    color: #1f1f1f !important;
+    margin-left: -16pt !important;
+  }
+  .ProseMirror .notion-toggle.is-closed [data-toggle-body],
+  .ProseMirror .notion-toggle [data-toggle-body] {
+    display: block !important;
+    margin-left: 6pt !important;
+    padding-left: 6pt !important;
+    border-left: 1px solid #ececec !important;
+  }
+
+  /* ---------- Columns ---------- */
+  .ProseMirror .columns-wrapper {
+    display: flex !important;
+    gap: 12pt !important;
+    margin: 8pt 0 !important;
+    page-break-inside: auto;
+  }
+  .ProseMirror .columns-wrapper [data-column],
+  .ProseMirror .columns-wrapper .column {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+  }
+
+  /* ---------- Tables ---------- */
+  .ProseMirror table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 8pt 0 !important;
+    page-break-inside: auto;
+    table-layout: fixed !important;
+    font-size: 10pt !important;
+  }
+  .ProseMirror table td,
+  .ProseMirror table th {
+    border: 1px solid #d8d8d6 !important;
+    padding: 4pt 6pt !important;
+    vertical-align: top !important;
+    color: #1f1f1f !important;
+    background: transparent !important;
+    word-wrap: break-word !important;
+  }
+  .ProseMirror table th {
+    background: #f4f4f2 !important;
+    font-weight: 600 !important;
+    text-align: left !important;
+  }
+  .ProseMirror table tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* ---------- Database (atom node) ---------- */
+  .ProseMirror [data-type="database-block"] {
+    margin: 10pt 0 !important;
+    background: #ffffff !important;
+    border: 1px solid #e6e6e3 !important;
+    border-radius: 6px !important;
+    padding: 6pt !important;
+    page-break-inside: auto;
+    overflow: visible !important;
+  }
+  /* Keep title; drop the chrome */
+  .ProseMirror [data-type="database-block"] .database-title-input {
+    border: 0 !important;
+    background: transparent !important;
+    font-size: 13pt !important;
+    font-weight: 600 !important;
+    padding: 2pt 0 6pt 0 !important;
+    color: #1f1f1f !important;
+  }
+  /* Render the active view as a static table */
+  .ProseMirror [data-type="database-block"] .database-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 9.5pt !important;
+  }
+  .ProseMirror [data-type="database-block"] .database-table th,
+  .ProseMirror [data-type="database-block"] .database-table td {
+    border: 1px solid #e6e6e3 !important;
+    padding: 4pt 6pt !important;
+    text-align: left !important;
+    color: #1f1f1f !important;
+    background: transparent !important;
+  }
+  .ProseMirror [data-type="database-block"] .database-table th {
+    background: #f4f4f2 !important;
+    font-weight: 600 !important;
+  }
+  /* Board view → flow as a sequence of column lists, no flex container */
+  .ProseMirror [data-type="database-block"] .database-board {
+    display: block !important;
+  }
+  .ProseMirror [data-type="database-block"] .board-column {
+    display: block !important;
+    margin-bottom: 8pt !important;
+    page-break-inside: avoid;
+  }
+  .ProseMirror [data-type="database-block"] .board-card {
+    border: 1px solid #e6e6e3 !important;
+    border-radius: 4px !important;
+    padding: 6pt 8pt !important;
+    margin-bottom: 4pt !important;
+    background: #fafafa !important;
+  }
+
+  /* ---------- Web Bookmark ---------- */
+  .ProseMirror [data-type="web-bookmark"],
+  .ProseMirror .web-bookmark-card {
+    display: block !important;
+    border: 1px solid #e6e6e3 !important;
+    border-radius: 6px !important;
+    background: #fafafa !important;
+    color: #1f1f1f !important;
+    padding: 8pt 10pt !important;
+    margin: 8pt 0 !important;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    text-decoration: none !important;
+  }
+  .ProseMirror [data-type="web-bookmark"] .web-bookmark-image,
+  .ProseMirror .web-bookmark-image {
+    max-height: 120pt !important;
+    max-width: 100% !important;
+    border-radius: 4px !important;
+    margin-bottom: 6pt !important;
+    object-fit: cover;
+  }
+  .ProseMirror .web-bookmark-title {
+    font-size: 11pt !important;
+    font-weight: 600 !important;
+    color: #1f1f1f !important;
+    text-decoration: none !important;
+  }
+  .ProseMirror .web-bookmark-description {
+    font-size: 9pt !important;
+    color: #555 !important;
+    margin-top: 2pt !important;
+  }
+  .ProseMirror .web-bookmark-url {
+    font-size: 8.5pt !important;
+    color: #777 !important;
+    margin-top: 4pt !important;
+    word-break: break-all !important;
+  }
+
+  /* ---------- Page Link ----------
+     Internal page-id links are meaningless in a portable PDF, so we
+     render them as a soft pill (icon + title) without the URL suffix. */
+  .ProseMirror [data-type="page-link"],
+  .ProseMirror .page-link-anchor,
+  .ProseMirror .page-link-card {
+    display: inline-flex !important;
+    align-items: baseline !important;
+    gap: 4pt !important;
+    background: #f4f4f2 !important;
+    border-radius: 4px !important;
+    padding: 0.5pt 6pt !important;
+    color: #1f1f1f !important;
+    text-decoration: none !important;
+    border: 1px solid #ececec !important;
+  }
+  .ProseMirror [data-type="page-link"] .page-link-title,
+  .ProseMirror .page-link-title {
+    color: #1f1f1f !important;
+    text-decoration: none !important;
+  }
+  /* Don't append the internal URL after page links (override the
+     general `a[href]::after` rule below). */
+  .ProseMirror [data-type="page-link"]::after,
+  .ProseMirror .page-link-anchor::after,
+  .ProseMirror .page-link-card::after {
+    content: "" !important;
+    display: none !important;
+  }
+
+  /* ---------- TOC ---------- */
+  .ProseMirror [data-type="table-of-contents"],
+  .ProseMirror .toc-nav {
+    display: block !important;
+    margin: 8pt 0 !important;
+    padding: 8pt 12pt !important;
+    border: 1px solid #ececec !important;
+    border-radius: 4px !important;
+    background: #fafafa !important;
+    page-break-inside: avoid;
+  }
+  .ProseMirror .toc-nav ul {
+    list-style: none !important;
+    padding-left: 0 !important;
+    margin: 0 !important;
+  }
+  .ProseMirror .toc-link {
+    display: block !important;
+    color: #1f1f1f !important;
+    text-decoration: none !important;
+    padding: 1pt 0 !important;
+  }
+  .ProseMirror .toc-link[data-level="2"] {
+    padding-left: 12pt !important;
+  }
+  .ProseMirror .toc-link[data-level="3"] {
+    padding-left: 24pt !important;
+  }
+  .ProseMirror .toc-link[data-level="4"] {
+    padding-left: 36pt !important;
+  }
+  .ProseMirror .toc-link[data-level="5"] {
+    padding-left: 48pt !important;
+  }
+  .ProseMirror .toc-link[data-level="6"] {
+    padding-left: 60pt !important;
+  }
+
+  /* ---------- Images (resizable + plain) ---------- */
+  .ProseMirror .image-node-wrapper,
+  .ProseMirror .image-container,
+  .ProseMirror figure {
+    margin: 8pt 0 !important;
+    page-break-inside: avoid;
+    text-align: left;
+  }
+  .ProseMirror .image-container[data-align="center"],
+  .ProseMirror figure[data-align="center"] {
+    text-align: center !important;
+  }
+  .ProseMirror .image-container[data-align="right"],
+  .ProseMirror figure[data-align="right"] {
+    text-align: right !important;
+  }
+  .ProseMirror img {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    border-radius: 4px !important;
+  }
+
+  /* ---------- Links ----------
+     Show URLs after external links so readers of the printed PDF can
+     follow them. Page-link / web-bookmark already opted out above. */
+  .ProseMirror a[href] {
+    color: #2563eb !important;
+    text-decoration: underline !important;
+  }
+  .ProseMirror a[href^="http://"]::after,
+  .ProseMirror a[href^="https://"]::after,
+  .ProseMirror a[href^="mailto:"]::after {
+    content: " (" attr(href) ")";
+    font-size: 8.5pt;
+    color: #777;
+    word-break: break-all;
+  }
+
+  /* ---------- Horizontal rule ---------- */
+  .ProseMirror hr {
+    border: 0 !important;
+    border-top: 1px solid #d8d8d6 !important;
+    margin: 12pt 0 !important;
+  }
+
+  /* ---------- Trailing-node decoration ---------- */
+  .ProseMirror .is-empty::before,
+  .ProseMirror p.is-editor-empty::before {
+    content: "" !important;
+    display: none !important;
+  }
+
+  /* ---------- Page-break helpers (authoring escape hatch) ---------- */
+  .pdf-page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+    height: 0 !important;
+    border: 0 !important;
+  }
+}
+
+/* =============================================================
+   Print preview mode — same rules applied via attribute, so devs
+   can preview the print output in the live editor by setting:
+     document.documentElement.dataset.pdfExport = "light"
+   The exporter does NOT set this in the normal flow (it only sets
+   it transiently if needed for headless/native PDF capture).
+   ============================================================= */
+html[data-pdf-export="light"] {
+  color-scheme: light !important;
+}
+html[data-pdf-export="light"] header,
+html[data-pdf-export="light"] aside,
+html[data-pdf-export="light"] .desktop-chrome-header,
+html[data-pdf-export="light"] .files-sidebar,
+html[data-pdf-export="light"] .bubble-menu,
+html[data-pdf-export="light"] [role="toolbar"],
+html[data-pdf-export="light"] .block-handle,
+html[data-pdf-export="light"] .status-bar {
+  display: none !important;
+}

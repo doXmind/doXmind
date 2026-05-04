@@ -27,6 +27,7 @@ import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useIsTauri } from "@/hooks/use-is-tauri";
 import { getDisplayName, isExcelFile, isPdfFile } from "@/lib/document-types";
+import { exportMarkdownAsPdf } from "@/lib/markdown-pdf-export";
 
 export function UnifiedHeader() {
   const isFilesSidebarOpen = useLayoutStore((s) => s.isFilesSidebarOpen);
@@ -60,7 +61,7 @@ export function UnifiedHeader() {
   const { isTauri, platform } = useIsTauri();
   const isMacTauri = isTauri && platform === "macos";
 
-  const handleExport = (format: "markdown" | "pdf" | "docx" | "xlsx") => {
+  const handleExport = async (format: "markdown" | "pdf" | "docx" | "xlsx") => {
     const { currentFileId, files } = useFileStore.getState();
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
@@ -80,6 +81,26 @@ export function UnifiedHeader() {
     // /api/excel/export-edited.
     if (format === "xlsx" && isExcelFile(currentFile)) {
       window.dispatchEvent(new CustomEvent("doxmind:export-xlsx"));
+      return;
+    }
+
+    // Markdown → PDF: route through the print pipeline. Native (Tauri)
+    // path saves directly via NSPrintOperation; browser fallback uses
+    // window.print(). Both honor @media print, which forces light mode
+    // and applies per-block rules from print.css.
+    if (format === "pdf") {
+      const result = await exportMarkdownAsPdf({ fileName: currentFile.name });
+      if (result.ok) {
+        if (result.via === "native" && result.path) {
+          toast.success(t("exportedAs", { format: "PDF" }));
+        }
+        // Browser-print path: the OS dialog already shows confirmation;
+        // we don't toast there to avoid double feedback.
+        return;
+      }
+      if (result.error && result.error !== "cancelled") {
+        toast.error(result.error);
+      }
       return;
     }
 

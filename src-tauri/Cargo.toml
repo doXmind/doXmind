@@ -40,5 +40,12 @@ objc2-app-kit = { version = "0.3", features = [
     "NSResponder",
     "NSEvent",
     "NSWorkspace",
+    "NSPrintInfo",
+    "NSPrintOperation",
 ] }
-objc2-foundation = { version = "0.3", features = ["NSData", "NSString", "NSGeometry"] }
+objc2-foundation = { version = "0.3", features = [
+    "NSData",
+    "NSString",
+    "NSGeometry",
+    "NSURL",
+] }
