@@ -1,6 +1,14 @@
 """Tests for the local Markdown workspace HTTP fallback."""
 
 import json
+from pathlib import Path
+
+from services.sidecar_io import SIDECAR_VERSION, sidecar_path_for
+from services.synthetic_document import (
+    PDF_BLOCK_TYPE,
+    LegacySidecarError,
+    SyntheticDocumentFactory,
+)
 
 
 def invoke(sync_client, command: str, payload: dict | None = None):
@@ -10,6 +18,36 @@ def invoke(sync_client, command: str, payload: dict | None = None):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def error_response(sync_client, command: str, payload: dict | None = None):
+    return sync_client.post(
+        "/api/workspace/invoke",
+        json={"command": command, "payload": payload or {}},
+    )
+
+
+def _make_pdf(tmp_path: Path, name: str = "Application.pdf") -> Path:
+    path = tmp_path / name
+    path.write_bytes(b"%PDF-1.4\n% doxmind test pdf\n")
+    return path
+
+
+def _legacy_pdf_payload(pdf_path: Path) -> dict:
+    return {
+        "version": SIDECAR_VERSION,
+        "id": "legacy-pdf",
+        "source_path": pdf_path.name,
+        "updated_at": "2024-01-01T00:00:00Z",
+        "pdf_editor": {"version": 1, "edits": {"1:0": {"text": "x"}}},
+        "pdf_parsed_cache": {"sourceHash": "abc", "parsed": {"pages": []}},
+    }
+
+
+def _write_legacy_pdf_sidecar(pdf_path: Path) -> Path:
+    sidecar_path = sidecar_path_for(pdf_path)
+    sidecar_path.write_text(json.dumps(_legacy_pdf_payload(pdf_path)), encoding="utf-8")
+    return sidecar_path
 
 
 def test_workspace_create_read_and_scan(sync_client, tmp_path):
@@ -182,3 +220,116 @@ def test_workspace_pdf_scan_binary_and_editor_state(sync_client, tmp_path):
         {"root": root, "path": "Application.pdf"},
     )
     assert restored == state
+
+
+def test_workspace_maps_sidecar_migration_error_to_structured_422(sync_client, tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    sidecar_path = _write_legacy_pdf_sidecar(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+    bak_path.write_bytes(b"previous migration backup")
+
+    response = error_response(
+        sync_client,
+        "workspace_read_pdf_doc_state",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "sidecar_migration_failed",
+        "sidecar_path": str(sidecar_path),
+        "block_type": PDF_BLOCK_TYPE,
+        "reason": (
+            f"a previous migration backup is in place at {bak_path}; "
+            "investigate before retrying"
+        ),
+        "recovery": "rename <sidecar>.bak back to <sidecar> to restore the original",
+    }
+
+
+def test_workspace_maps_legacy_sidecar_error_to_structured_422(
+    sync_client, tmp_path, monkeypatch
+):
+    pdf_path = _make_pdf(tmp_path)
+    sidecar_path = _write_legacy_pdf_sidecar(pdf_path)
+
+    def raise_legacy_error(
+        self,
+        sidecar_path: Path,
+        *,
+        for_path: Path | None = None,
+        _locked: bool = False,
+    ) -> None:
+        raise LegacySidecarError(sidecar_path, PDF_BLOCK_TYPE, "legacy reader failed")
+
+    monkeypatch.setattr(
+        SyntheticDocumentFactory,
+        "migrate_legacy_sidecar",
+        raise_legacy_error,
+    )
+
+    response = error_response(
+        sync_client,
+        "workspace_read_pdf_doc_state",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "legacy_sidecar_unrecoverable",
+        "sidecar_path": str(sidecar_path),
+        "block_type": PDF_BLOCK_TYPE,
+        "reason": "legacy reader failed",
+    }
+
+
+def test_workspace_maps_read_only_document_error_to_structured_409(
+    sync_client, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DOXMIND_SIDECAR_MIGRATE", "0")
+    pdf_path = _make_pdf(tmp_path)
+    _write_legacy_pdf_sidecar(pdf_path)
+
+    response = error_response(
+        sync_client,
+        "workspace_write_pdf_editor_state",
+        {
+            "root": str(tmp_path),
+            "path": pdf_path.name,
+            "payload": {"version": 1, "edits": {"1:0": {"text": "blocked"}}},
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "document_read_only",
+        "path": str(pdf_path),
+        "recovery": (
+            "unset DOXMIND_SIDECAR_MIGRATE or set it to 1 to enable migration; "
+            "or restore from <sidecar>.bak"
+        ),
+    }
+
+
+def test_workspace_maps_corrupt_sidecar_error_to_structured_422(sync_client, tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    sidecar_path.write_bytes(b'{"version": 1')
+
+    response = error_response(
+        sync_client,
+        "workspace_read_pdf_doc_state",
+        {"root": str(tmp_path), "path": pdf_path.name},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "sidecar_corrupt"
+    assert detail["sidecar_path"] == str(sidecar_path)
+    assert detail["forensic_path"] is not None
+    assert Path(detail["forensic_path"]).exists()
+    assert detail["reason"]
+    assert (
+        detail["recovery"]
+        == "investigate the forensic copy; restore over the sidecar manually if appropriate"
+    )

@@ -28,7 +28,12 @@ from services.sidecar_io import (
     read_sidecar,
     sidecar_path_for,
 )
-from services.synthetic_document import SyntheticDocumentFactory
+from services.synthetic_document import (
+    LegacySidecarError,
+    ReadOnlyDocumentError,
+    SidecarMigrationError,
+    SyntheticDocumentFactory,
+)
 
 router = APIRouter()
 
@@ -68,6 +73,47 @@ async def invoke_workspace(request: WorkspaceInvokeRequest):
         return _invoke(request.command, request.payload)
     except HTTPException:
         raise
+    except SidecarMigrationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "sidecar_migration_failed",
+                "sidecar_path": str(exc.sidecar_path),
+                "block_type": exc.block_type,
+                "reason": exc.reason,
+                "recovery": "rename <sidecar>.bak back to <sidecar> to restore the original",
+            },
+        )
+    except LegacySidecarError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "legacy_sidecar_unrecoverable",
+                "sidecar_path": str(exc.sidecar_path),
+                "block_type": exc.block_type,
+                "reason": exc.reason,
+            },
+        )
+    except ReadOnlyDocumentError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "document_read_only",
+                "path": str(exc.path),
+                "recovery": "unset DOXMIND_SIDECAR_MIGRATE or set it to 1 to enable migration; or restore from <sidecar>.bak",
+            },
+        )
+    except CorruptSidecarError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "sidecar_corrupt",
+                "sidecar_path": str(exc.sidecar_path),
+                "forensic_path": str(exc.forensic_path) if exc.forensic_path else None,
+                "reason": exc.reason,
+                "recovery": "investigate the forensic copy; restore over the sidecar manually if appropriate",
+            },
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
