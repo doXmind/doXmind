@@ -16,9 +16,14 @@ const outDir = resolve(projectRoot, "src-tauri");
 const sourcePath = resolve(outDir, "app-icon.png");
 
 const SIZE = 1024;
-const PAD = 100;
+// Apple's icon-grid template reserves ~10% margin (PAD=100) for the system
+// shadow. That looks correct in the Dock/Finder but appears as a "halo" of
+// empty pixels in our DMG view, where the squircle sits on a flat HFS
+// background with no shadow rendering. PAD=40 keeps a small visual breathing
+// room while letting the squircle fill the icon slot.
+const PAD = 40;
 const INNER = SIZE - PAD * 2;
-const RADIUS = 185;
+const RADIUS = 215;
 
 function squirclePath(x, y, w, h, r) {
   const k = 0.5519;

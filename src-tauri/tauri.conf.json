@@ -35,6 +35,7 @@
       "signingIdentity": "Developer ID Application: wangzhang wu (46KF5Z549N)",
       "entitlements": null,
       "dmg": {
+        "background": "dmg/background.png",
         "appPosition": {
           "x": 180,
           "y": 170
