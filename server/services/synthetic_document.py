@@ -10,18 +10,19 @@ is never modified by `write_full`.
 `open_pdf` / `open_excel` route the disk side through the same wire
 format that `MarkdownDocumentState` produces, including version and
 markdown-hash checks. ExternalRefBlockRegistry (#4) will replace the
-hardcoded PDF/Excel block declarations here. Sidecar migration of the
-legacy `{pdf_editor, pdf_parsed_cache, excel_editor, excel_parsed_cache}`
-shape lands in slice 4 (#11); this slice raises `LegacySidecarError`,
-which becomes the migration trigger when slice 4 lands.
+hardcoded PDF/Excel block declarations here. Legacy sidecar shapes
+(`{pdf_editor, pdf_parsed_cache, excel_editor, excel_parsed_cache}`) are
+migrated in place on first open via `migrate_legacy_sidecar`; ADR-0003
+explains why migration runs as an explicit step rather than at save time.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -39,9 +40,21 @@ from services.sidecar_io import (
 PDF_BLOCK_TYPE = "pdf-block"
 EXCEL_BLOCK_TYPE = "excel-block"
 
+_MIGRATE_ENV_VAR = "DOXMIND_SIDECAR_MIGRATE"
+_MIGRATE_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
+
 _LEGACY_KEYS_BY_BLOCK_TYPE: dict[str, tuple[str, ...]] = {
     PDF_BLOCK_TYPE: ("pdf_editor", "pdf_parsed_cache"),
     EXCEL_BLOCK_TYPE: ("excel_editor", "excel_parsed_cache"),
+}
+
+_LEGACY_EDITOR_KEY = {
+    PDF_BLOCK_TYPE: "pdf_editor",
+    EXCEL_BLOCK_TYPE: "excel_editor",
+}
+_LEGACY_PARSED_CACHE_KEY = {
+    PDF_BLOCK_TYPE: "pdf_parsed_cache",
+    EXCEL_BLOCK_TYPE: "excel_parsed_cache",
 }
 
 _PLACEHOLDER_RE = re.compile(
@@ -50,20 +63,41 @@ _PLACEHOLDER_RE = re.compile(
 
 
 class LegacySidecarError(Exception):
-    """Raised when a legacy-shape PDF/Excel sidecar is encountered.
+    """Raised when a legacy sidecar cannot be migrated or read.
 
-    Slice 4 (#11) replaces this branch with the in-place sidecar
-    migration; until then, callers must surface the error so the user
-    is not silently mutated under.
+    Migration runs automatically on first open when
+    `DOXMIND_SIDECAR_MIGRATE` is unset or truthy; this error signals an
+    actual failure (rewrite step crashed after the `.bak` was written),
+    not the mere presence of legacy shape.
     """
 
-    def __init__(self, sidecar_path: Path, block_type: str) -> None:
-        super().__init__(
-            f"legacy {block_type} sidecar shape at {sidecar_path}; "
-            "migration is handled by slice 4"
-        )
+    def __init__(self, sidecar_path: Path, block_type: str, reason: str) -> None:
+        super().__init__(f"legacy {block_type} sidecar at {sidecar_path}: {reason}")
         self.sidecar_path = sidecar_path
         self.block_type = block_type
+        self.reason = reason
+
+
+class SidecarMigrationError(LegacySidecarError):
+    """Raised when migration fails after `.bak` has been written.
+
+    The original sidecar contents are recoverable from `<sidecar>.bak`.
+    """
+
+
+class ReadOnlyDocumentError(Exception):
+    """Raised when a write is attempted on a read-only synthetic Document.
+
+    Triggered when `DOXMIND_SIDECAR_MIGRATE=0` opens a legacy sidecar:
+    the Document is synthesized from legacy state in memory but the
+    on-disk sidecar must not be modified.
+    """
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(
+            f"document at {path} is read-only ({_MIGRATE_ENV_VAR}=0 against legacy sidecar)"
+        )
+        self.path = path
 
 
 @dataclass(frozen=True)
@@ -73,12 +107,17 @@ class Document:
     `path` is the second-class file (`.pdf` / `.xlsx`); the sidecar lives
     at `sidecar_path_for(path)`. `block_id` and `block_type` identify the
     single Custom Block whose state lives in `snapshot.extras["blocks"][block_id]`.
+
+    `read_only` is set when the document was synthesized from a legacy
+    sidecar with `DOXMIND_SIDECAR_MIGRATE=0`; subsequent writes raise
+    `ReadOnlyDocumentError`.
     """
 
     path: Path
     block_id: str
     block_type: str
     snapshot: DocumentSnapshot
+    read_only: bool = field(default=False)
 
 
 class SyntheticDocumentFactory:
@@ -95,6 +134,8 @@ class SyntheticDocumentFactory:
         `document.path` is never touched. Returns a new `Document` whose
         `snapshot` reflects what was just written.
         """
+        if document.read_only:
+            raise ReadOnlyDocumentError(document.path)
         meta = dict(snapshot.meta)
         if not str(meta.get("id") or "").strip():
             raise ValueError("document id is required")
@@ -102,6 +143,53 @@ class SyntheticDocumentFactory:
         new_snapshot = replace(snapshot, meta=meta)
         self._write_sidecar(document.path, new_snapshot)
         return replace(document, snapshot=new_snapshot)
+
+    def migrate_legacy_sidecar(self, sidecar_path: Path, *, for_path: Path | None = None) -> None:
+        """Rewrite a legacy PDF/Excel sidecar in-place to markdown shape.
+
+        Idempotent: a no-op if the sidecar is already markdown-shape.
+        Writes `<sidecar>.bak` with the original bytes before mutating
+        the sidecar. If the rewrite fails after `.bak` is written, raises
+        `SidecarMigrationError` and leaves both files in place so the
+        user can recover by renaming `.bak` back.
+        """
+        assert for_path is not None, (
+            "migrate_legacy_sidecar requires for_path from production callers"
+        )
+        try:
+            raw_bytes = sidecar_path.read_bytes()
+        except FileNotFoundError:
+            return
+        try:
+            sidecar = json.loads(raw_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if not isinstance(sidecar, dict):
+            return
+
+        block_type = _detect_legacy_block_type(sidecar)
+        if block_type is None:
+            return
+
+        bak_path = _bak_path(sidecar_path)
+        if bak_path.exists():
+            raise SidecarMigrationError(
+                sidecar_path,
+                block_type,
+                f"a previous migration backup is in place at {bak_path}; investigate before retrying",
+            )
+
+        atomic_write(bak_path, raw_bytes)
+
+        try:
+            new_snapshot = _snapshot_from_legacy(for_path, block_type, sidecar)
+            self._write_sidecar(for_path, new_snapshot)
+        except Exception as exc:
+            raise SidecarMigrationError(
+                sidecar_path,
+                block_type,
+                f"rewrite failed after .bak was written: {exc}",
+            ) from exc
 
     def _open(self, path: Path, block_type: str) -> Document:
         if not path.is_absolute():
@@ -113,9 +201,28 @@ class SyntheticDocumentFactory:
             return self._synthesize_new(path, block_type)
 
         if any(key in sidecar for key in _LEGACY_KEYS_BY_BLOCK_TYPE[block_type]):
-            raise LegacySidecarError(sc_path, block_type)
+            if _migration_disabled():
+                return self._synthesize_read_only_from_legacy(path, block_type, sidecar)
+            self.migrate_legacy_sidecar(sc_path, for_path=path)
+            migrated = read_sidecar(sc_path)
+            if migrated is None:
+                raise SidecarMigrationError(sc_path, block_type, "sidecar missing after migration")
+            return self._read_markdown_shape(path, block_type, migrated)
 
         return self._read_markdown_shape(path, block_type, sidecar)
+
+    def _synthesize_read_only_from_legacy(
+        self, path: Path, block_type: str, sidecar: dict[str, Any]
+    ) -> Document:
+        snapshot = _snapshot_from_legacy(path, block_type, sidecar)
+        block_id = next(iter(snapshot.extras["blocks"]))  # type: ignore[index]
+        return Document(
+            path=path,
+            block_id=block_id,
+            block_type=block_type,
+            snapshot=snapshot,
+            read_only=True,
+        )
 
     def _synthesize_new(self, path: Path, block_type: str) -> Document:
         block_id = str(uuid.uuid4())
@@ -177,6 +284,52 @@ class SyntheticDocumentFactory:
             sidecar_path_for(path),
             json.dumps(sidecar, indent=2, ensure_ascii=False).encode(),
         )
+
+
+def _migration_disabled() -> bool:
+    raw = os.environ.get(_MIGRATE_ENV_VAR)
+    if raw is None:
+        return False
+    return raw.strip().lower() in _MIGRATE_DISABLED_VALUES
+
+
+def _detect_legacy_block_type(sidecar: dict[str, Any]) -> str | None:
+    for block_type, keys in _LEGACY_KEYS_BY_BLOCK_TYPE.items():
+        if any(key in sidecar for key in keys):
+            return block_type
+    return None
+
+
+def _bak_path(sidecar_path: Path) -> Path:
+    return sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+
+def _path_for_sidecar(sidecar_path: Path) -> Path:
+    name = sidecar_path.name
+    if name.startswith(".") and name.endswith(".doxmind"):
+        return sidecar_path.parent / name[1 : -len(".doxmind")]
+    raise ValueError(f"not a sidecar path: {sidecar_path}")
+
+
+def _snapshot_from_legacy(path: Path, block_type: str, sidecar: dict[str, Any]) -> DocumentSnapshot:
+    block_id = str(uuid.uuid4())
+    rel_src = path.name
+    body = _placeholder_line(block_type, block_id, rel_src) + "\n"
+    existing_id = str(sidecar.get("id") or "").strip() or str(uuid.uuid4())
+    meta: dict[str, Any] = {"id": existing_id, "title": path.stem}
+    slot: dict[str, Any] = {}
+    editor = sidecar.get(_LEGACY_EDITOR_KEY[block_type])
+    if isinstance(editor, dict):
+        slot["editor"] = editor
+    parsed_cache = sidecar.get(_LEGACY_PARSED_CACHE_KEY[block_type])
+    if isinstance(parsed_cache, dict):
+        slot["parsedCache"] = parsed_cache
+    return DocumentSnapshot(
+        html=_placeholder_html(block_type, block_id, rel_src),
+        markdown=body,
+        meta=meta,
+        extras={"blocks": {block_id: slot}},
+    )
 
 
 def _placeholder_line(block_type: str, block_id: str, rel_src: str) -> str:

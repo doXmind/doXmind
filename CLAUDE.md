@@ -151,6 +151,7 @@ All optional:
 - `DATA_DIR` — override `~/.doxmind`
 - `DOXMIND_PYTHON` — Python path for `npm run dev:all`
 - `DEBUG`, `HOST`, `PORT` — backend config
+- `DOXMIND_SIDECAR_MIGRATE` — controls one-shot migration of legacy PDF/Excel sidecars (`{pdf_editor, excel_editor, …}` shape) to the markdown sidecar shape on first open. Default on. Set to `0` (also accepted: `false`/`no`/`off`) to suppress migration; legacy sidecars then open in read-only mode and any save raises `ReadOnlyDocumentError`. Migration writes the original sidecar to `<sidecar>.bak` before rewriting; recovery is `mv .foo.doxmind.bak .foo.doxmind`. See [docs/adr/0003-explicit-sidecar-migration.md](docs/adr/0003-explicit-sidecar-migration.md).
 
 There are no API keys or external service credentials.
 

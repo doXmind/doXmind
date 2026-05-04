@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
 import re
 import uuid
 from datetime import UTC, datetime
@@ -174,5 +175,22 @@ def now_iso() -> str:
 def atomic_write(target: Path, data: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.parent / f".{target.name}.tmp-{uuid.uuid4().hex}"
-    tmp.write_bytes(data)
-    tmp.replace(target)
+    try:
+        tmp.write_bytes(data)
+        fd = os.open(tmp, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        tmp.replace(target)
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+    try:
+        dir_fd = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass

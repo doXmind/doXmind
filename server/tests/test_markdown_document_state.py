@@ -211,8 +211,7 @@ def test_atomic_write_interrupted_before_rename_leaves_prior_sidecar_intact(
     leftover_tmps = [
         p for p in sidecar.parent.iterdir() if p.name.startswith(f".{sidecar.name}.tmp-")
     ]
-    for tmp in leftover_tmps:
-        tmp.unlink()
+    assert leftover_tmps == []
 
 
 def test_custom_salvager_is_consulted_for_stale_sidecar(tmp_path: Path) -> None:
