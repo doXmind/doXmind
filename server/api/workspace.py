@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from send2trash import send2trash
 
 from services.sidecar_io import (
     Corrupt,
@@ -33,7 +34,7 @@ from services.synthetic_document import SyntheticDocumentFactory
 router = APIRouter()
 
 
-IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build", ".trash"}
+IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build"}
 
 # Per-root TTL cache for `workspace_scan`. Within a single user action the
 # adapter often calls scan -> index_rebuild -> search back-to-back, each of
@@ -621,26 +622,36 @@ def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
     if not source.is_file():
         raise ValueError(f"document is not a file: {rel_path}")
 
-    trash_path = unique_trash_path(workspace, rel_path)
-    trash_path.parent.mkdir(parents=True, exist_ok=True)
-    source.rename(trash_path)
-
     sidecar_path = sidecar_path_for(source)
-    sidecar_trash_path = None
-    if sidecar_path.exists():
-        sidecar_trash = sidecar_path_for(trash_path)
-        sidecar_path.rename(sidecar_trash)
-        sidecar_trash_path = relative_path_string(workspace, sidecar_trash)
+    sidecar_existed = sidecar_path.exists()
+    sidecar_rel: str | None = relative_path_string(workspace, sidecar_path) if sidecar_existed else None
 
+    _move_to_os_trash(source)
+    # The primary file has left the workspace — invalidate the scan cache
+    # before the sidecar step, otherwise a partial failure below leaves the
+    # cache serving a stale entry for a `.md` that's already in OS Trash.
     _invalidate_scan_cache(workspace)
+    if sidecar_existed:
+        # Sidecar travels into Trash as a separate entry — pair atomicity is
+        # captured in the user-facing Confirm copy, not enforced by the OS.
+        # If the sidecar move fails the .md is already gone, so surface the
+        # error and let the caller know the pair is half-deleted.
+        try:
+            _move_to_os_trash(sidecar_path)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"document moved to Trash but sidecar move failed: {exc}"
+            ) from exc
+
     return {
         "path": rel_path,
-        "sidecarPath": relative_path_string(workspace, sidecar_path)
-        if sidecar_trash_path
-        else None,
-        "trashPath": relative_path_string(workspace, trash_path),
-        "sidecarTrashPath": sidecar_trash_path,
+        "sidecarPath": sidecar_rel,
     }
+
+
+def _move_to_os_trash(path: Path) -> None:
+    # send2trash takes a string path on every platform it supports.
+    send2trash(str(path))
 
 
 def workspace_create_folder(root: str, rel_path: str) -> None:
@@ -670,15 +681,11 @@ def workspace_delete_folder(root: str, rel_path: str) -> dict[str, Any]:
     source = resolve_existing_workspace_path(workspace, rel_path)
     if not source.is_dir():
         raise ValueError(f"folder is not a directory: {rel_path}")
-    trash_path = unique_trash_dir_path(workspace, rel_path)
-    trash_path.parent.mkdir(parents=True, exist_ok=True)
-    source.rename(trash_path)
+    _move_to_os_trash(source)
     _invalidate_scan_cache(workspace)
     return {
         "path": rel_path,
         "sidecarPath": None,
-        "trashPath": relative_path_string(workspace, trash_path),
-        "sidecarTrashPath": None,
     }
 
 
@@ -706,8 +713,6 @@ def validate_relative_path(path: str) -> Path:
         clean = clean / part
     if not clean.parts:
         raise ValueError("document path is required")
-    if clean.parts[0] == ".trash":
-        raise ValueError("document path may not target workspace trash")
     return clean
 
 
@@ -830,26 +835,3 @@ def stable_path_id(path: str) -> str:
         hash_value ^= byte
         hash_value = (hash_value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return f"path:{hash_value:016x}"
-
-
-def unique_trash_path(root: Path, rel_path: str) -> Path:
-    source_rel = validate_relative_path(rel_path)
-    base = root / ".trash" / source_rel
-    return unique_path(base)
-
-
-def unique_trash_dir_path(root: Path, rel_path: str) -> Path:
-    return unique_path(root / ".trash" / validate_relative_path(rel_path))
-
-
-def unique_path(path: Path) -> Path:
-    if not path.exists():
-        return path
-    stem = path.stem
-    suffix = path.suffix
-    parent = path.parent
-    for index in range(1, 10_000):
-        candidate = parent / f"{stem} {index}{suffix}"
-        if not candidate.exists():
-            return candidate
-    raise ValueError(f"could not allocate unique path for {path}")

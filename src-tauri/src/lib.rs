@@ -344,8 +344,6 @@ impl From<DocCreatePayloadDto> for DocPayload {
 struct DeleteResultDto {
     path: String,
     sidecar_path: Option<String>,
-    trash_path: String,
-    sidecar_trash_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -968,30 +966,42 @@ fn doc_delete(root: String, path: String) -> Result<DeleteResultDto, String> {
     }
 
     let source_sidecar = doxmind_sidecar::sidecar_path_for(&source);
-    let trash_path = unique_trash_path(&root, &path)?;
-    if let Some(parent) = trash_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create trash directory: {err}"))?;
-    }
-    fs::rename(&source, &trash_path)
-        .map_err(|err| format!("failed to move document to workspace trash: {err}"))?;
+    let sidecar_existed = source_sidecar.exists();
+
+    move_to_os_trash(&source).map_err(|err| format!("failed to move document to Trash: {err}"))?;
 
     let mut sidecar_path = None;
-    let mut sidecar_trash_path = None;
-    if source_sidecar.exists() {
-        let trash_sidecar = doxmind_sidecar::sidecar_path_for(&trash_path);
-        fs::rename(&source_sidecar, &trash_sidecar)
-            .map_err(|err| format!("failed to move sidecar to workspace trash: {err}"))?;
+    if sidecar_existed {
+        // Sidecar travels into Trash as a separate entry; pair atomicity is
+        // captured in the user-facing Confirm copy, not enforced by the OS.
+        // If the sidecar move fails, the .md is already gone — surface the
+        // error so the caller knows the pair is half-deleted (the document
+        // is recoverable from Trash, the sidecar is now stranded).
+        move_to_os_trash(&source_sidecar)
+            .map_err(|err| format!("document moved to Trash but sidecar move failed: {err}"))?;
         sidecar_path = Some(relative_path_string(&root, &source_sidecar)?);
-        sidecar_trash_path = Some(relative_path_string(&root, &trash_sidecar)?);
     }
 
-    Ok(DeleteResultDto {
-        path,
-        sidecar_path,
-        trash_path: relative_path_string(&root, &trash_path)?,
-        sidecar_trash_path,
-    })
+    Ok(DeleteResultDto { path, sidecar_path })
+}
+
+// Production builds delegate to the platform recycle bin via the `trash` crate
+// (macOS Trash / Windows Recycle Bin). Unit tests use an `fs::remove_*` shim
+// so the test harness doesn't spam the developer's real Trash with fixtures —
+// the contract being tested is "the file leaves the workspace", not "the file
+// is in the OS recycle bin"; the latter is exercised manually and in CI smoke.
+#[cfg(not(test))]
+fn move_to_os_trash(path: &Path) -> Result<(), String> {
+    trash::delete(path).map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+fn move_to_os_trash(path: &Path) -> Result<(), String> {
+    if path.is_dir() {
+        fs::remove_dir_all(path).map_err(|err| err.to_string())
+    } else {
+        fs::remove_file(path).map_err(|err| err.to_string())
+    }
 }
 
 #[tauri::command]
@@ -1029,18 +1039,10 @@ fn workspace_delete_folder(root: String, path: String) -> Result<DeleteResultDto
     if !source.is_dir() {
         return Err(format!("folder is not a directory: {path}"));
     }
-    let trash_path = unique_trash_dir_path(&root, &path)?;
-    if let Some(parent) = trash_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create trash directory: {err}"))?;
-    }
-    fs::rename(&source, &trash_path)
-        .map_err(|err| format!("failed to move folder to workspace trash: {err}"))?;
+    move_to_os_trash(&source).map_err(|err| format!("failed to move folder to Trash: {err}"))?;
     Ok(DeleteResultDto {
         path,
         sidecar_path: None,
-        trash_path: relative_path_string(&root, &trash_path)?,
-        sidecar_trash_path: None,
     })
 }
 
@@ -1120,13 +1122,6 @@ fn validate_relative_path(path: &str) -> Result<PathBuf, String> {
 
     if clean.as_os_str().is_empty() {
         return Err("document path is required".into());
-    }
-    if clean
-        .components()
-        .next()
-        .is_some_and(|component| component.as_os_str() == ".trash")
-    {
-        return Err("document path may not target workspace trash".into());
     }
 
     Ok(clean)
@@ -1283,7 +1278,7 @@ fn is_ignored_scan_dir(name: &str) -> bool {
     is_hidden_sidecar_name(name)
         || matches!(
             name,
-            ".git" | "node_modules" | "target" | ".next" | "out" | "dist" | "build" | ".trash"
+            ".git" | "node_modules" | "target" | ".next" | "out" | "dist" | "build"
         )
 }
 
@@ -1626,66 +1621,6 @@ fn move_document_pair(
     }
 
     document_dto_for_path(&destination, relative_path_string(&root, &destination)?)
-}
-
-fn unique_trash_path(root: &Path, path: &str) -> Result<PathBuf, String> {
-    let relative = validate_relative_path(path)?;
-    let base = root.join(".trash").join(&relative);
-    let sidecar = doxmind_sidecar::sidecar_path_for(&base);
-    if !base.exists() && !sidecar.exists() {
-        return Ok(base);
-    }
-
-    let parent = base
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| root.join(".trash"));
-    let stem = base
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("document");
-    let extension = base
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("md");
-    let nonce = unix_nanos();
-
-    for counter in 0..1000 {
-        let candidate = parent.join(format!("{stem}.{nonce}.{counter}.{extension}"));
-        let candidate_sidecar = doxmind_sidecar::sidecar_path_for(&candidate);
-        if !candidate.exists() && !candidate_sidecar.exists() {
-            return Ok(candidate);
-        }
-    }
-
-    Err("failed to allocate workspace trash path".into())
-}
-
-fn unique_trash_dir_path(root: &Path, path: &str) -> Result<PathBuf, String> {
-    let relative = validate_relative_path(path)?;
-    let base = root.join(".trash").join(&relative);
-    if !base.exists() {
-        return Ok(base);
-    }
-
-    let parent = base
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| root.join(".trash"));
-    let name = base
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("folder");
-    let nonce = unix_nanos();
-
-    for counter in 0..1000 {
-        let candidate = parent.join(format!("{name}.{nonce}.{counter}"));
-        if !candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-
-    Err("failed to allocate workspace trash path".into())
 }
 
 fn sanitize_asset_filename(filename: &str) -> String {
@@ -2508,10 +2443,6 @@ mod tests {
         );
         write_file(&workspace.path.join("notes/No Id.md"), "# No Id\n");
         write_file(
-            &workspace.path.join(".trash/Deleted.md"),
-            "---\nid: deleted\n---\n",
-        );
-        write_file(
             &workspace.path.join(".doxmind/Cached.md"),
             "---\nid: cached\n---\n",
         );
@@ -2654,7 +2585,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_delete_moves_markdown_and_sidecar_to_workspace_trash() {
+    fn doc_delete_removes_markdown_and_sidecar_pair_from_workspace() {
         let workspace = TempWorkspace::new("delete-pair");
         write_file(&workspace.path.join("a.md"), "# A\n");
         write_file(&workspace.path.join(".a.doxmind"), r#"{"id":"a"}"#);
@@ -2663,14 +2594,41 @@ mod tests {
 
         assert_eq!(deleted.path, "a.md");
         assert_eq!(deleted.sidecar_path.as_deref(), Some(".a.doxmind"));
-        assert_eq!(deleted.trash_path, ".trash/a.md");
-        assert_eq!(
-            deleted.sidecar_trash_path.as_deref(),
-            Some(".trash/.a.doxmind")
-        );
-        assert!(workspace.path.join(".trash/a.md").exists());
-        assert!(workspace.path.join(".trash/.a.doxmind").exists());
+        // Both files leave the workspace. In production the OS trash receives
+        // them as two separate entries; under the test cfg the shim hard-deletes
+        // them — what matters here is the workspace contract.
         assert!(!workspace.path.join("a.md").exists());
         assert!(!workspace.path.join(".a.doxmind").exists());
+        // No workspace-internal `.trash/` directory should be created any more.
+        assert!(!workspace.path.join(".trash").exists());
+    }
+
+    #[test]
+    fn doc_delete_without_sidecar_succeeds() {
+        let workspace = TempWorkspace::new("delete-no-sidecar");
+        write_file(&workspace.path.join("solo.md"), "# Solo\n");
+
+        let deleted = doc_delete(workspace.root(), "solo.md".into()).expect("delete solo");
+
+        assert_eq!(deleted.path, "solo.md");
+        assert!(deleted.sidecar_path.is_none());
+        assert!(!workspace.path.join("solo.md").exists());
+        assert!(!workspace.path.join(".trash").exists());
+    }
+
+    #[test]
+    fn workspace_delete_folder_removes_subtree_from_workspace() {
+        let workspace = TempWorkspace::new("delete-folder");
+        std::fs::create_dir_all(workspace.path.join("notes")).expect("create notes");
+        write_file(&workspace.path.join("notes/a.md"), "# A\n");
+        write_file(&workspace.path.join("notes/.a.doxmind"), r#"{"id":"a"}"#);
+
+        let deleted =
+            workspace_delete_folder(workspace.root(), "notes".into()).expect("delete folder");
+
+        assert_eq!(deleted.path, "notes");
+        assert!(deleted.sidecar_path.is_none());
+        assert!(!workspace.path.join("notes").exists());
+        assert!(!workspace.path.join(".trash").exists());
     }
 }
