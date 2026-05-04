@@ -296,6 +296,22 @@ def test_open_pdf_reads_markdown_shape_after_sidecar_changes_shape(tmp_path):
     assert not bak_path.exists()
 
 
+def test_legacy_migrate_then_write_round_trip(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    _write_legacy_pdf_sidecar(pdf_path)
+    factory = SyntheticDocumentFactory()
+    doc = factory.open_pdf(pdf_path)
+    new_extras = {
+        "blocks": {doc.block_id: {"editor": {"v": 2, "edits": {"3:0": {"text": "edited"}}}}}
+    }
+
+    factory.write_full(doc, replace(doc.snapshot, extras=new_extras))
+    reopened = factory.open_pdf(pdf_path)
+
+    assert reopened.snapshot.extras == new_extras
+    assert reopened.block_id == doc.block_id
+
+
 def test_open_excel_migrates_legacy_sidecar_in_place(tmp_path):
     xlsx_path = _make_excel(tmp_path)
     raw_before = _write_legacy_excel_sidecar(xlsx_path)
@@ -378,17 +394,14 @@ def test_migrate_legacy_sidecar_aborts_after_rewrite_failure(tmp_path, monkeypat
     sidecar_path = sidecar_path_for(pdf_path)
     bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
 
-    real_atomic_write = sd_module.atomic_write
+    real_replace = Path.replace
 
-    def fail_on_rewrite(target: Path, data: bytes) -> None:
-        if target == bak_path:
-            real_atomic_write(target, data)
-            return
-        if target == sidecar_path:
+    def fail_on_sidecar_rewrite(self: Path, target: Path) -> Path:
+        if Path(target) == sidecar_path:
             raise OSError("simulated rewrite failure")
-        raise AssertionError(f"unexpected atomic_write to {target}")
+        return real_replace(self, target)
 
-    monkeypatch.setattr(sd_module, "atomic_write", fail_on_rewrite)
+    monkeypatch.setattr(Path, "replace", fail_on_sidecar_rewrite)
 
     with pytest.raises(SidecarMigrationError) as excinfo:
         SyntheticDocumentFactory().open_pdf(pdf_path)
@@ -398,10 +411,19 @@ def test_migrate_legacy_sidecar_aborts_after_rewrite_failure(tmp_path, monkeypat
     # the user can recover by renaming `.bak` back.
     assert bak_path.read_bytes() == raw_before
     assert sidecar_path.read_bytes() == raw_before
+    assert not [path for path in sidecar_path.parent.iterdir() if ".tmp-" in path.name]
 
 
-def test_open_pdf_in_read_only_mode_does_not_migrate(tmp_path, monkeypatch):
-    monkeypatch.setenv("DOXMIND_SIDECAR_MIGRATE", "0")
+@pytest.mark.parametrize(
+    "env_value",
+    ["0", "false", "False", "no", "off", "   0   ", "OfF"],
+)
+def test_open_pdf_with_disabled_migrate_env_opens_legacy_read_only(
+    tmp_path,
+    monkeypatch,
+    env_value,
+):
+    monkeypatch.setenv("DOXMIND_SIDECAR_MIGRATE", env_value)
     pdf_path = _make_pdf(tmp_path)
     raw_before = _write_legacy_pdf_sidecar(pdf_path)
     sidecar_path = sidecar_path_for(pdf_path)
@@ -433,6 +455,50 @@ def test_open_pdf_in_read_only_mode_does_not_migrate(tmp_path, monkeypatch):
 
     # Confirm the sidecar still hasn't moved.
     assert sidecar_path.read_bytes() == raw_before
+
+
+@pytest.mark.parametrize(
+    "env_value",
+    ["1", "true", "yes", "on", "TrUe"],
+)
+def test_open_pdf_with_enabled_migrate_env_migrates_legacy_sidecar(
+    tmp_path,
+    monkeypatch,
+    env_value,
+):
+    monkeypatch.setenv("DOXMIND_SIDECAR_MIGRATE", env_value)
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    document = SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    assert document.read_only is False
+    assert bak_path.read_bytes() == raw_before
+    on_disk = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert "pdf_editor" not in on_disk
+    assert "pdf_parsed_cache" not in on_disk
+    assert document.block_id in on_disk["extras"]["blocks"]
+
+
+@pytest.mark.parametrize("env_value", ["maybe", "", "２"])
+def test_open_pdf_with_invalid_migrate_env_raises_value_error(
+    tmp_path,
+    monkeypatch,
+    env_value,
+):
+    monkeypatch.setenv("DOXMIND_SIDECAR_MIGRATE", env_value)
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    with pytest.raises(ValueError, match="DOXMIND_SIDECAR_MIGRATE has invalid value"):
+        SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    assert sidecar_path.read_bytes() == raw_before
+    assert not bak_path.exists()
 
 
 def test_legacy_error_hierarchy_lets_callers_catch_the_base_class():
