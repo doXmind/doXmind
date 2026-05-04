@@ -663,10 +663,13 @@ def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any
 
 def doc_delete(root: str, rel_path: str) -> dict[str, Any]:
     workspace = canonical_workspace_root(root)
-    ensure_markdown_path(rel_path)
     source = resolve_existing_workspace_path(workspace, rel_path)
     if not source.is_file():
         raise ValueError(f"document is not a file: {rel_path}")
+    if not is_workspace_document_file(source):
+        raise ValueError(
+            f"document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {rel_path}"
+        )
 
     sidecar_path = sidecar_path_for(source)
     sidecar_existed = sidecar_path.exists()
