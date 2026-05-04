@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from api.workspace import (
+from services.sidecar_io import (
     SIDECAR_VERSION,
     atomic_write,
     build_md_with_frontmatter,

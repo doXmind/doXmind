@@ -7,80 +7,29 @@ the source of truth as `.md` files plus hidden `.doxmind` sidecars.
 
 from __future__ import annotations
 
-import hashlib
-import html
 import json
 import os
-import re
 import time
 import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import markdown
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from services.sidecar_io import (
+    atomic_write,
+    now_iso,
+    parse_frontmatter,
+    parse_yaml_scalar,
+    read_sidecar,
+    sidecar_path_for,
+)
+from services.synthetic_document import SyntheticDocumentFactory
+
 router = APIRouter()
 
-TASK_ITEM_RE = re.compile(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$")
 
-
-def _render_task_item_text(text: str) -> str:
-    rendered = markdown.markdown(text, extensions=["sane_lists"])
-    if rendered.startswith("<p>") and rendered.endswith("</p>"):
-        return rendered
-    return f"<p>{html.escape(text)}</p>"
-
-
-def render_task_lists(md: str) -> str:
-    """Convert simple GitHub-style task list runs into TipTap task-list HTML."""
-    lines = md.splitlines()
-    output: list[str] = []
-    index = 0
-
-    while index < len(lines):
-        match = TASK_ITEM_RE.match(lines[index])
-        if not match:
-            output.append(lines[index])
-            index += 1
-            continue
-
-        indent = match.group(1)
-        task_items: list[tuple[bool, str]] = []
-        while index < len(lines):
-            item_match = TASK_ITEM_RE.match(lines[index])
-            if not item_match or item_match.group(1) != indent:
-                break
-            checked = item_match.group(2).lower() == "x"
-            task_items.append((checked, item_match.group(3)))
-            index += 1
-
-        output.append('<ul data-type="taskList">')
-        for checked, text in task_items:
-            checked_attr = "true" if checked else "false"
-            output.append(
-                f'<li data-type="taskItem" data-checked="{checked_attr}">'
-                f"{_render_task_item_text(text)}</li>"
-            )
-        output.append("</ul>")
-
-    return "\n".join(output)
-
-
-def markdown_to_html(md: str) -> str:
-    """Render markdown to HTML for the editor.
-
-    No `codehilite` extension — TipTap can't parse the wrapper spans it
-    emits; the frontend uses lowlight for syntax highlighting instead.
-    """
-    return markdown.markdown(
-        render_task_lists(md), extensions=["tables", "fenced_code", "sane_lists"]
-    )
-
-
-SIDECAR_VERSION = 1
 IGNORED_SCAN_DIRS = {".git", "node_modules", "target", ".next", "out", "dist", "build", ".trash"}
 
 # Per-root TTL cache for `workspace_scan`. Within a single user action the
@@ -350,152 +299,165 @@ def read_workspace_binary(root: str, rel_path: str) -> list[int]:
 
 
 def read_pdf_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_pdf_file(path):
-        raise ValueError("PDF editor state is only enabled for PDFs")
-    sidecar = read_sidecar(sidecar_path_for(path))
-    if not sidecar:
-        return None
-    state = sidecar.get("pdf_editor")
-    return state if isinstance(state, dict) else None
+    """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``.
+
+    Slice 3 of #3 routes the on-disk shape through a markdown-shape
+    sidecar; the wire response is preserved. The frontend will switch to
+    the unified read/write surface in a later slice and this handler
+    will be removed.
+    """
+    return _read_block_slot_field(root, rel_path, _is_pdf_path, _open_pdf, "editor")
 
 
 def write_pdf_editor_state(root: str, rel_path: str, payload: dict[str, Any]) -> None:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_pdf_file(path):
-        raise ValueError("PDF editor state is only enabled for PDFs")
-    existing = read_sidecar(sidecar_path_for(path)) or {}
-    sidecar = {
-        "version": SIDECAR_VERSION,
-        "id": stable_path_id(relative_path_string(workspace, path)),
-        "source_path": relative_path_string(workspace, path),
-        "updated_at": now_iso(),
-        "pdf_editor": payload,
-    }
-    cache = existing.get("pdf_parsed_cache")
-    if cache is not None:
-        sidecar["pdf_parsed_cache"] = cache
-    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
-    _invalidate_scan_cache(workspace)
+    """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``.
+
+    See :func:`read_pdf_editor_state`.
+    """
+    _write_block_slot_field(root, rel_path, _is_pdf_path, _open_pdf, "editor", payload)
 
 
 def read_pdf_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    """Combined sidecar read for PDF open: editor state + parsed cache."""
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_pdf_file(path):
-        raise ValueError("PDF document state is only enabled for PDFs")
-    sidecar = read_sidecar(sidecar_path_for(path))
-    if not sidecar:
-        return None
-    editor = sidecar.get("pdf_editor")
-    cache = sidecar.get("pdf_parsed_cache")
-    return {
-        "editor": editor if isinstance(editor, dict) else None,
-        "parsedCache": cache if isinstance(cache, dict) else None,
-    }
+    """Deprecated: combined PDF read; delegates to ``SyntheticDocumentFactory``."""
+    return _read_block_slot_combined(root, rel_path, _is_pdf_path, _open_pdf)
 
 
 def write_pdf_parsed_cache(
     root: str, rel_path: str, source_hash: str, parsed: Any
 ) -> None:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_pdf_file(path):
-        raise ValueError("PDF parsed cache is only enabled for PDFs")
+    """Deprecated: delegates to ``SyntheticDocumentFactory.open_pdf``."""
     if not source_hash.strip():
         raise ValueError("sourceHash is required")
-    existing = read_sidecar(sidecar_path_for(path)) or {}
-    sidecar = {
-        "version": SIDECAR_VERSION,
-        "id": existing.get("id") or stable_path_id(relative_path_string(workspace, path)),
-        "source_path": relative_path_string(workspace, path),
-        "updated_at": now_iso(),
-        "pdf_parsed_cache": {"sourceHash": source_hash, "parsed": parsed},
-    }
-    if existing.get("pdf_editor") is not None:
-        sidecar["pdf_editor"] = existing["pdf_editor"]
-    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
+    _write_block_slot_field(
+        root,
+        rel_path,
+        _is_pdf_path,
+        _open_pdf,
+        "parsedCache",
+        {"sourceHash": source_hash, "parsed": parsed},
+    )
 
 
 def read_excel_editor_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_excel_file(path):
-        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm files")
-    sidecar = read_sidecar(sidecar_path_for(path))
-    if not sidecar:
-        return None
-    state = sidecar.get("excel_editor")
-    return state if isinstance(state, dict) else None
+    """Deprecated: delegates to ``SyntheticDocumentFactory.open_excel``."""
+    return _read_block_slot_field(root, rel_path, _is_excel_path, _open_excel, "editor")
 
 
 def write_excel_editor_state(root: str, rel_path: str, payload: dict[str, Any]) -> None:
-    workspace = canonical_workspace_root(root)
-    path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_excel_file(path):
-        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm files")
-    existing = read_sidecar(sidecar_path_for(path)) or {}
-    sidecar = {
-        "version": SIDECAR_VERSION,
-        "id": stable_path_id(relative_path_string(workspace, path)),
-        "source_path": relative_path_string(workspace, path),
-        "updated_at": now_iso(),
-        "excel_editor": payload,
-    }
-    # Preserve the parsed-workbook cache across editor-state saves; it only
-    # changes when the source xlsx itself is rewritten.
-    cache = existing.get("excel_parsed_cache")
-    if cache is not None:
-        sidecar["excel_parsed_cache"] = cache
-    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
-    _invalidate_scan_cache(workspace)
+    """Deprecated: delegates to ``SyntheticDocumentFactory.open_excel``."""
+    _write_block_slot_field(root, rel_path, _is_excel_path, _open_excel, "editor", payload)
 
 
 def read_excel_doc_state(root: str, rel_path: str) -> dict[str, Any] | None:
-    """Combined sidecar read for Excel open: editor state + parsed cache.
+    """Deprecated: combined Excel read; delegates to ``SyntheticDocumentFactory``."""
+    return _read_block_slot_combined(root, rel_path, _is_excel_path, _open_excel)
 
-    Returns ``{"editor": ..., "parsedCache": ...}`` so the open path needs a
-    single sidecar read instead of two parallel ones. Either field may be
-    null when absent.
-    """
+
+def write_excel_parsed_cache(
+    root: str, rel_path: str, source_hash: str, parsed: Any
+) -> None:
+    """Deprecated: delegates to ``SyntheticDocumentFactory.open_excel``."""
+    if not source_hash.strip():
+        raise ValueError("sourceHash is required")
+    _write_block_slot_field(
+        root,
+        rel_path,
+        _is_excel_path,
+        _open_excel,
+        "parsedCache",
+        {"sourceHash": source_hash, "parsed": parsed},
+    )
+
+
+def _is_pdf_path(path: Path) -> None:
+    if not is_pdf_file(path):
+        raise ValueError("PDF editor state is only enabled for PDFs")
+
+
+def _is_excel_path(path: Path) -> None:
+    if not is_excel_file(path):
+        raise ValueError("Excel editor state is only enabled for .xlsx/.xlsm files")
+
+
+def _open_pdf(path: Path):
+    return SyntheticDocumentFactory().open_pdf(path)
+
+
+def _open_excel(path: Path):
+    return SyntheticDocumentFactory().open_excel(path)
+
+
+def _block_slot(document) -> dict[str, Any]:
+    extras = document.snapshot.extras or {}
+    blocks = extras.get("blocks") if isinstance(extras.get("blocks"), dict) else {}
+    slot = blocks.get(document.block_id)
+    return slot if isinstance(slot, dict) else {}
+
+
+def _read_block_slot_field(
+    root: str,
+    rel_path: str,
+    type_check,
+    opener,
+    slot_field: str,
+) -> dict[str, Any] | None:
     workspace = canonical_workspace_root(root)
     path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_excel_file(path):
-        raise ValueError("Excel document state is only enabled for .xlsx/.xlsm files")
-    sidecar = read_sidecar(sidecar_path_for(path))
-    if not sidecar:
+    type_check(path)
+    if not sidecar_path_for(path).exists():
         return None
-    editor = sidecar.get("excel_editor")
-    cache = sidecar.get("excel_parsed_cache")
+    document = opener(path)
+    value = _block_slot(document).get(slot_field)
+    return value if isinstance(value, dict) else None
+
+
+def _read_block_slot_combined(
+    root: str,
+    rel_path: str,
+    type_check,
+    opener,
+) -> dict[str, Any] | None:
+    workspace = canonical_workspace_root(root)
+    path = resolve_existing_workspace_path(workspace, rel_path)
+    type_check(path)
+    if not sidecar_path_for(path).exists():
+        return None
+    document = opener(path)
+    slot = _block_slot(document)
+    editor = slot.get("editor")
+    cache = slot.get("parsedCache")
     return {
         "editor": editor if isinstance(editor, dict) else None,
         "parsedCache": cache if isinstance(cache, dict) else None,
     }
 
 
-def write_excel_parsed_cache(
-    root: str, rel_path: str, source_hash: str, parsed: Any
+def _write_block_slot_field(
+    root: str,
+    rel_path: str,
+    type_check,
+    opener,
+    slot_field: str,
+    value: Any,
 ) -> None:
+    from dataclasses import replace as _replace
+
     workspace = canonical_workspace_root(root)
     path = resolve_existing_workspace_path(workspace, rel_path)
-    if not is_excel_file(path):
-        raise ValueError("Excel parsed cache is only enabled for .xlsx/.xlsm files")
-    if not source_hash.strip():
-        raise ValueError("sourceHash is required")
-    existing = read_sidecar(sidecar_path_for(path)) or {}
-    sidecar = {
-        "version": SIDECAR_VERSION,
-        "id": existing.get("id") or stable_path_id(relative_path_string(workspace, path)),
-        "source_path": relative_path_string(workspace, path),
-        "updated_at": now_iso(),
-        "excel_parsed_cache": {"sourceHash": source_hash, "parsed": parsed},
-    }
-    if existing.get("excel_editor") is not None:
-        sidecar["excel_editor"] = existing["excel_editor"]
-    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
+    type_check(path)
+    factory = SyntheticDocumentFactory()
+    document = opener(path)
+    extras = dict(document.snapshot.extras or {})
+    blocks_raw = extras.get("blocks")
+    blocks = dict(blocks_raw) if isinstance(blocks_raw, dict) else {}
+    slot_raw = blocks.get(document.block_id)
+    slot = dict(slot_raw) if isinstance(slot_raw, dict) else {}
+    slot[slot_field] = value
+    blocks[document.block_id] = slot
+    extras["blocks"] = blocks
+    new_snapshot = _replace(document.snapshot, extras=extras)
+    factory.write_full(document, new_snapshot)
+    _invalidate_scan_cache(workspace)
 
 
 def write_doc_workspace(root: str, rel_path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -799,41 +761,6 @@ def document_dto_for_path(root: Path, path: Path) -> dict[str, Any]:
     }
 
 
-def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
-    if not raw.startswith("---"):
-        return {"id": str(uuid.uuid4())}, raw
-    lines = raw.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {"id": str(uuid.uuid4())}, raw
-
-    closing_index = None
-    for index, line in enumerate(lines[1:], start=1):
-        if line.strip() == "---":
-            closing_index = index
-            break
-    if closing_index is None:
-        return {"id": str(uuid.uuid4())}, raw
-
-    meta: dict[str, Any] = {}
-    for line in lines[1:closing_index]:
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        key = key.strip()
-        if key:
-            meta[key] = parse_yaml_scalar(value.strip())
-
-    body_lines = lines[closing_index + 1 :]
-    if body_lines and body_lines[0] == "":
-        body_lines = body_lines[1:]
-    body = "\n".join(body_lines)
-    if raw.endswith("\n") and body:
-        body += "\n"
-    if not meta.get("id"):
-        meta["id"] = str(uuid.uuid4())
-    return meta, body
-
-
 def parse_frontmatter_scan_fields(raw: str) -> tuple[str | None, str | None]:
     if not raw.startswith("---"):
         return None, None
@@ -855,56 +782,6 @@ def parse_frontmatter_scan_fields(raw: str) -> tuple[str | None, str | None]:
         if key == "title" and isinstance(parsed, str) and parsed:
             title = parsed
     return doc_id, title
-
-
-def parse_yaml_scalar(value: str) -> Any:
-    if value in {"true", "True"}:
-        return True
-    if value in {"false", "False"}:
-        return False
-    if value in {"null", "Null", "~"}:
-        return None
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        return value.strip("\"'")
-
-
-def build_md_with_frontmatter(meta: dict[str, Any], body: str) -> str:
-    lines = []
-    for key, value in meta.items():
-        if value is None:
-            continue
-        if isinstance(value, bool):
-            rendered = "true" if value else "false"
-        elif isinstance(value, (int, float)):
-            rendered = str(value)
-        else:
-            rendered = json.dumps(str(value), ensure_ascii=False)
-        lines.append(f"{key}: {rendered}")
-    trimmed_body = body.rstrip("\n")
-    return f"---\n{chr(10).join(lines)}\n---\n\n{trimmed_body}\n"
-
-
-def read_sidecar(path: Path) -> dict[str, Any] | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
-    except json.JSONDecodeError:
-        return None
-
-
-def sidecar_path_for(md_path: Path) -> Path:
-    name = md_path.name
-    lower = name.lower()
-    if lower.endswith(".markdown"):
-        stem = name[: -len(".markdown")]
-    elif lower.endswith(".md"):
-        stem = name[: -len(".md")]
-    else:
-        stem = name
-    return md_path.parent / f".{stem}.doxmind"
 
 
 def is_hidden_sidecar_name(name: str) -> bool:
@@ -937,21 +814,6 @@ def stable_path_id(path: str) -> str:
         hash_value ^= byte
         hash_value = (hash_value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return f"path:{hash_value:016x}"
-
-
-def hash_markdown(content: str) -> str:
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-
-def now_iso() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def atomic_write(target: Path, data: bytes) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.parent / f".{target.name}.tmp-{uuid.uuid4().hex}"
-    tmp.write_bytes(data)
-    tmp.replace(target)
 
 
 def unique_trash_path(root: Path, rel_path: str) -> Path:

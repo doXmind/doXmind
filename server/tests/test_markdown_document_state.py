@@ -13,7 +13,6 @@ from typing import Any
 
 import pytest
 
-from api.workspace import sidecar_path_for
 from services.markdown_document_state import (
     DocumentSnapshot,
     EmptyDocument,
@@ -22,6 +21,7 @@ from services.markdown_document_state import (
     SidecarStale,
     UsedSidecar,
 )
+from services.sidecar_io import sidecar_path_for
 
 
 def _write_md(path: Path, body: str, meta_lines: list[str] | None = None) -> None:
