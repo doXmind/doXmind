@@ -8,6 +8,7 @@ sidecar migration introduced in slice 4 (#11).
 from __future__ import annotations
 
 import json
+import multiprocessing
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -21,6 +22,7 @@ from services.sidecar_io import (
     atomic_write,
     sidecar_path_for,
 )
+from services.sidecar_lock import _locked_sidecar
 from services.synthetic_document import (
     EXCEL_BLOCK_TYPE,
     PDF_BLOCK_TYPE,
@@ -75,6 +77,11 @@ def _make_excel(tmp_path: Path, name: str = "Q3 Forecast.xlsx") -> Path:
     path = tmp_path / name
     path.write_bytes(b"PK\x03\x04 fake xlsx body")
     return path
+
+
+def _open_pdf_block_id_worker(sidecar_path: str) -> str:
+    pdf_path = sd_module._path_for_sidecar(Path(sidecar_path))
+    return SyntheticDocumentFactory().open_pdf(pdf_path).block_id
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +232,68 @@ def test_open_pdf_migrates_legacy_sidecar_in_place(tmp_path):
 
     # User's PDF binary is untouched.
     assert pdf_path.read_bytes().startswith(b"%PDF-")
+
+
+def test_open_pdf_concurrent_legacy_migration_race(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    raw_before = _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+
+    with multiprocessing.Pool(processes=4) as pool:
+        block_ids = pool.map(_open_pdf_block_id_worker, [str(sidecar_path)] * 4)
+
+    assert len(set(block_ids)) == 1
+    block_id = block_ids[0]
+
+    on_disk = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert on_disk["version"] == SIDECAR_VERSION
+    assert "pdf_editor" not in on_disk
+    assert "pdf_parsed_cache" not in on_disk
+    assert block_id in on_disk["extras"]["blocks"]
+
+    assert bak_path.exists()
+    assert bak_path.read_bytes() == raw_before
+
+
+def test_locked_sidecar_creates_and_keeps_lock_file(tmp_path):
+    sidecar_path = tmp_path / ".Application.pdf.doxmind"
+    lock_path = sidecar_path.parent / f"{sidecar_path.name}.lock"
+
+    assert not lock_path.exists()
+
+    with _locked_sidecar(sidecar_path):
+        assert lock_path.exists()
+
+    assert lock_path.exists()
+
+
+def test_open_pdf_reads_markdown_shape_after_sidecar_changes_shape(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    _write_legacy_pdf_sidecar(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    bak_path = sidecar_path.parent / f"{sidecar_path.name}.bak"
+    block_id = "existing-markdown-block"
+    markdown_sidecar = {
+        "version": SIDECAR_VERSION,
+        "id": "already-migrated",
+        "html": f'<!-- pdf-block id="{block_id}" src="{pdf_path.name}" -->',
+        "markdown_hash": "sha256:already-migrated",
+        "updated_at": "2024-01-01T00:00:00Z",
+        "extras": {"blocks": {block_id: {"editor": {"version": 2}}}},
+    }
+
+    with _locked_sidecar(sidecar_path):
+        atomic_write(
+            sidecar_path,
+            json.dumps(markdown_sidecar, indent=2).encode(),
+        )
+
+    document = SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    assert document.block_id == block_id
+    assert document.snapshot.extras == markdown_sidecar["extras"]
+    assert not bak_path.exists()
 
 
 def test_open_excel_migrates_legacy_sidecar_in_place(tmp_path):

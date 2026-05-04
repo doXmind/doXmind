@@ -58,6 +58,7 @@ ruff format .
 ## Storage Model
 
 The user's filesystem is the source of truth. Each document is represented by the original portable file plus a hidden sidecar holding doXmind-only state.
+A `<sidecar>.lock` file appears next to each sidecar during migration; these files are tiny, persist after use, and must not be deleted manually.
 
 ```text
 ~/Documents/notes/
