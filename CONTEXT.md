@@ -78,6 +78,11 @@ _Avoid_: PDF wrapper，Excel wrapper，virtual document。
 **Workspace**:
 用户选择的根目录。doXmind 扫描这个目录下的 Document 和 Second-class file，并维护一个 `.doxmind/index.json` 的 id 索引。
 
+**Delete**:
+把一个 Document（或 Second-class file）从 Workspace 移到操作系统的回收站（macOS Trash / Windows Recycle Bin）。`.md` 和它的 Sidecar **作为一对**一起搬，由 doXmind 在删除瞬间分别调用 OS trash API 完成。doXmind 自身**不持有**任何"已删除"状态——没有 `.trash/` 目录，没有 Settings → Trash UI。
+恢复路径完全外包给 OS：用户从废纸篓里把 `.md` 拖回原位置时，需要**同时把同名隐藏 Sidecar 也拖回**——这一约定在删除前的 ConfirmModal 文案里点出。如果用户只 restore 了 `.md`，下次打开会走正常的"missing sidecar"路径（按 Stale-sidecar 规则丢弃 HTML、从 `.md` 重建；Extras 不可恢复）。
+_Avoid_: trash document，soft delete，archive。删除就是删除，恢复是 OS 的事。
+
 ## Relationships
 
 - 一个 **Document** 在硬盘上 = 一个 `.md` 文件 + 一个 **Sidecar**
@@ -88,6 +93,7 @@ _Avoid_: PDF wrapper，Excel wrapper，virtual document。
 - 当 **Sidecar** 进入 **Stale** 状态时，每个 **Custom Block** 类型的 **Salvage** 规则决定它的 **Extras** 槽位能否被保留
 - 一个 **External-reference Custom Block** 实例 = 一个 **Block placeholder** + 一个 TipTap node + 一个 **Extras** slot，三处用同一个 `id` 关联，关系由 **Block correlation** 守护
 - **Self-contained Custom Block** 没有 **Extras** slot，也不参与 **Block correlation**——它的全部状态都在 markdown 文本里
+- **Delete** 同时移动 `.md` 和它的 **Sidecar** 到 OS 回收站；恢复需要用户把两个文件都拖回，否则 Extras 丢失（详见 [docs/adr/0005-delete-uses-os-trash.md](docs/adr/0005-delete-uses-os-trash.md)）
 
 ## 核心定位
 
