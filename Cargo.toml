@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/sidecar"]
+members = ["src-tauri", "crates/sidecar", "crates/excel-bench"]
 resolver = "2"
 
 [profile.release]
@@ -9,3 +9,11 @@ lto = true
 incremental = false
 opt-level = "s"
 strip = true
+
+# Speed-tuned profile for benchmarks. The release profile is sized for
+# the shipped binary (opt-level = "s"), which is the wrong target when we
+# want to know how fast Rust *can* go.
+[profile.bench-fast]
+inherits = "release"
+opt-level = 3
+strip = false

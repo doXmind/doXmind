@@ -1,0 +1,15 @@
+[package]
+name = "excel-bench"
+version = "0.0.0"
+edition = "2021"
+description = "Spike: calamine-based xlsx parser to benchmark against the Python openpyxl pipeline. Throwaway — not a production target."
+publish = false
+
+[[bin]]
+name = "excel-bench"
+path = "src/main.rs"
+
+[dependencies]
+calamine = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
