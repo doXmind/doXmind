@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from services.external_ref_blocks import (
+    DuplicatePolicy,
     ExternalRefBlockDefinition,
     ExternalRefBlockRegistry,
     NewPolicy,
@@ -53,6 +54,14 @@ class CorrelationResult:
     report: CorrelationReport
 
 
+class _Placeholder(NamedTuple):
+    block_type: str
+    id: str
+    line: int
+    src: str
+    attrs: str
+
+
 class BlockCorrelation:
     def __init__(self, registry: ExternalRefBlockRegistry) -> None:
         self._registry = registry
@@ -61,18 +70,59 @@ class BlockCorrelation:
         events: list[CorrelationEvent] = []
         resolved_extras = dict(extras)
         placeholder_re = _placeholder_re_for(self._registry.block_types())
-        placeholder_ids: set[str] = set()
 
-        for match in placeholder_re.finditer(markdown_body):
-            block_type = match.group("block_type")
-            block_id = match.group("id")
-            placeholder_ids.add(block_id)
+        # Pass 1: line-by-line scan, group by (block_type, id) for duplicate detection.
+        placeholders_by_key: dict[tuple[str, str], list[_Placeholder]] = {}
+        for line_number, line in enumerate(markdown_body.splitlines(), start=1):
+            for match in placeholder_re.finditer(line):
+                block_type = match.group("block_type")
+                block_id = match.group("id")
+                placeholder = _Placeholder(
+                    block_type=block_type,
+                    id=block_id,
+                    line=line_number,
+                    src=match.group("src"),
+                    attrs=match.group("attrs"),
+                )
+                placeholders_by_key.setdefault((block_type, block_id), []).append(placeholder)
 
+        placeholder_ids: set[str] = {block_id for (_, block_id) in placeholders_by_key}
+
+        # Pass 2: duplicate detection (errored events block saves). Track
+        # ids handled as duplicates so pass 3 does not also auto-create a
+        # slot for an ambiguous placeholder.
+        duplicate_ids: set[str] = set()
+        for (block_type, block_id), placeholders in placeholders_by_key.items():
+            if len(placeholders) < 2:
+                continue
+            entry = self._registry.by_block_type(block_type)
+            if entry.on_duplicate != DuplicatePolicy.ERROR:
+                continue
+            duplicate_ids.add(block_id)
+            events.append(
+                CorrelationEvent(
+                    kind="duplicate",
+                    block_type=block_type,
+                    id=block_id,
+                    how_handled=HowHandled.ERRORED,
+                    detail={
+                        "locations": [{"line": p.line} for p in placeholders]
+                    },
+                )
+            )
+
+        # Pass 3: new-id detection (placeholders missing from extras).
+        # Skip ids already handled as duplicates — slot creation for an
+        # ambiguous id would silently pick one placeholder over another.
+        for (block_type, block_id), placeholders in placeholders_by_key.items():
+            if block_id in duplicate_ids:
+                continue
             blocks = resolved_extras.get("blocks")
             if isinstance(blocks, dict) and block_id in blocks:
                 continue
 
             definition = self._registry.by_block_type(block_type)
+            first = placeholders[0]
             if definition.on_new == NewPolicy.EMPTY:
                 current_blocks = resolved_extras.get("blocks")
                 next_blocks = dict(current_blocks) if isinstance(current_blocks, dict) else {}
@@ -92,13 +142,11 @@ class BlockCorrelation:
                     block_type=block_type,
                     id=block_id,
                     how_handled=how_handled,
-                    detail={
-                        "src": match.group("src"),
-                        "attrs": match.group("attrs"),
-                    },
+                    detail={"src": first.src, "attrs": first.attrs},
                 )
             )
 
+        # Pass 4: orphan detection (slots without matching placeholders).
         resolved_extras = self._resolve_orphans(
             extras=resolved_extras,
             placeholder_ids=placeholder_ids,
