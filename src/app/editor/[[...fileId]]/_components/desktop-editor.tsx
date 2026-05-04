@@ -116,11 +116,11 @@ export function DesktopEditor() {
               className="desktop-content-surface relative min-h-0 min-w-0 overflow-hidden bg-background"
             >
               {/* Outline rail — collapsed by default, expands into a floating
-                outline popover on hover. The rail is inset from the scrollbar
-                so it does not crowd the scroll edge. */}
+                outline popover on hover. Keep it close to the scroll edge so
+                the popover reads as part of the document navigation chrome. */}
               {!isFocusMode && hasHeadings && (
                 <div
-                  className="pointer-events-none absolute bottom-[14vh] right-5 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-7"
+                  className="pointer-events-none absolute bottom-[14vh] right-2 top-[18vh] z-30 overflow-visible transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:right-2"
                   style={{ width: outlineRailWidth }}
                 >
                   {/* `relative` so the OutlineCollapsed root, which is
