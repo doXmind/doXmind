@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { NodeViewWrapper, NodeViewProps } from "@tiptap/react";
 import {
@@ -21,6 +21,9 @@ import { isInsideList, liftAtomBlock } from "@/lib/block-operations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
+import { ImageEmptyState } from "./image-empty-state";
+import { resolveImageSrc } from "@/lib/asset-url";
+import { useFileStore } from "@/stores/file-store";
 
 interface ResizeState {
   isResizing: boolean;
@@ -45,6 +48,18 @@ export function ImageNodeView({
   const { src, alt, title, width, height, align } = node.attrs;
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Resolve relative workspace paths (e.g. "./assets/foo.png") into a URL
+  // the webview can actually load (Tauri asset protocol).
+  const rootPath = useFileStore((s) => s.rootPath);
+  const docRelPath = useFileStore((s) => {
+    const file = s.files.find((f) => f.id === s.currentFileId);
+    return file?.storageHandle?.relPath ?? file?.storageHandle?.path ?? null;
+  });
+  const resolvedSrc = useMemo(
+    () => resolveImageSrc(src ?? "", rootPath, docRelPath),
+    [src, rootPath, docRelPath]
+  );
 
   let nodePos: number | undefined;
   try {
@@ -187,15 +202,15 @@ export function ImageNodeView({
   }, [src, deleteNode]);
 
   const handleDownload = useCallback(() => {
-    if (!src) return;
+    if (!resolvedSrc) return;
     const a = document.createElement("a");
-    a.href = src;
+    a.href = resolvedSrc;
     a.download = alt || "image";
     a.target = "_blank";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-  }, [src, alt]);
+  }, [resolvedSrc, alt]);
 
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -233,6 +248,19 @@ export function ImageNodeView({
     }
   }, [selected, isHovered]);
 
+  // Notion-style empty placeholder when no image has been chosen yet.
+  if (!src) {
+    return (
+      <NodeViewWrapper className="image-node-wrapper" data-align={align}>
+        <ImageEmptyState
+          onSetSrc={(newSrc, newAlt) =>
+            updateAttributes({ src: newSrc, ...(newAlt ? { alt: newAlt } : {}) })
+          }
+        />
+      </NodeViewWrapper>
+    );
+  }
+
   return (
     <NodeViewWrapper className="image-node-wrapper" data-align={align}>
       <div
@@ -248,7 +276,7 @@ export function ImageNodeView({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
-          src={src}
+          src={resolvedSrc}
           alt={alt || ""}
           title={title || undefined}
           onLoad={handleImageLoad}

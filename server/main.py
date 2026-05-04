@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from api import excel_editor, images, pdf_editor, workspace
+from api import excel_editor, images, links, pdf_editor, workspace
 from config import CORS_ORIGIN_REGEX, CORS_ORIGINS, get_cors_headers, get_settings
 from db.database import engine as db_engine
 from db.database import init_db
@@ -99,6 +99,7 @@ app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 app.include_router(pdf_editor.router, prefix="/api/pdf", tags=["pdf"])
 app.include_router(excel_editor.router, prefix="/api/excel", tags=["excel"])
+app.include_router(links.router, prefix="/api/links", tags=["links"])
 
 
 @app.get("/")

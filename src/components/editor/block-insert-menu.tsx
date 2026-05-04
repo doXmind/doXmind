@@ -24,7 +24,6 @@ import {
   GitBranch,
 } from "lucide-react";
 import { cn, formatShortcut } from "@/lib/utils";
-import { useEditorStore } from "@/stores/editor-store";
 import { TableSizePicker } from "./table-size-picker";
 
 interface BlockInsertMenuProps {
@@ -251,37 +250,11 @@ const insertItems: InsertItem[] = [
     icon: <Image className="h-4 w-4" />,
     category: "media",
     insert: (editor, pos) => {
-      // Insert an empty paragraph first, then open the image modal
       editor
         .chain()
         .focus()
-        .insertContentAt(pos, { type: "paragraph" })
-        .setTextSelection(pos + 1)
+        .insertContentAt(pos, [{ type: "image" }, { type: "paragraph" }])
         .run();
-
-      const { openImageModal } = useEditorStore.getState();
-      openImageModal((url, alt) => {
-        const { $from } = editor.state.selection;
-        const isEmptyParagraph =
-          $from.parent.type.name === "paragraph" && $from.parent.content.size === 0;
-
-        if (isEmptyParagraph) {
-          editor
-            .chain()
-            .focus()
-            .insertContentAt({ from: $from.before($from.depth), to: $from.after($from.depth) }, [
-              { type: "image", attrs: { src: url, alt } },
-              { type: "paragraph" },
-            ])
-            .run();
-        } else {
-          editor
-            .chain()
-            .focus()
-            .insertContent([{ type: "image", attrs: { src: url, alt } }, { type: "paragraph" }])
-            .run();
-        }
-      });
     },
   },
   {

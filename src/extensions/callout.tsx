@@ -55,6 +55,14 @@ export const Callout = Node.create<CalloutOptions>({
           "data-callout-type": attributes.type,
         }),
       },
+      emoji: {
+        default: null as string | null,
+        parseHTML: (element) => element.getAttribute("data-callout-emoji") || null,
+        renderHTML: (attributes) => {
+          if (!attributes.emoji) return {};
+          return { "data-callout-emoji": attributes.emoji };
+        },
+      },
     };
   },
 

@@ -123,7 +123,7 @@ interface FileState {
     name: string,
     content?: string,
     parentId?: string | null,
-    options?: { documentType?: "markdown" | "pdf" }
+    options?: { documentType?: "markdown" | "pdf" | "excel" }
   ) => Promise<string>;
   updateFile: (
     id: string,
@@ -530,14 +530,16 @@ export const useFileStore = create<FileState>()(
         name: string,
         content: string = "",
         parentId: string | null = null,
-        options?: { documentType?: "markdown" | "pdf" }
+        options?: { documentType?: "markdown" | "pdf" | "excel" }
       ) => {
         try {
           // Validate parentId exists (folder or file for sub-pages); fall back to root if stale
           const validParentId =
             parentId && get().files.some((f) => f.id === parentId) ? parentId : null;
 
-          const documentType = options?.documentType ?? (/\.pdf$/i.test(name) ? "pdf" : "markdown");
+          const documentType =
+            options?.documentType ??
+            (/\.pdf$/i.test(name) ? "pdf" : /\.(xlsx|xlsm)$/i.test(name) ? "excel" : "markdown");
 
           let entry;
           let storedContent = content;
@@ -554,6 +556,17 @@ export const useFileStore = create<FileState>()(
             // PDFs aren't displayed via `content` — the editor reads the
             // binary on demand. Keep the in-memory content empty so we don't
             // accidentally feed PDF bytes into a markdown viewer.
+            storedContent = "";
+          } else if (documentType === "excel") {
+            const { createBlankExcelBytes } = await import("@/lib/excel/blank-excel");
+            const bytes = createBlankExcelBytes();
+            entry = await getAdapter(get()).create({
+              name,
+              kind: "document",
+              parent: parentHandleForId(get().files, validParentId),
+              documentType: "excel",
+              binary: bytes,
+            });
             storedContent = "";
           } else {
             entry = await getAdapter(get()).create({

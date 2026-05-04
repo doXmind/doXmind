@@ -79,6 +79,31 @@ export function FilesSidebar() {
     }
   };
 
+  const handleCreateExcel = async (parentId: string | null = null) => {
+    const currentFiles = useFileStore
+      .getState()
+      .files.filter((f) => !f.isFolder && f.parentId === parentId);
+
+    let maxNum = 0;
+    currentFiles.forEach((file) => {
+      const match = file.name.match(/^Untitled-(\d+)\.xlsx$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+
+    const name = `Untitled-${maxNum + 1}.xlsx`;
+    try {
+      const newId = await createFile(name, "", parentId, { documentType: "excel" });
+      navigateToEditorFile(newId);
+    } catch (error) {
+      log.error("Failed to create Excel", error);
+      const { title, description } = getErrorMessage(error);
+      toast.error(title, { description });
+    }
+  };
+
   const handleTemplateSelect = async (template: FileTemplate) => {
     const currentFiles = useFileStore
       .getState()
@@ -122,6 +147,7 @@ export function FilesSidebar() {
       <WorkspaceHeader
         onCreateFile={() => handleCreateFile(null)}
         onCreatePdf={() => handleCreatePdf(null)}
+        onCreateExcel={() => handleCreateExcel(null)}
         onCreateFolder={() => handleCreateFolder(null)}
         onOpenTemplatePicker={() => setIsTemplatePickerOpen(true)}
         onCollapseAll={() => folderTreeRef.current?.collapseAll()}

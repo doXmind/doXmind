@@ -172,6 +172,7 @@
       "heading5Desc": "Minor heading",
       "heading6": "Heading 6",
       "heading6Desc": "Smallest heading",
+      "page": "Page",
       "linkToPage": "Link to Page",
       "linkToPageDesc": "Link to an existing page",
       "webBookmark": "Web Bookmark",
@@ -259,7 +260,7 @@
     },
     "slashMenu": {
       "categories": {
-        "basic": "Basic Blocks",
+        "basic": "Basic blocks",
         "lists": "Lists",
         "media": "Media",
         "database": "Database",
@@ -302,6 +303,7 @@
       "grayBgDesc": "Apply gray background to block",
       "noBg": "No background",
       "noBgDesc": "Remove block background color",
+      "filteredResults": "Filtered results",
       "closeMenu": "Close menu"
     },
     "callout": {
@@ -309,10 +311,11 @@
       "warning": "Warning",
       "error": "Error",
       "tip": "Tip",
-      "changeType": "Click to change type"
+      "changeType": "Click to change icon",
+      "resetIcon": "Reset to default"
     },
     "toggle": {
-      "defaultSummary": "Toggle heading"
+      "emptyHint": "Empty toggle. Click or drop blocks inside."
     },
     "versionPanel": {
       "manualEdit": "Manual edit",
@@ -327,27 +330,15 @@
     "noLanguagesFound": "No languages found",
     "popularLanguages": "Popular",
     "allLanguages": "All Languages",
-    "mathPreviewPlaceholder": "Preview will appear here...",
+    "addTexEquation": "Add a TeX equation",
     "invalidLatex": "Invalid LaTeX",
-    "insertSymbol": "Insert symbol",
-    "saveEnter": "Save (Enter)",
-    "cancelEscape": "Cancel (Escape)",
-    "enterToSave": "to save",
-    "escToCancel": "to cancel",
-    "shiftEnterNewline": "for newline",
     "selectSize": "Select size",
     "tableSize": "{rows} × {cols}",
     "tableSizeAria": "{rows} rows by {cols} columns",
-    "insertSymbolTitle": "Insert Symbol",
-    "searchSymbols": "Search symbols...",
-    "noSymbolsFound": "No symbols found",
-    "symbolPickerHint": "Click a symbol to insert · Hover for LaTeX code",
     "copyCode": "Copy code",
     "codeCopied": "Copied!",
     "emptyEquation": "Empty equation",
     "liftOutOfList": "Lift out of list",
-    "editEquation": "Edit equation",
-    "copyLatex": "Copy LaTeX",
     "alignLeft": "Align left",
     "alignCenter": "Align center",
     "alignRight": "Align right",
@@ -359,6 +350,14 @@
     "describeImage": "Describe this image...",
     "uploadTab": "Upload",
     "urlTab": "URL",
+    "linkTab": "Link",
+    "addAnImage": "Add an image",
+    "uploadFile": "Upload file",
+    "embedImage": "Embed image",
+    "addWebBookmark": "Add a web bookmark",
+    "pasteUrlPlaceholder": "Paste in https://…",
+    "createBookmark": "Create bookmark",
+    "createBookmarkHint": "Create a visual bookmark from a link.",
     "uploadingImage": "Uploading...",
     "dropImageHere": "Drop an image here or click to browse",
     "imageFormats": "PNG, JPG, GIF, WebP, SVG (max 10MB)",
@@ -368,6 +367,7 @@
     "imageUrlPlaceholder": "https://example.com/image.png",
     "insert": "Insert",
     "previewLabel": "Preview",
+    "addMermaidChart": "Add a Mermaid chart",
     "coverPicker": {
       "title": "Cover Image",
       "galleryTab": "Gallery",
@@ -385,15 +385,7 @@
       "imageUrlPlaceholder": "https://example.com/image.png",
       "apply": "Apply"
     },
-    "contextMenuAria": "Editor context menu",
-    "mermaid": {
-      "templates": "Templates",
-      "saveCtrlEnter": "Save (Ctrl+Enter)",
-      "cancelEscape": "Cancel (Escape)",
-      "toSave": "to save",
-      "toCancel": "to cancel",
-      "toIndent": "to indent"
-    }
+    "contextMenuAria": "Editor context menu"
   },
   "sidebar": {
     "settings": "Settings",
@@ -402,6 +394,7 @@
     "newFile": "New File",
     "newMarkdown": "Markdown",
     "newPdf": "PDF",
+    "newExcel": "Excel",
     "newFolder": "New folder",
     "collapseAll": "Collapse all",
     "fromTemplate": "From Template",

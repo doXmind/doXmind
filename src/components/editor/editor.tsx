@@ -2,6 +2,7 @@
 
 import { useEditor, EditorContent } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
 import {
   type CSSProperties,
   type MouseEvent,
@@ -13,9 +14,7 @@ import {
 import { BubbleMenuComponent } from "./bubble-menu";
 import { LinkBubbleMenu } from "./link-bubble-menu";
 
-import { ImageModal } from "./image-modal";
-import { BookmarkModal } from "./bookmark-modal";
-import { PagePickerModal } from "./page-picker-modal";
+import { PagePickerPopover } from "./page-picker-popover";
 import { EditorContextMenu } from "./editor-context-menu";
 import { SearchBar } from "./search-bar";
 import { StatusBar } from "./status-bar";
@@ -48,6 +47,91 @@ function extractDatabaseIds(content: string): Set<string> {
   return ids;
 }
 
+function focusTrailingParagraph(view: EditorView): boolean {
+  const { state, dispatch } = view;
+  const paragraph = state.schema.nodes.paragraph;
+  if (!paragraph) return false;
+
+  const { doc } = state;
+  const lastChild = doc.lastChild;
+  let tr = state.tr;
+  let selectionPos: number;
+
+  if (lastChild?.type === paragraph && lastChild.content.size === 0) {
+    const lastStart = doc.content.size - lastChild.nodeSize;
+    selectionPos = lastStart + 1;
+  } else {
+    const insertPos = doc.content.size;
+    tr = tr.insert(insertPos, paragraph.create());
+    selectionPos = insertPos + 1;
+  }
+
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, selectionPos)).scrollIntoView());
+  view.focus();
+  return true;
+}
+
+function exitTextBlockContainerAtEnd(
+  view: EditorView,
+  containerName: string,
+  options: { exitOnNonEmptyEnd?: boolean } = {}
+): boolean {
+  const { state, dispatch } = view;
+  const { selection } = state;
+  const paragraph = state.schema.nodes.paragraph;
+  if (!selection.empty || !paragraph) return false;
+
+  const { $from } = selection;
+  const parent = $from.parent;
+  const shouldExitNonEmpty = options.exitOnNonEmptyEnd ?? false;
+  const isEmptyParagraph = parent.content.size === 0;
+
+  if (
+    parent.type.name !== "paragraph" ||
+    $from.parentOffset !== parent.content.size ||
+    (!isEmptyParagraph && !shouldExitNonEmpty)
+  ) {
+    return false;
+  }
+
+  let containerDepth = 0;
+  for (let depth = $from.depth - 1; depth > 0; depth -= 1) {
+    if ($from.node(depth).type.name === containerName) {
+      containerDepth = depth;
+      break;
+    }
+  }
+
+  if (
+    containerDepth === 0 ||
+    $from.indexAfter(containerDepth) !== $from.node(containerDepth).childCount
+  ) {
+    return false;
+  }
+
+  const containerNode = $from.node(containerDepth);
+  const containerStart = $from.before(containerDepth);
+  const containerEnd = $from.after(containerDepth);
+
+  if (isEmptyParagraph && containerNode.childCount === 1) {
+    const tr = state.tr.replaceWith(containerStart, containerEnd, paragraph.create());
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, containerStart + 1)).scrollIntoView());
+    return true;
+  }
+
+  if (isEmptyParagraph) {
+    const tr = state.tr.delete($from.before(), $from.after());
+    const insertPos = tr.mapping.map(containerEnd);
+    tr.insert(insertPos, paragraph.create());
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, insertPos + 1)).scrollIntoView());
+    return true;
+  }
+
+  const tr = state.tr.insert(containerEnd, paragraph.create());
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, containerEnd + 1)).scrollIntoView());
+  return true;
+}
+
 interface EditorProps {
   file: FileItem;
   reservedRightInset?: number;
@@ -70,9 +154,6 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
   const setSelection = useEditorStore((s) => s.setSelection);
   const setSaving = useEditorStore((s) => s.setSaving);
   const setLastSavedAt = useEditorStore((s) => s.setLastSavedAt);
-  const imageModalOpen = useEditorStore((s) => s.imageModalOpen);
-  const imageModalCallback = useEditorStore((s) => s.imageModalCallback);
-  const closeImageModal = useEditorStore((s) => s.closeImageModal);
 
   // Layout state — use individual selectors to avoid re-renders on unrelated layout changes
   // fontFamily is applied at <html> by AppearanceInjector so the whole
@@ -230,6 +311,14 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
               );
               return true;
             }
+
+            if (
+              exitTextBlockContainerAtEnd(view, "blockquote", { exitOnNonEmptyEnd: true }) ||
+              exitTextBlockContainerAtEnd(view, "callout")
+            ) {
+              event.preventDefault();
+              return true;
+            }
           }
         }
 
@@ -258,11 +347,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
           if (!isInsideEditorWidth || !isBelowLastBlock) return false;
 
           event.preventDefault();
-          view.dispatch(
-            view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).scrollIntoView()
-          );
-          view.focus();
-          return true;
+          return focusTrailingParagraph(view);
         },
       },
     },
@@ -409,7 +494,9 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       domObserver?.stop();
 
       editor.commands.setContent(file.content, { emitUpdate: false });
-      editor.commands.focus("start");
+      // Don't auto-focus: when a doc opens we want the page resting at the
+      // top (title/cover visible) with no caret, the way Notion does it. The
+      // user clicks (or presses Enter on the title) to start editing.
       // Use editor.getHTML() (TipTap-normalized) rather than raw file.content
       // to prevent false-positive change detection in debouncedSave.
       lastContentRef.current = editor.getHTML();
@@ -419,6 +506,13 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
 
       // Restart DOM observer after content is fully replaced
       domObserver?.start();
+
+      // Reset scroll to the top so the title (and cover, if any) is visible
+      // on open. Without this, the previous file's scroll position lingers
+      // and the user lands mid-document.
+      if (scrollAreaRef.current) {
+        scrollAreaRef.current.scrollTop = 0;
+      }
 
       // Delay resetting the file switching flag to allow any queued
       // DOM observer callbacks to be discarded
@@ -458,11 +552,17 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       domObserver?.stop();
 
       editor.commands.setContent(file.content, { emitUpdate: false });
-      editor.commands.focus("start");
+      // Same as the file-switch effect above: opening a doc must not steal
+      // focus or scroll the title off-screen.
       lastContentRef.current = editor.getHTML();
       editor.emit("update", { editor, transaction: editor.state.tr, appendedTransactions: [] });
 
       domObserver?.start();
+
+      if (scrollAreaRef.current) {
+        scrollAreaRef.current.scrollTop = 0;
+      }
+
       requestAnimationFrame(() => {
         isFileSwitchingRef.current = false;
       });
@@ -474,17 +574,6 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
   }, [file.content, editor]);
 
   useBlockKeyboardShortcuts(editor);
-
-  // Handle Image Modal confirm
-  const handleImageModalConfirm = useCallback(
-    (url: string, alt?: string) => {
-      if (imageModalCallback) {
-        imageModalCallback(url, alt);
-      }
-      closeImageModal();
-    },
-    [imageModalCallback, closeImageModal]
-  );
 
   // Set --right-extend CSS variable for Notion-style table rightward breakout.
   // The available right edge excludes the outline gutter so tables do not
@@ -547,7 +636,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       if (!isInsideEditorColumn || !isBelowEditorContent) return;
 
       event.preventDefault();
-      editor.chain().focus("end").run();
+      focusTrailingParagraph(editor.view);
     },
     [editor]
   );
@@ -603,13 +692,7 @@ export function Editor({ file: initialFile, reservedRightInset = 0 }: EditorProp
       <LinkBubbleMenu editor={editor} />
       <EditorContextMenu editor={editor} />
 
-      <ImageModal
-        open={imageModalOpen}
-        onClose={closeImageModal}
-        onConfirm={handleImageModalConfirm}
-      />
-      <BookmarkModal />
-      <PagePickerModal />
+      <PagePickerPopover />
     </div>
   );
 }

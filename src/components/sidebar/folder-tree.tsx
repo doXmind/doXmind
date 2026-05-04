@@ -405,7 +405,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
             dragOverFolderId === folder.id
               ? "bg-[var(--sidebar-active)] ring-1 ring-primary/40"
               : isActiveFolder
-                ? "bg-[var(--sidebar-active)] shadow-[var(--sidebar-active-shadow)] ring-1 ring-[var(--sidebar-active-border)]"
+                ? "bg-[var(--sidebar-active)]"
                 : "hover:bg-[var(--sidebar-hover)]"
           )}
         >

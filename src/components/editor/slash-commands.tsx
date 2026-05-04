@@ -4,10 +4,12 @@ import Suggestion from "@tiptap/suggestion";
 import { ReactRenderer } from "@tiptap/react";
 import { computePosition, flip, shift, offset } from "@floating-ui/dom";
 import {
+  Fragment,
   forwardRef,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useState,
   useCallback,
   useRef,
@@ -42,7 +44,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { cn, formatShortcut } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 
 import { Palette, Table2, LayoutGrid, GalleryHorizontalEnd } from "lucide-react";
@@ -57,16 +59,24 @@ interface CommandItem {
   title: string;
   description: string;
   titleKey: string;
+  menuTitleKey?: string;
   descKey: string;
   icon: React.ReactNode;
   category: "basic" | "lists" | "media" | "database" | "layout" | "advanced" | "turninto" | "color";
   shortcut?: string;
+  menuShortcut?: string;
   searchOnly?: boolean;
   hasSubItems?: boolean;
   subItems?: CommandSubItem[];
   searchKeywords?: string[];
   command: (props: { editor: Editor; range: Range }) => void;
 }
+
+/**
+ * Feature flag: database blocks are still in internal beta. Flip to `true`
+ * to expose them in the slash menu (and search results) again.
+ */
+const ENABLE_DATABASE_BLOCKS = false;
 
 const categoryLabelKeys: Record<string, string> = {
   basic: "slashMenu.categories.basic",
@@ -78,6 +88,45 @@ const categoryLabelKeys: Record<string, string> = {
   turninto: "slashMenu.categories.turninto",
   color: "slashMenu.categories.color",
 };
+
+const notionBasicOrder = new Map<string, number>([
+  ["Text", 0],
+  ["Heading 1", 1],
+  ["Heading 2", 2],
+  ["Heading 3", 3],
+  ["Heading 4", 4],
+  ["Heading 5", 5],
+  ["Heading 6", 6],
+  ["Bullet List", 7],
+  ["Numbered List", 8],
+  ["Task List", 9],
+  ["Toggle", 10],
+  ["Link to Page", 11],
+  ["Callout", 12],
+]);
+
+const categoryOrder: Record<CommandItem["category"], number> = {
+  basic: 0,
+  lists: 0,
+  media: 1,
+  database: 2,
+  layout: 3,
+  advanced: 4,
+  turninto: 5,
+  color: 6,
+};
+
+function getMenuCategory(item: CommandItem): CommandItem["category"] {
+  if (notionBasicOrder.has(item.title)) return "basic";
+  if (item.category === "basic") return "advanced";
+  return item.category;
+}
+
+function getMenuRank(item: CommandItem, originalIndex: number) {
+  const basicRank = notionBasicOrder.get(item.title);
+  if (basicRank !== undefined) return basicRank;
+  return 100 + categoryOrder[getMenuCategory(item)] * 100 + originalIndex;
+}
 
 const commands: CommandItem[] = [
   // Basic Blocks
@@ -101,6 +150,7 @@ const commands: CommandItem[] = [
     icon: <Heading1 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+1",
+    menuShortcut: "#",
     searchKeywords: ["标题", "一级标题", "大标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run();
@@ -114,6 +164,7 @@ const commands: CommandItem[] = [
     icon: <Heading2 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+2",
+    menuShortcut: "##",
     searchKeywords: ["标题", "二级标题", "中标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run();
@@ -127,6 +178,7 @@ const commands: CommandItem[] = [
     icon: <Heading3 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+3",
+    menuShortcut: "###",
     searchKeywords: ["标题", "三级标题", "小标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
@@ -140,7 +192,7 @@ const commands: CommandItem[] = [
     icon: <Heading4 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+4",
-    searchOnly: true,
+    menuShortcut: "####",
     searchKeywords: ["标题", "四级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 4 }).run();
@@ -154,7 +206,7 @@ const commands: CommandItem[] = [
     icon: <Heading5 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+5",
-    searchOnly: true,
+    menuShortcut: "#####",
     searchKeywords: ["标题", "五级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 5 }).run();
@@ -168,7 +220,7 @@ const commands: CommandItem[] = [
     icon: <Heading6 className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Alt+6",
-    searchOnly: true,
+    menuShortcut: "######",
     searchKeywords: ["标题", "六级标题"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setNode("heading", { level: 6 }).run();
@@ -182,9 +234,10 @@ const commands: CommandItem[] = [
     icon: <Quote className="h-4 w-4" />,
     category: "basic",
     shortcut: "Ctrl+Shift+B",
+    menuShortcut: '"',
     searchKeywords: ["引用", "引用块"],
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleBlockquote().run();
+      editor.chain().focus().deleteRange(range).clearNodes().toggleBlockquote().run();
     },
   },
   {
@@ -196,7 +249,7 @@ const commands: CommandItem[] = [
     category: "basic",
     searchKeywords: ["提示框", "高亮", "警告"],
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setCallout({ type: "info" }).run();
+      editor.chain().focus().deleteRange(range).clearNodes().toggleCallout({ type: "info" }).run();
     },
   },
   {
@@ -206,6 +259,7 @@ const commands: CommandItem[] = [
     descKey: "blockMenu.toggleDesc",
     icon: <ChevronRight className="h-4 w-4" />,
     category: "basic",
+    menuShortcut: ">",
     searchKeywords: ["折叠", "可折叠"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).setToggle().run();
@@ -240,6 +294,7 @@ const commands: CommandItem[] = [
     title: "Link to Page",
     description: "Link to an existing page",
     titleKey: "blockMenu.linkToPage",
+    menuTitleKey: "blockMenu.page",
     descKey: "blockMenu.linkToPageDesc",
     icon: <FileText className="h-4 w-4" />,
     category: "basic",
@@ -247,9 +302,16 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       const { openPagePicker } = useEditorStore.getState();
+      const coords = editor.view.coordsAtPos(editor.state.selection.from);
+      const anchor = {
+        x: coords.left,
+        y: coords.top,
+        width: 0,
+        height: coords.bottom - coords.top,
+      };
       openPagePicker((attrs) => {
         editor.chain().focus().setPageLink(attrs).run();
-      });
+      }, anchor);
     },
   },
 
@@ -262,6 +324,7 @@ const commands: CommandItem[] = [
     icon: <List className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+8",
+    menuShortcut: "-",
     searchKeywords: ["无序列表", "列表"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleBulletList().run();
@@ -275,6 +338,7 @@ const commands: CommandItem[] = [
     icon: <ListOrdered className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+7",
+    menuShortcut: "1.",
     searchKeywords: ["有序列表", "编号列表"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleOrderedList().run();
@@ -288,6 +352,7 @@ const commands: CommandItem[] = [
     icon: <ListTodo className="h-4 w-4" />,
     category: "lists",
     shortcut: "Ctrl+Shift+9",
+    menuShortcut: "[]",
     searchKeywords: ["任务列表", "待办", "复选框"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleTaskList().run();
@@ -306,29 +371,26 @@ const commands: CommandItem[] = [
     searchKeywords: ["图片", "图像", "上传"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
-      const { openImageModal } = useEditorStore.getState();
-      openImageModal((url, alt) => {
-        const { $from } = editor.state.selection;
-        const isEmptyParagraph =
-          $from.parent.type.name === "paragraph" && $from.parent.content.size === 0;
+      const { $from } = editor.state.selection;
+      const isEmptyParagraph =
+        $from.parent.type.name === "paragraph" && $from.parent.content.size === 0;
 
-        if (isEmptyParagraph) {
-          editor
-            .chain()
-            .focus()
-            .insertContentAt({ from: $from.before($from.depth), to: $from.after($from.depth) }, [
-              { type: "image", attrs: { src: url, alt } },
-              { type: "paragraph" },
-            ])
-            .run();
-        } else {
-          editor
-            .chain()
-            .focus()
-            .insertContent([{ type: "image", attrs: { src: url, alt } }, { type: "paragraph" }])
-            .run();
-        }
-      });
+      if (isEmptyParagraph) {
+        editor
+          .chain()
+          .focus()
+          .insertContentAt({ from: $from.before($from.depth), to: $from.after($from.depth) }, [
+            { type: "image" },
+            { type: "paragraph" },
+          ])
+          .run();
+      } else {
+        editor
+          .chain()
+          .focus()
+          .insertContent([{ type: "image" }, { type: "paragraph" }])
+          .run();
+      }
     },
   },
   {
@@ -357,21 +419,7 @@ const commands: CommandItem[] = [
     category: "media",
     searchKeywords: ["网页书签", "书签", "链接"],
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).run();
-      const { openBookmarkModal } = useEditorStore.getState();
-      openBookmarkModal((attrs) => {
-        editor
-          .chain()
-          .focus()
-          .setWebBookmark({
-            url: attrs.url,
-            title: attrs.title,
-            description: attrs.description,
-            faviconUrl: attrs.faviconUrl,
-            imageUrl: attrs.imageUrl,
-          })
-          .run();
-      });
+      editor.chain().focus().deleteRange(range).setWebBookmark({ url: "" }).run();
     },
   },
 
@@ -716,7 +764,7 @@ const commands: CommandItem[] = [
     category: "turninto",
     searchKeywords: ["转换为引用"],
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleBlockquote().run();
+      editor.chain().focus().deleteRange(range).clearNodes().toggleBlockquote().run();
     },
   },
   {
@@ -728,7 +776,7 @@ const commands: CommandItem[] = [
     category: "turninto",
     searchKeywords: ["转换为提示框"],
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setCallout({ type: "info" }).run();
+      editor.chain().focus().deleteRange(range).clearNodes().toggleCallout({ type: "info" }).run();
     },
   },
   {
@@ -855,402 +903,524 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
   switch (title) {
     case "Text":
       return (
-        <div className="text-ui-base space-y-1.5 leading-relaxed text-popover-foreground/80">
-          <p>Start writing with plain text. Use commands to add formatting and blocks.</p>
+        <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+          <div>
+            The Milky Way is the galaxy that includes the Solar System, with the name describing its
+            appearance from Earth.
+          </div>
+          <div className="mt-1.5">
+            A faint band of light formed from stars that cannot be individually distinguished by the
+            naked eye.
+          </div>
         </div>
       );
 
     case "Heading 1":
       return (
-        <div className="space-y-1">
-          <p className="text-ui-xl font-bold leading-tight text-popover-foreground">
-            Large section heading
-          </p>
-          <p className="text-ui-xs text-muted-foreground">Used for major document sections</p>
+        <div className="px-3 pt-3 text-[#37352f]">
+          <div className="text-[16px] font-bold leading-[1.2]">Galaxies</div>
+          <div className="mt-2 text-[9px] leading-[1.55]">
+            A galaxy is a gravitationally bound system of stars, stellar remnants, and interstellar
+            gas.
+          </div>
         </div>
       );
 
     case "Heading 2":
       return (
-        <div className="space-y-1">
-          <p className="text-ui-lg font-bold leading-tight text-popover-foreground">
-            Medium section heading
-          </p>
-          <p className="text-ui-xs text-muted-foreground">Used for sub-sections</p>
+        <div className="px-3 pt-3 text-[#37352f]">
+          <div className="text-[13px] font-bold leading-[1.2]">Types of galaxies</div>
+          <div className="mt-2 text-[9px] leading-[1.55]">
+            Galaxies are classified by visual morphology as elliptical, spiral, or irregular.
+          </div>
         </div>
       );
 
     case "Heading 3":
       return (
-        <div className="space-y-1">
-          <p className="text-ui-md font-semibold leading-tight text-popover-foreground">
-            Small section heading
-          </p>
-          <p className="text-ui-xs text-muted-foreground">Used for nested sections</p>
+        <div className="px-3 pt-3 text-[#37352f]">
+          <div className="text-[11px] font-bold leading-[1.2]">Spiral galaxies</div>
+          <div className="mt-2 text-[9px] leading-[1.55]">
+            The most common type, characterized by their flat rotating disks of stars and
+            interstellar gas.
+          </div>
         </div>
       );
 
     case "Heading 4":
       return (
-        <div className="space-y-1">
-          <p className="text-ui-base font-semibold leading-tight text-popover-foreground">
-            Extra small heading
-          </p>
-          <p className="text-ui-xs text-muted-foreground">Minor section divider</p>
+        <div className="px-3 pt-3 text-[#37352f]">
+          <div className="text-[10px] font-bold leading-[1.2]">Barred spirals</div>
+          <div className="mt-1.5 text-[9px] leading-[1.55]">
+            A subtype of spiral galaxy with a central bar-shaped structure of stars.
+          </div>
         </div>
       );
 
     case "Heading 5":
       return (
-        <div className="space-y-1">
-          <p className="text-ui-base font-semibold leading-tight text-popover-foreground">
-            Minor heading
-          </p>
-          <p className="text-ui-xs text-muted-foreground">Small section label</p>
+        <div className="px-3 pt-3 text-[#37352f]">
+          <div className="text-[9px] font-bold leading-[1.2]">Local Group</div>
+          <div className="mt-1.5 text-[9px] leading-[1.55]">
+            The galaxy group that includes the Milky Way and the Andromeda Galaxy.
+          </div>
         </div>
       );
 
     case "Heading 6":
       return (
-        <div className="space-y-1">
-          <p className="text-ui-sm font-semibold uppercase tracking-wide text-popover-foreground">
-            Smallest heading
-          </p>
-          <p className="text-ui-xs text-muted-foreground">Fine-grained section label</p>
+        <div className="px-3 pt-3 text-[#37352f]">
+          <div className="text-[8px] font-bold uppercase leading-[1.2] tracking-wide">
+            Sub-section
+          </div>
+          <div className="mt-1.5 text-[9px] leading-[1.55]">
+            Used for the smallest level in the heading hierarchy.
+          </div>
         </div>
       );
 
     case "Quote":
       return (
-        <div className="border-l-[3px] border-popover-foreground/20 pl-3">
-          <p className="text-ui-base italic leading-relaxed text-muted-foreground">
-            &ldquo;The only way to do great work is to love what you do.&rdquo;
-          </p>
+        <div className="px-3 pt-3 text-[#37352f]">
+          <div className="border-l-[3px] border-[#37352f] pl-2 text-[10px] italic leading-[1.5]">
+            We are made of star-stuff. We are a way for the cosmos to know itself.
+          </div>
+          <div className="mt-2 text-[8px] text-[#9b9a97]">— Carl Sagan, Cosmos</div>
         </div>
       );
 
     case "Callout":
       return (
-        <div className="rounded-md border border-blue-200/50 bg-blue-50/50 p-2 dark:border-blue-800/50 dark:bg-blue-950/30">
-          <div className="flex items-start gap-2">
-            <span className="text-sm">&#x2139;&#xfe0f;</span>
-            <p className="text-ui-sm leading-relaxed text-popover-foreground/80">
-              Highlighted information or important note
-            </p>
+        <div className="px-3 pt-3 text-[9px] leading-[1.55] text-[#37352f]">
+          <div className="flex gap-1.5 rounded-sm bg-[#f1f1ef] px-2 py-1.5">
+            <div className="mt-[1px] flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#37352f]">
+              <span className="text-[7px] font-bold leading-none text-white">i</span>
+            </div>
+            <div className="min-w-0">
+              A <span className="font-bold">galaxy</span> is a gravitationally bo
+              <br />
+              dust, and dark matter. The wor
+              <br />
+              literally &ldquo;milky&rdquo;, a reference to t
+            </div>
+          </div>
+          <div className="mt-2">
+            The space between galaxies is filled w
+            <br />
+            average density of less than one atom
           </div>
         </div>
       );
 
     case "Toggle":
       return (
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <p className="text-ui-base font-medium text-popover-foreground">Toggle heading</p>
+        <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+          <div className="flex items-center gap-1 font-medium">
+            <ChevronRight className="h-2.5 w-2.5 shrink-0" />
+            <span>What is a galaxy?</span>
           </div>
-          <div className="ml-5 rounded border border-dashed border-border/60 px-2 py-1">
-            <p className="text-ui-xs text-muted-foreground">Hidden content inside...</p>
+          <div className="ml-3.5 mt-1.5">
+            A galaxy is a gravitationally bound system of stars, stellar remnants, gas, and dust.
           </div>
         </div>
       );
 
     case "Table of Contents":
       return (
-        <div className="text-ui-sm space-y-1">
-          <p className="font-medium text-popover-foreground">Table of Contents</p>
-          <div className="space-y-0.5 pl-1 text-muted-foreground">
-            <p>&#x2022; Introduction</p>
-            <p className="pl-3">&#x2022; Getting Started</p>
-            <p className="pl-6">&#x2022; Installation</p>
+        <div className="px-3 pt-3 text-[9px] leading-[1.7] text-[#37352f]">
+          <div className="font-semibold">Introduction</div>
+          <div className="pl-3 text-[#5e5d59]">Background</div>
+          <div className="pl-3 text-[#5e5d59]">Methodology</div>
+          <div className="pl-6 text-[#9b9a97]">Sample selection</div>
+          <div className="pl-6 text-[#9b9a97]">Data analysis</div>
+          <div className="font-semibold">Findings</div>
+        </div>
+      );
+
+    case "Page":
+    case "Link to Page":
+      return (
+        <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+          <div>Refer to the project overview in</div>
+          <div className="mt-1.5 inline-flex items-center gap-1 rounded-sm px-1 py-0.5 underline decoration-[#cccac4] underline-offset-[3px]">
+            <FileText className="h-3 w-3 shrink-0 text-[#9b9a97]" />
+            <span className="font-medium">Q3 Roadmap</span>
+          </div>
+          <div className="mt-1.5">for the full timeline and milestones.</div>
+        </div>
+      );
+
+    case "Bullet List":
+      return (
+        <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+          <div className="font-medium">Galaxy classification</div>
+          <div className="mt-1 space-y-0.5">
+            {["Spiral galaxies", "Elliptical galaxies", "Irregular galaxies", "Dwarf galaxies"].map(
+              (text) => (
+                <div key={text} className="flex gap-1.5">
+                  <span className="leading-none">•</span>
+                  <span>{text}</span>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      );
+
+    case "Numbered List":
+      return (
+        <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+          <div className="font-medium">How to observe the night sky</div>
+          <div className="mt-1 space-y-0.5">
+            {[
+              "Find a dark location",
+              "Allow your eyes to adapt",
+              "Use a star chart",
+              "Look up",
+            ].map((text, index) => (
+              <div key={text} className="flex gap-1.5">
+                <span className="text-[#5e5d59]">{index + 1}.</span>
+                <span>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "Task List":
+      return (
+        <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+          <div className="space-y-1">
+            {[
+              { text: "Read introduction chapter", done: true },
+              { text: "Take notes on key concepts", done: true },
+              { text: "Write summary essay", done: false },
+              { text: "Submit by Friday afternoon", done: false },
+            ].map(({ text, done }) => (
+              <div key={text} className="flex items-start gap-1.5">
+                {done ? (
+                  <div className="mt-[2px] flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] bg-[#37352f] text-[7px] font-bold leading-none text-white">
+                    ✓
+                  </div>
+                ) : (
+                  <div className="mt-[2px] h-2.5 w-2.5 shrink-0 rounded-[2px] border border-[#9b9a97]" />
+                )}
+                <span className={done ? "text-[#9b9a97] line-through" : undefined}>{text}</span>
+              </div>
+            ))}
           </div>
         </div>
       );
 
     case "Divider":
       return (
-        <div className="flex flex-col items-center gap-2 py-2">
-          <p className="text-ui-xs text-muted-foreground">Content above</p>
-          <hr className="w-full border-border" />
-          <p className="text-ui-xs text-muted-foreground">Content below</p>
-        </div>
-      );
-
-    case "Bullet List":
-      return (
-        <div className="text-ui-sm space-y-1 pl-1 text-popover-foreground/80">
-          <p>&#x2022; First bullet point</p>
-          <p>&#x2022; Second bullet point</p>
-          <p>&#x2022; Third bullet point</p>
-        </div>
-      );
-
-    case "Numbered List":
-      return (
-        <div className="text-ui-sm space-y-1 pl-1 text-popover-foreground/80">
-          <p>1. First item</p>
-          <p>2. Second item</p>
-          <p>3. Third item</p>
-        </div>
-      );
-
-    case "Task List":
-      return (
-        <div className="text-ui-sm space-y-1 text-popover-foreground/80">
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded-sm border border-muted-foreground/40" />
-            <span>Todo item</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="flex h-3 w-3 items-center justify-center rounded-sm bg-primary text-[8px] text-primary-foreground">
-              &#x2713;
-            </div>
-            <span className="line-through opacity-60">Completed item</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded-sm border border-muted-foreground/40" />
-            <span>Another todo</span>
-          </div>
+        <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+          <div>The Milky Way is the galaxy that includes our Solar System.</div>
+          <div className="my-2 h-px w-full bg-[#e6e5e1]" />
+          <div>Andromeda is the nearest large galaxy at 2.5 million light-years away.</div>
         </div>
       );
 
     case "Image":
       return (
-        <div className="flex flex-col items-center gap-1.5 rounded-md border border-dashed border-border/70 p-3">
-          {/* eslint-disable-next-line jsx-a11y/alt-text -- Lucide icon, not img */}
-          <Image className="h-6 w-6 text-muted-foreground/50" />
-          <p className="text-ui-xs text-muted-foreground">Upload or embed an image</p>
+        <div className="px-3 pt-3">
+          <div className="relative flex h-[72px] w-full items-center justify-center overflow-hidden rounded border border-[#e6e5e1] bg-[#f7f7f5]">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/80 ring-1 ring-[#e6e5e1]">
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <Image className="h-3.5 w-3.5 text-[#9b9a97]" />
+            </div>
+          </div>
+          <div className="mt-1.5 text-[8px] italic text-[#9b9a97]">
+            A view of the Milky Way galaxy
+          </div>
         </div>
       );
 
     case "Table":
       return (
-        <div className="text-ui-xs overflow-hidden rounded border border-border/70">
-          <div className="flex bg-muted/50">
-            <div className="flex-1 border-r border-border/50 px-2 py-1 font-medium">Header</div>
-            <div className="flex-1 border-r border-border/50 px-2 py-1 font-medium">Header</div>
-            <div className="flex-1 px-2 py-1 font-medium">Header</div>
-          </div>
-          <div className="flex border-t border-border/50">
-            <div className="flex-1 border-r border-border/50 px-2 py-1 text-muted-foreground">
-              Cell
+        <div className="px-3 pt-3 text-[7px] leading-tight text-[#37352f]">
+          <div className="overflow-hidden rounded border border-[#e6e5e1]">
+            <div className="grid grid-cols-3">
+              {[
+                ["Galaxy", "Type", "Distance"],
+                ["Andromeda", "Spiral", "2.5 Mly"],
+                ["Triangulum", "Spiral", "2.7 Mly"],
+                ["Whirlpool", "Spiral", "23 Mly"],
+              ].map((row, rowIdx) => (
+                <Fragment key={rowIdx}>
+                  {row.map((cell, colIdx) => (
+                    <div
+                      key={`${rowIdx}-${colIdx}`}
+                      className={cn(
+                        "px-1.5 py-1",
+                        rowIdx < 3 && "border-b border-[#e6e5e1]",
+                        colIdx < 2 && "border-r border-[#e6e5e1]",
+                        rowIdx === 0 && "bg-[#f7f7f5] font-semibold"
+                      )}
+                    >
+                      {cell}
+                    </div>
+                  ))}
+                </Fragment>
+              ))}
             </div>
-            <div className="flex-1 border-r border-border/50 px-2 py-1 text-muted-foreground">
-              Cell
-            </div>
-            <div className="flex-1 px-2 py-1 text-muted-foreground">Cell</div>
-          </div>
-          <div className="flex border-t border-border/50">
-            <div className="flex-1 border-r border-border/50 px-2 py-1 text-muted-foreground">
-              Cell
-            </div>
-            <div className="flex-1 border-r border-border/50 px-2 py-1 text-muted-foreground">
-              Cell
-            </div>
-            <div className="flex-1 px-2 py-1 text-muted-foreground">Cell</div>
           </div>
         </div>
       );
 
     case "2 Columns":
       return (
-        <div className="flex gap-1.5">
-          <div className="flex-1 rounded border border-border/60 bg-muted/30 px-2 py-3">
-            <div className="h-1 w-3/4 rounded bg-muted-foreground/20" />
-          </div>
-          <div className="flex-1 rounded border border-border/60 bg-muted/30 px-2 py-3">
-            <div className="h-1 w-3/4 rounded bg-muted-foreground/20" />
+        <div className="px-3 pt-3">
+          <div className="flex gap-2">
+            {[1, 2].map((idx) => (
+              <div key={idx} className="flex-1 space-y-1">
+                <div className="h-1.5 w-full rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-5/6 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-3/4 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-2/3 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-4/5 rounded-sm bg-[#e6e5e1]" />
+              </div>
+            ))}
           </div>
         </div>
       );
 
     case "3 Columns":
       return (
-        <div className="flex gap-1">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="flex-1 rounded border border-border/60 bg-muted/30 px-1.5 py-3">
-              <div className="h-1 w-3/4 rounded bg-muted-foreground/20" />
-            </div>
-          ))}
+        <div className="px-3 pt-3">
+          <div className="flex gap-1.5">
+            {[1, 2, 3].map((idx) => (
+              <div key={idx} className="flex-1 space-y-1">
+                <div className="h-1.5 w-full rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-5/6 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-3/4 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-2/3 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-4/5 rounded-sm bg-[#e6e5e1]" />
+              </div>
+            ))}
+          </div>
         </div>
       );
 
     case "4 Columns":
       return (
-        <div className="flex gap-0.5">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="flex-1 rounded border border-border/60 bg-muted/30 px-1 py-3">
-              <div className="h-1 w-3/4 rounded bg-muted-foreground/20" />
-            </div>
-          ))}
+        <div className="px-3 pt-3">
+          <div className="flex gap-1">
+            {[1, 2, 3, 4].map((idx) => (
+              <div key={idx} className="flex-1 space-y-1">
+                <div className="h-1.5 w-full rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-5/6 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-3/4 rounded-sm bg-[#e6e5e1]" />
+                <div className="h-1.5 w-2/3 rounded-sm bg-[#e6e5e1]" />
+              </div>
+            ))}
+          </div>
         </div>
       );
 
     case "Code Block":
       return (
-        <div className="text-ui-xs rounded-md bg-zinc-900 p-2.5 font-mono leading-relaxed text-zinc-300 dark:bg-zinc-800">
-          <p>
-            <span className="text-purple-400">const</span>{" "}
-            <span className="text-blue-300">hello</span> <span className="text-zinc-500">=</span>{" "}
-            <span className="text-green-400">&quot;world&quot;</span>;
-          </p>
+        <div className="px-3 pt-3">
+          <div className="rounded bg-[#1e1e1e] p-2 font-mono text-[7.5px] leading-[1.6] text-[#d4d4d4]">
+            <div>
+              <span className="text-white">function</span> <span className="text-white">greet</span>
+              (<span className="text-[#9b9a97]">name</span>) {"{"}
+            </div>
+            <div className="pl-3">
+              <span className="text-white">return</span>{" "}
+              <span className="text-[#9b9a97]">{"`Hello, ${name}!`"}</span>;
+            </div>
+            <div>{"}"}</div>
+            <div className="mt-1">
+              <span className="text-white">greet</span>(
+              <span className="text-[#9b9a97]">&quot;world&quot;</span>);
+            </div>
+          </div>
         </div>
       );
 
     case "Math Block":
       return (
-        <div className="flex items-center justify-center rounded-md border border-border/50 bg-muted/30 p-3">
-          <p className="text-ui-md font-serif italic text-popover-foreground">E = mc&sup2;</p>
+        <div className="px-3 pt-3 text-[9px] leading-[1.55] text-[#37352f]">
+          <div>Einstein&apos;s mass-energy equivalence:</div>
+          <div className="my-2 flex justify-center font-serif text-[20px] italic leading-none">
+            E = mc<sup className="text-[12px]">2</sup>
+          </div>
+          <div className="text-[#5e5d59]">where c is the speed of light in vacuum.</div>
         </div>
       );
 
     case "Mermaid Chart":
       return (
-        <div className="text-ui-xs rounded-md border border-border/50 bg-muted/30 p-2.5 font-mono leading-relaxed text-muted-foreground">
-          <p>graph LR</p>
-          <p className="pl-2">A[&quot;Start&quot;] --&gt; B[&quot;End&quot;]</p>
+        <div className="flex h-full items-center justify-center px-3 py-2 text-[7.5px] text-[#37352f]">
+          <div className="flex flex-col items-center gap-0.5">
+            <div className="rounded border border-[#37352f] bg-white px-2 py-0.5 leading-tight">
+              Idea
+            </div>
+            <div className="h-2 w-px bg-[#37352f]" />
+            <div className="flex gap-2">
+              <div className="rounded border border-[#37352f] bg-white px-1.5 py-0.5 leading-tight">
+                Build
+              </div>
+              <div className="rounded border border-[#37352f] bg-white px-1.5 py-0.5 leading-tight">
+                Test
+              </div>
+            </div>
+            <div className="h-2 w-px bg-[#37352f]" />
+            <div className="rounded border border-[#37352f] bg-[#f1f1ef] px-2 py-0.5 font-semibold leading-tight">
+              Ship
+            </div>
+          </div>
         </div>
       );
 
     case "Inline Math":
       return (
-        <div className="text-ui-base leading-relaxed text-popover-foreground/80">
-          <p>
-            The formula{" "}
-            <span className="rounded bg-muted/50 px-1 font-serif italic">
-              x&sup2; + y&sup2; = r&sup2;
+        <div className="px-3 pt-3 text-[9px] leading-[1.7] text-[#37352f]">
+          <div>
+            The Pythagorean theorem states that{" "}
+            <span className="rounded-sm bg-[#f1f1ef] px-1 font-serif italic">
+              a<sup>2</sup> + b<sup>2</sup> = c<sup>2</sup>
             </span>{" "}
-            appears inline with text.
-          </p>
+            for any right triangle.
+          </div>
+          <div className="mt-1.5 text-[#5e5d59]">
+            where a and b are the legs and c is the hypotenuse.
+          </div>
         </div>
       );
 
     case "Web Bookmark":
       return (
-        <div className="overflow-hidden rounded-md border border-border/70">
-          <div className="flex items-start gap-2 p-2">
-            <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-ui-sm font-medium text-popover-foreground">
-                Netscape (web browser)
-              </p>
-              <p className="text-ui-xs leading-relaxed text-muted-foreground">
-                Netscape is the general name for a web browser...
-              </p>
-              <div className="flex items-center gap-1">
-                <Globe className="h-2.5 w-2.5 text-muted-foreground" />
-                <span className="text-ui-xs text-muted-foreground">en.wikipedia.org</span>
+        <div className="px-3 pt-3">
+          <div className="flex h-[68px] overflow-hidden rounded border border-[#e6e5e1]">
+            <div className="min-w-0 flex-1 px-2 py-1.5">
+              <div className="truncate text-[8px] font-semibold leading-tight text-[#37352f]">
+                Milky Way - Wikipedia
+              </div>
+              <div className="mt-1 line-clamp-2 text-[7px] leading-[1.4] text-[#5e5d59]">
+                The Milky Way is the galaxy that includes the Solar System, with the name describing
+                its appearance.
+              </div>
+              <div className="mt-1 flex items-center gap-1 text-[7px] text-[#9b9a97]">
+                <div className="h-2 w-2 rounded-sm bg-[#9b9a97]" />
+                <span className="truncate">en.wikipedia.org</span>
               </div>
             </div>
-            <div className="h-10 w-14 shrink-0 rounded bg-muted" />
+            <div className="w-14 shrink-0 border-l border-[#e6e5e1] bg-[#f7f7f5]" />
           </div>
-        </div>
-      );
-
-    case "Link to Page":
-      return (
-        <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
-          <span className="text-base">&#x1f4cb;</span>
-          <span className="text-ui-base text-popover-foreground underline underline-offset-2">
-            Tasks
-          </span>
         </div>
       );
 
     case "Table view":
       return (
-        <div className="text-ui-xs overflow-hidden rounded border border-border/70">
-          <div className="flex bg-muted/50">
-            <div className="w-[45%] border-r border-border/50 px-2 py-1 font-medium">Aa Name</div>
-            <div className="flex-1 px-2 py-1 font-medium">&#x25cf; Status</div>
-          </div>
-          {[
-            {
-              name: "Mary Meeks",
-              status: "Scheduled",
-              color: "bg-amber-200 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200",
-            },
-            {
-              name: "Mitch Cohn",
-              status: "Engaged",
-              color: "bg-green-200 text-green-800 dark:bg-green-900/50 dark:text-green-200",
-            },
-            {
-              name: "Kim Saunders",
-              status: "Engaged",
-              color: "bg-green-200 text-green-800 dark:bg-green-900/50 dark:text-green-200",
-            },
-          ].map((row) => (
-            <div key={row.name} className="flex border-t border-border/50">
-              <div className="w-[45%] border-r border-border/50 px-2 py-1 text-muted-foreground">
-                {row.name}
+        <div className="px-3 pt-3 text-[7px] leading-tight text-[#37352f]">
+          <div className="overflow-hidden rounded border border-[#e6e5e1]">
+            <div className="grid grid-cols-[1fr_60px]">
+              <div className="border-b border-r border-[#e6e5e1] bg-[#f7f7f5] px-1.5 py-1 font-semibold">
+                Aa Name
               </div>
-              <div className="flex-1 px-2 py-1">
-                <span
-                  className={`text-ui-xs inline-block rounded px-1.5 py-0.5 font-medium ${row.color}`}
-                >
-                  {row.status}
+              <div className="border-b border-[#e6e5e1] bg-[#f7f7f5] px-1.5 py-1 font-semibold">
+                Status
+              </div>
+              <div className="border-b border-r border-[#e6e5e1] px-1.5 py-1">Mary Meeks</div>
+              <div className="border-b border-[#e6e5e1] px-1.5 py-1">
+                <span className="rounded-sm bg-[#ecece8] px-1 text-[6px] text-[#5e5d59]">
+                  Scheduled
+                </span>
+              </div>
+              <div className="border-b border-r border-[#e6e5e1] px-1.5 py-1">Mitch Cohn</div>
+              <div className="border-b border-[#e6e5e1] px-1.5 py-1">
+                <span className="rounded-sm bg-[#e0e0dc] px-1 text-[6px] text-[#37352f]">
+                  Engaged
+                </span>
+              </div>
+              <div className="border-r border-[#e6e5e1] px-1.5 py-1">Anna Kim</div>
+              <div className="px-1.5 py-1">
+                <span className="rounded-sm bg-[#f1f1ef] px-1 text-[6px] text-[#9b9a97]">
+                  Pending
                 </span>
               </div>
             </div>
-          ))}
+          </div>
         </div>
       );
 
     case "Board view":
       return (
-        <div className="flex gap-1.5">
-          {[
-            { label: "Todo", items: 2, color: "bg-zinc-200 dark:bg-zinc-700" },
-            { label: "In Progress", items: 1, color: "bg-blue-200 dark:bg-blue-900/50" },
-            { label: "Done", items: 2, color: "bg-green-200 dark:bg-green-900/50" },
-          ].map((col) => (
-            <div key={col.label} className="flex-1 space-y-1">
-              <div className="flex items-center gap-1 px-0.5">
-                <div className={`h-1.5 w-1.5 rounded-full ${col.color}`} />
-                <span className="text-ui-xs font-medium text-muted-foreground">{col.label}</span>
-              </div>
-              {Array.from({ length: col.items }).map((_, i) => (
-                <div key={i} className="rounded border border-border/60 bg-background p-1.5">
-                  <div className="h-1 w-4/5 rounded bg-muted-foreground/15" />
-                  <div className="mt-1 h-1 w-2/5 rounded bg-muted-foreground/10" />
+        <div className="px-3 pt-3">
+          <div className="flex gap-1.5 text-[7px] leading-tight">
+            {[
+              { label: "Todo", color: "#e6e5e1" },
+              { label: "Doing", color: "#cccac4" },
+              { label: "Done", color: "#9b9a97" },
+            ].map(({ label, color }) => (
+              <div key={label} className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-1 text-[#5e5d59]">
+                  <div className="h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: color }} />
+                  <span className="truncate font-semibold">{label}</span>
                 </div>
-              ))}
-            </div>
-          ))}
+                <div className="rounded border border-[#e6e5e1] bg-white p-1 shadow-sm">
+                  <div className="h-1 w-3/4 rounded-sm bg-[#37352f]/30" />
+                </div>
+                <div className="rounded border border-[#e6e5e1] bg-white p-1 shadow-sm">
+                  <div className="h-1 w-2/3 rounded-sm bg-[#37352f]/30" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       );
 
     case "Gallery view":
       return (
-        <div className="grid grid-cols-2 gap-1.5">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="overflow-hidden rounded border border-border/60">
-              <div className="h-8 bg-muted/50" />
-              <div className="p-1.5">
-                <div className="h-1 w-3/4 rounded bg-muted-foreground/20" />
-                <div className="mt-1 h-1 w-1/2 rounded bg-muted-foreground/10" />
+        <div className="px-3 pt-3">
+          <div className="grid grid-cols-2 gap-1.5">
+            {[
+              "from-[#f1f1ef] to-[#cccac4]",
+              "from-[#e6e5e1] to-[#9b9a97]",
+              "from-[#ecece8] to-[#b8b6b1]",
+              "from-[#f7f7f5] to-[#d4d2cd]",
+            ].map((gradient, idx) => (
+              <div key={idx} className="overflow-hidden rounded border border-[#e6e5e1] bg-white">
+                <div className={cn("h-7 bg-gradient-to-br", gradient)} />
+                <div className="space-y-0.5 p-1">
+                  <div className="h-1 w-4/5 rounded-sm bg-[#37352f]/40" />
+                  <div className="h-1 w-1/2 rounded-sm bg-[#37352f]/25" />
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       );
 
     case "List view":
       return (
-        <div className="text-ui-xs space-y-0.5">
-          {["Meeting notes", "Project plan", "Design spec", "Weekly review"].map((name) => (
-            <div
-              key={name}
-              className="flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-muted/30"
-            >
-              <FileText className="h-3 w-3 text-muted-foreground/50" />
-              <span className="text-popover-foreground/80">{name}</span>
-            </div>
-          ))}
+        <div className="px-3 pt-3 text-[8px] leading-tight text-[#37352f]">
+          <div className="overflow-hidden rounded border border-[#e6e5e1]">
+            {[
+              "Competitive Strategy",
+              "Value Capture",
+              "Cal Newport with Ezra Klein",
+              "How to Grow as Slack",
+              "Crafting The First Mile",
+            ].map((name, idx, arr) => (
+              <div
+                key={name}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1.5",
+                  idx < arr.length - 1 && "border-b border-[#ecece8]"
+                )}
+              >
+                <FileText className="h-2.5 w-2.5 shrink-0 text-[#9b9a97]" />
+                <span className="truncate font-medium">{name}</span>
+              </div>
+            ))}
+          </div>
         </div>
       );
 
     default:
-      // Color backgrounds
       if (item.category === "color") {
         const colorMap: Record<string, string> = {
           "Red background": "#fee2e2",
@@ -1263,18 +1433,98 @@ function getPreviewContent(item: CommandItem): React.ReactNode {
         const bg = colorMap[item.title];
         if (bg) {
           return (
-            <div className="rounded-md p-2.5" style={{ backgroundColor: bg }}>
-              <p className="text-ui-sm text-zinc-700">
-                Sample text with {item.title.toLowerCase()}
-              </p>
+            <div className="px-3 pt-3 text-[9px] leading-[1.6] text-[#37352f]">
+              <div className="rounded-sm px-2 py-1.5" style={{ backgroundColor: bg }}>
+                The Milky Way is the galaxy that
+                <br />
+                includes our Solar System.
+              </div>
+              <div className="mt-2">Use highlights to draw the eye to key ideas.</div>
             </div>
           );
         }
       }
-      // Fallback: show description
       return (
-        <p className="text-ui-base leading-relaxed text-muted-foreground">{item.description}</p>
+        <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-[#9b9a97]">
+          <div className="flex h-9 w-9 items-center justify-center rounded border border-[#e6e5e1] [&_svg]:h-5 [&_svg]:w-5">
+            {item.icon}
+          </div>
+          <div className="text-[9px] font-medium text-[#5e5d59]">{title}</div>
+        </div>
       );
+  }
+}
+
+function getPreviewCaption(item: CommandItem, translatedTitle: string) {
+  const title = item.title.replace(/^Turn into\s+/i, "");
+
+  switch (title) {
+    case "Text":
+      return "Just start writing with plain text";
+    case "Heading 1":
+      return "Big section heading";
+    case "Heading 2":
+      return "Medium section heading";
+    case "Heading 3":
+      return "Small section heading";
+    case "Heading 4":
+      return "Smaller section heading";
+    case "Heading 5":
+      return "Minor heading";
+    case "Heading 6":
+      return "Smallest heading";
+    case "Quote":
+      return "Capture a quote";
+    case "Callout":
+      return "Make writing stand out";
+    case "Toggle":
+      return "Hide content under a toggle";
+    case "Table of Contents":
+      return "Show an outline of your headings";
+    case "Page":
+    case "Link to Page":
+      return "Link to an existing page";
+    case "Bullet List":
+      return "Create a simple bulleted list";
+    case "Numbered List":
+      return "Create a list with numbering";
+    case "Task List":
+      return "Track tasks with a to-do list";
+    case "Divider":
+      return "Visually separate blocks";
+    case "Image":
+      return "Upload or embed an image";
+    case "Table":
+      return "Add a simple table";
+    case "Web Bookmark":
+      return "Save a link as a visual bookmark";
+    case "Code Block":
+      return "Capture a code snippet";
+    case "Math Block":
+      return "Insert a block math equation";
+    case "Mermaid Chart":
+      return "Insert a diagram or chart";
+    case "Inline Math":
+      return "Insert inline math expression";
+    case "Table view":
+      return "Create a table database view";
+    case "Board view":
+      return "Create a Kanban board view";
+    case "Gallery view":
+      return "Create a gallery database view";
+    case "List view":
+      return "Create a list database view";
+    case "2 Columns":
+      return "Side-by-side two columns";
+    case "3 Columns":
+      return "Side-by-side three columns";
+    case "4 Columns":
+      return "Side-by-side four columns";
+    default:
+      if (item.category === "color") {
+        return "Highlight a block with color";
+      }
+      return translatedTitle;
   }
 }
 
@@ -1292,18 +1542,16 @@ function PreviewCard({ item, translatedTitle }: { item: CommandItem; translatedT
     <div
       ref={previewRef}
       className={cn(
-        "absolute top-0 hidden w-[220px] rounded-xl border border-border/70 bg-popover p-3 shadow-xl md:block",
+        "absolute top-[27px] hidden w-[220px] rounded-md border border-[#e9e9e7] bg-white p-2 shadow-[0_8px_24px_rgba(15,15,15,0.08)] dark:border-[#3f3f3f] dark:bg-[#252525] dark:shadow-[0_8px_24px_rgba(0,0,0,0.24)] md:block",
         flipToLeft ? "right-full mr-2" : "left-full ml-2"
       )}
     >
-      <div className="mb-2 flex items-center gap-2">
-        <div className="flex h-5 w-5 items-center justify-center text-muted-foreground">
-          {item.icon}
-        </div>
-        <span className="text-ui-sm font-semibold text-muted-foreground/80">{translatedTitle}</span>
+      <div className="h-[140px] overflow-hidden rounded bg-white text-[#37352f] dark:border dark:border-[#e9e9e7]">
+        {getPreviewContent(item)}
       </div>
-      <div className="mb-2.5 h-px bg-border" />
-      <div className="pointer-events-none select-none">{getPreviewContent(item)}</div>
+      <div className="mt-2 text-[13px] font-semibold leading-[1.15] text-[#37352f] dark:text-[#f1f1ef]">
+        {getPreviewCaption(item, translatedTitle)}
+      </div>
     </div>
   );
 }
@@ -1311,236 +1559,280 @@ function PreviewCard({ item, translatedTitle }: { item: CommandItem; translatedT
 interface CommandListProps {
   items: CommandItem[];
   command: (item: CommandItem) => void;
+  query?: string;
 }
 
 interface CommandListRef {
   onKeyDown: (props: { event: KeyboardEvent }) => boolean;
 }
 
-const CommandList = forwardRef<CommandListRef, CommandListProps>(({ items, command }, ref) => {
-  const t = useTranslations("editor");
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [subView, setSubView] = useState<CommandItem | null>(null);
-  const [subSelectedIndex, setSubSelectedIndex] = useState(0);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  const selectItem = useCallback(
-    (index: number) => {
-      const item = items[index];
-      if (item) {
-        if (item.hasSubItems && item.subItems) {
-          setSubView(item);
-          setSubSelectedIndex(0);
-        } else {
-          command(item);
-        }
-      }
-    },
-    [items, command]
-  );
-
-  const selectSubItem = useCallback(
-    (subItem: CommandSubItem) => {
-      if (!subView) return;
-      const syntheticItem: CommandItem = {
-        ...subView,
-        command: subItem.command,
-      };
-      command(syntheticItem);
-    },
-    [subView, command]
-  );
-
-  useEffect(() => {
-    setSelectedIndex(0);
-    setSubView(null);
-  }, [items]);
-
-  // Scroll selected item into view
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const buttons = container.querySelectorAll("[data-command-item]");
-    const idx = subView ? subSelectedIndex : selectedIndex;
-    const selected = buttons[idx] as HTMLElement | undefined;
-    if (selected) {
-      selected.scrollIntoView({ block: "nearest" });
-    }
-  }, [selectedIndex, subSelectedIndex, subView]);
-
-  useImperativeHandle(ref, () => ({
-    onKeyDown: ({ event }) => {
-      // Sub-view keyboard navigation
-      if (subView && subView.subItems) {
-        if (event.key === "ArrowUp") {
-          setSubSelectedIndex(
-            (prev) => (prev - 1 + subView.subItems!.length) % subView.subItems!.length
-          );
-          return true;
-        }
-        if (event.key === "ArrowDown") {
-          setSubSelectedIndex((prev) => (prev + 1) % subView.subItems!.length);
-          return true;
-        }
-        if (event.key === "Enter") {
-          selectSubItem(subView.subItems[subSelectedIndex]);
-          return true;
-        }
-        if (event.key === "Backspace" || event.key === "ArrowLeft") {
-          setSubView(null);
-          return true;
-        }
-        return false;
-      }
-
-      // Main view keyboard navigation
-      if (event.key === "ArrowUp") {
-        setSelectedIndex((prev) => (prev - 1 + items.length) % items.length);
-        return true;
-      }
-
-      if (event.key === "ArrowDown") {
-        setSelectedIndex((prev) => (prev + 1) % items.length);
-        return true;
-      }
-
-      if (event.key === "Enter") {
-        selectItem(selectedIndex);
-        return true;
-      }
-
-      return false;
-    },
-  }));
-
-  if (items.length === 0) {
-    return <div className="p-2 text-sm text-muted-foreground">{t("blockMenu.noResults")}</div>;
-  }
-
-  // Sub-view rendering
-  if (subView && subView.subItems) {
-    return (
-      <div className="relative">
-        <div className="w-[420px] overflow-hidden rounded-xl border border-border/70 bg-popover shadow-xl">
-          <div ref={scrollContainerRef} className="p-1.5">
-            <button
-              onClick={() => setSubView(null)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50"
-            >
-              <ChevronLeft className="h-3 w-3" />
-              {t("blockMenu.back")}
-            </button>
-            <div className="mx-1 my-1 h-px bg-border" />
-            {subView.subItems.map((sub, idx) => (
-              <button
-                key={sub.titleKey}
-                data-command-item
-                onClick={() => selectSubItem(sub)}
-                onMouseEnter={() => setSubSelectedIndex(idx)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-2 py-1 text-left text-base",
-                  idx === subSelectedIndex
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50"
-                )}
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground">
-                  {sub.icon}
-                </div>
-                <p className="font-medium">{t(sub.titleKey)}</p>
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center justify-between border-t border-border px-3 py-2 text-sm text-muted-foreground/85">
-            <span>{t("slashMenu.closeMenu")}</span>
-            <span>esc</span>
-          </div>
-        </div>
-      </div>
+const CommandList = forwardRef<CommandListRef, CommandListProps>(
+  ({ items, command, query = "" }, ref) => {
+    const t = useTranslations("editor");
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const [subView, setSubView] = useState<CommandItem | null>(null);
+    const [subSelectedIndex, setSubSelectedIndex] = useState(0);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const isSearching = query.trim().length > 0;
+    const visibleItems = useMemo(
+      () =>
+        items
+          .map((item, originalIndex) => ({ item, originalIndex }))
+          .sort(
+            (a, b) =>
+              getMenuRank(a.item, a.originalIndex) - getMenuRank(b.item, b.originalIndex) ||
+              a.originalIndex - b.originalIndex
+          ),
+      [items]
     );
-  }
 
-  // Group items by category while preserving order
-  const groupedItems: { category: string; items: { item: CommandItem; globalIndex: number }[] }[] =
-    [];
-  let currentCategory = "";
+    const selectItem = useCallback(
+      (index: number) => {
+        const item = visibleItems[index]?.item;
+        if (item) {
+          if (item.hasSubItems && item.subItems) {
+            setSubView(item);
+            setSubSelectedIndex(0);
+          } else {
+            command(item);
+          }
+        }
+      },
+      [visibleItems, command]
+    );
 
-  items.forEach((item, globalIndex) => {
-    if (item.category !== currentCategory) {
-      currentCategory = item.category;
-      groupedItems.push({ category: item.category, items: [] });
+    const selectSubItem = useCallback(
+      (subItem: CommandSubItem) => {
+        if (!subView) return;
+        const syntheticItem: CommandItem = {
+          ...subView,
+          command: subItem.command,
+        };
+        command(syntheticItem);
+      },
+      [subView, command]
+    );
+
+    useEffect(() => {
+      setSelectedIndex(0);
+      setSubView(null);
+    }, [items]);
+
+    // Scroll selected item into view
+    useEffect(() => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const buttons = container.querySelectorAll("[data-command-item]");
+      const idx = subView ? subSelectedIndex : selectedIndex;
+      const selected = buttons[idx] as HTMLElement | undefined;
+      if (selected) {
+        selected.scrollIntoView({ block: "nearest" });
+      }
+    }, [selectedIndex, subSelectedIndex, subView]);
+
+    useImperativeHandle(ref, () => ({
+      onKeyDown: ({ event }) => {
+        // Sub-view keyboard navigation
+        if (subView && subView.subItems) {
+          if (event.key === "ArrowUp") {
+            setSubSelectedIndex(
+              (prev) => (prev - 1 + subView.subItems!.length) % subView.subItems!.length
+            );
+            return true;
+          }
+          if (event.key === "ArrowDown") {
+            setSubSelectedIndex((prev) => (prev + 1) % subView.subItems!.length);
+            return true;
+          }
+          if (event.key === "Enter") {
+            selectSubItem(subView.subItems[subSelectedIndex]);
+            return true;
+          }
+          if (event.key === "Backspace" || event.key === "ArrowLeft") {
+            setSubView(null);
+            return true;
+          }
+          return false;
+        }
+
+        // Main view keyboard navigation
+        if (visibleItems.length === 0) return false;
+
+        if (event.key === "ArrowUp") {
+          setSelectedIndex((prev) => (prev - 1 + visibleItems.length) % visibleItems.length);
+          return true;
+        }
+
+        if (event.key === "ArrowDown") {
+          setSelectedIndex((prev) => (prev + 1) % visibleItems.length);
+          return true;
+        }
+
+        if (event.key === "Enter") {
+          selectItem(selectedIndex);
+          return true;
+        }
+
+        return false;
+      },
+    }));
+
+    if (visibleItems.length === 0) {
+      return <div className="p-2 text-sm text-muted-foreground">{t("blockMenu.noResults")}</div>;
     }
-    groupedItems[groupedItems.length - 1].items.push({ item, globalIndex });
-  });
 
-  return (
-    <div className="relative">
-      <div className="w-[420px] overflow-hidden rounded-xl border border-border/70 bg-popover shadow-xl">
-        <div
-          ref={scrollContainerRef}
-          className="max-h-[360px] overflow-y-auto overflow-x-hidden p-1.5"
-        >
-          {groupedItems.map((group, groupIndex) => (
-            <div key={`${group.category}-${groupIndex}`}>
-              {/* Category separator */}
-              {groupIndex > 0 && <div className="mx-1 my-1 h-px bg-border" />}
-
-              {/* Category header */}
-              <div className="text-ui-sm px-2 pb-0.5 pt-1 font-semibold text-muted-foreground/80">
-                {t(categoryLabelKeys[group.category] ?? group.category)}
-              </div>
-
-              <div className="mx-1 my-1 h-px bg-border" />
-
-              {/* Items */}
-              {group.items.map(({ item, globalIndex }) => (
+    // Sub-view rendering
+    if (subView && subView.subItems) {
+      return (
+        <div className="relative">
+          <div
+            data-slash-menu-panel
+            className="w-[326px] overflow-hidden rounded-[14px] border border-[#e9e9e7] bg-white shadow-[0_12px_32px_rgba(15,15,15,0.1)] dark:border-[#3f3f3f] dark:bg-[#252525] dark:shadow-[0_12px_32px_rgba(0,0,0,0.34)]"
+          >
+            <div ref={scrollContainerRef} className="p-1.5">
+              <button
+                onClick={() => setSubView(null)}
+                className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-[13px] font-medium text-[#5e5d59] hover:bg-[#f1f1ef] dark:text-[#b8b8b8] dark:hover:bg-[#3a3a3a]"
+              >
+                <ChevronLeft className="h-3 w-3" />
+                {t("blockMenu.back")}
+              </button>
+              {subView.subItems.map((sub, idx) => (
                 <button
-                  key={item.titleKey}
+                  key={sub.titleKey}
                   data-command-item
-                  onClick={() => selectItem(globalIndex)}
-                  onMouseEnter={() => setSelectedIndex(globalIndex)}
+                  onClick={() => selectSubItem(sub)}
+                  onMouseEnter={() => setSubSelectedIndex(idx)}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-2 py-1 text-left text-base",
-                    globalIndex === selectedIndex
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/50"
+                    "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[15px] text-[#37352f] dark:text-[#f1f1ef]",
+                    idx === subSelectedIndex
+                      ? "bg-[#e9e9e7] dark:bg-[#3d3d3d]"
+                      : "hover:bg-[#f1f1ef] dark:hover:bg-[#333]"
                   )}
                 >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground">
-                    {item.icon}
+                  <div className="flex h-5 w-5 shrink-0 items-center justify-center text-[#5e5d59] dark:text-[#dedede]">
+                    {sub.icon}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{t(item.titleKey)}</p>
-                  </div>
-                  {item.hasSubItems && (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-                  )}
-                  {item.shortcut && !item.hasSubItems && (
-                    <span className="shrink-0 text-xs text-muted-foreground/65">
-                      {formatShortcut(item.shortcut)}
-                    </span>
-                  )}
+                  <p className="font-medium">{t(sub.titleKey)}</p>
                 </button>
               ))}
             </div>
-          ))}
+            <div className="flex h-[42px] items-center justify-between border-t border-[#e9e9e7] px-3 text-[15px] font-semibold text-[#37352f] dark:border-[#3a3a3a] dark:text-[#f1f1ef]">
+              <span>{t("slashMenu.closeMenu")}</span>
+              <span className="font-medium text-[#9b9a97] dark:text-[#8d8d8d]">esc</span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center justify-between border-t border-border px-3 py-2 text-sm text-muted-foreground/85">
-          <span>{t("slashMenu.closeMenu")}</span>
-          <span>esc</span>
+      );
+    }
+
+    // Group items by category while preserving order
+    const groupedItems: {
+      category: string;
+      items: { item: CommandItem; displayIndex: number }[];
+    }[] = [];
+    let currentCategory = "";
+
+    visibleItems.forEach(({ item }, displayIndex) => {
+      const menuCategory = isSearching ? "filtered" : getMenuCategory(item);
+      if (menuCategory !== currentCategory) {
+        currentCategory = menuCategory;
+        groupedItems.push({ category: menuCategory, items: [] });
+      }
+      groupedItems[groupedItems.length - 1].items.push({ item, displayIndex });
+    });
+
+    return (
+      <div className="relative">
+        <div
+          data-slash-menu-panel
+          className="w-[326px] overflow-hidden rounded-[14px] border border-[#e9e9e7] bg-white shadow-[0_12px_32px_rgba(15,15,15,0.1)] dark:border-[#3f3f3f] dark:bg-[#252525] dark:shadow-[0_12px_32px_rgba(0,0,0,0.34)]"
+        >
+          <div
+            ref={scrollContainerRef}
+            className="max-h-[408px] overflow-y-auto overflow-x-hidden px-1 py-4"
+          >
+            {groupedItems.map((group, groupIndex) => (
+              <div key={`${group.category}-${groupIndex}`}>
+                {/* Category separator */}
+                {groupIndex > 0 && (
+                  <div className="mx-0 my-3 h-px bg-[#e9e9e7] dark:bg-[#3a3a3a]" />
+                )}
+
+                {/* Category header */}
+                <div className="px-3 pb-4 text-[13px] font-semibold leading-none text-[#5e5d59] dark:text-[#b8b8b8]">
+                  {group.category === "filtered"
+                    ? t("slashMenu.filteredResults")
+                    : t(categoryLabelKeys[group.category] ?? group.category)}
+                </div>
+
+                {/* Items */}
+                {group.items.map(({ item, displayIndex }) => (
+                  <button
+                    key={item.titleKey}
+                    data-command-item
+                    onClick={() => selectItem(displayIndex)}
+                    onMouseEnter={() => setSelectedIndex(displayIndex)}
+                    className={cn(
+                      "flex h-8 w-full items-center gap-2 rounded-md px-3 text-left text-[15px] leading-tight text-[#37352f] dark:text-[#f1f1ef]",
+                      displayIndex === selectedIndex
+                        ? "bg-[#e9e9e7] dark:bg-[#3d3d3d]"
+                        : "hover:bg-[#f1f1ef] dark:hover:bg-[#333]"
+                    )}
+                  >
+                    <div className="flex h-5 w-5 shrink-0 items-center justify-center text-[#5e5d59] dark:text-[#dedede] [&_svg]:h-[18px] [&_svg]:w-[18px]">
+                      {item.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">
+                        {t(item.menuTitleKey ?? item.titleKey)}
+                        {isSearching && item.category === "database" && item.searchOnly && (
+                          <span className="font-medium text-[#9b9a97] dark:text-[#8d8d8d]">
+                            {" "}
+                            · Database
+                          </span>
+                        )}
+                        {isSearching && item.category === "turninto" && (
+                          <span className="font-medium text-[#9b9a97] dark:text-[#8d8d8d]">
+                            {" "}
+                            · Turn into
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    {item.hasSubItems && (
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#9b9a97] dark:text-[#8d8d8d]" />
+                    )}
+                    {item.menuShortcut && !item.hasSubItems && (
+                      <span className="shrink-0 text-[14px] font-semibold text-[#9b9a97] dark:text-[#8d8d8d]">
+                        {item.menuShortcut}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="flex h-[42px] items-center justify-between border-t border-[#e9e9e7] px-3 text-[15px] font-semibold text-[#37352f] dark:border-[#3a3a3a] dark:text-[#f1f1ef]">
+            <span>{t("slashMenu.closeMenu")}</span>
+            <span className="font-medium text-[#9b9a97] dark:text-[#8d8d8d]">esc</span>
+          </div>
         </div>
+        {visibleItems[selectedIndex]?.item && (
+          <PreviewCard
+            key={visibleItems[selectedIndex].item.titleKey}
+            item={visibleItems[selectedIndex].item}
+            translatedTitle={t(
+              visibleItems[selectedIndex].item.menuTitleKey ??
+                visibleItems[selectedIndex].item.titleKey
+            )}
+          />
+        )}
       </div>
-      {items[selectedIndex] && (
-        <PreviewCard
-          key={items[selectedIndex].titleKey}
-          item={items[selectedIndex]}
-          translatedTitle={t(items[selectedIndex].titleKey)}
-        />
-      )}
-    </div>
-  );
-});
+    );
+  }
+);
 
 CommandList.displayName = "CommandList";
 
@@ -1587,6 +1879,9 @@ export const SlashCommands = Extension.create({
           };
 
           return commands.filter((item) => {
+            // Internal-only blocks: never surfaced (not even via search) until
+            // the corresponding feature flag is enabled.
+            if (!ENABLE_DATABASE_BLOCKS && item.category === "database") return false;
             // Hidden categories: only show when query specifically matches
             if (item.category === "turninto" || item.category === "color" || item.searchOnly) {
               if (!q) return false;
@@ -1600,6 +1895,9 @@ export const SlashCommands = Extension.create({
           let component: ReactRenderer<CommandListRef> | null = null;
           let wrapper: HTMLDivElement | null = null;
           let getClientRect: (() => DOMRect | null) | null = null;
+          let scrollHandler: (() => void) | null = null;
+          let positionToken = 0;
+          let rafHandle = 0;
 
           const updatePosition = () => {
             if (!wrapper || !getClientRect) return;
@@ -1610,46 +1908,72 @@ export const SlashCommands = Extension.create({
               getBoundingClientRect: () => rect,
             };
 
+            const token = ++positionToken;
+
             computePosition(virtualEl, wrapper, {
+              strategy: "fixed",
               placement: "bottom-start",
               middleware: [offset(8), flip(), shift({ padding: 8 })],
             }).then(({ x, y }) => {
-              if (wrapper) {
-                Object.assign(wrapper.style, {
-                  left: `${x}px`,
-                  top: `${y}px`,
-                });
-              }
+              if (!wrapper || token !== positionToken) return;
+              Object.assign(wrapper.style, {
+                left: `${x}px`,
+                top: `${y}px`,
+                visibility: "visible",
+              });
+            });
+          };
+
+          const schedulePosition = () => {
+            if (rafHandle) cancelAnimationFrame(rafHandle);
+            rafHandle = requestAnimationFrame(() => {
+              rafHandle = 0;
+              updatePosition();
             });
           };
 
           return {
-            onStart: (props: { editor: Editor; clientRect?: (() => DOMRect | null) | null }) => {
+            onStart: (props: {
+              editor: Editor;
+              range: Range;
+              clientRect?: (() => DOMRect | null) | null;
+            }) => {
               component = new ReactRenderer(CommandList, {
                 props,
                 editor: props.editor,
               });
 
               if (!props.clientRect) return;
-
               getClientRect = props.clientRect;
 
               wrapper = document.createElement("div");
-              wrapper.style.position = "absolute";
+              wrapper.style.position = "fixed";
+              wrapper.style.top = "0";
+              wrapper.style.left = "0";
               wrapper.style.zIndex = "9999";
+              wrapper.style.visibility = "hidden";
               wrapper.appendChild(component.element);
               document.body.appendChild(wrapper);
 
               updatePosition();
+              schedulePosition();
+
+              scrollHandler = () => updatePosition();
+              window.addEventListener("scroll", scrollHandler, true);
+              window.addEventListener("resize", scrollHandler);
             },
 
-            onUpdate: (props: { clientRect?: (() => DOMRect | null) | null }) => {
+            onUpdate: (props: {
+              editor: Editor;
+              range: Range;
+              clientRect?: (() => DOMRect | null) | null;
+            }) => {
               component?.updateProps(props);
 
               if (props.clientRect) {
                 getClientRect = props.clientRect;
-                updatePosition();
               }
+              schedulePosition();
             },
 
             onKeyDown: (props: { event: KeyboardEvent }) => {
@@ -1662,11 +1986,22 @@ export const SlashCommands = Extension.create({
             },
 
             onExit: () => {
+              if (rafHandle) {
+                cancelAnimationFrame(rafHandle);
+                rafHandle = 0;
+              }
+              if (scrollHandler) {
+                window.removeEventListener("scroll", scrollHandler, true);
+                window.removeEventListener("resize", scrollHandler);
+                scrollHandler = null;
+              }
               if (wrapper) {
                 wrapper.remove();
                 wrapper = null;
               }
               component?.destroy();
+              getClientRect = null;
+              positionToken++;
             },
           };
         },

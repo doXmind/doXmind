@@ -38,11 +38,6 @@
   animation: mathPanelFadeIn 0.15s ease-out;
 }
 
-/* Symbol picker */
-.symbol-picker {
-  animation: symbolPickerSlideIn 0.15s ease-out;
-}
-
 @keyframes mathPanelFadeIn {
   from {
     opacity: 0;
@@ -52,26 +47,6 @@
     opacity: 1;
     transform: scale(1);
   }
-}
-
-@keyframes symbolPickerSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Scrollbar for symbol picker */
-.symbol-picker::-webkit-scrollbar {
-  @apply w-1.5;
-}
-
-.symbol-picker::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-border/50;
 }
 
 /* KaTeX adjustments for editor */
@@ -92,13 +67,6 @@
 /* Error state for invalid LaTeX */
 .ProseMirror .math-rendered.math-error {
   @apply rounded border border-destructive/30 px-2 py-1 text-destructive;
-}
-
-/* Inline math overlay toolbar — position above the equation instead of top-right */
-.math-inline-toolbar.image-overlay-toolbar {
-  top: auto;
-  right: 0;
-  bottom: calc(100% + 4px);
 }
 
 /* Empty equation placeholder */

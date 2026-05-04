@@ -75,7 +75,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { getDisplayName } from "@/lib/document-types";
 import { exportEditedWorkbook } from "@/lib/excel/export-edited";
 import {
   fetchExcelWorkbook,
@@ -2611,7 +2610,6 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
   // Render
   // ---------------------------------------------------------------------
 
-  const displayName = getDisplayName(file.name);
   const cellRefLabel = anchor ? `${columnLabel(anchor.col)}${anchor.row + 1}` : "";
   const canUndo = history.length > 0;
   const canRedo = future.length > 0;
@@ -2626,9 +2624,6 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
           horizontally on narrow displays. */}
       <div className="bg-sidebar flex shrink-0 flex-col border-b border-border/60">
         <div className="flex h-9 items-center gap-2 overflow-x-auto px-3">
-          <span className="text-ui-xs max-w-[160px] shrink truncate font-semibold text-foreground/90">
-            {displayName}
-          </span>
           {isExporting && (
             <span className="text-ui-xs flex shrink-0 items-center gap-1.5 text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Exporting…

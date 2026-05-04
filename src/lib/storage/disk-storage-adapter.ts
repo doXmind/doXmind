@@ -173,7 +173,13 @@ export class DiskStorageAdapter implements StorageAdapter {
       return folderEntryFromPath(path);
     }
 
-    const documentType = input.documentType ?? (/\.pdf$/i.test(input.name) ? "pdf" : "markdown");
+    const documentType =
+      input.documentType ??
+      (/\.pdf$/i.test(input.name)
+        ? "pdf"
+        : /\.(xlsx|xlsm)$/i.test(input.name)
+          ? "excel"
+          : "markdown");
 
     if (documentType === "pdf") {
       if (!input.binary || input.binary.byteLength === 0) {
@@ -185,6 +191,19 @@ export class DiskStorageAdapter implements StorageAdapter {
       // HTTP fallback (`/api/workspace/invoke`) re-uses the same shape via
       // JSON, so a plain array works for both transports.
       const document = await this.invoke<WorkspaceDocumentDto>("doc_create_pdf", {
+        root: this.requireRoot(),
+        path,
+        bytes: Array.from(input.binary),
+      });
+      return entryFromDocument(document);
+    }
+
+    if (documentType === "excel") {
+      if (!input.binary || input.binary.byteLength === 0) {
+        throw new Error("Creating an Excel workbook requires non-empty binary bytes");
+      }
+      const path = ensureExcelExtension(childPath(input.parent, input.name));
+      const document = await this.invoke<WorkspaceDocumentDto>("doc_create_excel", {
         root: this.requireRoot(),
         path,
         bytes: Array.from(input.binary),
@@ -548,6 +567,10 @@ function ensureMarkdownExtension(name: string): string {
 
 function ensurePdfExtension(name: string): string {
   return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
+}
+
+function ensureExcelExtension(name: string): string {
+  return /\.(xlsx|xlsm)$/i.test(name) ? name : `${name}.xlsx`;
 }
 
 function stripMarkdownExtension(name: string): string {

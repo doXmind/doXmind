@@ -4,7 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
-const EMOJI_CATEGORIES = [
+export interface EmojiCategory {
+  label: string;
+  emojis: string[];
+}
+
+const DEFAULT_CATEGORIES: EmojiCategory[] = [
   {
     label: "Documents",
     emojis: ["📄", "📝", "📋", "📑", "📃", "📜", "📓", "📔", "📒", "📕", "📗", "📘", "📙", "📚"],
@@ -35,9 +40,21 @@ interface EmojiPickerProps {
   onSelect: (emoji: string | null) => void;
   onClose: () => void;
   anchorRect: DOMRect;
+  categories?: EmojiCategory[];
+  removeLabel?: string;
+  hideRemove?: boolean;
+  searchPlaceholder?: string;
 }
 
-export function EmojiPicker({ onSelect, onClose, anchorRect }: EmojiPickerProps) {
+export function EmojiPicker({
+  onSelect,
+  onClose,
+  anchorRect,
+  categories = DEFAULT_CATEGORIES,
+  removeLabel = "Remove icon",
+  hideRemove = false,
+  searchPlaceholder = "Search emoji...",
+}: EmojiPickerProps) {
   const [search, setSearch] = useState("");
   const pickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,17 +88,29 @@ export function EmojiPicker({ onSelect, onClose, anchorRect }: EmojiPickerProps)
 
   // Filter emojis by search
   const filteredCategories = search
-    ? EMOJI_CATEGORIES.map((cat) => ({
-        ...cat,
-        emojis: cat.emojis.filter((e) => e.includes(search)),
-      })).filter((cat) => cat.emojis.length > 0)
-    : EMOJI_CATEGORIES;
+    ? categories
+        .map((cat) => ({
+          ...cat,
+          emojis: cat.emojis.filter((e) => e.includes(search)),
+        }))
+        .filter((cat) => cat.emojis.length > 0)
+    : categories;
 
   return createPortal(
     <div
       ref={pickerRef}
       className="fixed z-50 w-72 rounded-lg border border-border bg-popover shadow-lg"
       style={{ top, left }}
+      onMouseDown={(e) => {
+        // Don't blur the underlying editor selection on emoji clicks — without
+        // this, ProseMirror handles the blur first and a NodeView's
+        // updateAttributes may run against a stale position. The search input
+        // is opted-out so it can still receive focus.
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
+          e.preventDefault();
+        }
+      }}
     >
       {/* Search */}
       <div className="border-b border-border p-2">
@@ -90,7 +119,7 @@ export function EmojiPicker({ onSelect, onClose, anchorRect }: EmojiPickerProps)
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search emoji..."
+          placeholder={searchPlaceholder}
           className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none focus:border-primary"
         />
       </div>
@@ -124,14 +153,16 @@ export function EmojiPicker({ onSelect, onClose, anchorRect }: EmojiPickerProps)
       </div>
 
       {/* Remove button */}
-      <div className="border-t border-border p-2">
-        <button
-          onClick={() => onSelect(null)}
-          className="w-full rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          Remove icon
-        </button>
-      </div>
+      {!hideRemove && (
+        <div className="border-t border-border p-2">
+          <button
+            onClick={() => onSelect(null)}
+            className="w-full rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            {removeLabel}
+          </button>
+        </div>
+      )}
     </div>,
     document.body
   );

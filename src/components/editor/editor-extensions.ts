@@ -25,7 +25,7 @@ import { CustomCodeBlock } from "@/extensions/code-block";
 import { InlineMath, BlockMath } from "@/extensions/math";
 import { MermaidChart } from "@/extensions/mermaid";
 import { Callout } from "@/extensions/callout";
-import { Toggle } from "@/extensions/toggle";
+import { Toggle, ToggleSummary, ToggleBody } from "@/extensions/toggle";
 import { Columns, Column } from "@/extensions/columns";
 import { TableOfContents } from "@/extensions/toc";
 import { WebBookmark } from "@/extensions/web-bookmark";
@@ -124,6 +124,8 @@ export function getEditorExtensions(): Extensions {
 
     // Toggle/collapsible blocks
     Toggle,
+    ToggleSummary,
+    ToggleBody,
 
     // Multi-column layout (2–5 columns)
     Columns,
@@ -164,6 +166,7 @@ export function getEditorExtensions(): Extensions {
     Placeholder.configure({
       placeholder: "Type '/' for commands",
       showOnlyCurrent: true,
+      includeChildren: true,
     }),
   ];
 

@@ -172,6 +172,7 @@
       "heading5Desc": "次要标题",
       "heading6": "六级标题",
       "heading6Desc": "最小标题",
+      "page": "页面",
       "linkToPage": "页面链接",
       "linkToPageDesc": "链接到已有页面",
       "webBookmark": "网页书签",
@@ -302,6 +303,7 @@
       "grayBgDesc": "为块应用灰色背景",
       "noBg": "无背景",
       "noBgDesc": "移除块背景颜色",
+      "filteredResults": "筛选结果",
       "closeMenu": "关闭菜单"
     },
     "callout": {
@@ -309,10 +311,11 @@
       "warning": "警告",
       "error": "错误",
       "tip": "提示",
-      "changeType": "点击切换类型"
+      "changeType": "点击更换图标",
+      "resetIcon": "恢复默认图标"
     },
     "toggle": {
-      "defaultSummary": "折叠标题"
+      "emptyHint": "空折叠块。点击或拖入子块。"
     },
     "versionPanel": {
       "manualEdit": "手动编辑",
@@ -327,27 +330,15 @@
     "noLanguagesFound": "未找到语言",
     "popularLanguages": "常用",
     "allLanguages": "所有语言",
-    "mathPreviewPlaceholder": "预览将在此处显示...",
+    "addTexEquation": "添加 TeX 公式",
     "invalidLatex": "无效的 LaTeX",
-    "insertSymbol": "插入符号",
-    "saveEnter": "保存 (Enter)",
-    "cancelEscape": "取消 (Escape)",
-    "enterToSave": "保存",
-    "escToCancel": "取消",
-    "shiftEnterNewline": "换行",
     "selectSize": "选择大小",
     "tableSize": "{rows} × {cols}",
     "tableSizeAria": "{rows} 行 {cols} 列",
-    "insertSymbolTitle": "插入符号",
-    "searchSymbols": "搜索符号...",
-    "noSymbolsFound": "未找到符号",
-    "symbolPickerHint": "点击符号插入 · 悬停查看 LaTeX 代码",
     "copyCode": "复制代码",
     "codeCopied": "已复制！",
     "emptyEquation": "空公式",
     "liftOutOfList": "从列表中提出",
-    "editEquation": "编辑公式",
-    "copyLatex": "复制 LaTeX",
     "alignLeft": "左对齐",
     "alignCenter": "居中",
     "alignRight": "右对齐",
@@ -359,6 +350,14 @@
     "describeImage": "描述这张图片...",
     "uploadTab": "上传",
     "urlTab": "链接",
+    "linkTab": "链接",
+    "addAnImage": "添加图片",
+    "uploadFile": "上传文件",
+    "embedImage": "嵌入图片",
+    "addWebBookmark": "添加网页书签",
+    "pasteUrlPlaceholder": "粘贴 https://…",
+    "createBookmark": "创建书签",
+    "createBookmarkHint": "从链接创建可视化书签。",
     "uploadingImage": "上传中...",
     "dropImageHere": "拖放图片到此处或点击浏览",
     "imageFormats": "PNG, JPG, GIF, WebP, SVG（最大 10MB）",
@@ -368,6 +367,7 @@
     "imageUrlPlaceholder": "https://example.com/image.png",
     "insert": "插入",
     "previewLabel": "预览",
+    "addMermaidChart": "添加 Mermaid 图表",
     "coverPicker": {
       "title": "封面图片",
       "galleryTab": "图库",
@@ -385,15 +385,7 @@
       "imageUrlPlaceholder": "https://example.com/image.png",
       "apply": "应用"
     },
-    "contextMenuAria": "编辑器上下文菜单",
-    "mermaid": {
-      "templates": "模板",
-      "saveCtrlEnter": "保存 (Ctrl+Enter)",
-      "cancelEscape": "取消 (Escape)",
-      "toSave": "保存",
-      "toCancel": "取消",
-      "toIndent": "缩进"
-    }
+    "contextMenuAria": "编辑器上下文菜单"
   },
   "sidebar": {
     "settings": "设置",
@@ -402,6 +394,7 @@
     "newFile": "新建文件",
     "newMarkdown": "Markdown",
     "newPdf": "PDF",
+    "newExcel": "Excel",
     "newFolder": "新建文件夹",
     "collapseAll": "全部收起",
     "fromTemplate": "从模板创建",

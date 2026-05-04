@@ -45,9 +45,9 @@ use objc2::rc::Retained;
 #[cfg(target_os = "macos")]
 use objc2::AnyThread;
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSApplication, NSImage};
+use objc2_app_kit::{NSApplication, NSImage, NSWorkspace};
 #[cfg(target_os = "macos")]
-use objc2_foundation::{MainThreadMarker, NSData};
+use objc2_foundation::{MainThreadMarker, NSData, NSString};
 
 #[cfg(not(debug_assertions))]
 use tauri_plugin_shell::process::CommandChild;
@@ -644,6 +644,32 @@ fn doc_create_pdf(
 }
 
 #[tauri::command]
+fn doc_create_excel(
+    root: String,
+    path: String,
+    bytes: Vec<u8>,
+) -> Result<WorkspaceDocumentDto, String> {
+    let root = canonical_workspace_root(&root)?;
+    ensure_excel_path(&path)?;
+    let resolved = resolve_workspace_path_for_write(&root, &path)?;
+    if resolved.exists() {
+        return Err(format!("document already exists: {path}"));
+    }
+    if let Some(parent) = resolved.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create destination directory: {err}"))?;
+    }
+    // .xlsx is a ZIP archive — every valid file starts with the local file
+    // header signature `PK\x03\x04`. Reject anything else early so a corrupt
+    // blob doesn't silently land on disk.
+    if !bytes.starts_with(b"PK\x03\x04") {
+        return Err("payload is not an XLSX (missing PK ZIP header)".into());
+    }
+    fs::write(&resolved, &bytes).map_err(|err| format!("failed to write XLSX: {err}"))?;
+    document_dto_for_path(&resolved, relative_path_string(&root, &resolved)?)
+}
+
+#[tauri::command]
 fn doc_rename(
     root: String,
     old_path: String,
@@ -856,6 +882,17 @@ fn ensure_pdf_path(path: &str) -> Result<(), String> {
     match extension.as_deref() {
         Some("pdf") => Ok(()),
         _ => Err(format!("document path must end in .pdf: {path}")),
+    }
+}
+
+fn ensure_excel_path(path: &str) -> Result<(), String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("xlsx") | Some("xlsm") => Ok(()),
+        _ => Err(format!("document path must end in .xlsx or .xlsm: {path}")),
     }
 }
 
@@ -1619,6 +1656,20 @@ pub fn run() {
         .try_init()
         .ok();
 
+    // Override the dock tile icon BEFORE any heavy setup (backend spawn,
+    // window creation). Otherwise macOS shows the cached .icns for the
+    // 1-3 seconds it takes setup to reach apply_dock_icon, producing a
+    // visible "wrong logo → correct logo" flash on every launch.
+    //
+    // The companion call invalidates LaunchServices' cached metadata for
+    // our bundle so the *next* cold launch's dock-bounce icon comes from
+    // the on-disk .icns rather than a stale system cache entry.
+    #[cfg(target_os = "macos")]
+    {
+        apply_dock_icon();
+        refresh_launchservices_bundle_record();
+    }
+
     let port = pick_free_port();
     let backend_url = format!("http://127.0.0.1:{port}");
     log::info!("[backend] reserved {backend_url}");
@@ -1682,6 +1733,7 @@ window.__TAURI_PLATFORM__ = "{platform}";
             workspace_markdown_search,
             doc_create,
             doc_create_pdf,
+            doc_create_excel,
             doc_rename,
             doc_move,
             doc_delete,
@@ -1794,6 +1846,34 @@ fn apply_dock_icon() {
     };
     let app = NSApplication::sharedApplication(mtm);
     unsafe { app.setApplicationIconImage(Some(&image)) };
+}
+
+/// Tell LaunchServices to forget what it cached for our bundle and re-read
+/// the .icns from disk. Without this, Dock shows the stale cached icon during
+/// the launch bounce on every cold start (the runtime override only kicks in
+/// after the binary loads). One call here means the next launch — and every
+/// launch after that — pulls the current .icns instead.
+#[cfg(target_os = "macos")]
+fn refresh_launchservices_bundle_record() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    // Walk up: <bundle>.app/Contents/MacOS/<binary>  →  <bundle>.app
+    let Some(bundle) = exe
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+    else {
+        return;
+    };
+    if bundle.extension().map_or(true, |ext| ext != "app") {
+        return;
+    }
+    let path = bundle.to_string_lossy();
+    let ns_path = NSString::from_str(&path);
+    let workspace = NSWorkspace::sharedWorkspace();
+    workspace.noteFileSystemChanged_(&ns_path);
+    log::info!("[dock] refreshed LaunchServices record for {}", path);
 }
 
 #[cfg(target_os = "macos")]

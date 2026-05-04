@@ -1,21 +1,28 @@
 /* Editor Styles */
 .editor-page-frame {
-  --editor-page-x: 1.5rem;
+  --editor-page-x: 1rem;
   --editor-outline-gutter: 0px;
-  padding: 0.5rem var(--editor-page-x) 1rem var(--editor-page-x);
+  box-sizing: border-box;
+  width: min(
+    calc(100% - (var(--editor-page-x) * 2) - var(--editor-outline-gutter)),
+    var(--editor-content-width)
+  );
+  margin-right: auto;
+  margin-left: auto;
+  padding: 0.5rem 0 1rem;
+  transform: translateX(calc(var(--editor-outline-gutter) / -2));
 }
 
 @media (min-width: 768px) {
   .editor-page-frame {
-    --editor-page-x: 6rem;
+    --editor-page-x: 3rem;
     padding-top: 2rem;
-    padding-right: calc(var(--editor-page-x) + var(--editor-outline-gutter));
     padding-bottom: 2rem;
   }
 }
 
 .ProseMirror {
-  @apply min-h-[500px] px-4 pb-[50vh] pt-4 outline-none;
+  @apply min-h-[500px] pb-[50vh] pt-4 outline-none;
   font-size: 1rem;
   line-height: 1.55;
 }
@@ -58,6 +65,19 @@
 /* Hide placeholder when diff blocks are present */
 .ProseMirror:has(.diff-inserted-wrapper) p.is-empty::before,
 .ProseMirror:has(.diff-deleted) p.is-empty::before {
+  content: none;
+}
+
+/* While the page picker is open, swap the editor's empty-paragraph placeholder
+   from "Type '/' for commands" to "Search for a page..." — the user keeps
+   typing in the editor itself; the picker is just the floating list below. */
+body[data-page-picker-open="true"] .ProseMirror p.is-empty::before {
+  content: "Search for a page...";
+}
+
+/* Notion-style: no placeholder inside table cells so empty cells stay tight */
+.ProseMirror td p.is-empty::before,
+.ProseMirror th p.is-empty::before {
   content: none;
 }
 
@@ -112,6 +132,102 @@
 
 .ProseMirror blockquote {
   @apply border-l-[3px] border-foreground/15 pl-4 italic text-muted-foreground;
+}
+
+.ProseMirror .doxmind-callout-wrapper {
+  display: block;
+  margin: 4px 0;
+}
+
+.ProseMirror .doxmind-callout-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 0;
+  border-radius: 10px;
+  background: rgb(241, 241, 239);
+  padding: 10px 14px;
+  color: hsl(var(--foreground));
+}
+
+.dark .ProseMirror .doxmind-callout-card {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Shared callout-like surface for empty/expanded block placeholders
+   (math, mermaid, image empty state). Matches callout bg so empty
+   blocks read as inline content rather than floating cards. */
+.doxmind-block-placeholder {
+  background: rgb(241, 241, 239);
+}
+
+.dark .doxmind-block-placeholder {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ProseMirror .doxmind-callout-icon-slot {
+  display: flex;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.ProseMirror .doxmind-callout-icon-button {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 20px;
+  line-height: 1;
+  outline: none;
+  transition: background-color 120ms ease;
+}
+
+.ProseMirror .doxmind-callout-icon-button:hover,
+.ProseMirror .doxmind-callout-icon-button:focus-visible {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.dark .ProseMirror .doxmind-callout-icon-button:hover,
+.dark .ProseMirror .doxmind-callout-icon-button:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ProseMirror .doxmind-callout-content {
+  min-width: 0;
+  flex: 1;
+  min-height: 24px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 24px;
+}
+
+.ProseMirror .doxmind-callout-content [data-node-view-content] {
+  min-height: 24px;
+}
+
+.ProseMirror .doxmind-callout-content > * {
+  margin: 0 !important;
+}
+
+.ProseMirror .doxmind-callout-content p {
+  margin: 0 !important;
+  min-height: 24px;
+  line-height: 24px;
+}
+
+.ProseMirror .doxmind-callout-content > * + * {
+  margin-top: 0.75em !important;
+}
+
+.ProseMirror .doxmind-callout-content p.is-empty::before {
+  color: hsl(var(--muted-foreground) / 0.7);
 }
 
 .ProseMirror pre {
@@ -394,10 +510,17 @@
 
 /* Table */
 .ProseMirror table {
-  @apply my-4 w-full border-collapse;
+  @apply my-4 border-collapse;
   /* Clip the column-resize-handle (right:-2px) on the last column
      so it doesn't cause wrapper overflow / phantom scrollbar */
   overflow: clip;
+  /* Default render fills the content column like any other block.
+     When the user drags a column wider or adds columns, the explicit
+     <col> widths sum past 100% — the table grows past the wrapper and
+     .tableWrapper handles it (max-width up to the scroll edge, then
+     horizontal scroll). */
+  width: 100%;
+  min-width: max-content;
 }
 
 .ProseMirror th,
@@ -407,16 +530,15 @@
   border: 1px solid hsl(var(--foreground) / 0.08);
   line-height: 1.4;
   vertical-align: top;
-  transition:
-    border-color 0.15s ease,
-    border-width 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
-/* Active table: more visible borders when cursor is inside */
+/* Active table: darker borders when cursor is inside.
+   Do NOT change border-width here — with border-collapse the extra
+   pixels accumulate across every cell and reflow the whole table. */
 .ProseMirror table.table-editing th,
 .ProseMirror table.table-editing td {
-  border-color: hsl(var(--foreground) / 0.25);
-  border-width: 1.5px;
+  border-color: hsl(var(--foreground) / 0.3);
 }
 
 /* Remove paragraph/block margins inside table cells for Notion-like compact layout */
@@ -459,16 +581,22 @@
   background-color: hsl(217 91% 60% / 0.7);
 }
 
-/* Table wrapper — Notion-style rightward breakout.
-   Table left edge stays aligned with text. Right side extends to the
-   scroll area edge so wide tables grow rightward (like Notion).
-   --right-extend is set by ResizeObserver on [data-editor-scroll]. */
+/* Table wrapper — content-width by default, extends rightward only when needed.
+   Default insert sits within the content column like other blocks; once the
+   user drags a column wider, the wrapper grows up to the scroll edge
+   (--right-extend) and then horizontally scrolls. */
 .ProseMirror .tableWrapper {
-  @apply overflow-x-auto;
   margin-top: 1.5rem;
   margin-bottom: 1rem;
+  overflow-x: auto;
   /* Hide scrollbar by default, only show when actively scrolling */
   scrollbar-width: none;
+  /* Hug the table's natural width but always at least fill the content
+     column. With max-width below, this means: default = content column,
+     wider tables grow rightward up to that bound, beyond it = scroll. */
+  width: max-content;
+  min-width: 100%;
+  max-width: 100%;
 }
 .ProseMirror .tableWrapper::-webkit-scrollbar {
   height: 6px;
@@ -487,10 +615,9 @@
 
 @media (min-width: 768px) {
   .ProseMirror .tableWrapper {
-    /* Extend rightward only. Negative margin-right grows the wrapper's
-       content-box so the table fills from text left edge to scroll area right.
-       Keep 1.5rem padding so the table doesn't touch the edge. */
-    margin-right: calc(-1 * var(--right-extend, 0px) + 3rem);
+    /* Allow the wrapper to extend past the content column up to the scroll
+       edge — but only when its child table actually needs that width. */
+    max-width: calc(100% + var(--right-extend, 0px) - 3rem);
   }
 }
 
@@ -571,18 +698,36 @@
   box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.7);
 }
 
-/* Slash command inline query hint (Notion-like) */
+/* Slash command inline query hint (Notion-like).
+   Keep `display: inline` here — using inline-flex/inline-block on a
+   contenteditable decoration span breaks caret positioning, snapping the
+   caret to the start edge of the styled box (so the cursor visually
+   appears *before* the typed `/`). Use padding + border-radius for the
+   pill look; box-decoration-break keeps it intact across line wraps. */
 .ProseMirror .slash-command-query {
-  position: relative;
+  display: inline;
+  border-radius: 6px;
+  background: hsl(var(--muted) / 0.78);
+  padding: 2px 6px;
+  color: hsl(var(--foreground));
+  font-weight: 500;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.dark .ProseMirror .slash-command-query {
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .ProseMirror .slash-command-query-empty::after {
-  content: "Type to filter...";
+  content: "Type to search";
   display: inline;
-  color: hsl(var(--muted-foreground) / 0.55);
+  color: hsl(var(--muted-foreground) / 0.62);
   margin-left: 0.08rem;
   white-space: nowrap;
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Inline Comment Highlights */

@@ -7,7 +7,6 @@ import {
   Download,
   Keyboard,
   Palette,
-  Play,
   CloudUpload,
   Loader2,
 } from "lucide-react";
@@ -35,7 +34,6 @@ export function UnifiedHeader() {
   const toggleFilesSidebar = useLayoutStore((s) => s.toggleFilesSidebar);
   const toggleSearchBar = useLayoutStore((s) => s.toggleSearchBar);
   const setKeyboardShortcutsOpen = useLayoutStore((s) => s.setKeyboardShortcutsOpen);
-  const setPresentationMode = useLayoutStore((s) => s.setPresentationMode);
   const currentFile = useFileStore((s) =>
     s.currentFileId ? s.files.find((file) => file.id === s.currentFileId) : undefined
   );
@@ -51,7 +49,6 @@ export function UnifiedHeader() {
   // Only show a title when an actual document is loaded — on the
   // welcome screen there's no file to title, so showing "Untitled"
   // would just be noise.
-  const isPdf = currentFile ? isPdfFile(currentFile) : false;
   const isExcel = currentFile ? isExcelFile(currentFile) : false;
   const title = currentFileName ? getDisplayName(currentFileName) : "";
   const saveLabel = isSaving ? t("saving") : isDirty ? t("unsavedChanges") : t("saved");
@@ -117,15 +114,15 @@ export function UnifiedHeader() {
       <header
         data-tauri-drag-region
         data-borderless={!currentFileName ? "" : undefined}
-        className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center pr-3 text-foreground"
+        className="desktop-chrome-header relative z-20 grid h-11 shrink-0 items-center text-foreground"
         style={{
-          gridTemplateColumns: "max(var(--files-sidebar-width, 304px), 124px) minmax(0, 1fr) auto",
+          gridTemplateColumns: "var(--files-sidebar-width, 0px) minmax(0, 1fr)",
         }}
       >
         <div
           data-tauri-drag-region
           className={cn(
-            "desktop-chrome-left-controls flex min-w-0 items-center gap-2",
+            "desktop-chrome-left-controls absolute left-0 top-0 z-10 flex h-full min-w-0 items-center gap-2",
             !isMacTauri && "pl-3"
           )}
         >
@@ -144,151 +141,145 @@ export function UnifiedHeader() {
           )}
         </div>
 
-        <div data-tauri-drag-region className="flex min-w-0 justify-start px-4">
-          {title && (
-            <div
-              data-tauri-drag-region
-              className="flex h-8 min-w-0 max-w-[min(520px,100%)] items-center gap-2 rounded-md px-1.5"
-              aria-label={title}
-            >
-              <span
-                data-tauri-drag-region
-                className="text-ui-base min-w-0 truncate font-semibold text-foreground"
-              >
-                {title}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div data-tauri-drag-region className="flex items-center justify-end gap-1.5">
-          {currentFileName && (
-            <>
-              {!isPdf && (
-                <Tooltip content={t("present")} side="bottom">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="desktop-header-button h-7 w-7 rounded-md"
-                    onClick={() => setPresentationMode(true)}
-                    aria-label={t("present")}
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                  </Button>
-                </Tooltip>
-              )}
-
-              <div className="h-5 w-px bg-[var(--chrome-border)]" />
-
-              <Tooltip content={saveLabel} side="bottom">
-                <div className="text-ui-xs flex h-7 items-center gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-muted-foreground">
-                  {isSaving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                  ) : (
-                    <CloudUpload className="h-3.5 w-3.5 text-muted-foreground" />
-                  )}
-                  <span>{isDirty ? t("unsavedChanges") : t("saved")}</span>
-                </div>
-              </Tooltip>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-ui-xs h-7 gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-foreground hover:bg-[var(--sidebar-hover)] hover:text-foreground"
-                    aria-label={t("export")}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t("export")}</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  {isExcel ? (
-                    <DropdownMenuItem onClick={() => handleExport("xlsx")}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Export as Excel
-                    </DropdownMenuItem>
-                  ) : (
-                    <>
-                      <DropdownMenuItem onClick={() => handleExport("markdown")}>
-                        <Download className="mr-2 h-4 w-4" />
-                        {t("exportAsMarkdown")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport("pdf")}>
-                        <Download className="mr-2 h-4 w-4" />
-                        {t("exportAsPDF")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport("docx")}>
-                        <Download className="mr-2 h-4 w-4" />
-                        {t("exportAsWord")}
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <div className="h-5 w-px bg-[var(--chrome-border)]" />
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="desktop-header-button h-7 w-7 rounded-md"
-                    aria-label={tSettings("appearance")}
-                  >
-                    <Palette className="h-3.5 w-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-[280px] p-3">
-                  <ThemePickerPanel />
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Tooltip
-                content={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
-                side="bottom"
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "desktop-header-button h-7 w-7 rounded-md",
-                    isSearchBarOpen && "bg-[var(--sidebar-active)] text-foreground"
-                  )}
-                  onClick={handleFind}
-                  aria-label={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
+        <div
+          data-tauri-drag-region
+          className="col-start-2 flex h-full min-w-0 items-center px-4 md:px-6"
+        >
+          <div
+            data-tauri-drag-region
+            className="flex h-full w-full min-w-0 max-w-none items-center justify-between gap-4"
+          >
+            <div data-tauri-drag-region className="flex min-w-0 justify-start">
+              {title && (
+                <div
+                  data-tauri-drag-region
+                  className="flex h-8 min-w-0 max-w-[min(520px,100%)] items-center gap-2 rounded-md"
+                  aria-label={title}
                 >
-                  <Search className="h-3.5 w-3.5" />
-                </Button>
-              </Tooltip>
+                  <span
+                    data-tauri-drag-region
+                    className="text-ui-base min-w-0 truncate font-semibold text-foreground"
+                  >
+                    {title}
+                  </span>
+                </div>
+              )}
+            </div>
 
-              <DropdownMenu>
-                <Tooltip content={t("moreTooltip")} side="bottom">
-                  <DropdownMenuTrigger asChild>
+            <div data-tauri-drag-region className="flex shrink-0 items-center justify-end gap-1.5">
+              {currentFileName && (
+                <>
+                  <Tooltip content={saveLabel} side="bottom">
+                    <div className="text-ui-xs flex h-7 items-center gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-muted-foreground">
+                      {isSaving ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      ) : (
+                        <CloudUpload className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
+                      <span>{isDirty ? t("unsavedChanges") : t("saved")}</span>
+                    </div>
+                  </Tooltip>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-ui-xs h-7 gap-1.5 rounded-md border border-[var(--chrome-border)] bg-[var(--chrome-pill-bg)] px-2 font-semibold text-foreground hover:bg-[var(--sidebar-hover)] hover:text-foreground"
+                        aria-label={t("export")}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">{t("export")}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      {isExcel ? (
+                        <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                          <Download className="mr-2 h-4 w-4" />
+                          Export as Excel
+                        </DropdownMenuItem>
+                      ) : (
+                        <>
+                          <DropdownMenuItem onClick={() => handleExport("markdown")}>
+                            <Download className="mr-2 h-4 w-4" />
+                            {t("exportAsMarkdown")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                            <Download className="mr-2 h-4 w-4" />
+                            {t("exportAsPDF")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleExport("docx")}>
+                            <Download className="mr-2 h-4 w-4" />
+                            {t("exportAsWord")}
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <div className="h-5 w-px bg-[var(--chrome-border)]" />
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="desktop-header-button h-7 w-7 rounded-md"
+                        aria-label={tSettings("appearance")}
+                      >
+                        <Palette className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-[280px] p-3">
+                      <ThemePickerPanel />
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <Tooltip
+                    content={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
+                    side="bottom"
+                  >
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="desktop-header-button h-7 w-7 rounded-md"
-                      aria-label={t("moreActions")}
+                      className={cn(
+                        "desktop-header-button h-7 w-7 rounded-md",
+                        isSearchBarOpen && "bg-[var(--sidebar-active)] text-foreground"
+                      )}
+                      onClick={handleFind}
+                      aria-label={t("findTooltip", { shortcut: formatShortcut("Ctrl+F") })}
                     >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
+                      <Search className="h-3.5 w-3.5" />
                     </Button>
-                  </DropdownMenuTrigger>
-                </Tooltip>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
-                    <Keyboard className="mr-2 h-4 w-4" />
-                    {t("keyboardShortcuts")}
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {formatShortcut("Ctrl+?")}
-                    </span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          )}
+                  </Tooltip>
+
+                  <DropdownMenu>
+                    <Tooltip content={t("moreTooltip")} side="bottom">
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="desktop-header-button h-7 w-7 rounded-md"
+                          aria-label={t("moreActions")}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </Tooltip>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
+                        <Keyboard className="mr-2 h-4 w-4" />
+                        {t("keyboardShortcuts")}
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {formatShortcut("Ctrl+?")}
+                        </span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </header>
     </>

@@ -181,10 +181,8 @@ export const turnIntoOptions: TurnIntoEntry[] = [
     action: (editor: Editor) => {
       if (editor.isActive("blockquote")) {
         editor.chain().focus().clearNodes().run();
-      } else if (isInList(editor)) {
-        editor.chain().focus().clearNodes().toggleBlockquote().run();
       } else {
-        editor.chain().focus().toggleBlockquote().run();
+        editor.chain().focus().clearNodes().toggleBlockquote().run();
       }
     },
     isActive: (editor: Editor) => editor.isActive("blockquote"),
@@ -210,7 +208,7 @@ export const turnIntoOptions: TurnIntoEntry[] = [
       if (editor.isActive("callout")) {
         editor.chain().focus().clearNodes().run();
       } else {
-        editor.chain().focus().clearNodes().setCallout({ type: "info" }).run();
+        editor.chain().focus().clearNodes().toggleCallout({ type: "info" }).run();
       }
     },
     isActive: (editor: Editor) => editor.isActive("callout"),

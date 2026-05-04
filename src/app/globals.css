@@ -69,6 +69,7 @@
     --chrome-pill-bg: rgba(255, 255, 255, 0.62);
     --chrome-border: rgba(26, 28, 31, 0.1);
     --content-surface-bg: hsl(var(--background));
+    --editor-content-width: 966px;
     --radius: 0.5rem;
 
     /* Animation durations */
@@ -697,6 +698,42 @@ html {
   background-color: hsl(var(--muted-foreground) / 0.2);
 }
 
+/* ====================================
+   Notion-style toggle block
+   ==================================== */
+.ProseMirror [data-toggle-summary] {
+  /* The title row: lay it out inline so it sits next to the chevron without
+     wrapping under it, and strip any inherited paragraph margin. */
+}
+.ProseMirror [data-toggle-summary] > p,
+.ProseMirror [data-toggle-summary] > h1,
+.ProseMirror [data-toggle-summary] > h2,
+.ProseMirror [data-toggle-summary] > h3,
+.ProseMirror [data-toggle-summary] > h4,
+.ProseMirror [data-toggle-summary] > h5,
+.ProseMirror [data-toggle-summary] > h6 {
+  margin: 0;
+}
+
+/* The body: indent slightly so children visually nest under the title text. */
+.ProseMirror [data-toggle-body] {
+  /* The body is a normal block container; no border, no background. */
+}
+.ProseMirror [data-toggle-body] > .notion-toggle-body-content > *:first-child {
+  margin-top: 2px;
+}
+
+/* Hide the body entirely when the toggle is closed. */
+.ProseMirror .notion-toggle.is-closed [data-toggle-body] {
+  display: none !important;
+}
+
+/* Empty hint shown inside the body when there are no children. */
+.ProseMirror .notion-toggle-empty {
+  padding: 2px 0;
+  line-height: 1.5;
+}
+
 /* Safe area padding utilities */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom);
@@ -821,10 +858,8 @@ html {
   }
 
   /* Toggle blocks - always expand for print */
-  .ProseMirror [data-toggle-open="false"] > div:last-child {
-    max-height: none !important;
-    opacity: 1 !important;
-    overflow: visible !important;
+  .ProseMirror .notion-toggle.is-closed [data-toggle-body] {
+    display: revert !important;
   }
 }
 

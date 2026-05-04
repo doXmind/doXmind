@@ -155,6 +155,12 @@ def _invoke(command: str, payload: dict[str, Any]) -> Any:
             str(payload.get("path") or ""),
             payload.get("bytes") or [],
         )
+    if command == "doc_create_excel":
+        return doc_create_excel(
+            str(payload.get("root") or ""),
+            str(payload.get("path") or ""),
+            payload.get("bytes") or [],
+        )
     if command == "doc_rename":
         return move_document_pair(
             str(payload.get("root") or ""),
@@ -377,6 +383,25 @@ def doc_create_pdf(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]:
     return document_dto_for_path(workspace, path)
 
 
+def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]:
+    workspace = canonical_workspace_root(root)
+    ensure_excel_path(rel_path)
+    path = resolve_workspace_path_for_write(workspace, rel_path)
+    if path.exists():
+        raise ValueError(f"document already exists: {rel_path}")
+    if not isinstance(byte_list, (list, tuple)):
+        raise ValueError("XLSX bytes payload must be a list of unsigned bytes")
+    try:
+        data = bytes(int(b) & 0xFF for b in byte_list)
+    except (TypeError, ValueError) as err:
+        raise ValueError(f"invalid XLSX bytes payload: {err}") from err
+    if not data.startswith(b"PK\x03\x04"):
+        raise ValueError("payload is not an XLSX (missing PK ZIP header)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, data)
+    return document_dto_for_path(workspace, path)
+
+
 def write_doc(path: Path, payload: dict[str, Any]) -> None:
     meta = dict(payload.get("meta") or {})
     if not str(meta.get("id") or "").strip():
@@ -517,6 +542,11 @@ def ensure_markdown_path(path: str) -> None:
 def ensure_pdf_path(path: str) -> None:
     if Path(path).suffix.lower() != ".pdf":
         raise ValueError(f"document path must end in .pdf: {path}")
+
+
+def ensure_excel_path(path: str) -> None:
+    if Path(path).suffix.lower() not in (".xlsx", ".xlsm"):
+        raise ValueError(f"document path must end in .xlsx or .xlsm: {path}")
 
 
 def resolve_existing_workspace_path(root: Path, rel_path: str) -> Path:

@@ -3,65 +3,67 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import katex from "katex";
+import { CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Check, X, Trash2 } from "lucide-react";
-import { SymbolPicker } from "./symbol-picker";
 
 interface MathEditorPanelProps {
   latex: string;
   onChange: (latex: string) => void;
   onSave: () => void;
   onCancel: () => void;
-  onDelete: () => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   displayMode: boolean;
 }
 
 /**
- * Math Editor Panel Component
- *
- * Provides LaTeX input with live preview
+ * Notion-style TeX equation editor:
+ * - Header shows the live KaTeX preview when there is input, or a "TᴇX Add a TeX equation"
+ *   placeholder when empty.
+ * - LaTeX input row is hidden by default and reveals when the header is clicked.
+ * - For an existing equation being edited (latex non-empty on mount), the input row
+ *   starts expanded so the user sees their content immediately.
  */
 export function MathEditorPanel({
   latex,
   onChange,
   onSave,
   onCancel,
-  onDelete,
   onKeyDown,
   displayMode,
 }: MathEditorPanelProps) {
-  const [showSymbols, setShowSymbols] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const t = useTranslations("editor");
   const tc = useTranslations("common");
 
-  // Focus input on mount (desktop only to avoid mobile keyboard popup)
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth >= 768) {
-      const timer = setTimeout(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  const [isInputVisible, setIsInputVisible] = useState(() => !!latex.trim());
 
-  // Live preview
+  // Focus + select textarea whenever the input row becomes visible.
+  useEffect(() => {
+    if (!isInputVisible) return;
+    if (typeof window === "undefined" || window.innerWidth < 768) return;
+    inputRef.current?.focus();
+    if (latex.trim()) inputRef.current?.select();
+  }, [isInputVisible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-grow textarea up to a sensible cap.
+  useEffect(() => {
+    const ta = inputRef.current;
+    if (!ta || !isInputVisible) return;
+    ta.style.height = "0px";
+    ta.style.height = `${Math.min(ta.scrollHeight, 240)}px`;
+  }, [latex, isInputVisible]);
+
+  // Live KaTeX preview in the header when there is content.
   useEffect(() => {
     if (!previewRef.current) return;
-
-    const latexToRender = latex.trim();
-
-    if (!latexToRender) {
-      previewRef.current.innerHTML = `<span class="text-muted-foreground italic text-sm">${t("mathPreviewPlaceholder")}</span>`;
+    const code = latex.trim();
+    if (!code) {
+      previewRef.current.innerHTML = "";
       return;
     }
-
     try {
-      katex.render(latexToRender, previewRef.current, {
+      katex.render(code, previewRef.current, {
         displayMode,
         throwOnError: false,
         errorColor: "#ef4444",
@@ -72,176 +74,127 @@ export function MathEditorPanel({
     }
   }, [latex, displayMode, t]);
 
-  // Insert symbol at cursor position
-  const insertSymbol = useCallback(
-    (symbol: string) => {
-      const input = inputRef.current;
-      if (!input) {
-        onChange(latex + symbol);
-        return;
-      }
-
-      const start = input.selectionStart || 0;
-      const end = input.selectionEnd || 0;
-      const newLatex = latex.slice(0, start) + symbol + latex.slice(end);
-      onChange(newLatex);
-
-      // Move cursor after inserted symbol
-      setTimeout(() => {
-        const newPos = start + symbol.length;
-        input.setSelectionRange(newPos, newPos);
-        input.focus();
-      }, 0);
-
-      setShowSymbols(false);
-    },
-    [latex, onChange]
-  );
-
-  // Handle textarea input
   const handleInput = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      onChange(e.target.value);
-    },
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value),
     [onChange]
   );
 
-  // Handle special keys
   const handleKeyDownInternal = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // Allow Enter with Shift for newlines in block math
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         onSave();
         return;
       }
-
       if (e.key === "Escape") {
         e.preventDefault();
         onCancel();
         return;
       }
-
-      // Forward other key events
       onKeyDown(e);
     },
     [onSave, onCancel, onKeyDown]
   );
 
+  const handleHeaderClick = useCallback(() => {
+    setIsInputVisible(true);
+  }, []);
+
+  // Collapse the input row back into the placeholder when the user clicks
+  // elsewhere AND nothing was typed. If they typed content, keep it expanded
+  // so their work isn't hidden behind the header.
+  const handleTextareaBlur = useCallback(
+    (e: React.FocusEvent<HTMLTextAreaElement>) => {
+      const next = e.relatedTarget as HTMLElement | null;
+      if (next?.closest?.(".math-editor-panel")) return;
+      if (!latex.trim()) setIsInputVisible(false);
+    },
+    [latex]
+  );
+
   return (
     <div
       className={cn(
-        "math-editor-panel relative",
-        "rounded-lg border border-border bg-popover shadow-lg",
-        "animate-in fade-in-0 zoom-in-95 duration-150",
-        displayMode ? "mx-auto max-w-2xl p-4" : "inline-block p-2"
+        "math-editor-panel doxmind-block-placeholder relative flex flex-col overflow-hidden rounded-lg",
+        displayMode ? "w-full" : cn("inline-flex max-w-[420px]", isInputVisible && "w-full")
       )}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Preview */}
+      {/* Header — preview when there's content, placeholder when empty.
+          Click anywhere to expand the input row. */}
       <div
-        ref={previewRef}
+        role="button"
+        tabIndex={0}
+        onClick={handleHeaderClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleHeaderClick();
+          }
+        }}
         className={cn(
-          "math-preview overflow-x-auto",
-          displayMode
-            ? "mb-3 min-h-[3rem] border-b border-border py-4 text-center text-xl"
-            : "mb-2 min-h-[1.5rem] min-w-[60px] px-2 text-center"
+          "w-full text-left transition-colors",
+          displayMode ? "px-3 py-2.5" : "px-2 py-1",
+          !isInputVisible && "cursor-pointer hover:bg-muted/30"
         )}
-      />
+      >
+        {latex.trim() ? (
+          <div
+            ref={previewRef}
+            className={cn(
+              "math-editor-preview-content overflow-x-auto",
+              displayMode ? "min-h-[2rem] text-center" : "min-h-[1.25rem]"
+            )}
+          />
+        ) : displayMode ? (
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <span className="select-none font-serif text-[15px] leading-none">
+              T<sub className="ml-[1px]">E</sub>X
+            </span>
+            <span className="text-sm">{t("addTexEquation")}</span>
+          </div>
+        ) : (
+          <span className="select-none font-serif text-xs italic leading-none text-muted-foreground">
+            √x
+          </span>
+        )}
+      </div>
 
-      {/* Input area */}
-      <div className={cn("flex gap-2", displayMode ? "flex-col" : "items-start")}>
-        <div className="relative flex-1">
+      {/* Input + Done — only visible when expanded */}
+      {isInputVisible && (
+        <div className="flex w-full items-end gap-2 border-t border-border/50 bg-muted/40 p-1.5">
           <textarea
             ref={inputRef}
             value={latex}
             onChange={handleInput}
             onKeyDown={handleKeyDownInternal}
+            onBlur={handleTextareaBlur}
             placeholder={
               displayMode ? "e.g., \\frac{1}{2} + \\sum_{i=1}^{n} x_i" : "e.g., x^2 + y^2"
             }
             className={cn(
-              "w-full resize-none font-mono text-base md:text-sm",
-              "rounded-md border border-input bg-background px-3 py-2",
-              "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
-              "placeholder:text-muted-foreground",
-              displayMode ? "min-h-[80px]" : "h-[36px] min-h-[36px]"
+              "min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5",
+              "font-mono text-[13px] leading-relaxed text-foreground",
+              "placeholder:text-muted-foreground/60",
+              "focus:outline-none",
+              "max-h-[240px] min-h-[28px]"
             )}
-            rows={displayMode ? 3 : 1}
+            rows={1}
+            spellCheck={false}
           />
-        </div>
-
-        {/* Action buttons */}
-        <div className={cn("flex items-center gap-1", displayMode && "justify-end")}>
-          {/* Symbol picker button */}
-          <Button
+          <button
             type="button"
-            size="icon"
-            variant="ghost"
-            onClick={() => setShowSymbols(!showSymbols)}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            title={t("insertSymbol")}
-          >
-            <span className="font-serif text-lg">Σ</span>
-          </Button>
-
-          {/* Save button */}
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
             onClick={onSave}
-            className="h-8 w-8 text-green-600 hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/30"
-            title={t("saveEnter")}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5",
+              "bg-primary text-xs font-medium text-primary-foreground",
+              "transition-colors hover:bg-primary/90"
+            )}
           >
-            <Check className="h-4 w-4" />
-          </Button>
-
-          {/* Cancel button */}
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            onClick={onCancel}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            title={t("cancelEscape")}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-
-          {/* Delete button */}
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            onClick={onDelete}
-            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            title={tc("delete")}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            <span>{tc("done")}</span>
+            <CornerDownLeft className="h-3 w-3" />
+          </button>
         </div>
-      </div>
-
-      {/* Keyboard hints */}
-      <div className="mt-2 text-xs text-muted-foreground">
-        <span className="mr-3">
-          <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Enter</kbd> {t("enterToSave")}
-        </span>
-        <span className="mr-3">
-          <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Esc</kbd> {t("escToCancel")}
-        </span>
-        {displayMode && (
-          <span>
-            <kbd className="text-ui-xs rounded bg-muted px-1 py-0.5">Shift+Enter</kbd>{" "}
-            {t("shiftEnterNewline")}
-          </span>
-        )}
-      </div>
-
-      {/* Symbol picker dropdown */}
-      {showSymbols && (
-        <SymbolPicker onSelect={insertSymbol} onClose={() => setShowSymbols(false)} />
       )}
     </div>
   );
