@@ -959,10 +959,14 @@ fn doc_move(
 #[tauri::command]
 fn doc_delete(root: String, path: String) -> Result<DeleteResultDto, String> {
     let root = canonical_workspace_root(&root)?;
-    ensure_markdown_path(&path)?;
     let source = resolve_existing_workspace_path(&root, &path)?;
     if !source.is_file() {
         return Err(format!("document is not a file: {path}"));
+    }
+    if !is_workspace_document_file(&source) {
+        return Err(format!(
+            "document path must end in .md, .markdown, .pdf, .xlsx, or .xlsm: {path}"
+        ));
     }
 
     let source_sidecar = doxmind_sidecar::sidecar_path_for(&source);
@@ -2630,5 +2634,59 @@ mod tests {
         assert!(deleted.sidecar_path.is_none());
         assert!(!workspace.path.join("notes").exists());
         assert!(!workspace.path.join(".trash").exists());
+    }
+
+    #[test]
+    fn doc_delete_pdf_removes_pair_from_workspace() {
+        let workspace = TempWorkspace::new("delete-pdf");
+        write_file(&workspace.path.join("Spec.pdf"), "%PDF-1.4\n%%EOF\n");
+        write_file(
+            &workspace.path.join(".Spec.pdf.doxmind"),
+            r#"{"id":"pdf"}"#,
+        );
+
+        let deleted = doc_delete(workspace.root(), "Spec.pdf".into()).expect("delete pdf");
+
+        assert_eq!(deleted.path, "Spec.pdf");
+        assert_eq!(deleted.sidecar_path.as_deref(), Some(".Spec.pdf.doxmind"));
+        assert!(!workspace.path.join("Spec.pdf").exists());
+        assert!(!workspace.path.join(".Spec.pdf.doxmind").exists());
+        assert!(!workspace.path.join(".trash").exists());
+    }
+
+    #[test]
+    fn doc_delete_xlsx_removes_pair_from_workspace() {
+        let workspace = TempWorkspace::new("delete-xlsx");
+        write_file(&workspace.path.join("Budget.xlsx"), "PK\x03\x04");
+        write_file(
+            &workspace.path.join(".Budget.xlsx.doxmind"),
+            r#"{"id":"xlsx"}"#,
+        );
+
+        let deleted = doc_delete(workspace.root(), "Budget.xlsx".into()).expect("delete xlsx");
+
+        assert_eq!(deleted.path, "Budget.xlsx");
+        assert_eq!(
+            deleted.sidecar_path.as_deref(),
+            Some(".Budget.xlsx.doxmind")
+        );
+        assert!(!workspace.path.join("Budget.xlsx").exists());
+        assert!(!workspace.path.join(".Budget.xlsx.doxmind").exists());
+        assert!(!workspace.path.join(".trash").exists());
+    }
+
+    #[test]
+    fn doc_delete_rejects_unknown_extension() {
+        let workspace = TempWorkspace::new("delete-unknown");
+        write_file(&workspace.path.join("notes.txt"), "hi");
+
+        let err =
+            doc_delete(workspace.root(), "notes.txt".into()).expect_err("expected rejection");
+        assert!(
+            err.contains("must end in .md"),
+            "unexpected error: {err}"
+        );
+        // Source untouched.
+        assert!(workspace.path.join("notes.txt").exists());
     }
 }

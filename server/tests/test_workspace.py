@@ -1,14 +1,34 @@
 """Tests for the local Markdown workspace HTTP fallback."""
 
 import json
+import shutil
 from pathlib import Path
 
+import pytest
+
+from api import workspace as workspace_module
 from services.sidecar_io import SIDECAR_VERSION, sidecar_path_for
 from services.synthetic_document import (
     PDF_BLOCK_TYPE,
     LegacySidecarError,
     SyntheticDocumentFactory,
 )
+
+
+def _hard_delete(path: Path) -> None:
+    """Test shim for `_move_to_os_trash` — hard-deletes instead of moving to OS Trash so the
+    developer's real Trash isn't polluted with fixture files. The contract being verified
+    is "the file leaves the workspace"; OS-Trash arrival is exercised manually + in CI smoke."""
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+@pytest.fixture
+def patched_os_trash(monkeypatch):
+    monkeypatch.setattr(workspace_module, "_move_to_os_trash", _hard_delete)
+    yield
 
 
 def invoke(sync_client, command: str, payload: dict | None = None):
@@ -333,3 +353,51 @@ def test_workspace_maps_corrupt_sidecar_error_to_structured_422(sync_client, tmp
         detail["recovery"]
         == "investigate the forensic copy; restore over the sidecar manually if appropriate"
     )
+
+
+def test_doc_delete_pdf_removes_pair_from_workspace(sync_client, tmp_path, patched_os_trash):
+    pdf_path = _make_pdf(tmp_path, "Spec.pdf")
+    sidecar_path = sidecar_path_for(pdf_path)
+    sidecar_path.write_text(json.dumps({"id": "pdf"}), encoding="utf-8")
+
+    result = invoke(
+        sync_client,
+        "doc_delete",
+        {"root": str(tmp_path), "path": "Spec.pdf"},
+    )
+
+    assert result == {"path": "Spec.pdf", "sidecarPath": ".Spec.pdf.doxmind"}
+    assert not pdf_path.exists()
+    assert not sidecar_path.exists()
+
+
+def test_doc_delete_xlsx_removes_pair_from_workspace(sync_client, tmp_path, patched_os_trash):
+    xlsx_path = tmp_path / "Budget.xlsx"
+    xlsx_path.write_bytes(b"PK\x03\x04")
+    sidecar_path = sidecar_path_for(xlsx_path)
+    sidecar_path.write_text(json.dumps({"id": "xlsx"}), encoding="utf-8")
+
+    result = invoke(
+        sync_client,
+        "doc_delete",
+        {"root": str(tmp_path), "path": "Budget.xlsx"},
+    )
+
+    assert result == {"path": "Budget.xlsx", "sidecarPath": ".Budget.xlsx.doxmind"}
+    assert not xlsx_path.exists()
+    assert not sidecar_path.exists()
+
+
+def test_doc_delete_rejects_unknown_extension(sync_client, tmp_path, patched_os_trash):
+    note_path = tmp_path / "notes.txt"
+    note_path.write_text("hi", encoding="utf-8")
+
+    response = error_response(
+        sync_client,
+        "doc_delete",
+        {"root": str(tmp_path), "path": "notes.txt"},
+    )
+
+    assert response.status_code == 400
+    assert "must end in .md" in response.json()["detail"]
+    assert note_path.exists()
