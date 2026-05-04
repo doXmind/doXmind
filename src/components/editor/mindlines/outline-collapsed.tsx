@@ -3,6 +3,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import {
+  isPointInOutlineSafeArea,
+  projectLeftAnchoredPopoverRect,
+  rectFromDomRect,
+  type HoverRect,
+} from "./hover-intent";
 import type { Heading } from "./types";
 
 interface OutlineCollapsedProps {
@@ -22,11 +28,18 @@ const POPOVER_INDENT_PER_LEVEL_PX = 16;
 const POPOVER_OPEN_DELAY_MS = 120;
 const POPOVER_CLOSE_DELAY_MS = 180;
 const POPOVER_WIDTH_PX = 260;
+const POPOVER_MAX_HEIGHT_PX = 640;
+const POPOVER_VERTICAL_VIEWPORT_GUTTER_PX = 160;
+const POPOVER_ROW_ESTIMATE_PX = 28;
+const POPOVER_VERTICAL_PADDING_PX = 16;
+const HOVER_SAFE_AREA_PADDING_PX = 10;
 
 // ease-out-expo: fast start, smooth tail — Notion's "settle" feel.
 const EASE_OUT_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
 // ease-in: slow start, fast end — "pulled away" feel for exit.
 const EASE_IN: [number, number, number, number] = [0.7, 0, 0.84, 0];
+
+type InteractionPhase = "idle" | "primed" | "open" | "closing";
 
 function lineWidthForLevel(level: number) {
   return LEVEL_LINE_WIDTH_PX[level] ?? 6;
@@ -56,14 +69,11 @@ function popoverColorClass(level: number, isActive: boolean) {
 
 export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineCollapsedProps) {
   const [hoveredLineId, setHoveredLineId] = useState<string | null>(null);
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  // Tracks whether cursor is inside the wrapper hover zone. Flips synchronously
-  // on mouseEnter/Leave so the wrapper can pre-expand to popover width before
-  // the open delay elapses — otherwise the cursor leaves the narrow rail area
-  // mid-transit and the open is cancelled.
-  const [isHoverZone, setIsHoverZone] = useState(false);
+  const [phase, setPhase] = useState<InteractionPhase>("idle");
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const cancelOpen = useCallback(() => {
@@ -83,26 +93,27 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   const openPopoverNow = useCallback(() => {
     cancelOpen();
     cancelClose();
-    setIsHoverZone(true);
-    setPopoverOpen(true);
+    setPhase("open");
   }, [cancelClose, cancelOpen]);
 
   const schedulePopoverOpen = useCallback(() => {
     cancelClose();
-    setIsHoverZone(true);
-    if (popoverOpen || openTimer.current !== null) return;
+    setPhase((currentPhase) =>
+      currentPhase === "open" || currentPhase === "closing" ? "open" : "primed"
+    );
+    if (openTimer.current !== null) return;
     openTimer.current = window.setTimeout(() => {
-      setPopoverOpen(true);
+      setPhase("open");
       openTimer.current = null;
     }, POPOVER_OPEN_DELAY_MS);
-  }, [cancelClose, popoverOpen]);
+  }, [cancelClose]);
 
   const schedulePopoverClose = useCallback(() => {
     cancelOpen();
     cancelClose();
-    setIsHoverZone(false);
+    setPhase((currentPhase) => (currentPhase === "idle" ? "idle" : "closing"));
     closeTimer.current = window.setTimeout(() => {
-      setPopoverOpen(false);
+      setPhase("idle");
       closeTimer.current = null;
     }, POPOVER_CLOSE_DELAY_MS);
   }, [cancelClose, cancelOpen]);
@@ -110,9 +121,62 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   const closePopoverImmediate = useCallback(() => {
     cancelOpen();
     cancelClose();
-    setIsHoverZone(false);
-    setPopoverOpen(false);
+    setPhase("idle");
   }, [cancelClose, cancelOpen]);
+
+  const estimatedPopoverHeight = useCallback(() => {
+    const viewportHeight =
+      typeof window === "undefined" ? POPOVER_MAX_HEIGHT_PX : window.innerHeight;
+    return Math.min(
+      POPOVER_MAX_HEIGHT_PX,
+      Math.max(POPOVER_ROW_ESTIMATE_PX, viewportHeight - POPOVER_VERTICAL_VIEWPORT_GUTTER_PX),
+      headings.length * POPOVER_ROW_ESTIMATE_PX + POPOVER_VERTICAL_PADDING_PX
+    );
+  }, [headings.length]);
+
+  const getHoverRects = useCallback((): {
+    triggerRect: HoverRect;
+    popoverRect: HoverRect;
+  } | null => {
+    const railElement = railRef.current;
+    if (!railElement) return null;
+
+    const triggerRect = rectFromDomRect(railElement.getBoundingClientRect());
+    const popoverElement = popoverRef.current;
+    const popoverRect = popoverElement
+      ? rectFromDomRect(popoverElement.getBoundingClientRect())
+      : projectLeftAnchoredPopoverRect(triggerRect, POPOVER_WIDTH_PX, estimatedPopoverHeight());
+
+    return { triggerRect, popoverRect };
+  }, [estimatedPopoverHeight]);
+
+  const isPointerInSafeArea = useCallback(
+    (point: { x: number; y: number }) => {
+      const rects = getHoverRects();
+      if (!rects) return false;
+      return isPointInOutlineSafeArea({
+        point,
+        ...rects,
+        padding: HOVER_SAFE_AREA_PADDING_PX,
+      });
+    },
+    [getHoverRects]
+  );
+
+  const handlePointerExit = useCallback(
+    (event: { clientX: number; clientY: number }) => {
+      if (isPointerInSafeArea({ x: event.clientX, y: event.clientY })) {
+        cancelClose();
+        return;
+      }
+      if (phase === "primed") {
+        closePopoverImmediate();
+        return;
+      }
+      schedulePopoverClose();
+    },
+    [cancelClose, closePopoverImmediate, isPointerInSafeArea, phase, schedulePopoverClose]
+  );
 
   useEffect(
     () => () => {
@@ -123,17 +187,41 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   );
 
   useEffect(() => {
-    if (!popoverOpen || !activeId) return;
+    if (phase !== "open" || !activeId) return;
     const activeItem = listRef.current?.querySelector<HTMLElement>(
       `[data-outline-id="${activeId}"]`
     );
     activeItem?.scrollIntoView({ block: "nearest" });
-  }, [activeId, popoverOpen]);
+  }, [activeId, phase]);
+
+  useEffect(() => {
+    if (phase === "idle") return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const isSafe = isPointerInSafeArea({ x: event.clientX, y: event.clientY });
+      if (isSafe) {
+        cancelClose();
+        setPhase((currentPhase) => (currentPhase === "closing" ? "open" : currentPhase));
+        return;
+      }
+
+      if (phase === "primed") {
+        closePopoverImmediate();
+        return;
+      }
+      if (phase === "open") {
+        schedulePopoverClose();
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    return () => window.removeEventListener("pointermove", handlePointerMove);
+  }, [cancelClose, closePopoverImmediate, isPointerInSafeArea, phase, schedulePopoverClose]);
 
   if (headings.length === 0) return null;
 
   const compactRail = headings.length > 28;
-  const expanded = isHoverZone || popoverOpen;
+  const popoverMounted = phase === "open" || phase === "closing";
 
   const handleNavigate = (heading: Heading) => {
     onNavigate(heading, { skipFocus: true });
@@ -141,36 +229,56 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
   };
 
   return (
-    // Anchor to the parent column's right edge with `absolute right-0` so
-    // the wrapper grows leftward when it expands to the popover width —
-    // otherwise a normal-flow width change would push the popover off the
-    // right side of the viewport (the parent column is only 40 px wide and
-    // already inset against the window edge).
     <div
-      className="group/outline-rail absolute right-0 top-0 flex h-full justify-end transition-[width] duration-100 ease-out"
+      data-testid="outline-rail-root"
+      className="group/outline-rail pointer-events-auto absolute right-0 top-0 flex h-full justify-end"
       style={{
-        width: expanded ? POPOVER_WIDTH_PX : "100%",
-        pointerEvents: popoverOpen ? "auto" : "none",
+        width: "100%",
       }}
       onMouseEnter={schedulePopoverOpen}
-      onMouseLeave={schedulePopoverClose}
+      onMouseLeave={handlePointerExit}
+      onPointerEnter={schedulePopoverOpen}
+      onPointerLeave={handlePointerExit}
       onFocusCapture={openPopoverNow}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           schedulePopoverClose();
         }
       }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePopoverImmediate();
+        }
+      }}
     >
+      <div
+        aria-hidden="true"
+        data-testid="outline-rail-hover-sensor"
+        className="pointer-events-auto absolute inset-y-0 right-0 z-10 w-full"
+        onClick={openPopoverNow}
+        onMouseEnter={schedulePopoverOpen}
+        onMouseLeave={handlePointerExit}
+        onPointerEnter={schedulePopoverOpen}
+        onPointerLeave={handlePointerExit}
+      />
+
       {/* Rail — naked horizontal rules, fades to 0 when popover takes over */}
       <div
+        ref={railRef}
+        data-testid="outline-rail-trigger"
+        onMouseEnter={schedulePopoverOpen}
+        onMouseLeave={handlePointerExit}
+        onPointerEnter={schedulePopoverOpen}
+        onPointerLeave={handlePointerExit}
         className={cn(
-          "pointer-events-auto flex h-full flex-col items-end overflow-hidden py-1 pr-0.5 transition-opacity duration-150",
-          popoverOpen
-            ? "opacity-0"
+          "pointer-events-none flex h-full flex-col items-end overflow-hidden py-1 pr-0.5 transition-opacity duration-150",
+          popoverMounted
+            ? "opacity-0 duration-100"
             : "opacity-[0.14] group-focus-within/outline-rail:opacity-[0.85] group-hover/outline-rail:opacity-[0.85]"
         )}
-        style={{ gap: compactRail ? 2 : 5 }}
-        aria-hidden={popoverOpen}
+        style={{ gap: compactRail ? 2 : 5, width: "100%" }}
+        aria-hidden={popoverMounted}
       >
         {headings.map((heading) => {
           const isActive = heading.id === activeId;
@@ -186,15 +294,19 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
                 e.stopPropagation();
                 handleNavigate(heading);
               }}
-              onMouseEnter={() => setHoveredLineId(heading.id)}
+              onMouseEnter={() => {
+                setHoveredLineId(heading.id);
+                schedulePopoverOpen();
+              }}
               onMouseLeave={() => setHoveredLineId(null)}
+              onPointerEnter={schedulePopoverOpen}
               onFocus={() => setHoveredLineId(heading.id)}
               onBlur={() => setHoveredLineId(null)}
               className="flex shrink-0 cursor-pointer items-center rounded-sm bg-transparent p-0 outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
               style={{ height: compactRail ? 8 : 12 }}
               aria-label={`Navigate to: ${heading.text || "Untitled"}`}
               aria-current={isActive ? "location" : undefined}
-              tabIndex={popoverOpen ? -1 : 0}
+              tabIndex={popoverMounted ? -1 : 0}
             >
               <span
                 aria-hidden="true"
@@ -207,26 +319,31 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
       </div>
 
       <AnimatePresence>
-        {popoverOpen && (
-          <motion.div
+        {popoverMounted && (
+          <motion.nav
+            ref={popoverRef}
             key="outline-popover"
-            role="dialog"
+            role="navigation"
             aria-label="Document outline"
             onMouseEnter={openPopoverNow}
-            onMouseLeave={schedulePopoverClose}
-            initial={{ opacity: 0, y: -4 }}
+            onMouseLeave={handlePointerExit}
+            onPointerEnter={openPopoverNow}
+            onPointerLeave={handlePointerExit}
+            initial={{ opacity: 0, x: 4, scale: 0.985 }}
             animate={{
               opacity: 1,
-              y: 0,
-              transition: { duration: 0.15, ease: EASE_OUT_EXPO },
+              x: 0,
+              scale: 1,
+              transition: { duration: 0.14, ease: EASE_OUT_EXPO },
             }}
             exit={{
               opacity: 0,
-              y: -2,
+              x: 3,
+              scale: 0.99,
               transition: { duration: 0.1, ease: EASE_IN },
             }}
-            className="font-brand-sans absolute right-0 top-0 z-50 flex flex-col rounded-md border border-foreground/[0.09] bg-popover text-popover-foreground shadow-[0_1px_0_rgba(15,15,15,0.02),0_4px_16px_rgba(15,15,15,0.04)]"
-            style={{ width: POPOVER_WIDTH_PX }}
+            className="font-brand-sans pointer-events-auto absolute right-0 top-0 z-50 flex origin-right flex-col rounded-md border border-foreground/[0.09] bg-popover text-popover-foreground shadow-[0_1px_0_rgba(15,15,15,0.02),0_4px_16px_rgba(15,15,15,0.04)]"
+            style={{ width: POPOVER_WIDTH_PX, transformOrigin: "right top" }}
           >
             <div
               ref={listRef}
@@ -261,7 +378,7 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
                 );
               })}
             </div>
-          </motion.div>
+          </motion.nav>
         )}
       </AnimatePresence>
     </div>
