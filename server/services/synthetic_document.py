@@ -40,6 +40,7 @@ from services.sidecar_io import (
     read_sidecar,
     sidecar_path_for,
 )
+from services.sidecar_lock import _locked_sidecar
 
 PDF_BLOCK_TYPE = "pdf-block"
 EXCEL_BLOCK_TYPE = "excel-block"
@@ -148,7 +149,9 @@ class SyntheticDocumentFactory:
         self._write_sidecar(document.path, new_snapshot)
         return replace(document, snapshot=new_snapshot)
 
-    def migrate_legacy_sidecar(self, sidecar_path: Path, *, for_path: Path | None = None) -> None:
+    def migrate_legacy_sidecar(
+        self, sidecar_path: Path, *, for_path: Path | None = None, _locked: bool = False
+    ) -> None:
         """Rewrite a legacy PDF/Excel sidecar in-place to markdown shape.
 
         Idempotent: a no-op if the sidecar is already markdown-shape.
@@ -173,6 +176,11 @@ class SyntheticDocumentFactory:
         if block_type is None:
             return
         raw_bytes = sidecar_path.read_bytes()
+
+        if not _locked:
+            with _locked_sidecar(sidecar_path):
+                self.migrate_legacy_sidecar(sidecar_path, for_path=for_path, _locked=True)
+            return
 
         bak_path = _bak_path(sidecar_path)
         if bak_path.exists():
@@ -212,8 +220,26 @@ class SyntheticDocumentFactory:
         if any(key in sidecar for key in _LEGACY_KEYS_BY_BLOCK_TYPE[block_type]):
             if _migration_disabled():
                 return self._synthesize_read_only_from_legacy(path, block_type, sidecar)
-            self.migrate_legacy_sidecar(sc_path, for_path=path)
-            migrated = read_sidecar(sc_path)
+            with _locked_sidecar(sc_path):
+                locked_sidecar = read_sidecar(sc_path)
+                if isinstance(locked_sidecar, Missing):
+                    raise SidecarMigrationError(
+                        sc_path, block_type, "sidecar missing during migration"
+                    )
+                if isinstance(locked_sidecar, Corrupt):
+                    forensic_path = _write_forensic_copy(sc_path, locked_sidecar.raw)
+                    raise CorruptSidecarError(sc_path, forensic_path, locked_sidecar.reason)
+                if not isinstance(locked_sidecar, Loaded):
+                    raise TypeError(
+                        f"unexpected sidecar read result: {type(locked_sidecar).__name__}"
+                    )
+                if not any(
+                    key in locked_sidecar.data for key in _LEGACY_KEYS_BY_BLOCK_TYPE[block_type]
+                ):
+                    return self._read_markdown_shape(path, block_type, locked_sidecar.data)
+
+                self.migrate_legacy_sidecar(sc_path, for_path=path, _locked=True)
+                migrated = read_sidecar(sc_path)
             if isinstance(migrated, Missing):
                 raise SidecarMigrationError(sc_path, block_type, "sidecar missing after migration")
             if isinstance(migrated, Corrupt):
