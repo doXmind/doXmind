@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Literal
 
 from services.external_ref_blocks import ExternalRefBlockRegistry
@@ -10,19 +11,31 @@ from services.external_ref_blocks import ExternalRefBlockRegistry
 CorrelationEventKind = Literal["orphan", "duplicate", "new"]
 
 
+class HowHandled(StrEnum):
+    ERRORED = "errored"
+    DISCARDED = "discarded"
+    CREATED_EMPTY = "created_empty"
+    KEPT = "kept"
+    SKIPPED = "skipped"
+    DEDUPED = "deduped"
+
+
 @dataclass(frozen=True, slots=True)
 class CorrelationEvent:
     kind: CorrelationEventKind
     block_type: str
     id: str
-    how_handled: str
+    how_handled: HowHandled
     detail: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class CorrelationReport:
     events: list[CorrelationEvent] = field(default_factory=list)
-    blocking: bool = False
+
+    @property
+    def blocking(self) -> bool:
+        return any(event.how_handled == HowHandled.ERRORED for event in self.events)
 
     def by_kind(self, kind: CorrelationEventKind) -> list[CorrelationEvent]:
         return [event for event in self.events if event.kind == kind]

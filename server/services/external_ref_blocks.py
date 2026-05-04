@@ -52,8 +52,8 @@ class ExternalRefBlockDefinition:
     on_orphan: OrphanPolicy
     on_duplicate: DuplicatePolicy
     on_new: NewPolicy
+    salvage: SalvageHandler
     slot_key_for_id: SlotKeyForId = default_slot_key_for_id
-    salvage: SalvageHandler = keep_prior_value
     slot_key_prefixes: tuple[str, ...] = field(default=("blocks/",))
 
     def matches_slot_key(self, slot_key: str) -> bool:
@@ -77,10 +77,13 @@ class ExternalRefBlockRegistry:
         except KeyError as exc:
             raise KeyError(f"unknown external-reference block type: {block_type}") from exc
 
-    def by_slot_key(self, slot_key: str) -> tuple[ExternalRefBlockDefinition, ...]:
-        return tuple(
-            entry for entry in self._by_block_type.values() if entry.matches_slot_key(slot_key)
-        )
+    def by_slot_key(
+        self, slot_key: str, block_type: str
+    ) -> ExternalRefBlockDefinition | None:
+        entry = self._by_block_type.get(block_type)
+        if entry is None or not entry.matches_slot_key(slot_key):
+            return None
+        return entry
 
     def block_types(self) -> tuple[str, ...]:
         return tuple(self._by_block_type)
@@ -98,6 +101,7 @@ def default_external_ref_block_registry() -> ExternalRefBlockRegistry:
                 on_orphan=OrphanPolicy.DISCARD,
                 on_duplicate=DuplicatePolicy.ERROR,
                 on_new=NewPolicy.EMPTY,
+                salvage=keep_prior_value,
             ),
             ExternalRefBlockDefinition(
                 block_type="excel-block",
@@ -105,6 +109,7 @@ def default_external_ref_block_registry() -> ExternalRefBlockRegistry:
                 on_orphan=OrphanPolicy.DISCARD,
                 on_duplicate=DuplicatePolicy.ERROR,
                 on_new=NewPolicy.EMPTY,
+                salvage=keep_prior_value,
             ),
         )
     )

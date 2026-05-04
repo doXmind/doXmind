@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from services.block_correlation import BlockCorrelation, CorrelationEvent, CorrelationReport
+from services.block_correlation import (
+    BlockCorrelation,
+    CorrelationEvent,
+    CorrelationReport,
+    HowHandled,
+)
 from services.external_ref_blocks import default_external_ref_block_registry
 
 
@@ -22,16 +27,17 @@ def test_report_by_kind_filters_events() -> None:
         kind="orphan",
         block_type="pdf-block",
         id="b1",
-        how_handled="discarded",
+        how_handled=HowHandled.DISCARDED,
     )
     duplicate = CorrelationEvent(
         kind="duplicate",
         block_type="pdf-block",
         id="b1",
-        how_handled="errored",
+        how_handled=HowHandled.ERRORED,
     )
-    report = CorrelationReport(events=[orphan, duplicate], blocking=True)
+    report = CorrelationReport(events=[orphan, duplicate])
 
     assert report.by_kind("orphan") == [orphan]
     assert report.by_kind("duplicate") == [duplicate]
     assert report.by_kind("new") == []
+    assert report.blocking is True

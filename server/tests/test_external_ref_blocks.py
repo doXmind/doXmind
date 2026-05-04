@@ -10,6 +10,7 @@ from services.external_ref_blocks import (
     NewPolicy,
     OrphanPolicy,
     default_external_ref_block_registry,
+    keep_prior_value,
 )
 
 
@@ -31,6 +32,7 @@ def test_registry_lookup_by_block_type() -> None:
         on_orphan=OrphanPolicy.KEEP,
         on_duplicate=DuplicatePolicy.KEEP_FIRST,
         on_new=NewPolicy.SKIP,
+        salvage=keep_prior_value,
     )
     registry = ExternalRefBlockRegistry([entry])
 
@@ -40,9 +42,18 @@ def test_registry_lookup_by_block_type() -> None:
 def test_registry_lookup_by_slot_key() -> None:
     registry = default_external_ref_block_registry()
 
-    matches = registry.by_slot_key("blocks/1a2b3c4d-1111-4aaa-8bbb-123456789abc")
+    pdf_match = registry.by_slot_key(
+        "blocks/1a2b3c4d-1111-4aaa-8bbb-123456789abc",
+        "pdf-block",
+    )
+    excel_match = registry.by_slot_key(
+        "blocks/1a2b3c4d-1111-4aaa-8bbb-123456789abc",
+        "excel-block",
+    )
 
-    assert {entry.block_type for entry in matches} == {"pdf-block", "excel-block"}
+    assert pdf_match is registry.by_block_type("pdf-block")
+    assert excel_match is registry.by_block_type("excel-block")
+    assert registry.by_slot_key("blocks/abc", "unknown-block") is None
     assert registry.by_block_type("pdf-block").slot_key_for_id("abc") == "blocks/abc"
 
 
@@ -53,6 +64,7 @@ def test_registry_rejects_duplicate_block_type() -> None:
         on_orphan=OrphanPolicy.KEEP,
         on_duplicate=DuplicatePolicy.KEEP_FIRST,
         on_new=NewPolicy.SKIP,
+        salvage=keep_prior_value,
     )
     registry = ExternalRefBlockRegistry([entry])
 
