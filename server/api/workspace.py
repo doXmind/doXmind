@@ -296,35 +296,46 @@ def workspace_markdown_search(root: str, query: str, limit: Any = None) -> list[
 
 
 def read_doc(path: Path) -> dict[str, Any]:
-    if not path.is_absolute():
-        raise ValueError("document path must be absolute")
-    raw = path.read_text(encoding="utf-8")
-    meta, body = parse_frontmatter(raw)
-    current_hash = hash_markdown(raw)
-    sidecar = read_sidecar(sidecar_path_for(path))
+    from services.markdown_document_state import (
+        EmptyDocument,
+        MarkdownDocumentState,
+        NoSidecar,
+        SidecarStale,
+        UsedSidecar,
+    )
 
-    if (
-        sidecar
-        and sidecar.get("version") == SIDECAR_VERSION
-        and sidecar.get("markdown_hash") == current_hash
-    ):
-        if meta.get("id") != sidecar.get("id"):
-            meta["id"] = sidecar.get("id")
+    outcome = MarkdownDocumentState().read(path)
+    if isinstance(outcome, UsedSidecar):
         return {
-            "html": sidecar.get("html") or "",
-            "markdown": body,
-            "meta": meta,
-            "extras": sidecar.get("extras"),
+            "html": outcome.html,
+            "markdown": outcome.markdown,
+            "meta": outcome.meta,
+            "extras": outcome.extras,
             "source": "sidecar",
         }
-
-    if not body.strip():
-        return {"html": "", "markdown": "", "meta": meta, "extras": None, "source": "empty"}
-
+    if isinstance(outcome, EmptyDocument):
+        return {"html": "", "markdown": "", "meta": outcome.meta, "extras": None, "source": "empty"}
+    if isinstance(outcome, SidecarStale):
+        if not outcome.markdown.strip():
+            return {
+                "html": "",
+                "markdown": "",
+                "meta": outcome.meta,
+                "extras": outcome.salvaged_extras or None,
+                "source": "empty",
+            }
+        return {
+            "html": outcome.fresh_html,
+            "markdown": outcome.markdown,
+            "meta": outcome.meta,
+            "extras": outcome.salvaged_extras or None,
+            "source": "markdown",
+        }
+    assert isinstance(outcome, NoSidecar)
     return {
-        "html": markdown_to_html(body),
-        "markdown": body,
-        "meta": meta,
+        "html": outcome.html,
+        "markdown": outcome.markdown,
+        "meta": outcome.meta,
         "extras": None,
         "source": "markdown",
     }
@@ -597,26 +608,15 @@ def doc_create_excel(root: str, rel_path: str, byte_list: Any) -> dict[str, Any]
 
 
 def write_doc(path: Path, payload: dict[str, Any]) -> None:
-    meta = dict(payload.get("meta") or {})
-    if not str(meta.get("id") or "").strip():
-        raise ValueError("document id is required")
-    html = str(payload.get("html") or "")
-    markdown = str(payload.get("markdown") or "")
-    extras = payload.get("extras")
-    meta.setdefault("updated", now_iso())
-    md_content = build_md_with_frontmatter(meta, markdown)
+    from services.markdown_document_state import DocumentSnapshot, MarkdownDocumentState
 
-    atomic_write(path, md_content.encode("utf-8"))
-    sidecar = {
-        "version": SIDECAR_VERSION,
-        "id": meta["id"],
-        "html": html,
-        "markdown_hash": hash_markdown(md_content),
-        "updated_at": now_iso(),
-    }
-    if extras is not None:
-        sidecar["extras"] = extras
-    atomic_write(sidecar_path_for(path), json.dumps(sidecar, indent=2, ensure_ascii=False).encode())
+    snapshot = DocumentSnapshot(
+        html=str(payload.get("html") or ""),
+        markdown=str(payload.get("markdown") or ""),
+        meta=dict(payload.get("meta") or {}),
+        extras=payload.get("extras"),
+    )
+    MarkdownDocumentState().write_full(path, snapshot)
 
 
 def move_document_pair(root: str, old_path: str, new_path: str) -> dict[str, Any]:
