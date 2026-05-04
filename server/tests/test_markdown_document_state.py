@@ -21,7 +21,7 @@ from services.markdown_document_state import (
     SidecarStale,
     UsedSidecar,
 )
-from services.sidecar_io import sidecar_path_for
+from services.sidecar_io import CorruptSidecarError, sidecar_path_for
 
 
 def _write_md(path: Path, body: str, meta_lines: list[str] | None = None) -> None:
@@ -377,3 +377,44 @@ def test_write_slot_preserves_top_level_fields(tmp_path: Path) -> None:
     assert sidecar_after["id"] == sidecar_before["id"]
     assert sidecar_after["markdown_hash"] == sidecar_before["markdown_hash"]
     assert isinstance(sidecar_after["updated_at"], str)
+
+
+def test_read_against_corrupt_sidecar_raises_and_writes_forensic_copy(
+    tmp_path: Path,
+) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "Corrupt.md"
+    _write_md(path, "body\n", meta_lines=["id: doc-1"])
+    sidecar_path = sidecar_path_for(path)
+    corrupt_bytes = b'{"version": 1'
+    sidecar_path.write_bytes(corrupt_bytes)
+
+    with pytest.raises(CorruptSidecarError) as excinfo:
+        state.read(path)
+
+    assert excinfo.value.sidecar_path == sidecar_path
+    assert excinfo.value.forensic_path is not None
+    assert sidecar_path.read_bytes() == corrupt_bytes
+    assert excinfo.value.forensic_path.exists()
+    assert excinfo.value.forensic_path.read_bytes() == corrupt_bytes
+    assert excinfo.value.forensic_path.name.startswith(f"{sidecar_path.name}.corrupt-")
+
+
+def test_write_slot_against_corrupt_sidecar_raises_and_preserves_original(
+    tmp_path: Path,
+) -> None:
+    state = MarkdownDocumentState()
+    path = tmp_path / "SlotCorrupt.md"
+    _write_md(path, "body\n", meta_lines=["id: doc-1"])
+    sidecar_path = sidecar_path_for(path)
+    corrupt_bytes = b"\xff\xfe"
+    sidecar_path.write_bytes(corrupt_bytes)
+
+    with pytest.raises(CorruptSidecarError) as excinfo:
+        state.write_slot(path, "pdf_blocks", {"b1": {"page": 1}})
+
+    assert excinfo.value.sidecar_path == sidecar_path
+    assert excinfo.value.forensic_path is not None
+    assert sidecar_path.read_bytes() == corrupt_bytes
+    assert excinfo.value.forensic_path.exists()
+    assert excinfo.value.forensic_path.read_bytes() == corrupt_bytes
