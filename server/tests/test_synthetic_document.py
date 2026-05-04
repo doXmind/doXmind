@@ -17,6 +17,7 @@ import pytest
 from services import synthetic_document as sd_module
 from services.sidecar_io import (
     SIDECAR_VERSION,
+    CorruptSidecarError,
     atomic_write,
     sidecar_path_for,
 )
@@ -369,3 +370,43 @@ def test_legacy_error_hierarchy_lets_callers_catch_the_base_class():
     # SidecarMigrationError is-a LegacySidecarError so legacy callers that
     # caught the base class continue to work after slice 4.
     assert issubclass(SidecarMigrationError, LegacySidecarError)
+
+
+def test_open_pdf_against_corrupt_sidecar_raises_and_writes_forensic_copy(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    corrupt_bytes = b'{"version": 1'
+    sidecar_path.write_bytes(corrupt_bytes)
+
+    with pytest.raises(CorruptSidecarError) as excinfo:
+        SyntheticDocumentFactory().open_pdf(pdf_path)
+
+    assert excinfo.value.sidecar_path == sidecar_path
+    assert excinfo.value.forensic_path is not None
+    assert sidecar_path.read_bytes() == corrupt_bytes
+    assert excinfo.value.forensic_path.exists()
+    assert excinfo.value.forensic_path.read_bytes() == corrupt_bytes
+    assert pdf_path.read_bytes().startswith(b"%PDF-")
+
+
+def test_open_pdf_recovers_after_good_sidecar_is_restored(tmp_path):
+    pdf_path = _make_pdf(tmp_path)
+    factory = SyntheticDocumentFactory()
+    original = factory.open_pdf(pdf_path)
+    sidecar_path = sidecar_path_for(pdf_path)
+    good_sidecar = sidecar_path.read_bytes()
+    corrupt_bytes = b"\xff\xfe"
+    sidecar_path.write_bytes(corrupt_bytes)
+
+    with pytest.raises(CorruptSidecarError) as excinfo:
+        factory.open_pdf(pdf_path)
+
+    assert excinfo.value.forensic_path is not None
+    assert excinfo.value.forensic_path.read_bytes() == corrupt_bytes
+
+    atomic_write(sidecar_path, good_sidecar)
+
+    recovered = factory.open_pdf(pdf_path)
+
+    assert recovered.block_id == original.block_id
+    assert recovered.snapshot.extras == original.snapshot.extras
