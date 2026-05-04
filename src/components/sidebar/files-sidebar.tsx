@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Settings } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FolderTree, type FolderTreeHandle } from "./folder-tree";
@@ -50,7 +50,7 @@ export function FilesSidebar() {
     } catch (error) {
       log.error("Failed to create file", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -75,7 +75,7 @@ export function FilesSidebar() {
     } catch (error) {
       log.error("Failed to create PDF", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -100,7 +100,7 @@ export function FilesSidebar() {
     } catch (error) {
       log.error("Failed to create Excel", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -125,7 +125,7 @@ export function FilesSidebar() {
     } catch (error) {
       log.error("Failed to create file from template", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
       throw error;
     }
   };
@@ -138,7 +138,7 @@ export function FilesSidebar() {
     } catch (error) {
       log.error("Failed to create folder", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 

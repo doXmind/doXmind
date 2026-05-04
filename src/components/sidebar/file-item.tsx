@@ -10,7 +10,7 @@ import {
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,20 +110,16 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
             revealFileInFinder(file).catch((error) => {
               log.error("Failed to reveal file in Finder", error);
               const { title, description } = getErrorMessage(error);
-              toast.error(title, { description });
+              notify.error(title, { description });
             });
           } else if (contextMenuFocusIndex === 2 && file.parentId) {
             // Move to Root (only when file is in a folder)
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
-            moveFileToFolder(file.id, null)
-              .then(() => {
-                toast.success(t("movedToRoot"));
-              })
-              .catch((error) => {
-                log.error("Failed to move file to root", error);
-                toast.error(t("failedToMove"));
-              });
+            moveFileToFolder(file.id, null).catch((error) => {
+              log.error("Failed to move file to root", error);
+              notify.error(t("failedToMove"));
+            });
           } else if (contextMenuFocusIndex === 2 + exportOffset) {
             setContextMenu(null);
             setContextMenuFocusIndex(-1);
@@ -242,7 +238,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
         await renameFile(file.id, fullName);
       } catch (error) {
         log.error("Failed to rename file", error);
-        toast.error(t("failedToRename"));
+        notify.error(t("failedToRename"));
       }
     }
     setIsRenaming(false);
@@ -261,33 +257,18 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     }
   };
 
-  const { restoreFile } = useFileStore();
-
   const handleDelete = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const fileName = getNameWithoutExtension(file.name);
     try {
       await deleteFile(file.id);
       // Navigate to the next file or welcome screen after deletion
       const nextId = useFileStore.getState().currentFileId;
       navigateToEditorFile(nextId);
-      toast(`"${fileName}" moved to trash`, {
-        action: {
-          label: t("restore"),
-          onClick: async () => {
-            try {
-              await restoreFile(file.id);
-              toast.success(t("restoredName", { name: fileName }));
-            } catch {
-              toast.error(t("failedToRestore"));
-            }
-          },
-        },
-        duration: 6000,
-      });
+      // Recovery path: Settings → Trash. Notion-style: silence on the happy
+      // path; the file vanishing from the sidebar is itself the feedback.
     } catch (error) {
       log.error("Failed to delete file", error);
-      toast.error(t("failedToDelete"));
+      notify.error(t("failedToDelete"));
     }
   };
 
@@ -299,42 +280,32 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     // the editor to mount + render, mermaid light re-render, and
     // restoring the user's previous navigation when done.
     if (format === "pdf") {
-      const loadingId = toast.loading(t("exportingAs", { format: formatLabel }));
+      const progressId = notify.startProgress(t("exportingAs", { format: formatLabel }));
       void (async () => {
         try {
           const result = await exportMarkdownAsPdf({
             fileId: file.id,
             fileName: file.name,
           });
-          toast.dismiss(loadingId);
-          if (result.ok) {
-            // The browser-print fallback already shows the system save
-            // dialog as its own confirmation; only toast for the native
-            // path where there is no other UI signal.
-            if (result.via === "native") {
-              toast.success(t("exportedAs", { format: formatLabel }));
-            }
-            return;
-          }
-          // Silent on user cancel; surface real errors.
-          if (result.error && result.error !== "cancelled") {
-            toast.error(t("failedToExport", { format: formatLabel }));
+          notify.resolveProgress(progressId);
+          if (!result.ok && result.error && result.error !== "cancelled") {
+            notify.error(t("failedToExport", { format: formatLabel }));
           }
         } catch (err) {
-          toast.dismiss(loadingId);
+          notify.failProgress(progressId);
           log.error("Failed to export PDF", err);
-          toast.error(t("failedToExport", { format: formatLabel }));
+          notify.error(t("failedToExport", { format: formatLabel }));
         }
       })();
       return;
     }
 
     if (format !== "markdown") {
-      toast.error(t("diskExportOnlyMarkdown"));
+      notify.error(t("diskExportOnlyMarkdown"));
       return;
     }
 
-    toast.promise(
+    void notify.promise(
       (async () => {
         const store = useFileStore.getState();
         await store.loadFileContent(file.id, { force: true });
@@ -374,7 +345,7 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     } catch (error) {
       log.error("Failed to reveal file in Finder", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -382,10 +353,9 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
     setContextMenu(null);
     try {
       await moveFileToFolder(file.id, null);
-      toast.success(t("movedToRoot"));
     } catch (error) {
       log.error("Failed to move file to root", error);
-      toast.error(t("failedToMove"));
+      notify.error(t("failedToMove"));
     }
   };
 
@@ -539,16 +509,15 @@ export function FileItem({ file, indent: _indent = false }: FileItemProps) {
                 } catch (error) {
                   log.error("Failed to reveal file in Finder", error);
                   const { title, description } = getErrorMessage(error);
-                  toast.error(title, { description });
+                  notify.error(title, { description });
                 }
               }}
               onMoveToRoot={async () => {
                 try {
                   await moveFileToFolder(file.id, null);
-                  toast.success(t("movedToRoot"));
                 } catch (error) {
                   log.error("Failed to move file to root", error);
-                  toast.error(t("failedToMove"));
+                  notify.error(t("failedToMove"));
                 }
               }}
               onExport={handleExport}

@@ -7,7 +7,7 @@ import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { useFileStore } from "@/stores/file-store";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 
 const log = storeLogger.child("WorkspaceHome");
 
@@ -31,7 +31,7 @@ export function WorkspaceHome() {
     } catch (error) {
       log.error("Failed to create workspace document", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 

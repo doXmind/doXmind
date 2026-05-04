@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { useFileStore } from "@/stores/file-store";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
@@ -36,11 +36,10 @@ export function BulkActionBar() {
     try {
       const fileIds = Array.from(selectedFileIds);
       await bulkMoveFiles(fileIds, folderId);
-      toast.success(t("movedFilesCount", { count: selectedCount }));
     } catch (error) {
       log.error("Failed to bulk move files", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -53,11 +52,10 @@ export function BulkActionBar() {
       // Navigate to the next file or welcome screen
       const nextId = useFileStore.getState().currentFileId;
       navigateToEditorFile(nextId);
-      toast.success(t("movedFilesToTrash", { count: selectedCount }));
     } catch (error) {
       log.error("Failed to bulk delete files", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     } finally {
       setIsDeleting(false);
     }
@@ -81,8 +79,6 @@ export function BulkActionBar() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
-    toast.success(t("exportedFiles", { count: selectedCount }));
   };
 
   return (

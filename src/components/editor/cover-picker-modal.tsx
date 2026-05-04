@@ -6,7 +6,7 @@ import { Upload, Link, Loader2, AlertCircle, Images } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { parseUploadError } from "@/lib/utils/image-upload-errors";
@@ -71,7 +71,7 @@ export function CoverPickerModal({
     } catch (error) {
       const errorMessage = parseUploadError(error);
       setUploadError(errorMessage);
-      toast.error(errorMessage);
+      notify.error(errorMessage);
     } finally {
       setIsUploading(false);
     }
@@ -116,11 +116,11 @@ export function CoverPickerModal({
     try {
       const parsed = new URL(trimmed);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        toast.error("URL must start with http:// or https://");
+        notify.error("URL must start with http:// or https://");
         return;
       }
     } catch {
-      toast.error("Invalid URL");
+      notify.error("Invalid URL");
       return;
     }
     onConfirm(trimmed);

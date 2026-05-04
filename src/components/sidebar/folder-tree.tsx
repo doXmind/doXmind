@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { FileItem } from "./file-item";
 import { useFileStore } from "@/stores/file-store";
 import type { FileItem as FileItemType } from "@/types";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
 import { revealFileInFinder } from "@/lib/storage/reveal";
@@ -67,7 +67,6 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   const moveFileToFolder = useFileStore((s) => s.moveFileToFolder);
   const renameFile = useFileStore((s) => s.renameFile);
   const deleteFile = useFileStore((s) => s.deleteFile);
-  const restoreFile = useFileStore((s) => s.restoreFile);
   const justCreatedFileId = useFileStore((s) => s.justCreatedFileId);
   const clearJustCreatedFileId = useFileStore((s) => s.clearJustCreatedFileId);
 
@@ -142,10 +141,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     if (draggedFileId && draggedFileId !== folderId) {
       try {
         await moveFileToFolder(draggedFileId, folderId);
-        toast.success(folderId ? t("movedToFolder") : t("movedToRoot"));
       } catch (error) {
         log.error("Failed to move file", error);
-        toast.error(t("failedToMove"));
+        notify.error(t("failedToMove"));
       }
     }
   };
@@ -159,11 +157,10 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
     }
     try {
       await renameFile(renamingFolderId, renamingFolderName.trim());
-      toast.success(t("folderRenamed"));
     } catch (error) {
       log.error("Failed to rename folder", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
     setRenamingFolderId(null);
     setRenamingFolderName("");
@@ -185,28 +182,13 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
   }, [allFolders, justCreatedFileId, clearJustCreatedFileId]);
 
   const handleDeleteFolderDirect = async (folder: FileItemType) => {
-    const folderName = folder.name;
-    const folderId = folder.id;
     try {
-      await deleteFile(folderId);
-      toast(t("movedToTrash"), {
-        action: {
-          label: t("restore"),
-          onClick: async () => {
-            try {
-              await restoreFile(folderId);
-              toast.success(t("restoredName", { name: folderName }));
-            } catch {
-              toast.error(t("failedToRestoreFolder"));
-            }
-          },
-        },
-        duration: 6000,
-      });
+      await deleteFile(folder.id);
+      // Recovery path: Settings → Trash. Silent on the happy path.
     } catch (error) {
       log.error("Failed to delete folder", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -246,7 +228,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(function
           } catch (error) {
             log.error("Failed to reveal folder in Finder", error);
             const { title, description } = getErrorMessage(error);
-            toast.error(title, { description });
+            notify.error(title, { description });
           }
         },
       },

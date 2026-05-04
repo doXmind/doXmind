@@ -21,7 +21,7 @@ import {
 import { ThemePickerPanel } from "@/components/shared/shared-theme-toggle";
 import { cn, formatShortcut } from "@/lib/utils";
 import { useTranslations } from "next-intl";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useFileStore } from "@/stores/file-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -65,8 +65,6 @@ export function UnifiedHeader() {
     const { currentFileId, files } = useFileStore.getState();
     const currentFile = currentFileId ? files.find((file) => file.id === currentFileId) : undefined;
     if (!currentFile) return;
-    const formatLabel =
-      format === "markdown" ? "Markdown" : format === "xlsx" ? "Excel" : format.toUpperCase();
 
     // PDF export when the active document is a PDF: hand off to the PDF
     // editor (PyMuPDF redact + insert_htmlbox pipeline). The editor owns
@@ -91,21 +89,18 @@ export function UnifiedHeader() {
     if (format === "pdf") {
       const result = await exportMarkdownAsPdf({ fileName: currentFile.name });
       if (result.ok) {
-        if (result.via === "native" && result.path) {
-          toast.success(t("exportedAs", { format: "PDF" }));
-        }
-        // Browser-print path: the OS dialog already shows confirmation;
-        // we don't toast there to avoid double feedback.
+        // Native path saves to a chosen path; browser path shows the OS
+        // print dialog. Either way the OS surface is the success signal.
         return;
       }
       if (result.error && result.error !== "cancelled") {
-        toast.error(result.error);
+        notify.error(result.error);
       }
       return;
     }
 
     if (format !== "markdown") {
-      toast.error(t("diskExportOnlyMarkdown"));
+      notify.error(t("diskExportOnlyMarkdown"));
       return;
     }
     const markdown = currentFile.contentMarkdown ?? currentFile.content ?? "";
@@ -119,7 +114,6 @@ export function UnifiedHeader() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success(t("exportedAs", { format: formatLabel }));
   };
 
   const handleFind = () => {

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Image as ImageIcon, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
 import { parseUploadError } from "@/lib/utils/image-upload-errors";
@@ -77,7 +77,7 @@ export function ImageEmptyState({ onSetSrc }: ImageEmptyStateProps) {
         });
         onSetSrc(uploadedUrl, file.name.replace(/\.[^.]+$/, ""));
       } catch (error) {
-        toast.error(parseUploadError(error));
+        notify.error(parseUploadError(error));
       } finally {
         setIsUploading(false);
       }

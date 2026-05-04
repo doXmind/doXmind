@@ -8,7 +8,8 @@ import "./styles/presentation.css";
 import "./styles/components.css";
 import "./styles/print.css";
 import { Providers } from "@/components/providers";
-import { ThemedToaster } from "@/components/themed-toaster";
+import { InlineErrorBanner } from "@/components/notifications/inline-error-banner";
+import { HeaderProgressStrip } from "@/components/notifications/header-progress-strip";
 import { ClientIntlProvider } from "@/i18n/intl-provider";
 
 export const viewport: Viewport = {
@@ -126,7 +127,8 @@ export default function RootLayout({
               Skip to content
             </a>
             {children}
-            <ThemedToaster />
+            <HeaderProgressStrip />
+            <InlineErrorBanner />
           </Providers>
         </ClientIntlProvider>
       </body>

@@ -71,7 +71,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -450,11 +450,9 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         setActiveSheetId(sidecar?.activeSheetId ?? parsed.sheets[0]?.id ?? null);
         setSelection(singleCellRange(0, 0));
         setStatus("ready");
-        if (parsed.truncated.sheets) {
-          toast.message("Some sheets were hidden", {
-            description: "doXmind currently shows the first 64 sheets in a workbook.",
-          });
-        }
+        // The truncation is reflected in the visible sheet tabs; further
+        // surfacing was a noisy success-class toast that the design no
+        // longer carries.
       } catch (err) {
         if (cancelled || (err instanceof DOMException && err.name === "AbortError")) {
           return;
@@ -945,7 +943,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     if (input === null) return;
     const value = Number(input);
     if (!Number.isFinite(value)) {
-      toast.error("Enter a number");
+      notify.error("Enter a number");
       return;
     }
     addConditionalFormatRule((range) => ({
@@ -965,7 +963,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     if (input === null) return;
     const value = Number(input);
     if (!Number.isFinite(value)) {
-      toast.error("Enter a number");
+      notify.error("Enter a number");
       return;
     }
     addConditionalFormatRule((range) => ({
@@ -992,7 +990,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     const min = Number(minInput);
     const max = Number(maxInput);
     if (!Number.isFinite(min) || !Number.isFinite(max)) {
-      toast.error("Enter numbers");
+      notify.error("Enter numbers");
       return;
     }
     addConditionalFormatRule((range) => ({
@@ -1572,7 +1570,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         (s) => s.id !== sheetId && s.name.toLowerCase() === trimmed.toLowerCase()
       );
       if (taken) {
-        toast.error("A sheet with that name already exists");
+        notify.error("A sheet with that name already exists");
         return;
       }
       applyWorkbookOpAndPersist({ type: "renameSheet", sheetId, name: trimmed });
@@ -1602,7 +1600,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     async (sheetId: string) => {
       if (!displayWorkbook) return;
       if (displayWorkbook.sheets.length <= 1) {
-        toast.error("A workbook must have at least one sheet");
+        notify.error("A workbook must have at least one sheet");
         return;
       }
       const sheet = displayWorkbook.sheets.find((s) => s.id === sheetId);
@@ -1771,7 +1769,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     }
     if (updates.length === 0) return;
     applyCellUpdates(updates);
-    toast.success(`Replaced ${updates.length} ${updates.length === 1 ? "match" : "matches"}`);
+    // Silent: the cells visibly update.
   }, [
     displaySheet,
     findMatches,
@@ -2053,7 +2051,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       const targetRow = isSingleRow ? b.top : b.bottom + 1;
       const targetCol = isSingleRow ? b.right + 1 : b.left;
       if (targetRow >= displaySheet.rowCount || targetCol >= displaySheet.colCount) {
-        toast.error("No empty cell adjacent to the selection — extend the sheet first");
+        notify.error("No empty cell adjacent to the selection — extend the sheet first");
         return;
       }
       const range = `${columnLabel(b.left)}${b.top + 1}:${columnLabel(b.right)}${b.bottom + 1}`;
@@ -2076,7 +2074,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       if (!displaySheet || !selection) return;
       const b = rangeBounds(selection);
       if (b.top === b.bottom) {
-        toast.message("Select more than one row to sort");
+        // Silent: caller noop.
         return;
       }
       type RowSnapshot = {
@@ -2097,7 +2095,6 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
         }
         rows.push({ originalRow: r, values, hasFormula });
       }
-      const formulaRowCount = rows.filter((r) => r.hasFormula).length;
       // Skip rows that contain formulas — they stay anchored.
       const sortable = rows.filter((r) => !r.hasFormula);
       sortable.sort((a, b2) => {
@@ -2122,11 +2119,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       }
       if (updates.length === 0) return;
       applyCellUpdates(updates);
-      if (formulaRowCount > 0) {
-        toast.message(`Sorted ${updates.length / (b.right - b.left + 1)} rows`, {
-          description: `${formulaRowCount} row(s) with formulas were left in place.`,
-        });
-      }
+      // Silent on success; the visible cells reorder themselves.
     },
     [displaySheet, selection, cellsByCoord, editsByCoord, applyCellUpdates]
   );
@@ -2143,13 +2136,9 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       return;
     }
     if (!effectiveStyleForAnchor) {
-      toast.message("Select a cell with formatting first");
       return;
     }
     setPaintStyle({ ...effectiveStyleForAnchor });
-    toast.message("Format painter armed", {
-      description: "Click or drag to paint the captured style. Esc to cancel.",
-    });
   }, [paintStyle, effectiveStyleForAnchor]);
 
   // -------------------------------------------------------------------
@@ -2226,7 +2215,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      toast.error("Clipboard write was blocked");
+      notify.error("Clipboard write was blocked");
     }
     return text;
   }, [selection, displaySheet, cellsByCoord, editsByCoord, computedValueAt]);
@@ -2237,7 +2226,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     try {
       text = await navigator.clipboard.readText();
     } catch {
-      toast.error("Clipboard read was blocked");
+      notify.error("Clipboard read was blocked");
       return;
     }
     if (!text) return;
@@ -2366,7 +2355,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
     const bytes = xlsxBytesRef.current;
     const state = editorStateRef.current ?? { version: 1 as const };
     if (!bytes) {
-      toast.error("Workbook bytes are not loaded yet");
+      notify.error("Workbook bytes are not loaded yet");
       return;
     }
     setIsExporting(true);
@@ -2380,10 +2369,10 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
-      toast.success("Exported workbook");
+      // OS save dialog is the success signal.
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to export workbook";
-      toast.error(message);
+      notify.error(message);
     } finally {
       setIsExporting(false);
     }
@@ -3388,7 +3377,7 @@ export function ExcelEditorWorkspace({ file }: ExcelEditorWorkspaceProps) {
             if (!displaySheet) return;
             const range = parseRangeRef(input);
             if (!range) {
-              toast.error("Couldn't read that cell reference");
+              notify.error("Couldn't read that cell reference");
               return;
             }
             const maxRow = Math.max(0, displaySheet.rowCount - 1);

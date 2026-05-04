@@ -3,7 +3,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ImageNodeView } from "@/components/editor/image-node-view";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { api } from "@/lib/api";
 import { parseUploadError } from "@/lib/utils/image-upload-errors";
 
@@ -102,7 +102,6 @@ async function uploadAndInsertImage(file: File, view: any, pos?: number) {
       .setMeta(ImageUploadPlaceholderKey, { type: "remove", id: uploadId });
     view.dispatch(insertTr);
 
-    toast.success("Image uploaded successfully");
     return true;
   } catch (error) {
     // Remove placeholder decoration only — nothing to clean up in the document
@@ -118,7 +117,7 @@ async function uploadAndInsertImage(file: File, view: any, pos?: number) {
     }
 
     const errorMessage = parseUploadError(error);
-    toast.error(errorMessage);
+    notify.error(errorMessage);
 
     return false;
   }

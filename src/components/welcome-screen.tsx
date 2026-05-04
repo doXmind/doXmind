@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { useFileStore } from "@/stores/file-store";
 import { getErrorMessage } from "@/lib/utils";
 import { storeLogger } from "@/lib/logger";
@@ -81,18 +81,17 @@ export function WelcomeScreen() {
 
   const handleOpenFolder = async () => {
     if (!isDesktopShell) {
-      toast.error(tSidebar("openWorkspaceRequiresDesktop"));
+      notify.error(tSidebar("openWorkspaceRequiresDesktop"));
       return;
     }
     try {
       const selected = await pickNativeFolder(tSidebar("openFolder"));
       if (!selected) return;
       await openFolder(selected);
-      toast.success(tSidebar("workspaceOpened"));
     } catch (error) {
       log.error("Failed to open folder", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -108,7 +107,7 @@ export function WelcomeScreen() {
     } catch (error) {
       log.error("Failed to create new document", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -124,7 +123,7 @@ export function WelcomeScreen() {
     } catch (error) {
       log.error("Failed to start untitled buffer", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -134,7 +133,7 @@ export function WelcomeScreen() {
     } catch (error) {
       log.error("Failed to open recent workspace", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -144,7 +143,7 @@ export function WelcomeScreen() {
     } catch (error) {
       log.error("Failed to open recent file", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 

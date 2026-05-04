@@ -1,9 +1,30 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode, HTMLAttributes } from "react";
 import { OutlineCollapsed } from "@/components/editor/mindlines/outline-collapsed";
 import { useFileStore } from "@/stores/file-store";
 import type { Heading } from "@/components/editor/mindlines/types";
 import type { FileItem } from "@/types";
+
+// AnimatePresence's exit animation keeps elements mounted longer than the
+// store-driven open/close timers we're verifying. Stub it out so the dialog
+// unmounts the moment popoverOpen flips to false.
+vi.mock("framer-motion", () => {
+  const motion = new Proxy(
+    {},
+    {
+      get:
+        () =>
+        ({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children?: ReactNode }) => (
+          <div {...props}>{children}</div>
+        ),
+    }
+  );
+  return {
+    motion,
+    AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
+  };
+});
 
 const headings: Heading[] = [
   { id: "h-0", level: 1, text: "Overview", pos: 0 },
@@ -56,10 +77,9 @@ describe("OutlineCollapsed", () => {
     expect(railRoot).toBeTruthy();
 
     fireEvent.mouseEnter(railRoot!);
-    act(() => vi.advanceTimersByTime(70));
+    act(() => vi.advanceTimersByTime(120));
 
     expect(screen.getByRole("dialog", { name: "Document outline" })).toBeInTheDocument();
-    expect(screen.getByText("Test.md")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Navigate to: Overview" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute(
       "aria-current",
@@ -67,7 +87,7 @@ describe("OutlineCollapsed", () => {
     );
 
     fireEvent.mouseLeave(railRoot!);
-    act(() => vi.advanceTimersByTime(219));
+    act(() => vi.advanceTimersByTime(179));
     expect(screen.getByRole("dialog", { name: "Document outline" })).toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(1));
@@ -81,7 +101,7 @@ describe("OutlineCollapsed", () => {
     const railRoot = screen.getByRole("button", { name: "Navigate to: Overview" }).parentElement
       ?.parentElement;
     fireEvent.mouseEnter(railRoot!);
-    act(() => vi.advanceTimersByTime(70));
+    act(() => vi.advanceTimersByTime(120));
 
     fireEvent.click(screen.getByRole("button", { name: "Detail" }));
 

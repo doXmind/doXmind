@@ -7,10 +7,13 @@ import { WelcomeScreen } from "@/components/welcome-screen";
 import { StratigraphyWelcome } from "@/components/welcome/stratigraphy";
 import { useFileStore } from "@/stores/file-store";
 
-vi.mock("sonner", () => ({
-  toast: {
+vi.mock("@/lib/notifications", () => ({
+  notify: {
     error: vi.fn(),
-    success: vi.fn(),
+    promise: vi.fn(),
+    startProgress: vi.fn(),
+    resolveProgress: vi.fn(),
+    failProgress: vi.fn(),
   },
 }));
 
@@ -196,9 +199,9 @@ describe("WelcomeScreen store wiring", () => {
     expect(window.location.pathname).toMatch(/^\/editor\/transient-/);
   });
 
-  it("blocks browser-only folder opening with the desktop-required toast", async () => {
+  it("blocks browser-only folder opening with the desktop-required notification", async () => {
     const user = userEvent.setup();
-    const { toast } = await import("sonner");
+    const { notify } = await import("@/lib/notifications");
     const { pickNativeFolder } = await import("@/lib/native-dialog");
 
     renderWithIntl(<WelcomeScreen />);
@@ -206,7 +209,7 @@ describe("WelcomeScreen store wiring", () => {
     await user.click(screen.getByRole("button", { name: "Open Folder" }));
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
+      expect(notify.error).toHaveBeenCalledWith(
         "Opening folders and files requires the desktop app."
       );
     });

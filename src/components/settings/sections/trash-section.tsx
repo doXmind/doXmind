@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { FileText, Folder, Loader2, RotateCcw, Trash2, X } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { useTranslations } from "next-intl";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { useFileStore } from "@/stores/file-store";
@@ -44,27 +44,25 @@ export function TrashSection() {
     loadTrash();
   }, [loadTrash]);
 
-  const handleRestore = async (id: string, name: string) => {
+  const handleRestore = async (id: string, _name: string) => {
     setRestoringId(id);
     try {
       await restoreFile(id);
-      toast.success(tSidebar("restoredName", { name }));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     } finally {
       setRestoringId(null);
     }
   };
 
-  const handlePermanentDelete = async (id: string, name: string) => {
+  const handlePermanentDelete = async (id: string, _name: string) => {
     setDeletingId(id);
     try {
       await permanentDeleteFile(id);
-      toast.success(tSidebar("permanentlyDeletedName", { name }));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);
@@ -74,10 +72,9 @@ export function TrashSection() {
   const handleEmptyTrash = async () => {
     try {
       await emptyTrash();
-      toast.success(tSidebar("trashEmptied"));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 

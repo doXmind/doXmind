@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowRight, Folder, Plus } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { useTranslations } from "next-intl";
 import { getErrorMessage } from "@/lib/utils";
 import { useFileStore } from "@/stores/file-store";
@@ -28,7 +28,7 @@ export function WorkspaceSection() {
 
   const chooseDirectory = async (title: string) => {
     if (!isDesktop) {
-      toast.error(t("workspaceDesktopRequired"));
+      notify.error(t("workspaceDesktopRequired"));
       return null;
     }
     return await pickNativeFolder(title);
@@ -40,10 +40,9 @@ export function WorkspaceSection() {
       const selected = await chooseDirectory(t("openWorkspace"));
       if (!selected) return;
       await openFolder(selected);
-      toast.success(t("workspaceOpened"));
     } catch (error) {
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     } finally {
       setIsOpening(false);
     }
@@ -52,7 +51,7 @@ export function WorkspaceSection() {
   const handleOpen = (path: string) => {
     void openFolder(path).catch((error) => {
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     });
   };
 

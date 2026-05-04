@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { navigateToEditorFile } from "@/lib/editor-navigation";
 import { useFileStore } from "@/stores/file-store";
 import { useLayoutStore } from "@/stores/layout-store";
@@ -66,7 +66,7 @@ export function NativeMenuListener() {
         await openWindowForTarget({ kind: "file", path: selected });
       } catch (error) {
         log.error("open file failed", error);
-        toast.error("Failed to open file");
+        notify.error("Failed to open file");
       }
     };
 
@@ -77,7 +77,7 @@ export function NativeMenuListener() {
         await openWindowForTarget({ kind: "folder", path: selected });
       } catch (error) {
         log.error("open folder failed", error);
-        toast.error("Failed to open folder");
+        notify.error("Failed to open folder");
       }
     };
 
@@ -97,7 +97,7 @@ export function NativeMenuListener() {
         }
       } catch (error) {
         log.error("reveal failed", error);
-        toast.error("Couldn't reveal in Finder");
+        notify.error("Couldn't reveal in Finder");
       }
     };
 

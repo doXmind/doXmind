@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, FolderOpen, Plus, X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,7 +66,7 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
 
   const handleOpenFolderPicker = async () => {
     if (!isDesktopShell) {
-      toast.error(t("openWorkspaceRequiresDesktop"));
+      notify.error(t("openWorkspaceRequiresDesktop"));
       return;
     }
     try {
@@ -76,7 +76,7 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
     } catch (error) {
       log.error("Failed to pick folder", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -86,7 +86,7 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
     } catch (error) {
       log.error("Failed to open new window", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -103,7 +103,7 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
     } catch (error) {
       log.error("Failed to open recent target", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 
@@ -117,11 +117,10 @@ export function WorkspaceSwitcher({ label, titleAttr }: WorkspaceSwitcherProps) 
     setPendingFolderPath(null);
     try {
       await switchWorkspace({ kind: "folder", path }, { newWindow });
-      if (!newWindow) toast.success(t("workspaceOpened"));
     } catch (error) {
       log.error("Failed to switch workspace", error);
       const { title, description } = getErrorMessage(error);
-      toast.error(title, { description });
+      notify.error(title, { description });
     }
   };
 

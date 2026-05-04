@@ -22,7 +22,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notifications";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -1003,7 +1003,6 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
   const handleExportPdf = useCallback(() => {
     const { changedTextEdits, hasChanges } = collectChangedEdits();
     if (!hasChanges) {
-      toast.message("No PDF changes yet");
       return;
     }
 
@@ -1034,7 +1033,7 @@ export function PdfEditorWorkspace({ file }: PdfEditorWorkspaceProps) {
       );
     };
 
-    toast.promise(persistState.then(exportPipeline), {
+    void notify.promise(persistState.then(exportPipeline), {
       loading: "Exporting edited PDF...",
       success: "Edited PDF exported",
       error: "Failed to export edited PDF",
