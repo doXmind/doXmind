@@ -148,7 +148,10 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
     // already inset against the window edge).
     <div
       className="group/outline-rail absolute right-0 top-0 flex h-full justify-end transition-[width] duration-100 ease-out"
-      style={{ width: expanded ? POPOVER_WIDTH_PX : "100%" }}
+      style={{
+        width: expanded ? POPOVER_WIDTH_PX : "100%",
+        pointerEvents: popoverOpen ? "auto" : "none",
+      }}
       onMouseEnter={schedulePopoverOpen}
       onMouseLeave={schedulePopoverClose}
       onFocusCapture={openPopoverNow}
@@ -161,7 +164,7 @@ export function OutlineCollapsed({ headings, activeId, onNavigate }: OutlineColl
       {/* Rail — naked horizontal rules, fades to 0 when popover takes over */}
       <div
         className={cn(
-          "flex h-full flex-col items-end overflow-hidden py-1 pr-0.5 transition-opacity duration-150",
+          "pointer-events-auto flex h-full flex-col items-end overflow-hidden py-1 pr-0.5 transition-opacity duration-150",
           popoverOpen
             ? "opacity-0"
             : "opacity-[0.14] group-focus-within/outline-rail:opacity-[0.85] group-hover/outline-rail:opacity-[0.85]"

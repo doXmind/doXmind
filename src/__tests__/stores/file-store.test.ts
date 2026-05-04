@@ -261,4 +261,46 @@ describe("useFileStore disk workspace", () => {
     expect(invokeMock).toHaveBeenCalledWith("doc_delete", { root: "/workspace", path: "Doc.md" });
     expect(useFileStore.getState().files).toHaveLength(0);
   });
+
+  it("preserves the original delete error if reverting with loadFiles also throws", async () => {
+    const originalLoadFiles = useFileStore.getState().loadFiles;
+    const deleteError = new Error("delete failed");
+    const loadFilesError = new Error("loadFiles failed");
+    const loadFilesMock = vi.fn().mockRejectedValue(loadFilesError);
+
+    useFileStore.setState({
+      files: [
+        {
+          id: "doc-1",
+          name: "Doc.md",
+          content: "",
+          isFolder: false,
+          parentId: null,
+          position: 0,
+          isFavorite: false,
+          icon: null,
+          coverImageUrl: null,
+          coverPosition: 0.5,
+          createdAt: now,
+          updatedAt: now,
+          wordCount: 0,
+          preview: "",
+          storageHandle: { mode: "disk", id: "doc-1", kind: "document", relPath: "Doc.md" },
+        },
+      ],
+      loadFiles: loadFilesMock,
+    });
+    const fetchMock = vi.fn().mockRejectedValue(deleteError);
+    vi.stubGlobal("fetch", fetchMock);
+    invokeMock.mockRejectedValueOnce(new Error("tauri unavailable"));
+
+    try {
+      await expect(useFileStore.getState().deleteFile("doc-1")).rejects.toBe(deleteError);
+      expect(loadFilesMock).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledOnce();
+    } finally {
+      useFileStore.setState({ loadFiles: originalLoadFiles });
+      vi.unstubAllGlobals();
+    }
+  });
 });

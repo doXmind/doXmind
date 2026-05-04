@@ -109,22 +109,25 @@ def parse_workbook(
     rows_truncated: dict[str, bool] = {}
     cols_truncated: dict[str, bool] = {}
 
-    for index, name in enumerate(wb_formulas.sheetnames):
-        if index >= parse_limits.max_sheets:
-            break
-        formula_sheet = wb_formulas[name]
-        value_sheet = wb_values[name] if name in wb_values.sheetnames else None
-        sheet_dto, sheet_truncations = _parse_sheet(
-            formula_sheet,
-            value_sheet,
-            index=index,
-            limits=parse_limits,
-        )
-        sheets.append(sheet_dto)
-        if sheet_truncations.get("rows"):
-            rows_truncated[sheet_dto["id"]] = True
-        if sheet_truncations.get("cols"):
-            cols_truncated[sheet_dto["id"]] = True
+    try:
+        for index, name in enumerate(wb_formulas.sheetnames):
+            if index >= parse_limits.max_sheets:
+                break
+            formula_sheet = wb_formulas[name]
+            value_sheet = wb_values[name] if name in wb_values.sheetnames else None
+            sheet_dto, sheet_truncations = _parse_sheet(
+                formula_sheet,
+                value_sheet,
+                index=index,
+                limits=parse_limits,
+            )
+            sheets.append(sheet_dto)
+            if sheet_truncations.get("rows"):
+                rows_truncated[sheet_dto["id"]] = True
+            if sheet_truncations.get("cols"):
+                cols_truncated[sheet_dto["id"]] = True
+    except ValueError as exc:
+        raise ValueError(f"failed to parse xlsx: {exc}") from exc
 
     return {
         "version": 1,

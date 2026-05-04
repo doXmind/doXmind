@@ -94,6 +94,27 @@ describe("OutlineCollapsed", () => {
     expect(screen.queryByRole("dialog", { name: "Document outline" })).not.toBeInTheDocument();
   });
 
+  it("keeps the expanded hover zone click-through until the popover mounts", () => {
+    render(<OutlineCollapsed headings={headings} activeId="h-10" onNavigate={vi.fn()} />);
+
+    const railRoot = screen.getByRole("button", { name: "Navigate to: Overview" }).parentElement
+      ?.parentElement;
+    expect(railRoot).toBeTruthy();
+
+    fireEvent.mouseEnter(railRoot!);
+
+    expect(railRoot).toHaveStyle({
+      width: "260px",
+      pointerEvents: "none",
+    });
+    expect(screen.queryByRole("dialog", { name: "Document outline" })).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(screen.getByRole("dialog", { name: "Document outline" })).toBeInTheDocument();
+    expect(railRoot).toHaveStyle({ pointerEvents: "auto" });
+  });
+
   it("navigates from popover items without forcing editor focus", () => {
     const onNavigate = vi.fn();
     render(<OutlineCollapsed headings={headings} activeId="h-0" onNavigate={onNavigate} />);
