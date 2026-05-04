@@ -26,7 +26,7 @@ Current full-write shape:
   "version": 1,
   "id": "dfe24100-bb43-4f93-8553-2d9fdcc50172",
   "html": "<p>Rendered editor HTML</p>",
-  "markdown_hash": "b1d4f1f6e2d0f0d6525f3b3e5d2a6ef6a7a6a5e81f1e8f87fd9abf437f2ed5d4",
+  "markdown_hash": "0000000000000000000000000000000000000000000000000000000000000000",
   "updated_at": "2026-04-29T17:38:00Z",
   "extras": {
     "blocks": {
@@ -36,14 +36,23 @@ Current full-write shape:
 }
 ```
 
-| Key             | Type    | Required            | Meaning                                                                                                                        |
-| --------------- | ------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `version`       | integer | Yes                 | Sidecar schema version. Current value is `1`.                                                                                  |
-| `id`            | string  | Yes for full writes | Stable Document id. If frontmatter disagrees, the Sidecar id wins during read backfill.                                        |
-| `html`          | string  | Yes for full writes | Lossless editor HTML for fast reopen when `markdown_hash` matches the current markdown file.                                   |
-| `markdown_hash` | string  | Yes                 | Bare SHA-256 hex digest of the full markdown file content after frontmatter is applied. A mismatch means the Sidecar is stale. |
-| `updated_at`    | string  | Yes                 | UTC timestamp in ISO-8601 form, for example `2026-04-29T17:38:00Z`.                                                            |
-| `extras`        | object  | Optional            | doXmind-only Custom Block state. External-reference block state lives under `extras.blocks.<id>` by default.                   |
+| Key             | Type    | Required            | Meaning                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------- | ------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`       | integer | Yes                 | Sidecar schema version. Current value is `1`.                                                                                                                                                                                                                                                                                                                                                                  |
+| `id`            | string  | Yes for full writes | Stable document identifier. UUID v4 for natively-created documents and Synthetic Documents. For Synthetic Documents migrated from a legacy PDF/Excel sidecar, the original stable_path_id (form: `path:<hash>`) is preserved and is NOT a UUID. If frontmatter disagrees, the Sidecar id wins during read backfill. `_snapshot_from_legacy` in [`synthetic_document.py`](../server/services/synthetic_document.py) produces non-UUID ids. |
+| `html`          | string  | Yes for full writes | Lossless editor HTML for fast reopen when `markdown_hash` matches the current markdown file.                                                                                                                                                                                                                                                                                                                   |
+| `markdown_hash` | string  | Yes                 | SHA-256 hex digest of the complete `.md` file content, including frontmatter. A mismatch means the Sidecar is stale.                                                                                                                                                                                                                                                                                            |
+| `updated_at`    | string  | Yes                 | UTC timestamp in ISO-8601 form, for example `2026-04-29T17:38:00Z`.                                                                                                                                                                                                                                                                                                                                            |
+| `extras`        | object  | Optional            | doXmind-only Custom Block state. External-reference block state lives under `extras.blocks.<id>` by default.                                                                                                                                                                                                                                                                                                   |
+
+Readers MUST accept any non-empty string for `id`.
+`MarkdownDocumentState.write_full` rejects an empty id with `ValueError`;
+readers encountering a Sidecar with an empty id, currently impossible to
+produce but defensible to guard against, should treat the document as
+malformed.
+
+Any reader recomputing the hash to detect staleness must include frontmatter;
+body-only hashing produces false stale results.
 
 New markdown-shape Sidecars should use only these top-level keys. Legacy
 PDF/Excel sidecars may contain older top-level keys while they are awaiting
@@ -64,8 +73,18 @@ An External-reference Custom Block is represented in markdown by one single-line
 HTML comment:
 
 ```text
-<!-- {block_type} id="{uuid_v4}" src="{relative_path}" [{attr}="{value}"]* -->
+<!-- {block_type} id="{uuid_v4_or_legacy_id}" src="{relative_path}" [{attr}="{value}"]* -->
 ```
+
+The canonical production order is:
+
+```text
+<!-- {block_type} id={uuid_v4_or_legacy_id} src={relative_path} [{attr}={value}]* -->
+```
+
+`id` MUST appear before `src`, and any additional attributes MUST follow `src`.
+Slice #33's frontend regex will be derived from this spec; order-agnostic specs
+cause silent frontend/backend disagreement.
 
 Example:
 
@@ -76,8 +95,9 @@ Example:
 Rules:
 
 - `block_type` is one of the strings in the vocabulary table below.
-- `id` is a UUID v4 generated when the block is inserted. It is immutable for
-  the lifetime of that block instance, including when `src` changes.
+- `id` is a non-empty stable block id generated when the block is inserted. It
+  is immutable for the lifetime of that block instance, including when `src`
+  changes.
 - `src` is a workspace-scoped relative path to the referenced user file. Current
   writers use paths relative to the owning Document or Synthetic Document
   location; implementations must not write absolute paths.
@@ -90,16 +110,11 @@ Rules:
 Canonical extraction form:
 
 ```text
-<!--\s*(?P<block_type>[A-Za-z][A-Za-z0-9-]*)\s+(?P<attrs>[^>]*)-->
+<!--\s*(?P<block_type>pdf-block|excel-block)\s+id="(?P<id>[^"]+)"\s+src="(?P<src>[^"]+)"(?P<attrs>.*?)\s*-->
 ```
 
-After matching a placeholder comment, parse `attrs` as HTML-style attributes and
-require at least:
-
-```text
-id="(?P<id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})"
-src="(?P<src>[^"]+)"
-```
+Implementer's tip: slice #33's frontend regex must anchor the attrs group the
+same way.
 
 Frontend and backend implementations may use language-specific regexes or an
 HTML attribute parser, but they must be equivalent to this contract for
@@ -107,10 +122,12 @@ doXmind-written placeholders.
 
 ## Block Type Vocabulary
 
-| `block_type`  | Category           | Backend registry presence | Default `slot_key_for_id(id)` |
-| ------------- | ------------------ | ------------------------- | ----------------------------- |
-| `pdf-block`   | External-reference | Yes                       | `blocks/<id>`                 |
-| `excel-block` | External-reference | Yes                       | `blocks/<id>`                 |
+| `block_type`  | Category           | Backend registry presence | Default `slot_key_for_id(id)` | `hydration_mode` | `salvage_rule`                              | Frontend extension class |
+| ------------- | ------------------ | ------------------------- | ----------------------------- | ---------------- | ------------------------------------------- | ------------------------ |
+| `pdf-block`   | External-reference | Yes                       | `blocks/<id>`                 | LAZY             | Keep matching slot; discard orphan slots    | —                        |
+| `excel-block` | External-reference | Yes                       | `blocks/<id>`                 | LAZY             | Keep matching slot; discard orphan slots    | —                        |
+
+_The frontend extension class column will be filled in when slice #33 (#33) creates the corresponding CustomBlockExtensions entries._
 
 Self-contained Custom Blocks such as mermaid, callout, math, toggle, and
 page-link are intentionally absent from the backend registry because all of
@@ -138,5 +155,9 @@ To add a new block type:
 - For External-reference blocks, add one backend `ExternalRefBlockRegistry`
   entry with `block_type`, `slot_key_for_id`, hydration mode, salvage behavior,
   and orphan/duplicate/new policies.
+- Any new External-reference `block_type` MUST declare both `hydration_mode` and
+  `salvage_rule` in the vocabulary table. ADR-0002,
+  [Hybrid Hydration for Custom Blocks](adr/0002-hybrid-hydration-for-custom-blocks.md),
+  is the governing contract.
 - Add tests proving the placeholder round-trips through the frontend parser and
   that backend correlation handles the block's slot policy.
